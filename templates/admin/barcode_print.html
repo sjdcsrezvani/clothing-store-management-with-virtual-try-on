@@ -1,0 +1,318 @@
+{% extends "base.html" %}
+{% block title %}چاپ بارکد — رای کیدز{% endblock %}
+{% block content %}
+<h2>چاپ بارکد محصولات</h2>
+
+<div class="filter-bar" id="controls">
+    <form method="get" action="/admin/barcodes/print" class="search-form">
+        <select name="category">
+            <option value="">همه دسته‌ها</option>
+            {% for cat in categories %}
+            <option value="{{ cat }}" {% if category_filter == cat %}selected{% endif %}>{{ cat }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-primary">اعمال فیلتر</button>
+    </form>
+    <div class="print-controls" style="margin-top: 1rem;">
+        <button type="button" onclick="selectAll()" class="btn btn-secondary">انتخاب همه</button>
+        <button type="button" onclick="deselectAll()" class="btn btn-secondary">لغو انتخاب</button>
+        <button type="button" onclick="printSelected()" class="btn btn-primary">چاپ انتخاب شده</button>
+        <span id="selected-count" style="margin-right: 1rem;">0 بارکد انتخاب شده</span>
+    </div>
+    <div style="margin-top: 0.5rem;">
+        <form method="post" action="/admin/barcodes/mark-printed" id="mark-printed-form" style="display: inline;">
+            <input type="hidden" name="selected_ids" id="selected_ids_input" value="">
+            <button type="submit" class="btn btn-secondary">ثبت چاپ شده</button>
+        </form>
+        <form method="post" action="/admin/barcodes/reset" style="display: inline;" 
+              onsubmit="return confirm('آیا مطمئن هستید؟ تمام شمارش‌های چاپ ریست می‌شود.')">
+            <button type="submit" class="btn btn-danger">ریست شمارش چاپ</button>
+        </form>
+    </div>
+</div>
+
+<div class="card barcode-print-sheet" id="barcode-sheet">
+    {% if barcode_items %}
+    <div class="barcode-grid">
+        {% for item in barcode_items %}
+        <label class="barcode-cell {% if item.already_printed %}printed{% endif %}" for="sel-{{ item.product_id }}-{{ loop.index0 }}">
+            <input type="checkbox" class="barcode-checkbox" 
+                   id="sel-{{ item.product_id }}-{{ loop.index0 }}"
+                   name="selected_products" value="{{ item.product_id }}"
+                   data-product-id="{{ item.product_id }}"
+                   data-product-name="{{ item.name }}"
+                   data-product-price="{{ item.price }}"
+                   {% if item.already_printed %}disabled{% else %}checked{% endif %}>
+            <div class="barcode-label">
+                <div class="label-shop-name">
+                    <span class="shop-fa">رای کیدز</span>
+                    <span class="shop-en">Ray Kids</span>
+                </div>
+                <div class="label-social">
+                    <span class="social-item">
+                        <svg class="social-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
+                        <span>@raykids</span>
+                    </span>
+                    <span class="social-item">
+                        <svg class="social-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                        <span>raykids.ir</span>
+                    </span>
+                </div>
+                <div class="label-barcode">
+                    <img src="/static/uploads/barcodes/barcode_{{ item.barcode }}.png" 
+                         alt="{{ item.barcode }}" class="barcode-img">
+                </div>
+                <div class="label-product-name">{{ item.name }}</div>
+                <div class="label-price">{{ fmt(item.price) }} تومان</div>
+            </div>
+        </label>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p>محصولی یافت نشد.</p>
+    {% endif %}
+</div>
+
+<nav class="admin-nav" id="nav-controls">
+    <a href="/admin/products"><button type="button" class="btn btn-secondary">بازگشت به مدیریت محصولات</button></a>
+    <a href="/admin"><button type="button" class="btn btn-secondary">بازگشت به داشبورد</button></a>
+</nav>
+
+<style>
+    .barcode-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 3mm;
+        padding: 5mm;
+    }
+    .barcode-cell {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        padding: 2mm;
+        cursor: pointer;
+        transition: all 0.15s;
+        position: relative;
+    }
+    .barcode-cell:hover {
+        border-color: #c44dff;
+        background: #faf5ff;
+    }
+    .barcode-cell.printed {
+        opacity: 0.5;
+        background: #f0f0f0;
+    }
+    .barcode-checkbox {
+        position: absolute;
+        top: 2mm;
+        right: 2mm;
+        width: 12px;
+        height: 12px;
+    }
+    .barcode-label {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 100%;
+        padding: 1mm;
+    }
+    .label-shop-name {
+        text-align: center;
+        margin-bottom: 1mm;
+    }
+    .shop-fa {
+        display: block;
+        font-size: 11pt;
+        font-weight: 800;
+        color: #c44dff;
+        font-family: 'Vazirmatn', sans-serif;
+    }
+    .shop-en {
+        display: block;
+        font-size: 8pt;
+        color: #666;
+        font-weight: 600;
+    }
+    .label-social {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.5mm;
+        margin-bottom: 1mm;
+    }
+    .social-item {
+        display: flex;
+        align-items: center;
+        gap: 1mm;
+        font-size: 7pt;
+        color: #555;
+        direction: ltr;
+    }
+    .social-icon {
+        width: 10px;
+        height: 10px;
+        flex-shrink: 0;
+    }
+    .label-barcode {
+        margin: 1mm 0;
+    }
+    .barcode-img {
+        width: 100%;
+        max-width: 40mm;
+        height: auto;
+    }
+    .label-product-name {
+        font-size: 8pt;
+        font-weight: 600;
+        text-align: center;
+        color: #333;
+        margin-top: 1mm;
+    }
+    .label-price {
+        font-size: 9pt;
+        font-weight: 700;
+        color: #c44dff;
+        text-align: center;
+    }
+    .printed-badge {
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        background: #ff6b6b;
+        color: #fff;
+        font-size: 6pt;
+        padding: 1px 4px;
+        border-radius: 3px;
+    }
+    .print-controls {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+    #selected-count {
+        font-weight: 600;
+        color: #c44dff;
+    }
+
+    @media print {
+        * { margin: 0 !important; padding: 0 !important; box-sizing: border-box !important; }
+        body * { visibility: hidden !important; }
+        #barcode-sheet, #barcode-sheet * { visibility: visible !important; }
+        
+        #barcode-sheet {
+            position: fixed !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 210mm !important;
+            height: 297mm !important;
+            border: none !important;
+            box-shadow: none !important;
+            background: white !important;
+            direction: ltr !important;
+            overflow: hidden !important;
+        }
+        
+        .barcode-grid {
+            display: block !important;
+            width: 198mm !important;
+            margin-left: 4mm !important;
+            margin-right: 4mm !important;
+            padding: 2mm 0 !important;
+            direction: ltr !important;
+            text-align: center !important;
+        }
+        
+        .barcode-cell {
+            display: inline-block !important;
+            width: 41mm !important;
+            vertical-align: top !important;
+            border: 0.5px solid #999 !important;
+            padding: 0.5mm !important;
+            border-radius: 0 !important;
+            margin: 0.7mm !important;
+            direction: ltr !important;
+            text-align: center !important;
+            page-break-inside: avoid !important;
+        }
+        
+        .barcode-checkbox { display: none !important; }
+        .printed-badge { display: none !important; }
+        .barcode-cell.unchecked { display: none !important; }
+        .barcode-cell.printed { display: none !important; }
+        
+        .barcode-img { max-width: 42mm !important; height: auto !important; }
+        .shop-fa { font-size: 15pt !important; }
+        .shop-en { font-size: 12pt !important; }
+        .social-icon { width: 15px !important; height: 15px !important; }
+        .social-item { font-size: 10pt !important; }
+        .label-product-name { font-size: 10pt !important; }
+        .label-price { font-size: 10pt !important; }
+    }
+</style>
+
+<script>
+function selectAll() {
+    document.querySelectorAll('.barcode-checkbox:not(:disabled)').forEach(cb => {
+        cb.checked = true;
+        cb.closest('.barcode-cell').classList.remove('unchecked');
+    });
+    updateCount();
+}
+function deselectAll() {
+    document.querySelectorAll('.barcode-checkbox:not(:disabled)').forEach(cb => {
+        cb.checked = false;
+        cb.closest('.barcode-cell').classList.add('unchecked');
+    });
+    updateCount();
+}
+function updateCount() {
+    const checked = document.querySelectorAll('.barcode-checkbox:checked:not(:disabled)');
+    document.getElementById('selected-count').textContent = checked.length + ' بارکد انتخاب شده';
+    
+    const counts = {};
+    checked.forEach(cb => {
+        const pid = cb.dataset.productId;
+        counts[pid] = (counts[pid] || 0) + 1;
+    });
+    const parts = [];
+    for (const [pid, count] of Object.entries(counts)) {
+        for (let i = 0; i < count; i++) parts.push(pid);
+    }
+    document.getElementById('selected_ids_input').value = parts.join(',');
+    
+    document.querySelectorAll('.barcode-checkbox').forEach(cb => {
+        cb.closest('.barcode-cell').classList.toggle('unchecked', !cb.checked && !cb.disabled);
+    });
+}
+document.querySelectorAll('.barcode-checkbox').forEach(cb => {
+    cb.addEventListener('change', updateCount);
+});
+updateCount();
+
+function printSelected() {
+    document.querySelectorAll('.barcode-checkbox:not(:checked):not(:disabled)').forEach(cb => {
+        cb.closest('.barcode-cell').classList.add('unchecked');
+    });
+    window.print();
+}
+
+document.getElementById('mark-printed-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const form = this;
+    const idsStr = document.getElementById('selected_ids_input').value;
+    const oldInput = form.querySelector('input[name="selected_ids"]');
+    if (oldInput) oldInput.remove();
+    idsStr.split(',').filter(Boolean).forEach(pid => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'selected_products';
+        input.value = pid;
+        form.appendChild(input);
+    });
+    form.submit();
+});
+</script>
+{% endblock %}

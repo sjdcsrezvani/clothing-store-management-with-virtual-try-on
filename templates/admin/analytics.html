@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block title %}تحلیل مالی — رای کیدز{% endblock %}
+{% block content %}
+<h2>تحلیل مالی</h2>
+
+<div class="card">
+    <form method="get" action="/admin/analytics" class="filter-bar">
+        <div class="search-form">
+            <a href="/admin/analytics?period=today" class="btn {% if period == 'today' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">امروز</a>
+            <a href="/admin/analytics?period=week" class="btn {% if period == 'week' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">هفته</a>
+            <a href="/admin/analytics?period=month" class="btn {% if period == 'month' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">ماه</a>
+            <a href="/admin/analytics?period=year" class="btn {% if period == 'year' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">سال</a>
+            <a href="/admin/analytics?period=all" class="btn {% if period == 'all' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">همه</a>
+        </div>
+        <div class="search-form" style="margin-top: 0.7rem;">
+            <input type="text" name="start_date" value="{{ start_date }}" placeholder="تاریخ شروع" class="persian-date-input">
+            <span>تا</span>
+            <input type="text" name="end_date" value="{{ end_date }}" placeholder="تاریخ پایان" class="persian-date-input">
+            <input type="hidden" name="period" value="custom">
+            <button type="submit" class="btn btn-primary btn-sm">اعمال</button>
+        </div>
+    </form>
+</div>
+
+<div class="kpi-grid">
+    <div class="kpi-card"><h4>کل فروش</h4><p class="kpi-value">{{ fmt(summary.total_revenue) }} ت</p></div>
+    <div class="kpi-card profit"><h4>سود ناخالص</h4><p class="kpi-value">{{ fmt(summary.gross_profit) }} ت</p></div>
+    <div class="kpi-card margin"><h4>حاشیه سود</h4><p class="kpi-value">{{ summary.margin }}٪</p></div>
+    <div class="kpi-card"><h4>تعداد فاکتور</h4><p class="kpi-value tnum">{{ summary.invoice_count }}</p></div>
+    <div class="kpi-card"><h4>میانگین فاکتور</h4><p class="kpi-value">{{ fmt(summary.aov) }} ت</p></div>
+    <div class="kpi-card"><h4>مشتریان جدید</h4><p class="kpi-value tnum">{{ summary.new_customers }}</p></div>
+</div>
+
+<div class="charts-grid">
+    <div class="card chart-card"><h3>فروش روزانه</h3><canvas id="dailyChart"></canvas></div>
+    <div class="card chart-card"><h3>فروش بر اساس دسته‌بندی</h3><canvas id="categoryChart"></canvas></div>
+    <div class="card chart-card"><h3>پرفروش‌ترین محصولات</h3><canvas id="topProductsChart"></canvas></div>
+    <div class="card chart-card"><h3>سود بر اساس محصول</h3><canvas id="profitChart"></canvas></div>
+    <div class="card chart-card"><h3>روش پرداخت</h3><canvas id="paymentChart"></canvas></div>
+    <div class="card chart-card"><h3>فروش بر اساس سطح مشتری</h3><canvas id="tierChart"></canvas></div>
+</div>
+
+<div class="tables-grid">
+    <div class="card">
+        <h3>محصولات پرفروش</h3>
+        <table>
+            <thead><tr><th>نام</th><th>دسته</th><th>تعداد</th><th>فروش</th><th>سود</th><th>حاشیه</th></tr></thead>
+            <tbody>
+            {% for p in top_products_rev %}
+                <tr><td>{{ p.name }}</td><td>{{ p.category }}</td><td class="tnum">{{ p.qty_sold }}</td><td class="tnum">{{ fmt(p.revenue) }}</td><td class="tnum">{{ fmt(p.profit) }}</td><td class="tnum">{{ p.margin }}٪</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="card">
+        <h3>دسته‌بندی‌ها</h3>
+        <table>
+            <thead><tr><th>دسته</th><th>تعداد</th><th>فروش</th><th>سود</th><th>حاشیه</th></tr></thead>
+            <tbody>
+            {% for c in categories %}
+                <tr><td>{{ c.category }}</td><td class="tnum">{{ c.quantity }}</td><td class="tnum">{{ fmt(c.revenue) }}</td><td class="tnum">{{ fmt(c.profit) }}</td><td class="tnum">{{ ((c.profit / c.revenue * 100)|round(1)) if c.revenue > 0 else 0 }}٪</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="card">
+        <h3>تخفیف‌ها</h3>
+        {% if discounts %}
+        <table>
+            <thead><tr><th>نوع</th><th>مبلغ کل</th><th>درصد فروش</th></tr></thead>
+            <tbody>
+            {% for d in discounts %}
+                <tr><td>{{ d.type }}</td><td class="tnum">{{ fmt(d.total_amount) }}</td><td class="tnum">{{ d.pct_of_revenue }}٪</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}<p>تخفیفی در این دوره ثبت نشده.</p>{% endif %}
+    </div>
+    <div class="card">
+        <h3>مشتریان برتر</h3>
+        <table>
+            <thead><tr><th>نام</th><th>تلفن</th><th>سطح</th><th>مجموع خرید</th><th>سفارش</th></tr></thead>
+            <tbody>
+            {% for c in top_customers %}
+                <tr><td>{{ c.name }}</td><td class="tnum">{{ c.phone }}</td><td><span class="tier-badge tier-{{ c.tier }}">{{ c.tier }}</span></td><td class="tnum">{{ fmt(c.total_spent) }}</td><td class="tnum">{{ c.orders }}</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<nav class="admin-nav">
+    <a href="/admin"><button type="button" class="btn btn-ghost">بازگشت به داشبورد</button></a>
+</nav>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const dailyData = {{ daily|tojson }};
+const categoryData = {{ categories|tojson }};
+const topProductsRev = {{ top_products_rev|tojson }};
+const topProductsProfit = {{ top_products_profit|tojson }};
+const paymentData = {{ payment_methods|tojson }};
+const tierData = {{ tier_revenue|tojson }};
+
+const palette = ['#E27D3B', '#2E5D4F', '#C8A464', '#1F1B16', '#A4303F', '#8a6a18', '#1a5a8a', '#6b6b6b'];
+const baseOpts = (extra={}) => Object.assign({ responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { family: 'Vazirmatn' } } } }, scales: { y: { beginAtZero: true } } }, extra);
+
+new Chart(document.getElementById('dailyChart'), {
+    type: 'bar',
+    data: { labels: dailyData.map(d => d.date), datasets: [
+        { label: 'فروش', data: dailyData.map(d => d.revenue), backgroundColor: '#1F1B16' },
+        { label: 'سود', data: dailyData.map(d => d.profit), backgroundColor: '#2E5D4F' }
+    ]},
+    options: baseOpts()
+});
+
+new Chart(document.getElementById('categoryChart'), {
+    type: 'doughnut',
+    data: { labels: categoryData.map(c => c.category), datasets: [{ data: categoryData.map(c => c.revenue), backgroundColor: palette }]},
+    options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { family: 'Vazirmatn' } } } } }
+});
+
+new Chart(document.getElementById('topProductsChart'), {
+    type: 'bar',
+    data: { labels: topProductsRev.map(p => p.name.substring(0, 15)), datasets: [{ label: 'فروش', data: topProductsRev.map(p => p.revenue), backgroundColor: '#E27D3B' }]},
+    options: baseOpts({ indexAxis: 'y', plugins: { legend: { display: false } } })
+});
+
+new Chart(document.getElementById('profitChart'), {
+    type: 'bar',
+    data: { labels: topProductsProfit.map(p => p.name.substring(0, 15)), datasets: [{ label: 'سود', data: topProductsProfit.map(p => p.profit), backgroundColor: '#2E5D4F' }]},
+    options: baseOpts({ indexAxis: 'y', plugins: { legend: { display: false } } })
+});
+
+new Chart(document.getElementById('paymentChart'), {
+    type: 'pie',
+    data: { labels: paymentData.map(p => p.method === 'card' ? 'کارت' : 'نقد'), datasets: [{ data: paymentData.map(p => p.revenue), backgroundColor: ['#1F1B16', '#E27D3B'] }]},
+    options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { family: 'Vazirmatn' } } } } }
+});
+
+new Chart(document.getElementById('tierChart'), {
+    type: 'bar',
+    data: { labels: tierData.map(t => t.tier), datasets: [{ label: 'فروش', data: tierData.map(t => t.revenue), backgroundColor: ['#6b6b6b', '#C8A464', '#1a5a8a'] }]},
+    options: baseOpts({ plugins: { legend: { display: false } } })
+});
+</script>
+
+<style>
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 0.8rem;
+    margin-bottom: 1.5rem;
+}
+.kpi-card {
+    background: var(--paper-card);
+    border: 1.5px solid var(--ink);
+    border-radius: 4px;
+    padding: 0.9rem;
+    text-align: center;
+}
+.kpi-card h4 { font-size: 0.78rem; color: rgba(31,27,22,0.6); margin-bottom: 0.3rem; font-weight: 600; }
+.kpi-value { font-size: 1.15rem; font-weight: 800; letter-spacing: -0.02em; }
+.kpi-card.profit .kpi-value  { color: var(--pine); }
+.kpi-card.margin .kpi-value  { color: var(--persimmon); }
+.charts-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+.chart-card { min-height: 280px; overflow: hidden; }
+.chart-card canvas { max-width: 100% !important; max-height: 260px !important; }
+.tables-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+@media (max-width: 900px) {
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    .charts-grid, .tables-grid { grid-template-columns: 1fr; }
+}
+</style>
+{% endblock %}

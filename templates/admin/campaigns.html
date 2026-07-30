@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}کمپین‌ها — رای کیدز{% endblock %}
+{% block content %}
+<h2>مدیریت کمپین‌ها</h2>
+
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+{% endif %}
+
+<div class="admin-nav" style="margin-bottom: 1.5rem;">
+    <a href="/admin/campaigns/add"><button type="button" class="btn btn-primary">افزودن کمپین جدید</button></a>
+</div>
+
+<div class="card">
+    {% if campaigns %}
+    <table>
+        <thead>
+            <tr>
+                <th>نام</th>
+                <th>کد</th>
+                <th>تخفیف</th>
+                <th>حداقل خرید</th>
+                <th>وضعیت</th>
+                <th>تاریخ شروع</th>
+                <th>تاریخ پایان</th>
+                <th>عملیات</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for campaign in campaigns %}
+            <tr>
+                <td>{{ campaign.name }}</td>
+                <td><span class="code">{{ campaign.code }}</span></td>
+                <td>{{ campaign.discount_percent }}٪</td>
+                <td>{{ fmt(campaign.min_purchase) }} تومان</td>
+                <td>
+                    {% if campaign.is_active %}
+                        <span class="badge badge-available">فعال</span>
+                    {% else %}
+                        <span class="badge badge-used">غیرفعال</span>
+                    {% endif %}
+                </td>
+                <td>{{ campaign.start_date.strftime('%Y/%m/%d') if campaign.start_date else '—' }}</td>
+                <td>{{ campaign.end_date.strftime('%Y/%m/%d') if campaign.end_date else '—' }}</td>
+                <td>
+                    <a href="/admin/campaigns/{{ campaign.id }}"><button type="button" class="btn btn-secondary btn-sm">ویرایش</button></a>
+                    <form method="post" action="/admin/campaigns/{{ campaign.id }}/send" style="display:inline;"
+                          onsubmit="return confirm('آیا مطمئن هستید؟ پیامک کمپین به همه مشتریان الماس ارسال خواهد شد.')">
+                        <button type="submit" class="btn btn-primary btn-sm">ارسال پیامک</button>
+                    </form>
+                    <form method="post" action="/admin/campaigns/{{ campaign.id }}/delete" style="display:inline;"
+                          onsubmit="return confirm('آیا مطمئن هستید؟')">
+                        <button type="submit" class="btn btn-danger btn-sm">حذف</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>هنوز کمپینی ایجاد نشده است.</p>
+    {% endif %}
+</div>
+
+<nav class="admin-nav">
+    <a href="/admin"><button type="button" class="btn btn-secondary">بازگشت به داشبورد</button></a>
+</nav>
+{% endblock %}

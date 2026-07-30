@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}رای کیدز{% endblock %}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1><a href="/sales/new">🎨 رای کیدز</a></h1>
+            <nav>
+                <a href="/sales/new"><button type="button" class="nav-btn">🛒 فروش جدید</button></a>
+                <a href="/admin"><button type="button" class="nav-btn">⚙️ مدیریت</button></a>
+            </nav>
+        </div>
+    </header>
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+    <footer>
+        <div class="container">
+            <p>🧸 رای کیدز — فروشگاه پوشاک کودک | سیستم فروش و باشگاه مشتریان</p>
+        </div>
+    </footer>
+    <script src="/static/js/jquery.min.js"></script>
+    <script src="/static/js/persian-datepicker.min.js"></script>
+    <script>
+    $(function() {
+        $('.persian-date-input').persianDatepicker({
+            format: 'YYYY/MM/DD',
+            autoClose: true,
+            initialValue: false
+        });
+    });
+    </script>
+</body>
+</html>

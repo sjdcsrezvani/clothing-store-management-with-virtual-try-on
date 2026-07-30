@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}{% if edit_mode %}ویرایش محصول{% else %}افزودن محصول{% endif %} — رای کیدز{% endblock %}
+{% block content %}
+<h2>{% if edit_mode %}ویرایش محصول: {{ product.name }}{% else %}افزودن محصول جدید{% endif %}</h2>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<div class="card">
+    <form method="post" 
+          action="{% if edit_mode %}/admin/products/{{ product.id }}{% else %}/admin/products/add{% endif %}"
+          enctype="multipart/form-data">
+        
+        <div class="form-row">
+            <div class="form-group">
+                <label for="name">نام محصول *</label>
+                <input type="text" id="name" name="name" required value="{{ product.name if product else '' }}">
+            </div>
+            <div class="form-group">
+                <label for="price">قیمت فروش (تومان) *</label>
+                <input type="number" id="price" name="price" required min="0" value="{{ product.price if product else '' }}">
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="cost_price">قیمت خرید (تومان) *</label>
+                <input type="number" id="cost_price" name="cost_price" required min="0" value="{{ product.cost_price if product else '' }}">
+                <small>قیمت خرید از تأمین‌کننده (فقط برای تحلیل مالی)</small>
+            </div>
+            <div class="form-group">
+                <label for="stock_quantity">موجودی انبار</label>
+                <input type="number" id="stock_quantity" name="stock_quantity" min="0" value="{{ product.stock_quantity if product else '0' }}">
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="barcode">بارکد</label>
+                <input type="text" id="barcode" name="barcode" value="{{ product.barcode if product else '' }}" placeholder="خالی برای تولید خودکار">
+                <small>خالی بگذارید تا بارکد خودکار تولید شود</small>
+            </div>
+            <div class="form-group">
+                <label for="size">سایز</label>
+                <input type="text" id="size" name="size" value="{{ product.size if product else '' }}" placeholder="مثال: 3-4 years, M, 110cm">
+            </div>
+            <div class="form-group">
+                <label for="color">رنگ</label>
+                <input type="text" id="color" name="color" value="{{ product.color if product else '' }}">
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="category">دسته‌بندی</label>
+                <input type="text" id="category" name="category" value="{{ product.category if product else '' }}" placeholder="مثال: پیراهن، شلوار، لباس مجلسی">
+            </div>
+            <div class="form-group">
+                <label for="brand">برند</label>
+                <input type="text" id="brand" name="brand" value="{{ product.brand if product else '' }}">
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="sku">کد انبارداری (SKU)</label>
+                <input type="text" id="sku" name="sku" value="{{ product.sku if product else '' }}">
+            </div>
+            <div class="form-group">
+                <label for="description">توضیحات</label>
+                <textarea id="description" name="description" rows="3">{{ product.description if product else '' }}</textarea>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="image">تصویر محصول</label>
+            <input type="file" id="image" name="image" accept="image/*">
+            {% if product and product.image_path %}
+                <div style="margin-top: 0.5rem;">
+                    <img src="{{ product.image_path }}" alt="تصویر فعلی" style="max-width: 200px; border-radius: 8px;">
+                    <p class="hint">تصویر جدید انتخاب کنید تا تصویر فعلی جایگزین شود</p>
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary">
+                {% if edit_mode %}ذخیره تغییرات{% else %}افزودن محصول{% endif %}
+            </button>
+            <a href="/admin/products" class="btn btn-secondary">لغو</a>
+        </div>
+    </form>
+</div>
+
+<nav class="admin-nav">
+    <a href="/admin/products" class="btn btn-secondary">بازگشت به لیست محصولات</a>
+</nav>
+{% endblock %}

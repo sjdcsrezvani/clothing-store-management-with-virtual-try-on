@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}داشبورد مدیریت — رای کیدز{% endblock %}
+{% block content %}
+<h2>داشبورد مدیریت</h2>
+
+{% if action_message %}<div class="alert alert-success">{{ action_message }}</div>{% endif %}
+
+<h3 style="margin: 1.5rem 0 0.6rem; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(31,27,22,0.6);">تنظیمات کلیدی</h3>
+<div class="stats-grid">
+    <div class="stat-card accent-persimmon">
+        <div class="stat-label">تخفیف معرف</div>
+        <div class="stat-value tnum">{{ fmt(referrer_discount) }} ت</div>
+        <div class="stat-sub">به ازای هر معرفی</div>
+    </div>
+    <div class="stat-card accent-pine">
+        <div class="stat-label">تخفیف معرفی‌شده</div>
+        <div class="stat-value tnum">{{ fmt(referred_discount) }} ت</div>
+        <div class="stat-sub">برای اولین خرید</div>
+    </div>
+    <div class="stat-card accent-saffron">
+        <div class="stat-label">حداقل خرید</div>
+        <div class="stat-value tnum">{{ fmt(min_purchase) }} ت</div>
+        <div class="stat-sub">برای استفاده از تخفیف</div>
+    </div>
+    <div class="stat-card accent-ink">
+        <div class="stat-label">سقف معرفی ماهانه</div>
+        <div class="stat-value tnum">{{ monthly_limit }} <span style="font-size:0.6em;">نفر</span></div>
+    </div>
+</div>
+
+<h3 style="margin: 1.5rem 0 0.6rem; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(31,27,22,0.6);">آمار</h3>
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">کل مشتریان</div>
+        <div class="stat-value tnum">{{ total_customers }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">کل معرفی‌ها</div>
+        <div class="stat-value tnum">{{ total_referrals }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">دارای تخفیف فعال</div>
+        <div class="stat-value tnum">{{ customers_with_discount }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">موجودی پنل پیامک</div>
+        <div class="stat-value tnum">{{ sms_balance or '—' }}</div>
+    </div>
+</div>
+
+<h3 style="margin: 1.5rem 0 0.6rem; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(31,27,22,0.6);">سطح مشتریان</h3>
+<div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
+    <div class="stat-card">
+        <span class="tier-badge tier-silver">نقره‌ای</span>
+        <div class="stat-value tnum" style="margin-top: 0.5rem;">{{ silver_count }}</div>
+    </div>
+    <div class="stat-card">
+        <span class="tier-badge tier-gold">طلایی</span>
+        <div class="stat-value tnum" style="margin-top: 0.5rem;">{{ gold_count }}</div>
+    </div>
+    <div class="stat-card">
+        <span class="tier-badge tier-diamond">الماس</span>
+        <div class="stat-value tnum" style="margin-top: 0.5rem;">{{ diamond_count }}</div>
+    </div>
+</div>
+
+<div class="card">
+    <h3>برترین معرف‌ها</h3>
+    {% if top_referrers %}
+    <table>
+        <thead><tr><th>نام</th><th>تلفن</th><th>کل</th><th>این ماه</th><th>سطح</th><th>تخفیف</th></tr></thead>
+        <tbody>
+        {% for customer, count in top_referrers %}
+            <tr>
+                <td>{{ customer.full_name }}</td>
+                <td class="tnum">{{ customer.phone }}</td>
+                <td class="tnum">{{ count }}</td>
+                <td class="tnum">{{ customer.monthly_referral_count }}</td>
+                <td><span class="tier-badge tier-{{ customer.tier }}">{{ customer.tier }}</span></td>
+                <td class="tnum">{{ fmt(customer.referrer_discount) }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}<p style="color: rgba(31,27,22,0.55);">هنوز معرفی‌ای ثبت نشده.</p>{% endif %}
+</div>
+
+<div class="card">
+    <h3>برترین مشتریان (بر اساس خرید)</h3>
+    {% if top_spenders %}
+    <table>
+        <thead><tr><th>نام</th><th>تلفن</th><th>سطح</th><th>امتیاز</th><th>تعداد خرید</th><th>مجموع خرید</th></tr></thead>
+        <tbody>
+        {% for customer in top_spenders %}
+            <tr>
+                <td>{{ customer.full_name }}</td>
+                <td class="tnum">{{ customer.phone }}</td>
+                <td><span class="tier-badge tier-{{ customer.tier }}">{{ customer.tier }}</span></td>
+                <td class="tnum">{{ customer.total_points }}</td>
+                <td class="tnum">{{ customer.total_purchases }}</td>
+                <td class="tnum"><strong>{{ fmt(customer.total_spent) }}</strong></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}<p style="color: rgba(31,27,22,0.55);">هنوز خریدی ثبت نشده.</p>{% endif %}
+</div>
+
+<div class="admin-nav">
+    <form method="post" action="/admin/check-birthdays"><button type="submit" class="btn btn-ghost">بررسی تولدها</button></form>
+    <form method="post" action="/admin/check-downgrades"><button type="submit" class="btn btn-ghost">بررسی کاهش سطح</button></form>
+</div>
+
+<div class="card" style="border-color: var(--pomegranate); border-style: dashed;">
+    <h3 style="color: var(--pomegranate);">منطقه خطر</h3>
+    <p style="color: rgba(31,27,22,0.65); margin-bottom: 1rem;">این عمل تمام اطلاعات مشتریان، معرفی‌ها و تنظیمات را حذف می‌کند.</p>
+    <form method="post" action="/admin/reset-database" onsubmit="return confirm('آیا مطمئن هستید؟ تمام اطلاعات حذف خواهد شد!')">
+        <button type="submit" class="btn btn-danger">ریست دیتابیس</button>
+    </form>
+</div>
+
+<nav class="admin-nav">
+    <a href="/admin/analytics"><button type="button" class="btn btn-primary">تحلیل مالی</button></a>
+    <a href="/admin/campaigns"><button type="button" class="btn btn-primary">کمپین‌ها</button></a>
+    <a href="/admin/customers"><button type="button" class="btn btn-ghost">مدیریت مشتریان</button></a>
+    <a href="/admin/products"><button type="button" class="btn btn-ghost">مدیریت محصولات</button></a>
+    <a href="/sales/"><button type="button" class="btn btn-ghost">تاریخچه فروش</button></a>
+    <a href="/admin/settings"><button type="button" class="btn btn-ghost">تنظیمات</button></a>
+    <a href="/sales/new"><button type="button" class="btn btn-primary">فروش جدید</button></a>
+</nav>
+{% endblock %}

@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}تنظیمات{% endblock %}
+{% block content %}
+<h2>تنظیمات سیستم</h2>
+
+<div class="card">
+    <form method="post" action="/admin/settings">
+        <h3>تنظیمات تخفیف</h3>
+        <div class="form-group">
+            <label for="default_referrer_discount">مبلغ تخفیف معرف (تومان)</label>
+            <input type="number" id="default_referrer_discount" name="default_referrer_discount"
+                   value="{{ settings.get('default_referrer_discount', '50000') }}" min="0">
+            <small>مبلغی که معرف به ازای هر معرفی دریافت می‌کند</small>
+        </div>
+        <div class="form-group">
+            <label for="default_referred_discount">مبلغ تخفیف معرفی شده (تومان)</label>
+            <input type="number" id="default_referred_discount" name="default_referred_discount"
+                   value="{{ settings.get('default_referred_discount', '30000') }}" min="0">
+            <small>مبلغ تخفیف برای مشتری جدید (فقط اولین خرید)</small>
+        </div>
+        <div class="form-group">
+            <label for="min_purchase_for_discount">حداقل مبلغ خرید برای استفاده از تخفیف (تومان)</label>
+            <input type="number" id="min_purchase_for_discount" name="min_purchase_for_discount"
+                   value="{{ settings.get('min_purchase_for_discount', '500000') }}" min="0">
+            <small>مشتری باید حداقل این مبلغ خرید کرده باشد تا بتواند از تخفیف استفاده کند</small>
+        </div>
+        <div class="form-group">
+            <label for="monthly_referral_limit">سقف معرفی ماهانه (نفر)</label>
+            <input type="number" id="monthly_referral_limit" name="monthly_referral_limit"
+                   value="{{ settings.get('monthly_referral_limit', '10') }}" min="1">
+            <small>حداکثر تعداد افرادی که یک مشتری می‌تواند در ماه معرفی کند</small>
+        </div>
+
+        <h3 style="margin-top: 2rem;">تنظیمات سطوح مشتریان</h3>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="tier_points_per_amount">امتیاز به ازای هر خرید</label>
+                <input type="number" id="tier_points_per_amount" name="tier_points_per_amount"
+                       value="{{ tier_config.points_per_amount }}" min="0">
+            </div>
+            <div class="form-group">
+                <label for="tier_points_per_toman">به ازای هر مبلغ (تومان)</label>
+                <input type="number" id="tier_points_per_toman" name="tier_points_per_toman"
+                       value="{{ tier_config.points_per_toman }}" min="0">
+                <small>مثال: 10 امتیاز به ازای هر 100,000 تومان</small>
+            </div>
+        </div>
+        
+        <h4>سطح طلایی 🥇</h4>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="tier_gold_threshold">آستانه امتیاز</label>
+                <input type="number" id="tier_gold_threshold" name="tier_gold_threshold"
+                       value="{{ tier_config.gold_threshold }}" min="0">
+            </div>
+            <div class="form-group">
+                <label for="tier_gold_discount_percent">درصد تخفیف دائمی</label>
+                <input type="number" id="tier_gold_discount_percent" name="tier_gold_discount_percent"
+                       value="{{ tier_config.gold_discount_percent }}" min="0" max="100">
+            </div>
+            <div class="form-group">
+                <label for="tier_gold_birthday_discount">مبلغ تخفیف تولد (تومان)</label>
+                <input type="number" id="tier_gold_birthday_discount" name="tier_gold_birthday_discount"
+                       value="{{ tier_config.gold_birthday_discount }}" min="0">
+            </div>
+        </div>
+        
+        <h4>سطح الماس 💎</h4>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="tier_diamond_threshold">آستانه امتیاز</label>
+                <input type="number" id="tier_diamond_threshold" name="tier_diamond_threshold"
+                       value="{{ tier_config.diamond_threshold }}" min="0">
+            </div>
+            <div class="form-group">
+                <label for="tier_diamond_discount_percent">درصد تخفیف دائمی</label>
+                <input type="number" id="tier_diamond_discount_percent" name="tier_diamond_discount_percent"
+                       value="{{ tier_config.diamond_discount_percent }}" min="0" max="100">
+            </div>
+            <div class="form-group">
+                <label for="tier_diamond_birthday_discount">مبلغ تخفیف تولد (تومان)</label>
+                <input type="number" id="tier_diamond_birthday_discount" name="tier_diamond_birthday_discount"
+                       value="{{ tier_config.diamond_birthday_discount }}" min="0">
+            </div>
+        </div>
+        
+        <h4>کاهش سطح (Downgrade)</h4>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="tier_downgrade_months">ماه‌های عدم خرید</label>
+                <input type="number" id="tier_downgrade_months" name="tier_downgrade_months"
+                       value="{{ tier_config.downgrade_months }}" min="0">
+                <small>اگر مشتری در این مدت خرید نکند، یک سطح کاهش می‌یابد</small>
+            </div>
+            <div class="form-group">
+                <label for="tier_downgrade_amount">حداقل مبلغ خرید (تومان)</label>
+                <input type="number" id="tier_downgrade_amount" name="tier_downgrade_amount"
+                       value="{{ tier_config.downgrade_amount }}" min="0">
+                <small>حداقل مبلغ خرید در دوره برای حفظ سطح</small>
+            </div>
+        </div>
+        
+        <h4>اطلاع‌رسانی تولد</h4>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="birthday_sms_days_before">روزهای قبل از تولد</label>
+                <input type="number" id="birthday_sms_days_before" name="birthday_sms_days_before"
+                       value="{{ tier_config.birthday_sms_days_before }}" min="0">
+                <small>چند روز قبل از تولد فرزند پیامک ارسال شود</small>
+            </div>
+            <div class="form-group">
+                <label for="birthday_sms_pattern_code">کد پترن پیامک تولد</label>
+                <input type="text" id="birthday_sms_pattern_code" name="birthday_sms_pattern_code"
+                       value="{{ settings.get('birthday_sms_pattern_code', '') }}">
+            </div>
+        </div>
+
+        <h3 style="margin-top: 2rem;">تنظیمات پیامک</h3>
+        <div class="form-group">
+            <label for="farazsms_api_key">کلید API فراز اس ام اس</label>
+            <input type="text" id="farazsms_api_key" name="farazsms_api_key"
+                   value="{{ settings.get('farazsms_api_key', '') }}">
+        </div>
+        <div class="form-group">
+            <label for="farazsms_line_number">شماره خط فراز اس ام اس</label>
+            <input type="text" id="farazsms_line_number" name="farazsms_line_number"
+                   value="{{ settings.get('farazsms_line_number', '') }}">
+        </div>
+        <div class="form-group">
+            <label for="farazsms_welcome_pattern">کد پترن خوش‌آمدگویی</label>
+            <input type="text" id="farazsms_welcome_pattern" name="farazsms_welcome_pattern"
+                   value="{{ settings.get('farazsms_welcome_pattern', '') }}">
+        </div>
+        <div class="form-group">
+            <label for="farazsms_referral_pattern">کد پترن اطلاع‌رسانی معرفی</label>
+            <input type="text" id="farazsms_referral_pattern" name="farazsms_referral_pattern"
+                   value="{{ settings.get('farazsms_referral_pattern', '') }}">
+        </div>
+        <button type="submit" class="btn btn-primary">ذخیره تنظیمات</button>
+    </form>
+</div>
+
+<nav class="admin-nav">
+    <a href="/admin" class="btn btn-secondary">بازگشت به داشبورد</a>
+</nav>
+{% endblock %}

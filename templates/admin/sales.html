@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}تاریخچه فروش — رای کیدز{% endblock %}
+{% block content %}
+<h2>تاریخچه فروش</h2>
+
+<div class="filter-bar">
+    <form method="get" action="/sales" class="search-form">
+        <input type="text" name="search" placeholder="جستجو بر اساس نام یا تلفن مشتری" value="{{ search }}">
+        <button type="submit" class="btn btn-primary">جستجو</button>
+    </form>
+</div>
+
+<div class="card">
+    {% if sales %}
+    <table>
+        <thead>
+            <tr>
+                <th>شماره فاکتور</th>
+                <th>مشتری</th>
+                <th>تاریخ</th>
+                <th>جمع کل</th>
+                <th>تخفیف</th>
+                <th>مبلغ نهایی</th>
+                <th>امتیاز</th>
+                <th>روش پرداخت</th>
+                <th>عملیات</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for sale in sales %}
+            <tr>
+                <td>#{{ sale.id }}</td>
+                <td>
+                    {% if sale.customer %}
+                        {{ sale.customer.full_name if sale.customer else '—' }}<br>
+                        <small>{{ sale.customer.phone }}</small>
+                    {% else %}
+                        بدون مشتری
+                    {% endif %}
+                </td>
+                <td>{{ sale.created_at.strftime('%Y/%m/%d %H:%M') }}</td>
+                <td>{{ fmt(sale.total_amount) }} تومان</td>
+                <td>
+                    {% if sale.discount_amount > 0 %}
+                        -{{ fmt(sale.discount_amount) }} تومان
+                    {% else %}—{% endif %}
+                </td>
+                <td><strong>{{ fmt(sale.final_amount) }} تومان</strong></td>
+                <td>{{ sale.points_earned }} امتیاز</td>
+                <td>{% if sale.payment_method == 'card' %}💳{% else %}💵{% endif %}</td>
+                <td>
+                    <a href="/sales/invoice/{{ sale.id }}" class="btn btn-secondary btn-sm">فاکتور</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>فروشی ثبت نشده است.</p>
+    {% endif %}
+</div>
+
+<nav class="admin-nav">
+    <a href="/admin" class="btn btn-secondary">بازگشت به داشبورد</a>
+    <a href="/sales/new" class="btn btn-primary">فروش جدید</a>
+</nav>
+{% endblock %}

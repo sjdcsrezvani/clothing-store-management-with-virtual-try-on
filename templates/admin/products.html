@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}مدیریت محصولات — رای کیدز{% endblock %}
+{% block content %}
+<h2>مدیریت محصولات</h2>
+
+<div class="card">
+    <h3>اسکن بارکد محصول</h3>
+    <form method="get" action="/admin/products" class="search-form">
+        <input type="text" id="barcode-scanner" name="search" placeholder="بارکد را اسکن کنید..." autofocus autocomplete="off">
+        <button type="submit" class="btn btn-primary">جستجو</button>
+    </form>
+</div>
+
+<div class="filter-bar">
+    <form method="get" action="/admin/products" class="search-form">
+        <input type="text" name="search" placeholder="جستجو بر اساس نام، بارکد یا SKU" value="{{ search }}">
+        <select name="category">
+            <option value="">همه دسته‌ها</option>
+            {% for cat in categories %}
+            <option value="{{ cat }}" {% if category_filter == cat %}selected{% endif %}>{{ cat }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-primary">اعمال فیلتر</button>
+    </form>
+</div>
+
+<div class="admin-nav" style="margin-bottom: 1.5rem;">
+    <a href="/admin/products/add"><button type="button" class="btn btn-primary">افزودن محصول جدید</button></a>
+    <a href="/admin/barcodes/print"><button type="button" class="btn btn-secondary">چاپ بارکد</button></a>
+</div>
+
+<div class="card">
+    {% if products %}
+    <table>
+        <thead>
+            <tr>
+                <th>تصویر</th>
+                <th>نام</th>
+                <th>بارکد</th>
+                <th>قیمت فروش</th>
+                <th>قیمت خرید</th>
+                <th>موجودی</th>
+                <th>سایز</th>
+                <th>رنگ</th>
+                <th>دسته</th>
+                <th>عملیات</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for product in products %}
+            <tr>
+                <td>
+                    {% if product.image_path %}
+                        <img src="{{ product.image_path }}" alt="{{ product.name }}" style="width: 50px; height: 50px; object-fit: cover; border-radius: 8px;">
+                    {% else %}
+                        <span class="no-image">بدون تصویر</span>
+                    {% endif %}
+                </td>
+                <td>{{ product.name }}</td>
+                <td><span class="barcode">{{ product.barcode }}</span></td>
+                <td>{{ fmt(product.price) }} تومان</td>
+                <td>{{ fmt(product.cost_price) }} تومان</td>
+                <td>
+                    {% if product.stock_quantity > 0 %}
+                        <span class="stock-available">{{ product.stock_quantity }}</span>
+                    {% else %}
+                        <span class="stock-empty">ناموجود</span>
+                    {% endif %}
+                </td>
+                <td>{{ product.size or '—' }}</td>
+                <td>{{ product.color or '—' }}</td>
+                <td>{{ product.category or '—' }}</td>
+                <td>
+                    <a href="/admin/products/{{ product.id }}"><button type="button" class="btn btn-secondary btn-sm">ویرایش</button></a>
+                    <form method="post" action="/admin/products/{{ product.id }}/delete" style="display:inline;" 
+                          onsubmit="return confirm('آیا مطمئن هستید؟ این محصول حذف خواهد شد.')">
+                        <button type="submit" class="btn btn-danger btn-sm">حذف</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>محصولی یافت نشد.</p>
+    {% endif %}
+</div>
+
+<nav class="admin-nav">
+    <a href="/admin"><button type="button" class="btn btn-secondary">بازگشت به داشبورد</button></a>
+</nav>
+
+<script>
+document.getElementById('barcode-scanner').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        this.form.submit();
+    }
+});
+</script>
+{% endblock %}

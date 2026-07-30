@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}مدیریت مشتریان{% endblock %}
+{% block content %}
+<h2>مدیریت مشتریان</h2>
+
+<div class="filter-bar">
+    <form method="get" action="/admin/customers" class="search-form">
+        <input type="text" name="search" placeholder="جستجو بر اساس نام، شماره یا کد معرفی" value="{{ search }}">
+        <select name="sort">
+            <option value="date" {% if sort == 'date' %}selected{% endif %}>تاریخ ثبت‌نام</option>
+            <option value="tier" {% if sort == 'tier' %}selected{% endif %}>سطح</option>
+            <option value="purchase_desc" {% if sort == 'purchase_desc' %}selected{% endif %}>بیشترین خرید</option>
+            <option value="purchase_asc" {% if sort == 'purchase_asc' %}selected{% endif %}>کمترین خرید</option>
+            <option value="points" {% if sort == 'points' %}selected{% endif %}>بیشترین امتیاز</option>
+        </select>
+        <select name="tier">
+            <option value="">همه سطوح</option>
+            <option value="silver" {% if tier_filter == 'silver' %}selected{% endif %}>نقره‌ای</option>
+            <option value="gold" {% if tier_filter == 'gold' %}selected{% endif %}>طلایی</option>
+            <option value="diamond" {% if tier_filter == 'diamond' %}selected{% endif %}>الماس</option>
+        </select>
+        <button type="submit" class="btn btn-primary">اعمال فیلتر</button>
+    </form>
+</div>
+
+<div class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>نام</th>
+                <th>شماره موبایل</th>
+                <th>کد معرفی</th>
+                <th>سطح</th>
+                <th>امتیاز</th>
+                <th>مجموع خرید</th>
+                <th>تعداد خرید</th>
+                <th>تخفیف معرفی شده</th>
+                <th>تخفیف معرفی</th>
+                <th>معرفی این ماه</th>
+                <th>فرزند</th>
+                <th>تاریخ ثبت‌نام</th>
+                <th>عملیات</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for customer in customers %}
+            <tr>
+                <td>{{ customer.full_name }}</td>
+                <td>{{ customer.phone }}</td>
+                <td><span class="code">{{ customer.referral_code }}</span></td>
+                <td>
+                    <span class="tier-badge tier-{{ customer.tier }}">
+                        {% if customer.tier == 'diamond' %}الماس
+                        {% elif customer.tier == 'gold' %}طلایی
+                        {% else %}نقره‌ای{% endif %}
+                    </span>
+                </td>
+                <td>{{ customer.total_points|default(0) }}</td>
+                <td>{{ fmt(customer.total_spent|default(0)) }} تومان</td>
+                <td>{{ customer.total_purchases|default(0) }}</td>
+                <td>
+                    {{ fmt(customer.referred_discount) }} تومان
+                    {% if customer.has_used_referred_discount %}
+                        <span class="badge badge-used">استفاده شده</span>
+                    {% elif customer.referred_discount > 0 %}
+                        <span class="badge badge-available">قابل استفاده</span>
+                    {% endif %}
+                </td>
+                <td>{{ fmt(customer.referrer_discount) }} تومان</td>
+                <td>{{ customer.monthly_referral_count }}</td>
+                <td>
+                    {% if customer.child_name %}
+                        {{ customer.child_name }}
+                        {% if customer.child_birthday %}<br><small>{{ customer.child_birthday }}{% endif %}</small>
+                    {% else %}—{% endif %}
+                </td>
+                <td>{{ customer.created_at.strftime('%Y/%m/%d') }}</td>
+                <td>
+                    <form method="post" action="/admin/customers/{{ customer.id }}/delete" style="display:inline;"
+                          onsubmit="return confirm('آیا مطمئن هستید؟')">
+                        <button type="submit" class="btn btn-danger btn-sm">حذف</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<nav class="admin-nav">
+    <a href="/admin" class="btn btn-secondary">بازگشت به داشبورد</a>
+</nav>
+{% endblock %}

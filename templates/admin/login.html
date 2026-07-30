@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}ورود مدیر{% endblock %}
+{% block content %}
+<div class="login-card">
+    <h2>ورود مدیر</h2>
+    {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+    <form method="post" action="/admin/login">
+        <div class="form-group">
+            <label for="password">رمز عبور</label>
+            <input type="password" id="password" name="password" required autofocus>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">ورود</button>
+    </form>
+</div>
+{% endblock %}
