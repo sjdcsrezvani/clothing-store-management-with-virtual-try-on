@@ -115,7 +115,8 @@ def apply_discounts_after_sale(
         customer.active_referral_count = 0
 
     # Establish a first-time referral and reward the referrer exactly once.
-    if referrer and not customer.referred_by:
+    # Self-referral (referrer == customer) never rewards or creates a row.
+    if referrer and not customer.referred_by and referrer.id != customer.id:
         customer.referred_by = referrer.id
         referrer_discount = get_setting_int(db, "default_referrer_discount", 50000)
         referrer.referrer_discount += referrer_discount

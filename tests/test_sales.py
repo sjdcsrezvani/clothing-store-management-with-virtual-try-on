@@ -117,7 +117,12 @@ def test_discount_engine_referred_carry_over_and_gates():
     from services._common import get_setting_int
     from models import Settings, Customer
     db = TestSession()
-    db.add(Settings(key="min_purchase_for_discount", value="100000"))
+    # Upsert: the shared module DB may already hold this key from another test.
+    row = db.query(Settings).filter(Settings.key == "min_purchase_for_discount").first()
+    if row:
+        row.value = "100000"
+    else:
+        db.add(Settings(key="min_purchase_for_discount", value="100000"))
     c = Customer(phone="09000000011", referral_code="AAA111", referred_discount=30000)
     db.add(c)
     db.commit()
@@ -192,6 +197,26 @@ def test_apply_discounts_creates_referral_row_and_rewards_once():
     row = db.query(Referral).filter(Referral.referred_id == referred.id).first()
     assert row is not None and row.referrer_id == referrer.id, "Referral row created"
     assert row.referred_discount == 30000
+    db.close()
+
+
+def test_apply_discounts_self_referral_not_rewarded():
+    """A customer entering their OWN referral code must not reward themselves or
+    create a self-referring Referral row."""
+    from models import Referral, Customer
+    from services.discount import apply_discounts_after_sale
+    db = TestSession()
+    c = Customer(phone="09000006666", referral_code="SRR666", referred_discount=30000)
+    db.add(c)
+    db.commit()
+    discounts = {"referred_discount": 30000, "referrer_discount": 0}
+    apply_discounts_after_sale(c, discounts, db, c)
+    db.commit()
+    assert c.has_used_referred_discount is True
+    assert c.referrer_discount == 0, "self-referral must not reward"
+    assert c.referred_by is None, "self-referral must not set referred_by"
+    row = db.query(Referral).filter(Referral.referred_id == c.id).first()
+    assert row is None, "self-referral must not create a Referral row"
     db.close()
 
 
@@ -291,6 +316,50 @@ def test_scan_step_renders_referral_card_and_discount_inputs():
     assert "تخفیف معرفی دیگران: 50,000 تومان" in body
     assert "مبلغ نهایی" in body
     assert "150,000" in body  # 200,000 - 50,000 final
+    db.close()
+
+
+def test_scan_step_preview_shows_referred_discount_with_referrer():
+    """Fix: the scan-step preview must show the referred discount when a valid
+    referrer is entered, exactly as the confirmed receipt will — shared code path.
+    The in-memory grant must NOT persist from a preview request."""
+    from models import Customer, Product, Settings
+    db = TestSession()
+    for key, val in [("min_purchase_for_discount", "0"),
+                     ("default_referred_discount", "30000")]:
+        srow = db.query(Settings).filter(Settings.key == key).first()
+        if srow:
+            srow.value = val
+        else:
+            db.add(Settings(key=key, value=val))
+    referrer = Customer(phone="09000006668", referral_code="PRV111")
+    c = Customer(phone="09000006669", referral_code="PRV222")
+    prod = Product(barcode="999004", name="Test shirt", price=200000,
+                   cost_price=0, stock_quantity=10)
+    db.add_all([referrer, c, prod])
+    db.commit()
+    cid = c.id
+
+    resp = client.post("/sales/add-to-basket", data={
+        "customer_id": cid,
+        "barcode": "999004",
+        "basket_json": "[]",
+        "referrer_code": "PRV111",
+        "referrer_phone": "",
+        "use_referrer_discount": "1",
+        "custom_discount_amount": "",
+        "custom_discount_percent": "",
+    })
+    assert resp.status_code == 200
+    body = resp.text
+    assert "تخفیف معرفی: 30,000 تومان" in body, "preview must show the referred discount"
+    assert "170,000" in body  # 200,000 - 30,000 final amount
+    # Preview never persists the in-memory grant.
+    db2 = TestSession()
+    fresh = db2.query(Customer).filter_by(id=cid).first()
+    assert fresh.referred_discount == 0, "preview must not persist the grant"
+    assert fresh.referred_by is None, "preview must not set referred_by"
+    db2.close()
     db.close()
 
 

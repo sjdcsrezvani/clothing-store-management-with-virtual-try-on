@@ -18,6 +18,29 @@ def _discount_int(v: str) -> int:
         return int(v)
     except (TypeError, ValueError):
         return 0
+
+
+def _resolve_referrer(referrer_code: str, referrer_phone: str, db):
+    """Resolve a referrer from referral code (preferred) or phone. Shared by the
+    scan-step preview and confirm-sale so both derive the same referred discount."""
+    if referrer_code:
+        return db.query(Customer).filter(
+            Customer.referral_code == to_english_digits(referrer_code).upper()
+        ).first()
+    elif referrer_phone:
+        return db.query(Customer).filter(
+            Customer.phone == to_english_digits(referrer_phone.strip())
+        ).first()
+    return None
+
+
+def _grant_referred_discount(referrer, customer, db) -> None:
+    """Grant the first-buy referred discount in-memory when a valid, non-self
+    referrer is present and the customer is not already referred. Never sets
+    customer.referred_by and never commits here — apply_discounts_after_sale
+    settles referred_by + the Referral row exactly once after a real sale."""
+    if referrer and not customer.referred_by and referrer.id != customer.id:
+        customer.referred_discount = get_discount_setting(db, "default_referred_discount", 30000)
 from services.sms import send_welcome_sms
 
 router = APIRouter(prefix="/sales")
@@ -28,6 +51,9 @@ def _render_scan(request, customer, basket, total_amount, db,
                  referrer_code="", referrer_phone="",
                  use_referrer_discount="1", custom_discount_amount=0,
                  custom_discount_percent=0, error=None, success=None):
+    # Match confirm-sale exactly: resolve the referrer and grant the in-memory
+    # referred discount so the on-screen preview equals the confirmed receipt.
+    _grant_referred_discount(_resolve_referrer(referrer_code, referrer_phone, db), customer, db)
     discounts = calculate_discounts(
         customer, total_amount, db,
         use_referrer_discount=(use_referrer_discount == "1"),
@@ -299,24 +325,14 @@ async def sales_confirm(
 
     total_amount = sum(item["total_price"] for item in basket)
 
-    # Resolve referrer (code or phone)
-    referrer = None
-    if referrer_code:
-        referrer = db.query(Customer).filter(
-            Customer.referral_code == to_english_digits(referrer_code).upper()
-        ).first()
-    elif referrer_phone:
-        referrer = db.query(Customer).filter(
-            Customer.phone == to_english_digits(referrer_phone.strip())
-        ).first()
-
-    # Grant the first-buy referred discount the moment a referrer is entered,
-    # so it applies to THIS purchase (gated by min_purchase + carry-over).
-    # NOTE: do NOT set customer.referred_by here — apply_discounts_after_sale
+    # Resolve referrer (code or phone) and grant the first-buy referred discount
+    # in-memory the moment a referrer is entered, so it applies to THIS purchase.
+    # Shared with _render_scan so the scan-step preview matches this receipt.
+    # NOTE: never sets customer.referred_by here — apply_discounts_after_sale
     # sets it and the Referral row, and its `not customer.referred_by` guard
     # must still see it as unset so the reward fires exactly once.
-    if referrer and not customer.referred_by:
-        customer.referred_discount = get_discount_setting(db, "default_referred_discount", 30000)
+    referrer = _resolve_referrer(referrer_code, referrer_phone, db)
+    _grant_referred_discount(referrer, customer, db)
 
     discounts = calculate_discounts(
         customer,
