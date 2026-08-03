@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from models import Customer
+from models import Customer, Referral
 from services._common import get_setting_int, current_year_month
 from services.tier import (
     get_tier_config,
@@ -103,21 +103,22 @@ def apply_discounts_after_sale(
     db: Session,
     referrer: Customer = None,
 ):
-    """Apply/mark discounts as used after a successful sale."""
-    
+    """Apply/mark discounts as used and settle the referral after a successful sale."""
+
     # Mark referred discount as used
     if discounts["referred_discount"] > 0:
         customer.has_used_referred_discount = True
-    
+
     # Reset referrer discount if used
     if discounts["referrer_discount"] > 0:
         customer.referrer_discount = 0
         customer.active_referral_count = 0
-    
-    # Handle referrer rewards (if customer was referred)
-    if referrer and discounts["referred_discount"] > 0:
-        referrer_discount_amount = get_setting_int(db, "default_referrer_discount", 50000)
-        referrer.referrer_discount += referrer_discount_amount
+
+    # Establish a first-time referral and reward the referrer exactly once.
+    if referrer and not customer.referred_by:
+        customer.referred_by = referrer.id
+        referrer_discount = get_setting_int(db, "default_referrer_discount", 50000)
+        referrer.referrer_discount += referrer_discount
         referrer.active_referral_count += 1
 
         year, month = current_year_month()
@@ -126,3 +127,10 @@ def apply_discounts_after_sale(
             referrer.monthly_referral_year = year
             referrer.monthly_referral_month = month
         referrer.monthly_referral_count += 1
+
+        db.add(Referral(
+            referrer_id=referrer.id,
+            referred_id=customer.id,
+            referrer_discount=referrer_discount,
+            referred_discount=customer.referred_discount,
+        ))

@@ -173,6 +173,28 @@ def test_points_floor_to_threshold():
     assert calculate_points(250000, cfg) == 20
 
 
+def test_apply_discounts_creates_referral_row_and_rewards_once():
+    from models import Referral, Customer
+    from services.discount import apply_discounts_after_sale
+    db = TestSession()
+    referrer = Customer(phone="09000002111", referral_code="RRR111")
+    referred = Customer(phone="09000002222", referral_code="SSS222",
+                        referred_discount=30000)
+    db.add_all([referrer, referred])
+    db.commit()
+
+    discounts = {"referred_discount": 30000, "referrer_discount": 0}
+    apply_discounts_after_sale(referred, discounts, db, referrer)
+    db.commit()
+
+    assert referred.has_used_referred_discount is True
+    assert referrer.referrer_discount == 50000, "referrer rewarded once"
+    row = db.query(Referral).filter(Referral.referred_id == referred.id).first()
+    assert row is not None and row.referrer_id == referrer.id, "Referral row created"
+    assert row.referred_discount == 30000
+    db.close()
+
+
 if __name__ == "__main__":
     setup_module()
     try:
