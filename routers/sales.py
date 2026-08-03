@@ -24,6 +24,35 @@ router = APIRouter(prefix="/sales")
 templates = Jinja2Templates(directory="templates")
 
 
+def _render_scan(request, customer, basket, total_amount, db,
+                 referrer_code="", referrer_phone="",
+                 use_referrer_discount="1", custom_discount_amount=0,
+                 custom_discount_percent=0, error=None, success=None):
+    discounts = calculate_discounts(
+        customer, total_amount, db,
+        use_referrer_discount=(use_referrer_discount == "1"),
+        custom_amount=custom_discount_amount,
+        custom_percent=custom_discount_percent,
+    )
+    return templates.TemplateResponse(request, "sales/checkout.html", {
+        "step": "scan",
+        "customer": customer,
+        "basket": basket,
+        "basket_json": json.dumps(basket),
+        "total_amount": total_amount,
+        "tier_config": get_tier_config(db),
+        "referrer_code": referrer_code,
+        "referrer_phone": referrer_phone,
+        "use_referrer_discount": use_referrer_discount,
+        "custom_discount_amount": custom_discount_amount,
+        "custom_discount_percent": custom_discount_percent,
+        "discounts": discounts,
+        "error": error,
+        "success": success,
+        "fmt": fmt,
+    })
+
+
 @router.get("/", response_class=HTMLResponse)
 async def sales_list(
     request: Request,
@@ -79,17 +108,9 @@ async def sales_lookup_customer(
         })
     
     customer = db.query(Customer).filter(Customer.phone == phone).first()
-    
+
     if customer:
-        return templates.TemplateResponse(request, "sales/checkout.html", {
-            "step": "scan",
-            "customer": customer,
-            "basket": [],
-            "basket_json": "[]",
-            "total_amount": 0,
-            "tier_config": get_tier_config(db),
-            "fmt": fmt,
-        })
+        return _render_scan(request, customer, [], 0, db)
     
     # Customer not found, show create form
     return templates.TemplateResponse(request, "sales/checkout.html", {
@@ -121,15 +142,7 @@ async def sales_create_customer(
 
     existing = db.query(Customer).filter(Customer.phone == phone).first()
     if existing:
-        return templates.TemplateResponse(request, "sales/checkout.html", {
-            "step": "scan",
-            "customer": existing,
-            "basket": [],
-            "basket_json": "[]",
-            "total_amount": 0,
-            "tier_config": get_tier_config(db),
-            "fmt": fmt,
-        })
+        return _render_scan(request, existing, [], 0, db)
 
     if not phone.startswith("09") or len(phone) != 11:
         return templates.TemplateResponse(request, "sales/checkout.html", {
@@ -157,15 +170,7 @@ async def sales_create_customer(
     # Send welcome SMS now (the customer is committed, not "pending")
     await send_welcome_sms(customer.phone, customer.first_name or "", customer.referral_code, db)
 
-    return templates.TemplateResponse(request, "sales/checkout.html", {
-        "step": "scan",
-        "customer": customer,
-        "basket": [],
-        "basket_json": "[]",
-        "total_amount": 0,
-        "tier_config": get_tier_config(db),
-        "fmt": fmt,
-    })
+    return _render_scan(request, customer, [], 0, db)
 
 
 @router.post("/add-to-basket", response_class=HTMLResponse)
@@ -176,6 +181,9 @@ async def sales_add_to_basket(
     basket_json: str = Form("[]"),
     referrer_code: str = Form(""),
     referrer_phone: str = Form(""),
+    use_referrer_discount: str = Form("1"),
+    custom_discount_amount: str = Form(""),
+    custom_discount_percent: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """Add a product to the basket by barcode."""
@@ -188,19 +196,16 @@ async def sales_add_to_basket(
     total_amount = sum(item["total_price"] for item in basket)
 
     def _scan_step(error: str | None = None, success: str | None = None):
-        return templates.TemplateResponse(request, "sales/checkout.html", {
-            "step": "scan",
-            "customer": customer,
-            "basket": basket,
-            "basket_json": json.dumps(basket),
-            "total_amount": total_amount,
-            "error": error,
-            "success": success,
-            "referrer_code": referrer_code,
-            "referrer_phone": referrer_phone,
-            "tier_config": get_tier_config(db),
-            "fmt": fmt,
-        })
+        return _render_scan(
+            request, customer, basket, total_amount, db,
+            referrer_code=referrer_code,
+            referrer_phone=referrer_phone,
+            use_referrer_discount=use_referrer_discount,
+            custom_discount_amount=_discount_int(custom_discount_amount),
+            custom_discount_percent=_discount_int(custom_discount_percent),
+            error=error,
+            success=success,
+        )
 
     product = db.query(Product).filter(
         Product.barcode == barcode,
@@ -241,6 +246,9 @@ async def sales_remove_from_basket(
     basket_json: str = Form("[]"),
     referrer_code: str = Form(""),
     referrer_phone: str = Form(""),
+    use_referrer_discount: str = Form("1"),
+    custom_discount_amount: str = Form(""),
+    custom_discount_percent: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """Remove a product from the basket."""
@@ -251,17 +259,14 @@ async def sales_remove_from_basket(
     basket = [it for it in json.loads(basket_json) if it["product_id"] != int(product_id)]
     total_amount = sum(item["total_price"] for item in basket)
 
-    return templates.TemplateResponse(request, "sales/checkout.html", {
-        "step": "scan",
-        "customer": customer,
-        "basket": basket,
-        "basket_json": json.dumps(basket),
-        "total_amount": total_amount,
-        "referrer_code": referrer_code,
-        "referrer_phone": referrer_phone,
-        "tier_config": get_tier_config(db),
-        "fmt": fmt,
-    })
+    return _render_scan(
+        request, customer, basket, total_amount, db,
+        referrer_code=referrer_code,
+        referrer_phone=referrer_phone,
+        use_referrer_discount=use_referrer_discount,
+        custom_discount_amount=_discount_int(custom_discount_amount),
+        custom_discount_percent=_discount_int(custom_discount_percent),
+    )
 
 
 @router.post("/confirm-sale", response_class=HTMLResponse)

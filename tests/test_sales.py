@@ -253,6 +253,47 @@ def test_confirm_sale_applies_referral_and_custom_discount():
     db.close()
 
 
+def test_scan_step_renders_referral_card_and_discount_inputs():
+    """Scan step about a referred customer must render the opt-in checkbox, the
+    custom-discount inputs, and the server-driven discount preview (loop over
+    discounts.details)."""
+    from models import Customer, Product
+    db = TestSession()
+    c = Customer(phone="09000007777", first_name="ZED", last_name="ZED",
+                 referral_code="ZZZ777", referrer_discount=50000,
+                 active_referral_count=2)
+    prod = Product(barcode="999003", name="Test shirt", price=200000,
+                   cost_price=0, stock_quantity=10)
+    db.add_all([c, prod])
+    db.commit()
+
+    # add-to-basket renders the scan step through _render_scan, with a
+    # non-empty basket so the discount preview loop actually runs.
+    resp = client.post("/sales/add-to-basket", data={
+        "customer_id": c.id,
+        "barcode": "999003",
+        "basket_json": "[]",
+        "referrer_code": "",
+        "referrer_phone": "",
+        "use_referrer_discount": "1",
+        "custom_discount_amount": "",
+        "custom_discount_percent": "",
+    })
+    assert resp.status_code == 200
+    body = resp.text
+    # Opt-in checkbox card (only renders when active_referral_count > 0)
+    assert "🎟 تخفیف معرفی فعال" in body
+    assert "use-ref-checkbox" in body
+    # Custom discount inputs present
+    assert 'name="custom_discount_amount"' in body
+    assert 'name="custom_discount_percent"' in body
+    # Server-driven preview: referrer discount applied (200k total >= any min)
+    assert "تخفیف معرفی دیگران: 50,000 تومان" in body
+    assert "مبلغ نهایی" in body
+    assert "150,000" in body  # 200,000 - 50,000 final
+    db.close()
+
+
 def test_confirm_sale_custom_discount_non_numeric_is_200():
     import json
     from models import Customer, Product, Settings as S
