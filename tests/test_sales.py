@@ -195,6 +195,64 @@ def test_apply_discounts_creates_referral_row_and_rewards_once():
     db.close()
 
 
+def test_confirm_sale_applies_referral_and_custom_discount():
+    import json
+    from models import Customer, Product, Settings
+    db = TestSession()
+    # Upsert: the shared module DB may already hold these keys from earlier tests.
+    for key, val in [("min_purchase_for_discount", "0"),
+                     ("default_referred_discount", "30000")]:
+        row = db.query(Settings).filter(Settings.key == key).first()
+        if row:
+            row.value = val
+        else:
+            db.add(Settings(key=key, value=val))
+    referrer = Customer(phone="09000003333", first_name="REF", last_name="REF",
+                        referral_code="REFAAA")
+    db.add(referrer)
+    prod = Product(barcode="999001", name="Test shirt", price=200000,
+                   cost_price=0, stock_quantity=10)
+    db.add(prod)
+    db.commit()
+    ref_id, pid = referrer.id, prod.id
+
+    cust = Customer(phone="09000004444", first_name="NEW", last_name="NEW",
+                    referral_code="NNN444")
+    db.add(cust)
+    db.commit()
+    cid = cust.id
+
+    basket = json.dumps([{
+        "product_id": pid, "name": "Test shirt", "size": None, "color": None,
+        "unit_price": 200000, "quantity": 1, "total_price": 200000, "image_path": None,
+    }])
+    # Referral discount (30000) + custom amount (25000) => 55000 total discount
+    resp = client.post("/sales/confirm-sale", data={
+        "customer_id": cid, "basket_json": basket, "payment_method": "card",
+        "referrer_code": "REFAAA", "referrer_phone": "",
+        "use_referrer_discount": "", "custom_discount_amount": "25000",
+        "custom_discount_percent": "",
+    })
+    assert resp.status_code == 200
+    body = resp.text
+    # Receipt renders amounts with `fmt` (ASCII thousands separators), e.g. 30,000.
+    assert "30,000" in body, "referred discount shown on receipt"
+    assert "25,000" in body, "custom discount shown on receipt"
+    assert "55,000" in body, "total discount shown on receipt"
+
+    # Referral settled in the DB
+    from models import Referral
+    db2 = TestSession()
+    c = db2.query(Customer).filter_by(id=cid).first()
+    assert c.has_used_referred_discount is True
+    assert c.referred_discount == 30000, "granted value retained on the customer"
+    assert c.referred_by == ref_id
+    row = db2.query(Referral).filter(Referral.referred_id == cid).first()
+    assert row is not None
+    db2.close()
+    db.close()
+
+
 if __name__ == "__main__":
     setup_module()
     try:

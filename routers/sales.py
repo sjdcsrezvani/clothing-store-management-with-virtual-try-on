@@ -5,7 +5,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from database import get_db
-from models import Customer, Product, Sale, SaleItem, Referral, generate_referral_code, to_english_digits
+from models import Customer, Product, Sale, SaleItem, generate_referral_code, to_english_digits
 from services._common import fmt, get_setting_int as get_discount_setting, parse_persian_birthday
 from services.discount import calculate_discounts, apply_discounts_after_sale
 from services.tier import update_customer_after_purchase, get_tier_config
@@ -264,6 +264,9 @@ async def sales_confirm(
     referrer_code: str = Form(""),
     referrer_phone: str = Form(""),
     payment_method: str = Form("card"),
+    use_referrer_discount: str = Form(""),
+    custom_discount_amount: str = Form(""),
+    custom_discount_percent: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """Confirm and complete the sale."""
@@ -294,8 +297,22 @@ async def sales_confirm(
             Customer.phone == to_english_digits(referrer_phone.strip())
         ).first()
 
-    is_first_purchase = customer.total_purchases == 0
-    discounts = calculate_discounts(customer, total_amount, db, is_first_purchase)
+    # Grant the first-buy referred discount the moment a referrer is entered,
+    # so it applies to THIS purchase (gated by min_purchase + carry-over).
+    # NOTE: do NOT set customer.referred_by here — apply_discounts_after_sale
+    # sets it and the Referral row, and its `not customer.referred_by` guard
+    # must still see it as unset so the reward fires exactly once.
+    if referrer and not customer.referred_by:
+        customer.referred_discount = get_discount_setting(db, "default_referred_discount", 30000)
+
+    discounts = calculate_discounts(
+        customer,
+        total_amount,
+        db,
+        use_referrer_discount=(use_referrer_discount == "1"),
+        custom_amount=int(custom_discount_amount or 0),
+        custom_percent=int(custom_discount_percent or 0),
+    )
 
     sale = Sale(
         customer_id=customer.id,
@@ -326,19 +343,6 @@ async def sales_confirm(
     points_earned = update_customer_after_purchase(customer, sale.final_amount, db)
     sale.points_earned = points_earned
     apply_discounts_after_sale(customer, discounts, db, referrer)
-
-    if referrer and not customer.referred_by:
-        customer.referred_by = referrer.id
-        referrer_discount = get_discount_setting(db, "default_referrer_discount", 50000)
-        referrer.referrer_discount += referrer_discount
-        referrer.active_referral_count += 1
-        referrer.monthly_referral_count += 1
-        db.add(Referral(
-            referrer_id=referrer.id,
-            referred_id=customer.id,
-            referrer_discount=referrer_discount,
-            referred_discount=0,
-        ))
 
     db.commit()
 
