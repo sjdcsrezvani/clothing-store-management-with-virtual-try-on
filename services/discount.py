@@ -13,7 +13,9 @@ def calculate_discounts(
     customer: Customer,
     total_amount: int,
     db: Session,
-    is_first_purchase: bool = True,
+    use_referrer_discount: bool = True,
+    custom_amount: int = 0,
+    custom_percent: int = 0,
 ) -> dict:
     """
     Calculate all applicable discounts for a customer.
@@ -21,33 +23,36 @@ def calculate_discounts(
     """
     config = get_tier_config(db)
     min_purchase = get_setting_int(db, "min_purchase_for_discount", 500000)
-    
+
     discounts = {
         "referred_discount": 0,
         "referrer_discount": 0,
         "tier_discount": 0,
         "birthday_discount": 0,
+        "custom_discount": 0,
+        "total_amount": total_amount,
         "total_discount": 0,
         "details": [],
     }
-    
-    # 1. Referred discount (first purchase only, must meet min purchase)
-    if (is_first_purchase and 
-        not customer.has_used_referred_discount and 
+
+    # 1. Referred discount (first qualifying purchase, must meet min purchase).
+    #    Guard is `has_used_referred_discount`, NOT first-purchase: carries over
+    #    until a purchase meets the threshold.
+    if (not customer.has_used_referred_discount and
         customer.referred_discount > 0 and
         total_amount >= min_purchase):
         discounts["referred_discount"] = customer.referred_discount
         discounts["details"].append(
             f"تخفیف معرفی: {customer.referred_discount:,} تومان"
         )
-    
-    # 2. Referrer discount (accumulated from referring others)
-    if customer.referrer_discount > 0:
+
+    # 2. Referrer discount (accumulated from referring others) — opt-in.
+    if use_referrer_discount and customer.referrer_discount > 0:
         discounts["referrer_discount"] = customer.referrer_discount
         discounts["details"].append(
             f"تخفیف معرفی دیگران: {customer.referrer_discount:,} تومان"
         )
-    
+
     # 3. Tier permanent discount
     tier_percent = get_tier_discount_percent(customer.tier, config)
     if tier_percent > 0:
@@ -56,7 +61,7 @@ def calculate_discounts(
         discounts["details"].append(
             f"تخفیف {customer.tier} ({tier_percent}%): {tier_discount:,} تومان"
         )
-    
+
     # 4. Birthday discount
     if check_birthday_eligible(customer, config):
         birthday_disc = get_birthday_discount(customer.tier, config)
@@ -65,16 +70,30 @@ def calculate_discounts(
             discounts["details"].append(
                 f"تخفیف تولد فرزند: {birthday_disc:,} تومان"
             )
-    
-    # Calculate total discount (cannot exceed total amount)
+
+    # 5. Custom discount — amount wins; else percent of total.
+    if custom_amount > 0:
+        discounts["custom_discount"] = custom_amount
+        discounts["details"].append(
+            f"تخفیف ویژه: {custom_amount:,} تومان"
+        )
+    elif custom_percent > 0:
+        custom_disc = int(total_amount * custom_percent / 100)
+        discounts["custom_discount"] = custom_disc
+        discounts["details"].append(
+            f"تخفیف ویژه ({custom_percent}٪): {custom_disc:,} تومان"
+        )
+
+    # Total discount cannot exceed total amount.
     discounts["total_discount"] = min(
         total_amount,
         discounts["referred_discount"] +
         discounts["referrer_discount"] +
         discounts["tier_discount"] +
-        discounts["birthday_discount"]
+        discounts["birthday_discount"] +
+        discounts["custom_discount"],
     )
-    
+
     return discounts
 
 

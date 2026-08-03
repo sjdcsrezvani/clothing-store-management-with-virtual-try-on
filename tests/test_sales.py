@@ -110,6 +110,69 @@ def test_birthday_parser_edge_cases():
     assert parse_persian_birthday("1403/13/01") is None  # bad month
 
 
+def test_discount_engine_referred_carry_over_and_gates():
+    """Referred discount: below min -> no apply; at/above min -> applies; and it is
+    not tied to the literal first purchase (has_used_referred_discount is the guard)."""
+    from services.discount import calculate_discounts
+    from services._common import get_setting_int
+    from models import Settings, Customer
+    db = TestSession()
+    db.add(Settings(key="min_purchase_for_discount", value="100000"))
+    c = Customer(phone="09000000011", referral_code="AAA111", referred_discount=30000)
+    db.add(c)
+    db.commit()
+    # territory below threshold -> 0
+    below = calculate_discounts(c, 90000, db)
+    assert below["referred_discount"] == 0, "must not apply below min purchase"
+    # territory at/above threshold -> applied
+    at = calculate_discounts(c, 100000, db)
+    assert at["referred_discount"] == 30000
+    db.close()
+
+
+def test_discount_engine_referrer_opt_in():
+    from services.discount import calculate_discounts
+    from models import Customer
+    db = TestSession()
+    c = Customer(phone="09000001122", referral_code="ABB112",
+                 referrer_discount=150000, active_referral_count=3)
+    db.add(c)
+    db.commit()
+    off = calculate_discounts(c, 200000, db, use_referrer_discount=False)
+    assert off["referrer_discount"] == 0, "opt-out must zero the referrer discount"
+    on = calculate_discounts(c, 200000, db, use_referrer_discount=True)
+    assert on["referrer_discount"] == 150000
+    db.close()
+
+
+def test_discount_engine_custom_amount_percent_precedence_and_cap():
+    from services.discount import calculate_discounts
+    from models import Customer
+    db = TestSession()
+    c = Customer(phone="09000008888", referral_code="AAA888")
+    db.add(c)
+    db.commit()
+    amt = calculate_discounts(c, 200000, db, custom_amount=30000, custom_percent=0)
+    assert amt["custom_discount"] == 30000, "amount-only applies the amount"
+    pct = calculate_discounts(c, 200000, db, custom_amount=0, custom_percent=10)
+    assert pct["custom_discount"] == 20000, "percent-only applies percent of total"
+    both = calculate_discounts(c, 200000, db, custom_amount=5000, custom_percent=10)
+    assert both["custom_discount"] == 5000, "amount takes precedence"
+    capped = calculate_discounts(c, 10000, db, custom_amount=99999)
+    assert capped["total_discount"] == 10000, "total discount capped at total amount"
+    db.close()
+
+
+def test_points_floor_to_threshold():
+    """Points already floor-divide; lock it in. 90,000/100k -> 0; 100k -> 10; 190k -> 10; 250k -> 20."""
+    from services.tier import calculate_points
+    cfg = {"points_per_amount": 10, "points_per_toman": 100000}
+    assert calculate_points(90000, cfg) == 0
+    assert calculate_points(100000, cfg) == 10
+    assert calculate_points(190000, cfg) == 10
+    assert calculate_points(250000, cfg) == 20
+
+
 if __name__ == "__main__":
     setup_module()
     try:
