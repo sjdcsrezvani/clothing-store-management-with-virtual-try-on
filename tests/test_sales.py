@@ -253,6 +253,40 @@ def test_confirm_sale_applies_referral_and_custom_discount():
     db.close()
 
 
+def test_confirm_sale_custom_discount_non_numeric_is_200():
+    import json
+    from models import Customer, Product, Settings as S
+    db = TestSession()
+    for key, val in [("min_purchase_for_discount", "0"),
+                     ("default_referred_discount", "30000")]:
+        row = db.query(S).filter(S.key == key).first()
+        if row:
+            row.value = val
+        else:
+            db.add(S(key=key, value=val))
+    prod = Product(barcode="999002", name="Test shirt", price=200000,
+                   cost_price=0, stock_quantity=5)
+    db.add(prod)
+    c = Customer(phone="09000005555", first_name="BAD", last_name="NUM",
+                 referral_code="BNN555")
+    db.add(c)
+    db.commit()
+    pid, cid = prod.id, c.id
+    basket = json.dumps([{
+        "product_id": pid, "name": "Test shirt", "size": None, "color": None,
+        "unit_price": 200000, "quantity": 1, "total_price": 200000, "image_path": None,
+    }])
+    # Non-numeric custom fields must not 500 — they parse to 0.
+    resp = client.post("/sales/confirm-sale", data={
+        "customer_id": cid, "basket_json": basket, "payment_method": "card",
+        "referrer_code": "", "referrer_phone": "",
+        "use_referrer_discount": "", "custom_discount_amount": "abc",
+        "custom_discount_percent": "xyz",
+    })
+    assert resp.status_code == 200, f"non-numeric custom discount must not 500: {resp.status_code}"
+    db.close()
+
+
 if __name__ == "__main__":
     setup_module()
     try:

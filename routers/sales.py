@@ -10,6 +10,14 @@ from services._common import fmt, get_setting_int as get_discount_setting, parse
 from services.discount import calculate_discounts, apply_discounts_after_sale
 from services.tier import update_customer_after_purchase, get_tier_config
 from services.invoice import generate_invoice_text, generate_invoice_pdf
+
+
+def _discount_int(v: str) -> int:
+    """Tolerant parse for client-supplied discount strings: empty/non-numeric -> 0."""
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return 0
 from services.sms import send_welcome_sms
 
 router = APIRouter(prefix="/sales")
@@ -310,8 +318,8 @@ async def sales_confirm(
         total_amount,
         db,
         use_referrer_discount=(use_referrer_discount == "1"),
-        custom_amount=int(custom_discount_amount or 0),
-        custom_percent=int(custom_discount_percent or 0),
+        custom_amount=_discount_int(custom_discount_amount),
+        custom_percent=_discount_int(custom_discount_percent),
     )
 
     sale = Sale(
