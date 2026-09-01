@@ -26,6 +26,12 @@ from services.security import (
     login_success,
     log_action,
     set_admin_password,
+    authenticate_staff,
+    ensure_owner_account,
+    require_role,
+    current_staff_user,
+    hash_password,
+    require_html_role,
 )
 from services.store import invalidate_store_cache, get_store
 from services.templating import templates
@@ -47,27 +53,33 @@ async def admin_login_page(request: Request):
 
 
 @router.post("/login", response_class=HTMLResponse)
-async def admin_login(request: Request, password: str = Form(...), db: Session = Depends(get_db)):
+async def admin_login(request: Request, username: str = Form("owner"), password: str = Form(...), db: Session = Depends(get_db)):
     if login_locked(request):
         log_action(db, "login_blocked", "بیش از حد تلاش ناموفق")
         return templates.TemplateResponse(request, "admin/login.html", {
             "error": "تلاش‌های ناموفق زیاد بود. چند دقیقه بعد دوباره امتحان کنید."
         })
-    if check_admin_password(db, password):
+    user = authenticate_staff(db, username or "owner", password)
+    if user:
         login_success(request)
-        request.session["is_admin"] = True
+        request.session.clear()
+        request.session["is_admin"] = True  # legacy compatibility for templates
+        request.session["staff_user_id"] = user.id
+        request.session["staff_role"] = user.role
         request.session["api_token"] = API_TOKEN
-        log_action(db, "login", "ورود موفق")
+        user.last_login_at = datetime.now(timezone.utc)
+        db.commit()
+        log_action(db, "login", "ورود موفق", request=request, target_type="staff_user", target_id=user.id)
         return RedirectResponse(url="/admin", status_code=303)
     login_failure(request)
-    log_action(db, "login_failed", "رمز عبور اشتباه")
-    return templates.TemplateResponse(request, "admin/login.html", {"error": "رمز عبور اشتباه است"})
+    log_action(db, "login_failed", "رمز عبور اشتباه", request=request)
+    return templates.TemplateResponse(request, "admin/login.html", {"error": "رمز عبور اشتباه است", "username": username})
 
 
 @router.post("/logout", response_class=HTMLResponse)
 async def admin_logout(request: Request, db: Session = Depends(get_db)):
-    if check_admin(request):
-        log_action(db, "logout", "خروج")
+    if current_staff_user(db, request):
+        log_action(db, "logout", "خروج", request=request)
     request.session.clear()
     return RedirectResponse(url="/admin/login", status_code=303)
 
@@ -178,8 +190,9 @@ async def admin_setup(
 
 @router.get("/", response_class=HTMLResponse)
 async def admin_dashboard(request: Request, db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     total_customers = db.query(Customer).count()
     total_referrals = db.query(Referral).count()
@@ -259,8 +272,9 @@ async def admin_customers(
     page: int = 1,
     db: Session = Depends(get_db),
 ):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     query = db.query(Customer)
     
@@ -320,8 +334,9 @@ async def admin_customers(
 
 @router.post("/customers/{customer_id}/delete", response_class=HTMLResponse)
 async def admin_delete_customer(customer_id: int, request: Request, db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if customer:
@@ -330,15 +345,71 @@ async def admin_delete_customer(customer_id: int, request: Request, db: Session 
         ).delete()
         db.delete(customer)
         db.commit()
-        log_action(db, "customer_delete", f"مشتری {customer.phone}")
+        log_action(db, "customer_delete", f"مشتری {customer.phone}", request=request, target_type="customer", target_id=customer.id, before={"phone": customer.phone})
 
     return RedirectResponse(url="/admin/customers", status_code=303)
 
 
+@router.get("/staff", response_class=HTMLResponse)
+async def admin_staff(request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    from models import StaffUser
+    return templates.TemplateResponse(request, "admin/staff.html", {
+        "staff_users": db.query(StaffUser).order_by(StaffUser.created_at.desc()).all(),
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
+    })
+
+
+@router.post("/staff", response_class=HTMLResponse)
+async def admin_staff_create(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    role: str = Form("cashier"),
+    db: Session = Depends(get_db),
+):
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    from models import StaffUser
+    username = username.strip().lower()
+    if not username or len(password) < 6 or role not in {"cashier", "manager", "owner"}:
+        return RedirectResponse(url="/admin/staff?err=اطلاعات کاربر نامعتبر است.", status_code=303)
+    if db.query(StaffUser).filter(StaffUser.username == username).first():
+        return RedirectResponse(url="/admin/staff?err=نام کاربری تکراری است.", status_code=303)
+    user = StaffUser(username=username, password_hash=hash_password(password), role=role)
+    db.add(user)
+    db.commit()
+    log_action(db, "staff_create", f"ایجاد کاربر {username}", request=request, target_type="staff_user", target_id=user.id, after={"username": username, "role": role})
+    return RedirectResponse(url="/admin/staff?msg=کاربر ایجاد شد.", status_code=303)
+
+
+@router.post("/staff/{staff_id}/disable", response_class=HTMLResponse)
+async def admin_staff_disable(staff_id: int, request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    from models import StaffUser
+    user = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="کاربر یافت نشد")
+    if user.username == "owner":
+        return RedirectResponse(url="/admin/staff?err=کاربر مالک اصلی را نمی‌توان غیرفعال کرد.", status_code=303)
+    before = {"is_active": user.is_active}
+    user.is_active = False
+    db.commit()
+    log_action(db, "staff_disable", f"غیرفعال‌سازی کاربر {user.username}", request=request, target_type="staff_user", target_id=user.id, before=before, after={"is_active": False})
+    return RedirectResponse(url="/admin/staff?msg=کاربر غیرفعال شد.", status_code=303)
+
+
 @router.get("/settings", response_class=HTMLResponse)
 async def admin_settings(request: Request, db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
 
     settings = {s.key: s.value for s in db.query(Settings).all()}
     tier_config = get_tier_config(db)
@@ -353,8 +424,9 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/settings", response_class=HTMLResponse)
 async def admin_update_settings(request: Request, db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
 
     form = await request.form()
     for key, value in form.items():
@@ -367,7 +439,7 @@ async def admin_update_settings(request: Request, db: Session = Depends(get_db))
             db.add(Settings(key=key, value=str(value)))
     db.commit()
     invalidate_store_cache()
-    log_action(db, "settings_update", "به‌روزرسانی تنظیمات")
+    log_action(db, "settings_update", "به‌روزرسانی تنظیمات", request=request, target_type="settings")
 
     return RedirectResponse(url="/admin/settings?msg=تنظیمات ذخیره شد.", status_code=303)
 
@@ -380,8 +452,9 @@ async def admin_change_password(
     new_password_confirm: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
 
     if not check_admin_password(db, current_password):
         return RedirectResponse(url="/admin/settings?err=رمز عبور فعلی اشتباه است.", status_code=303)
@@ -391,17 +464,18 @@ async def admin_change_password(
         return RedirectResponse(url="/admin/settings?err=رمز جدید و تکرار آن یکسان نیستند.", status_code=303)
 
     set_admin_password(db, new_password)
-    log_action(db, "change_password", "تغییر رمز عبور مدیریت")
+    log_action(db, "change_password", "تغییر رمز عبور مدیریت", request=request, target_type="settings")
     return RedirectResponse(url="/admin/settings?msg=رمز عبور با موفقیت تغییر کرد.", status_code=303)
 
 
 @router.post("/backup", response_class=HTMLResponse)
 async def admin_backup_now(request: Request, db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
 
     path = create_backup()
-    log_action(db, "backup", f"پشتیبان‌گیری دستی: {path or 'ناموفق'}")
+    log_action(db, "backup", f"پشتیبان‌گیری دستی: {path or 'ناموفق'}", request=request, target_type="backup")
     if path:
         return RedirectResponse(url="/admin/backups?msg=پشتیبان‌گیری انجام شد.", status_code=303)
     return RedirectResponse(url="/admin/backups?err=پشتیبان‌گیری انجام نشد (فایل دیتابیس موجود نیست).", status_code=303)
@@ -409,8 +483,9 @@ async def admin_backup_now(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/backups", response_class=HTMLResponse)
 async def admin_backups(request: Request, db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
 
     return templates.TemplateResponse(request, "admin/backups.html", {
         "backups": list_backups(),
@@ -422,8 +497,9 @@ async def admin_backups(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/backups/download", response_class=HTMLResponse)
 async def admin_backup_download(request: Request, name: str = "", db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
 
     path = backup_download_path(name)
     if not path:
@@ -434,8 +510,9 @@ async def admin_backup_download(request: Request, name: str = "", db: Session = 
 @router.get("/pos-reconciliation", response_class=HTMLResponse)
 async def admin_pos_reconciliation(request: Request, db: Session = Depends(get_db)):
     """Show terminal attempts that need local reconciliation."""
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     transactions = db.query(POSTransaction).order_by(POSTransaction.created_at.desc()).limit(200).all()
     unresolved_count = sum(
@@ -462,8 +539,9 @@ async def admin_pos_reconciliation_review(
     db: Session = Depends(get_db),
 ):
     """Record that an administrator reviewed a terminal mismatch."""
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     transaction = db.query(POSTransaction).filter(POSTransaction.id == transaction_id).first()
     if not transaction:
@@ -473,14 +551,15 @@ async def admin_pos_reconciliation_review(
     transaction.reconciliation_note = note.strip()[:1000] or "بررسی شد؛ نتیجه در سوابق دستی ثبت شده است."
     transaction.reconciled_at = datetime.now(timezone.utc)
     db.commit()
-    log_action(db, "pos_reconciliation", f"تطبیق تراکنش کارت‌خوان #{transaction.id}")
+    log_action(db, "pos_reconciliation", f"تطبیق تراکنش کارت‌خوان #{transaction.id}", request=request, target_type="pos_transaction", target_id=transaction.id, after={"reconciled": True})
     return RedirectResponse(url="/admin/pos-reconciliation?msg=تراکنش بررسی شد.", status_code=303)
 
 
 @router.get("/logs", response_class=HTMLResponse)
 async def admin_logs(request: Request, db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
 
     logs = db.query(AdminLog).order_by(AdminLog.created_at.desc()).limit(100).all()
     return templates.TemplateResponse(request, "admin/logs.html", {
@@ -491,8 +570,9 @@ async def admin_logs(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/reset-database", response_class=HTMLResponse)
 async def admin_reset_database(request: Request, db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
 
     # Hard-delete sales data + customers, children first to honour FK ordering.
     db.query(SaleCampaign).delete()
@@ -504,7 +584,7 @@ async def admin_reset_database(request: Request, db: Session = Depends(get_db)):
     db.query(Referral).delete()
     db.query(Customer).delete()
     db.commit()
-    log_action(db, "reset_database", "ریست کامل دیتابیس")
+    log_action(db, "reset_database", "ریست کامل دیتابیس", request=request, target_type="database")
 
     return RedirectResponse(url="/admin", status_code=303)
 
@@ -515,8 +595,9 @@ async def admin_check_birthdays(request: Request, db: Session = Depends(get_db))
 
     Each sent customer gets a marker, so pressing the button again (even next day)
     won't re-send to the same customer for the same birthday."""
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
 
     config = get_tier_config(db)
     days_before = config["birthday_sms_days_before"]
@@ -545,8 +626,9 @@ async def admin_check_birthdays(request: Request, db: Session = Depends(get_db))
 @router.post("/check-downgrades", response_class=HTMLResponse)
 async def admin_check_downgrades(request: Request, db: Session = Depends(get_db)):
     """Manually trigger tier downgrade check."""
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
     
     from services.tier import get_tier_config, check_tier_downgrade, get_customers_for_downgrade_check
     
@@ -569,8 +651,9 @@ TIER_UP_SMS_LIMIT = 10
 
 @router.get("/tier-up", response_class=HTMLResponse)
 async def admin_tier_up(request: Request, db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
 
     customers = sorted(
         tier_up_candidates(db),
@@ -591,8 +674,9 @@ async def admin_tier_up(request: Request, db: Session = Depends(get_db)):
 @router.post("/tier-up/send", response_class=HTMLResponse)
 async def admin_tier_up_send(request: Request, customer_ids: list[int] = Form([]), db: Session = Depends(get_db)):
     """Send tier-up SMS to selected customers, capped so we never blast >10 at once."""
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
 
     gold_pattern = db.query(Settings).filter(Settings.key == "sms_pattern_tier_up_gold").first()
     diamond_pattern = db.query(Settings).filter(Settings.key == "sms_pattern_tier_up_diamond").first()
@@ -618,15 +702,16 @@ async def admin_tier_up_send(request: Request, customer_ids: list[int] = Form([]
             sent += 1
 
     db.commit()
-    log_action(db, "tier_up_sms", f"{sent} پیامک ارتقا ارسال شد")
+    log_action(db, "tier_up_sms", f"{sent} پیامک ارتقا ارسال شد", request=request, target_type="customer")
 
     skipped = max(0, len(customer_ids) - TIER_UP_SMS_LIMIT)
     return RedirectResponse(url=f"/admin/tier-up?sent={sent}&skipped={skipped}", status_code=303)
 
 
 @router.get("/sales", response_class=HTMLResponse)
-async def admin_sales_redirect(request: Request):
+async def admin_sales_redirect(request: Request, db: Session = Depends(get_db)):
     """Redirect admin sales to sales list."""
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "cashier")
+    if not hasattr(guard, "role"):
+        return guard
     return RedirectResponse(url="/sales/", status_code=303)

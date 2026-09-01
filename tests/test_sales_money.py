@@ -32,6 +32,9 @@ def _make_customer(db_session, phone="09120000001", **kwargs):
 
 
 def _confirm_sale(client, basket, customer_id=0, extra=None, referrer_code="", url="/sales/new"):
+    login_token = csrf_token(client)
+    login = client.post("/admin/login", data={"username": "owner", "password": "test-admin-pass", "csrf_token": login_token}, follow_redirects=False)
+    assert login.status_code == 303
     token = csrf_token(client, url)
     data = {
         "customer_id": str(customer_id),

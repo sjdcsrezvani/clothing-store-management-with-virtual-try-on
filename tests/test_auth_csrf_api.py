@@ -18,7 +18,7 @@ def test_login_wrong_password_shows_error(client):
 
 def test_login_correct_password_grants_access(client):
     token = csrf_token(client)
-    resp = client.post("/admin/login", data={"password": "test-admin-pass", "csrf_token": token}, follow_redirects=False)
+    resp = client.post("/admin/login", data={"username": "owner", "password": "test-admin-pass", "csrf_token": token}, follow_redirects=False)
     assert resp.status_code == 303
     assert resp.headers["location"].endswith("/admin")
     resp = client.get("/admin")
@@ -46,7 +46,7 @@ def test_post_with_wrong_csrf_token_is_rejected(client):
 
 def test_post_with_valid_csrf_token_succeeds(client):
     token = csrf_token(client)
-    resp = client.post("/admin/login", data={"password": "test-admin-pass", "csrf_token": token}, follow_redirects=False)
+    resp = client.post("/admin/login", data={"username": "owner", "password": "test-admin-pass", "csrf_token": token}, follow_redirects=False)
     assert resp.status_code == 303
 
 

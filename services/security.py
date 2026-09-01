@@ -14,7 +14,8 @@ import time
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, Request
-from starlette.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
+from starlette.responses import JSONResponse, RedirectResponse
 
 from config import ADMIN_PASSWORD, API_TOKEN
 
@@ -77,6 +78,83 @@ def check_admin_password(db, password: str) -> bool:
     return verify_password(password, stored)
 
 
+ROLE_ORDER = {"cashier": 1, "manager": 2, "owner": 3}
+
+
+def _session_staff_user(db, request: Request):
+    """Return the active staff account for this session, with legacy owner fallback."""
+    from models import StaffUser
+    staff_id = request.session.get("staff_user_id")
+    if staff_id:
+        user = db.query(StaffUser).filter(StaffUser.id == staff_id, StaffUser.is_active == True).first()
+        if user:
+            return user
+        request.session.clear()
+    if request.session.get("is_admin"):
+        # Compatibility for existing sessions; login migrates this account.
+        return db.query(StaffUser).filter(StaffUser.username == "owner", StaffUser.is_active == True).first()
+    return None
+
+
+def current_staff_user(db, request: Request):
+    return _session_staff_user(db, request)
+
+
+def require_role(request: Request, db, minimum_role: str = "cashier"):
+    """Require an active staff account whose role meets the requested level."""
+    user = _session_staff_user(db, request)
+    if not user or ROLE_ORDER.get(user.role, 0) < ROLE_ORDER.get(minimum_role, 99):
+        raise HTTPException(status_code=403, detail="شما اجازه انجام این عملیات را ندارید.")
+    return user
+
+
+def check_role(request: Request, db, minimum_role: str = "cashier") -> bool:
+    try:
+        require_role(request, db, minimum_role)
+        return True
+    except HTTPException:
+        return False
+
+
+def require_html_role(request: Request, db, minimum_role: str = "cashier"):
+    """Return the active user or an HTML response suitable for route guards."""
+    try:
+        return require_role(request, db, minimum_role)
+    except HTTPException as error:
+        if not request.session.get("staff_user_id"):
+            return RedirectResponse(url="/admin/login", status_code=303)
+        raise error
+
+
+def ensure_owner_account(db):
+    """Migrate the existing single admin password into the owner staff account."""
+    from models import StaffUser
+    user = db.query(StaffUser).filter(StaffUser.username == "owner").first()
+    password_hash = get_admin_password_hash(db)
+    if not password_hash:
+        return None
+    if not user:
+        user = StaffUser(username="owner", password_hash=password_hash, role="owner", is_active=True)
+        db.add(user)
+        db.commit()
+    elif user.password_hash != password_hash:
+        user.password_hash = password_hash
+        db.commit()
+    return user
+
+
+def authenticate_staff(db, username: str, password: str):
+    from models import StaffUser
+    user = db.query(StaffUser).filter(StaffUser.username == username.strip(), StaffUser.is_active == True).first()
+    if user and verify_password(password, user.password_hash):
+        return user
+    # Existing installations have only the old password; owner is the migrated identity.
+    owner = ensure_owner_account(db)
+    if username.strip() == "owner" and owner and verify_password(password, owner.password_hash):
+        return owner
+    return None
+
+
 # ── Login rate limiting (in-memory; per client IP) ────────────────────────────
 
 _login_attempts: dict[str, list[float]] = {}
@@ -111,11 +189,24 @@ def login_success(request: Request) -> None:
 
 # ── Admin action log ──────────────────────────────────────────────────────────
 
-def log_action(db, action: str, detail: str = "") -> None:
-    """Record an admin action (login, logout, reset, refund, campaign send…)."""
+def log_action(db, action: str, detail: str = "", request: Request | None = None,
+               target_type: str | None = None, target_id: int | None = None,
+               before: dict | None = None, after: dict | None = None) -> None:
+    """Record an authenticated staff action without breaking the real operation."""
     try:
         from models import AdminLog
-        db.add(AdminLog(action=action, detail=str(detail)[:500]))
+        user = _session_staff_user(db, request) if request is not None else None
+        db.add(AdminLog(
+            action=action,
+            detail=str(detail)[:500],
+            staff_user_id=user.id if user else None,
+            target_type=target_type,
+            target_id=target_id,
+            ip_address=_client_ip(request) if request is not None else None,
+            request_id=request.headers.get("X-Request-ID") if request is not None else None,
+            before_json=json.dumps(before, ensure_ascii=False, default=str)[:4000] if before else None,
+            after_json=json.dumps(after, ensure_ascii=False, default=str)[:4000] if after else None,
+        ))
         db.commit()
     except Exception as e:  # never let logging break the real operation
         logger.warning("log_action failed: %s", e)

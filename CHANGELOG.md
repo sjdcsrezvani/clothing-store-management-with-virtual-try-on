@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.1.1 — 2026-09-01
+
+### Security and authorization
+
+- Added explicit `cashier`, `manager`, and `owner` staff roles.
+- Migrated the legacy admin password to the owner staff account.
+- Protected checkout, POS, invoices, refunds, inventory, credit, campaigns,
+  settings, reports, backups, reset, and virtual try-on routes by role.
+- Added owner-only staff management with account disabling.
+- Extended audit logs with staff identity, target, IP address, request ID, and
+  before/after metadata.
+- Added role and authorization regression tests.
+
+
 ## v0.1.0-beta.1 — 2026-09-01
 
 First public beta release of RaiKids Store Management.

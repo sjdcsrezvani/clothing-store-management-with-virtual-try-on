@@ -9,6 +9,21 @@ and accounting-lite: credit sales (نسیه) with a debt ledger, supplier purcha
 that update stock & cost, expenses, a cash register, a net profit & loss
 report, and CSV exports.
 
+## Security and staff roles
+
+The application uses authenticated staff accounts with explicit roles:
+
+- **Cashier** — create sales, use the POS checkout, and view limited invoices.
+- **Manager** — all cashier capabilities plus refunds, customer/loyalty changes,
+  inventory, purchases, expenses, credit collections, campaigns, and POS review.
+- **Owner** — all manager capabilities plus settings, analytics and exports,
+  backups, database reset, and staff account management.
+
+The legacy single-admin password is migrated to the `owner` account on startup.
+Create additional accounts from **Admin → Staff**. Disabled accounts cannot log
+in. Sensitive actions are recorded with the staff member, target, IP address,
+request ID when supplied, and before/after summaries where applicable.
+
 ## Accounting features (admin panel)
 
 - **📒 حساب نسیه** (`/admin/credit`) — sell on credit at checkout; see who owes
@@ -191,7 +206,7 @@ beyond the beta schema.
 PYTHONPATH=. pytest -q
 ```
 
-Tests cover the money logic: server-side price recomputation at checkout,
+Tests cover the money logic and authorization: server-side price recomputation at checkout,
 stock clamping, refund reversal, referral settlement, CSRF protection, and the
 API-token gate. They use a throwaway SQLite database — never your real data.
 

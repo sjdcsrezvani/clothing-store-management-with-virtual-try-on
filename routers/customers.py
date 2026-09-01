@@ -7,6 +7,8 @@ from services._common import fmt, get_setting_int as get_discount_setting, curre
 from services.sms import send_welcome_sms
 from services.templating import templates
 from services.tier import get_tier_config
+from services.security import require_html_role, log_action
+from services.security import require_html_role, log_action
 
 router = APIRouter()
 
@@ -26,6 +28,9 @@ async def create_customer(
     child_birthday: str = Form(""),
     db: Session = Depends(get_db),
 ):
+    guard = require_html_role(request, db, "cashier")
+    if not hasattr(guard, "role"):
+        return guard
     phone = to_english_digits(phone.strip())
     if not phone.startswith("09") or len(phone) != 11:
         return templates.TemplateResponse(request, "index.html", {
@@ -128,7 +133,11 @@ async def lookup_customer(request: Request, phone: str = "", db: Session = Depen
 @router.post("/customers/{customer_id}/update-child", response_class=HTMLResponse)
 async def update_child_info(customer_id: int, request: Request, db: Session = Depends(get_db)):
     """Update child information for a customer."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
+
     if not customer:
         raise HTTPException(status_code=404, detail="مشتری یافت نشد")
 
@@ -157,7 +166,11 @@ async def update_child_info(customer_id: int, request: Request, db: Session = De
 
 @router.post("/customers/{customer_id}/use-referred-discount", response_class=HTMLResponse)
 async def use_referred_discount(customer_id: int, request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
+
     if not customer:
         raise HTTPException(status_code=404, detail="مشتری یافت نشد")
 
@@ -202,7 +215,11 @@ async def use_referred_discount(customer_id: int, request: Request, db: Session 
 
 @router.post("/customers/{customer_id}/use-referrer-discount", response_class=HTMLResponse)
 async def use_referrer_discount(customer_id: int, request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
+
     if not customer:
         raise HTTPException(status_code=404, detail="مشتری یافت نشد")
 

@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Product, ProductVariant, ProductImage, Settings, generate_barcode, to_english_digits
+from services.security import require_html_role
 from services._common import fmt, check_admin, jalali_str
 from services.barcode import generate_barcode_number
 from services.templating import templates
@@ -24,8 +25,9 @@ async def admin_products(
     page: int = 1,
     db: Session = Depends(get_db),
 ):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     query = db.query(Product).filter(Product.is_active == True)
 
@@ -63,9 +65,10 @@ async def admin_products(
 
 
 @router.get("/products/add", response_class=HTMLResponse)
-async def admin_product_add_form(request: Request):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+async def admin_product_add_form(request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     return templates.TemplateResponse(request, "admin/product_form.html", {
         "product": None,
@@ -82,8 +85,9 @@ async def admin_product_add(
     description: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     # Parse dynamic variant fields
     form = await request.form()
@@ -198,8 +202,9 @@ async def admin_product_add(
 
 @router.get("/products/{product_id}", response_class=HTMLResponse)
 async def admin_product_edit_form(product_id: int, request: Request, db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
@@ -223,8 +228,9 @@ async def admin_product_update(
     description: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
@@ -336,8 +342,9 @@ async def admin_product_update(
 
 @router.post("/products/{product_id}/delete", response_class=HTMLResponse)
 async def admin_product_delete(product_id: int, request: Request, db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     product = db.query(Product).filter(Product.id == product_id).first()
     if product:
@@ -352,8 +359,9 @@ async def admin_product_delete(product_id: int, request: Request, db: Session = 
 @router.get("/variants/{variant_id}/edit", response_class=HTMLResponse)
 async def admin_variant_edit_form(variant_id: int, request: Request, db: Session = Depends(get_db)):
     """Edit a specific variant."""
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     variant = db.query(ProductVariant).filter(ProductVariant.id == variant_id).first()
     if not variant:
@@ -381,8 +389,9 @@ async def admin_variant_update(
     db: Session = Depends(get_db),
 ):
     """Update a specific variant."""
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     variant = db.query(ProductVariant).filter(ProductVariant.id == variant_id).first()
     if not variant:
@@ -466,6 +475,8 @@ async def admin_variant_update(
     variant.updated_at = datetime.now(timezone.utc)
 
     db.commit()
+    from services.security import log_action
+    log_action(db, "variant_update", f"ویرایش تنوع #{variant.id}", request=request, target_type="variant", target_id=variant.id)
 
     return RedirectResponse(url="/admin/products/" + str(variant.product_id), status_code=303)
 
@@ -473,8 +484,9 @@ async def admin_variant_update(
 @router.post("/variants/{variant_id}/delete", response_class=HTMLResponse)
 async def admin_variant_delete(variant_id: int, request: Request, db: Session = Depends(get_db)):
     """Delete a specific variant."""
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     variant = db.query(ProductVariant).filter(ProductVariant.id == variant_id).first()
     if variant:
@@ -489,8 +501,9 @@ async def admin_variant_delete(variant_id: int, request: Request, db: Session = 
 @router.post("/variants/{variant_id}/demand", response_class=HTMLResponse)
 async def admin_variant_demand_up(variant_id: int, request: Request, db: Session = Depends(get_db)):
     """Record one customer asking for this variant (out-of-stock)."""
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     variant = db.query(ProductVariant).filter(ProductVariant.id == variant_id).first()
     if not variant:
@@ -504,8 +517,9 @@ async def admin_variant_demand_up(variant_id: int, request: Request, db: Session
 @router.post("/variants/{variant_id}/demand/reset", response_class=HTMLResponse)
 async def admin_variant_demand_reset(variant_id: int, request: Request, db: Session = Depends(get_db)):
     """Clears the counted demand for a variant (owner filled the backlog)."""
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     variant = db.query(ProductVariant).filter(ProductVariant.id == variant_id).first()
     if not variant:
@@ -523,8 +537,9 @@ async def admin_barcodes_print(
     page: int = 1,
     db: Session = Depends(get_db),
 ):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     query = db.query(Product).filter(Product.is_active == True)
 
@@ -590,8 +605,9 @@ async def admin_barcodes_print(
 @router.post("/barcodes/mark-printed", response_class=HTMLResponse)
 async def admin_barcodes_mark_printed(request: Request, db: Session = Depends(get_db)):
     """Mark the selected unprinted tag copies as printed."""
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     form = await request.form()
     selected_ids = form.getlist("selected_products")
@@ -634,8 +650,9 @@ async def admin_barcodes_mark_printed(request: Request, db: Session = Depends(ge
 @router.post("/barcodes/reset", response_class=HTMLResponse)
 async def admin_barcodes_reset(request: Request, db: Session = Depends(get_db)):
     """Reset printed counts for the selected tag copies only."""
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     form = await request.form()
     selected_ids = form.getlist("selected_products")

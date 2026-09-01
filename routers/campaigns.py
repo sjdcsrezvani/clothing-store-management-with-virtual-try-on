@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import Customer, Campaign, Settings, to_english_digits
 from services._common import fmt, check_admin, get_setting_int, parse_jalali_input, parse_jalali_input_end, jalali_str
-from services.security import log_action
+from services.security import log_action, require_html_role
 from services.sms import send_campaign_sms
 from services.templating import templates
 
@@ -14,8 +14,9 @@ router = APIRouter(prefix="/admin")
 
 @router.get("/campaigns", response_class=HTMLResponse)
 async def admin_campaigns(request: Request, db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     
     campaigns = db.query(Campaign).order_by(Campaign.created_at.desc()).all()
     return templates.TemplateResponse(request, "admin/campaigns.html", {
@@ -27,8 +28,9 @@ async def admin_campaigns(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/campaigns/add", response_class=HTMLResponse)
 async def admin_campaign_add_form(request: Request):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     
     return templates.TemplateResponse(request, "admin/campaign_form.html", {
         "campaign": None,
@@ -48,8 +50,9 @@ async def admin_campaign_add(
     end_date: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     
     try:
         discount_int = int(to_english_digits(discount_percent))
@@ -81,8 +84,9 @@ async def admin_campaign_add(
 
 @router.get("/campaigns/{campaign_id}", response_class=HTMLResponse)
 async def admin_campaign_edit_form(campaign_id: int, request: Request, db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     
     campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
     if not campaign:
@@ -108,8 +112,9 @@ async def admin_campaign_update(
     end_date: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     
     campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
     if not campaign:
@@ -149,8 +154,9 @@ async def admin_campaign_send(campaign_id: int, request: Request, db: Session = 
 
     Safety: each customer gets a per-campaign dedup marker (like birthday SMS),
     so double-clicks never re-send; a configurable cap stops runaway blasts."""
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     
     campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
     if not campaign:
@@ -206,8 +212,9 @@ async def admin_campaign_send(campaign_id: int, request: Request, db: Session = 
 
 @router.post("/campaigns/{campaign_id}/delete", response_class=HTMLResponse)
 async def admin_campaign_delete(campaign_id: int, request: Request, db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
     if campaign:

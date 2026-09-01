@@ -56,7 +56,8 @@
                 <div class="sidebar-section-label">ابزارها</div>
                 <a href="/admin/try-on" data-nav="tryon"><span>👗</span> پرو مجازی</a>
                 <a href="/admin/backups" data-nav="backups"><span>💾</span> پشتیبان‌ها</a>
-                <a href="/admin/settings" data-nav="settings"><span>⚙️</span> تنظیمات</a>
+                {% if request.session.get('staff_role') == 'owner' %}<a href="/admin/staff">👥 کارکنان</a>{% endif %}
+            <a href="/admin/settings" data-nav="settings"><span>⚙️</span> تنظیمات</a>
                 <a href="/admin/pos-reconciliation" data-nav="pos-reconciliation"><span>📟</span> تطبیق کارت‌خوان</a>
                 <a href="/admin/logs" data-nav="logs"><span>📜</span> گزارش عملیات</a>
             </nav>

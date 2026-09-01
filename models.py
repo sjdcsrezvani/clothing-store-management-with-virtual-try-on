@@ -1,7 +1,7 @@
 import string
 import random
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, CheckConstraint
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -23,6 +23,23 @@ def to_english_digits(s: str) -> str:
     for i in range(10):
         result = result.replace(persian[i], str(i)).replace(arabic[i], str(i))
     return result
+
+
+class StaffUser(Base):
+    """An authenticated store staff member with an explicit role."""
+    __tablename__ = "staff_users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(100), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(String(20), nullable=False, default="cashier", index=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    last_login_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("role IN ('cashier', 'manager', 'owner')", name="ck_staff_users_role"),
+    )
 
 
 class Customer(Base):
@@ -373,13 +390,22 @@ class Payment(Base):
 
 
 class AdminLog(Base):
-    """Lightweight audit trail of admin actions (login, reset, refund, …)."""
+    """Audit trail of authenticated staff actions."""
     __tablename__ = "admin_logs"
 
     id = Column(Integer, primary_key=True, index=True)
     action = Column(String(50), nullable=False)
     detail = Column(Text, nullable=True)
+    staff_user_id = Column(Integer, ForeignKey("staff_users.id"), nullable=True, index=True)
+    target_type = Column(String(50), nullable=True)
+    target_id = Column(Integer, nullable=True)
+    ip_address = Column(String(64), nullable=True)
+    request_id = Column(String(100), nullable=True)
+    before_json = Column(Text, nullable=True)
+    after_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    staff_user = relationship("StaffUser")
 
 
 class Campaign(Base):

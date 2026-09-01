@@ -78,6 +78,15 @@ def _apply_missing_columns():
         "purchase_items": [
             ("prev_cost_price", "INTEGER"),
         ],
+        "admin_logs": [
+            ("staff_user_id", "INTEGER"),
+            ("target_type", "VARCHAR(50)"),
+            ("target_id", "INTEGER"),
+            ("ip_address", "VARCHAR(64)"),
+            ("request_id", "VARCHAR(100)"),
+            ("before_json", "TEXT"),
+            ("after_json", "TEXT"),
+        ],
     }
     with engine.begin() as conn:
         for table, cols in table_to_cols.items():
@@ -95,12 +104,11 @@ async def lifespan(app: FastAPI):
     _apply_missing_columns()
     _migrate_unknown_customers()
     _seed_legacy_stock_movements()
-    # Seed the admin password hash from ADMIN_PASSWORD (env) on first run so
-    # login works before the owner visits Settings. No-op afterwards.
+    # Seed the admin password hash and migrate the legacy single-admin account.
     db = SessionLocal()
     try:
-        from services.security import get_admin_password_hash
-        get_admin_password_hash(db)
+        from services.security import ensure_owner_account
+        ensure_owner_account(db)
     finally:
         db.close()
     scheduler = asyncio.create_task(scheduler_task())

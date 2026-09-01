@@ -17,7 +17,7 @@ from models import (
 from services._common import fmt, get_setting_int as get_discount_setting, parse_persian_birthday, jalali_str
 from services.accounting import credit_sale_allowed, apply_credit_surcharge
 from services.discount import calculate_discounts, apply_discounts_after_sale
-from services.security import log_action
+from services.security import log_action, require_html_role
 from services.tier import (
     update_customer_after_purchase, get_tier_config, check_tier_upgrade,
     tier_up_marker_key, TIER_RANK,
@@ -218,6 +218,9 @@ def _render_scan(request, customer, basket, total_amount, db,
 
 @router.get("/", response_class=HTMLResponse)
 async def sales_list(request: Request, search: str = "", page: int = 1, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "cashier")
+    if not hasattr(guard, "role"):
+        return guard
     query = db.query(Sale).filter(Sale.payment_confirmed == True)
 
     if search:
@@ -243,6 +246,9 @@ async def sales_list(request: Request, search: str = "", page: int = 1, db: Sess
 
 @router.get("/new", response_class=HTMLResponse)
 async def sales_new(request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "cashier")
+    if not hasattr(guard, "role"):
+        return guard
     return templates.TemplateResponse(request, "sales/checkout.html", {
         "step": "customer",
         "basket": [],
@@ -256,11 +262,17 @@ async def sales_new(request: Request, db: Session = Depends(get_db)):
 @router.post("/skip-customer", response_class=HTMLResponse)
 async def sales_skip_customer(request: Request, db: Session = Depends(get_db)):
     """Start a sale without a phone number — anonymous walk-in (no Customer row)."""
+    guard = require_html_role(request, db, "cashier")
+    if not hasattr(guard, "role"):
+        return guard
     return _render_scan(request, None, [], 0, db)
 
 
 @router.post("/lookup-customer", response_class=HTMLResponse)
 async def sales_lookup_customer(request: Request, phone: str = Form(""), db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "cashier")
+    if not hasattr(guard, "role"):
+        return guard
     phone = to_english_digits(phone.strip())
 
     if not phone or not phone.startswith("09") or len(phone) != 11:
@@ -302,6 +314,9 @@ async def sales_create_customer(
     child_birthday: str = Form(""),
     db: Session = Depends(get_db),
 ):
+    guard = require_html_role(request, db, "cashier")
+    if not hasattr(guard, "role"):
+        return guard
     phone = to_english_digits(phone.strip())
 
     existing = db.query(Customer).filter(Customer.phone == phone).first()
@@ -348,6 +363,9 @@ async def sales_apply_discount(
     custom_discount_percent: str = Form(""),
     db: Session = Depends(get_db),
 ):
+    guard = require_html_role(request, db, "cashier")
+    if not hasattr(guard, "role"):
+        return guard
     customer = _resolve_customer(customer_id, db)
 
     basket = json.loads(basket_json)
@@ -486,6 +504,9 @@ async def sales_send_to_terminal(
     nonce returns the stored result and never sends a second terminal charge.
     Only an approved row receives a session capability for ``confirm-sale``.
     """
+    require_role = require_html_role(request, db, "cashier")
+    if not hasattr(require_role, "role"):
+        return require_role
     if amount <= 0:
         raise HTTPException(status_code=400, detail="مبلغ نامعتبر است.")
     if not checkout_nonce or len(checkout_nonce) > 100:
@@ -589,6 +610,9 @@ async def sales_confirm(
     Integrity: prices, quantities and totals are recomputed from the database
     here — the client-supplied basket_json is treated as an untrusted list of
     variant IDs, never as a source of price."""
+    guard = require_html_role(request, db, "cashier")
+    if not hasattr(guard, "role"):
+        return guard
     if payment_method not in ALLOWED_PAYMENT_METHODS:
         raise HTTPException(status_code=400, detail="روش پرداخت نامعتبر است.")
 
@@ -782,6 +806,9 @@ async def sales_confirm(
 @router.get("/invoice/{sale_id}", response_class=HTMLResponse)
 async def sales_invoice_view(sale_id: int, request: Request, db: Session = Depends(get_db)):
     """View/print an invoice."""
+    guard = require_html_role(request, db, "cashier")
+    if not hasattr(guard, "role"):
+        return guard
     sale = db.query(Sale).filter(Sale.id == sale_id).first()
     if not sale:
         raise HTTPException(status_code=404, detail="فاکتور یافت نشد")
@@ -846,6 +873,9 @@ async def api_lookup_barcode(barcode: str, db: Session = Depends(get_db)):
 @router.post("/{sale_id}/refund", response_class=HTMLResponse)
 async def sale_refund(sale_id: int, request: Request, refund_reason: str = Form(""), db: Session = Depends(get_db)):
     """Refund/void a sale."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     sale = db.query(Sale).filter(Sale.id == sale_id).first()
     if not sale:
         raise HTTPException(status_code=404, detail="فاکتور یافت نشد")
@@ -928,6 +958,6 @@ async def sale_refund(sale_id: int, request: Request, refund_reason: str = Form(
     db.query(SaleCampaign).filter(SaleCampaign.sale_id == sale.id).delete()
 
     db.commit()
-    log_action(db, "refund", f"ابطال فاکتور #{sale.id}")
+    log_action(db, "refund", f"ابطال فاکتور #{sale.id}", request=request, target_type="sale", target_id=sale.id, after={"is_refunded": True, "refund_amount": sale.refund_amount, "reason": refund_reason})
 
     return RedirectResponse(url=f"/sales/invoice/{sale_id}", status_code=303)

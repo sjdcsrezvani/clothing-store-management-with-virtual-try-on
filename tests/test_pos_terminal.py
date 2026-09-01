@@ -116,6 +116,9 @@ def test_send_to_terminal_persists_approval_and_reuses_nonce(client, db_session,
         return {"status": "approved", "response_code": "00200", "label": "Approved", "response": "RS003RS00200"}
 
     monkeypatch.setattr("routers.sales.send_terminal_sale", fake_send)
+    login_token = csrf_token(client)
+    login = client.post("/admin/login", data={"username": "owner", "password": "test-admin-pass", "csrf_token": login_token}, follow_redirects=False)
+    assert login.status_code == 303
     token = csrf_token(client, "/sales/new")
     data = {**_send_data("checkout-idempotency-1"), "csrf_token": token}
 
@@ -144,6 +147,9 @@ def test_terminal_error_is_persisted_as_uncertain_and_not_retried(client, db_ses
         raise TimeoutError("terminal did not answer")
 
     monkeypatch.setattr("routers.sales.send_terminal_sale", fake_send)
+    login_token = csrf_token(client)
+    login = client.post("/admin/login", data={"username": "owner", "password": "test-admin-pass", "csrf_token": login_token}, follow_redirects=False)
+    assert login.status_code == 303
     token = csrf_token(client, "/sales/new")
     data = {**_send_data("checkout-idempotency-uncertain"), "csrf_token": token}
 
@@ -170,6 +176,9 @@ def test_approved_pos_transaction_links_to_one_sale(client, db_session, monkeypa
             "label": "Approved", "response": "RS003RS00200",
         },
     )
+    login_token = csrf_token(client)
+    login = client.post("/admin/login", data={"username": "owner", "password": "test-admin-pass", "csrf_token": login_token}, follow_redirects=False)
+    assert login.status_code == 303
     checkout_page = csrf_token(client, "/sales/new")
     nonce = "checkout-idempotency-sale"
     send_response = client.post(

@@ -88,9 +88,8 @@ def get_setting_int(db: Session, key: str, default: int) -> int:
 
 
 def check_admin(request: Request) -> bool:
-    """Admin check backed by the server-side session (set at login), not a
-    forgeable cookie value. SessionMiddleware guarantees request.session."""
-    return bool(request.session.get("is_admin"))
+    """Legacy boolean admin-session check kept for compatibility."""
+    return bool(request.session.get("is_admin") and request.session.get("staff_user_id"))
 
 
 def parse_persian_birthday(value: str) -> str | None:

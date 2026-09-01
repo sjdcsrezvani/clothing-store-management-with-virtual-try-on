@@ -19,7 +19,7 @@ from database import get_db
 from models import Product, ProductVariant, GeneratedImage, to_english_digits
 from services._common import check_admin, fmt, jalali_str
 from services.image_gen import ImageGenService, ImageGenerationError, composite_logo, MAIN_PROMPT
-from services.security import require_api_token, tryon_can_generate, tryon_record_generation, tryon_daily_remaining, log_action
+from services.security import require_api_token, tryon_can_generate, tryon_record_generation, tryon_daily_remaining, log_action, require_html_role
 from services.templating import templates
 from config import TRYON_BACKGROUNDS, TRYON_POSE_MODES, TRYON_FACE_MODES
 
@@ -492,8 +492,9 @@ async def mobile_app_page(request: Request):
 
 @admin_router.get("/try-on", response_class=HTMLResponse)
 async def admin_tryon_page(request: Request, msg: str = "", err: str = "", db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     saved = db.query(GeneratedImage).order_by(GeneratedImage.created_at.desc()).limit(20).all()
 
@@ -522,8 +523,9 @@ async def admin_tryon_add_product(
     db: Session = Depends(get_db),
 ):
     """Add a product to the try-on list by barcode. Does NOT generate an image."""
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     barcode = to_english_digits(barcode_input.strip())
     if not barcode:
@@ -555,8 +557,9 @@ async def admin_tryon_generate(
     category: str = Form(CATEGORY_UPPER),
     db: Session = Depends(get_db),
 ):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     scanned_ids = [s["id"] for s in _tryon["scanned"]]
     if not scanned_ids:
@@ -641,8 +644,9 @@ async def admin_tryon_generate(
 
 @admin_router.post("/try-on/save")
 async def admin_tryon_save(request: Request, db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     if not _tryon["last_gen_path"] or not _tryon["last_gen_url"]:
         return RedirectResponse(url="/admin/try-on?err=تصویری برای ذخیره وجود ندارد.", status_code=303)
 
@@ -671,8 +675,9 @@ async def admin_tryon_download(request: Request, logo: str = "no"):
     """Stream the most-recently generated image as a downloadable file.
     `logo=yes` composites the brand logo onto it via PIL (no AI call).
     `logo=no` (default) returns the raw generated image."""
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     path = _tryon.get("last_gen_path")
     if not path or not Path(path).exists():
         return RedirectResponse(url="/admin/try-on?err=تصویری برای دانلود وجود ندارد.", status_code=303)
@@ -704,8 +709,9 @@ async def admin_tryon_download(request: Request, logo: str = "no"):
 
 @admin_router.post("/try-on/clear")
 async def admin_tryon_clear(request: Request):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     _clear_kid_photo()
     _tryon["scanned"] = []
     _tryon["last_gen_url"] = None
@@ -718,8 +724,9 @@ async def admin_tryon_clear(request: Request):
 
 @admin_router.get("/try-on/saved", response_class=HTMLResponse)
 async def admin_tryon_saved(request: Request, db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     saved = db.query(GeneratedImage).order_by(GeneratedImage.created_at.desc()).all()
 
     # Resolve each saved image's stored barcodes back to real variant photos so
@@ -775,8 +782,9 @@ async def admin_tryon_saved_download(
     logo: str = "no",
     db: Session = Depends(get_db),
 ):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     record = db.query(GeneratedImage).filter(GeneratedImage.id == img_id).first()
     if not record:
         return RedirectResponse(url="/admin/try-on/saved?err=تصویر یافت نشد.", status_code=303)

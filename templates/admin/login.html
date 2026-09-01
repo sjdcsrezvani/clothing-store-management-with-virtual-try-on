@@ -8,6 +8,8 @@
     {% if error %}<div class="alert alert-error">⚠️ {{ error }}</div>{% endif %}
     <form method="post" action="/admin/login">
         <div class="form-group">
+            <label for="username" style="text-align: right;">👤 نام کاربری</label>
+            <input type="text" id="username" name="username" value="{{ username|default('owner') }}" placeholder="نام کاربری" autocomplete="username" required>
             <label for="password" style="text-align: right;">🔑 رمز عبور مدیریت</label>
             <input type="password" id="password" name="password" required autofocus
                    placeholder="رمز عبور را وارد کنید">

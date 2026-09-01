@@ -19,7 +19,7 @@ from services.accounting import (
     get_aged_receivables, reverse_payment,
 )
 from services.analytics import get_date_range
-from services.security import log_action
+from services.security import log_action, require_html_role
 from services.templating import templates
 from services.inventory import record_stock_movement, restore_cost_after_purchase_reversal
 
@@ -48,8 +48,9 @@ async def admin_accounting(
     end_date: str = "",
     db: Session = Depends(get_db),
 ):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     start, end = get_date_range(period, start_date or None, end_date or None)
     pl = get_net_pl(db, start, end)
@@ -80,8 +81,9 @@ async def admin_accounting_export(
     end_date: str = "",
     db: Session = Depends(get_db),
 ):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     start, end = get_date_range("custom" if (start_date and end_date) else "all",
                                 start_date or None, end_date or None)
@@ -148,8 +150,9 @@ async def admin_accounting_export(
 
 @router.get("/credit", response_class=HTMLResponse)
 async def admin_credit(request: Request, db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     return templates.TemplateResponse(request, "admin/credit.html", {
         "debts": get_customer_debts(db),
         "total_debt": debt_totals(db)["total_debt"],
@@ -162,8 +165,9 @@ async def admin_credit(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/credit/{customer_id}", response_class=HTMLResponse)
 async def admin_credit_customer(customer_id: int, request: Request, db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(status_code=404, detail="مشتری یافت نشد")
@@ -198,8 +202,9 @@ async def admin_credit_pay(
     note: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:
@@ -219,7 +224,7 @@ async def admin_credit_pay(
     )
     db.commit()
     if applied > 0:
-        log_action(db, "credit_payment", f"دریافت {applied:,} از {customer.phone}")
+        log_action(db, "credit_payment", f"دریافت {applied:,} از {customer.phone}", request=request, target_type="customer", target_id=customer.id, after={"amount": applied, "method": method})
         return RedirectResponse(
             url=f"/admin/credit/{customer.id}?msg={applied:,} تومان ثبت شد.", status_code=303,
         )
@@ -230,8 +235,9 @@ async def admin_credit_pay(
 async def admin_credit_limit(customer_id: int, request: Request, credit_limit: str = Form(""), db: Session = Depends(get_db)):
     """Set a per-customer credit limit (سقف اعتبار). Empty/0 resets to the
     store-wide default; the checkout blocks نسیه sales that exceed it."""
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:
         return RedirectResponse(url="/admin/credit", status_code=303)
@@ -241,7 +247,7 @@ async def admin_credit_limit(customer_id: int, request: Request, credit_limit: s
         limit = 0
     customer.credit_limit = max(0, limit) or None
     db.commit()
-    log_action(db, "credit_limit", f"سقف اعتبار {customer.phone}: {customer.credit_limit or 'پیش‌فرض'}")
+    log_action(db, "credit_limit", f"سقف اعتبار {customer.phone}: {customer.credit_limit or 'پیش‌فرض'}", request=request, target_type="customer", target_id=customer.id, after={"credit_limit": customer.credit_limit})
     return RedirectResponse(url=f"/admin/credit/{customer.id}?msg=سقف اعتبار ذخیره شد.", status_code=303)
 
 
@@ -249,15 +255,16 @@ async def admin_credit_limit(customer_id: int, request: Request, credit_limit: s
 async def admin_payment_delete(payment_id: int, request: Request, db: Session = Depends(get_db)):
     """Undo a نسیه payment. The customer's debt ledger is rebuilt from the
     remaining payments, so invoices and the cash box return to their prior state."""
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     payment = db.query(Payment).filter(Payment.id == payment_id).first()
     if not payment:
         return RedirectResponse(url="/admin/credit", status_code=303)
     customer_id = payment.customer_id
     reversed_amount = reverse_payment(db, payment)
     db.commit()
-    log_action(db, "payment_delete", f"حذف دریافت {reversed_amount:,}")
+    log_action(db, "payment_delete", f"برگشت دریافت {reversed_amount:,}", request=request, target_type="payment", target_id=payment_id, after={"reversed_amount": reversed_amount})
     return RedirectResponse(
         url=f"/admin/credit/{customer_id}?msg={reversed_amount:,} تومان از دریافت‌ها حذف شد.",
         status_code=303,
@@ -271,8 +278,9 @@ async def admin_collections(request: Request, db: Session = Depends(get_db)):
     """Aged-receivables dashboard: bucket each customer's outstanding نسیه
     balance by the age of their oldest unpaid invoice (≤30 / 31–60 / 61–90 / 90+).
     Helps the owner chase overdue credit before it goes bad."""
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     report = get_aged_receivables(db)
     return templates.TemplateResponse(request, "admin/collections.html", {
         "buckets": report["buckets"],
@@ -289,8 +297,9 @@ async def admin_collections(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/suppliers", response_class=HTMLResponse)
 async def admin_suppliers(request: Request, db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     suppliers = db.query(Supplier).order_by(Supplier.created_at.desc()).all()
     totals = dict(
         db.query(Supplier.id, func.coalesce(func.sum(Purchase.total_cost), 0))
@@ -315,27 +324,29 @@ async def admin_supplier_add(
     note: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     if not name.strip():
         return RedirectResponse(url="/admin/suppliers?err=نام تأمین‌کننده الزامی است.", status_code=303)
     db.add(Supplier(name=name.strip(), phone=phone.strip() or None, note=note.strip() or None))
     db.commit()
-    log_action(db, "supplier_add", name.strip())
+    log_action(db, "supplier_add", name.strip(), request=request, target_type="supplier", target_id=supplier.id, after={"name": name.strip()})
     return RedirectResponse(url="/admin/suppliers?msg=تأمین‌کننده اضافه شد.", status_code=303)
 
 
 @router.post("/suppliers/{supplier_id}/delete", response_class=HTMLResponse)
 async def admin_supplier_delete(supplier_id: int, request: Request, db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     supplier = db.query(Supplier).filter(Supplier.id == supplier_id).first()
     if supplier:
         for p in db.query(Purchase).filter(Purchase.supplier_id == supplier.id).all():
             p.supplier_id = None
         db.delete(supplier)
         db.commit()
-        log_action(db, "supplier_delete", supplier.name)
+        log_action(db, "supplier_delete", supplier.name, request=request, target_type="supplier", target_id=supplier_id, before={"name": supplier.name})
     return RedirectResponse(url="/admin/suppliers", status_code=303)
 
 
@@ -343,8 +354,9 @@ async def admin_supplier_delete(supplier_id: int, request: Request, db: Session 
 
 @router.get("/purchases", response_class=HTMLResponse)
 async def admin_purchases(request: Request, db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     from models import Product
     products = db.query(Product).filter(Product.is_active == True) \
@@ -370,8 +382,9 @@ async def admin_purchase_add(
     note: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
 
     form = await request.form()
     indices = set()
@@ -433,15 +446,16 @@ async def admin_purchase_add(
             variant.cost_price = unit_cost  # refresh the cost basis
 
     db.commit()
-    log_action(db, "purchase_add", f"خرید {total_cost:,} تومان")
+    log_action(db, "purchase_add", f"خرید {total_cost:,} تومان", request=request, target_type="purchase", target_id=purchase.id, after={"total_cost": total_cost})
     return RedirectResponse(url="/admin/purchases?msg=خرید با موفقیت ثبت شد و موجودی به‌روز شد.", status_code=303)
 
 
 @router.get("/inventory-movements", response_class=HTMLResponse)
 async def admin_inventory_movements(request: Request, db: Session = Depends(get_db)):
     """Read-only audit view of the append-only inventory ledger."""
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     movements = db.query(StockMovement).order_by(
         StockMovement.created_at.desc(), StockMovement.id.desc()
     ).limit(200).all()
@@ -460,8 +474,9 @@ async def admin_purchase_delete(purchase_id: int, request: Request, db: Session 
     ledger cannot infer lots retroactively, so refusing that reversal is safer
     than making stock or cost history negative.
     """
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     purchase = db.query(Purchase).filter(Purchase.id == purchase_id).first()
     if not purchase:
         return RedirectResponse(url="/admin/purchases", status_code=303)
@@ -508,7 +523,7 @@ async def admin_purchase_delete(purchase_id: int, request: Request, db: Session 
         restore_cost_after_purchase_reversal(db, variant, item.prev_cost_price)
 
     db.commit()
-    log_action(db, "purchase_reverse", f"برگشت خرید #{purchase_id}")
+    log_action(db, "purchase_reverse", f"برگشت خرید #{purchase_id}", request=request, target_type="purchase", target_id=purchase_id, after={"reversed": True})
     return RedirectResponse(url="/admin/purchases?msg=خرید با ثبت حرکت برگشت، معکوس شد.", status_code=303)
 
 
@@ -516,8 +531,9 @@ async def admin_purchase_delete(purchase_id: int, request: Request, db: Session 
 
 @router.get("/expenses", response_class=HTMLResponse)
 async def admin_expenses(request: Request, db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     expenses = db.query(Expense).order_by(Expense.created_at.desc()).limit(100).all()
     total = sum(e.amount for e in db.query(Expense).all())
     return templates.TemplateResponse(request, "admin/expenses.html", {
@@ -538,33 +554,37 @@ async def admin_expense_add(
     note: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     try:
         amount_int = int(amount)
     except (TypeError, ValueError):
         amount_int = 0
     if amount_int <= 0:
         return RedirectResponse(url="/admin/expenses?err=مبلغ معتبر نیست.", status_code=303)
-    db.add(Expense(
+    expense = Expense(
         amount=amount_int,
         category=category.strip() or None,
         note=note.strip() or None,
-    ))
+    )
+    db.add(expense)
+    db.flush()
     db.commit()
-    log_action(db, "expense_add", f"{amount_int:,} تومان ({category or '—'})")
+    log_action(db, "expense_add", f"{amount_int:,} تومان ({category or '—'})", request=request, target_type="expense", target_id=expense.id, after={"amount": amount_int, "category": category})
     return RedirectResponse(url="/admin/expenses?msg=هزینه ثبت شد.", status_code=303)
 
 
 @router.post("/expenses/{expense_id}/delete", response_class=HTMLResponse)
 async def admin_expense_delete(expense_id: int, request: Request, db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     expense = db.query(Expense).filter(Expense.id == expense_id).first()
     if expense:
         db.delete(expense)
         db.commit()
-        log_action(db, "expense_delete", f"حذف هزینه {expense.amount:,}")
+        log_action(db, "expense_delete", f"برگشت هزینه {expense.amount:,}", request=request, target_type="expense", target_id=expense_id, before={"amount": expense.amount})
     return RedirectResponse(url="/admin/expenses", status_code=303)
 
 
@@ -578,8 +598,9 @@ async def admin_cashbox(
     end_date: str = "",
     db: Session = Depends(get_db),
 ):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     start, end = get_date_range(period, start_date or None, end_date or None)
     opening = get_opening_balance(db)
     register = get_cashbox(db, start, end, opening)
@@ -597,8 +618,9 @@ async def admin_cashbox(
 
 @router.post("/cashbox/opening", response_class=HTMLResponse)
 async def admin_cashbox_opening(request: Request, opening: str = Form("0"), db: Session = Depends(get_db)):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     try:
         opening_int = int(opening)
     except (TypeError, ValueError):

@@ -48,13 +48,13 @@ def db_session():
 @pytest.fixture(autouse=True)
 def _clean_db(client, db_session):
     """Reset all tables before each test so tests are independent."""
-    from models import (SaleCampaign, SaleItem, Sale, POSTransaction, StockMovement, GeneratedImage,
+    from models import (StaffUser, SaleCampaign, SaleItem, Sale, POSTransaction, StockMovement, GeneratedImage,
                         Referral, Customer, ProductVariant, Product,
                         Campaign, Settings, AdminLog, Payment, Expense,
                         Purchase, PurchaseItem, Supplier)
     for model in (SaleCampaign, SaleItem, POSTransaction, StockMovement, Sale, GeneratedImage, Payment,
                   Referral, Customer, ProductVariant, Product, PurchaseItem,
-                  Purchase, Expense, Supplier, Campaign, Settings, AdminLog):
+                  Purchase, Expense, Supplier, Campaign, AdminLog, StaffUser, Settings):
         db_session.query(model).delete()
     db_session.commit()
     db_session.expire_all()  # drop stale identity-map entries
@@ -74,12 +74,12 @@ def csrf_token(client, url="/admin/login") -> str:
 def authed(client):
     """Log in as admin and return the client."""
     token = csrf_token(client)
-    resp = client.post("/admin/login", data={"password": "test-admin-pass", "csrf_token": token}, follow_redirects=False)
+    resp = client.post("/admin/login", data={"username": "owner", "password": "test-admin-pass", "csrf_token": token}, follow_redirects=False)
     assert resp.status_code == 303, resp.text[:300]
     return client
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="session", autouse=True)
 def session_cleanup():
     yield
     for suffix in ("", "-wal", "-shm"):

@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from database import get_db
 from services._common import fmt, check_admin, jalali_str
+from services.security import require_html_role
 from services.templating import templates
 from services.analytics import (
     get_date_range, get_revenue_summary, get_daily_revenue,
@@ -28,8 +29,9 @@ async def admin_analytics(
     category: str = "",
     db = Depends(get_db),
 ):
-    if not check_admin(request):
-        return RedirectResponse(url="/admin/login", status_code=303)
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
 
     start, end = get_date_range(period, start_date or None, end_date or None)
     cat = category or None
