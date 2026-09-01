@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}📟 تطبیق کارت‌خوان — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div class="page-heading">
+    <div>
+        <span class="eyebrow">کنترل پرداخت‌های الکترونیکی</span>
+        <h2>📟 تطبیق کارت‌خوان</h2>
+        <p>تراکنش‌هایی را بررسی کنید که نتیجه کارت‌خوان و فاکتور محلی آن‌ها باید با هم تطبیق داده شوند.</p>
+    </div>
+    <a href="/admin" class="btn btn-ghost">🔙 داشبورد</a>
+</div>
+
+{% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
+{% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
+
+<div class="stats-grid">
+    <div class="stat-card accent-persimmon">
+        <div class="stat-label">⚠️ نیازمند بررسی</div>
+        <div class="stat-value tnum">{{ unresolved_count }}</div>
+        <div class="stat-sub">از ۲۰۰ رکورد اخیر</div>
+    </div>
+</div>
+
+<div class="card">
+    {% if transactions %}
+    <div class="table-scroll">
+    <table>
+        <thead>
+            <tr>
+                <th>شناسه</th>
+                <th>زمان</th>
+                <th>مبلغ</th>
+                <th>وضعیت کارت‌خوان</th>
+                <th>کد پاسخ</th>
+                <th>فاکتور</th>
+                <th>تطبیق</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for transaction in transactions %}
+            <tr>
+                <td class="tnum"><strong>#{{ transaction.id }}</strong></td>
+                <td class="tnum">{{ jalali_str(transaction.created_at) }}</td>
+                <td class="tnum"><strong>{{ fmt(transaction.amount) }}</strong> تومان</td>
+                <td>
+                    {% if transaction.status == 'approved' %}
+                        <span class="badge badge-success">✅ تأیید شد</span>
+                    {% elif transaction.status == 'linked_to_sale' %}
+                        <span class="badge badge-success">🔗 متصل به فاکتور</span>
+                    {% elif transaction.status == 'cancelled' %}
+                        <span class="badge">⛔ لغو شد</span>
+                    {% elif transaction.status == 'uncertain' %}
+                        <span class="badge badge-warning">⚠️ نامشخص</span>
+                    {% elif transaction.status == 'sent' %}
+                        <span class="badge badge-warning">⏳ در حال ارسال</span>
+                    {% elif transaction.status == 'declined' %}
+                        <span class="badge">🚫 رد شد</span>
+                    {% else %}
+                        <span class="badge">{{ transaction.status }}</span>
+                    {% endif %}
+                    {% if transaction.response_label %}<br><small>{{ transaction.response_label }}</small>{% endif %}
+                </td>
+                <td dir="ltr" class="tnum">{{ transaction.response_code or '—' }}</td>
+                <td>
+                    {% if transaction.sale_id %}
+                        <a href="/sales/invoice/{{ transaction.sale_id }}" class="btn btn-sm btn-ghost">🧾 #{{ transaction.sale_id }}</a>
+                    {% else %}—{% endif %}
+                </td>
+                <td>
+                    {% if transaction.reconciled %}
+                        <span class="badge badge-success">ثبت شده</span>
+                        {% if transaction.reconciliation_note %}<br><small>{{ transaction.reconciliation_note }}</small>{% endif %}
+                    {% else %}
+                        <form method="post" action="/admin/pos-reconciliation/{{ transaction.id }}/review">
+                            <input type="text" name="note" placeholder="یادداشت بررسی" maxlength="1000">
+                            <button type="submit" class="btn btn-sm btn-primary">✓ ثبت بررسی</button>
+                        </form>
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <div style="text-align:center; padding:2rem; color:var(--ink-soft);">
+        <div style="font-size:3rem;">📟</div>
+        <p>هنوز تراکنش کارت‌خوانی ثبت نشده است.</p>
+    </div>
+    {% endif %}
+</div>
+
+<nav class="admin-nav">
+    <a href="/admin/logs" class="btn btn-ghost">📜 گزارش عملیات</a>
+    <a href="/sales/new" class="btn btn-primary">🛒 فروش جدید</a>
+</nav>
+{% endblock %}

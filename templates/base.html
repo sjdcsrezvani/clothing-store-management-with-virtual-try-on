@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{{ store.name }}{% endblock %}</title>
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="icon" type="image/png" href="/static/logo.png">
+    <meta name="theme-color" content="#fff5f0">
+</head>
+<body>
+    <div class="app-shell">
+        <header class="app-topbar">
+            <div class="topbar-inner">
+                <button type="button" class="menu-toggle" id="menu-toggle" aria-label="باز کردن منو" aria-expanded="false">☰</button>
+                <a class="brand" href="/sales/new">
+                    <span class="brand-mark">🎨</span>
+                    <span class="brand-copy"><strong>{{ store.name }}</strong><small>{{ store.tagline or 'سیستم فروشگاه' }}</small></span>
+                </a>
+                <div class="topbar-actions">
+                    <a href="/sales/new" class="quick-sale">🛒 <span>فروش جدید</span></a>
+                    <a href="/admin" class="topbar-admin">⚙️</a>
+                </div>
+            </div>
+        </header>
+
+        <aside class="app-sidebar" id="app-sidebar" aria-label="منوی اصلی">
+            <div class="sidebar-brand">
+                <span class="sidebar-brand-icon">🧸</span>
+                <div><strong>{{ store.name }}</strong><small>پنل مدیریت</small></div>
+            </div>
+            <nav class="sidebar-nav">
+                <div class="sidebar-section-label">فروشگاه</div>
+                <a href="/sales/new" data-nav="sales"><span>🛒</span> فروش جدید</a>
+                <a href="/sales/" data-nav="sales-history"><span>🧾</span> تاریخچه فروش</a>
+                <a href="/admin/products" data-nav="products"><span>📦</span> محصولات و موجودی</a>
+                <a href="/admin/purchases" data-nav="purchases"><span>🚚</span> خرید از عمده‌فروش</a>
+                <a href="/admin/inventory-movements" data-nav="inventory-movements"><span>📚</span> دفتر انبار</a>
+
+                <div class="sidebar-section-label">مشتریان</div>
+                <a href="/admin/customers" data-nav="customers"><span>👥</span> مشتریان</a>
+                <a href="/admin/credit" data-nav="credit"><span>📒</span> حساب نسیه</a>
+                <a href="/admin/collections" data-nav="collections"><span>📋</span> وصول مطالبات</a>
+                <a href="/admin/campaigns" data-nav="campaigns"><span>📢</span> کمپین پیامکی</a>
+
+                <div class="sidebar-section-label">گزارش و مالی</div>
+                <a href="/admin" data-nav="dashboard"><span>📊</span> داشبورد</a>
+                <a href="/admin/analytics" data-nav="analytics"><span>📈</span> تحلیل فروش</a>
+                <a href="/admin/accounting" data-nav="accounting"><span>🧮</span> سود و زیان</a>
+                <a href="/admin/cashbox" data-nav="cashbox"><span>🧾</span> صندوق</a>
+                <a href="/admin/expenses" data-nav="expenses"><span>💸</span> هزینه‌ها</a>
+                <a href="/admin/suppliers" data-nav="suppliers"><span>🏭</span> تأمین‌کنندگان</a>
+
+                <div class="sidebar-section-label">ابزارها</div>
+                <a href="/admin/try-on" data-nav="tryon"><span>👗</span> پرو مجازی</a>
+                <a href="/admin/backups" data-nav="backups"><span>💾</span> پشتیبان‌ها</a>
+                <a href="/admin/settings" data-nav="settings"><span>⚙️</span> تنظیمات</a>
+                <a href="/admin/pos-reconciliation" data-nav="pos-reconciliation"><span>📟</span> تطبیق کارت‌خوان</a>
+                <a href="/admin/logs" data-nav="logs"><span>📜</span> گزارش عملیات</a>
+            </nav>
+            <div class="sidebar-footer">
+                <a href="/sales/new" class="sidebar-new-sale">➕ شروع فروش جدید</a>
+                <form method="post" action="/admin/logout">
+                    <button type="submit" class="sidebar-logout">🚪 خروج از حساب</button>
+                </form>
+            </div>
+        </aside>
+        <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+        <main class="app-main">
+            <div class="page-container">
+                <div class="mobile-context-bar" aria-label="دسترسی سریع">
+                    <span>🧸 {{ store.name }}</span>
+                    <a href="/sales/new">➕ فروش جدید</a>
+                </div>
+                {% block content %}{% endblock %}
+            </div>
+            <footer class="app-footer">
+                <p>🧸 {{ store.name }}{% if store.tagline %} — {{ store.tagline }}{% endif %} <span>• سیستم فروش و باشگاه مشتریان</span></p>
+                {% if store.footer %}<p>{{ store.footer }}</p>{% endif %}
+            </footer>
+        </main>
+    </div>
+
+    <script src="/static/js/jquery.min.js"></script>
+    <script src="/static/js/persian-datepicker.min.js"></script>
+    <script>
+    // Open the POS in a second native window (desktop app) or browser tab (web).
+    // target="_blank" alone does nothing inside pywebview, so pages call this.
+    function openNewSaleWindow() {
+        try {
+            if (window.pywebview && window.pywebview.api && window.pywebview.api.open_new_sale) {
+                window.pywebview.api.open_new_sale();
+                return false;
+            }
+        } catch (e) { /* fall back to browser behavior */ }
+        window.open('/sales/new', '_blank', 'noopener');
+        return false;
+    }
+
+    $(function() {
+        $('.persian-date-input').persianDatepicker({
+            format: 'YYYY/MM/DD',
+            autoClose: true,
+            initialValue: false
+        });
+    });
+
+    // Responsive app sidebar.
+    (function () {
+        var body = document.body;
+        var toggle = document.getElementById('menu-toggle');
+        var overlay = document.getElementById('sidebar-overlay');
+        var sidebar = document.querySelector('.app-sidebar');
+        function setOpen(open) {
+            body.classList.toggle('sidebar-open', open);
+            if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        }
+        if (toggle) toggle.addEventListener('click', function () {
+            setOpen(!body.classList.contains('sidebar-open'));
+        });
+        if (overlay) overlay.addEventListener('click', function () { setOpen(false); });
+        document.querySelectorAll('.sidebar-nav a').forEach(function (link) {
+            link.addEventListener('click', function () { setOpen(false); });
+        });
+        // Highlight the current section.
+        var path = window.location.pathname;
+        var activeLink = null;
+        document.querySelectorAll('.sidebar-nav a[data-nav]').forEach(function (link) {
+            var href = link.getAttribute('href');
+            if ((href === '/admin' && path === '/admin/') || (href !== '/admin' && path.indexOf(href) === 0)) {
+                link.classList.add('active');
+                activeLink = link;
+            }
+        });
+        // Keep the sidebar where the user left it across page loads: restore
+        // the exact scroll position, then nudge the active item into view
+        // (covers deep links like /admin/try-on opened directly).
+        if (sidebar) {
+            var saved = sessionStorage.getItem('sidebarScroll');
+            if (saved) sidebar.scrollTop = parseInt(saved, 10) || 0;
+            if (activeLink) {
+                // Nudge the active item into view (manual math on the sidebar
+                // container so the page itself never scrolls); no-op when the
+                // item is already visible.
+                var top = activeLink.offsetTop;
+                var bottom = top + activeLink.offsetHeight;
+                if (top < sidebar.scrollTop) sidebar.scrollTop = top;
+                else if (bottom > sidebar.scrollTop + sidebar.clientHeight) sidebar.scrollTop = bottom - sidebar.clientHeight;
+            }
+            var scrollRaf = null;
+            sidebar.addEventListener('scroll', function () {
+                if (scrollRaf) return;
+                scrollRaf = requestAnimationFrame(function () {
+                    scrollRaf = null;
+                    try { sessionStorage.setItem('sidebarScroll', String(sidebar.scrollTop)); } catch (e) { /* private mode */ }
+                });
+            });
+        }
+    })();
+
+    // Ensure a POST form carries the CSRF token before it is submitted.
+    window.ensureCsrf = function (f) {
+        if (!f || !f.querySelector) return;
+        if ((f.getAttribute('method') || 'get').toLowerCase() !== 'post') return;
+        if (!f.querySelector('input[name="csrf_token"]')) {
+            var meta = document.querySelector('meta[name="csrf-token"]');
+            var i = document.createElement('input');
+            i.type = 'hidden';
+            i.name = 'csrf_token';
+            i.value = meta ? meta.content : '';
+            f.appendChild(i);
+        }
+    };
+    document.addEventListener('submit', function (e) { ensureCsrf(e.target); }, true);
+    </script>
+</body>
+</html>

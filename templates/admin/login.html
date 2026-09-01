@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}🔐 ورود مدیر — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div class="login-card">
+    <div style="font-size: 3rem; margin-bottom: 0.5rem;">🔐</div>
+    <h2>ورود مدیر</h2>
+    {% if error %}<div class="alert alert-error">⚠️ {{ error }}</div>{% endif %}
+    <form method="post" action="/admin/login">
+        <div class="form-group">
+            <label for="password" style="text-align: right;">🔑 رمز عبور مدیریت</label>
+            <input type="password" id="password" name="password" required autofocus
+                   placeholder="رمز عبور را وارد کنید">
+        </div>
+        <button type="submit" class="btn btn-primary btn-block btn-large">🚪 ورود</button>
+    </form>
+    <div style="margin-top: 1rem; font-size: 0.8rem; color: var(--ink-soft);">
+        🧸 {{ store.name }} — {{ store.tagline }}
+    </div>
+</div>
+
+{% endblock %}

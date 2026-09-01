@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}👥 مدیریت مشتریان — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem;">
+    <span style="font-size: 2rem;">👥</span>
+    <h2 style="margin: 0;">مدیریت مشتریان</h2>
+</div>
+
+<div class="filter-bar">
+    <form method="get" action="/admin/customers" class="search-form">
+        <input type="text" name="search" placeholder="🔍 جستجو بر اساس نام، شماره یا کد معرفی" value="{{ search }}">
+        <select name="sort">
+            <option value="date" {% if sort == 'date' %}selected{% endif %}>📅 تاریخ ثبت‌نام</option>
+            <option value="tier" {% if sort == 'tier' %}selected{% endif %}>🏷️ سطح</option>
+            <option value="purchase_desc" {% if sort == 'purchase_desc' %}selected{% endif %}>💰 بیشترین خرید</option>
+            <option value="purchase_asc" {% if sort == 'purchase_asc' %}selected{% endif %}>📉 کمترین خرید</option>
+            <option value="points" {% if sort == 'points' %}selected{% endif %}>🌟 بیشترین امتیاز</option>
+        </select>
+        <select name="tier">
+            <option value="">🏷️ همه سطوح</option>
+            <option value="silver" {% if tier_filter == 'silver' %}selected{% endif %}>🥈 نقره‌ای</option>
+            <option value="gold" {% if tier_filter == 'gold' %}selected{% endif %}>⭐ طلایی</option>
+            <option value="diamond" {% if tier_filter == 'diamond' %}selected{% endif %}>💎 الماس</option>
+        </select>
+        <button type="submit" class="btn btn-primary">✅ اعمال فیلتر</button>
+    </form>
+</div>
+
+<div class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>👤 نام</th>
+                <th>📱 تلفن</th>
+                <th>🔑 کد معرفی</th>
+                <th>🏷️ سطح</th>
+                <th>🌟 امتیاز</th>
+                <th>💰 کل خرید</th>
+                <th>🛒 تعداد</th>
+                <th>🏷️ تخفیف معرفی‌شده</th>
+                <th>🎉 تخفیف معرف</th>
+                <th>📅 این ماه</th>
+                <th>🧒 فرزند</th>
+                <th>📅 ثبت‌نام</th>
+                <th>🔧</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for customer in customers %}
+            <tr>
+                <td><strong>{{ customer.full_name }}</strong></td>
+                <td class="tnum">{{ customer.phone }}</td>
+                <td><span style="font-family: monospace; letter-spacing: 0.15em; direction: ltr; display: inline-block;">{{ customer.referral_code }}</span></td>
+                <td>
+                    <span class="tier-badge tier-{{ customer.tier }}" style="font-size: 0.7rem;">
+                        {% if customer.tier == 'diamond' %}💎 الماس
+                        {% elif customer.tier == 'gold' %}⭐ طلایی
+                        {% else %}🥈 نقره‌ای{% endif %}
+                    </span>
+                </td>
+                <td class="tnum">{{ customer.total_points|default(0) }}</td>
+                <td class="tnum">{{ fmt(customer.total_spent|default(0)) }} تومان</td>
+                <td class="tnum">{{ customer.total_purchases|default(0) }}</td>
+                <td class="tnum">
+                    {{ fmt(customer.referred_discount) }}
+                    {% if customer.has_used_referred_discount %}
+                        <span class="badge badge-used">✅ استفاده شده</span>
+                    {% elif customer.referred_discount > 0 %}
+                        <span class="badge badge-available">✨ فعال</span>
+                    {% endif %}
+                </td>
+                <td class="tnum">{{ fmt(customer.referrer_discount) }}</td>
+                <td class="tnum">{{ customer.monthly_referral_count }}</td>
+                <td>
+                    {% if customer.child_name %}
+                        🧒 {{ customer.child_name }}
+                        {% if customer.child_birthday %}<br><small style="color: var(--ink-soft);">🎂 {{ customer.child_birthday }}</small>{% endif %}
+                    {% else %}—{% endif %}
+                </td>
+                <td class="tnum">{{ jalali_str(customer.created_at, false) }}</td>
+                <td>
+                    <form method="post" action="/admin/customers/{{ customer.id }}/delete" style="display:inline;"
+                          onsubmit="return confirm('⚠️ آیا مطمئن هستید؟')">
+                        <button type="submit" class="btn btn-sm btn-danger">🗑️</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% if total_pages > 1 %}
+    <div style="display: flex; align-items: center; justify-content: center; gap: 1rem; padding: 1rem;">
+        {% if page > 1 %}
+        <a class="btn btn-sm btn-ghost" href="/admin/customers?page={{ page - 1 }}&search={{ search }}&sort={{ sort }}&tier={{ tier_filter }}">→ صفحه قبل</a>
+        {% endif %}
+        <span style="color: var(--ink-soft);">صفحه {{ page }} از {{ total_pages }}</span>
+        {% if page < total_pages %}
+        <a class="btn btn-sm btn-ghost" href="/admin/customers?page={{ page + 1 }}&search={{ search }}&sort={{ sort }}&tier={{ tier_filter }}">صفحه بعد ←</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<nav class="admin-nav">
+    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
+</nav>
+{% endblock %}

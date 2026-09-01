@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}📋 وصول مطالبات — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem;">
+    <span style="font-size: 2rem;">📋</span>
+    <h2 style="margin: 0;">وصول مطالبات (نسیه سررسیده)</h2>
+</div>
+
+{% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
+
+{# ─── Summary cards ─── #}
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">🟢 جاری (≤ ۳۰ روز)</div>
+        <div class="stat-value tnum">{{ fmt(totals.current) }} ت</div>
+        <div class="stat-sub">{{ buckets.current|length }} مشتری</div>
+    </div>
+    <div class="stat-card accent-saffron">
+        <div class="stat-label">🟡 ۳۱–۶۰ روز</div>
+        <div class="stat-value tnum">{{ fmt(totals['31_60']) }} ت</div>
+        <div class="stat-sub">{{ buckets['31_60']|length }} مشتری</div>
+    </div>
+    <div class="stat-card accent-persimmon">
+        <div class="stat-label">🟠 ۶۱–۹۰ روز</div>
+        <div class="stat-value tnum">{{ fmt(totals['61_90']) }} ت</div>
+        <div class="stat-sub">{{ buckets['61_90']|length }} مشتری</div>
+    </div>
+    <div class="stat-card accent-ink">
+        <div class="stat-label" style="color: #FF4757;">🔴 بیش از ۹۰ روز</div>
+        <div class="stat-value tnum">{{ fmt(totals.over_90) }} ت</div>
+        <div class="stat-sub">{{ buckets.over_90|length }} مشتری</div>
+    </div>
+</div>
+
+<div class="card">
+    <h3>📊 مجموع مطالبات نسیه: <strong class="tnum">{{ fmt(grand_total) }}</strong> تومان</h3>
+    <p style="color: var(--ink-soft); font-size: 0.85rem; margin-top: 0.3rem;">
+        سن بدهی بر اساس قدیمی‌ترین فاکتور تسویه‌نشده هر مشتری محاسبه می‌شود. مشتریان قدیمی‌تر را زودتر پیگیری کنید.
+    </p>
+</div>
+
+{# ─── Over 90 days (most urgent) ─── #}
+{% macro bucket_table(entries, label, icon, color) %}
+{% if entries %}
+<div class="card">
+    <h3 style="color: {{ color }};">{{ icon }} {{ label }} — {{ entries|length }} مشتری</h3>
+    <table>
+        <thead>
+            <tr><th>👤 مشتری</th><th>📱 تلفن</th><th>💰 بدهی</th><th>🧾 فاکتور</th><th>📅 قدیمی‌ترین</th><th></th></tr>
+        </thead>
+        <tbody>
+        {% for entry in entries %}
+            <tr>
+                <td>{{ entry.customer.full_name }}</td>
+                <td class="tnum">{{ entry.customer.phone }}</td>
+                <td class="tnum"><strong>{{ fmt(entry.debt) }}</strong> ت</td>
+                <td class="tnum">{{ entry.invoice_count }}</td>
+                <td class="tnum">{{ jalali_str(entry.oldest_date, with_time=False) }}</td>
+                <td><a href="/admin/credit/{{ entry.customer.id }}" class="btn btn-ghost btn-small">📒 پیگیری</a></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endmacro %}
+
+{{ bucket_table(buckets.over_90, "بیش از ۹۰ روز (بحرانی)", "🔴", "#FF4757") }}
+{{ bucket_table(buckets['61_90'], "۶۱–۹۰ روز", "🟠", "#FF6B35") }}
+{{ bucket_table(buckets['31_60'], "۳۱–۶۰ روز", "🟡", "#FFA500") }}
+{{ bucket_table(buckets.current, "جاری (≤ ۳۰ روز)", "🟢", "#2ECC71") }}
+
+{% if grand_total == 0 %}
+<div class="card" style="text-align: center; padding: 2rem;">
+    <div style="font-size: 3rem; margin-bottom: 0.5rem;">✅</div>
+    <p style="font-size: 1.1rem;">هیچ مطالبات معوقی وجود ندارد — همه نسیه‌ها تسویه شده‌اند.</p>
+</div>
+{% endif %}
+
+<nav class="admin-nav">
+    <a href="/admin/credit" class="btn btn-primary">📒 حساب نسیه</a>
+    <a href="/admin/accounting" class="btn btn-ghost">🧮 سود و زیان</a>
+    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
+</nav>
+{% endblock %}

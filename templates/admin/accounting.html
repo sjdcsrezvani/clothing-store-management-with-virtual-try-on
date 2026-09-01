@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}🧮 سود و زیان — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1rem; flex-wrap: wrap;">
+    <span style="font-size: 2rem;">🧮</span>
+    <h2 style="margin: 0;">سود و زیان</h2>
+    <div style="margin-right: auto; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+        <a href="/admin/accounting/export?kind=sales" class="btn btn-sm btn-ghost">📄 خروجی فروش</a>
+        <a href="/admin/accounting/export?kind=customers" class="btn btn-sm btn-ghost">📄 خروجی مشتریان</a>
+        <a href="/admin/accounting/export?kind=purchases" class="btn btn-sm btn-ghost">📄 خروجی خریدها</a>
+        <a href="/admin/accounting/export?kind=expenses" class="btn btn-sm btn-ghost">📄 خروجی هزینه‌ها</a>
+    </div>
+</div>
+
+{# ─── Period filter ─── #}
+<div class="card" style="margin-bottom: 1rem;">
+    <form method="get" action="/admin/accounting" class="filter-bar" style="margin: 0;">
+        <select name="period" style="padding: 0.5rem 0.7rem; border: 2px solid #E8DDD5; border-radius: 8px; font-family: inherit;">
+            <option value="today" {% if period == 'today' %}selected{% endif %}>📅 امروز</option>
+            <option value="week" {% if period == 'week' %}selected{% endif %}>🗓️ این هفته</option>
+            <option value="month" {% if period == 'month' %}selected{% endif %}>📆 این ماه</option>
+            <option value="year" {% if period == 'year' %}selected{% endif %}>📅 امسال</option>
+            <option value="all" {% if period == 'all' %}selected{% endif %}>🌐 همه</option>
+            <option value="custom" {% if period == 'custom' %}selected{% endif %}>✏️ دلخواه</option>
+        </select>
+        <input type="text" name="start_date" class="persian-date-input" placeholder="از: ۱۴۰۵/۰۱/۰۱" value="{{ start_date }}">
+        <input type="text" name="end_date" class="persian-date-input" placeholder="تا: ۱۴۰۵/۰۶/۳۱" value="{{ end_date }}">
+        <button type="submit" class="btn btn-primary">🔍 نمایش</button>
+    </form>
+</div>
+
+{# ─── Net P&L ─── #}
+<div class="stats-grid">
+    <div class="stat-card accent-pine">
+        <div class="stat-label">💰 درآمد فروش</div>
+        <div class="stat-value tnum">{{ fmt(pl.revenue) }} ت</div>
+        <div class="stat-sub">{{ pl.invoice_count }} فاکتور</div>
+    </div>
+    <div class="stat-card accent-persimmon">
+        <div class="stat-label">📦 بهای تمام‌شده کالا</div>
+        <div class="stat-value tnum">{{ fmt(pl.cogs) }} ت</div>
+        <div class="stat-sub">سود ناخالص: {{ fmt(pl.gross) }} ت ({{ pl.gross_margin }}٪)</div>
+    </div>
+    <div class="stat-card accent-saffron">
+        <div class="stat-label">💸 هزینه‌ها</div>
+        <div class="stat-value tnum">{{ fmt(pl.expenses) }} ت</div>
+        <div class="stat-sub">{{ pl.expense_cats|length }} دسته هزینه</div>
+    </div>
+    <div class="stat-card {% if pl.net >= 0 %}accent-candy{% else %}accent-ink{% endif %}">
+        <div class="stat-label">🧮 سود خالص</div>
+        <div class="stat-value tnum {% if pl.net < 0 %}">−{% endif %}{{ fmt(pl.net|abs) }} ت</div>
+        <div class="stat-sub">حاشیه: {{ pl.net_margin }}٪</div>
+    </div>
+</div>
+
+{# ─── Expenses breakdown ─── #}
+<div class="card">
+    <h3>💸 هزینه‌ها بر اساس دسته</h3>
+    {% if pl.expense_cats %}
+    <table>
+        <thead><tr><th>دسته</th><th>مبلغ</th><th>سهم</th></tr></thead>
+        <tbody>
+            {% for row in pl.expense_cats %}
+            <tr>
+                <td>{{ row.category }}</td>
+                <td class="tnum">{{ fmt(row.amount) }} تومان</td>
+                <td>
+                    <div style="background:#f0e8e0; border-radius:999px; height:10px; width:100%; max-width:200px;">
+                        <div style="background:var(--persimmon); height:10px; border-radius:999px; width:{{ (row.amount / pl.expenses * 100) if pl.expenses else 0 }}%;"></div>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}<p style="color: var(--ink-soft);">هزینه‌ای در این بازه ثبت نشده است.</p>{% endif %}
+</div>
+
+{# ─── Debt & cash summary ─── #}
+<div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
+    <div class="stat-card" style="text-align:center;">
+        <div class="stat-label">📒 بدهی نسیه مشتریان</div>
+        <div class="stat-value tnum" style="color: var(--persimmon);">{{ fmt(debts.total_debt) }} ت</div>
+        <div class="stat-sub"><a href="/admin/credit">مدیریت نسیه ←</a></div>
+    </div>
+    <div class="stat-card" style="text-align:center;">
+        <div class="stat-label">📦 مجموع خرید از عمده‌فروش</div>
+        <div class="stat-value tnum">{{ fmt(debts.total_purchases) }} ت</div>
+        <div class="stat-sub"><a href="/admin/purchases">ثبت خرید ←</a></div>
+    </div>
+    <div class="stat-card" style="text-align:center;">
+        <div class="stat-label">🧾 صندوق (این بازه)</div>
+        <div class="stat-value tnum">{{ fmt(cashbox.closing) }} ت</div>
+        <div class="stat-sub"><a href="/admin/cashbox">جزئیات صندوق ←</a></div>
+    </div>
+</div>
+
+<nav class="admin-nav">
+    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
+</nav>
+{% endblock %}

@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}💸 هزینه‌ها — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
+    <span style="font-size: 2rem;">💸</span>
+    <h2 style="margin: 0;">هزینه‌های فروشگاه</h2>
+    <div class="stat-card" style="padding: 0.5rem 1rem; margin-right: auto;">
+        <span style="color: var(--ink-soft);">مجموع هزینه‌ها:</span>
+        <strong class="tnum" style="color: var(--persimmon);">{{ fmt(total) }} تومان</strong>
+    </div>
+</div>
+
+{% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
+{% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
+
+<div class="card">
+    <h3>➕ ثبت هزینه</h3>
+    <form method="post" action="/admin/expenses/add" class="filter-bar" style="margin: 0;">
+        <input type="number" name="amount" min="1" placeholder="💰 مبلغ (تومان) *" required style="flex:1;">
+        <input type="text" name="category" list="expense-cats" placeholder="🗂️ دسته (مثلاً: اجاره)" style="flex:1;">
+        <datalist id="expense-cats">
+            <option value="اجاره"><option value="برق و آب"><option value="اینترنت و تلفن">
+            <option value="حقوق"><option value="تعمیرات"><option value="بسته‌بندی">
+            <option value="حمل و نقل"><option value="متفرقه">
+        </datalist>
+        <input type="text" name="note" placeholder="📝 توضیح" style="flex:2;">
+        <button type="submit" class="btn btn-primary">💾 ثبت</button>
+    </form>
+</div>
+
+<div class="card">
+    {% if expenses %}
+    <table>
+        <thead>
+            <tr>
+                <th>تاریخ</th>
+                <th>دسته</th>
+                <th>مبلغ</th>
+                <th>توضیح</th>
+                <th>🔧</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for e in expenses %}
+            <tr>
+                <td class="tnum">{{ jalali_str(e.created_at) }}</td>
+                <td>{{ e.category or '—' }}</td>
+                <td class="tnum"><strong>{{ fmt(e.amount) }} ت</strong></td>
+                <td>{{ e.note or '—' }}</td>
+                <td>
+                    <form method="post" action="/admin/expenses/{{ e.id }}/delete" style="display:inline;"
+                          onsubmit="return confirm('⚠️ حذف این هزینه؟')">
+                        <button type="submit" class="btn btn-sm btn-danger">🗑️</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}<p style="color: var(--ink-soft); text-align: center; padding: 1.5rem;">هزینه‌ای ثبت نشده است.</p>{% endif %}
+</div>
+
+<nav class="admin-nav">
+    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
+    <a href="/admin/accounting" class="btn btn-ghost">🧮 سود و زیان</a>
+</nav>
+{% endblock %}
