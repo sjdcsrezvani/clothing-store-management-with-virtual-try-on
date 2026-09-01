@@ -1,3 +1,8 @@
+## 1.1.11
+
+- Unified dashboard totals with canonical financial reporting.
+- Corrected period-scoped refunds and inventory reconciliation details.
+
 # Changelog
 
 ## v1.1.10 — 2026-09-01

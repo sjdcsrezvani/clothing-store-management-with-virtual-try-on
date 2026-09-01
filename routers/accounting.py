@@ -57,7 +57,17 @@ async def admin_accounting(
     start, end = get_date_range(period, start_date or None, end_date or None)
     report = canonical_report(db, start, end)
     checks = reconciliation_checks(db, start, end)
-    pl = get_net_pl(db, start, end)
+    pl = {
+        "revenue": report["net_sales"],
+        "cogs": report["cogs"],
+        "gross": report["gross_profit"],
+        "gross_margin": report["gross_margin"],
+        "expenses": report["operating_expenses"],
+        "net": report["net_profit"],
+        "net_margin": round(report["net_profit"] / report["net_sales"] * 100, 1) if report["net_sales"] else 0,
+        "invoice_count": report["sale_count"],
+        "expense_cats": [],
+    }
     debts = debt_totals(db)
     cashbox = get_cashbox(db, start, end, get_opening_balance(db))
 

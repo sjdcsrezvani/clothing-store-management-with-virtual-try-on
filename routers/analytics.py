@@ -40,7 +40,14 @@ async def admin_analytics(
     # Gather all analytics data
     report = canonical_report(db, start, end)
     reconciliation = reconciliation_checks(db, start, end)
-    summary = get_revenue_summary(db, start, end)
+    summary = {
+        "total_revenue": report["net_sales"],
+        "gross_profit": report["gross_profit"],
+        "margin": report["gross_margin"],
+        "invoice_count": report["sale_count"],
+        "aov": round(report["net_sales"] / report["sale_count"]) if report["sale_count"] else 0,
+        "new_customers": 0,
+    }
     daily = get_daily_revenue(db, start, end)
     categories = get_revenue_by_category(db, start, end)
     top_products_rev = get_top_products(db, start, end, 10, "revenue")
