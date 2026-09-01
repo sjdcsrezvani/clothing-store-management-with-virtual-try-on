@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}📒 نسیه {{ customer.full_name }} — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
+    <span style="font-size: 2rem;">📒</span>
+    <h2 style="margin: 0;">نسیه {{ customer.full_name }}</h2>
+    <div style="margin-right: auto;">
+        <span style="color: var(--ink-soft);">بدهی فعلی:</span>
+        <strong class="tnum" style="color: var(--persimmon); font-size: 1.3rem;">{{ fmt(debt) }} تومان</strong>
+    </div>
+</div>
+
+{% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
+{% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
+
+<div class="card" style="margin-bottom: 1rem;">
+    <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+        <div>
+            <strong>🛡️ سقف اعتبار:</strong>
+            {% if credit_limit > 0 %}<span class="tnum">{{ fmt(credit_limit) }} تومان</span>
+            {% else %}<span>بدون محدودیت</span>{% endif %}
+            {% if custom_limit %}<small class="tnum" style="color: var(--ink-soft);">(سقف اختصاصی)</small>{% endif %}
+            {% if debt > credit_limit and credit_limit > 0 %}
+            <span style="color: var(--persimmon); font-weight: 700;">⚠️ بدهی بیشتر از سقف است — فروش نسیه جدید مسدود است.</span>
+            {% endif %}
+        </div>
+        <form method="post" action="/admin/credit/{{ customer.id }}/limit" style="display:flex; gap:0.4rem; align-items:center; margin-right:auto; flex-wrap:wrap;">
+            <label style="font-size:0.85rem; color: var(--ink-soft);">سقف اختصاصی (تومان، ۰ = پیش‌فرض فروشگاه):</label>
+            <input type="number" name="credit_limit" min="0" value="{{ custom_limit or '' }}" placeholder="پیش‌فرض" class="tnum" style="width: 130px; padding:0.4rem 0.6rem; border:2px solid #E8DDD5; border-radius:8px; font-family:inherit;">
+            <button type="submit" class="btn btn-sm btn-ghost">💾 ذخیره</button>
+        </form>
+    </div>
+</div>
+
+<div class="checkout-layout">
+    <div class="checkout-left">
+        {# ── Payment form ── #}
+        <div class="card">
+            <h3>💵 ثبت دریافت</h3>
+            <form method="post" action="/admin/credit/pay">
+                <input type="hidden" name="customer_id" value="{{ customer.id }}">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>💰 مبلغ (تومان)</label>
+                        <input type="number" name="amount" min="1" max="{{ debt }}" value="{{ debt }}" required class="tnum">
+                        <small>حداکثر بدهی: {{ fmt(debt) }} تومان</small>
+                    </div>
+                    <div class="form-group">
+                        <label>💳 روش</label>
+                        <select name="method" style="padding:0.6rem 0.8rem; border:2px solid #E8DDD5; border-radius:8px; font-family:inherit; width:100%;">
+                            <option value="cash">💵 نقد</option>
+                            <option value="card">💳 کارت</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>📝 توضیح (اختیاری)</label>
+                    <input type="text" name="note" placeholder="مثلاً: قسط اول">
+                </div>
+                <button type="submit" class="btn btn-success btn-large btn-block">💵 ثبت دریافت</button>
+            </form>
+        </div>
+
+        {# ── Unpaid invoices ── #}
+        <div class="card">
+            <h3>🧾 فاکتورهای نسیه باز</h3>
+            {% if unpaid_sales %}
+            <table>
+                <thead><tr><th>شماره</th><th>تاریخ</th><th>مبلغ</th><th>پرداخت‌شده</th><th>باقی‌مانده</th></tr></thead>
+                <tbody>
+                    {% for sale in unpaid_sales %}
+                    <tr>
+                        <td><a href="/sales/invoice/{{ sale.id }}">#{{ sale.id }}</a></td>
+                        <td class="tnum">{{ jalali_str(sale.created_at, false) }}</td>
+                        <td class="tnum">{{ fmt(sale.final_amount) }}</td>
+                        <td class="tnum">{{ fmt(sale.credit_paid_amount or 0) }}</td>
+                        <td class="tnum"><strong style="color: var(--persimmon);">{{ fmt(sale.final_amount - (sale.credit_paid_amount or 0)) }}</strong></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}<p style="color: var(--ink-soft);">فاکتور نسیه بازی وجود ندارد.</p>{% endif %}
+        </div>
+    </div>
+
+    <div class="checkout-right">
+        {# ── Payment history ── #}
+        <div class="card">
+            <h3>📜 تاریخچه دریافت‌ها</h3>
+            {% if payments %}
+            <table>
+                <thead><tr><th>تاریخ</th><th>مبلغ</th><th>روش</th><th>توضیح</th><th>🔧</th></tr></thead>
+                <tbody>
+                    {% for p in payments %}
+                    <tr>
+                        <td class="tnum">{{ jalali_str(p.created_at, false) }}</td>
+                        <td class="tnum">{{ fmt(p.amount) }}</td>
+                        <td>{% if p.method == 'card' %}💳{% else %}💵{% endif %}</td>
+                        <td>{{ p.note or '—' }}</td>
+                        <td>
+                            <form method="post" action="/admin/payments/{{ p.id }}/reverse"
+                                  onsubmit="return confirm('این دریافت حذف شود؟ بدهی مشتری به‌روز می‌شود.');">
+                                <button type="submit" class="btn btn-ghost" style="padding:0.2rem 0.5rem;" title="حذف دریافت">🗑️</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}<p style="color: var(--ink-soft);">هنوز دریافتی ثبت نشده است.</p>{% endif %}
+        </div>
+    </div>
+</div>
+
+<nav class="admin-nav">
+    <a href="/admin/credit" class="btn btn-ghost">🔙 حساب نسیه</a>
+</nav>
+{% endblock %}

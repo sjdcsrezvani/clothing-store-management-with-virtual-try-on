@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}{% if edit_mode %}✏️ ویرایش {{ product.name }}{% else %}➕ افزودن محصول{% endif %} — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem;">
+    <span style="font-size: 2rem;">{% if edit_mode %}✏️{% else %}➕{% endif %}</span>
+    <h2 style="margin: 0;">{% if edit_mode %}ویرایش محصول: {{ product.name }}{% else %}افزودن محصول جدید{% endif %}</h2>
+</div>
+
+{% if error %}
+<div class="alert alert-error">⚠️ {{ error }}</div>
+{% endif %}
+
+<div class="card">
+    <form id="product-form" method="post"
+          action="{% if edit_mode %}/admin/products/{{ product.id }}{% else %}/admin/products/add{% endif %}"
+          enctype="multipart/form-data">
+
+        <!-- Base Product Info -->
+        <h3 style="margin-bottom: 1rem; color: var(--ink-soft);">اطلاعات اصلی محصول</h3>
+
+        <div class="form-row">
+            <div class="form-group" style="flex: 2;">
+                <label for="name">👕 نام محصول *</label>
+                <input type="text" id="name" name="name" required value="{{ product.name if product else '' }}" placeholder="مثال: پیراهن پسرانه">
+            </div>
+            <div class="form-group">
+                <label for="category">📂 دسته‌بندی</label>
+                <input type="text" id="category" name="category" value="{{ product.category if product else '' }}" placeholder="مثال: پیراهن">
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="brand">🏷️ برند</label>
+                <input type="text" id="brand" name="brand" value="{{ product.brand if product else '' }}" placeholder="مثال: {{ store.name }}">
+            </div>
+            <div class="form-group">
+                <label for="description">📝 توضیحات</label>
+                <textarea id="description" name="description" rows="2" placeholder="توضیحات محصول...">{{ product.description if product else '' }}</textarea>
+            </div>
+        </div>
+
+        <!-- Variants Section -->
+        <h3 style="margin: 2rem 0 1rem; color: var(--ink-soft);">🎨 تنوع محصول (سایز و رنگ)</h3>
+
+        {% if edit_mode and product.variants %}
+        <div style="margin-bottom: 1rem; padding: 1rem; background: var(--paper); border-radius: 8px;">
+            <table style="width: 100%; font-size: 0.9rem;">
+                <thead>
+                    <tr style="text-align: right;">
+                        <th>تصویر</th>
+                        <th>سایز</th>
+                        <th>رنگ</th>
+                        <th>قیمت</th>
+                        <th>موجودی</th>
+                        <th>بارکد</th>
+                        <th>درخواست</th>
+                        <th>عملیات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for variant in product.variants %}
+                    <tr>
+                        <td>
+                            {% if variant.image_path and '/uploads/barcodes/' not in variant.image_path %}
+                                <img src="{{ variant.image_path }}" style="max-width: 48px; max-height: 48px; border-radius: 4px; object-fit: cover;">
+                            {% else %}
+                                <span style="color: var(--ink-light);">—</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ variant.size or '—' }}</td>
+                        <td>{{ variant.color or '—' }}</td>
+                        <td class="tnum">{{ fmt(variant.price) }} ت</td>
+                        <td>
+                            <span class="badge {% if variant.stock_quantity > 0 %}badge-available{% else %}badge-none{% endif %}">
+                                {{ variant.stock_quantity }}
+                            </span>
+                        </td>
+                        <td style="font-family: monospace; direction: ltr;">{{ variant.barcode }}</td>
+                        <td>
+                            <span class="badge {% if variant.stock_quantity == 0 and variant.demand_count > 0 %}badge-none{% else %}badge-available{% endif %}">
+                                {{ variant.demand_count or 0 }}
+                            </span>
+                            <button type="submit" form="product-form" formaction="/admin/variants/{{ variant.id }}/demand" formmethod="post" formnovalidate class="btn btn-sm btn-ghost" title="یک مشتری این سایز/رنگ را خواست">➕</button>
+                            {% if variant.demand_count > 0 %}
+                            <button type="submit" form="product-form" formaction="/admin/variants/{{ variant.id }}/demand/reset" formmethod="post" formnovalidate onclick="return confirm('📈 شمارنده درخواست این تنوع صفر شود؟')" class="btn btn-sm btn-danger" title="پس از تأمین، صفر کن">🔄</button>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="/admin/variants/{{ variant.id }}/edit" class="btn btn-sm btn-ghost">✏️</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        <!-- Dynamic Variants Container -->
+        <div id="variants-container"></div>
+
+        <button type="button" class="btn btn-ghost" onclick="addVariant()" style="margin: 1rem 0;">
+            ➕ افزودن تنوع جدید
+        </button>
+
+        <div style="display: flex; gap: 0.5rem; margin-top: 1.5rem;">
+            <button type="submit" class="btn btn-primary btn-large">
+                {% if edit_mode %}💾 ذخیره تغییرات{% else %}➕ افزودن محصول{% endif %}
+            </button>
+            <a href="/admin/products" class="btn btn-ghost">🔙 لغو</a>
+        </div>
+    </form>
+</div>
+
+<nav class="admin-nav">
+    <a href="/admin/products" class="btn btn-ghost">🔙 بازگشت به لیست محصولات</a>
+</nav>
+
+<script>
+let variantIndex = 0;
+
+function addVariant() {
+    const container = document.getElementById('variants-container');
+    const html = `
+        <div class="variant-block" style="padding: 1rem; border: 2px dashed var(--ink-light); border-radius: 8px; margin-bottom: 0.5rem; position: relative;">
+            <button type="button" onclick="this.parentElement.remove()" style="position: absolute; top: 0.5rem; left: 0.5rem; background: none; border: none; cursor: pointer; font-size: 1.2rem; color: var(--danger);">✕</button>
+            <h4 style="margin: 0 0 1rem; padding-right: 1.5rem;">تنوع جدید</h4>
+            <div class="form-row" style="grid-template-columns: 1fr 1fr 1fr;">
+                <div class="form-group">
+                    <label>📏 سایز</label>
+                    <input type="text" name="variant_size_${variantIndex}" placeholder="مثال: 3-4 سال">
+                </div>
+                <div class="form-group">
+                    <label>🎨 رنگ</label>
+                    <input type="text" name="variant_color_${variantIndex}" placeholder="مثال: آبی">
+                </div>
+                <div class="form-group">
+                    <label>💰 قیمت فروش (تومان) *</label>
+                    <input type="number" name="variant_price_${variantIndex}" required min="0" placeholder="مثال: 250000">
+                </div>
+            </div>
+            <div class="form-row" style="grid-template-columns: 1fr 1fr 1fr;">
+                <div class="form-group">
+                    <label>💵 قیمت خرید (تومان)</label>
+                    <input type="number" name="variant_cost_price_${variantIndex}" min="0" placeholder="مثال: 150000">
+                </div>
+                <div class="form-group">
+                    <label>📦 موجودی</label>
+                    <input type="number" name="variant_stock_${variantIndex}" min="0" value="0" placeholder="مثال: 10">
+                </div>
+                <div class="form-group">
+                    <label>🔲 بارکد</label>
+                    <input type="text" name="variant_barcode_${variantIndex}" placeholder="خالی = تولید خودکار">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>🏷️ کد انبارداری (SKU)</label>
+                <input type="text" name="variant_sku_${variantIndex}" placeholder="اختیاری">
+            </div>
+            <div class="form-group">
+                <label>🖼️ تصویر تنوع</label>
+                <input type="file" name="variant_image_${variantIndex}" accept="image/*" style="padding: 0.3rem;">
+            </div>
+            <input type="hidden" name="variant_index_${variantIndex}" value="${variantIndex}">
+        </div>
+    `;
+    container.insertAdjacentHTML('beforeend', html);
+    variantIndex++;
+}
+
+// Add one variant by default if none exist
+{% if not edit_mode or not product.variants %}
+document.addEventListener('DOMContentLoaded', function() {
+    addVariant();
+});
+{% endif %}
+</script>
+{% endblock %}

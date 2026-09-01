@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}🧾 تاریخچه فروش — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem;">
+    <span style="font-size: 2rem;">🧾</span>
+    <h2 style="margin: 0;">تاریخچه فروش</h2>
+</div>
+
+<div class="filter-bar">
+    <form method="get" action="/sales" class="search-form">
+        <input type="text" name="search" placeholder="🔍 جستجو بر اساس نام یا تلفن مشتری" value="{{ search }}">
+        <button type="submit" class="btn btn-primary">🔍 جستجو</button>
+    </form>
+</div>
+
+<div class="card">
+    {% if sales %}
+    <table>
+        <thead>
+            <tr>
+                <th>📄 شماره</th>
+                <th>👤 مشتری</th>
+                <th>🕐 تاریخ</th>
+                <th>📦 جمع کل</th>
+                <th>🏷️ تخفیف</th>
+                <th>💰 مبلغ نهایی</th>
+                <th>🌟 امتیاز</th>
+                <th>💳 پرداخت</th>
+                <th>🔧</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for sale in sales %}
+            <tr>
+                <td><strong>#{{ sale.id }}</strong></td>
+                <td>
+                    {% if sale.customer %}
+                        {{ sale.customer.full_name }}<br>
+                        <small style="color: var(--ink-soft);" class="tnum">{{ sale.customer.phone }}</small>
+                    {% else %}
+                        <span style="color: var(--ink-soft);">مشتری ناشناس</span>
+                    {% endif %}
+                </td>
+                <td class="tnum">{{ jalali_str(sale.created_at) }}</td>
+                <td class="tnum">{{ fmt(sale.total_amount) }}</td>
+                <td class="tnum">
+                    {% if sale.discount_amount > 0 %}
+                        <span style="color: var(--mint-dark);">−{{ fmt(sale.discount_amount) }}</span>
+                    {% else %}—{% endif %}
+                </td>
+                <td class="tnum"><strong>{{ fmt(sale.final_amount) }}</strong></td>
+                <td class="tnum">{{ sale.points_earned or '—' }}</td>
+                <td>
+                    {% if sale.payment_method == 'card' %}💳
+                    {% elif sale.payment_method == 'credit' %}📒<small>نسیه</small>
+                    {% else %}💵{% endif %}
+                </td>
+                <td>
+                    <a href="/sales/invoice/{{ sale.id }}" class="btn btn-sm btn-ghost">🧾 فاکتور</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div style="text-align: center; padding: 2rem; color: var(--ink-soft);">
+        <div style="font-size: 3rem; margin-bottom: 0.5rem;">🧾</div>
+        <p>فروشی ثبت نشده است.</p>
+    </div>
+    {% endif %}
+    {% if total_pages > 1 %}
+    <div style="display: flex; align-items: center; justify-content: center; gap: 1rem; padding: 1rem;">
+        {% if page > 1 %}
+        <a class="btn btn-sm btn-ghost" href="/sales?page={{ page - 1 }}&search={{ search }}">→ صفحه قبل</a>
+        {% endif %}
+        <span style="color: var(--ink-soft);">صفحه {{ page }} از {{ total_pages }}</span>
+        {% if page < total_pages %}
+        <a class="btn btn-sm btn-ghost" href="/sales?page={{ page + 1 }}&search={{ search }}">صفحه بعد ←</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<nav class="admin-nav">
+    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
+    <a href="/sales/new" class="btn btn-primary">🛒 فروش جدید</a>
+</nav>
+{% endblock %}

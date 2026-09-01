@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}🧾 فاکتور فروش — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div class="alert alert-success" style="font-size: 1.05rem; text-align: center; justify-content: center;">
+    🎉 فروش با موفقیت ثبت شد!
+    {% if points_earned %}&nbsp;🌟 امتیاز کسب‌شده: <strong>{{ points_earned }}</strong>{% endif %}
+</div>
+
+<div class="invoice">
+    <div class="invoice-header">
+        <h2>🧸 {{ store.name }}</h2>
+        <div class="invoice-meta">
+            <span>📄 شماره: {{ sale.id }}</span>
+            <span>🕐 {{ jalali_str(sale.created_at) }}</span>
+        </div>
+    </div>
+
+    {% if customer %}
+    <div class="invoice-customer">
+        <p><span class="label">👤 مشتری</span><span>{{ customer.full_name }}</span></p>
+        <p><span class="label">📱 تلفن</span><span class="tnum">{{ customer.phone }}</span></p>
+        <p>
+            <span class="label">🏷️ سطح</span>
+            <span>
+                <span class="tier-badge tier-{{ customer.tier }}">
+                    {% if customer.tier == 'diamond' %}💎 الماس
+                    {% elif customer.tier == 'gold' %}⭐ طلایی
+                    {% else %}🥈 نقره‌ای{% endif %}
+                </span>
+            </span>
+        </p>
+    </div>
+    {% endif %}
+
+    <div class="invoice-items">
+        {% for item in items %}
+        <div class="invoice-item">
+            <span class="name">
+                {{ item.variant.display_name if item.variant else (item.product.name if item.product else '—') }}
+            </span>
+            <span class="qty tnum">{{ item.quantity }}×</span>
+            <span class="price tnum">{{ fmt(item.total_price) }}</span>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="invoice-summary">
+        <div class="summary-row"><span>📦 جمع کل</span><span class="tnum">{{ fmt(sale.total_amount) }} تومان</span></div>
+        {% if sale.discount_amount > 0 %}
+        <div class="summary-row discount"><span>🏷️ تخفیف</span><span class="tnum">−{{ fmt(sale.discount_amount) }} تومان</span></div>
+        {% if discounts and discounts.details %}
+        <div style="padding: 0.3rem 0.5rem; font-size: 0.8rem; background: #FFFAF5; border-radius: 6px; margin: 0.3rem 0;">
+            {% for detail in discounts.details %}<div>· {{ detail }}</div>{% endfor %}
+        </div>
+        {% endif %}
+        {% endif %}
+        <div class="summary-row total"><span>💰 مبلغ قابل پرداخت</span><span class="tnum">{{ fmt(sale.final_amount) }} تومان</span></div>
+        <div class="summary-row"><span>💳 روش پرداخت</span><span>
+            {% if sale.payment_method == 'card' %}💳 کارت
+            {% elif sale.payment_method == 'credit' %}📒 نسیه
+            {% else %}💵 نقد{% endif %}
+        </span></div>
+        {% if sale.payment_method == 'credit' and customer %}
+        <div class="summary-row" style="color: var(--persimmon); font-weight: 700;">
+            <span>📒 بدهی نسیه این فاکتور</span>
+            <span class="tnum">{{ fmt(sale.final_amount - sale.credit_paid_amount) }} تومان</span>
+        </div>
+        {% endif %}
+        {% if sale.points_earned %}
+        <div class="summary-row" style="color: var(--candy); font-weight: 700;">
+            <span>🌟 امتیاز کسب‌شده</span><span class="tnum">{{ sale.points_earned }}</span>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="invoice-actions">
+    {% if sale.is_refunded %}
+    <div class="alert alert-error" style="flex: 1; text-align: right;">
+        ⛔ این فاکتور ابطال شده است.
+        {% if sale.refund_reason %}<br>📝 دلیل: {{ sale.refund_reason }}{% endif %}
+        {% if sale.refund_date %}<br>🕐 تاریخ ابطال: {{ jalali_str(sale.refund_date) }}{% endif %}
+    </div>
+    {% else %}
+        {% if invoice_path %}
+        <a href="{{ invoice_path }}" target="_blank" class="btn btn-ghost">📄 دانلود PDF</a>
+        {% endif %}
+        <button onclick="window.print()" class="btn btn-primary">🖨️ چاپ فاکتور</button>
+        <form method="post" action="/sales/{{ sale.id }}/refund"
+              onsubmit="return confirm('⚠️ آیا مطمئن هستید؟ این فاکتور ابطال می‌شود و موجودی بازمی‌گردد.')"
+              style="display: flex; gap: 0.4rem; align-items: center;">
+            <input type="text" name="refund_reason" placeholder="📝 دلیل ابطال"
+                   style="padding: 0.5rem 0.7rem; border: 2px solid #E8DDD5; border-radius: 8px; max-width: 180px; font-family: inherit;">
+            <button type="submit" class="btn btn-danger">⛔ ابطال فاکتور</button>
+        </form>
+    {% endif %}
+    <a href="/sales/new" class="btn btn-success">🛒 فروش جدید</a>
+    <a href="/admin" class="btn btn-ghost">📊 داشبورد</a>
+</div>
+{% endblock %}

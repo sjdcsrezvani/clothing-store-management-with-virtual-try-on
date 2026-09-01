@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}🏭 تأمین‌کنندگان — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem;">
+    <span style="font-size: 2rem;">🏭</span>
+    <h2 style="margin: 0;">تأمین‌کنندگان</h2>
+</div>
+
+{% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
+{% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
+
+<div class="card">
+    <h3>➕ افزودن تأمین‌کننده</h3>
+    <form method="post" action="/admin/suppliers/add" class="filter-bar" style="margin: 0;">
+        <input type="text" name="name" placeholder="نام تأمین‌کننده / عمده‌فروش *" required style="flex:2;">
+        <input type="tel" name="phone" placeholder="📱 تلفن" style="flex:1;">
+        <input type="text" name="note" placeholder="📝 توضیح" style="flex:2;">
+        <button type="submit" class="btn btn-primary">➕ افزودن</button>
+    </form>
+</div>
+
+<div class="card">
+    {% if suppliers %}
+    <table>
+        <thead>
+            <tr>
+                <th>🏭 نام</th>
+                <th>📱 تلفن</th>
+                <th>📝 توضیح</th>
+                <th>📦 مجموع خرید</th>
+                <th>💳 پرداخت‌شده</th>
+                <th>📒 بدهی</th>
+                <th>💳 ثبت پرداخت</th>
+                <th>🔧</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in suppliers %}
+            <tr>
+                <td><strong>{{ s.name }}</strong></td>
+                <td class="tnum">{{ s.phone or '—' }}</td>
+                <td>{{ s.note or '—' }}</td>
+                <td class="tnum">{{ fmt(total_by_supplier.get(s.id, 0)) }} تومان</td>
+                <td class="tnum">{{ fmt(balances.get(s.id, {}).get('paid', 0)) }} تومان</td>
+                <td class="tnum"><strong>{{ fmt(balances.get(s.id, {}).get('owed', 0)) }} تومان</strong></td>
+                <td>
+                    <form method="post" action="/admin/suppliers/{{ s.id }}/payment" style="display:flex; gap:.25rem;">
+                        <input type="number" name="amount" min="1" required placeholder="مبلغ" style="width:100px;">
+                        <button type="submit" class="btn btn-sm btn-primary">ثبت</button>
+                    </form>
+                </td>
+                <td>
+                    <form method="post" action="/admin/suppliers/{{ s.id }}/delete" style="display:inline;"
+                          onsubmit="return confirm('⚠️ حذف {{ s.name }}؟ خریدهای ثبت‌شده باقی می‌مانند.')">
+                        <button type="submit" class="btn btn-sm btn-danger">🗑️</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="text-align: center; color: var(--ink-soft); padding: 2rem;">هنوز تأمین‌کننده‌ای ثبت نشده است.</p>
+    {% endif %}
+</div>
+
+<nav class="admin-nav">
+    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
+    <a href="/admin/purchases" class="btn btn-primary">📦 ثبت خرید جدید</a>
+</nav>
+{% endblock %}

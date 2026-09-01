@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}🧾 صندوق — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1rem; flex-wrap: wrap;">
+    <span style="font-size: 2rem;">🧾</span>
+    <h2 style="margin: 0;">صندوق</h2>
+</div>
+
+{% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
+{% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
+
+{# ─── Period filter ─── #}
+<div class="card" style="margin-bottom: 1rem;">
+    <form method="get" action="/admin/cashbox" class="filter-bar" style="margin: 0;">
+        <select name="period" style="padding: 0.5rem 0.7rem; border: 2px solid #E8DDD5; border-radius: 8px; font-family: inherit;">
+            <option value="today" {% if period == 'today' %}selected{% endif %}>📅 امروز</option>
+            <option value="week" {% if period == 'week' %}selected{% endif %}>🗓️ این هفته</option>
+            <option value="month" {% if period == 'month' %}selected{% endif %}>📆 این ماه</option>
+            <option value="all" {% if period == 'all' %}selected{% endif %}>🌐 همه</option>
+        </select>
+        <button type="submit" class="btn btn-primary">🔍 نمایش</button>
+    </form>
+</div>
+
+{# ─── Opening balance ─── #}
+<div class="card" style="margin-bottom: 1rem;">
+    {% if active_session %}
+    <div class="alert alert-success">صندوق باز است؛ کاربر #{{ active_session.cashier_user_id }} • موجودی آغازین {{ fmt(active_session.opening_balance) }} ت</div>
+    <form method="post" action="/admin/cashbox/close" class="filter-bar" style="margin: 0;">
+        <label for="counted" style="font-weight: 600;">💵 موجودی شمارش‌شده:</label>
+        <input type="number" id="counted" name="counted" min="0" required style="max-width: 200px;">
+        <button type="submit" class="btn btn-primary">🔒 بستن صندوق</button>
+    </form>
+    {% else %}
+    <form method="post" action="/admin/cashbox/open" class="filter-bar" style="margin: 0;">
+        <label for="opening" style="font-weight: 600;">💰 موجودی ابتدای روز:</label>
+        <input type="number" id="opening" name="opening" min="0" value="{{ register.opening }}" required style="max-width: 200px;">
+        <button type="submit" class="btn btn-primary">🔓 باز کردن صندوق</button>
+    </form>
+    {% endif %}
+    <form method="post" action="/admin/cashbox/opening" class="filter-bar" style="margin-top: .75rem;">
+        <label for="opening" style="font-weight: 600;">💰 موجودی ابتدای روز (در صندوق):</label>
+        <input type="number" id="opening" name="opening" min="0" value="{{ register.opening }}" style="max-width: 200px;">
+        <button type="submit" class="btn btn-ghost">💾 ذخیره</button>
+    </form>
+</div>
+
+{# ─── Register ─── #}
+<div class="stats-grid">
+    <div class="stat-card accent-pine">
+        <div class="stat-label">📥 ورودی‌ها</div>
+        <div class="stat-value tnum">{{ fmt(register.cash_in) }} ت</div>
+        <div class="stat-sub">فروش نقدی: {{ fmt(register.cash_sales) }} ت</div>
+        <div class="stat-sub">دریافت نسیه: {{ fmt(register.credit_payments) }} ت</div>
+    </div>
+    <div class="stat-card accent-persimmon">
+        <div class="stat-label">📤 خروجی‌ها</div>
+        <div class="stat-value tnum">{{ fmt(register.cash_out) }} ت</div>
+        <div class="stat-sub">استرداد: {{ fmt(register.refunds) }} ت</div>
+        <div class="stat-sub">هزینه‌ها: {{ fmt(register.expenses) }} ت • خرید: {{ fmt(register.purchases) }} ت</div>
+        <div class="stat-sub">پرداخت تأمین‌کننده: {{ fmt(register.supplier_payments) }} ت</div>
+    </div>
+    <div class="stat-card {% if register.closing >= 0 %}accent-candy{% else %}accent-ink{% endif %}">
+        <div class="stat-label">🧾 موجودی پایان دوره</div>
+        <div class="stat-value tnum">{{ fmt(register.closing) }} ت</div>
+        <div class="stat-sub">شروع: {{ fmt(register.opening) }} ت</div>
+    </div>
+</div>
+
+<nav class="admin-nav">
+    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
+    <a href="/admin/accounting" class="btn btn-ghost">🧮 سود و زیان</a>
+</nav>
+{% endblock %}

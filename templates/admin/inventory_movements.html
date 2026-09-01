@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}📚 دفتر انبار — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div class="page-heading">
+    <div>
+        <span class="eyebrow">ردیابی موجودی</span>
+        <h2>📚 دفتر انبار</h2>
+        <p>هر تغییر موجودی به‌صورت غیرقابل‌حذف ثبت می‌شود؛ این صفحه برای حسابرسی و بررسی اختلاف‌هاست.</p>
+    </div>
+    <a href="/admin/products" class="btn btn-ghost">📦 محصولات</a>
+</div>
+
+<div class="card">
+    {% if movements %}
+    <div class="table-scroll">
+    <table>
+        <thead>
+            <tr>
+                <th>شناسه</th>
+                <th>زمان</th>
+                <th>محصول / تنوع</th>
+                <th>نوع حرکت</th>
+                <th>تغییر موجودی</th>
+                <th>بهای واحد</th>
+                <th>مرجع</th>
+                <th>توضیح</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for movement in movements %}
+            <tr>
+                <td class="tnum">#{{ movement.id }}</td>
+                <td class="tnum">{{ jalali_str(movement.created_at) }}</td>
+                <td>{{ movement.variant.display_name if movement.variant else '—' }}</td>
+                <td>
+                    {% if movement.movement_type == 'opening_stock' %}📥 موجودی اولیه
+                    {% elif movement.movement_type == 'purchase' %}📦 خرید
+                    {% elif movement.movement_type == 'purchase_reversal' %}↩️ برگشت خرید
+                    {% elif movement.movement_type == 'sale' %}🛒 فروش
+                    {% elif movement.movement_type == 'sale_refund' %}↩️ برگشت فروش
+                    {% elif movement.movement_type == 'adjustment' %}🛠️ اصلاح دستی
+                    {% elif movement.movement_type == 'cost_adjustment' %}💵 اصلاح بها
+                    {% else %}{{ movement.movement_type }}{% endif %}
+                </td>
+                <td class="tnum" style="color: {% if movement.quantity_delta < 0 %}var(--persimmon){% else %}var(--mint-dark){% endif %}; font-weight:700;">
+                    {% if movement.quantity_delta > 0 %}+{% endif %}{{ movement.quantity_delta }}
+                </td>
+                <td class="tnum">{{ fmt(movement.unit_cost) if movement.unit_cost is not none else '—' }}</td>
+                <td class="tnum">
+                    {% if movement.purchase_id %}خرید #{{ movement.purchase_id }}{% endif %}
+                    {% if movement.sale_id %}فاکتور #{{ movement.sale_id }}{% endif %}
+                    {% if not movement.purchase_id and not movement.sale_id %}—{% endif %}
+                </td>
+                <td>{{ movement.note or '—' }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <div style="text-align:center; padding:2rem; color:var(--ink-soft);">
+        <div style="font-size:3rem;">📚</div>
+        <p>هنوز حرکت انباری ثبت نشده است.</p>
+    </div>
+    {% endif %}
+</div>
+
+<nav class="admin-nav">
+    <a href="/admin/purchases" class="btn btn-ghost">🚚 خریدها</a>
+    <a href="/admin" class="btn btn-primary">🔙 داشبورد</a>
+</nav>
+{% endblock %}
