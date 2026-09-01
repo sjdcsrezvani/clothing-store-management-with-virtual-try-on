@@ -203,6 +203,13 @@ class ProductVariant(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
+    __table_args__ = (
+        CheckConstraint("price >= 0", name="ck_variants_price_nonnegative"),
+        CheckConstraint("cost_price >= 0", name="ck_variants_cost_nonnegative"),
+        CheckConstraint("stock_quantity >= 0", name="ck_variants_stock_nonnegative"),
+        CheckConstraint("demand_count >= 0", name="ck_variants_demand_nonnegative"),
+    )
+
     product = relationship("Product", back_populates="variants")
     sale_items = relationship("SaleItem", back_populates="variant")
     stock_movements = relationship("StockMovement", back_populates="variant", order_by="StockMovement.created_at", cascade="all, delete-orphan")
@@ -219,6 +226,15 @@ class ProductVariant(Base):
 
 class Sale(Base):
     __tablename__ = "sales"
+    __table_args__ = (
+        CheckConstraint("payment_method IN ('card', 'cash', 'credit')", name="ck_sales_payment_method"),
+        CheckConstraint("total_amount >= 0", name="ck_sales_total_nonnegative"),
+        CheckConstraint("discount_amount >= 0", name="ck_sales_discount_nonnegative"),
+        CheckConstraint("final_amount >= 0", name="ck_sales_final_nonnegative"),
+        CheckConstraint("credit_surcharge >= 0", name="ck_sales_credit_surcharge_nonnegative"),
+        CheckConstraint("credit_paid_amount >= 0", name="ck_sales_credit_paid_nonnegative"),
+        CheckConstraint("refund_amount >= 0", name="ck_sales_refund_nonnegative"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
@@ -257,6 +273,11 @@ class POSTransaction(Base):
     host = Column(String(255), nullable=False)
     port = Column(Integer, nullable=False)
     status = Column(String(30), nullable=False, default="created", index=True)
+    __table_args__ = (
+        CheckConstraint("status IN ('created', 'sent', 'approved', 'cancelled', 'declined', 'uncertain', 'linked_to_sale')", name="ck_pos_status"),
+        CheckConstraint("amount > 0", name="ck_pos_amount_positive"),
+        CheckConstraint("port > 0 AND port <= 65535", name="ck_pos_port_valid"),
+    )
     response_code = Column(String(20), nullable=True)
     response_label = Column(String(200), nullable=True)
     response_text = Column(Text, nullable=True)
@@ -293,6 +314,10 @@ class StockMovement(Base):
     note = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
+    __table_args__ = (
+        CheckConstraint("movement_type IN ('opening_stock', 'purchase', 'purchase_reversal', 'sale', 'sale_refund', 'adjustment', 'cost_adjustment')", name="ck_stock_movement_type"),
+    )
+
     variant = relationship("ProductVariant", back_populates="stock_movements")
 
 
@@ -304,9 +329,17 @@ class SaleItem(Base):
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     variant_id = Column(Integer, ForeignKey("product_variants.id"), nullable=True)  # nullable for legacy data
     quantity = Column(Integer, nullable=False)
-    unit_price = Column(Integer, nullable=False)  # Price at time of sale
+    unit_price = Column(Integer, nullable=False)
+    # Price at time of sale
     unit_cost = Column(Integer, default=0)
     total_price = Column(Integer, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_sale_items_quantity_positive"),
+        CheckConstraint("unit_price >= 0", name="ck_sale_items_unit_price_nonnegative"),
+        CheckConstraint("unit_cost >= 0", name="ck_sale_items_unit_cost_nonnegative"),
+        CheckConstraint("total_price >= 0", name="ck_sale_items_total_nonnegative"),
+    )
 
     sale = relationship("Sale", back_populates="items")
     product = relationship("Product", back_populates="sale_items")
@@ -352,6 +385,10 @@ class PurchaseItem(Base):
     product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
     quantity = Column(Integer, nullable=False, default=1)
     unit_cost = Column(Integer, nullable=False, default=0)
+    __table_args__ = (
+        CheckConstraint("quantity >= 0", name="ck_purchase_items_quantity_nonnegative"),
+        CheckConstraint("unit_cost >= 0", name="ck_purchase_items_cost_nonnegative"),
+    )
     # Cost basis of the variant BEFORE this purchase was applied, so deleting
     # the purchase can restore it (stock alone is not enough to undo a purchase).
     prev_cost_price = Column(Integer, nullable=True)
@@ -368,6 +405,7 @@ class Expense(Base):
     id = Column(Integer, primary_key=True, index=True)
     amount = Column(Integer, nullable=False)
     category = Column(String(100), nullable=True)
+    __table_args__ = (CheckConstraint("amount > 0", name="ck_expenses_amount_positive"),)
     note = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -380,7 +418,11 @@ class Payment(Base):
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
     sale_id = Column(Integer, ForeignKey("sales.id"), nullable=True)
     amount = Column(Integer, nullable=False)
-    method = Column(String(20), default="cash")  # cash / card
+    method = Column(String(20), default="cash")
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_payments_amount_positive"),
+        CheckConstraint("method IN ('cash', 'card')", name="ck_payments_method"),
+    )  # cash / card
     note = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 

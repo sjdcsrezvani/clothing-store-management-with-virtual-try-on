@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.1.3 — 2026-09-01
+
+### Database integrity and migrations
+
+- Enabled SQLite foreign-key enforcement for every connection.
+- Added database checks for payment methods, monetary values, quantities, POS states, and stock movement types.
+- Added versioned schema tracking with upgrade, downgrade, status, and backup helpers.
+- Added migration compatibility, backup, foreign-key, relationship, and constraint tests.
+- Updated upgrade documentation for the versioned database flow.
+
+
 ## v1.1.2 — 2026-09-01
 
 ### Phase 1 hardening

@@ -185,20 +185,20 @@ uploads, backups, or any other local shop data.
 
 ## Database migrations
 
-The current beta uses additive startup migrations for compatibility with the
-existing owner database. Before upgrading a real installation, stop the app and
-create a verified backup. Start the new version once to apply compatible schema
-changes, then confirm the application and reports work before deleting the old
-backup. A versioned migration system is planned before the application grows
-beyond the beta schema.
+The database now records a schema version in `schema_version`. Before upgrading
+a real installation, stop the app and create a verified backup. Run the
+migration status check, apply the upgrade, and confirm the application and
+reports work before deleting the old backup. A failed migration must stop the
+upgrade so the backup can be restored and the issue investigated.
 
 ## Updating
 
 1. Stop the app.
-2. Pull the new code (`git pull` or replace files).
-3. `pip install -r requirements.txt` (new dependencies are pinned here).
-4. Start the app — schema migrations for new tables run automatically at
-   startup; additive columns are applied by `_apply_missing_columns()`.
+2. Create a verified backup of `referral.db`.
+3. Pull the new code (`git pull` or replace files).
+4. `pip install -r requirements.txt`.
+5. Start the app; the versioned migration runner applies pending changes.
+6. Verify the schema and application before removing the backup.
 
 ## Tests
 

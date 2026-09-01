@@ -13,6 +13,7 @@ def _set_sqlite_pragma(dbapi_connection, connection_record):
     try:
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.execute("PRAGMA foreign_keys = ON")
     finally:
         cursor.close()
 

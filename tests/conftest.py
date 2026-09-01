@@ -52,9 +52,9 @@ def _clean_db(client, db_session):
                         Referral, Customer, ProductVariant, Product,
                         Campaign, Settings, AdminLog, Payment, Expense,
                         Purchase, PurchaseItem, Supplier)
-    for model in (SaleCampaign, SaleItem, POSTransaction, StockMovement, Sale, GeneratedImage, Payment,
-                  Referral, Customer, ProductVariant, Product, PurchaseItem,
-                  Purchase, Expense, Supplier, Campaign, AdminLog, StaffUser, Settings):
+    for model in (SaleCampaign, SaleItem, StockMovement, POSTransaction, Payment, Sale, GeneratedImage,
+                  Referral, PurchaseItem, Purchase, ProductVariant, Product, Expense, Supplier,
+                  Campaign, AdminLog, StaffUser, Settings, Customer):
         db_session.query(model).delete()
     db_session.commit()
     db_session.expire_all()  # drop stale identity-map entries

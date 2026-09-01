@@ -12,6 +12,7 @@ from routers.clothes_images import admin_router as clothes_admin_router, api_rou
 from services.security import CSRFMiddleware
 from services.store import get_store
 from services.scheduler import scheduler_task
+from migrations import upgrade
 
 
 def _seed_legacy_stock_movements():
@@ -102,6 +103,7 @@ def _apply_missing_columns(migration_engine=None):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    upgrade(engine)
     _apply_missing_columns()
     _migrate_unknown_customers()
     _seed_legacy_stock_movements()
