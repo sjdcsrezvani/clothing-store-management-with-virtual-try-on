@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}📦 مدیریت محصولات — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem;">
+    <span style="font-size: 2rem;">📦</span>
+    <h2 style="margin: 0;">مدیریت محصولات</h2>
+</div>
+
+<div class="card" style="background: #FFFAF5;">
+    <h3>🔍 اسکن بارکد محصول</h3>
+    <form method="get" action="/admin/products" class="search-form">
+        <input type="text" id="barcode-scanner" name="search" placeholder="🔲 بارکد را اسکن کنید..." autofocus autocomplete="off">
+        <button type="submit" class="btn btn-primary">🔍 جستجو</button>
+    </form>
+</div>
+
+<div class="filter-bar">
+    <form method="get" action="/admin/products" class="search-form">
+        <input type="text" name="search" placeholder="🔍 جستجو بر اساس نام یا دسته‌بندی" value="{{ search }}">
+        <select name="category">
+            <option value="">📂 همه دسته‌ها</option>
+            {% for cat in categories %}
+            <option value="{{ cat }}" {% if category_filter == cat %}selected{% endif %}>{{ cat }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-primary">✅ اعمال فیلتر</button>
+    </form>
+</div>
+
+<div class="admin-nav" style="margin-bottom: 1.5rem;">
+    <a href="/admin/products/add" class="btn btn-primary">➕ افزودن محصول جدید</a>
+    <a href="/admin/barcodes/print" class="btn btn-ghost">🏷️ چاپ تگ محصولات</a>
+</div>
+
+<div class="card">
+    {% if products %}
+    <table>
+        <thead>
+            <tr>
+                <th>🖼️</th>
+                <th>👕 نام محصول</th>
+                <th>📂 دسته</th>
+                <th>🎨 تنوع‌ها</th>
+                <th>💰 محدوده قیمت</th>
+                <th>📦 موجودی کل</th>
+                <th>🔧 عملیات</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for product in products %}
+            <tr>
+                <td>
+                    {% set ns = namespace(img_path=None) %}
+                    {% for v in product.variants %}
+                        {% if not ns.img_path and v.image_path and '/uploads/barcodes/' not in v.image_path %}
+                            {% set ns.img_path = v.image_path %}
+                        {% endif %}
+                    {% endfor %}
+                    {% if ns.img_path %}
+                        <img src="{{ ns.img_path }}" alt="{{ product.name }}" style="width: 50px; height: 50px; object-fit: cover; border-radius: 8px;">
+                    {% elif product.image_path %}
+                        <img src="{{ product.image_path }}" alt="{{ product.name }}" style="width: 50px; height: 50px; object-fit: cover; border-radius: 8px;">
+                    {% else %}
+                        <span style="color: var(--ink-soft);">📷</span>
+                    {% endif %}
+                </td>
+                <td><strong>{{ product.name }}</strong></td>
+                <td>📂 {{ product.category or '—' }}</td>
+                <td>
+                    {% if product.variants %}
+                        {% set sizes = product.variants|map(attribute='size')|unique|reject('none')|list %}
+                        {% set colors = product.variants|map(attribute='color')|unique|reject('none')|list %}
+                        <span class="badge badge-info">{{ product.variants|length }} تنوع</span>
+                        {% if sizes %}<div style="font-size: 0.8rem; margin-top: 0.25rem;">📏 {{ sizes|join(', ') }}</div>{% endif %}
+                        {% if colors %}<div style="font-size: 0.8rem;">🎨 {{ colors|join(', ') }}</div>{% endif %}
+                    {% else %}
+                        <span style="color: var(--ink-soft);">بدون تنوع</span>
+                    {% endif %}
+                </td>
+                <td class="tnum">{{ product.price_range or '—' }}</td>
+                <td>
+                    {% set total_stock = product.total_stock %}
+                    {% if total_stock > 0 %}
+                        <span class="badge badge-available">{{ total_stock }}</span>
+                    {% else %}
+                        <span class="badge badge-none">❌ ناموجود</span>
+                    {% endif %}
+                </td>
+                <td style="display: flex; gap: 0.3rem;">
+                    <a href="/admin/products/{{ product.id }}" class="btn btn-sm btn-ghost">✏️ ویرایش</a>
+                    <form method="post" action="/admin/products/{{ product.id }}/delete" style="display:inline;"
+                          onsubmit="return confirm('⚠️ حذف شود؟')">
+                        <button type="submit" class="btn btn-sm btn-danger">🗑️</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div style="text-align: center; padding: 2rem; color: var(--ink-soft);">
+        <div style="font-size: 3rem; margin-bottom: 0.5rem;">📦</div>
+        <p>محصولی یافت نشد.</p>
+        <a href="/admin/products/add" class="btn btn-primary" style="margin-top: 1rem;">➕ افزودن محصول جدید</a>
+    </div>
+    {% endif %}
+    {% if total_pages > 1 %}
+    <div style="display: flex; align-items: center; justify-content: center; gap: 1rem; padding: 1rem;">
+        {% if page > 1 %}
+        <a class="btn btn-sm btn-ghost" href="/admin/products?page={{ page - 1 }}&search={{ search }}&category={{ category_filter }}">→ صفحه قبل</a>
+        {% endif %}
+        <span style="color: var(--ink-soft);">صفحه {{ page }} از {{ total_pages }}</span>
+        {% if page < total_pages %}
+        <a class="btn btn-sm btn-ghost" href="/admin/products?page={{ page + 1 }}&search={{ search }}&category={{ category_filter }}">صفحه بعد ←</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<nav class="admin-nav">
+    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
+</nav>
+
+<script>
+document.getElementById('barcode-scanner').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        this.form.submit();
+    }
+});
+</script>
+{% endblock %}
