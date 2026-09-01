@@ -6,14 +6,12 @@ the network or real customer data.
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 # Point the app at a scratch DB + fixed secrets BEFORE importing it.
-_TEST_DB = Path(__file__).parent / "test_app.db"
-if _TEST_DB.exists():
-    _TEST_DB.unlink()
-for _suffix in ("-wal", "-shm"):
-    Path(str(_TEST_DB) + _suffix).unlink(missing_ok=True)
+_TEST_DIR = Path(tempfile.mkdtemp(prefix="raykids-tests-"))
+_TEST_DB = _TEST_DIR / "test_app.db"
 
 os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB}"
 os.environ["ADMIN_PASSWORD"] = "test-admin-pass"
@@ -86,3 +84,4 @@ def session_cleanup():
     yield
     for suffix in ("", "-wal", "-shm"):
         Path(str(_TEST_DB) + suffix).unlink(missing_ok=True)
+    _TEST_DIR.rmdir()

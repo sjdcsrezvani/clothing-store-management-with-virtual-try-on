@@ -151,6 +151,32 @@ take the child's photo — it uploads to `/api/image-gen/upload-kid-photo`.
 - **Restore:** stop the app, copy the backup file over `referral.db` (keep a
   copy of the current file first), start the app again.
 
+## Development from a clean checkout
+
+The repository intentionally excludes local customer data and generated files.
+After cloning, create a virtual environment, install `requirements.txt`, copy
+`.env.example` to `.env`, and configure local development secrets. The app
+creates a new local SQLite database when run in development. Never copy a real
+shop database into the repository.
+
+Run the isolated test suite with:
+
+```bash
+PYTHONPATH=. python -m pytest -q
+```
+
+Tests use a temporary database directory and do not modify `referral.db`, `.env`,
+uploads, backups, or any other local shop data.
+
+## Database migrations
+
+The current beta uses additive startup migrations for compatibility with the
+existing owner database. Before upgrading a real installation, stop the app and
+create a verified backup. Start the new version once to apply compatible schema
+changes, then confirm the application and reports work before deleting the old
+backup. A versioned migration system is planned before the application grows
+beyond the beta schema.
+
 ## Updating
 
 1. Stop the app.
