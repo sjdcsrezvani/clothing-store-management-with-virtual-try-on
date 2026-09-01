@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}مدیریت کارکنان{% endblock %}
+{% block content %}
+<div class="page-header"><h2>👥 مدیریت کارکنان</h2></div>
+{% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
+{% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
+<div class="card">
+  <h3>ایجاد کاربر جدید</h3>
+  <form method="post" action="/admin/staff" class="form-row">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>نام کاربری<input name="username" autocomplete="username" required></label>
+    <label>رمز عبور<input name="password" type="password" minlength="6" autocomplete="new-password" required></label>
+    <label>نقش<select name="role"><option value="cashier">صندوقدار</option><option value="manager">مدیر</option><option value="owner">مالک</option></select></label>
+    <button class="btn btn-primary" type="submit">ایجاد کاربر</button>
+  </form>
+</div>
+<div class="card">
+  <h3>کاربران</h3>
+  <div class="table-wrap"><table><thead><tr><th>نام کاربری</th><th>نقش</th><th>وضعیت</th><th>آخرین ورود</th><th>عملیات</th></tr></thead><tbody>
+  {% for user in staff_users %}<tr><td>{{ user.username }}</td><td>{{ user.role }}</td><td>{{ 'فعال' if user.is_active else 'غیرفعال' }}</td><td>{{ user.last_login_at or '—' }}</td><td>{% if user.is_active and user.username != 'owner' %}<form method="post" action="/admin/staff/{{ user.id }}/disable"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-sm btn-danger" type="submit">غیرفعال</button></form>{% else %}—{% endif %}</td></tr>{% else %}<tr><td colspan="5">کاربری ثبت نشده است.</td></tr>{% endfor %}
+  </tbody></table></div>
+</div>
+{% endblock %}

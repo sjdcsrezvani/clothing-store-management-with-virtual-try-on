@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}📂 تصاویر ذخیره‌شده — پرو مجازی{% endblock %}
+{% block content %}
+
+<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem;">
+    <span style="font-size: 2rem;">📂</span>
+    <h2 style="margin: 0;">تصاویر ذخیره‌شده</h2>
+</div>
+
+{% if saved_images %}
+<div class="card">
+    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:0.8rem;">
+        {% for img in saved_images %}
+        <div style="border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.08); background:#fff;">
+            <div style="position:relative; cursor:pointer;" onclick="openLightbox('{{ img.image_path }}')">
+                <img src="{{ img.image_path }}" alt="saved"
+                     style="width:100%; height:160px; object-fit:cover; display:block;">
+                <img src="/static/logo.png" alt="logo"
+                     style="position:absolute; top:0; left:0; width:80px; height:80px; pointer-events:none; filter:drop-shadow(0 1px 3px rgba(0,0,0,0.4));">
+            </div>
+            <div style="padding:0.5rem; font-size:0.7rem; color:var(--ink-soft); text-align:center;">
+                🗓️ {{ jalali_str(img.created_at) }}
+            </div>
+            {% if img.variants %}
+            <div style="padding:0 0.4rem 0.4rem; display:flex; gap:0.3rem; flex-wrap:wrap; justify-content:center;">
+                {% for v in img.variants %}
+                <div style="text-align:center; max-width:70px;" title="{{ v.name }}{% if v.color %} — {{ v.color }}{% endif %}">
+                    {% if v.image_path %}
+                        <img src="{{ v.image_path }}" alt="{{ v.name }}"
+                             style="width:44px; height:44px; object-fit:cover; border-radius:6px; border:1px solid #eee;">
+                    {% else %}
+                        <div style="width:44px; height:44px; display:flex; align-items:center; justify-content:center; border-radius:6px; background:#FFFAF5; border:1px solid #eee;">📦</div>
+                    {% endif %}
+                    <div style="font-size:0.6rem; margin-top:2px; line-height:1.1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                        {{ v.color or v.barcode }}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            <div style="display:flex; gap:0.3rem; padding:0 0.4rem 0.5rem; justify-content:center;">
+                <a href="/admin/try-on/saved/{{ img.id }}/download?logo=yes"
+                   class="btn btn-success" style="font-size:0.7rem; padding:0.3rem 0.5rem;">⬇️ با لوگو</a>
+                <a href="/admin/try-on/saved/{{ img.id }}/download?logo=no"
+                   class="btn btn-primary" style="font-size:0.7rem; padding:0.3rem 0.5rem;">⬇️ بدون لوگو</a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% else %}
+<div class="card" style="text-align:center; padding:3rem 1rem;">
+    <div style="font-size:3rem;">📭</div>
+    <p style="color:var(--ink-soft);">هنوز تصویری ذخیره نشده است.</p>
+    <a href="/admin/try-on" class="btn btn-primary" style="margin-top:1rem;">👗 رفتن به پرو مجازی</a>
+</div>
+{% endif %}
+
+{# ─── Lightbox ─── #}
+<div id="lightbox" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.92);z-index:9999;align-items:center;justify-content:center;"
+     onclick="closeLightbox(event)">
+    <div id="lightbox-stage" style="position:relative;display:inline-block;line-height:0;">
+        <img id="lightbox-img" src="" alt="full"
+             style="max-width:95vw;max-height:95vh;object-fit:contain;border-radius:8px;display:block;">
+        <img src="/static/logo.png" alt="logo"
+             style="position:absolute;top:0;left:0;width:200px;height:200px;pointer-events:none;filter:drop-shadow(0 2px 6px rgba(0,0,0,0.4));">
+    </div>
+    <div style="position:absolute;top:1rem;right:1rem;color:#fff;font-size:2rem;cursor:pointer;" onclick="closeLightbox()">✕</div>
+</div>
+
+<nav class="admin-nav" style="margin-top: 1.5rem;">
+    <a href="/admin/try-on" class="btn btn-ghost">🔙 بازگشت به پرو مجازی</a>
+    <a href="/admin" class="btn btn-ghost">⚙️ داشبورد</a>
+</nav>
+
+<script>
+function openLightbox(src) {
+    document.getElementById('lightbox-img').src = src;
+    document.getElementById('lightbox').style.display = 'flex';
+}
+function closeLightbox(e) {
+    if (!e || e.target === e.currentTarget || e.target.tagName === 'DIV')
+        document.getElementById('lightbox').style.display = 'none';
+}
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') document.getElementById('lightbox').style.display = 'none';
+});
+</script>
+{% endblock %}

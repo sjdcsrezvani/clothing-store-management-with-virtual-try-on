@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}📒 حساب نسیه — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
+    <span style="font-size: 2rem;">📒</span>
+    <h2 style="margin: 0;">حساب نسیه مشتریان</h2>
+    <div class="stat-card" style="padding: 0.5rem 1rem; margin-right: auto;">
+        <span style="color: var(--ink-soft);">مجموع بدهی:</span>
+        <strong class="tnum" style="color: var(--persimmon);">{{ fmt(total_debt) }} تومان</strong>
+    </div>
+</div>
+
+{% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
+{% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
+
+<div class="card">
+    {% if debts %}
+    <table>
+        <thead>
+            <tr>
+                <th>👤 مشتری</th>
+                <th>📱 تلفن</th>
+                <th>🏷️ سطح</th>
+                <th>📒 بدهی</th>
+                <th>🧾 فاکتورهای باز</th>
+                <th>🔧</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in debts %}
+            <tr>
+                <td><strong>{{ row.customer.full_name }}</strong></td>
+                <td class="tnum">{{ row.customer.phone }}</td>
+                <td><span class="tier-badge tier-{{ row.customer.tier }}">{% if row.customer.tier == 'diamond' %}💎 الماس{% elif row.customer.tier == 'gold' %}⭐ طلایی{% else %}🥈 نقره‌ای{% endif %}</span></td>
+                <td class="tnum"><strong style="color: var(--persimmon);">{{ fmt(row.debt) }} ت</strong>
+                    {% if row.over_limit %}<span title="بیشتر از سقف اعتبار ({{ fmt(row.limit) }} ت)" style="cursor:help;">⚠️</span>{% endif %}
+                    {% if row.limit > 0 %}<small class="tnum" style="color: var(--ink-soft);"> / سقف {{ fmt(row.limit) }} ت</small>{% endif %}
+                </td>
+                <td class="tnum">{{ row.unpaid_sales|length }}</td>
+                <td><a href="/admin/credit/{{ row.customer.id }}" class="btn btn-sm btn-primary">📒 دریافت</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div style="text-align: center; padding: 2rem; color: var(--ink-soft);">
+        <div style="font-size: 3rem; margin-bottom: 0.5rem;">🎉</div>
+        <p>هیچ بدهی نسیه‌ای وجود ندارد — همه تسویه کرده‌اند.</p>
+        <small>در فروش جدید، روش پرداخت «📒 نسیه» را انتخاب کنید تا مبلغ به حساب مشتری اضافه شود.</small>
+    </div>
+    {% endif %}
+</div>
+
+<nav class="admin-nav">
+    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
+    <a href="/admin/accounting" class="btn btn-ghost">🧮 سود و زیان</a>
+</nav>
+{% endblock %}

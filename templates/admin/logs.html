@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}📜 گزارش عملیات — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem;">
+    <span style="font-size: 2rem;">📜</span>
+    <h2 style="margin: 0;">گزارش عملیات مدیریت</h2>
+</div>
+
+<div class="card">
+    {% if logs %}
+    <table>
+        <thead>
+            <tr>
+                <th>🕐 زمان</th>
+                <th>🔧 عملیات</th>
+                <th>📝 جزئیات</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for log in logs %}
+            <tr>
+                <td class="tnum">{{ jalali_str(log.created_at) }}</td>
+                <td><code>{{ log.action }}</code></td>
+                <td>{{ log.detail or '—' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="text-align: center; color: var(--ink-soft); padding: 2rem;">هنوز عملیاتی ثبت نشده است.</p>
+    {% endif %}
+</div>
+
+<nav class="admin-nav">
+    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
+</nav>
+{% endblock %}
