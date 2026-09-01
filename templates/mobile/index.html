@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>{{ store.name }} — Virtual Try-On</title>
+<style id="connection-help-style">.connection-help{padding:0 16px 10px;color:var(--ink-soft);font-size:12px;line-height:1.7}.connection-help strong{color:var(--ink)}</style>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{--pink:#FF6B8A;--sky:#45B7D1;--bg:#FFF5F0;--card:#fff;--ink:#2D2D2D;--ink-soft:#999;--radius:16px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;padding:0;margin:0}
+
+/* ─── Header ─── */
+.header{background:linear-gradient(135deg,var(--pink),var(--sky));color:#fff;padding:16px;text-align:center;font-weight:700;font-size:18px;box-shadow:0 2px 12px rgba(255,107,138,0.25)}
+.header small{display:block;font-weight:400;font-size:13px;opacity:0.9;margin-top:2px}
+
+/* ─── Config bar ─── */
+.config-bar{padding:12px 16px;background:var(--card);display:flex;gap:8px;align-items:center;box-shadow:0 1px 4px rgba(0,0,0,0.06)}
+.config-bar input{flex:1;padding:10px 12px;border:2px solid #E8DDD5;border-radius:10px;font-size:15px;font-family:monospace;direction:ltr}
+.config-bar input:focus{outline:none;border-color:var(--pink)}
+.config-bar .status-dot{width:12px;height:12px;border-radius:50%;background:#ddd;flex-shrink:0}
+.config-bar .status-dot.online{background:#51CF66}
+.config-bar .status-dot.offline{background:#FF4757}
+
+/* ─── Main buttons ─── */
+.main-actions{padding:16px;display:flex;flex-direction:column;gap:12px}
+.action-btn{display:flex;align-items:center;justify-content:center;gap:10px;padding:22px;border:none;border-radius:var(--radius);font-size:17px;font-weight:700;color:#fff;cursor:pointer;transition:transform 0.1s,box-shadow 0.15s;box-shadow:0 4px 14px rgba(0,0,0,0.08)}
+.action-btn:active{transform:scale(0.97)}
+.action-btn .icon{font-size:28px}
+.action-btn.photo{background:linear-gradient(135deg,var(--sky),#389BB0)}
+.action-btn:disabled{opacity:0.5;transform:none}
+
+/* ─── Log ─── */
+.log-section{padding:0 16px 20px}
+.log-section h3{font-size:14px;color:var(--ink-soft);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.log-list{background:var(--card);border-radius:var(--radius);padding:12px;max-height:200px;overflow-y:auto;font-size:13px}
+.log-entry{padding:8px 0;border-bottom:1px solid #f0e8e0;display:flex;align-items:start;gap:8px;line-height:1.4}
+.log-entry:last-child{border-bottom:none}
+.log-entry .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap;flex-shrink:0;margin-top:1px}
+.badge-ok{background:#E8F8EC;color:#1a7a2e}
+.badge-err{background:#FFE8E8;color:#c0392b}
+.badge-info{background:#E8F0FF;color:#1a5a8a}
+
+/* ─── Photo capture overlay ─── */
+.photo-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:100;flex-direction:column;align-items:center;justify-content:center;padding:20px}
+.photo-overlay.active{display:flex}
+.photo-overlay .photo-card{background:var(--card);border-radius:var(--radius);padding:30px 24px;text-align:center;max-width:340px;width:100%}
+.photo-overlay .photo-card .big-icon{font-size:56px;margin-bottom:12px}
+.photo-overlay .photo-card h3{font-size:18px;margin-bottom:6px}
+.photo-overlay .photo-card p{font-size:14px;color:var(--ink-soft);margin-bottom:20px}
+.file-input-wrapper{position:relative;overflow:hidden;margin-bottom:12px}
+.file-input-wrapper input[type=file]{position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.file-input-wrapper .fake-btn{display:block;padding:16px;border:2px dashed var(--pink);border-radius:12px;color:var(--pink);font-weight:600;font-size:15px}
+.photo-preview{max-width:100%;max-height:200px;border-radius:12px;margin-bottom:12px;display:none}
+.btn-group{display:flex;gap:8px}
+.btn-group button{flex:1;padding:14px;border:none;border-radius:10px;font-weight:700;font-size:15px;cursor:pointer}
+.btn-cancel{background:#f0f0f0;color:var(--ink)}
+.btn-send{background:var(--pink);color:#fff}
+.btn-send:disabled{opacity:0.5}
+.send-status{padding:10px;border-radius:8px;margin-top:10px;font-weight:600;font-size:14px;display:none}
+
+/* ─── Empty state ─── */
+.empty-state{text-align:center;padding:30px 16px;color:var(--ink-soft)}
+.empty-state .icon{font-size:48px;margin-bottom:8px}
+
+/* ─── Animations ─── */
+@keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+
+/* ─── Toast ─── */
+.toast{position:fixed;bottom:20px;left:20px;right:20px;padding:14px 20px;border-radius:12px;color:#fff;font-weight:600;font-size:14px;text-align:center;z-index:200;animation:slideUp 0.3s;display:none}
+.toast.success{background:#51CF66}
+.toast.error{background:#FF4757}
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+    👗 {{ store.name }} — Virtual Try-On
+    <small>Photo Upload</small>
+</div>
+
+<!-- Server Config -->
+<div class="config-bar" style="flex-wrap:wrap;">
+    <input type="text" id="server-ip" placeholder="آدرس کامپیوتر، مثلاً 192.168.1.181:8000" inputmode="url" autocomplete="off">
+    <input type="text" id="api-token" placeholder="API token" autocomplete="off" style="flex:1;min-width:120px;">
+    <div class="status-dot" id="status-dot" title="Connection status"></div>
+    <button onclick="saveConfig();testConnection()" style="background:var(--pink);color:#fff;border:none;padding:8px 14px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer">Save</button>
+</div>
+<div class="connection-help">گوشی و کامپیوتر باید به یک Wi‑Fi وصل باشند. در حالت وب معمولی، پورت پیش‌فرض <strong>8000</strong> است؛ اگر پورت دیگری می‌بینید همان را بعد از IP وارد کنید.</div>
+
+<!-- Main Actions -->
+<div class="main-actions">
+    <button class="action-btn photo" id="btn-photo" onclick="showPhotoCapture()">
+        <span class="icon">📸</span> Take Photo
+    </button>
+</div>
+
+<!-- Activity Log -->
+<div class="log-section">
+    <h3>📋 Activity Log</h3>
+    <div class="log-list" id="log-list">
+        <div class="empty-state">
+            <div class="icon">📱</div>
+            <div>Activities will appear here</div>
+        </div>
+    </div>
+</div>
+
+<!-- Photo Capture Overlay -->
+<div class="photo-overlay" id="photo-overlay">
+    <div class="photo-card">
+        <div class="big-icon">📸</div>
+        <h3>Take Kid's Photo</h3>
+        <p>Take a clear photo of the child's face for AI try-on</p>
+        <div class="file-input-wrapper">
+            <input type="file" id="photo-input" accept="image/*" capture="environment" onchange="onPhotoSelected(event)">
+            <div class="fake-btn">📱 Open Camera</div>
+        </div>
+        <img id="photo-preview" class="photo-preview" alt="Preview">
+        <div class="btn-group">
+            <button class="btn-cancel" onclick="hidePhotoCapture()">Cancel</button>
+            <button class="btn-send" id="btn-send-photo" onclick="sendPhoto()" disabled>📤 Send to Server</button>
+        </div>
+        <div class="send-status" id="send-status"></div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ─── State ───
+let baseUrl = '';
+let apiToken = '';
+let selectedPhotoFile = null;
+
+// ─── Config ───
+function loadConfig() {
+    const ip = localStorage.getItem('server_ip') || '';
+    apiToken = localStorage.getItem('api_token') || '';
+    document.getElementById('server-ip').value = ip;
+    document.getElementById('api-token').value = apiToken;
+    baseUrl = normalizeBaseUrl(ip);
+    if (ip) testConnection();
+}
+function saveConfig() {
+    const ip = document.getElementById('server-ip').value.trim();
+    apiToken = document.getElementById('api-token').value.trim();
+    localStorage.setItem('server_ip', ip);
+    localStorage.setItem('api_token', apiToken);
+    baseUrl = normalizeBaseUrl(ip);
+    addLog('info', 'Server set to ' + (ip || '(none)') + (apiToken ? ' (token set)' : ' (no token)'));
+}
+function normalizeBaseUrl(value) {
+    value = (value || '').trim().replace(/^https?:\/\//i, '').replace(/\/$/, '');
+    if (!value) return '';
+    // Keep an explicitly supplied port; append 8000 only when omitted.
+    if (!value.includes(':')) value += ':8000';
+    return 'http://' + value;
+}
+function apiHeaders() {
+    return apiToken ? { 'X-API-Token': apiToken } : {};
+}
+
+// ─── Connection test ───
+async function testConnection() {
+    const dot = document.getElementById('status-dot');
+    dot.className = 'status-dot';
+    saveConfig();
+    if (!baseUrl) { dot.className = 'status-dot offline'; return; }
+    try {
+        const r = await fetch(baseUrl + '/admin/try-on', { method: 'GET', signal: AbortSignal.timeout(5000) });
+        dot.className = 'status-dot ' + (r.ok || r.status === 303 ? 'online' : 'offline');
+        if (r.ok || r.status === 303) addLog('ok', 'Connected to server');
+        else addLog('err', 'Server returned ' + r.status);
+    } catch(e) {
+        dot.className = 'status-dot offline';
+        addLog('err', 'Cannot reach server: ' + e.message);
+    }
+}
+
+// ─── Log ───
+function addLog(type, msg) {
+    const list = document.getElementById('log-list');
+    const empty = list.querySelector('.empty-state');
+    if (empty) empty.remove();
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    const badgeMap = { ok: 'OK', err: 'Error', info: 'Info' };
+    entry.innerHTML = `<span class="badge badge-${type}">${badgeMap[type]||type}</span><span>${msg}</span>`;
+    list.insertBefore(entry, list.firstChild);
+    // Keep max 50 entries
+    while (list.children.length > 50) list.removeChild(list.lastChild);
+}
+
+// ─── Toast ───
+function showToast(msg, type, ms) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast ' + type;
+    t.style.display = 'block';
+    clearTimeout(t._hide);
+    t._hide = setTimeout(() => { t.style.display = 'none'; }, ms || 3000);
+}
+
+// ─── Photo Capture ───
+function showPhotoCapture() {
+    if (!baseUrl) { showToast('Set server IP first', 'error'); return; }
+    selectedPhotoFile = null;
+    document.getElementById('photo-preview').style.display = 'none';
+    document.getElementById('btn-send-photo').disabled = true;
+    document.getElementById('send-status').style.display = 'none';
+    document.getElementById('photo-input').value = '';
+    document.getElementById('photo-overlay').classList.add('active');
+}
+
+function hidePhotoCapture() {
+    document.getElementById('photo-overlay').classList.remove('active');
+    selectedPhotoFile = null;
+}
+
+function onPhotoSelected(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    selectedPhotoFile = file;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const preview = document.getElementById('photo-preview');
+        preview.src = e.target.result;
+        preview.style.display = 'block';
+        document.getElementById('btn-send-photo').disabled = false;
+    };
+    reader.readAsDataURL(file);
+    addLog('info', 'Photo selected: ' + file.name);
+}
+
+async function sendPhoto() {
+    if (!selectedPhotoFile) return;
+    const btn = document.getElementById('btn-send-photo');
+    const status = document.getElementById('send-status');
+    btn.disabled = true;
+    status.style.display = 'block';
+    status.className = 'send-status';
+    status.textContent = '⏳ Sending...';
+
+    const formData = new FormData();
+    formData.append('file', selectedPhotoFile);
+
+    try {
+        const r = await fetch(baseUrl + '/api/image-gen/upload-kid-photo', {
+            method: 'POST',
+            headers: apiHeaders(),
+            body: formData,
+            signal: AbortSignal.timeout(30000),
+        });
+        const data = await r.json();
+        if (r.ok) {
+            status.className = 'send-status';
+            status.style.background = '#E8F8EC';
+            status.style.color = '#1a7a2e';
+            status.textContent = '✅ Photo sent successfully!';
+            addLog('ok', 'Kid photo uploaded');
+            showToast('Photo uploaded ✓', 'success');
+            setTimeout(hidePhotoCapture, 1500);
+        } else {
+            throw new Error(data.detail || 'Upload failed');
+        }
+    } catch(e) {
+        status.className = 'send-status';
+        status.style.background = '#FFE8E8';
+        status.style.color = '#c0392b';
+        status.textContent = '❌ ' + e.message;
+        addLog('err', 'Photo upload failed: ' + e.message);
+        showToast('Upload failed: ' + e.message, 'error');
+        btn.disabled = false;
+    }
+}
+
+// ─── Init ───
+loadConfig();
+document.getElementById('server-ip').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { saveConfig(); testConnection(); }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}📦 خرید از عمده‌فروش — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem;">
+    <span style="font-size: 2rem;">📦</span>
+    <h2 style="margin: 0;">خرید از عمده‌فروش</h2>
+</div>
+
+{% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
+{% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
+
+<div class="card">
+    <h3>➕ ثبت خرید جدید</h3>
+    <p style="color: var(--ink-soft); font-size: 0.9rem; margin-bottom: 1rem;">
+        با ثبت خرید، موجودی انبار خودکار اضافه می‌شود و قیمت تمام‌شده (cost) همان‌جا به‌روز می‌شود.
+    </p>
+    <form method="post" action="/admin/purchases/add">
+        <div class="form-row">
+            <div class="form-group">
+                <label>🏭 تأمین‌کننده</label>
+                <select name="supplier_id" style="padding:0.6rem 0.8rem; border:2px solid #E8DDD5; border-radius:8px; font-family:inherit; width:100%;">
+                    <option value="">— بدون تأمین‌کننده —</option>
+                    {% for s in suppliers %}
+                    <option value="{{ s.id }}">{{ s.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group" style="flex:2;">
+                <label>📝 توضیح</label>
+                <input type="text" name="note" placeholder="مثلاً: فاکتور ۱۴۰۵">
+            </div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+            <strong>🧾 اقلام خرید</strong>
+            <button type="button" class="btn btn-sm btn-ghost" onclick="addRow()">➕ افزودن ردیف</button>
+        </div>
+
+        <div id="purchase-rows"></div>
+
+        <button type="submit" class="btn btn-success btn-large" style="margin-top: 1rem;">💾 ثبت خرید</button>
+    </form>
+</div>
+
+<div class="card">
+    <h3>🕐 خریدهای اخیر</h3>
+    {% if purchases %}
+    <table>
+        <thead>
+            <tr>
+                <th>شماره</th>
+                <th>تاریخ</th>
+                <th>تأمین‌کننده</th>
+                <th>مبلغ کل</th>
+                <th>توضیح</th>
+                <th>وضعیت</th>
+                <th>🔧</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in purchases %}
+            <tr>
+                <td><strong>#{{ p.id }}</strong></td>
+                <td class="tnum">{{ jalali_str(p.created_at) }}</td>
+                <td>{{ p.supplier.name if p.supplier else '—' }}</td>
+                <td class="tnum"><strong>{{ fmt(p.total_cost) }} ت</strong></td>
+                <td>{{ p.note or '—' }}</td>
+                <td>
+                    {% if p.is_reversed %}
+                        <span class="badge">↩️ برگشت‌خورده</span>
+                    {% else %}
+                        <span class="badge badge-success">✅ فعال</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if not p.is_reversed %}
+                    <form method="post" action="/admin/purchases/{{ p.id }}/delete" style="display:inline;"
+                          onsubmit="return confirm('⚠️ این خرید حذف نمی‌شود؛ یک حرکت برگشت در دفتر انبار ثبت می‌شود. ادامه؟')">
+                        <button type="submit" class="btn btn-sm btn-danger">↩️ برگشت</button>
+                    </form>
+                    {% else %}—{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}<p style="color: var(--ink-soft); text-align: center; padding: 1.5rem;">هنوز خریدی ثبت نشده است.</p>{% endif %}
+</div>
+
+<script>
+var nextIdx = 0;
+var products = [
+    {% for p in products %}
+    {name: {{ p.name|tojson }}, variants: [
+        {% for v in p.variants if v.is_active %}
+        {id: {{ v.id }}, label: {{ (v.display_name + ' — ' ~ fmt(v.price) ~ ' تومان')|tojson }}},
+        {% endfor %}
+    ]},
+    {% endfor %}
+];
+function rowHTML(idx) {
+    var opts = '';
+    products.forEach(function (p) {
+        if (!p.variants.length) return;
+        opts += '<optgroup label="' + p.name + '">';
+        p.variants.forEach(function (v) { opts += '<option value="' + v.id + '">' + v.label + '</option>'; });
+        opts += '</optgroup>';
+    });
+    return '<div class="purchase-row" style="display:flex; gap:0.5rem; margin-bottom:0.5rem; align-items:center;">' +
+        '<select name="purchase_variant_' + idx + '" required style="flex:3; padding:0.55rem 0.7rem; border:2px solid #E8DDD5; border-radius:8px; font-family:inherit;">' +
+        '<option value="">— انتخاب محصول —</option>' + opts + '</select>' +
+        '<input type="number" name="purchase_qty_' + idx + '" min="1" value="1" title="تعداد" style="width:80px; padding:0.55rem 0.7rem; border:2px solid #E8DDD5; border-radius:8px;">' +
+        '<input type="number" name="purchase_cost_' + idx + '" min="0" placeholder="قیمت واحد (تومان)" title="قیمت واحد" style="flex:2; padding:0.55rem 0.7rem; border:2px solid #E8DDD5; border-radius:8px;">' +
+        '<button type="button" class="btn btn-sm btn-danger" onclick="this.parentNode.remove()">✕</button>' +
+        '</div>';
+}
+function addRow() {
+    var container = document.getElementById('purchase-rows');
+    container.insertAdjacentHTML('beforeend', rowHTML(nextIdx));
+    nextIdx += 1;
+}
+addRow();
+</script>
+
+<nav class="admin-nav">
+    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
+    <a href="/admin/suppliers" class="btn btn-ghost">🏭 تأمین‌کنندگان</a>
+</nav>
+{% endblock %}

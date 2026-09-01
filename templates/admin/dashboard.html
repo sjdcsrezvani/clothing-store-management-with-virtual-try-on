@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}📊 داشبورد مدیریت — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div class="page-heading">
+    <div>
+        <span class="eyebrow">نمای کلی فروشگاه</span>
+        <h2>📊 داشبورد مدیریت</h2>
+        <p>سلام! وضعیت فروش، مشتریان و عملیات امروز را یک‌جا ببینید.</p>
+    </div>
+    <a href="/sales/new" class="btn btn-success">🛒 ثبت فروش</a>
+</div>
+
+{% if action_message %}<div class="alert alert-success">✅ {{ action_message }}</div>{% endif %}
+
+{# ─── Key settings ─── #}
+<h3 style="display: flex; align-items: center; gap: 0.4rem; margin: 1.5rem 0 0.8rem; font-size: 0.9rem; color: var(--ink-soft);">
+    ⚙️ تنظیمات کلیدی
+</h3>
+<div class="stats-grid">
+    <div class="stat-card accent-persimmon">
+        <div class="stat-label">🤝 تخفیف معرف</div>
+        <div class="stat-value tnum">{{ fmt(referrer_discount) }} ت</div>
+        <div class="stat-sub">به ازای هر معرفی</div>
+    </div>
+    <div class="stat-card accent-pine">
+        <div class="stat-label">🎁 تخفیف معرفی‌شده</div>
+        <div class="stat-value tnum">{{ fmt(referred_discount) }} ت</div>
+        <div class="stat-sub">برای اولین خرید</div>
+    </div>
+    <div class="stat-card accent-saffron">
+        <div class="stat-label">🛒 حداقل خرید</div>
+        <div class="stat-value tnum">{{ fmt(min_purchase) }} ت</div>
+        <div class="stat-sub">برای استفاده از تخفیف</div>
+    </div>
+    <div class="stat-card accent-ink">
+        <div class="stat-label">📋 سقف معرفی ماهانه</div>
+        <div class="stat-value tnum">{{ monthly_limit }} <span style="font-size:0.6em;">نفر</span></div>
+    </div>
+</div>
+
+{# ─── Stats ─── #}
+<h3 style="display: flex; align-items: center; gap: 0.4rem; margin: 1.5rem 0 0.8rem; font-size: 0.9rem; color: var(--ink-soft);">
+    📈 آمار فروشگاه
+</h3>
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">👥 کل مشتریان</div>
+        <div class="stat-value tnum">{{ total_customers }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">🤝 کل معرفی‌ها</div>
+        <div class="stat-value tnum">{{ total_referrals }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">🏷️ دارای تخفیف فعال</div>
+        <div class="stat-value tnum">{{ customers_with_discount }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">📱 وضعیت دستگاه پیامک</div>
+        <div class="stat-value tnum">{{ sms_balance or '—' }}</div>
+    </div>
+</div>
+
+{# ─── Tiers ─── #}
+<h3 style="display: flex; align-items: center; gap: 0.4rem; margin: 1.5rem 0 0.8rem; font-size: 0.9rem; color: var(--ink-soft);">
+    🏆 سطوح مشتریان
+</h3>
+<div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
+    <div class="stat-card" style="text-align: center;">
+        <span class="tier-badge tier-silver">🥈 نقره‌ای</span>
+        <div class="stat-value tnum" style="margin-top: 0.5rem;">{{ silver_count }}</div>
+    </div>
+    <div class="stat-card" style="text-align: center;">
+        <span class="tier-badge tier-gold">⭐ طلایی</span>
+        <div class="stat-value tnum" style="margin-top: 0.5rem;">{{ gold_count }}</div>
+    </div>
+    <div class="stat-card" style="text-align: center;">
+        <span class="tier-badge tier-diamond">💎 الماس</span>
+        <div class="stat-value tnum" style="margin-top: 0.5rem;">{{ diamond_count }}</div>
+    </div>
+</div>
+
+{# ─── Top referrers ─── #}
+<div class="card">
+    <h3>🏆 برترین معرف‌ها</h3>
+    {% if top_referrers %}
+    <table>
+        <thead><tr><th>👤 نام</th><th>📱 تلفن</th><th>📊 کل</th><th>📅 این ماه</th><th>🏷️ سطح</th><th>💰 تخفیف</th></tr></thead>
+        <tbody>
+        {% for customer, count in top_referrers %}
+            <tr>
+                <td>{{ customer.full_name }}</td>
+                <td class="tnum">{{ customer.phone }}</td>
+                <td class="tnum">{{ count }}</td>
+                <td class="tnum">{{ customer.monthly_referral_count }}</td>
+                <td><span class="tier-badge tier-{{ customer.tier }}">
+                    {% if customer.tier == 'diamond' %}💎 الماس{% elif customer.tier == 'gold' %}⭐ طلایی{% else %}🥈 نقره‌ای{% endif %}
+                </span></td>
+                <td class="tnum">{{ fmt(customer.referrer_discount) }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}<p style="color: var(--ink-soft);">🤝 هنوز معرفی‌ای ثبت نشده.</p>{% endif %}
+</div>
+
+{# ─── Top spenders ─── #}
+<div class="card">
+    <h3>👑 برترین مشتریان (بر اساس خرید)</h3>
+    {% if top_spenders %}
+    <table>
+        <thead><tr><th>👤 نام</th><th>📱 تلفن</th><th>🏷️ سطح</th><th>🌟 امتیاز</th><th>🛒 تعداد خرید</th><th>💰 مجموع خرید</th></tr></thead>
+        <tbody>
+        {% for customer in top_spenders %}
+            <tr>
+                <td>{{ customer.full_name }}</td>
+                <td class="tnum">{{ customer.phone }}</td>
+                <td><span class="tier-badge tier-{{ customer.tier }}">
+                    {% if customer.tier == 'diamond' %}💎 الماس{% elif customer.tier == 'gold' %}⭐ طلایی{% else %}🥈 نقره‌ای{% endif %}
+                </span></td>
+                <td class="tnum">{{ customer.total_points }}</td>
+                <td class="tnum">{{ customer.total_purchases }}</td>
+                <td class="tnum"><strong>{{ fmt(customer.total_spent) }}</strong></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}<p style="color: var(--ink-soft);">🛒 هنوز خریدی ثبت نشده.</p>{% endif %}
+</div>
+
+{# ─── Quick actions ─── #}
+<div class="card quick-actions-card">
+    <div>
+        <span class="eyebrow">ابزارهای سریع</span>
+        <h3>🔧 اقدامات دوره‌ای</h3>
+    </div>
+    <div class="quick-actions">
+        <form method="post" action="/admin/check-birthdays"><button type="submit" class="btn btn-ghost">🎂 پیامک تولد</button></form>
+        <form method="post" action="/admin/check-downgrades"><button type="submit" class="btn btn-ghost">📉 بررسی سطح</button></form>
+        <form method="post" action="/admin/backup"><button type="submit" class="btn btn-ghost">💾 پشتیبان‌گیری</button></form>
+    </div>
+</div>
+
+{# ─── Danger zone ─── #}
+<details class="danger-zone danger-details">
+    <summary>⚠️ منطقه خطر — عملیات غیرقابل بازگشت</summary>
+    <div>
+        <p>این عمل تمام اطلاعات مشتریان، معرفی‌ها و تنظیمات را حذف می‌کند.</p>
+        <form method="post" action="/admin/reset-database" onsubmit="return confirm('⚠️ آیا مطمئن هستید؟ تمام اطلاعات حذف خواهد شد!')">
+            <button type="submit" class="btn btn-danger">🗑️ ریست دیتابیس</button>
+        </form>
+    </div>
+</details>
+{% endblock %}
