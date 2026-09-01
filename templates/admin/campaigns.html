@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}📢 کمپین‌ها — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem;">
+    <span style="font-size: 2rem;">📢</span>
+    <h2 style="margin: 0;">مدیریت کمپین‌ها</h2>
+</div>
+
+{% if message %}
+<div class="alert alert-success">✅ {{ message }}</div>
+{% endif %}
+
+<div class="admin-nav" style="margin-bottom: 1.5rem;">
+    <a href="/admin/campaigns/add" class="btn btn-primary">➕ افزودن کمپین جدید</a>
+</div>
+
+<div class="card">
+    {% if campaigns %}
+    <table>
+        <thead>
+            <tr>
+                <th>📢 نام</th>
+                <th>🔑 کد</th>
+                <th>🏷️ تخفیف</th>
+                <th>🛒 حداقل خرید</th>
+                <th>🔵 وضعیت</th>
+                <th>📅 شروع</th>
+                <th>📅 پایان</th>
+                <th>🔧 عملیات</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for campaign in campaigns %}
+            <tr>
+                <td><strong>{{ campaign.name }}</strong></td>
+                <td><span style="font-family: monospace; letter-spacing: 0.15em; direction: ltr; display: inline-block;">{{ campaign.code }}</span></td>
+                <td class="tnum">{{ campaign.discount_percent }}٪</td>
+                <td class="tnum">{{ fmt(campaign.min_purchase) }}</td>
+                <td>
+                    {% if campaign.is_active %}
+                        <span class="badge badge-available">✅ فعال</span>
+                    {% else %}
+                        <span class="badge badge-used">⛔ غیرفعال</span>
+                    {% endif %}
+                </td>
+                <td class="tnum">{{ campaign.start_date.strftime('%Y/%m/%d') if campaign.start_date else '—' }}</td>
+                <td class="tnum">{{ campaign.end_date.strftime('%Y/%m/%d') if campaign.end_date else '—' }}</td>
+                <td style="display: flex; gap: 0.3rem;">
+                    <a href="/admin/campaigns/{{ campaign.id }}" class="btn btn-sm btn-ghost">✏️</a>
+                    <form method="post" action="/admin/campaigns/{{ campaign.id }}/send" style="display:inline;"
+                          onsubmit="return confirm('⚠️ آیا مطمئن هستید؟ پیامک کمپین به همه مشتریان الماس ارسال خواهد شد.')">
+                        <button type="submit" class="btn btn-sm btn-primary">📤 ارسال</button>
+                    </form>
+                    <form method="post" action="/admin/campaigns/{{ campaign.id }}/delete" style="display:inline;"
+                          onsubmit="return confirm('⚠️ آیا مطمئن هستید؟')">
+                        <button type="submit" class="btn btn-sm btn-danger">🗑️</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div style="text-align: center; padding: 2rem; color: var(--ink-soft);">
+        <div style="font-size: 3rem; margin-bottom: 0.5rem;">📢</div>
+        <p>هنوز کمپینی ایجاد نشده است.</p>
+        <a href="/admin/campaigns/add" class="btn btn-primary" style="margin-top: 1rem;">➕ ایجاد کمپین جدید</a>
+    </div>
+    {% endif %}
+</div>
+
+<nav class="admin-nav">
+    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
+</nav>
+{% endblock %}

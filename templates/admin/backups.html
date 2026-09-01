@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}💾 پشتیبان‌ها — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
+    <span style="font-size: 2rem;">💾</span>
+    <h2 style="margin: 0;">پشتیبان‌گیری</h2>
+    <form method="post" action="/admin/backup" style="margin-right: auto;">
+        <button type="submit" class="btn btn-primary">💾 پشتیبان‌گیری الآن</button>
+    </form>
+</div>
+
+{% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
+{% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
+
+<div class="card">
+    <p style="color: var(--ink-soft); font-size: 0.9rem; margin-bottom: 1rem;">
+        یک نسخه پشتیبان هر شب به‌صورت خودکار ساخته می‌شود (۳۰ نسخه اخیر نگه داشته می‌شود).
+        برای بازیابی، فایل پشتیبان را دانلود کنید و محتوای آن را جایگزین فایل
+        <code>referral.db</code> کنید (قبل از جایگزینی، دیتابیس فعلی را حتماً یک‌جا کپی کنید).
+    </p>
+    {% if backups %}
+    <table>
+        <thead>
+            <tr>
+                <th>📄 نام فایل</th>
+                <th>📦 حجم</th>
+                <th>🕐 تاریخ</th>
+                <th>⬇️ دانلود</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for b in backups %}
+            <tr>
+                <td style="direction: ltr; text-align: right; font-family: monospace;">{{ b.name }}</td>
+                <td class="tnum">{{ '{:,}'.format(b.size) }} بایت</td>
+                <td class="tnum">{{ jalali_str(b.mtime, false) }}</td>
+                <td><a href="/admin/backups/download?name={{ b.name }}" class="btn btn-sm btn-ghost">⬇️ دانلود</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="text-align: center; color: var(--ink-soft); padding: 2rem;">هنوز پشتیبان‌گیری انجام نشده است.</p>
+    {% endif %}
+</div>
+
+<nav class="admin-nav">
+    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
+</nav>
+{% endblock %}
