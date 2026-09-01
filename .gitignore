@@ -1,0 +1,58 @@
+# ── Environment & secrets ──
+# NEVER commit .env — it contains API keys and the admin password.
+.env
+.env.*
+!.env.example
+
+# ── Databases (customer data — never commit) ──
+*.db
+*.db.bak
+*.db-journal
+*.db-wal
+*.db-shm
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.venv/
+venv/
+
+# ── TLS keys (never commit) ──
+cert.pem
+key.pem
+
+# ── Local / scratch ──
+.DS_Store
+session1.txt
+
+# ── User-generated uploads ──
+static/uploads/
+
+# ── Local tool settings (machine-specific) ──
+local-settings.json
+
+# ── Backups ──
+backups/
+
+# ── PyInstaller build artifacts ──
+build/
+dist/
+*.spec.bak
+
+# ── Owner provisioning bundle (real DB + secrets; embeddable, never commit) ──
+owner_bundle/
+
+# ── Desktop app user data (dev runs from desktop_entry) ──
+~/Library/Application Support/RaykidStore/
+.setup_done
+
+# ── Local workspace artifacts ──
+.freebuff/
+
+# ── Internal notes / editor artifacts ──
+local-config/
+AGENTS.md
+*.bak
+logo cropped.png

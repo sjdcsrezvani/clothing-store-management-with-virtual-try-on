@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}📈 ارتقای سطح — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div class="card">
+    <h3>📈 ارتقای سطح مشتریان</h3>
+    <p style="color: var(--ink-soft); font-size: 0.9rem; margin-bottom: 1rem;">
+        مشتریانی که سطح‌شان بالا رفته (نقره‌ای ← طلایی، طلایی ← الماس) و هنوز پیامک ارتقا نگرفته‌اند.
+        برای جلوگیری از ارسال انبوه، در هر بار ارسال حداکثر <strong>{{ limit }}</strong> پیامک فرستاده می‌شود.
+        پس از ارسال، مشتری تا رسیدن به سطح بعدی (یا ارتقای مجدد پس از کاهش سطح) از فهرست حذف می‌شود.
+    </p>
+
+    {% if sent_msg and sent_msg != '0' %}
+    <div class="alert alert-success">✅ {{ sent_msg }} پیامک ارتقا ارسال شد.</div>
+    {% endif %}
+    {% if skipped_msg == 'no_pattern' %}
+    <div class="alert alert-error">⚠️ ابتدا متن هر دو پیامک ارتقا (نقره‌ای ← طلایی و طلایی ← الماس) را در صفحه تنظیمات بنویسید.</div>
+    {% elif skipped_msg and skipped_msg != '0' %}
+    <div class="alert alert-error">⚠️ {{ skipped_msg }} مشتری به دلیل سقف {{ limit }} پیامک در هر ارسال، ارسال نشد.</div>
+    {% endif %}
+
+    {% if customers %}
+    <form method="post" action="/admin/tier-up/send">
+        <table>
+            <thead>
+                <tr>
+                    <th>ارسال</th>
+                    <th>👤 نام</th>
+                    <th>📱 تلفن</th>
+                    <th>🏷️ سطح جدید</th>
+                    <th>🌟 امتیاز</th>
+                    <th>💰 کل خرید</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in customers %}
+                <tr>
+                    <td>
+                        <input type="checkbox" name="customer_ids" value="{{ c.id }}"
+                               {% if loop.index0 < limit %}checked{% endif %}>
+                    </td>
+                    <td><strong>{{ c.full_name }}</strong></td>
+                    <td class="tnum">{{ c.phone }}</td>
+                    <td>
+                        <span class="tier-badge tier-{{ c.tier }}">
+                            {% if c.tier == 'diamond' %}💎 الماس{% else %}⭐ طلایی{% endif %}
+                        </span>
+                    </td>
+                    <td class="tnum">{{ c.total_points }}</td>
+                    <td class="tnum">{{ fmt(c.total_spent) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <button type="submit" class="btn btn-primary btn-large" style="margin-top: 1rem;">📲 ارسال پیامک ارتقا</button>
+    </form>
+    {% else %}
+    <p style="font-size: 1.05rem;">🎉 هیچ مشتری برای ارسال پیامک ارتقا وجود ندارد.</p>
+    {% endif %}
+</div>
+
+<nav class="admin-nav">
+    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
+    <a href="/admin/settings" class="btn btn-ghost">⚙️ تنظیمات پیامک</a>
+</nav>
+
+<script>
+var limit = {{ limit }};
+document.querySelectorAll('input[name="customer_ids"]').forEach(function (el) {
+    el.addEventListener('change', function () {
+        var checked = document.querySelectorAll('input[name="customer_ids"]:checked');
+        if (checked.length > limit) {
+            el.checked = false;
+            alert('حداکثر ' + limit + ' مشتری در هر ارسال.');
+        }
+    });
+});
+</script>
+{% endblock %}

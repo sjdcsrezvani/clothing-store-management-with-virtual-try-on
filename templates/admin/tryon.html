@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+{% block title %}👗 پرو مجازی — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
+    <span style="font-size: 2rem;">👗</span>
+    <h2 style="margin: 0;">پرو مجازی — Virtual Try-On</h2>
+    <a href="/sales/new" onclick="return openNewSaleWindow();" rel="noopener" class="btn btn-success btn-sm" style="margin-right: auto;">➕ فروش جدید</a>
+    <form method="post" action="/admin/try-on/clear"
+          onsubmit="return confirm('عکس کودک و محصولات فعلی پاک می‌شوند. ادامه؟');">
+        <button type="submit" class="btn btn-ghost btn-sm">🆕 شروع مشتری جدید</button>
+    </form>
+</div>
+
+{% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
+{% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
+
+<div class="checkout-layout">
+    {# ─── LEFT COLUMN ─── #}
+    <div class="checkout-left">
+
+        {# ── Kid photo ── #}
+        <div class="card">
+            <h3>📸 عکس کودک</h3>
+            {% if kid_photo_preview %}
+            <div style="text-align: center; margin-bottom: 0.8rem;">
+                <img src="{{ kid_photo_preview }}" alt="kid"
+                     style="max-width: 200px; max-height: 200px; border-radius: 12px; object-fit: cover; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+            </div>
+            {% else %}
+            <div style="text-align: center; padding: 1.5rem; background: #FFFAF5; border-radius: 8px; margin-bottom: 0.8rem;">
+                <div style="font-size: 3rem;">📷</div>
+                <p style="color: var(--ink-soft);">هنوز عکسی آپلود نشده</p>
+                <small>از طریق گوشی یا فرم زیر آپلود کنید</small>
+            </div>
+            {% endif %}
+            <details>
+                <summary style="cursor: pointer; font-weight: 600; color: var(--candy);">📤 آپلود عکس کودک</summary>
+                <form method="post" action="/api/image-gen/upload-kid-photo"
+                      enctype="multipart/form-data" style="margin-top: 0.8rem;"
+                      target="upload-frame"
+                      onsubmit="setTimeout(function(){ location.reload(); }, 1200);">
+                    <div class="form-group" style="margin-bottom: 0.5rem;">
+                        <input type="file" name="file" accept="image/*" required style="padding: 0.4rem;">
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-primary">📤 آپلود</button>
+                </form>
+                <iframe name="upload-frame" style="display:none;"></iframe>
+            </details>
+            <div style="margin-top: 0.8rem; font-size: 0.85rem; color: var(--ink-soft);">
+                📱 از گوشی: <code>POST /api/image-gen/upload-kid-photo</code> (multipart, field: <code>file</code>)
+            </div>
+        </div>
+
+        {# ── Barcode scanning ── #}
+        <div class="card">
+            <h3>🔲 اسکن بارکد محصولات</h3>
+            <div style="font-size: 0.85rem; color: var(--ink-soft); margin-bottom: 0.8rem;">
+                📱 بارکدها را با گوشی اسکن کنید یا دستی وارد کنید
+            </div>
+
+            <form method="post" action="/admin/try-on/add-product" style="display: flex; gap: 0.5rem; margin-bottom: 0.8rem;">
+                <input type="text" name="barcode_input" placeholder="🔲 بارکد را اسکن یا وارد کنید..."
+                       style="flex:1; padding:0.6rem 0.8rem; border:2px solid #E8DDD5; border-radius:8px; font-family:inherit; font-size:1rem; direction:ltr;"
+                       autofocus>
+                <button type="submit" class="btn btn-primary btn-sm">➕ افزودن</button>
+            </form>
+
+            {% if scanned %}
+            <div style="margin-top: 0.5rem;">
+                <strong style="font-size: 0.9rem;">📋 محصولات انتخاب‌شده ({{ scanned|length }}):</strong>
+                <div style="margin-top: 0.4rem; display: flex; flex-direction: column; gap: 0.3rem;">
+                    {% for s in scanned %}
+                    <div style="display:flex; align-items:center; gap:0.5rem; padding:0.4rem 0.6rem; background:#FFFAF5; border-radius:6px;">
+                        {% if s.image_path %}
+                            <img src="{{ s.image_path }}" alt="{{ s.name }}" style="width:40px; height:40px; object-fit:cover; border-radius:6px;">
+                        {% else %}
+                            <span style="font-size:1.2rem;">📦</span>
+                        {% endif %}
+                        <span style="flex:1;"><strong>{{ s.name }}</strong> <small style="color:var(--ink-soft);">{{ s.barcode }}</small></span>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--ink-soft);">
+                    🧵 تصویر این محصول‌ها + عکس کودک به‌عنوان مرجع به هوش مصنوعی ارسال می‌شود
+                </div>
+            </div>
+            {% else %}
+            <div style="text-align:center; padding:1rem; color:var(--ink-soft);">
+                <small>هیچ محصولی انتخاب نشده — بارکد اسکن کنید</small>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {# ─── RIGHT COLUMN ─── #}
+    <div class="checkout-right">
+
+        {# ── Generate ── #}
+        <div class="card" style="background: #FFFAF5;">
+            <h3>✨ تولید تصویر هوش مصنوعی</h3>
+            <form id="gen-form" method="post" action="/admin/try-on/generate">
+                <div class="form-group">
+                    <label for="mode">👗 نوع پرو</label>
+                    <select id="mode" name="mode" style="font-family:inherit; padding:0.6rem 0.8rem; border:2px solid #E8DDD5; border-radius:8px; width:100%;">
+                        <option value="product_only" selected>👕 فقط محصول (بقیه لباس‌ها دست‌نخورده بماند)</option>
+                        <option value="head_to_toe">👗 استایل کامل سر تا پا (هماهنگ با محصول)</option>
+                    </select>
+                    <small>در حالت «فقط محصول» فقط خود محصول عوض می‌شود. در حالت «استایل کامل» کل لباس‌ها با محصول هماهنگ می‌شوند.</small>
+                </div>
+
+                <div class="form-group" id="category-group" style="margin-top: 0.8rem;">
+                    <label for="category">🧵 نوع محصول (برای تنظیم قانون لباس)</label>
+                    <select id="category" name="category" style="font-family:inherit; padding:0.6rem 0.8rem; border:2px solid #E8DDD5; border-radius:8px; width:100%;">
+                        <option value="upper" selected>👕 بالاتنه (تیشرت، سویشرت، هودی، پولیور)</option>
+                        <option value="lower">👖 پایین‌تنه (جین، شلوار، شلوارک، دامن)</option>
+                        <option value="set">👚👖 ست دو تکه (تیشرت+شلوارک، سویشرت+شلوار)</option>
+                        <option value="layered">🧥 لایه‌ای بالاتنه (ژاکت/هودی + تیشرت رویی)</option>
+                        <option value="dress">👗 یک‌تکه (پیراهن، پینافور، اورال — با تیشرت زیری)</option>
+                    </select>
+                    <small>نوع محصول را دقیق انتخاب کنید: در حالت «فقط محصول» فقط همان قطعات عوض می‌شوند؛ در حالت «استایل کامل» بقیه لباس‌ها هماهنگ با همین نوع ساخته می‌شوند.</small>
+                </div>
+
+                <div class="form-group" style="margin-top: 0.8rem;">
+                    <label for="pose">🧍 ژست کودک</label>
+                    <select id="pose" name="pose" style="font-family:inherit; padding:0.6rem 0.8rem; border:2px solid #E8DDD5; border-radius:8px; width:100%;">
+                        {% for mode in pose_modes %}
+                        <option value="{{ mode.key }}">{{ mode.label_fa }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group" style="margin-top: 0.8rem;">
+                    <label for="face">🧑‍🎨 حالت چهره</label>
+                    <select id="face" name="face" style="font-family:inherit; padding:0.6rem 0.8rem; border:2px solid #E8DDD5; border-radius:8px; width:100%;">
+                        {% for mode in face_modes %}
+                        <option value="{{ mode.key }}">{{ mode.label_fa }}</option>
+                        {% endfor %}
+                    </select>
+                    <small>در هر سه حالت فرم صورت، بینی و بقیه اجزای چهره دقیقاً حفظ می‌شود. زیبا‌سازی فقط پوست (رفع جوش و لک) و حالت لبخند را در بر می‌گیرد — ظاهری طبیعی، نه آرایش.</small>
+                </div>
+
+                <div class="form-group" style="margin-top: 0.8rem;">
+                    <label for="background">🖼️ پس‌زمینه</label>
+                    <select id="background" name="background" style="font-family:inherit; padding:0.6rem 0.8rem; border:2px solid #E8DDD5; border-radius:8px; width:100%;">
+                        <option value="random" selected>🎲 پس‌زمینه تصادفی (پیشنهاد می‌شود)</option>
+                        <option value="">🚫 پس‌زمینه را تغییر نده</option>
+                        {% for group in backgrounds %}
+                        <optgroup label="{{ group.label_fa }}">
+                            {% for option in group.options %}
+                            <option value="{{ option.key }}">{{ option.label_fa }}</option>
+                            {% endfor %}
+                        </optgroup>
+                        {% endfor %}
+                    </select>
+                    <small>«تصادفی» هر بار یک استودیوی متفاوت انتخاب می‌کند (از بین {{ backgrounds|map(attribute='options')|map('length')|sum }} گزینه).</small>
+                </div>
+
+                <div style="margin-top: 0.8rem; font-size:0.9rem; color:var(--ink-soft);">
+                    🔧 موتور تولید: <strong>gpt-image-2</strong> (gapgpt)
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-large btn-block" style="font-size:1.1rem; margin-top: 1rem;">
+                    ✨ تولید تصویر
+                </button>
+            </form>
+        </div>
+
+        {# ── Generated result ── #}
+        {% if last_gen_url %}
+        <div class="card" style="text-align: center; border-color: var(--candy);">
+            <h3>🖼️ تصویر نهایی (با لوگو)</h3>
+            {% if last_gen_engine %}
+            <div style="font-size:0.85rem; color:var(--ink-soft); margin-bottom:0.5rem; padding:0.3rem 0.6rem; background:#FFFAF5; border-radius:6px; display:inline-block;">
+                🤖 مدل: {{ last_gen_engine }}
+            </div>
+            {% endif %}
+            <div id="final-preview" style="display: inline-block; max-width: 100%;">
+                <img src="{{ last_gen_url }}" alt="generated"
+                     id="generated-img"
+                     style="max-width:100%; max-height:400px; border-radius:12px; box-shadow:0 4px 16px rgba(0,0,0,0.12); cursor:pointer; display:block;"
+                     onclick="openLightbox('{{ last_gen_url }}')">
+            </div>
+            <div style="display: flex; gap: 0.5rem; justify-content: center; margin-top: 1rem; flex-wrap: wrap;">
+                <a href="/admin/try-on/download?logo=yes" class="btn btn-success">⬇️ دانلود با لوگو</a>
+                <a href="/admin/try-on/download?logo=no" class="btn btn-primary">⬇️ دانلود بدون لوگو</a>
+                <form method="post" action="/admin/try-on/save" style="display:inline;">
+                    <button type="submit" class="btn">💾 ذخیره در گالری</button>
+                </form>
+                <form method="post" action="/admin/try-on/clear" style="display:inline;">
+                    <button type="submit" class="btn btn-ghost">🔄 پاک کردن و شروع مجدد</button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+
+        {# ── Saved images shortcut ── #}
+        <a href="/admin/try-on/saved" class="card" style="display:block; text-decoration:none; color:inherit; text-align:center;">
+            <div style="font-size:1.05rem; font-weight:600;">📂 تصاویر ذخیره‌شده</div>
+            <div style="font-size:0.85rem; color:var(--ink-soft); margin-top:0.3rem;">
+                مشاهده گالری ({{ saved_count }} تصویر)
+            </div>
+        </a>
+    </div>
+</div>
+
+{# ─── Verbose generation loader ─── #}
+<style>
+@keyframes gen-spin { to { transform: rotate(360deg); } }
+@keyframes gen-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+@keyframes gen-shine { to { background-position: -200% 0; } }
+.gen-spinner {
+    width: 74px; height: 74px; border-radius: 50%;
+    border: 5px solid rgba(255,255,255,0.15);
+    border-top-color: #ff9ad5; border-right-color: #b79cff; border-bottom-color: #7ad0ff;
+    animation: gen-spin 1s linear infinite;
+    box-shadow: 0 0 30px rgba(183,156,255,0.35);
+}
+.gen-float { display:inline-block; animation: gen-float 2.2s ease-in-out infinite; }
+</style>
+<div id="gen-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(12,10,34,0.92);backdrop-filter:blur(6px);z-index:10001;flex-direction:column;align-items:center;justify-content:center;gap:1.2rem;">
+    <a href="/sales/new" onclick="return openNewSaleWindow();" rel="noopener" class="btn btn-success">➕ باز کردن فروش جدید در پنجره دیگر</a>
+    <div class="gen-spinner"></div>
+    <div id="gen-step" style="color:#fff;font-size:1.25rem;font-weight:600;text-align:center;padding:0 1rem;"></div>
+    <div style="width:min(420px,80vw);height:10px;border-radius:6px;background:rgba(255,255,255,0.15);overflow:hidden;">
+        <div id="gen-bar" style="width:10%;height:100%;border-radius:6px;background:linear-gradient(90deg,#ff9ad5,#b79cff,#7ad0ff);background-size:200% 100%;animation:gen-shine 1.6s linear infinite;transition:width .8s ease;"></div>
+    </div>
+    <div style="color:rgba(255,255,255,0.6);font-size:0.85rem;"><span class="gen-float">✨</span> معمولاً ۱ تا ۲ دقیقه — در صف شلوغ ممکن است تا ۴ دقیقه طول بکشد (صفحه را نبندید)</div>
+</div>
+
+{# ─── Lightbox ─── #}
+<div id="lightbox" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.92);z-index:9999;align-items:center;justify-content:center;"
+     onclick="closeLightbox(event)">
+    <div id="lightbox-stage" style="position:relative;display:inline-block;line-height:0;">
+        <img id="lightbox-img" src="" alt="full"
+             style="max-width:95vw;max-height:95vh;object-fit:contain;border-radius:8px;display:block;">
+        <img src="/static/logo.png" alt="logo"
+             id="lightbox-logo"
+             style="position:absolute;top:0;left:0;width:200px;height:200px;pointer-events:none;filter:drop-shadow(0 2px 6px rgba(0,0,0,0.4));">
+    </div>
+    <div style="position:absolute;top:1rem;right:1rem;color:#fff;font-size:2rem;cursor:pointer;" onclick="closeLightbox()">✕</div>
+</div>
+
+<nav class="admin-nav" style="margin-top: 1.5rem;">
+    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
+</nav>
+
+<script>
+function openLightbox(src) {
+    document.getElementById('lightbox-img').src = src;
+    document.getElementById('lightbox').style.display = 'flex';
+}
+function closeLightbox(e) {
+    if (!e || e.target === e.currentTarget || e.target.tagName === 'DIV')
+        document.getElementById('lightbox').style.display = 'none';
+}
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') document.getElementById('lightbox').style.display = 'none';
+});
+// Category dropdown always visible — it applies to both outfit modes.
+
+(function () {
+    var form = document.getElementById('gen-form');
+    if (!form) return;
+    var overlay = document.getElementById('gen-overlay');
+    var step = document.getElementById('gen-step');
+    var bar = document.getElementById('gen-bar');
+    var phases = [
+        "📸 دریافت عکس کودک…",
+        "👕 خواندن لباس و سایز…",
+        "🧵 طراحی اولیه لباس…",
+        "🎨 رنگ‌آمیزی پارچه…",
+        "✨ افزودن جزئیات و نور…",
+        "🪄 اعمال پس‌زمینه…",
+        "💫 نهایی‌سازی تصویر…"
+    ];
+    var retryPhases = [
+        "⏳ سرور کند بود — تلاش مجدد…",
+        "🔄 تلاش دوباره برای تولید…",
+        "💪 یه بار دیگه امتحان می‌کنیم…"
+    ];
+    form.addEventListener('submit', function () {
+        var btn = form.querySelector('button[type="submit"]');
+        if (btn) btn.disabled = true;
+        overlay.style.display = 'flex';
+        var i = 0;
+        step.textContent = phases[0];
+        bar.style.width = '12%';
+        setInterval(function () {
+            i = (i + 1) % phases.length;
+            // After the regular 7 phases cycle once (~17s), blend in retry lines
+            if (i === 0 && Math.random() < 0.15) {
+                step.textContent = retryPhases[Math.floor(Math.random() * retryPhases.length)];
+            } else {
+                step.textContent = phases[i];
+            }
+            bar.style.width = (12 + ((i + 1) / phases.length) * 78) + '%';
+        }, 2400);
+    });
+})();
+</script>
+{% endblock %}

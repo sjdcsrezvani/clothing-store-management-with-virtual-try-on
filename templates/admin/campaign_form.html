@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}{% if edit_mode %}✏️ ویرایش کمپین{% else %}➕ افزودن کمپین{% endif %} — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem;">
+    <span style="font-size: 2rem;">{% if edit_mode %}✏️{% else %}➕{% endif %}</span>
+    <h2 style="margin: 0;">{% if edit_mode %}ویرایش کمپین: {{ campaign.name }}{% else %}افزودن کمپین جدید{% endif %}</h2>
+</div>
+
+<div class="card">
+    <form method="post"
+          action="{% if edit_mode %}/admin/campaigns/{{ campaign.id }}{% else %}/admin/campaigns/add{% endif %}">
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="name">📢 نام کمپین *</label>
+                <input type="text" id="name" name="name" required value="{{ campaign.name if campaign else '' }}" placeholder="مثال: حراج تابستانه">
+            </div>
+            <div class="form-group">
+                <label for="code">🔑 کد تخفیف *</label>
+                <input type="text" id="code" name="code" required value="{{ campaign.code if campaign else '' }}" placeholder="مثال: SUMMER2025">
+                <small>کدی که مشتریان برای استفاده از تخفیف وارد می‌کنند</small>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="discount_percent">🏷️ درصد تخفیف *</label>
+                <input type="number" id="discount_percent" name="discount_percent" required min="1" max="100" value="{{ campaign.discount_percent if campaign else '' }}">
+            </div>
+            <div class="form-group">
+                <label for="min_purchase">🛒 حداقل خرید (تومان)</label>
+                <input type="number" id="min_purchase" name="min_purchase" min="0" value="{{ campaign.min_purchase if campaign else '0' }}">
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="start_date">📅 تاریخ شروع</label>
+                <input type="date" id="start_date" name="start_date" value="{{ campaign.start_date.strftime('%Y-%m-%d') if campaign and campaign.start_date else '' }}">
+            </div>
+            <div class="form-group">
+                <label for="end_date">📅 تاریخ پایان</label>
+                <input type="date" id="end_date" name="end_date" value="{{ campaign.end_date.strftime('%Y-%m-%d') if campaign and campaign.end_date else '' }}">
+            </div>
+        </div>
+
+        {% if edit_mode %}
+        <div class="form-group" style="margin-top: 0.5rem;">
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                <input type="checkbox" name="is_active" {% if campaign.is_active %}checked{% endif %} style="width: auto;">
+                ✅ کمپین فعال باشد
+            </label>
+        </div>
+        {% endif %}
+
+        <div style="display: flex; gap: 0.5rem; margin-top: 1.5rem;">
+            <button type="submit" class="btn btn-primary btn-large">
+                {% if edit_mode %}💾 ذخیره تغییرات{% else %}➕ افزودن کمپین{% endif %}
+            </button>
+            <a href="/admin/campaigns" class="btn btn-ghost">🔙 لغو</a>
+        </div>
+    </form>
+</div>
+
+<nav class="admin-nav">
+    <a href="/admin/campaigns" class="btn btn-ghost">🔙 بازگشت به لیست کمپین‌ها</a>
+</nav>
+{% endblock %}
