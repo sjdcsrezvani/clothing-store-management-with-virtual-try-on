@@ -340,14 +340,14 @@ TRYON_BACKGROUNDS = [
 # ── Try-on pose modes ──
 # Controls how the child's pose is handled in the generated image.
 # `key` is the value sent through the form; `prompt_clause` is appended to the
-# base try-on prompt to steer pose preservation or AI-chosen pose.
+# Base try-on prompt to steer pose preservation or an automatic pose.
 TRYON_POSE_MODES = [
     {"key": "preserve", "label_fa": "🪄 حفظ ژست عکس اصلی",
      "prompt_clause": (
          "Preserve the person's exact face, body shape and posture — sitting stays sitting, standing stays standing, "
          "kneeling stays kneeling. Do not change pose, body shape or weight distribution. Only clothing changes."
      )},
-    {"key": "ai", "label_fa": "✨ ژست انتخابی هوش مصنوعی",
+    {"key": "ai", "label_fa": "✨ ژست خودکار",
      "prompt_clause": (
          "Catalog stance — standing, relaxed shoulders, gentle smile, one hand slightly out, three-quarter to camera, "
          "natural weight. Confident, comfortable. Keep face, body shape, skin tone, hair and expression identical to reference."
@@ -363,7 +363,7 @@ TRYON_POSE_MODES = [
 # ── Try-on face modes ──
 # Controls how the child's/teen's face is handled in the generated image.
 # `key` is the value sent through the form; `prompt_clause` is the FACE RULE
-# appended after the pose clause (it lands after MAIN_PROMPT so it overrides
+# Appended after the pose clause so it takes precedence over
 # its generic identity wording). All modes keep the face structure intact;
 # they only differ in skin beautification and expression.
 TRYON_FACE_MODES = [

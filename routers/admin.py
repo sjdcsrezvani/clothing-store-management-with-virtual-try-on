@@ -55,7 +55,7 @@ async def admin_login_page(request: Request):
 @router.post("/login", response_class=HTMLResponse)
 async def admin_login(request: Request, username: str = Form("owner"), password: str = Form(...), db: Session = Depends(get_db)):
     if login_locked(request):
-        log_action(db, "login_blocked", "بیش از حد تلاش ناموفق")
+        log_action(db, "login_blocked", "بیش از حد تلاش ناموفق", request=request)
         return templates.TemplateResponse(request, "admin/login.html", {
             "error": "تلاش‌های ناموفق زیاد بود. چند دقیقه بعد دوباره امتحان کنید."
         })
@@ -63,7 +63,6 @@ async def admin_login(request: Request, username: str = Form("owner"), password:
     if user:
         login_success(request)
         request.session.clear()
-        request.session["is_admin"] = True  # legacy compatibility for templates
         request.session["staff_user_id"] = user.id
         request.session["staff_role"] = user.role
         request.session["api_token"] = API_TOKEN
@@ -183,7 +182,7 @@ async def admin_setup(
 
     db.commit()
     invalidate_store_cache()
-    log_action(db, "setup_complete", f"راه‌اندازی اولیه: {store_name.strip()}")
+    log_action(db, "setup_complete", f"راه‌اندازی اولیه: {store_name.strip()}", request=request, target_type="settings", after={"store_name": store_name.strip()})
 
     return RedirectResponse(url="/admin/login?msg=راه‌اندازی تکمیل شد. اکنون وارد شوید.", status_code=303)
 

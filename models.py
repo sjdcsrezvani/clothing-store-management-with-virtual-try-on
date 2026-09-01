@@ -72,7 +72,6 @@ class Customer(Base):
     credit_limit = Column(Integer, nullable=True)
     last_purchase_date = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    is_admin = Column(Boolean, default=False)
 
     referrer = relationship("Customer", remote_side=[id], backref="referrals_made")
     sales = relationship("Sale", back_populates="customer")
@@ -145,7 +144,7 @@ class Product(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
-    # Ponytail: single image for list views, variants have their own
+    # Single image for list views; variants can have their own images.
     image_path = Column(String(500), nullable=True)
 
     # Relationships

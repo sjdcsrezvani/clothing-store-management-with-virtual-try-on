@@ -52,10 +52,11 @@ def _migrate_unknown_customers():
             conn.execute(text("DELETE FROM customers WHERE id=:cid"), {"cid": row[0]})
 
 
-def _apply_missing_columns():
+def _apply_missing_columns(migration_engine=None):
     """Additive migration: ALTER TABLE for columns that exist in models but not in the DB.
-    ponytail: SQLite-specific, single-table scan. Replace with Alembic when migration count > 5."""
-    insp = inspect(engine)
+    SQLite-specific additive migration that scans each known table."""
+    migration_engine = migration_engine or engine
+    insp = inspect(migration_engine)
     table_to_cols = {
         "customers": [
             ("child_photo_path", "VARCHAR(500)"),
@@ -88,7 +89,7 @@ def _apply_missing_columns():
             ("after_json", "TEXT"),
         ],
     }
-    with engine.begin() as conn:
+    with migration_engine.begin() as conn:
         for table, cols in table_to_cols.items():
             if not insp.has_table(table):
                 continue

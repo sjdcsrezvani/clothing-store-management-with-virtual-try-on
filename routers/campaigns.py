@@ -27,7 +27,7 @@ async def admin_campaigns(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/campaigns/add", response_class=HTMLResponse)
-async def admin_campaign_add_form(request: Request):
+async def admin_campaign_add_form(request: Request, db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
@@ -197,7 +197,7 @@ async def admin_campaign_send(campaign_id: int, request: Request, db: Session = 
             sent_count += 1
     
     db.commit()
-    log_action(db, "campaign_sms", f"کمپین «{campaign.name}»: {sent_count} ارسال، {skipped} رد شد")
+    log_action(db, "campaign_sms", f"کمپین «{campaign.name}»: {sent_count} ارسال، {skipped} رد شد", request=request, target_type="campaign", target_id=campaign.id, after={"sent_count": sent_count, "skipped": skipped})
 
     message = f"پیامک کمپین به {sent_count} مشتری الماس ارسال شد."
     if skipped:

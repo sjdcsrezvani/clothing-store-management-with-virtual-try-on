@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.1.2 — 2026-09-01
+
+### Phase 1 hardening
+
+- Completed route authorization coverage for staff roles.
+- Disabled sessions are rejected immediately, and role changes apply to active sessions.
+- Added legacy-schema migration coverage using an isolated temporary database.
+- Refused anonymous audit records for business mutations.
+- Removed the transitional administrator flag from authorization and staff models.
+- Cleaned public documentation and source comments of internal development references.
+
+
 ## v1.1.1 — 2026-09-01
 
 ### Security and authorization
@@ -29,7 +41,7 @@ First public beta release of RaiKids Store Management.
 - Expenses, suppliers, cashbox, accounting, analytics, and CSV exports
 - Persian invoices in HTML and PDF formats
 - Optional SMS gateway integration
-- Optional AI virtual try-on workflow
+- Optional virtual try-on workflow
 - macOS and Windows desktop packaging scripts
 
 ### Beta limitations

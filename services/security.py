@@ -90,9 +90,6 @@ def _session_staff_user(db, request: Request):
         if user:
             return user
         request.session.clear()
-    if request.session.get("is_admin"):
-        # Compatibility for existing sessions; login migrates this account.
-        return db.query(StaffUser).filter(StaffUser.username == "owner", StaffUser.is_active == True).first()
     return None
 
 
@@ -196,6 +193,9 @@ def log_action(db, action: str, detail: str = "", request: Request | None = None
     try:
         from models import AdminLog
         user = _session_staff_user(db, request) if request is not None else None
+        if request is not None and user is None and action not in {"login_failed", "login_blocked"}:
+            logger.error("Refusing anonymous audit event: %s", action)
+            return
         db.add(AdminLog(
             action=action,
             detail=str(detail)[:500],
@@ -295,9 +295,7 @@ def require_api_token(request: Request) -> None:
     header_token = request.headers.get("X-API-Token", "")
     if API_TOKEN and header_token and hmac.compare_digest(header_token, API_TOKEN):
         return
-    if request.session.get("api_token") == API_TOKEN:
-        return
-    if not API_TOKEN and request.session.get("is_admin"):
+    if request.session.get("api_token") == API_TOKEN and request.session.get("staff_user_id"):
         return
     raise HTTPException(status_code=401, detail="Unauthorized")
 

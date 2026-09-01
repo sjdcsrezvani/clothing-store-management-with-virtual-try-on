@@ -89,7 +89,7 @@ def get_setting_int(db: Session, key: str, default: int) -> int:
 
 def check_admin(request: Request) -> bool:
     """Legacy boolean admin-session check kept for compatibility."""
-    return bool(request.session.get("is_admin") and request.session.get("staff_user_id"))
+    return bool(request.session.get("staff_user_id"))
 
 
 def parse_persian_birthday(value: str) -> str | None:

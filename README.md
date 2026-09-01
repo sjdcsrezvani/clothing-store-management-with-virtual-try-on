@@ -3,7 +3,7 @@
 FastAPI + SQLite point-of-sale for a local kids' & teens' clothing shop:
 products & variants with barcode tags, checkout with referral / tier / birthday
 discounts, customer loyalty (points, gold/diamond tiers), SMS gateway
-(welcome, birthday, tier-up, campaigns), virtual try-on (AI product photos on
+(welcome, birthday, tier-up, campaigns), virtual try-on product previews on
 the child's picture), invoices (HTML + Persian PDF), a deep analytics suite,
 and accounting-lite: credit sales (نسیه) with a debt ledger, supplier purchases
 that update stock & cost, expenses, a cash register, a net profit & loss
@@ -215,10 +215,10 @@ API-token gate. They use a throwaway SQLite database — never your real data.
 - Admin auth is session-based (signed cookie, 12h expiry) with PBKDF2-hashed
   passwords stored in the settings table, plus a login rate limiter.
 - Every state-changing form is CSRF-protected.
-- `/api/*` endpoints (customer lookup, photo upload, AI generation) require the
+- `/api/*` endpoints (customer lookup, photo upload, image generation) require the
   `API_TOKEN` or an admin session — never open to the network.
-- AI image generation is capped per day (setting `tryon_daily_limit`) and
-  rate-limited per client, because every generation costs real money.
+- Image generation is capped per day (setting `tryon_daily_limit`) and
+  rate-limited per client, because each generation uses a metered service.
 - Keep the machine on a trusted network; nothing here is designed to face the
   public internet without additional hardening.
 

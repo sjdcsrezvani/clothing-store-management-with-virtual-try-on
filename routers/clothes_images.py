@@ -384,13 +384,10 @@ def _face_clause(key: str) -> str:
 
 
 def _clean_garment_details(detail: str) -> str:
-    """Strip Gemini template boilerplate out of variant `tryon_details` before it
-    is embedded in the prompt. The admin pastes the full Gemini output
-    (CATEGORY: / VARIANT DESCRIPTION: / IMPORTANT PRESERVATION DETAILS: /
-    CONFIDENCE:) but only the descriptive content belongs in the prompt —
-    labels like "CONFIDENCE: High" read like instructions to the model and
-    waste input tokens. Safe for hand-written descriptions: it only removes the
-    known template markers."""
+    """Strip known description-template boilerplate before embedding variant
+    details in the prompt. Only descriptive content belongs in the prompt;
+    confidence and section labels are omitted. Hand-written descriptions remain
+    safe because only the known markers are removed."""
     if not detail:
         return ""
     lines = detail.replace("\r\n", "\n").replace("\r", "\n").split("\n")
@@ -484,7 +481,10 @@ def _scanned_product_dict(product: Product, barcode: str) -> dict:
 # ─── Mobile web app (barcode scanner + photo upload) ───
 
 @admin_router.get("/mobile", response_class=HTMLResponse)
-async def mobile_app_page(request: Request):
+async def mobile_app_page(request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "cashier")
+    if not hasattr(guard, "role"):
+        return guard
     return templates.TemplateResponse(request, "mobile/index.html", {})
 
 
@@ -671,7 +671,7 @@ async def admin_tryon_save(request: Request, db: Session = Depends(get_db)):
 # ─── Download latest generated image (with or without logo) ───
 
 @admin_router.get("/try-on/download", response_class=Response)
-async def admin_tryon_download(request: Request, logo: str = "no"):
+async def admin_tryon_download(request: Request, logo: str = "no", db: Session = Depends(get_db)):
     """Stream the most-recently generated image as a downloadable file.
     `logo=yes` composites the brand logo onto it via PIL (no AI call).
     `logo=no` (default) returns the raw generated image."""
@@ -708,7 +708,7 @@ async def admin_tryon_download(request: Request, logo: str = "no"):
 
 
 @admin_router.post("/try-on/clear")
-async def admin_tryon_clear(request: Request):
+async def admin_tryon_clear(request: Request, db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard

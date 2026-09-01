@@ -30,8 +30,8 @@ session1.txt
 # ── User-generated uploads ──
 static/uploads/
 
-# ── Claude / Codebuff local settings (machine-specific) ──
-.claude/settings.local.json
+# ── Local tool settings (machine-specific) ──
+local-settings.json
 
 # ── Backups ──
 backups/
@@ -48,11 +48,11 @@ owner_bundle/
 ~/Library/Application Support/RaykidStore/
 .setup_done
 
-# ── Freebuff local workspace artifacts ──
+# ── Local workspace artifacts ──
 .freebuff/
 
 # ── Internal notes / editor artifacts ──
-.claude/
+local-config/
 AGENTS.md
 *.bak
 logo cropped.png

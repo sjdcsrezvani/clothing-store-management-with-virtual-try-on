@@ -1,8 +1,8 @@
-"""Virtual try-on image generation via the gapgpt /v1/images/edits gateway.
+"""Virtual try-on image generation through the configured image gateway.
 
-Kid photo + garment photo(s) are sent as separate multipart files to
-gpt-image-2. Prompt building and input-image compression are kept here;
-anything provider-specific was removed when we dropped the multi-provider chain.
+Kid photo and garment photos are sent as separate multipart files. Prompt
+assembly and input-image preparation are kept here so the router stays focused
+on request handling.
 """
 import base64
 import io
@@ -46,10 +46,8 @@ def _load_logo() -> Optional[Image.Image]:
 
 
 def composite_logo(image_bytes: bytes, logo_width: int = 230) -> bytes:
-    """Return PNG bytes of `image_bytes` with the brand logo pinned to the
-    top-left corner, scaled to `logo_width` pixels wide (aspect preserved).
-    Logo is added via PIL only — no AI involved. Falls back to a plain PNG
-    re-encode if the logo is missing."""
+    """Return PNG bytes with the brand logo pinned to the top-left corner.
+    Falls back to a plain PNG re-encode if the logo is missing."""
     base = Image.open(io.BytesIO(image_bytes))
     if base.mode != "RGBA":
         base = base.convert("RGBA")
