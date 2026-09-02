@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import Customer, Referral, generate_referral_code, to_english_digits
 from services._common import fmt, get_setting_int as get_discount_setting, current_year_month, parse_persian_birthday, jalali_str
-from services.sms import send_welcome_sms
+from services.sms import queue_welcome_sms
 from services.templating import templates
 from services.tier import get_tier_config
 from services.security import require_html_role, log_action
@@ -64,7 +64,7 @@ async def create_customer(
     )
     db.add(customer)
     db.commit()
-    await send_welcome_sms(phone, first_name, code, db)
+    await queue_welcome_sms(phone, first_name, code, db)
 
     tier_config = get_tier_config(db)
     return templates.TemplateResponse(request, "customer.html", {

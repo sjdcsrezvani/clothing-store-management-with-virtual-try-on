@@ -109,6 +109,28 @@ class Referral(Base):
     referred = relationship("Customer", foreign_keys=[referred_id])
 
 
+class BackgroundJob(Base):
+    __tablename__ = "background_jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_type = Column(String(40), nullable=False, index=True)
+    payload = Column(Text, nullable=False)
+    status = Column(String(20), nullable=False, default="pending", index=True)
+    retry_count = Column(Integer, nullable=False, default=0)
+    next_retry_at = Column(DateTime, nullable=True, index=True)
+    error_message = Column(Text, nullable=True)
+    locked_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    result_path = Column(String(500), nullable=True)
+    result_url = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("status IN ('pending', 'processing', 'completed', 'failed')", name="ck_background_jobs_status"),
+        CheckConstraint("retry_count >= 0", name="ck_background_jobs_retry_count"),
+    )
+
+
 class Settings(Base):
     __tablename__ = "settings"
 

@@ -2,6 +2,7 @@ import httpx
 import logging
 from sqlalchemy.orm import Session
 from models import Settings
+from services.jobs import enqueue
 from config import SMS_GATEWAY_URL, SMS_API_KEY, SMS_DEVICE_ID
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ async def send_sms(message: str, recipient: str, db: Session) -> bool:
     config = get_sms_config(db)
 
     if not config["api_key"] or not config["device_id"]:
-        logger.warning(f"SMS skipped (no api key/device): to={recipient}, msg={message}")
+        logger.warning("SMS skipped because gateway configuration is incomplete")
         return False
 
     try:
@@ -54,10 +55,10 @@ async def send_sms(message: str, recipient: str, db: Session) -> bool:
                 timeout=10,
             )
             if resp.status_code == 200:
-                logger.info(f"SMS sent to {recipient}")
+                logger.info("SMS sent")
                 return True
             else:
-                logger.error(f"SMS failed: {resp.status_code} {resp.text}")
+                logger.error("SMS failed with status %s", resp.status_code)
                 return False
     except Exception as e:
         logger.error(f"SMS error: {e}")
@@ -72,6 +73,23 @@ async def send_pattern_sms(pattern: str, recipient: str, attributes: dict, db: S
 
 # ========== Pattern 1: Welcome SMS ==========
 # Keys: var1=first_name, var2=referral_code
+async def queue_sms(pattern: str, recipient: str, attributes: dict, db: Session):
+    if not pattern:
+        return None
+    job = enqueue(db, "sms", {"pattern": pattern, "recipient": recipient, "attributes": attributes})
+    db.commit()
+    return job
+
+
+async def queue_welcome_sms(phone: str, first_name: str, referral_code: str, db: Session):
+    config = get_sms_config(db)
+    if not config["welcome_pattern"]:
+        return None
+    job = enqueue(db, "sms", {"pattern": config["welcome_pattern"], "recipient": phone, "attributes": {"var1": first_name or "مشتری", "var2": referral_code}})
+    db.commit()
+    return job
+
+
 async def send_welcome_sms(phone: str, first_name: str, referral_code: str, db: Session) -> bool:
     """Send welcome SMS after checkout completion."""
     config = get_sms_config(db)

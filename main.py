@@ -126,6 +126,19 @@ def _apply_missing_columns(migration_engine=None):
         "refunds": [
             ("cash_session_id", "INTEGER"),
         ],
+        "background_jobs": [
+            ("job_type", "VARCHAR(40)"),
+            ("payload", "TEXT"),
+            ("status", "VARCHAR(20) DEFAULT 'pending'"),
+            ("retry_count", "INTEGER DEFAULT 0"),
+            ("next_retry_at", "DATETIME"),
+            ("error_message", "TEXT"),
+            ("locked_at", "DATETIME"),
+            ("completed_at", "DATETIME"),
+            ("result_path", "VARCHAR(500)"),
+            ("result_url", "VARCHAR(500)"),
+            ("created_at", "DATETIME"),
+        ],
         "admin_logs": [
             ("staff_user_id", "INTEGER"),
             ("target_type", "VARCHAR(50)"),
@@ -151,6 +164,10 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     upgrade(engine)
     _apply_missing_columns()
+    from services.operations import validate_production_config
+    configuration_errors = validate_production_config()
+    if configuration_errors:
+        raise RuntimeError("Invalid production configuration: " + "; ".join(configuration_errors))
     _migrate_unknown_customers()
     _seed_legacy_stock_movements()
     # Seed the admin password hash and migrate the legacy single-admin account.

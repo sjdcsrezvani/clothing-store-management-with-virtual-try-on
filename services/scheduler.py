@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from database import SessionLocal
 from services.backup import create_backup
 from services.checkout import expire_stale
+from services.jobs import reclaim_stale, claim_next, process_one, complete, fail
 from services.tier import (
     get_tier_config,
     get_customers_for_downgrade_check,
@@ -27,7 +28,7 @@ async def check_tier_downgrades():
         for customer in customers:
             was_downgraded = check_tier_downgrade(customer, config, db)
             if was_downgraded:
-                logger.info(f"Customer {customer.phone} downgraded to {customer.tier}")
+                logger.info("Customer tier downgraded")
 
         db.commit()
 
@@ -56,6 +57,16 @@ async def scheduler_task():
             db = SessionLocal()
             try:
                 expire_stale(db)
+                reclaim_stale(db)
+                for _ in range(10):
+                    job = claim_next(db)
+                    if not job:
+                        break
+                    try:
+                        await process_one(db, job)
+                        complete(db, job)
+                    except Exception as error:
+                        fail(db, job, error)
             finally:
                 db.close()
 

@@ -19,6 +19,7 @@ from services.sms import (
 )
 from services._common import fmt, check_admin, get_setting_int as get_discount_setting, jalali_str
 from services.backup import create_backup, list_backups, backup_download_path
+from services.operations import verify_sqlite_backup
 from services.security import (
     check_admin_password,
     login_locked,
@@ -486,8 +487,11 @@ async def admin_backups(request: Request, db: Session = Depends(get_db)):
     if not hasattr(guard, "role"):
         return guard
 
+    backups = list_backups()
+    for backup in backups:
+        backup.update(verify_sqlite_backup(Path("backups") / backup["name"]))
     return templates.TemplateResponse(request, "admin/backups.html", {
-        "backups": list_backups(),
+        "backups": backups,
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
         "jalali_str": jalali_str,
@@ -638,7 +642,8 @@ async def admin_check_birthdays(request: Request, db: Session = Depends(get_db))
             skipped += 1
             continue
 
-        success = await send_birthday_sms(customer.phone, customer.first_name or "", customer.child_name or "", db)
+        from services.sms import queue_sms
+        success = await queue_sms(config.get("birthday_pattern", ""), customer.phone, {"var1": customer.first_name or "مشتری", "var2": customer.child_name or "فرزند شما"}, db) is not None
         if success:
             db.add(Settings(key=log_key, value="sent"))
             sent += 1
@@ -719,7 +724,8 @@ async def admin_tier_up_send(request: Request, customer_ids: list[int] = Form([]
             continue
 
         sms_fn = send_tier_up_gold_sms if customer.tier == "gold" else send_tier_up_diamond_sms
-        success = await sms_fn(customer.phone, customer.first_name or "", customer.total_points, db)
+        pattern = gold_pattern.value if customer.tier == "gold" else diamond_pattern.value
+        success = await queue_sms(pattern, customer.phone, {"var1": customer.first_name or "مشتری", "var2": str(customer.total_points)}, db) is not None
         if success:
             marker = db.query(Settings).filter(Settings.key == tier_up_marker_key(customer.id)).first()
             if marker:

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 6
+MIGRATION_VERSION = 7
 
 
 def migration_status(engine) -> int:

@@ -26,6 +26,7 @@
                 <th>📄 نام فایل</th>
                 <th>📦 حجم</th>
                 <th>🕐 تاریخ</th>
+                <th>🔎 وضعیت</th>
                 <th>⬇️ دانلود</th>
             </tr>
         </thead>
@@ -35,6 +36,7 @@
                 <td style="direction: ltr; text-align: right; font-family: monospace;">{{ b.name }}</td>
                 <td class="tnum">{{ '{:,}'.format(b.size) }} بایت</td>
                 <td class="tnum">{{ jalali_str(b.mtime, false) }}</td>
+                <td>{% if b.verified %}✅ تأیید شده{% else %}⚠️ بررسی نشده{% endif %}</td>
                 <td><a href="/admin/backups/download?name={{ b.name }}" class="btn btn-sm btn-ghost">⬇️ دانلود</a></td>
             </tr>
             {% endfor %}

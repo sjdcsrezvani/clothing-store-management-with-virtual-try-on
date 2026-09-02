@@ -6,7 +6,7 @@ from database import get_db
 from models import Customer, Referral, generate_referral_code, to_english_digits
 from services._common import gregorian_to_jalali
 from services.security import require_api_token
-from services.sms import send_welcome_sms
+from services.sms import queue_welcome_sms
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_api_token)])
 
@@ -75,7 +75,7 @@ async def api_create_customer(body: CustomerCreate, db: Session = Depends(get_db
         db.add(referral)
 
     db.commit()
-    await send_welcome_sms(phone, body.first_name, code, db)
+    await queue_welcome_sms(phone, body.first_name, code, db)
 
     return customer
 

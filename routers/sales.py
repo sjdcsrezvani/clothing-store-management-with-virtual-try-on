@@ -148,7 +148,7 @@ def _grant_referred_discount(referrer, customer, db) -> None:
         customer.referred_discount = get_discount_setting(db, "default_referred_discount", 30000)
 
 
-from services.sms import send_welcome_sms
+from services.sms import queue_welcome_sms
 from services.templating import templates
 
 router = APIRouter(prefix="/sales")
@@ -372,7 +372,7 @@ async def sales_create_customer(
     db.commit()
     db.refresh(customer)
 
-    await send_welcome_sms(customer.phone, customer.first_name or "", customer.referral_code, db)
+    await queue_welcome_sms(customer.phone, customer.first_name or "", customer.referral_code, db)
 
     return _render_scan(request, customer, [], 0, db)
 

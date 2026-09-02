@@ -67,12 +67,25 @@ def classify_response(raw: str) -> dict:
     return {"status": "unknown", "response_code": None, "label": "Unknown response"}
 
 
+def _safe_details(details: dict | None) -> dict:
+    details = details or {}
+    safe = {}
+    for key, value in details.items():
+        if key in {"payload", "text", "response", "error"}:
+            safe[key] = "[redacted]"
+        elif key in {"amount", "ip"}:
+            safe[key] = "[redacted]"
+        else:
+            safe[key] = value
+    return safe
+
+
 def log_event(event: str, details: dict | None = None) -> None:
-    """Write the same JSON-line transaction diagnostics as server.js."""
+    """Write redacted JSON-line transaction diagnostics."""
     entry = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()),
         "event": event,
-        **(details or {}),
+        **_safe_details(details),
     }
     line = json.dumps(entry, ensure_ascii=False)
     logger.info(line)

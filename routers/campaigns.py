@@ -6,7 +6,7 @@ from database import get_db
 from models import Customer, Campaign, Settings, to_english_digits
 from services._common import fmt, check_admin, get_setting_int, parse_jalali_input, parse_jalali_input_end, jalali_str
 from services.security import log_action, require_html_role
-from services.sms import send_campaign_sms
+from services.sms import queue_sms
 from services.templating import templates
 
 router = APIRouter(prefix="/admin")
@@ -174,32 +174,31 @@ async def admin_campaign_send(campaign_id: int, request: Request, db: Session = 
     limit = get_setting_int(db, "campaign_sms_limit", 100)
     diamond_customers = db.query(Customer).filter(Customer.tier == "diamond").all()
     
-    sent_count = 0
+    queued_count = 0
     skipped = 0
     for customer in diamond_customers:
-        if sent_count >= limit:
+        if queued_count >= limit:
             skipped += 1
             continue
         marker_key = f"campaign_sms_{campaign.id}_{customer.id}"
         if db.query(Settings).filter(Settings.key == marker_key).first():
             skipped += 1
             continue
-        success = await send_campaign_sms(
+        await queue_sms(
+            pattern.value,
             customer.phone,
-            customer.first_name or "",
-            campaign.name,
-            campaign.code,
-            campaign.discount_percent,
+            {"var1": customer.first_name or "مشتری", "var2": campaign.name, "var3": campaign.code, "var4": str(campaign.discount_percent)},
             db,
         )
+        success = True
         if success:
             db.add(Settings(key=marker_key, value="sent"))
-            sent_count += 1
+            queued_count += 1
     
     db.commit()
-    log_action(db, "campaign_sms", f"کمپین «{campaign.name}»: {sent_count} ارسال، {skipped} رد شد", request=request, target_type="campaign", target_id=campaign.id, after={"sent_count": sent_count, "skipped": skipped})
+    log_action(db, "campaign_sms", f"کمپین «{campaign.name}»: {queued_count} در صف، {skipped} رد شد", request=request, target_type="campaign", target_id=campaign.id, after={"queued_count": queued_count, "skipped": skipped})
 
-    message = f"پیامک کمپین به {sent_count} مشتری الماس ارسال شد."
+    message = f"پیامک کمپین برای {queued_count} مشتری الماس در صف قرار گرفت."
     if skipped:
         message += f" ({skipped} مشتری به دلیل ارسال قبلی یا سقف {limit} رد شدند.)"
     return templates.TemplateResponse(request, "admin/campaigns.html", {

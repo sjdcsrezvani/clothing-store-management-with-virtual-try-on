@@ -16,10 +16,11 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Product, ProductVariant, GeneratedImage, to_english_digits
+from models import Product, ProductVariant, GeneratedImage, BackgroundJob, to_english_digits
 from services._common import check_admin, fmt, jalali_str
 from services.image_gen import ImageGenService, ImageGenerationError, composite_logo, MAIN_PROMPT
 from services.security import require_api_token, tryon_can_generate, tryon_record_generation, tryon_daily_remaining, log_action, require_html_role
+from services.jobs import enqueue
 from services.templating import templates
 from config import TRYON_BACKGROUNDS, TRYON_POSE_MODES, TRYON_FACE_MODES
 
@@ -610,34 +611,20 @@ async def admin_tryon_generate(
         garment_details=garment_details, category=category, face_key=face,
     )
 
-    try:
-        image_bytes = await asyncio.to_thread(
-            image_gen.generate,
-            prompt=prefix,
-            reference_image_paths=reference_paths,
-            prompt_mid=prompt_mid,
-            prompt_suffix=outfit_clause,
-        )
-    except ImageGenerationError as e:
-        logger.error("Generation failed: %s", e)
-        return RedirectResponse(url=f"/admin/try-on?err=تولید تصویر با خطا مواجه شد: {e}", status_code=303)
-    finally:
-        _remove_temp_file(kid_temp_path)
-
-    # Save to temp (not yet saved to DB). The provider returns JPEG bytes
-    # (output_format=jpeg), so store with the matching .jpg extension.
     filename = f"tryon_{uuid.uuid4().hex[:12]}.jpg"
     filepath = GENERATED_DIR / filename
-    with open(filepath, "wb") as f:
-        f.write(image_bytes)
-
-    _tryon["last_gen_url"] = f"/static/uploads/generated/{filename}"
-    _tryon["last_gen_path"] = str(filepath)
-    _tryon["last_gen_engine"] = "gpt-image-2"
-    _tryon["last_gen_prompt"] = f"{prefix} [MAIN_PROMPT] {prompt_mid} {outfit_clause}"
+    job = enqueue(db, "tryon", {
+        "prompt": prefix,
+        "prompt_mid": prompt_mid,
+        "prompt_suffix": outfit_clause,
+        "reference_paths": reference_paths,
+        "temporary_paths": [kid_temp_path] if kid_temp_path else [],
+        "output_path": str(filepath),
+        "result_url": f"/static/uploads/generated/{filename}",
+    })
+    db.commit()
     tryon_record_generation(request)
-
-    return RedirectResponse(url="/admin/try-on?msg=تصویر با موفقیت تولید شد. برای ذخیره دائم، دکمه ذخیره را بزنید.", status_code=303)
+    return RedirectResponse(url=f"/admin/try-on?msg=درخواست تولید در صف قرار گرفت (شناسه {job.id}).", status_code=303)
 
 
 # ─── Save generated image permanently ───
@@ -849,6 +836,14 @@ async def upload_kid_photo(file: UploadFile = File(...)):
 
 # ─── JSON API: Generate (stateless) ───
 
+@api_router.get("/image-gen/jobs/{job_id}")
+async def api_image_job(job_id: int, db: Session = Depends(get_db)):
+    job = db.query(BackgroundJob).filter(BackgroundJob.id == job_id, BackgroundJob.job_type == "tryon").first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return {"job_id": job.id, "status": job.status, "image_url": job.result_url if job.status == "completed" else None, "error": job.error_message if job.status == "failed" else None}
+
+
 @api_router.post("/image-gen/generate")
 async def api_generate(
     request: Request,
@@ -920,21 +915,17 @@ async def api_generate(
         _remove_temp_file(kid_temp_path)
         raise HTTPException(status_code=400, detail="عکس کودک و تصویر محصول الزامی است.")
 
-    try:
-        img = await asyncio.to_thread(
-            image_gen.generate,
-            prompt=prompt_prefix,
-            reference_image_paths=reference_paths,
-            prompt_mid=prompt_mid,
-            prompt_suffix=outfit_clause,
-        )
-    except ImageGenerationError as e:
-        raise HTTPException(status_code=502, detail=f"Generation failed: {e}")
-    finally:
-        _remove_temp_file(kid_temp_path)
     filename = f"tryon_api_{uuid.uuid4().hex[:12]}.jpg"
     filepath = GENERATED_DIR / filename
-    with open(filepath, "wb") as f:
-        f.write(img)
+    job = enqueue(db, "tryon", {
+        "prompt": prompt_prefix,
+        "prompt_mid": prompt_mid,
+        "prompt_suffix": outfit_clause,
+        "reference_paths": reference_paths,
+        "temporary_paths": [kid_temp_path] if kid_temp_path else [],
+        "output_path": str(filepath),
+        "result_url": f"/static/uploads/generated/{filename}",
+    })
+    db.commit()
     tryon_record_generation(request)
-    return {"status": "success", "image_url": f"/static/uploads/generated/{filename}"}
+    return {"status": "queued", "job_id": job.id, "status_url": f"/api/image-gen/jobs/{job.id}"}

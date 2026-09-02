@@ -5,11 +5,15 @@
 Backups land in `backups/` and are pruned to the newest KEEP_COUNT files.
 """
 import logging
+import hashlib
+import sqlite3
 import re
 from datetime import datetime
 from pathlib import Path
 
 from config import DATABASE_URL
+from migrations import migration_status
+from services.operations import verify_sqlite_backup
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +48,13 @@ def create_backup() -> str | None:
         if not dest.exists():
             logger.error("Backup failed: VACUUM INTO produced no file")
             return None
+        with sqlite3.connect(f"file:{dest}?mode=ro", uri=True) as check:
+            integrity = check.execute("PRAGMA integrity_check").fetchone()[0]
+        if integrity != "ok":
+            logger.error("Backup integrity check failed")
+            return None
+        metadata = verify_sqlite_backup(dest)
+        logger.info("Backup verified: size=%s checksum=%s", metadata["size"], metadata["checksum"])
         _prune()
         logger.info("Backup created: %s", dest)
         return str(dest)
@@ -68,10 +79,12 @@ def list_backups() -> list[dict]:
         if not _BACKUP_RE.match(f.name):
             continue
         stat = f.stat()
+        metadata = verify_sqlite_backup(f)
         items.append({
             "name": f.name,
             "size": stat.st_size,
             "mtime": datetime.fromtimestamp(stat.st_mtime),
+            **metadata,
         })
     items.sort(key=lambda i: i["mtime"], reverse=True)
     return items
