@@ -215,8 +215,10 @@
 <!-- Global tooltip element (fixed positioning, never clipped) -->
 <div id="globalTip" style="display:none; position:fixed; background:#1a1a2e; color:#f0f0f0; padding:0.6rem 0.8rem; border-radius:8px; font-size:0.8rem; line-height:1.6; width:max-content; max-width:340px; white-space:normal; pointer-events:none; z-index:9999; box-shadow:0 4px 20px rgba(0,0,0,0.3); text-align:right; direction:rtl; font-family:Vazirmatn,sans-serif;"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
+if (typeof Chart === 'undefined') {
+    if (typeof window.renderOfflineCharts === 'function') window.renderOfflineCharts();
+} else {
 const dailyData = {{ daily|tojson }};
 const categoryData = {{ categories|tojson }};
 const topProductsProfit = {{ top_products_profit|tojson }};
@@ -321,6 +323,7 @@ new Chart(document.getElementById('customerSegChart'), {
     data: { labels: customerHealth.segments.map(s => s.label), datasets: [{ data: customerHealth.segments.map(s => s.count), backgroundColor: ['#A66CFF', '#FFC857', '#45B7D1', '#FF6B8A'] }]},
     options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { family: 'Vazirmatn', size: 11 } } } } }
 });
+}
 </script>
 
 <style>

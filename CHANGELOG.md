@@ -5,6 +5,16 @@
 
 # Changelog
 
+## v1.1.13 — 2026-09-02
+
+### Frontend workflows and responsive checkout
+
+- Added a workflow-focused action center to the admin dashboard.
+- Added touch-friendly controls, visible keyboard focus, responsive basket behavior, and duplicate-submit protection.
+- Added checkout payment status feedback, cash change calculation, and accessible status announcements.
+- Added a local offline chart renderer and removed the analytics CDN dependency.
+- Added frontend smoke checks for local assets, checkout behavior, accessibility hooks, and offline analytics.
+
 ## v1.1.10 — 2026-09-01
 
 ### Unified reporting

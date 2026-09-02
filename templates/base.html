@@ -9,8 +9,9 @@
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="icon" type="image/png" href="/static/logo.png">
     <meta name="theme-color" content="#fff5f0">
+    <script src="/static/js/charts.js"></script>
 </head>
-<body>
+<body data-app-shell="store-management">
     <div class="app-shell">
         <header class="app-topbar">
             <div class="topbar-inner">
@@ -21,7 +22,7 @@
                 </a>
                 <div class="topbar-actions">
                     <a href="/sales/new" class="quick-sale">🛒 <span>فروش جدید</span></a>
-                    <a href="/admin" class="topbar-admin">⚙️</a>
+                    <a href="/admin" class="topbar-admin" aria-label="پنل مدیریت">تنظیمات</a>
                 </div>
             </div>
         </header>
@@ -56,8 +57,11 @@
                 <div class="sidebar-section-label">ابزارها</div>
                 <a href="/admin/try-on" data-nav="tryon"><span>👗</span> پرو مجازی</a>
                 <a href="/admin/backups" data-nav="backups"><span>💾</span> پشتیبان‌ها</a>
-                {% if request.session.get('staff_role') == 'owner' %}<a href="/admin/staff">👥 کارکنان</a>{% endif %}
-            <a href="/admin/settings" data-nav="settings"><span>⚙️</span> تنظیمات</a>
+                {% if request.session.get('staff_role') == 'owner' %}
+                <a href="/admin/staff">👥 کارکنان</a>
+                {% endif %}
+                <a href="/admin/settings" data-nav="settings"><span aria-hidden="true">⚙️</span> تنظیمات</a>
+
                 <a href="/admin/pos-reconciliation" data-nav="pos-reconciliation"><span>📟</span> تطبیق کارت‌خوان</a>
                 <a href="/admin/logs" data-nav="logs"><span>📜</span> گزارش عملیات</a>
             </nav>
@@ -86,6 +90,7 @@
     </div>
 
     <script src="/static/js/jquery.min.js"></script>
+    <script src="/static/js/app.js" defer></script>
     <script src="/static/js/persian-datepicker.min.js"></script>
     <script>
     // Open the POS in a second native window (desktop app) or browser tab (web).
