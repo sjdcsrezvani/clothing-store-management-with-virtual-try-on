@@ -24,6 +24,7 @@ from services.security import log_action, require_html_role
 from services.templating import templates
 from services.inventory import record_stock_movement, restore_cost_after_purchase_reversal
 from services.reporting import canonical_report, reconciliation_checks
+from services.events import append_event
 
 router = APIRouter(prefix="/admin")
 PAYMENT_LABELS = {"card": "💳 کارت", "cash": "💵 نقد", "credit": "📒 نسیه"}
@@ -236,7 +237,13 @@ async def admin_credit_pay(
         return RedirectResponse(url=f"/admin/credit/{customer.id}?err=مبلغ معتبر نیست.", status_code=303)
 
     applied = apply_customer_payment(
-        db, customer, min(amount_int, debt), method=method, note=note,
+        db,
+        customer,
+        min(amount_int, debt),
+        method=method,
+        note=note,
+        operator_user_id=guard.id,
+        request_id=request.headers.get("X-Request-ID"),
     )
     db.commit()
     if applied > 0:
@@ -278,7 +285,11 @@ async def admin_payment_reverse(payment_id: int, request: Request, db: Session =
         return RedirectResponse(url="/admin/credit", status_code=303)
     customer_id = payment.customer_id
     reversed_amount = reverse_payment(
-        db, payment, operator_id=guard.id, reason="Payment reversal",
+        db,
+        payment,
+        operator_id=guard.id,
+        reason="Payment reversal",
+        request_id=request.headers.get("X-Request-ID"),
     )
     db.commit()
     db.expire_all()
@@ -355,7 +366,9 @@ async def admin_supplier_add(
         return guard
     if not name.strip():
         return RedirectResponse(url="/admin/suppliers?err=نام تأمین‌کننده الزامی است.", status_code=303)
-    db.add(Supplier(name=name.strip(), phone=phone.strip() or None, note=note.strip() or None))
+    supplier = Supplier(name=name.strip(), phone=phone.strip() or None, note=note.strip() or None)
+    db.add(supplier)
+    db.flush()
     db.commit()
     log_action(db, "supplier_add", name.strip(), request=request, target_type="supplier", target_id=supplier.id, after={"name": name.strip()})
     return RedirectResponse(url="/admin/suppliers?msg=تأمین‌کننده اضافه شد.", status_code=303)
@@ -379,7 +392,7 @@ async def admin_supplier_payment(supplier_id: int, request: Request, amount: str
     if not supplier or amount_int <= 0 or amount_int > balance:
         return RedirectResponse(url="/admin/suppliers?err=پرداخت تأمین‌کننده از بدهی بیشتر است یا نامعتبر است.", status_code=303)
     open_session = db.query(CashSession).filter(CashSession.status == "open").order_by(CashSession.opened_at.desc()).first()
-    db.add(SupplierPayment(
+    supplier_payment = SupplierPayment(
         supplier_id=supplier.id,
         purchase_id=purchase.id if purchase else None,
         amount=amount_int,
@@ -387,7 +400,25 @@ async def admin_supplier_payment(supplier_id: int, request: Request, amount: str
         note=note.strip() or None,
         method="cash",
         cash_session_id=open_session.id if open_session else None,
-    ))
+    )
+    db.add(supplier_payment)
+    db.flush()
+    append_event(
+        db,
+        "SupplierPaymentRecorded",
+        "supplier_payment",
+        supplier_payment.id,
+        idempotency_key=f"supplier-payment:{supplier_payment.id}:recorded",
+        actor_user_id=guard.id,
+        request_id=request.headers.get("X-Request-ID"),
+        payload={
+            "supplier_id": supplier_payment.supplier_id,
+            "purchase_id": supplier_payment.purchase_id,
+            "amount": supplier_payment.amount,
+            "method": supplier_payment.method,
+            "cash_session_id": supplier_payment.cash_session_id,
+        },
+    )
     db.commit()
     log_action(db, "supplier_payment", f"پرداخت به {supplier.name}", request=request, target_type="supplier", target_id=supplier.id, after={"amount": amount_int})
     return RedirectResponse(url="/admin/suppliers?msg=پرداخت تأمین‌کننده ثبت شد.", status_code=303)
@@ -495,14 +526,29 @@ async def admin_purchase_add(
             prev_cost_price=variant.cost_price if unit_cost > 0 else None,
         ))
         record_stock_movement(
-            db, variant, qty, "purchase",
+            db,
+            variant,
+            qty,
+            "purchase",
             unit_cost=unit_cost if unit_cost > 0 else None,
             purchase_id=purchase.id,
             note=f"ورود خرید #{purchase.id}",
+            actor_user_id=guard.id,
+            request_id=request.headers.get("X-Request-ID"),
         )
         if unit_cost > 0:
             variant.cost_price = unit_cost  # refresh the cost basis
 
+    append_event(
+        db,
+        "PurchaseRecorded",
+        "purchase",
+        purchase.id,
+        idempotency_key=f"purchase:{purchase.id}:recorded",
+        actor_user_id=guard.id,
+        request_id=request.headers.get("X-Request-ID"),
+        payload={"total_cost": purchase.total_cost, "supplier_id": purchase.supplier_id},
+    )
     db.commit()
     log_action(db, "purchase_add", f"خرید {total_cost:,} تومان", request=request, target_type="purchase", target_id=purchase.id, after={"total_cost": total_cost})
     return RedirectResponse(url="/admin/purchases?msg=خرید با موفقیت ثبت شد و موجودی به‌روز شد.", status_code=303)
@@ -573,13 +619,29 @@ async def admin_purchase_delete(purchase_id: int, request: Request, db: Session 
         if not variant:
             continue
         record_stock_movement(
-            db, variant, -item.quantity, "purchase_reversal",
+            db,
+            variant,
+            -item.quantity,
+            "purchase_reversal",
             unit_cost=item.unit_cost if item.unit_cost > 0 else None,
             purchase_id=purchase.id,
             note=f"برگشت خرید #{purchase.id}",
+            actor_user_id=guard.id,
+            request_id=request.headers.get("X-Request-ID"),
         )
         restore_cost_after_purchase_reversal(db, variant, item.prev_cost_price)
 
+    append_event(
+        db,
+        "PurchaseReversed",
+        "purchase",
+        purchase.id,
+        idempotency_key=f"purchase:{purchase.id}:reversed",
+        actor_user_id=guard.id,
+        request_id=request.headers.get("X-Request-ID"),
+        payload={"total_cost": purchase.total_cost},
+        occurred_at=purchase.reversed_at,
+    )
     db.commit()
     log_action(db, "purchase_reverse", f"برگشت خرید #{purchase_id}", request=request, target_type="purchase", target_id=purchase_id, after={"reversed": True})
     return RedirectResponse(url="/admin/purchases?msg=خرید با ثبت حرکت برگشت، معکوس شد.", status_code=303)
@@ -631,6 +693,21 @@ async def admin_expense_add(
     )
     db.add(expense)
     db.flush()
+    append_event(
+        db,
+        "ExpenseRecorded",
+        "expense",
+        expense.id,
+        idempotency_key=f"expense:{expense.id}:recorded",
+        actor_user_id=guard.id,
+        request_id=request.headers.get("X-Request-ID"),
+        payload={
+            "amount": expense.amount,
+            "category": expense.category,
+            "payment_method": expense.payment_method,
+            "cash_session_id": expense.cash_session_id,
+        },
+    )
     db.commit()
     log_action(db, "expense_add", f"{amount_int:,} تومان ({category or '—'})", request=request, target_type="expense", target_id=expense.id, after={"amount": amount_int, "category": category})
     return RedirectResponse(url="/admin/expenses?msg=هزینه ثبت شد.", status_code=303)
@@ -644,7 +721,13 @@ async def admin_expense_delete(expense_id: int, request: Request, db: Session = 
     expense = db.query(Expense).filter(Expense.id == expense_id).first()
     if expense:
         from services.ledger import reverse_expense_immutably
-        reverse_expense_immutably(db, expense, guard.id, "Expense reversal")
+        reverse_expense_immutably(
+            db,
+            expense,
+            guard.id,
+            "Expense reversal",
+            request_id=request.headers.get("X-Request-ID"),
+        )
         db.commit()
         log_action(db, "expense_reverse", f"برگشت هزینه {expense.amount:,}", request=request, target_type="expense", target_id=expense_id, after={"reversed": True, "operator_user_id": guard.id})
     return RedirectResponse(url="/admin/expenses", status_code=303)
@@ -693,6 +776,18 @@ async def admin_cashbox_open(request: Request, opening: str = Form("0"), db: Ses
         return RedirectResponse(url="/admin/cashbox?err=موجودی اولیه نامعتبر است یا صندوق دیگری باز است.", status_code=303)
     session = CashSession(cashier_user_id=guard.id, opening_balance=opening_int)
     db.add(session)
+    db.flush()
+    append_event(
+        db,
+        "CashSessionOpened",
+        "cash_session",
+        session.id,
+        idempotency_key=f"cash-session:{session.id}:opened",
+        actor_user_id=guard.id,
+        request_id=request.headers.get("X-Request-ID"),
+        payload={"opening_balance": session.opening_balance},
+        occurred_at=session.opened_at,
+    )
     db.commit()
     log_action(db, "cash_session_open", "باز کردن صندوق", request=request, target_type="cash_session", target_id=session.id, after={"opening_balance": opening_int})
     return RedirectResponse(url="/admin/cashbox?msg=صندوق باز شد.", status_code=303)
@@ -718,6 +813,21 @@ async def admin_cashbox_close(request: Request, counted: str = Form("0"), db: Se
     session.closed_at = end
     session.manager_user_id = guard.id
     session.status = "closed"
+    append_event(
+        db,
+        "CashSessionClosed",
+        "cash_session",
+        session.id,
+        idempotency_key=f"cash-session:{session.id}:closed",
+        actor_user_id=guard.id,
+        request_id=request.headers.get("X-Request-ID"),
+        payload={
+            "expected_closing_balance": expected,
+            "counted_closing_balance": counted_int,
+            "variance": session.variance,
+        },
+        occurred_at=session.closed_at,
+    )
     db.commit()
     log_action(db, "cash_session_close", "بستن صندوق", request=request, target_type="cash_session", target_id=session.id, after={"expected": expected, "counted": counted_int, "variance": session.variance})
     return RedirectResponse(url="/admin/cashbox?msg=صندوق بسته شد.", status_code=303)

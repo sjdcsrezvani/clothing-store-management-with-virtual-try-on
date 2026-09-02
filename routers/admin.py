@@ -8,6 +8,7 @@ from database import get_db
 from datetime import datetime, timezone
 from models import (
     Customer, Referral, Settings, Sale, SaleItem, SaleCampaign, GeneratedImage, AdminLog, POSTransaction, StockMovement,
+    BusinessEvent,
 )
 from config import ADMIN_PASSWORD, API_TOKEN
 from deployment import OWNER_MODE
@@ -44,6 +45,7 @@ from services.tier import (
     tier_up_sent_rank,
     TIER_RANK,
 )
+from services.events import event_history, event_payload, append_event
 
 router = APIRouter(prefix="/admin")
 
@@ -569,6 +571,9 @@ async def admin_pos_reconciliation_review(
     if masked_card and not masked_card.startswith("****"):
         raise HTTPException(status_code=400, detail="فقط اطلاعات کارت ماسک‌شده مجاز است.")
 
+    if transaction.reconciled:
+        raise HTTPException(status_code=409, detail="این تراکنش قبلاً تطبیق داده شده است.")
+
     operator = guard
     transaction.provider_reference = provider_reference.strip()[:100] or None
     transaction.terminal_transaction_number = terminal_transaction_number.strip()[:100] or None
@@ -581,9 +586,53 @@ async def admin_pos_reconciliation_review(
     transaction.operator_user_id = operator.id
     transaction.reconciled_at = datetime.now(timezone.utc)
     transaction.last_retry_at = datetime.now(timezone.utc)
+    append_event(
+        db,
+        "POSReconciled",
+        "pos_transaction",
+        transaction.id,
+        idempotency_key=f"pos:{transaction.id}:reconciled",
+        actor_user_id=operator.id,
+        request_id=request.headers.get("X-Request-ID"),
+        payload={
+            "resolution_type": resolution_type,
+            "provider_reference": transaction.provider_reference,
+            "terminal_transaction_number": transaction.terminal_transaction_number,
+            "retrieval_reference_number": transaction.retrieval_reference_number,
+            "masked_card": transaction.masked_card,
+            "evidence_recorded": True,
+        },
+        occurred_at=transaction.reconciled_at,
+    )
     db.commit()
     log_action(db, "pos_reconciliation", f"تطبیق تراکنش کارت‌خوان #{transaction.id}", request=request, target_type="pos_transaction", target_id=transaction.id, after={"resolution_type": resolution_type, "operator_user_id": operator.id})
     return RedirectResponse(url="/admin/pos-reconciliation?msg=نتیجه تطبیق ثبت شد.", status_code=303)
+
+
+@router.get("/events", response_class=HTMLResponse)
+async def admin_events(
+    request: Request,
+    aggregate_type: str = "",
+    event_type: str = "",
+    limit: int = 200,
+    db: Session = Depends(get_db),
+):
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    events = event_history(
+        db,
+        aggregate_type=aggregate_type.strip() or None,
+        event_type=event_type.strip() or None,
+        limit=limit,
+    )
+    return templates.TemplateResponse(request, "admin/events.html", {
+        "events": events,
+        "event_payload": event_payload,
+        "aggregate_type": aggregate_type,
+        "event_type": event_type,
+        "limit": limit,
+    })
 
 
 @router.get("/logs", response_class=HTMLResponse)
@@ -605,15 +654,62 @@ async def admin_reset_database(request: Request, db: Session = Depends(get_db)):
     if not hasattr(guard, "role"):
         return guard
 
-    # Hard-delete sales data + customers, children first to honour FK ordering.
-    db.query(SaleCampaign).delete()
-    db.query(SaleItem).delete()
-    db.query(StockMovement).delete()
-    db.query(POSTransaction).delete()
-    db.query(Sale).delete()
-    db.query(GeneratedImage).delete()
-    db.query(Referral).delete()
-    db.query(Customer).delete()
+    from models import (
+        CheckoutEvent,
+        CheckoutSession,
+        FinancialEntry,
+        Payment,
+        PaymentReversal,
+        Refund,
+        ProductVariant,
+        RefundLine,
+        StockReservation,
+    )
+    refund_ids = [row.id for row in db.query(Refund.id).all()]
+    reversal_ids = [row.id for row in db.query(PaymentReversal.id).all()]
+
+    append_event(
+        db,
+        "DatabaseReset",
+        "database",
+        None,
+        idempotency_key=f"database-reset:{datetime.now(timezone.utc).isoformat()}",
+        actor_user_id=guard.id,
+        request_id=request.headers.get("X-Request-ID"),
+        payload={
+            "sales": db.query(Sale).count(),
+            "customers": db.query(Customer).count(),
+            "pos_transactions": db.query(POSTransaction).count(),
+        },
+    )
+
+    if refund_ids:
+        db.query(FinancialEntry).filter(FinancialEntry.refund_id.in_(refund_ids)).delete(synchronize_session=False)
+    if reversal_ids:
+        db.query(FinancialEntry).filter(FinancialEntry.payment_reversal_id.in_(reversal_ids)).delete(synchronize_session=False)
+    db.query(RefundLine).delete(synchronize_session=False)
+    db.query(PaymentReversal).delete(synchronize_session=False)
+    db.query(Refund).delete(synchronize_session=False)
+    db.query(CheckoutEvent).delete(synchronize_session=False)
+    db.query(StockReservation).delete(synchronize_session=False)
+    db.query(ProductVariant).update(
+        {ProductVariant.reserved_quantity: 0},
+        synchronize_session=False,
+    )
+    db.query(CheckoutSession).delete(synchronize_session=False)
+    db.query(SaleCampaign).delete(synchronize_session=False)
+    db.query(SaleItem).delete(synchronize_session=False)
+    db.query(StockMovement).filter(StockMovement.sale_id.isnot(None)).delete(synchronize_session=False)
+    db.query(POSTransaction).delete(synchronize_session=False)
+    db.query(Payment).delete(synchronize_session=False)
+    db.query(Sale).delete(synchronize_session=False)
+    db.query(GeneratedImage).delete(synchronize_session=False)
+    db.query(Referral).delete(synchronize_session=False)
+    db.query(Customer).update(
+        {Customer.referred_by: None},
+        synchronize_session=False,
+    )
+    db.query(Customer).delete(synchronize_session=False)
     db.commit()
     log_action(db, "reset_database", "ریست کامل دیتابیس", request=request, target_type="database")
 

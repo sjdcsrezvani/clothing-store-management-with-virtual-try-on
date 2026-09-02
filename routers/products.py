@@ -194,7 +194,14 @@ async def admin_product_add(
 
     db.flush()
     for variant, initial_stock in created_variants:
-        record_opening_stock(db, variant, initial_stock, "موجودی اولیه هنگام ایجاد تنوع")
+        record_opening_stock(
+            db,
+            variant,
+            initial_stock,
+            "موجودی اولیه هنگام ایجاد تنوع",
+            actor_user_id=guard.id,
+            request_id=request.headers.get("X-Request-ID"),
+        )
     db.commit()
 
     return RedirectResponse(url="/admin/products", status_code=303)
@@ -334,7 +341,14 @@ async def admin_product_update(
 
     db.flush()
     for variant, initial_stock in created_variants:
-        record_opening_stock(db, variant, initial_stock, "موجودی اولیه هنگام ایجاد تنوع")
+        record_opening_stock(
+            db,
+            variant,
+            initial_stock,
+            "موجودی اولیه هنگام ایجاد تنوع",
+            actor_user_id=guard.id,
+            request_id=request.headers.get("X-Request-ID"),
+        )
     db.commit()
 
     return RedirectResponse(url="/admin/products", status_code=303)
@@ -462,13 +476,22 @@ async def admin_variant_update(
     variant.price = price_int
     variant.cost_price = cost_price_int
     record_cost_adjustment(
-        db, variant, old_cost_price, cost_price_int,
+        db,
+        variant,
+        old_cost_price,
+        cost_price_int,
         note="اصلاح دستی بهای تمام‌شده توسط مدیر",
+        actor_user_id=guard.id,
+        request_id=request.headers.get("X-Request-ID"),
     )
     variant.fake_cost_price = fake_cost_price_int
     record_stock_adjustment(
-        db, variant, stock_int,
+        db,
+        variant,
+        stock_int,
         note="اصلاح دستی موجودی توسط مدیر",
+        actor_user_id=guard.id,
+        request_id=request.headers.get("X-Request-ID"),
     )
     variant.sku = sku if sku else None
     variant.tryon_details = tryon_details.strip() if tryon_details.strip() else None

@@ -1,13 +1,13 @@
 from sqlalchemy import create_engine, text
 
-from migrations import backup_database, downgrade, migration_status, upgrade
+from migrations import MIGRATION_VERSION, backup_database, downgrade, migration_status, upgrade
 
 
 def test_versioned_upgrade_and_downgrade(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'store.db'}")
     assert migration_status(engine) == 0
-    assert upgrade(engine) == 7
-    assert migration_status(engine) == 7
+    assert upgrade(engine) == MIGRATION_VERSION
+    assert migration_status(engine) == MIGRATION_VERSION
     assert downgrade(engine) == 0
     assert migration_status(engine) == 0
 

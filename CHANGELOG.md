@@ -5,6 +5,15 @@
 
 # Changelog
 
+## v1.1.14 — 2026-09-02
+
+### Transaction-centered business events
+
+- Added an append-only business event journal for checkout, inventory, payments, refunds, credit, purchasing, expenses, cash sessions, POS reconciliation, and database reset actions.
+- Added idempotent event appends with redacted payloads, actor/request attribution, legacy-record backfill, and owner-only event history.
+- Kept event writes in the same database transaction as the business mutation so failed operations do not leave false history.
+- Added server-owned checkout and terminal event coverage for payment requests, outcomes, reservation changes, and completed sales.
+
 ## v1.1.13 — 2026-09-02
 
 ### Frontend workflows and responsive checkout

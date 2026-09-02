@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}گزارش رویدادهای کسب‌وکار{% endblock %}
+{% block content %}
+<div class="page-heading">
+    <div>
+        <span class="eyebrow">دفتر رویدادهای تراکنشی</span>
+        <h2>رویدادهای کسب‌وکار</h2>
+        <p>تاریخچه ثبت‌شده فروش، پرداخت، موجودی و عملیات مالی.</p>
+    </div>
+    <a href="/admin" class="btn btn-ghost">بازگشت به داشبورد</a>
+</div>
+
+<form method="get" action="/admin/events" class="card form-row">
+    <label>نوع موجودیت
+        <input name="aggregate_type" value="{{ aggregate_type }}" maxlength="50" placeholder="sale">
+    </label>
+    <label>نوع رویداد
+        <input name="event_type" value="{{ event_type }}" maxlength="60" placeholder="SaleCompleted">
+    </label>
+    <label>تعداد
+        <input name="limit" type="number" min="1" max="1000" value="{{ limit }}">
+    </label>
+    <button class="btn btn-primary" type="submit">فیلتر</button>
+</form>
+
+<div class="card">
+    {% if events %}
+    <div class="table-scroll">
+        <table>
+            <thead>
+                <tr>
+                    <th>زمان</th>
+                    <th>رویداد</th>
+                    <th>موجودیت</th>
+                    <th>کاربر</th>
+                    <th>جزئیات</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for event in events %}
+                <tr>
+                    <td class="tnum">{{ event.occurred_at }}</td>
+                    <td><code>{{ event.event_type }}</code></td>
+                    <td><code>{{ event.aggregate_type }}{% if event.aggregate_id %} #{{ event.aggregate_id }}{% endif %}</code></td>
+                    <td>{{ event.actor_user.username if event.actor_user else 'سیستم' }}</td>
+                    <td><code dir="ltr">{{ event_payload(event) }}</code></td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="empty-state">رویدادی برای نمایش وجود ندارد.</p>
+    {% endif %}
+</div>
+{% endblock %}

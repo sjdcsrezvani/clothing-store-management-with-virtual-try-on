@@ -1,7 +1,7 @@
 import string
 import random
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, CheckConstraint
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, CheckConstraint, event as sqlalchemy_event
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -230,7 +230,6 @@ class ProductVariant(Base):
         CheckConstraint("price >= 0", name="ck_variants_price_nonnegative"),
         CheckConstraint("cost_price >= 0", name="ck_variants_cost_nonnegative"),
         CheckConstraint("stock_quantity >= 0", name="ck_variants_stock_nonnegative"),
-        CheckConstraint("reserved_quantity >= 0", name="ck_variants_reserved_nonnegative"),
         CheckConstraint("reserved_quantity >= 0", name="ck_variants_reserved_nonnegative"),
         CheckConstraint("demand_count >= 0", name="ck_variants_demand_nonnegative"),
     )
@@ -740,3 +739,72 @@ class CheckoutEvent(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     checkout = relationship("CheckoutSession", back_populates="history")
+
+
+BUSINESS_EVENT_TYPES = (
+    "CheckoutCreated",
+    "StockReserved",
+    "StockReleased",
+    "StockReservationConsumed",
+    "StockDecremented",
+    "StockReceived",
+    "StockReturned",
+    "StockAdjusted",
+    "StockCostAdjusted",
+    "PaymentRequested",
+    "PaymentApproved",
+    "PaymentCancelled",
+    "PaymentDeclined",
+    "PaymentUncertain",
+    "POSReconciled",
+    "CheckoutExpired",
+    "SaleCompleted",
+    "RefundIssued",
+    "CheckoutRefunded",
+    "CreditSaleIssued",
+    "CreditPaymentRecorded",
+    "PaymentReversed",
+    "ExpenseRecorded",
+    "ExpenseReversed",
+    "PurchaseRecorded",
+    "PurchaseReversed",
+    "SupplierPaymentRecorded",
+    "LoyaltyUpdated",
+    "CashSessionOpened",
+    "CashSessionClosed",
+    "DatabaseReset",
+)
+
+
+class BusinessEvent(Base):
+    """Append-only record of a committed retail business action."""
+    __tablename__ = "business_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_type = Column(String(60), nullable=False, index=True)
+    aggregate_type = Column(String(50), nullable=False, index=True)
+    aggregate_id = Column(Integer, nullable=True, index=True)
+    idempotency_key = Column(String(200), nullable=False, unique=True, index=True)
+    actor_user_id = Column(Integer, ForeignKey("staff_users.id"), nullable=True, index=True)
+    request_id = Column(String(100), nullable=True, index=True)
+    payload = Column(Text, nullable=False, default="{}")
+    schema_version = Column(Integer, nullable=False, default=1)
+    occurred_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
+
+    __table_args__ = (
+        CheckConstraint(f"event_type IN {BUSINESS_EVENT_TYPES!r}", name="ck_business_events_type"),
+        CheckConstraint("aggregate_id IS NULL OR aggregate_id > 0", name="ck_business_events_aggregate_id"),
+        CheckConstraint("schema_version > 0", name="ck_business_events_schema_version"),
+    )
+
+    actor_user = relationship("StaffUser")
+
+
+@sqlalchemy_event.listens_for(BusinessEvent, "before_update")
+def _reject_business_event_update(mapper, connection, target):
+    raise ValueError("Business events are append-only")
+
+
+@sqlalchemy_event.listens_for(BusinessEvent, "before_delete")
+def _reject_business_event_delete(mapper, connection, target):
+    raise ValueError("Business events are append-only")

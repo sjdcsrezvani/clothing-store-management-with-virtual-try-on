@@ -120,8 +120,16 @@ def get_payment_history(db, customer_id: int, limit: int = 50) -> list:
         .order_by(Payment.created_at.desc()).limit(limit).all()
 
 
-def apply_customer_payment(db, customer, amount: int, method: str = "cash",
-                           note: str = "", sale_id: int | None = None) -> int:
+def apply_customer_payment(
+    db,
+    customer,
+    amount: int,
+    method: str = "cash",
+    note: str = "",
+    sale_id: int | None = None,
+    operator_user_id: int | None = None,
+    request_id: str | None = None,
+) -> int:
     """Record a payment toward a customer's نسیه debt.
 
     Applied FIFO across their oldest unpaid credit sales; a `payments` row is
@@ -155,27 +163,52 @@ def apply_customer_payment(db, customer, amount: int, method: str = "cash",
 
     if applied > 0:
         open_session = db.query(CashSession).filter(CashSession.status == "open").order_by(CashSession.opened_at.desc()).first()
-        db.add(Payment(
+        payment = Payment(
             customer_id=customer.id,
             sale_id=sale_id,
             amount=applied,
             method=method,
             cash_session_id=open_session.id if open_session and method == "cash" else None,
             note=note or "",
-        ))
+        )
+        db.add(payment)
+        db.flush()
+        from services.events import append_event
+        append_event(
+            db,
+            "CreditPaymentRecorded",
+            "payment",
+            payment.id,
+            idempotency_key=f"payment:{payment.id}:recorded",
+            actor_user_id=operator_user_id,
+            request_id=request_id,
+            payload={
+                "customer_id": customer.id,
+                "sale_id": sale_id,
+                "amount": applied,
+                "method": method,
+                "cash_session_id": payment.cash_session_id,
+            },
+        )
         customer.total_debt = max(0, (customer.total_debt or 0) - applied)
 
     return applied
 
 
-def reverse_payment(db, payment, operator_id=None, reason="Payment reversal") -> int:
+def reverse_payment(
+    db,
+    payment,
+    operator_id=None,
+    reason="Payment reversal",
+    request_id=None,
+) -> int:
     """Record an immutable reversal and rebuild the remaining allocation."""
     if getattr(payment, "reversed_at", None):
         return 0
     from services.ledger import reverse_payment_immutably
     customer = payment.customer
     amount = payment.amount or 0
-    reverse_payment_immutably(db, payment, operator_id, reason)
+    reverse_payment_immutably(db, payment, operator_id, reason, request_id=request_id)
     db.flush()
 
     sales = db.query(Sale).filter(
