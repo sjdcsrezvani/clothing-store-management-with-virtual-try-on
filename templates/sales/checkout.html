@@ -291,10 +291,7 @@
                     <span id="terminal-indicator-text">📟 کارت‌خوان: در حال بررسی…</span>
                 </div>
                 <form method="post" action="/sales/send-to-terminal" id="terminal-form" onsubmit="sendToTerminal(event)">
-                    <input type="hidden" name="amount" value="{{ final }}">
                     <input type="hidden" name="checkout_nonce" value="{{ checkout_nonce }}">
-                    <input type="hidden" name="customer_id" value="{{ customer_id }}">
-                    <input type="hidden" name="basket_json" value="{{ basket_json }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <button type="submit" id="terminal-submit" class="btn btn-ghost btn-block" style="margin-bottom:0.6rem;">📟 ارسال مبلغ به کارت‌خوان</button>
                 </form>

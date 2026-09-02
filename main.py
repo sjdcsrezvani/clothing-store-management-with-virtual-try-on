@@ -175,6 +175,9 @@ async def lifespan(app: FastAPI):
     try:
         from services.security import ensure_owner_account
         ensure_owner_account(db)
+        from services.events import backfill_legacy_events
+        backfill_legacy_events(db)
+        db.commit()
     finally:
         db.close()
     scheduler = asyncio.create_task(scheduler_task())

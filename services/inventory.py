@@ -23,6 +23,16 @@ MOVEMENT_TYPES = {
     "cost_adjustment",
 }
 
+_MOVEMENT_EVENT_TYPES = {
+    "opening_stock": "StockReceived",
+    "purchase": "StockReceived",
+    "purchase_reversal": "StockReturned",
+    "sale": "StockDecremented",
+    "sale_refund": "StockReturned",
+    "adjustment": "StockAdjusted",
+    "cost_adjustment": "StockCostAdjusted",
+}
+
 
 def record_stock_movement(
     db,
@@ -34,6 +44,8 @@ def record_stock_movement(
     purchase_id: int | None = None,
     sale_id: int | None = None,
     note: str | None = None,
+    actor_user_id: int | None = None,
+    request_id: str | None = None,
 ) -> StockMovement:
     """Append one movement and update the cached variant balance atomically."""
     if movement_type not in MOVEMENT_TYPES:
@@ -54,6 +66,25 @@ def record_stock_movement(
         note=(note or "")[:500] or None,
     )
     db.add(movement)
+    db.flush()
+    from services.events import append_event
+    event_type = _MOVEMENT_EVENT_TYPES[movement_type]
+    append_event(
+        db,
+        event_type,
+        "variant",
+        variant.id,
+        idempotency_key=f"stock-movement:{movement.id}",
+        actor_user_id=actor_user_id,
+        request_id=request_id,
+        payload={
+            "movement_id": movement.id,
+            "quantity_delta": quantity_delta,
+            "movement_type": movement_type,
+            "purchase_id": purchase_id,
+            "sale_id": sale_id,
+        },
+    )
     return movement
 
 
@@ -61,7 +92,16 @@ class InsufficientStockError(Exception):
     pass
 
 
-def atomic_decrement_stock(db, variant_id: int, quantity: int, *, sale_id: int | None = None, note: str | None = None):
+def atomic_decrement_stock(
+    db,
+    variant_id: int,
+    quantity: int,
+    *,
+    sale_id: int | None = None,
+    note: str | None = None,
+    actor_user_id: int | None = None,
+    request_id: str | None = None,
+):
     """Decrement stock with one conditional SQL update and append its ledger row."""
     quantity = int(quantity)
     if quantity <= 0:
@@ -79,19 +119,58 @@ def atomic_decrement_stock(db, variant_id: int, quantity: int, *, sale_id: int |
     )
     db.add(movement)
     db.flush()
+    from services.events import append_event
+    append_event(
+        db,
+        "StockDecremented",
+        "variant",
+        int(variant_id),
+        idempotency_key=f"stock-movement:{movement.id}",
+        actor_user_id=actor_user_id,
+        request_id=request_id,
+        payload={
+            "movement_id": movement.id,
+            "quantity_delta": -quantity,
+            "sale_id": sale_id,
+        },
+    )
     return movement
 
 
-def record_opening_stock(db, variant: ProductVariant, quantity: int, note: str = ""):
+def record_opening_stock(
+    db,
+    variant: ProductVariant,
+    quantity: int,
+    note: str = "",
+    *,
+    actor_user_id: int | None = None,
+    request_id: str | None = None,
+):
     """Record initial stock for a newly-created variant."""
     if quantity:
         return record_stock_movement(
-            db, variant, quantity, "opening_stock", unit_cost=variant.cost_price, note=note,
+            db,
+            variant,
+            quantity,
+            "opening_stock",
+            unit_cost=variant.cost_price,
+            note=note,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
         )
     return None
 
 
-def record_cost_adjustment(db, variant: ProductVariant, old_cost: int, new_cost: int, note: str = ""):
+def record_cost_adjustment(
+    db,
+    variant: ProductVariant,
+    old_cost: int,
+    new_cost: int,
+    note: str = "",
+    *,
+    actor_user_id: int | None = None,
+    request_id: str | None = None,
+):
     """Record a cost-basis edit without changing stock or sale history."""
     if int(old_cost or 0) == int(new_cost or 0):
         return None
@@ -103,16 +182,48 @@ def record_cost_adjustment(db, variant: ProductVariant, old_cost: int, new_cost:
         note=(note or "")[:500] or None,
     )
     db.add(movement)
+    db.flush()
+    from services.events import append_event
+    append_event(
+        db,
+        "StockCostAdjusted",
+        "variant",
+        variant.id,
+        idempotency_key=f"stock-movement:{movement.id}",
+        actor_user_id=actor_user_id,
+        request_id=request_id,
+        payload={
+            "movement_id": movement.id,
+            "old_cost": old_cost,
+            "new_cost": new_cost,
+        },
+    )
     return movement
 
 
-def record_stock_adjustment(db, variant: ProductVariant, new_quantity: int, note: str = ""):
+def record_stock_adjustment(
+    db,
+    variant: ProductVariant,
+    new_quantity: int,
+    note: str = "",
+    *,
+    actor_user_id: int | None = None,
+    request_id: str | None = None,
+):
     """Replace a displayed balance through a signed, auditable adjustment."""
     new_quantity = max(0, int(new_quantity))
     delta = new_quantity - (variant.stock_quantity or 0)
     if not delta:
         return None
-    return record_stock_movement(db, variant, delta, "adjustment", note=note)
+    return record_stock_movement(
+        db,
+        variant,
+        delta,
+        "adjustment",
+        note=note,
+        actor_user_id=actor_user_id,
+        request_id=request_id,
+    )
 
 
 def latest_active_purchase_cost(db, variant_id: int) -> int | None:

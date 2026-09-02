@@ -23,6 +23,7 @@ from services.tier import (
     tier_up_marker_key, TIER_RANK,
 )
 from services.invoice import generate_invoice_text, generate_invoice_pdf
+from services.events import append_event
 from services.pos_terminal import (
     send_sale as send_terminal_sale,
     get_terminal_config,
@@ -90,6 +91,40 @@ def _transaction_response(transaction: POSTransaction, approval_token: str | Non
     if transaction.sale_id:
         result["sale_id"] = transaction.sale_id
     return result
+
+
+def _append_pos_outcome_event(
+    db: Session,
+    transaction: POSTransaction,
+    outcome: str,
+    *,
+    actor_user_id: int | None,
+    request_id: str | None,
+) -> None:
+    event_type = {
+        "approved": "PaymentApproved",
+        "cancelled": "PaymentCancelled",
+        "declined": "PaymentDeclined",
+        "uncertain": "PaymentUncertain",
+    }.get(outcome)
+    if not event_type:
+        raise ValueError(f"Unknown POS outcome: {outcome}")
+    append_event(
+        db,
+        event_type,
+        "pos_transaction",
+        transaction.id,
+        idempotency_key=f"pos:{transaction.id}:{event_type}",
+        actor_user_id=actor_user_id,
+        request_id=request_id,
+        payload={
+            "checkout_nonce": transaction.checkout_nonce,
+            "amount": transaction.amount,
+            "status": transaction.status,
+            "response_code": transaction.response_code,
+            "sale_id": transaction.sale_id,
+        },
+    )
 
 
 def _reuse_pos_transaction(request: Request, db: Session, transaction: POSTransaction, amount: int):
@@ -518,10 +553,7 @@ async def sales_terminal_status(db: Session = Depends(get_db)):
 @router.post("/send-to-terminal", response_class=JSONResponse)
 async def sales_send_to_terminal(
     request: Request,
-    amount: int = Form(0),
     checkout_nonce: str = Form(""),
-    customer_id: int = Form(0),
-    basket_json: str = Form("[]"),
     db: Session = Depends(get_db),
 ):
     """Start one durable, idempotent Parsian sale attempt.
@@ -537,15 +569,7 @@ async def sales_send_to_terminal(
         raise HTTPException(status_code=400, detail="شناسه سبد خرید نامعتبر است.")
     checkout = get_checkout(db, checkout_nonce)
     if not checkout:
-        checkout = create_checkout(
-            db,
-            customer_id=customer_id or None,
-            staff_user_id=request.session.get("staff_user_id"),
-            basket_json=basket_json,
-            payment_method="card",
-        )
-        checkout.checkout_nonce = checkout_nonce
-        db.commit()
+        raise HTTPException(status_code=404, detail="سبد خرید یافت نشد.")
     if checkout.staff_user_id != request.session.get("staff_user_id"):
         raise HTTPException(status_code=404, detail="سبد خرید یافت نشد.")
     if checkout.state in {"completed", "expired", "payment_cancelled", "payment_declined"}:
@@ -593,10 +617,36 @@ async def sales_send_to_terminal(
         port=cfg["port"],
         status="sent",
         basket_snapshot=snapshot,
+        operator_user_id=require_role.id,
     )
     db.add(transaction)
     try:
-        db.commit()  # Durable before the terminal can approve the payment.
+        db.flush()
+        checkout.pos_transaction_id = transaction.id
+        checkout.payment_method = "card"
+        append_event(
+            db,
+            "PaymentRequested",
+            "pos_transaction",
+            transaction.id,
+            idempotency_key=f"pos:{transaction.id}:requested",
+            actor_user_id=require_role.id,
+            request_id=request.headers.get("X-Request-ID"),
+            payload={
+                "checkout_id": checkout.id,
+                "amount": transaction.amount,
+                "payment_method": checkout.payment_method,
+            },
+        )
+        set_payment_pending(
+            db,
+            checkout,
+            request_id=request.headers.get("X-Request-ID"),
+            commit=False,
+        )
+        # The terminal must not be contacted until the local request and
+        # payment-pending state are durable.
+        db.commit()
     except IntegrityError:
         # Another request may have won the unique checkout_nonce race.
         db.rollback()
@@ -607,9 +657,6 @@ async def sales_send_to_terminal(
             return _reuse_pos_transaction(request, db, existing, amount)
         raise
     db.refresh(transaction)
-    checkout.pos_transaction_id = transaction.id
-    checkout.payment_method = "card"
-    set_payment_pending(db, checkout)
     _clear_pos_approval(request)
 
     try:
@@ -622,6 +669,21 @@ async def sales_send_to_terminal(
         transaction.status = "uncertain"
         transaction.error_message = str(error)[:500]
         transaction.response_label = "نیازمند تطبیق دستی"
+        _append_pos_outcome_event(
+            db,
+            transaction,
+            "uncertain",
+            actor_user_id=require_role.id,
+            request_id=request.headers.get("X-Request-ID"),
+        )
+        set_payment_outcome(
+            db,
+            checkout,
+            "uncertain",
+            transaction.response_label,
+            request_id=request.headers.get("X-Request-ID"),
+            commit=False,
+        )
         db.commit()
         return JSONResponse(status_code=502, content={
             "detail": str(error) or "ارتباط با دستگاه کارت‌خوان ناموفق بود.",
@@ -635,16 +697,31 @@ async def sales_send_to_terminal(
     transaction.response_code = result.get("response_code")
     transaction.response_label = result.get("label")
     transaction.response_text = result.get("response")
-    db.commit()
     outcome = transaction.status if transaction.status in {"approved", "cancelled", "declined"} else "uncertain"
-    set_payment_outcome(db, checkout, outcome, transaction.response_label or "")
+    _append_pos_outcome_event(
+        db,
+        transaction,
+        outcome,
+        actor_user_id=require_role.id,
+        request_id=request.headers.get("X-Request-ID"),
+    )
+    set_payment_outcome(
+        db,
+        checkout,
+        outcome,
+        transaction.response_label or "",
+        request_id=request.headers.get("X-Request-ID"),
+        commit=False,
+    )
+
+    approval_token = None
+    if transaction.status == "approved":
+        approval_token = secrets.token_urlsafe(32)
+        transaction.approval_token_hash = _approval_hash(approval_token)
+    db.commit()
 
     if transaction.status != "approved":
         return _transaction_response(transaction)
-
-    approval_token = secrets.token_urlsafe(32)
-    transaction.approval_token_hash = _approval_hash(approval_token)
-    db.commit()
     request.session[POS_APPROVAL_SESSION_KEY] = {
         "token": approval_token,
         "status": "approved",
@@ -821,9 +898,14 @@ async def sales_confirm(
             raise HTTPException(status_code=409, detail="محصول حذف شده است؛ لطفاً دوباره تلاش کنید.")
         try:
             atomic_decrement_stock(
-                db, variant.id, item["quantity"], sale_id=sale.id,
+                db,
+                variant.id,
+                item["quantity"],
+                sale_id=sale.id,
                 checkout=checkout,
                 note=f"فروش فاکتور #{sale.id}",
+                actor_user_id=guard.id,
+                request_id=request.headers.get("X-Request-ID"),
             )
         except InsufficientStockError as error:
             db.rollback()
@@ -848,7 +930,13 @@ async def sales_confirm(
         approval.status = "linked_to_sale"
         approval.reconciled = True
         approval.reconciled_at = datetime.now(timezone.utc)
-    complete_checkout(db, checkout, sale.id)
+    complete_checkout(
+        db,
+        checkout,
+        sale.id,
+        request_id=request.headers.get("X-Request-ID"),
+        commit=False,
+    )
     db.commit()
     request.session.pop("checkout_nonce", None)
     # Make the terminal approval one-time-use. Cash/credit sales also clear an
@@ -969,15 +1057,26 @@ async def sale_refund(sale_id: int, request: Request, refund_reason: str = Form(
         variant = db.query(ProductVariant).filter(ProductVariant.id == item.variant_id).first()
         if variant:
             record_stock_movement(
-                db, variant, item.quantity, "sale_refund",
+                db,
+                variant,
+                item.quantity,
+                "sale_refund",
                 sale_id=sale.id,
                 note=f"برگشت موجودی فاکتور #{sale.id}",
+                actor_user_id=guard.id,
+                request_id=request.headers.get("X-Request-ID"),
             )
 
     checkout = db.query(CheckoutSession).filter(CheckoutSession.sale_id == sale.id).first()
     if checkout and checkout.state == "completed":
         from services.checkout import refund_checkout
-        refund_checkout(db, checkout)
+        refund_checkout(
+            db,
+            checkout,
+            actor_user_id=guard.id,
+            request_id=request.headers.get("X-Request-ID"),
+            commit=False,
+        )
 
     # Reverse customer stats
     if sale.customer_id:
@@ -1044,9 +1143,14 @@ async def sale_refund(sale_id: int, request: Request, refund_reason: str = Form(
             for item in sale_items
         ]
         create_refund(
-            db, sale, guard.id, sale.refund_reason, refund_lines,
+            db,
+            sale,
+            guard.id,
+            sale.refund_reason,
+            refund_lines,
             payment_reference=(sale.pos_transaction.provider_reference if sale.pos_transaction else None),
             pos_reference=(sale.pos_transaction.retrieval_reference_number if sale.pos_transaction else None),
+            request_id=request.headers.get("X-Request-ID"),
         )
 
     # Remove campaign-discount links for the voided sale.

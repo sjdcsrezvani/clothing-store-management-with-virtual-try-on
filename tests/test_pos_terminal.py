@@ -4,8 +4,9 @@ import re
 import socket
 import threading
 
-from models import POSTransaction, Product, ProductVariant, Sale, Settings
+from models import POSTransaction, Product, ProductVariant, Sale, Settings, StaffUser
 from services import pos_terminal
+from services.checkout import create_checkout
 from tests.conftest import csrf_token
 
 
@@ -98,13 +99,19 @@ def _make_pos_variant(db_session, price=100_000, stock=2):
     return variant
 
 
-def _send_data(nonce, amount=100_000, variant_id=None):
-    return {
-        "amount": str(amount),
-        "checkout_nonce": nonce,
-        "customer_id": "0",
-        "basket_json": json.dumps([{"variant_id": variant_id, "quantity": 1}]) if variant_id else "[]",
-    }
+def _create_server_checkout(db_session, nonce, variant_id):
+    owner = db_session.query(StaffUser).filter(StaffUser.username == "owner").one()
+    return create_checkout(
+        db_session,
+        staff_user_id=owner.id,
+        basket_json=json.dumps([{"variant_id": variant_id, "quantity": 1}]),
+        payment_method="card",
+        checkout_nonce=nonce,
+    )
+
+
+def _send_data(nonce):
+    return {"checkout_nonce": nonce}
 
 
 def test_send_to_terminal_persists_approval_and_reuses_nonce(client, db_session, monkeypatch):
@@ -121,7 +128,9 @@ def test_send_to_terminal_persists_approval_and_reuses_nonce(client, db_session,
     login = client.post("/admin/login", data={"username": "owner", "password": "test-admin-pass", "csrf_token": login_token}, follow_redirects=False)
     assert login.status_code == 303
     token = csrf_token(client, "/sales/new")
-    data = {**_send_data("checkout-idempotency-1", variant_id=variant.id), "csrf_token": token}
+    nonce = "checkout-idempotency-1"
+    _create_server_checkout(db_session, nonce, variant.id)
+    data = {**_send_data(nonce), "csrf_token": token}
 
     first = client.post("/sales/send-to-terminal", data=data)
     second = client.post("/sales/send-to-terminal", data=data)
@@ -153,7 +162,9 @@ def test_terminal_error_is_persisted_as_uncertain_and_not_retried(client, db_ses
     assert login.status_code == 303
     token = csrf_token(client, "/sales/new")
     variant = _make_pos_variant(db_session, price=100_000, stock=2)
-    data = {**_send_data("checkout-idempotency-uncertain", variant_id=variant.id), "csrf_token": token}
+    nonce = "checkout-idempotency-uncertain"
+    _create_server_checkout(db_session, nonce, variant.id)
+    data = {**_send_data(nonce), "csrf_token": token}
 
     first = client.post("/sales/send-to-terminal", data=data)
     second = client.post("/sales/send-to-terminal", data=data)
@@ -183,9 +194,10 @@ def test_approved_pos_transaction_links_to_one_sale(client, db_session, monkeypa
     assert login.status_code == 303
     checkout_page = csrf_token(client, "/sales/new")
     nonce = "checkout-idempotency-sale"
+    _create_server_checkout(db_session, nonce, variant.id)
     send_response = client.post(
         "/sales/send-to-terminal",
-        data={**_send_data(nonce, variant_id=variant.id), "csrf_token": checkout_page},
+        data={**_send_data(nonce), "csrf_token": checkout_page},
     )
     assert send_response.status_code == 200
     approval_token = send_response.json()["approval_token"]

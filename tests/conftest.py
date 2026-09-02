@@ -48,11 +48,11 @@ def db_session():
 @pytest.fixture(autouse=True)
 def _clean_db(client, db_session):
     """Reset all tables before each test so tests are independent."""
-    from models import (StaffUser, SaleCampaign, SaleItem, Sale, POSTransaction, CheckoutEvent, CheckoutSession, StockReservation, StockMovement, GeneratedImage,
+    from models import (BusinessEvent, StaffUser, SaleCampaign, SaleItem, Sale, POSTransaction, CheckoutEvent, CheckoutSession, StockReservation, StockMovement, GeneratedImage,
                         Referral, Customer, ProductVariant, Product,
                         Campaign, Settings, AdminLog, Payment, Expense, CashSessionEntry,
                         Purchase, PurchaseItem, Supplier, Refund, RefundLine, PaymentReversal, FinancialEntry, CashSession, CashSessionEntry, SupplierPayment)
-    for model in (CheckoutEvent, StockReservation, CheckoutSession, RefundLine, FinancialEntry, PaymentReversal, Refund, SaleCampaign, SaleItem, StockMovement, POSTransaction, Payment, Sale, GeneratedImage,
+    for model in (BusinessEvent, CheckoutEvent, StockReservation, CheckoutSession, RefundLine, FinancialEntry, PaymentReversal, Refund, SaleCampaign, SaleItem, StockMovement, POSTransaction, Payment, Sale, GeneratedImage,
                   Referral, PurchaseItem, Purchase, ProductVariant, Product, Expense, SupplierPayment,
                   Campaign, CashSession, CashSessionEntry, AdminLog, StaffUser, Settings, Customer):
         db_session.query(model).delete()

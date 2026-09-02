@@ -7,7 +7,16 @@ def now():
     return datetime.now(timezone.utc)
 
 
-def create_refund(db, sale, operator_id, reason, lines, payment_reference=None, pos_reference=None):
+def create_refund(
+    db,
+    sale,
+    operator_id,
+    reason,
+    lines,
+    payment_reference=None,
+    pos_reference=None,
+    request_id=None,
+):
     refund = Refund(
         sale_id=sale.id,
         operator_user_id=operator_id,
@@ -33,10 +42,26 @@ def create_refund(db, sale, operator_id, reason, lines, payment_reference=None, 
         reason=refund.reason,
         reference=payment_reference or pos_reference,
     ))
+    from services.events import append_event
+    append_event(
+        db,
+        "RefundIssued",
+        "refund",
+        refund.id,
+        idempotency_key=f"refund:{refund.id}:issued",
+        actor_user_id=operator_id,
+        request_id=request_id,
+        payload={
+            "sale_id": refund.sale_id,
+            "amount": refund.total_amount,
+            "original_payment_reference": payment_reference,
+            "pos_reversal_reference": pos_reference,
+        },
+    )
     return refund
 
 
-def reverse_payment_immutably(db, payment, operator_id, reason):
+def reverse_payment_immutably(db, payment, operator_id, reason, request_id=None):
     if payment.reversed_at:
         return None
     reversal = PaymentReversal(
@@ -56,10 +81,21 @@ def reverse_payment_immutably(db, payment, operator_id, reason):
     ))
     payment.reversed_at = now()
     payment.reversal_id = reversal.id
+    from services.events import append_event
+    append_event(
+        db,
+        "PaymentReversed",
+        "payment_reversal",
+        reversal.id,
+        idempotency_key=f"payment-reversal:{reversal.id}:recorded",
+        actor_user_id=operator_id,
+        request_id=request_id,
+        payload={"payment_id": payment.id, "amount": payment.amount, "reason": reversal.reason},
+    )
     return reversal
 
 
-def reverse_expense_immutably(db, expense, operator_id, reason):
+def reverse_expense_immutably(db, expense, operator_id, reason, request_id=None):
     if expense.reversed_at:
         return None
     expense.reversed_at = now()
@@ -74,4 +110,15 @@ def reverse_expense_immutably(db, expense, operator_id, reason):
     db.add(entry)
     db.flush()
     expense.reversal_id = entry.id
+    from services.events import append_event
+    append_event(
+        db,
+        "ExpenseReversed",
+        "expense",
+        expense.id,
+        idempotency_key=f"expense:{expense.id}:reversed",
+        actor_user_id=operator_id,
+        request_id=request_id,
+        payload={"amount": expense.amount, "reason": reason or "Expense reversal"},
+    )
     return entry

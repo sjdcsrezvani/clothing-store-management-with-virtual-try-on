@@ -24,6 +24,7 @@ from models import (
     CHECKOUT_TRANSITIONS,
     Customer,
     ProductVariant,
+    Sale,
     StockReservation,
     StockMovement,
 )
@@ -76,10 +77,12 @@ def create_checkout(
     staff_user_id: int | None = None,
     basket_json: str = "[]",
     payment_method: str = "card",
+    checkout_nonce: str | None = None,
+    request_id: str | None = None,
 ) -> CheckoutSession:
     """Create a fresh draft checkout with a server-generated nonce."""
     checkout = CheckoutSession(
-        checkout_nonce=secrets.token_urlsafe(18),
+        checkout_nonce=(checkout_nonce or secrets.token_urlsafe(18))[:100],
         customer_id=customer_id or None,
         staff_user_id=staff_user_id,
         basket_json=basket_json,
@@ -90,6 +93,17 @@ def create_checkout(
     db.add(checkout)
     db.flush()
     _record_event(db, checkout, "draft", "checkout created")
+    from services.events import append_event
+    append_event(
+        db,
+        "CheckoutCreated",
+        "checkout",
+        checkout.id,
+        idempotency_key=f"checkout:{checkout.id}:created",
+        actor_user_id=staff_user_id,
+        request_id=request_id,
+        payload={"customer_id": checkout.customer_id},
+    )
     db.commit()
     db.refresh(checkout)
     return checkout
@@ -131,7 +145,11 @@ def is_expired(checkout: CheckoutSession) -> bool:
     return checkout.expires_at < _now()
 
 
-def expire_stale(db: Session) -> int:
+def expire_stale(
+    db: Session,
+    *,
+    request_id: str | None = None,
+) -> int:
     """Expire checkouts past their timeout and release their reservations.
 
     Called by the scheduler and before every checkout read so abandoned
@@ -139,21 +157,38 @@ def expire_stale(db: Session) -> int:
     now = _now()
     stale = db.query(CheckoutSession).filter(
         CheckoutSession.expires_at < now,
-        CheckoutSession.state.in_(("draft", "reserved", "payment_pending",
-                                    "payment_approved", "payment_uncertain")),
+        CheckoutSession.state.in_(("draft", "reserved")),
     ).all()
     count = 0
     for checkout in stale:
-        release_reservations(db, checkout)
-        if transition_allowed(checkout.state, "expired"):
+        previous_state = checkout.state
+        release_reservations(db, checkout, request_id=request_id)
+        if transition_allowed(previous_state, "expired"):
             _set_state(db, checkout, "expired", "timeout")
+            from services.events import append_event
+            append_event(
+                db,
+                "CheckoutExpired",
+                "checkout",
+                checkout.id,
+                idempotency_key=f"checkout:{checkout.id}:expired",
+                actor_user_id=checkout.staff_user_id,
+                request_id=request_id,
+                payload={"previous_state": previous_state},
+            )
             count += 1
     if count:
         db.commit()
     return count
 
 
-def reserve_basket(db: Session, checkout: CheckoutSession, items: list[dict]) -> list[StockReservation]:
+def reserve_basket(
+    db: Session,
+    checkout: CheckoutSession,
+    items: list[dict],
+    *,
+    request_id: str | None = None,
+) -> list[StockReservation]:
     """Create or refresh stock reservations for the basket items.
 
     Each item is ``{"variant_id": int, "quantity": int}``. Reservations are
@@ -163,12 +198,13 @@ def reserve_basket(db: Session, checkout: CheckoutSession, items: list[dict]) ->
         raise ValueError(f"Cannot reserve from state {checkout.state}")
 
     # Release any prior reservations for this checkout first (re-scan).
-    release_reservations(db, checkout)
+    release_reservations(db, checkout, request_id=request_id)
     db.flush()
 
     now = _now()
     exp = _reservation_expiry()
     reservations: list[StockReservation] = []
+    from services.events import append_event
     for item in items:
         variant_id = int(item.get("variant_id") or 0)
         qty = max(1, int(item.get("quantity") or 1))
@@ -204,6 +240,22 @@ def reserve_basket(db: Session, checkout: CheckoutSession, items: list[dict]) ->
             expires_at=exp,
         )
         db.add(reservation)
+        db.flush()
+        append_event(
+            db,
+            "StockReserved",
+            "reservation",
+            reservation.id,
+            idempotency_key=f"reservation:{reservation.id}:reserved",
+            actor_user_id=checkout.staff_user_id,
+            request_id=request_id,
+            payload={
+                "checkout_session_id": checkout.id,
+                "variant_id": variant_id,
+                "quantity": qty,
+                "expires_at": exp,
+            },
+        )
         reservations.append(reservation)
 
     if checkout.state == "draft":
@@ -213,32 +265,148 @@ def reserve_basket(db: Session, checkout: CheckoutSession, items: list[dict]) ->
     return reservations
 
 
-def release_reservations(db: Session, checkout: CheckoutSession) -> int:
+def release_reservations(
+    db: Session,
+    checkout: CheckoutSession,
+    *,
+    request_id: str | None = None,
+) -> int:
     """Mark all active reservations for this checkout as released."""
     now = _now()
+    from services.events import append_event
     released = db.query(StockReservation).filter(
         StockReservation.checkout_session_id == checkout.id,
         StockReservation.state == "active",
     ).all()
-    for r in released:
-        variant = db.query(ProductVariant).filter(ProductVariant.id == r.variant_id).first()
-        if variant:
-            variant.reserved_quantity = max(0, (variant.reserved_quantity or 0) - r.quantity)
-        r.state = "released"
-        r.released_at = now
-    return len(released)
+    released_count = 0
+    for reservation in released:
+        result = db.execute(
+            update(StockReservation)
+            .where(
+                StockReservation.id == reservation.id,
+                StockReservation.state == "active",
+            )
+            .values(state="released", released_at=now)
+        )
+        if result.rowcount != 1:
+            continue
+        db.execute(
+            update(ProductVariant)
+            .where(ProductVariant.id == reservation.variant_id)
+            .values(
+                reserved_quantity=text(
+                    "CASE WHEN reserved_quantity >= :release_qty "
+                    "THEN reserved_quantity - :release_qty ELSE 0 END"
+                ).bindparams(release_qty=reservation.quantity),
+            )
+        )
+        reservation.state = "released"
+        reservation.released_at = now
+        append_event(
+            db,
+            "StockReleased",
+            "reservation",
+            reservation.id,
+            idempotency_key=f"reservation:{reservation.id}:released",
+            actor_user_id=checkout.staff_user_id,
+            request_id=request_id,
+            payload={"variant_id": reservation.variant_id, "quantity": reservation.quantity},
+            occurred_at=now,
+        )
+        released_count += 1
+    return released_count
 
 
-def consume_reservations(db: Session, checkout: CheckoutSession) -> None:
-    """Mark reservations as consumed after a completed sale."""
-    for r in db.query(StockReservation).filter(
+def _consume_reservation_quantity(
+    db: Session,
+    checkout: CheckoutSession,
+    variant_id: int,
+    quantity: int,
+    reference: str,
+    request_id: str | None = None,
+) -> None:
+    """Consume only the quantity used by one sale from active holds."""
+    from services.events import append_event
+    remaining = int(quantity)
+    for reservation in db.query(StockReservation).filter(
+        StockReservation.checkout_session_id == checkout.id,
+        StockReservation.variant_id == int(variant_id),
+        StockReservation.state == "active",
+    ).order_by(StockReservation.id.asc()).all():
+        if remaining <= 0:
+            break
+        consumed = min(reservation.quantity, remaining)
+        original_quantity = reservation.quantity
+        if consumed == original_quantity:
+            reservation.state = "consumed"
+            reservation.released_at = _now()
+        else:
+            reservation.quantity = original_quantity - consumed
+        append_event(
+            db,
+            "StockReservationConsumed",
+            "reservation",
+            reservation.id,
+            idempotency_key=f"reservation:{reservation.id}:consumed:{reference}",
+            actor_user_id=checkout.staff_user_id,
+            request_id=request_id,
+            payload={
+                "variant_id": reservation.variant_id,
+                "quantity": consumed,
+                "remaining_quantity": reservation.quantity if reservation.state == "active" else 0,
+            },
+        )
+        remaining -= consumed
+    if remaining > 0:
+        raise InsufficientStockError("Checkout reservation is no longer valid; please retry")
+
+
+def consume_reservations(
+    db: Session,
+    checkout: CheckoutSession,
+    *,
+    request_id: str | None = None,
+) -> None:
+    """Mark all remaining holds for a completed checkout as consumed."""
+    from services.events import append_event
+    for reservation in db.query(StockReservation).filter(
         StockReservation.checkout_session_id == checkout.id,
         StockReservation.state == "active",
-    ).all():
-        variant = db.query(ProductVariant).filter(ProductVariant.id == r.variant_id).first()
-        if variant:
-            variant.reserved_quantity = max(0, (variant.reserved_quantity or 0) - r.quantity)
-        r.state = "consumed"
+    ).order_by(StockReservation.id.asc()).all():
+        consumed_at = _now()
+        result = db.execute(
+            update(StockReservation)
+            .where(
+                StockReservation.id == reservation.id,
+                StockReservation.state == "active",
+            )
+            .values(state="consumed", released_at=consumed_at)
+        )
+        if result.rowcount != 1:
+            continue
+        db.execute(
+            update(ProductVariant)
+            .where(ProductVariant.id == reservation.variant_id)
+            .values(
+                reserved_quantity=text(
+                    "CASE WHEN reserved_quantity >= :consume_qty "
+                    "THEN reserved_quantity - :consume_qty ELSE 0 END"
+                ).bindparams(consume_qty=reservation.quantity),
+            )
+        )
+        reservation.state = "consumed"
+        reservation.released_at = consumed_at
+        append_event(
+            db,
+            "StockReservationConsumed",
+            "reservation",
+            reservation.id,
+            idempotency_key=f"reservation:{reservation.id}:consumed",
+            actor_user_id=checkout.staff_user_id,
+            request_id=request_id,
+            payload={"variant_id": reservation.variant_id, "quantity": reservation.quantity},
+            occurred_at=reservation.released_at,
+        )
 
 
 def finalize_basket(db: Session, checkout: CheckoutSession) -> dict:
@@ -347,6 +515,8 @@ def atomic_decrement_stock(
     sale_id: int | None = None,
     checkout: CheckoutSession | None = None,
     note: str | None = None,
+    actor_user_id: int | None = None,
+    request_id: str | None = None,
 ) -> StockMovement:
     """Decrement variant stock atomically.
 
@@ -358,27 +528,28 @@ def atomic_decrement_stock(
     if quantity <= 0:
         raise ValueError("Quantity must be positive")
 
-    reservation_ids = []
     if checkout is not None:
         held = db.query(StockReservation).filter(
             StockReservation.checkout_session_id == checkout.id,
             StockReservation.variant_id == int(variant_id),
             StockReservation.state == "active",
-        ).all()
+            StockReservation.expires_at > _now(),
+        ).order_by(StockReservation.id.asc()).all()
         held_quantity = sum(r.quantity for r in held)
         if held_quantity < int(quantity):
             db.rollback()
             raise InsufficientStockError("Checkout reservation is no longer valid; please retry")
-        reservation_ids = [r.id for r in held]
-
+    update_sql = (
+        "UPDATE product_variants "
+        "SET stock_quantity = stock_quantity - :qty, updated_at = :now"
+    )
+    if checkout is not None:
+        update_sql += ", reserved_quantity = CASE WHEN reserved_quantity >= :qty THEN reserved_quantity - :qty ELSE reserved_quantity END"
+        update_sql += " WHERE id = :vid AND stock_quantity >= :qty AND reserved_quantity >= :qty"
+    else:
+        update_sql += " WHERE id = :vid AND stock_quantity >= :qty"
     result = db.execute(
-        text(
-            "UPDATE product_variants "
-            "SET stock_quantity = stock_quantity - :qty, "
-            "reserved_quantity = CASE WHEN reserved_quantity >= :qty THEN reserved_quantity - :qty ELSE reserved_quantity END, "
-            "updated_at = :now "
-            "WHERE id = :vid AND stock_quantity >= :qty"
-        ),
+        text(update_sql),
         {"qty": int(quantity), "vid": int(variant_id), "now": _now()},
     )
     if result.rowcount != 1:
@@ -388,9 +559,6 @@ def atomic_decrement_stock(
         )
 
     if checkout is not None:
-        for reservation in db.query(StockReservation).filter(StockReservation.id.in_(reservation_ids)).all():
-            reservation.state = "consumed"
-            reservation.released_at = _now()
         db.flush()
 
     movement = StockMovement(
@@ -402,21 +570,76 @@ def atomic_decrement_stock(
     )
     db.add(movement)
     db.flush()
+    from services.events import append_event
+    if checkout is not None:
+        _consume_reservation_quantity(
+            db,
+            checkout,
+            int(variant_id),
+            int(quantity),
+            f"movement:{movement.id}",
+            request_id=request_id,
+        )
+    append_event(
+        db,
+        "StockDecremented",
+        "variant",
+        int(variant_id),
+        idempotency_key=f"stock-movement:{movement.id}",
+        actor_user_id=(
+            actor_user_id
+            if actor_user_id is not None
+            else checkout.staff_user_id if checkout is not None else None
+        ),
+        request_id=request_id,
+        payload={
+            "movement_id": movement.id,
+            "quantity_delta": -int(quantity),
+            "sale_id": sale_id,
+            "checkout_id": checkout.id if checkout is not None else None,
+        },
+    )
     # Refresh the variant so subsequent reads see the committed balance.
     db.expire(db.query(ProductVariant).filter(ProductVariant.id == variant_id).first())
     return movement
 
 
-def set_payment_pending(db: Session, checkout: CheckoutSession) -> None:
+def set_payment_pending(
+    db: Session,
+    checkout: CheckoutSession,
+    *,
+    request_id: str | None = None,
+    commit: bool = True,
+) -> None:
     if checkout.state == "payment_pending":
         return
     if checkout.state == "draft":
         _set_state(db, checkout, "reserved", "basket reserved before payment")
     _set_state(db, checkout, "payment_pending", "pos payment initiated")
-    db.commit()
+    from services.events import append_event
+    append_event(
+        db,
+        "PaymentRequested",
+        "checkout",
+        checkout.id,
+        idempotency_key=f"checkout:{checkout.id}:payment-requested",
+        actor_user_id=checkout.staff_user_id,
+        request_id=request_id,
+        payload={"amount": checkout.final_amount, "payment_method": checkout.payment_method},
+    )
+    if commit:
+        db.commit()
 
 
-def set_payment_outcome(db: Session, checkout: CheckoutSession, outcome: str, detail: str = "") -> None:
+def set_payment_outcome(
+    db: Session,
+    checkout: CheckoutSession,
+    outcome: str,
+    detail: str = "",
+    *,
+    request_id: str | None = None,
+    commit: bool = True,
+) -> None:
     """Record the terminal response. ``outcome`` is one of: approved,
     cancelled, declined, uncertain."""
     state_map = {
@@ -429,10 +652,37 @@ def set_payment_outcome(db: Session, checkout: CheckoutSession, outcome: str, de
     if not to_state:
         raise ValueError(f"Unknown payment outcome: {outcome}")
     _set_state(db, checkout, to_state, detail)
-    db.commit()
+    if outcome in {"cancelled", "declined"}:
+        release_reservations(db, checkout, request_id=request_id)
+    from services.events import append_event
+    event_type = {
+        "payment_approved": "PaymentApproved",
+        "payment_cancelled": "PaymentCancelled",
+        "payment_declined": "PaymentDeclined",
+        "payment_uncertain": "PaymentUncertain",
+    }[to_state]
+    append_event(
+        db,
+        event_type,
+        "checkout",
+        checkout.id,
+        idempotency_key=f"checkout:{checkout.id}:{event_type}",
+        actor_user_id=checkout.staff_user_id,
+        request_id=request_id,
+        payload={"amount": checkout.final_amount, "detail": detail},
+    )
+    if commit:
+        db.commit()
 
 
-def complete_checkout(db: Session, checkout: CheckoutSession, sale_id: int) -> None:
+def complete_checkout(
+    db: Session,
+    checkout: CheckoutSession,
+    sale_id: int,
+    *,
+    request_id: str | None = None,
+    commit: bool = True,
+) -> None:
     """Mark the checkout as completed and consume its reservations."""
     if checkout.state == "payment_uncertain":
         raise ValueError("Uncertain payment requires reconciliation before completion")
@@ -442,14 +692,71 @@ def complete_checkout(db: Session, checkout: CheckoutSession, sale_id: int) -> N
         raise ValueError(f"Invalid checkout transition: {checkout.state} → completed")
     _set_state(db, checkout, "completed", f"sale #{sale_id}")
     checkout.sale_id = sale_id
-    consume_reservations(db, checkout)
-    db.commit()
+    consume_reservations(db, checkout, request_id=request_id)
+    from services.events import append_event
+    sale = db.query(Sale).filter(Sale.id == sale_id).first()
+    append_event(
+        db,
+        "SaleCompleted",
+        "sale",
+        sale_id,
+        idempotency_key=f"sale:{sale_id}:completed",
+        actor_user_id=checkout.staff_user_id,
+        request_id=request_id,
+        payload={
+            "payment_method": sale.payment_method if sale else None,
+            "final_amount": sale.final_amount if sale else None,
+            "customer_id": sale.customer_id if sale else None,
+        },
+    )
+    if sale and sale.payment_method == "credit":
+        append_event(
+            db,
+            "CreditSaleIssued",
+            "sale",
+            sale_id,
+            idempotency_key=f"sale:{sale_id}:credit-issued",
+        actor_user_id=checkout.staff_user_id,
+        request_id=request_id,
+        payload={"customer_id": sale.customer_id, "amount": sale.final_amount},
+        )
+    if sale and sale.points_earned and sale.customer_id:
+        append_event(
+            db,
+            "LoyaltyUpdated",
+            "customer",
+            sale.customer_id,
+            idempotency_key=f"sale:{sale_id}:loyalty-updated",
+            actor_user_id=checkout.staff_user_id,
+            payload={"sale_id": sale_id, "points_earned": sale.points_earned},
+        )
+    if commit:
+        db.commit()
 
 
-def refund_checkout(db: Session, checkout: CheckoutSession) -> None:
+def refund_checkout(
+    db: Session,
+    checkout: CheckoutSession,
+    *,
+    actor_user_id: int | None = None,
+    request_id: str | None = None,
+    commit: bool = True,
+) -> None:
     """Move a completed checkout to refunded."""
     _set_state(db, checkout, "refunded", "sale refunded")
-    db.commit()
+    from services.events import append_event
+    append_event(
+        db,
+        "CheckoutRefunded",
+        "checkout",
+        checkout.id,
+        idempotency_key=f"checkout:{checkout.id}:refunded",
+        actor_user_id=(actor_user_id if actor_user_id is not None else checkout.staff_user_id),
+        request_id=request_id,
+        payload={"sale_id": checkout.sale_id},
+    )
+    if commit:
+        db.commit()
 
 
 class InsufficientStockError(Exception):
