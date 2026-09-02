@@ -11,7 +11,17 @@
     <a href="/sales/new" class="btn btn-success">🛒 ثبت فروش</a>
 </div>
 
-{% if action_message %}<div class="alert alert-success">✅ {{ action_message }}</div>{% endif %}
+{% if action_message %}<div class="alert alert-success" role="status">✅ {{ action_message }}</div>{% endif %}
+
+<section class="action-center card" aria-labelledby="action-center-title">
+    <div class="section-heading"><div><span class="eyebrow">نیازمند توجه</span><h3 id="action-center-title">اقدام‌های امروز</h3></div><span class="status-dot" aria-hidden="true"></span></div>
+    <div class="action-grid">
+        <a class="action-item action-warning" href="/admin/products"><strong>موجودی کم</strong><span>بررسی و سفارش مجدد کالاها</span></a>
+        <a class="action-item action-danger" href="/admin/pos-reconciliation"><strong>تراکنش‌های نامشخص</strong><span>بررسی پرداخت‌های کارت‌خوان</span></a>
+        <a class="action-item action-info" href="/admin/collections"><strong>وصول مطالبات</strong><span>پیگیری حساب‌های نسیه</span></a>
+        <a class="action-item action-success" href="/admin/backups"><strong>پشتیبان‌گیری</strong><span>بررسی آخرین نسخه پشتیبان</span></a>
+    </div>
+</section>
 
 {# ─── Key settings ─── #}
 <h3 style="display: flex; align-items: center; gap: 0.4rem; margin: 1.5rem 0 0.8rem; font-size: 0.9rem; color: var(--ink-soft);">

@@ -15,8 +15,8 @@
     <form method="post" action="/sales/lookup-customer">
         <div class="form-group">
             <input type="tel" id="phone" name="phone" class="phone-input"
-                   placeholder="09xxxxxxxxx" required maxlength="11" pattern="09\d{9}" autofocus
-                   inputmode="numeric">
+                   placeholder="09xxxxxxxxx" required maxlength="11" pattern="09\d{9}" autofocus inputmode="tel" aria-label="شماره تلفن مشتری">
+
         </div>
         <button type="submit" class="btn btn-primary btn-block btn-large">🔍 جستجوی مشتری</button>
     </form>
@@ -66,7 +66,7 @@
 
 {% elif step == "scan" %}
 {# ─── STEP 3: Checkout / Scan ─── #}
-<div class="checkout-layout">
+<div class="checkout-layout" aria-label="فرآیند صندوق فروش">
     <div class="checkout-left">
         {# ── Customer info card ── #}
         {% if customer %}
@@ -134,8 +134,8 @@
                 <input type="hidden" name="custom_discount_percent" value="{{ custom_discount_percent|default(0) }}">
                 <div class="form-group" style="margin-bottom: 0;">
                     <input type="text" id="barcode-input" name="barcode" class="barcode-input"
-                           placeholder="🔲 بارکد را اسکن کنید..." autofocus autocomplete="off"
-                           inputmode="numeric">
+                           placeholder="بارکد را اسکن کنید..." autofocus autocomplete="off"
+                           inputmode="numeric" aria-label="بارکد محصول">
                 </div>
             </form>
         </div>
@@ -242,14 +242,17 @@
                 <div class="summary-row discount"><span>{{ line }}</span></div>
                 {% endfor %}
                 {% set final = (total_amount - discounts.total_discount) if total_amount >= discounts.total_discount else 0 %}
-                <div class="summary-row total"><span>💰 مبلغ نهایی</span><span class="tnum">{{ fmt(final) }} تومان</span></div>
+                <div class="summary-row total"><span>💰 مبلغ نهایی</span><span class="tnum" data-amount="{{ final }}">{{ fmt(final) }} تومان</span></div>
                 {% if discounts.total_discount > 0 %}
                 <div class="summary-row discount"><span>جمع تخفیف</span><span class="tnum">-{{ fmt(discounts.total_discount) }} تومان</span></div>
                 {% endif %}
             </div>
 
-            <div class="payment-section">
-                <div class="payment-options">
+            <div class="payment-section" aria-label="پرداخت">
+                <div class="payment-timeline" aria-label="وضعیت پرداخت">
+                    <span class="timeline-step active">۱ انتخاب روش</span><span class="timeline-line"></span><span class="timeline-step">۲ پرداخت</span><span class="timeline-line"></span><span class="timeline-step">۳ صدور فاکتور</span>
+                </div>
+                <div class="payment-options" role="radiogroup" aria-label="روش پرداخت">
                     <label class="payment-option">
                         <input type="radio" name="payment_method" value="card" checked>
                         <span>💳 کارت</span>
@@ -295,7 +298,12 @@
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <button type="submit" id="terminal-submit" class="btn btn-ghost btn-block" style="margin-bottom:0.6rem;">📟 ارسال مبلغ به کارت‌خوان</button>
                 </form>
-                <div id="terminal-status" class="alert" style="display:none; margin-bottom:0.6rem;"></div>
+                <div id="terminal-status" class="alert" style="display:none; margin-bottom:0.6rem;" role="status" aria-live="polite"></div>
+                <div id="cash-calculator" class="cash-calculator" hidden>
+                    <label for="cash-received">وجه دریافتی (تومان)</label>
+                    <input id="cash-received" type="number" min="0" inputmode="numeric" placeholder="مبلغ دریافتی">
+                    <strong id="cash-change" aria-live="polite">باقی‌مانده: —</strong>
+                </div>
                 <form method="post" action="/sales/confirm-sale" id="confirm-form">
                     <input type="hidden" name="customer_id" value="{{ customer_id }}">
                     <input type="hidden" name="basket_json" value="{{ basket_json }}">
@@ -328,15 +336,6 @@
 function setAll(name, value) {
     document.querySelectorAll('input[name="' + name + '"]').forEach(function (el) { el.value = value; });
 }
-// preserve the existing barcode-Enter behavior
-document.getElementById('barcode-input').addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        var f = document.getElementById('scan-form');
-        ensureCsrf(f);
-        f.submit();
-    }
-});
 var posRequiresApproval = {{ 'true' if pos_requires_approval else 'false' }};
 
 function updatePaymentUi() {
