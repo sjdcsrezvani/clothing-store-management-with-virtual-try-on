@@ -25,6 +25,12 @@ def test_analytics_has_no_external_chart_dependency():
     assert "/static/js/charts.js" not in text
 
 
+def test_print_layout_is_light_and_readable_for_all_themes():
+    css = (ROOT / "static/css/style.css").read_text()
+    assert "html, body { background: #fff !important; color: #000 !important; }" in css
+    assert ".invoice, .invoice .invoice-header" in css
+
+
 def test_frontend_assets_have_accessibility_and_loading_support():
     css = (ROOT / "static/css/style.css").read_text()
     js = (ROOT / "static/js/app.js").read_text()

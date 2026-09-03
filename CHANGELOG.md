@@ -1,3 +1,14 @@
+## 2.0.0 — 2026-09-03
+
+### Switchable store themes
+
+- Added ten store-wide visual themes for operations, POS, boutique, children’s, dark, high-contrast, and custom-brand workflows.
+- Added Owner-only Appearance settings with live previews and persistent theme selection.
+- Added validated custom brand colors and optional store logo upload.
+- Added theme-aware shared surfaces, navigation, forms, tables, alerts, focus states, and dark-mode styling.
+- Replaced professional navigation emoji dependence with local labeled control icons while preserving the Kids Boutique identity.
+- Kept receipts and invoices on a clean light print layout.
+
 ## 1.1.11
 
 - Unified dashboard totals with canonical financial reporting.

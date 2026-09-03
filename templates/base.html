@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fa" dir="rtl">
+<html lang="fa" dir="rtl" data-theme="{{ theme.id }}" data-theme-mode="{{ theme.mode }}" style="{{ theme.inline_style }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,7 +7,7 @@
     <meta name="csrf-token" content="{{ csrf_token }}">
     <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
-    <link rel="icon" type="image/png" href="/static/logo.png">
+    <link rel="icon" type="image/png" href="{{ store.logo_path }}">
     <meta name="theme-color" content="#fff5f0">
     <script src="/static/js/charts.js"></script>
 </head>
@@ -17,11 +17,11 @@
             <div class="topbar-inner">
                 <button type="button" class="menu-toggle" id="menu-toggle" aria-label="باز کردن منو" aria-expanded="false">☰</button>
                 <a class="brand" href="/sales/new">
-                    <span class="brand-mark">🎨</span>
+                    <img class="brand-logo" src="{{ store.logo_path }}" alt="{{ store.name }}">
                     <span class="brand-copy"><strong>{{ store.name }}</strong><small>{{ store.tagline or 'سیستم فروشگاه' }}</small></span>
                 </a>
                 <div class="topbar-actions">
-                    <a href="/sales/new" class="quick-sale">🛒 <span>فروش جدید</span></a>
+                    <a href="/sales/new" class="quick-sale"><span class="icon-sale" aria-hidden="true"></span><span>فروش جدید</span></a>
                     <a href="/admin" class="topbar-admin" aria-label="پنل مدیریت">تنظیمات</a>
                 </div>
             </div>
@@ -29,47 +29,47 @@
 
         <aside class="app-sidebar" id="app-sidebar" aria-label="منوی اصلی">
             <div class="sidebar-brand">
-                <span class="sidebar-brand-icon">🧸</span>
+                <img class="sidebar-brand-logo" src="{{ store.logo_path }}" alt="">
                 <div><strong>{{ store.name }}</strong><small>پنل مدیریت</small></div>
             </div>
             <nav class="sidebar-nav">
                 <div class="sidebar-section-label">فروشگاه</div>
-                <a href="/sales/new" data-nav="sales"><span>🛒</span> فروش جدید</a>
-                <a href="/sales/" data-nav="sales-history"><span>🧾</span> تاریخچه فروش</a>
-                <a href="/admin/products" data-nav="products"><span>📦</span> محصولات و موجودی</a>
-                <a href="/admin/purchases" data-nav="purchases"><span>🚚</span> خرید از عمده‌فروش</a>
-                <a href="/admin/inventory-movements" data-nav="inventory-movements"><span>📚</span> دفتر انبار</a>
+                <a href="/sales/new" data-nav="sales"><span class="nav-icon icon-sale" aria-hidden="true"></span> فروش جدید</a>
+                <a href="/sales/" data-nav="sales-history"><span class="nav-icon icon-history" aria-hidden="true"></span> تاریخچه فروش</a>
+                <a href="/admin/products" data-nav="products"><span class="nav-icon icon-box" aria-hidden="true"></span> محصولات و موجودی</a>
+                <a href="/admin/purchases" data-nav="purchases"><span class="nav-icon icon-truck" aria-hidden="true"></span> خرید از عمده‌فروش</a>
+                <a href="/admin/inventory-movements" data-nav="inventory-movements"><span class="nav-icon icon-ledger" aria-hidden="true"></span> دفتر انبار</a>
 
                 <div class="sidebar-section-label">مشتریان</div>
-                <a href="/admin/customers" data-nav="customers"><span>👥</span> مشتریان</a>
-                <a href="/admin/credit" data-nav="credit"><span>📒</span> حساب نسیه</a>
-                <a href="/admin/collections" data-nav="collections"><span>📋</span> وصول مطالبات</a>
-                <a href="/admin/campaigns" data-nav="campaigns"><span>📢</span> کمپین پیامکی</a>
+                <a href="/admin/customers" data-nav="customers"><span class="nav-icon icon-users" aria-hidden="true"></span> مشتریان</a>
+                <a href="/admin/credit" data-nav="credit"><span class="nav-icon icon-credit" aria-hidden="true"></span> حساب نسیه</a>
+                <a href="/admin/collections" data-nav="collections"><span class="nav-icon icon-collections" aria-hidden="true"></span> وصول مطالبات</a>
+                <a href="/admin/campaigns" data-nav="campaigns"><span class="nav-icon icon-campaign" aria-hidden="true"></span> کمپین پیامکی</a>
 
                 <div class="sidebar-section-label">گزارش و مالی</div>
-                <a href="/admin" data-nav="dashboard"><span>📊</span> داشبورد</a>
-                <a href="/admin/analytics" data-nav="analytics"><span>📈</span> تحلیل فروش</a>
-                <a href="/admin/accounting" data-nav="accounting"><span>🧮</span> سود و زیان</a>
-                <a href="/admin/cashbox" data-nav="cashbox"><span>🧾</span> صندوق</a>
-                <a href="/admin/expenses" data-nav="expenses"><span>💸</span> هزینه‌ها</a>
-                <a href="/admin/suppliers" data-nav="suppliers"><span>🏭</span> تأمین‌کنندگان</a>
+                <a href="/admin" data-nav="dashboard"><span class="nav-icon icon-dashboard" aria-hidden="true"></span> داشبورد</a>
+                <a href="/admin/analytics" data-nav="analytics"><span class="nav-icon icon-chart" aria-hidden="true"></span> تحلیل فروش</a>
+                <a href="/admin/accounting" data-nav="accounting"><span class="nav-icon icon-accounting" aria-hidden="true"></span> سود و زیان</a>
+                <a href="/admin/cashbox" data-nav="cashbox"><span class="nav-icon icon-cash" aria-hidden="true"></span> صندوق</a>
+                <a href="/admin/expenses" data-nav="expenses"><span class="nav-icon icon-expenses" aria-hidden="true"></span> هزینه‌ها</a>
+                <a href="/admin/suppliers" data-nav="suppliers"><span class="nav-icon icon-supplier" aria-hidden="true"></span> تأمین‌کنندگان</a>
 
                 <div class="sidebar-section-label">ابزارها</div>
-                <a href="/admin/try-on" data-nav="tryon"><span>👗</span> پرو مجازی</a>
-                <a href="/admin/backups" data-nav="backups"><span>💾</span> پشتیبان‌ها</a>
+                <a href="/admin/try-on" data-nav="tryon"><span class="nav-icon icon-dress" aria-hidden="true"></span> پرو مجازی</a>
+                <a href="/admin/backups" data-nav="backups"><span class="nav-icon icon-backup" aria-hidden="true"></span> پشتیبان‌ها</a>
                 {% if request.session.get('staff_role') == 'owner' %}
-                <a href="/admin/staff">👥 کارکنان</a>
+                <a href="/admin/staff"><span class="nav-icon icon-staff" aria-hidden="true"></span> کارکنان</a>
                 <a href="/admin/events" data-nav="events"><span>📚</span> دفتر رویدادها</a>
                 {% endif %}
-                <a href="/admin/settings" data-nav="settings"><span aria-hidden="true">⚙️</span> تنظیمات</a>
+                <a href="/admin/settings" data-nav="settings"><span class="nav-icon icon-settings" aria-hidden="true"></span> تنظیمات</a>
 
-                <a href="/admin/pos-reconciliation" data-nav="pos-reconciliation"><span>📟</span> تطبیق کارت‌خوان</a>
-                <a href="/admin/logs" data-nav="logs"><span>📜</span> گزارش عملیات</a>
+                <a href="/admin/pos-reconciliation" data-nav="pos-reconciliation"><span class="nav-icon icon-terminal" aria-hidden="true"></span> تطبیق کارت‌خوان</a>
+                <a href="/admin/logs" data-nav="logs"><span class="nav-icon icon-logs" aria-hidden="true"></span> گزارش عملیات</a>
             </nav>
             <div class="sidebar-footer">
-                <a href="/sales/new" class="sidebar-new-sale">➕ شروع فروش جدید</a>
+                <a href="/sales/new" class="sidebar-new-sale"><span class="icon-plus" aria-hidden="true"></span> شروع فروش جدید</a>
                 <form method="post" action="/admin/logout">
-                    <button type="submit" class="sidebar-logout">🚪 خروج از حساب</button>
+                    <button type="submit" class="sidebar-logout"><span class="icon-logout" aria-hidden="true"></span> خروج از حساب</button>
                 </form>
             </div>
         </aside>
@@ -78,13 +78,13 @@
         <main class="app-main">
             <div class="page-container">
                 <div class="mobile-context-bar" aria-label="دسترسی سریع">
-                    <span>🧸 {{ store.name }}</span>
-                    <a href="/sales/new">➕ فروش جدید</a>
+                    <span><span class="context-mark" aria-hidden="true"></span> {{ store.name }}</span>
+                    <a href="/sales/new"><span class="icon-plus" aria-hidden="true"></span> فروش جدید</a>
                 </div>
                 {% block content %}{% endblock %}
             </div>
             <footer class="app-footer">
-                <p>🧸 {{ store.name }}{% if store.tagline %} — {{ store.tagline }}{% endif %} <span>• سیستم فروش و باشگاه مشتریان</span></p>
+                <p><span class="footer-mark" aria-hidden="true"></span> {{ store.name }}{% if store.tagline %} — {{ store.tagline }}{% endif %} <span>• سیستم فروش و باشگاه مشتریان</span></p>
                 {% if store.footer %}<p>{{ store.footer }}</p>{% endif %}
             </footer>
         </main>

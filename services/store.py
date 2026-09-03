@@ -18,6 +18,7 @@ DEFAULT_STORE = {
     "tagline": "فروشگاه پوشاک کودک",
     "instagram": "",
     "footer": "",
+    "logo_path": "/static/logo.png",
 }
 
 

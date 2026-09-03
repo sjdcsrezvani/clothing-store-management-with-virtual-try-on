@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Form
+from fastapi import APIRouter, Depends, HTTPException, Request, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -46,6 +46,7 @@ from services.tier import (
     TIER_RANK,
 )
 from services.events import event_history, event_payload, append_event
+from services.themes import THEMES, DEFAULT_THEME_ID, THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY, all_theme_previews, validate_hex, contrast_ratio, get_theme
 
 router = APIRouter(prefix="/admin")
 
@@ -419,9 +420,16 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
         "settings": settings,
         "tier_config": tier_config,
         "store": get_store(db),
+        "themes": all_theme_previews(db),
+        "active_theme_id": get_theme_id(db),
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
     })
+
+
+def get_theme_id(db: Session) -> str:
+    row = db.query(Settings).filter(Settings.key == THEME_SETTING_KEY).first()
+    return row.value if row and row.value in THEMES else DEFAULT_THEME_ID
 
 
 @router.post("/settings", response_class=HTMLResponse)
@@ -431,14 +439,53 @@ async def admin_update_settings(request: Request, db: Session = Depends(get_db))
         return guard
 
     form = await request.form()
+    theme_id = str(form.get(THEME_SETTING_KEY, DEFAULT_THEME_ID)).strip()
+    primary = str(form.get(CUSTOM_PRIMARY_KEY, "#C94B68")).strip().upper()
+    secondary = str(form.get(CUSTOM_SECONDARY_KEY, "#197A8C")).strip().upper()
+    if theme_id not in THEMES:
+        return RedirectResponse(url="/admin/settings?err=تم انتخاب نامعتبر است.", status_code=303)
+    if theme_id == "custom-brand":
+        if not validate_hex(primary) or not validate_hex(secondary):
+            return RedirectResponse(url="/admin/settings?err=رنگ‌ها باید به صورت HEX شش‌رقمی باشند.", status_code=303)
+        if contrast_ratio(primary, "#FFFFFF") < 4.5 and contrast_ratio(primary, "#000000") < 4.5:
+            return RedirectResponse(url="/admin/settings?err=رنگ اصلی کنتراست کافی ندارد.", status_code=303)
+        if contrast_ratio(secondary, "#FFFFFF") < 3 and contrast_ratio(secondary, "#000000") < 3:
+            return RedirectResponse(url="/admin/settings?err=رنگ دوم کنتراست کافی ندارد.", status_code=303)
+    updates = {THEME_SETTING_KEY: theme_id, CUSTOM_PRIMARY_KEY: primary, CUSTOM_SECONDARY_KEY: secondary}
     for key, value in form.items():
-        if key == "csrf_token":
+        if key in {"csrf_token", THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY, "theme_logo"}:
             continue
+        updates[key] = str(value)
+    for key, value in updates.items():
         setting = db.query(Settings).filter(Settings.key == key).first()
         if setting:
-            setting.value = str(value)
+            setting.value = value
         else:
-            db.add(Settings(key=key, value=str(value)))
+            db.add(Settings(key=key, value=value))
+    logo = form.get("theme_logo")
+    if hasattr(logo, "filename") and hasattr(logo, "read") and logo.filename:
+        if logo.content_type not in {"image/png", "image/jpeg", "image/webp"}:
+            return RedirectResponse(url="/admin/settings?err=فرمت لوگو باید PNG، JPG یا WEBP باشد.", status_code=303)
+        content = await logo.read()
+        if len(content) > 2_000_000:
+            return RedirectResponse(url="/admin/settings?err=حجم لوگو نباید بیشتر از ۲ مگابایت باشد.", status_code=303)
+        from PIL import Image
+        from io import BytesIO
+        try:
+            image = Image.open(BytesIO(content))
+            image.verify()
+        except Exception:
+            return RedirectResponse(url="/admin/settings?err=فایل لوگو معتبر نیست.", status_code=303)
+        logo_dir = Path("static/uploads/branding")
+        logo_dir.mkdir(parents=True, exist_ok=True)
+        suffix = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}[logo.content_type]
+        logo_path = logo_dir / ("store-logo" + suffix)
+        logo_path.write_bytes(content)
+        logo_setting = db.query(Settings).filter(Settings.key == "store_logo_path").first()
+        if logo_setting:
+            logo_setting.value = "/static/uploads/branding/store-logo" + suffix
+        else:
+            db.add(Settings(key="store_logo_path", value="/static/uploads/branding/store-logo" + suffix))
     db.commit()
     invalidate_store_cache()
     log_action(db, "settings_update", "به‌روزرسانی تنظیمات", request=request, target_type="settings")
