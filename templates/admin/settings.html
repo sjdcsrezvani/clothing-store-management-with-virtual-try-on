@@ -10,8 +10,43 @@
 {% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
 {% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
 
-<div class="card">
-    <form method="post" action="/admin/settings">
+<div class="card appearance-card">
+    <form method="post" action="/admin/settings" enctype="multipart/form-data">
+        <section class="appearance-section" aria-labelledby="appearance-title">
+            <div class="section-heading">
+                <div>
+                    <span class="eyebrow">Appearance</span>
+                    <h3 id="appearance-title">انتخاب ظاهر فروشگاه</h3>
+                </div>
+                <span class="appearance-active" id="appearance-active">{{ active_theme_id }}</span>
+            </div>
+            <p class="appearance-intro">یک ظاهر خوانا و مناسب برای کار روزانه انتخاب کنید. این انتخاب برای همه کاربران فروشگاه اعمال می‌شود.</p>
+            <div class="theme-gallery" role="radiogroup" aria-label="تم‌های فروشگاه">
+                {% for theme in themes %}
+                <button type="button" class="theme-option{% if theme.id == active_theme_id %} is-selected{% endif %}" data-theme-id="{{ theme.id }}" data-theme-mode="{{ theme.mode }}" data-theme-style="{{ theme.inline_style }}" role="radio" aria-checked="{{ 'true' if theme.id == active_theme_id else 'false' }}">
+                    <span class="theme-preview theme-preview-{{ theme.mode }}" style="{{ theme.inline_style }}" aria-hidden="true">
+                        <span class="theme-preview-top"></span>
+                        <span class="theme-preview-body"><span></span><i></i><b></b></span>
+                        <span class="theme-preview-table"><em></em><em></em><em></em></span>
+                    </span>
+                    <span class="theme-option-copy"><strong>{{ theme.name }}</strong><small>{{ theme.description }}</small></span>
+                    <span class="theme-swatch-row" aria-hidden="true"><i style="background: {{ theme.tokens['--candy'] }}"></i><i style="background: {{ theme.tokens['--sky'] }}"></i><i style="background: {{ theme.tokens['--mint'] }}"></i><i style="background: {{ theme.tokens['--bg'] }}"></i></span>
+                </button>
+                {% endfor %}
+            </div>
+            <input type="hidden" name="ui_theme" id="ui-theme-input" value="{{ active_theme_id }}">
+            <div class="custom-brand-fields" id="custom-brand-fields"{% if active_theme_id != 'custom-brand' %} hidden{% endif %}>
+                <h4>برند اختصاصی</h4>
+                <div class="form-row">
+                    <div class="form-group"><label for="theme_custom_primary">رنگ اصلی</label><input type="color" id="theme_custom_primary" name="theme_custom_primary" value="{{ settings.get('theme_custom_primary', '#C94B68') }}"><small>برای دکمه‌های اصلی و تأکیدها</small></div>
+                    <div class="form-group"><label for="theme_custom_secondary">رنگ دوم</label><input type="color" id="theme_custom_secondary" name="theme_custom_secondary" value="{{ settings.get('theme_custom_secondary', '#197A8C') }}"><small>برای ناوبری و عناصر کمکی</small></div>
+                </div>
+                <div class="form-group"><label for="theme_logo">لوگوی فروشگاه</label><input type="file" id="theme_logo" name="theme_logo" accept="image/png,image/jpeg,image/webp"><small>PNG، JPG یا WEBP، حداکثر ۲ مگابایت</small></div>
+            </div>
+            <button type="submit" class="btn btn-primary appearance-apply"><span class="icon-check" aria-hidden="true"></span> اعمال ظاهر انتخاب‌شده</button>
+        </section>
+
+        <hr class="settings-divider">
         <h3>🏪 مشخصات فروشگاه</h3>
         <div class="form-row">
             <div class="form-group">
@@ -266,6 +301,48 @@
 </div>
 
 <nav class="admin-nav">
-    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
-</nav>
+    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a></nav>
+
+<script>
+(function () {
+    var options = document.querySelectorAll('.theme-option');
+    var root = document.documentElement;
+    var input = document.getElementById('ui-theme-input');
+    var active = document.getElementById('appearance-active');
+    var custom = document.getElementById('custom-brand-fields');
+    if (!options.length || !input) return;
+    function applyOption(option) {
+        var style = option.dataset.themeStyle || '';
+        if (option.dataset.themeId === 'custom-brand') {
+            var primary = document.getElementById('theme_custom_primary');
+            var secondary = document.getElementById('theme_custom_secondary');
+            if (primary && secondary) style += '; --candy: ' + primary.value + '; --candy-dark: ' + primary.value + '; --sky: ' + secondary.value + '; --sky-dark: ' + secondary.value;
+        }
+        root.setAttribute('data-theme', option.dataset.themeId);
+        root.setAttribute('data-theme-mode', option.dataset.themeMode || 'light');
+        root.setAttribute('style', style);
+        input.value = option.dataset.themeId;
+        active.textContent = option.dataset.themeId;
+        if (custom) custom.hidden = option.dataset.themeId !== 'custom-brand';
+    }
+    options.forEach(function (option) {
+        option.addEventListener('click', function () {
+            options.forEach(function (item) {
+                item.classList.remove('is-selected');
+                item.setAttribute('aria-checked', 'false');
+            });
+            option.classList.add('is-selected');
+            option.setAttribute('aria-checked', 'true');
+            applyOption(option);
+        });
+    });
+    ['theme_custom_primary', 'theme_custom_secondary'].forEach(function (id) {
+        var field = document.getElementById(id);
+        if (field) field.addEventListener('input', function () {
+            var selected = document.querySelector('.theme-option.is-selected');
+            if (selected && selected.dataset.themeId === 'custom-brand') applyOption(selected);
+        });
+    });
+})();
+</script>
 {% endblock %}
