@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}قرارداد استخدام{% endblock %}
+{% block content %}
+<div class="document-actions"><button class="btn btn-primary" onclick="window.print()">چاپ قرارداد</button><a class="btn btn-ghost" href="/admin/staff">بازگشت</a></div>
+<div class="print-document">
+  <div class="print-document-header"><h1>{{ owner_settings.get('owner_business_name', store.name) }}</h1><h2>قرارداد همکاری و استخدام</h2><div class="print-document-meta"><span>تاریخ تنظیم: {{ jalali_str(staff_user.hire_date or staff_user.created_at, with_time=False) }}</span><span>کد قرارداد: {{ staff_user.employee_code or staff_user.id }}</span></div></div>
+  <p>این قرارداد بین <strong>{{ owner_settings.get('owner_full_name', '—') }}</strong> به نمایندگی از {{ owner_settings.get('owner_business_name', store.name) }}، به عنوان {{ owner_settings.get('owner_signatory_title', 'کارفرما') }}، و آقای/خانم <strong>{{ staff_user.full_name or staff_user.username }}</strong> منعقد می‌شود.</p>
+  <h3>۱. مشخصات طرف دوم</h3>
+  <p>کد ملی: {{ staff_user.national_id or '—' }} · تلفن: {{ staff_user.phone or '—' }} · نشانی: {{ staff_user.address or '—' }}</p>
+  <h3>۲. سمت و مدت همکاری</h3>
+  <p>سمت: <strong>{{ staff_user.job_title or 'کارمند فروشگاه' }}</strong> · نوع همکاری: <strong>{{ {'full_time':'تمام‌وقت','part_time':'پاره‌وقت','contractor':'قراردادی'}.get(staff_user.employment_type, staff_user.employment_type) }}</strong> · تاریخ شروع: {{ jalali_str(staff_user.hire_date, with_time=False) if staff_user.hire_date else '—' }} · پایان: {{ jalali_str(staff_user.contract_end_date, with_time=False) if staff_user.contract_end_date else 'نامحدود' }}</p>
+  <h3>۳. حقوق و مزایا</h3>
+  <p>حقوق ماهانه توافق‌شده: <strong>{{ fmt(staff_user.salary_amount) }} تومان</strong>. روز پرداخت: {{ staff_user.salary_payment_day or 'توافقی' }}. برنامه کاری: {{ staff_user.work_schedule or 'طبق برنامه فروشگاه' }}.</p>
+  <h3>۴. تعهدات</h3>
+  <p>کارمند متعهد است وظایف محوله، محرمانگی اطلاعات مشتریان و موجودی فروشگاه، و دستورالعمل‌های عملیاتی را رعایت کند. جزئیات تکمیلی می‌تواند در یادداشت‌های پرسنلی ثبت شود.</p>
+  {% if staff_user.notes %}<p>یادداشت: {{ staff_user.notes }}</p>{% endif %}
+  <div class="document-signatures"><div>امضای کارمند<br>{{ staff_user.full_name or staff_user.username }}</div><div>امضای {{ owner_settings.get('owner_signatory_title', 'کارفرما') }}<br>{{ owner_settings.get('owner_full_name', '—') }}</div></div>
+</div>
+{% endblock %}

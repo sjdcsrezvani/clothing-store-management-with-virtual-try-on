@@ -5,6 +5,7 @@ from database import SessionLocal
 from services.backup import create_backup
 from services.checkout import expire_stale
 from services.jobs import reclaim_stale, claim_next, process_one, complete, fail
+from services.checks import trigger_due_reminders
 from services.tier import (
     get_tier_config,
     get_customers_for_downgrade_check,
@@ -56,6 +57,8 @@ async def scheduler_task():
 
             db = SessionLocal()
             try:
+                trigger_due_reminders(db)
+                db.commit()
                 expire_stale(db)
                 reclaim_stale(db)
                 for _ in range(10):

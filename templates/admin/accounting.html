@@ -55,8 +55,21 @@
 </div>
 
 {# ─── Expenses breakdown ─── #}
-<div class="card">
-    <h3>💸 هزینه‌ها بر اساس دسته</h3>
+    <div class="stats-grid expense-type-summary">
+        <div class="stat-card accent-sky">
+            <div class="stat-label">هزینه‌های یک‌باره</div>
+            <div class="stat-value tnum">{{ fmt(pl.one_time_expenses) }} ت</div>
+            <div class="stat-sub">هزینه‌های غیرتکرارشونده</div>
+        </div>
+        <div class="stat-card accent-pine">
+            <div class="stat-label">هزینه‌های ماهانه</div>
+            <div class="stat-value tnum">{{ fmt(pl.monthly_expenses) }} ت</div>
+            <div class="stat-sub">هزینه‌های ثابت ماهانه</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>💸 هزینه‌ها بر اساس دسته</h3>
     {% if pl.expense_cats %}
     <table>
         <thead><tr><th>دسته</th><th>مبلغ</th><th>سهم</th></tr></thead>

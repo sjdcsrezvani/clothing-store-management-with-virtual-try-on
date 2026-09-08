@@ -1,10 +1,20 @@
+## 2.1.0 — 2026-09-08
+
+### Tag editor and barcode reliability
+
+- Added configurable compact or standard barcode density for printable product tags.
+- Kept barcode bars and human-readable barcode numbers as independently editable fields.
+- Added live barcode preview synchronization, layout diagnostics, overlap warnings, and sticky preview guidance.
+- Ensured generated barcode images contain only scanner-readable Code 128 bars and are keyed to the exact variant code.
+
 ## 2.0.0 — 2026-09-03
 
 ### Switchable store themes
 
 - Added ten store-wide visual themes for operations, POS, boutique, children’s, dark, high-contrast, and custom-brand workflows.
 - Added Owner-only Appearance settings with live previews and persistent theme selection.
-- Added validated custom brand colors and optional store logo upload.
+- Added validated custom brand colors.
+- Kept the generated-image logo workflow limited to virtual try-on output; no store logo is rendered in the application shell or theme settings.
 - Added theme-aware shared surfaces, navigation, forms, tables, alerts, focus states, and dark-mode styling.
 - Replaced professional navigation emoji dependence with local labeled control icons while preserving the Kids Boutique identity.
 - Kept receipts and invoices on a clean light print layout.

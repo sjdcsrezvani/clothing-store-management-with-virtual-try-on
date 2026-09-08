@@ -26,6 +26,13 @@ def canonical_report(db, start: datetime, end: datetime) -> dict:
     cogs = db.query(func.coalesce(func.sum(SaleItem.unit_cost * SaleItem.quantity), 0)).filter(SaleItem.sale_id.in_(sale_ids)).scalar() if sale_ids else 0
     cogs = (cogs or 0) - sum(sum(item.unit_cost * item.quantity for item in sale.items) for sale in sales if sale.is_refunded)
     expenses = db.query(func.coalesce(func.sum(Expense.amount), 0)).filter(Expense.reversed_at.is_(None), Expense.created_at.between(start, end)).scalar() or 0
+    one_time_expenses = db.query(func.coalesce(func.sum(Expense.amount), 0)).filter(
+        Expense.reversed_at.is_(None), Expense.expense_type == "one_time", Expense.created_at.between(start, end)
+    ).scalar() or 0
+    monthly_expenses = db.query(func.coalesce(func.sum(Expense.amount), 0)).filter(
+        Expense.reversed_at.is_(None), Expense.expense_type == "monthly", Expense.created_at.between(start, end)
+    ).scalar() or 0
+
     cash_collected = sum(sale.final_amount or 0 for sale in active_sales if sale.payment_method in {"cash", "card"})
     credit_issued = sum(sale.final_amount or 0 for sale in active_sales if sale.payment_method == "credit")
     credit_collected = db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(
@@ -40,6 +47,7 @@ def canonical_report(db, start: datetime, end: datetime) -> dict:
         "gross_sales": gross_sales, "discounts": discounts, "refunds": refunds,
         "net_sales": net_sales, "cogs": cogs, "gross_profit": gross_profit,
         "operating_expenses": expenses, "net_profit": gross_profit - expenses,
+        "one_time_expenses": one_time_expenses, "monthly_expenses": monthly_expenses,
         "cash_collected": cash_collected, "credit_issued": credit_issued,
         "credit_collected": credit_collected, "outstanding_debt": debt,
         "inventory_value": inventory_value, "sale_count": len(active_sales),

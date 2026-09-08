@@ -227,11 +227,50 @@ def test_manual_stock_edit_creates_adjustment_movement(client, db_session, authe
     assert movement.quantity_delta == 2
 
 
-def test_expense_recorded(client, db_session, authed):
-    _post(client, "/admin/expenses/add", {"amount": "1500000", "category": "اجاره", "note": "مرداد"}, authed)
-    expense = db_session.query(Expense).order_by(Expense.id.desc()).first()
-    assert expense.amount == 1_500_000
-    assert expense.category == "اجاره"
+def test_expense_types_are_saved_and_reported(client, db_session, authed):
+    _post(client, "/admin/expenses/add", {
+        "amount": "1500000",
+        "category": "اجاره",
+        "expense_type": "monthly",
+        "note": "اجاره ماهانه",
+    }, authed)
+    _post(client, "/admin/expenses/add", {
+        "amount": "250000",
+        "category": "تعمیرات",
+        "expense_type": "one_time",
+        "note": "تعمیر قفسه",
+    }, authed)
+
+    expenses = db_session.query(Expense).order_by(Expense.id.asc()).all()
+    assert [expense.expense_type for expense in expenses] == ["monthly", "one_time"]
+
+    from datetime import datetime, timezone, timedelta
+    from services.accounting import get_net_pl
+    from services.reporting import canonical_report
+    start = datetime.now(timezone.utc) - timedelta(days=1)
+    end = datetime.now(timezone.utc) + timedelta(days=1)
+    pl = get_net_pl(db_session, start, end)
+    report = canonical_report(db_session, start, end)
+    assert pl["expense_type_totals"] == {"one_time": 250_000, "monthly": 1_500_000}
+    assert report["one_time_expenses"] == 250_000
+    assert report["monthly_expenses"] == 1_500_000
+
+    page = client.get("/admin/expenses")
+    assert page.status_code == 200
+    assert "هزینه‌های ماهانه" in page.text
+    assert "هزینه‌های یک‌باره" in page.text
+    assert "اجاره ماهانه" in page.text
+
+
+def test_invalid_expense_type_is_rejected(client, db_session, authed):
+    response = _post(client, "/admin/expenses/add", {
+        "amount": "100000",
+        "category": "متفرقه",
+        "expense_type": "weekly",
+        "note": "نامعتبر",
+    }, authed)
+    assert response.status_code == 303
+    assert db_session.query(Expense).count() == 0
 
 
 def test_net_pl_calculation(client, db_session):

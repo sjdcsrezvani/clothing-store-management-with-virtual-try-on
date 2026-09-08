@@ -29,8 +29,13 @@ def get_net_pl(db, start, end) -> dict:
     gross = revenue - cogs
     expenses = db.query(Expense).filter(Expense.created_at.between(start, end)).all()
     total_expenses = sum(e.amount for e in expenses if e.reversed_at is None)
+    expense_type_totals = {"one_time": 0, "monthly": 0}
     by_cat: dict[str, int] = {}
     for e in expenses:
+        if e.reversed_at is not None:
+            continue
+        expense_type = e.expense_type if e.expense_type in expense_type_totals else "one_time"
+        expense_type_totals[expense_type] += e.amount
         key = e.category or "بدون دسته"
         by_cat[key] = by_cat.get(key, 0) + e.amount
     expense_cats = sorted(
@@ -44,6 +49,7 @@ def get_net_pl(db, start, end) -> dict:
         "gross_margin": round(gross / revenue * 100, 1) if revenue else 0,
         "expenses": total_expenses,
         "expense_cats": expense_cats,
+        "expense_type_totals": expense_type_totals,
         "net": gross - total_expenses,
         "net_margin": round((gross - total_expenses) / revenue * 100, 1) if revenue else 0,
         "invoice_count": len(sales),

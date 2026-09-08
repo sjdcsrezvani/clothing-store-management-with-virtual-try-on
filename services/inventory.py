@@ -211,7 +211,11 @@ def record_stock_adjustment(
     request_id: str | None = None,
 ):
     """Replace a displayed balance through a signed, auditable adjustment."""
-    new_quantity = max(0, int(new_quantity))
+    new_quantity = int(new_quantity)
+    if new_quantity < 0:
+        raise ValueError("Stock cannot become negative")
+    if new_quantity < (variant.reserved_quantity or 0):
+        raise ValueError("Stock cannot be lower than reserved quantity")
     delta = new_quantity - (variant.stock_quantity or 0)
     if not delta:
         return None

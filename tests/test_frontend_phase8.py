@@ -31,6 +31,24 @@ def test_print_layout_is_light_and_readable_for_all_themes():
     assert ".invoice, .invoice .invoice-header" in css
 
 
+def test_theme_shell_has_distinct_tokens_and_unclipped_topbar_actions():
+    base = (ROOT / "templates/base.html").read_text()
+    css = (ROOT / "static/css/style.css").read_text()
+    assert 'class="topbar-actions"' in base
+    assert 'class="quick-sale"' in base
+    assert 'class="topbar-admin"' in base
+    assert 'id="icon-cart"' in base
+    assert 'id="icon-settings"' in base
+    assert 'class="sidebar-brand-icon"' not in base
+    assert '.sidebar-brand-icon' not in css
+    assert '.sidebar-brand::before' not in css
+    assert 'position: absolute; left: 1.25rem' in css
+    assert '.topbar-admin { width: 42px' not in css
+    assert '--card-accent' in css
+    assert '--table-header' in css
+    assert 'html[data-theme="kids-boutique"] .card { border: none; }' in css
+
+
 def test_frontend_assets_have_accessibility_and_loading_support():
     css = (ROOT / "static/css/style.css").read_text()
     js = (ROOT / "static/js/app.js").read_text()

@@ -1,7 +1,7 @@
 import string
 import random
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, CheckConstraint, event as sqlalchemy_event
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, CheckConstraint, UniqueConstraint, event as sqlalchemy_event
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -33,13 +33,37 @@ class StaffUser(Base):
     username = Column(String(100), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     role = Column(String(20), nullable=False, default="cashier", index=True)
+    full_name = Column(String(200), nullable=True)
+    employee_code = Column(String(50), nullable=True, index=True)
+    national_id = Column(String(30), nullable=True, index=True)
+    phone = Column(String(30), nullable=True)
+    email = Column(String(150), nullable=True)
+    job_title = Column(String(100), nullable=True)
+    employment_type = Column(String(20), nullable=False, default="full_time")
+    hire_date = Column(DateTime, nullable=True)
+    birth_date = Column(DateTime, nullable=True)
+    contract_end_date = Column(DateTime, nullable=True)
+    education = Column(String(200), nullable=True)
+    work_schedule = Column(String(200), nullable=True)
+    salary_payment_day = Column(Integer, nullable=True)
+    address = Column(Text, nullable=True)
+    emergency_contact = Column(String(200), nullable=True)
+    bank_account = Column(String(80), nullable=True)
+    iban = Column(String(40), nullable=True)
+    salary_amount = Column(Integer, nullable=False, default=0)
+    notes = Column(Text, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     last_login_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     __table_args__ = (
         CheckConstraint("role IN ('cashier', 'manager', 'owner')", name="ck_staff_users_role"),
+        CheckConstraint("employment_type IN ('full_time', 'part_time', 'contractor')", name="ck_staff_users_employment_type"),
+        CheckConstraint("salary_amount >= 0", name="ck_staff_users_salary_nonnegative"),
+        CheckConstraint("salary_payment_day IS NULL OR (salary_payment_day >= 1 AND salary_payment_day <= 31)", name="ck_staff_users_salary_day_valid"),
     )
+
+    salary_payments = relationship("SalaryPayment", foreign_keys="SalaryPayment.staff_user_id", back_populates="staff_user", order_by="SalaryPayment.paid_at.desc()")
 
 
 class Customer(Base):
@@ -162,6 +186,15 @@ class Product(Base):
     base_sku = Column(String(50), nullable=True)
     base_barcode = Column(String(50), nullable=True)
     weight_grams = Column(Integer, nullable=True)
+    garment_type = Column(String(80), nullable=True)
+    gender = Column(String(30), nullable=True)
+    material = Column(String(120), nullable=True)
+    season = Column(String(50), nullable=True)
+    collection = Column(String(100), nullable=True)
+    care_instructions = Column(Text, nullable=True)
+    supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True, index=True)
+    default_reorder_point = Column(Integer, nullable=False, default=0)
+    default_reorder_quantity = Column(Integer, nullable=False, default=0)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
@@ -172,11 +205,24 @@ class Product(Base):
     # Relationships
     variants = relationship("ProductVariant", back_populates="product", cascade="all, delete-orphan")
     images = relationship("ProductImage", back_populates="product", order_by="ProductImage.sort_order", cascade="all, delete-orphan")
+    supplier = relationship("Supplier", foreign_keys=[supplier_id])
     sale_items = relationship("SaleItem", back_populates="product")
 
     @property
     def total_stock(self):
         return sum(v.stock_quantity for v in self.variants if v.is_active)
+
+    @property
+    def total_reserved(self):
+        return sum(v.reserved_quantity or 0 for v in self.variants if v.is_active)
+
+    @property
+    def available_stock(self):
+        return sum(v.available_quantity for v in self.variants if v.is_active)
+
+    @property
+    def needs_reorder(self):
+        return any(v.needs_reorder for v in self.variants if v.is_active)
 
     @property
     def price_range(self):
@@ -215,6 +261,11 @@ class ProductVariant(Base):
     # Manual demand counter: how many customers asked for this variant
     # while it was out of stock. +1 by owner; reset by owner after restocking.
     demand_count = Column(Integer, default=0)
+    reorder_point = Column(Integer, nullable=False, default=0)
+    reorder_quantity = Column(Integer, nullable=False, default=0)
+    storage_location = Column(String(100), nullable=True)
+    size_system = Column(String(30), nullable=True)
+    color_code = Column(String(30), nullable=True)
 
     # Variant-specific SKU (optional)
     sku = Column(String(50), nullable=True)
@@ -232,11 +283,21 @@ class ProductVariant(Base):
         CheckConstraint("stock_quantity >= 0", name="ck_variants_stock_nonnegative"),
         CheckConstraint("reserved_quantity >= 0", name="ck_variants_reserved_nonnegative"),
         CheckConstraint("demand_count >= 0", name="ck_variants_demand_nonnegative"),
+        CheckConstraint("reorder_point >= 0", name="ck_variants_reorder_point_nonnegative"),
+        CheckConstraint("reorder_quantity >= 0", name="ck_variants_reorder_quantity_nonnegative"),
     )
 
     product = relationship("Product", back_populates="variants")
     sale_items = relationship("SaleItem", back_populates="variant")
     stock_movements = relationship("StockMovement", back_populates="variant", order_by="StockMovement.created_at", cascade="all, delete-orphan")
+
+    @property
+    def available_quantity(self):
+        return max(0, (self.stock_quantity or 0) - (self.reserved_quantity or 0))
+
+    @property
+    def needs_reorder(self):
+        return self.available_quantity <= (self.reorder_point or 0)
 
     @property
     def display_name(self):
@@ -395,6 +456,58 @@ class Supplier(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     purchases = relationship("Purchase", back_populates="supplier")
+    checks = relationship("CheckRecord", back_populates="supplier")
+
+
+class CheckRecord(Base):
+    """A check issued by the store to a supplier or other provider."""
+    __tablename__ = "issued_checks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True, index=True)
+    provider_name = Column(String(200), nullable=False)
+    check_number = Column(String(100), nullable=True, index=True)
+    amount_rials = Column(Integer, nullable=False)
+    issue_at = Column(DateTime, nullable=False)
+    due_at = Column(DateTime, nullable=False, index=True)
+    bank_name = Column(String(120), nullable=True)
+    account_reference = Column(String(120), nullable=True)
+    note = Column(Text, nullable=True)
+    reminder_days = Column(Text, nullable=False, default="[14,7,3]")
+    status = Column(String(20), nullable=False, default="issued", index=True)
+    paid_at = Column(DateTime, nullable=True)
+    operator_user_id = Column(Integer, ForeignKey("staff_users.id"), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("amount_rials > 0", name="ck_issued_checks_amount_positive"),
+        CheckConstraint("status IN ('issued', 'paid', 'cancelled', 'bounced')", name="ck_issued_checks_status"),
+    )
+
+    supplier = relationship("Supplier", back_populates="checks")
+    operator = relationship("StaffUser")
+    reminders = relationship("CheckReminder", back_populates="check", cascade="all, delete-orphan", order_by="CheckReminder.days_before.desc()")
+
+
+class CheckReminder(Base):
+    """Durable reminder/alarm for one issued check."""
+    __tablename__ = "check_reminders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    check_id = Column(Integer, ForeignKey("issued_checks.id"), nullable=False, index=True)
+    days_before = Column(Integer, nullable=False)
+    remind_at = Column(DateTime, nullable=False, index=True)
+    status = Column(String(20), nullable=False, default="pending", index=True)
+    triggered_at = Column(DateTime, nullable=True)
+    dismissed_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("days_before > 0", name="ck_check_reminders_days_positive"),
+        CheckConstraint("status IN ('pending', 'triggered', 'dismissed')", name="ck_check_reminders_status"),
+    )
+
+    check = relationship("CheckRecord", back_populates="reminders")
 
 
 class Purchase(Base):
@@ -539,17 +652,50 @@ class Expense(Base):
     id = Column(Integer, primary_key=True, index=True)
     amount = Column(Integer, nullable=False)
     category = Column(String(100), nullable=True)
+    expense_type = Column(String(20), nullable=False, default="one_time")
     payment_method = Column(String(20), nullable=False, default="cash")
     cash_session_id = Column(Integer, ForeignKey("cash_sessions.id"), nullable=True)
     reversed_at = Column(DateTime, nullable=True)
     reversal_id = Column(Integer, nullable=True)
     __table_args__ = (
         CheckConstraint("amount > 0", name="ck_expenses_amount_positive"),
+        CheckConstraint("expense_type IN ('one_time', 'monthly')", name="ck_expenses_type"),
         CheckConstraint("payment_method IN ('cash', 'card')", name="ck_expenses_payment_method"),
     )
     note = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    reversed_at = Column(DateTime, nullable=True)
+
+
+class SalaryPayment(Base):
+    """A monthly wage payment linked to its expense and cash movement."""
+    __tablename__ = "salary_payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    staff_user_id = Column(Integer, ForeignKey("staff_users.id"), nullable=False, index=True)
+    period_key = Column(String(20), nullable=False)
+    gross_amount = Column(Integer, nullable=False)
+    deductions = Column(Integer, nullable=False, default=0)
+    net_amount = Column(Integer, nullable=False)
+    payment_method = Column(String(20), nullable=False, default="cash")
+    paid_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    operator_user_id = Column(Integer, ForeignKey("staff_users.id"), nullable=False)
+    expense_id = Column(Integer, ForeignKey("expenses.id"), nullable=False, unique=True)
+    cash_session_id = Column(Integer, ForeignKey("cash_sessions.id"), nullable=True)
+    note = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("staff_user_id", "period_key", name="uq_salary_payments_staff_period"),
+        CheckConstraint("gross_amount > 0", name="ck_salary_gross_positive"),
+        CheckConstraint("deductions >= 0 AND deductions < gross_amount", name="ck_salary_deductions_valid"),
+        CheckConstraint("net_amount > 0", name="ck_salary_net_positive"),
+        CheckConstraint("payment_method IN ('cash', 'card')", name="ck_salary_payment_method"),
+    )
+
+    staff_user = relationship("StaffUser", foreign_keys=[staff_user_id], back_populates="salary_payments")
+    operator = relationship("StaffUser", foreign_keys=[operator_user_id])
+    expense = relationship("Expense")
+    cash_session = relationship("CashSession")
 
 
 class Payment(Base):
@@ -761,6 +907,7 @@ BUSINESS_EVENT_TYPES = (
     "SaleCompleted",
     "RefundIssued",
     "CheckoutRefunded",
+    "TagBatchPrinted",
     "CreditSaleIssued",
     "CreditPaymentRecorded",
     "PaymentReversed",
@@ -769,9 +916,15 @@ BUSINESS_EVENT_TYPES = (
     "PurchaseRecorded",
     "PurchaseReversed",
     "SupplierPaymentRecorded",
+    "SalaryPaid",
     "LoyaltyUpdated",
     "CashSessionOpened",
     "CashSessionClosed",
+    "CheckIssued",
+    "CheckPaid",
+    "CheckCancelled",
+    "CheckBounced",
+    "CheckReminderTriggered",
     "DatabaseReset",
 )
 
@@ -791,8 +944,10 @@ class BusinessEvent(Base):
     schema_version = Column(Integer, nullable=False, default=1)
     occurred_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
 
+    # Event types are validated in code (append_event) rather than as a DB CHECK
+    # constraint: the constraint was baked into the table at creation time and
+    # silently rejected event types added by later releases.
     __table_args__ = (
-        CheckConstraint(f"event_type IN {BUSINESS_EVENT_TYPES!r}", name="ck_business_events_type"),
         CheckConstraint("aggregate_id IS NULL OR aggregate_id > 0", name="ck_business_events_aggregate_id"),
         CheckConstraint("schema_version > 0", name="ck_business_events_schema_version"),
     )
@@ -808,3 +963,43 @@ def _reject_business_event_update(mapper, connection, target):
 @sqlalchemy_event.listens_for(BusinessEvent, "before_delete")
 def _reject_business_event_delete(mapper, connection, target):
     raise ValueError("Business events are append-only")
+
+
+class TagPrintBatch(Base):
+    """Auditable record of one physical tag-print operation."""
+    __tablename__ = "tag_print_batches"
+
+    id = Column(Integer, primary_key=True, index=True)
+    operator_user_id = Column(Integer, ForeignKey("staff_users.id"), nullable=False, index=True)
+    template_snapshot = Column(Text, nullable=False, default="{}")
+    item_count = Column(Integer, nullable=False, default=0)
+    total_quantity = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    operator = relationship("StaffUser")
+    lines = relationship("TagPrintBatchLine", back_populates="batch", cascade="all, delete-orphan", order_by="TagPrintBatchLine.id")
+
+
+class TagPrintBatchLine(Base):
+    """Snapshot of each variant and quantity in a printed tag batch."""
+    __tablename__ = "tag_print_batch_lines"
+
+    id = Column(Integer, primary_key=True, index=True)
+    batch_id = Column(Integer, ForeignKey("tag_print_batches.id"), nullable=False, index=True)
+    variant_id = Column(Integer, ForeignKey("product_variants.id"), nullable=False, index=True)
+    quantity = Column(Integer, nullable=False)
+    product_name = Column(String(200), nullable=False)
+    barcode = Column(String(50), nullable=False)
+    sku = Column(String(50), nullable=True)
+    size = Column(String(20), nullable=True)
+    color = Column(String(50), nullable=True)
+    unit_price = Column(Integer, nullable=False, default=0)
+    is_reprint = Column(Boolean, nullable=False, default=False)
+
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_tag_print_line_quantity_positive"),
+        CheckConstraint("unit_price >= 0", name="ck_tag_print_line_price_nonnegative"),
+    )
+
+    batch = relationship("TagPrintBatch", back_populates="lines")
+    variant = relationship("ProductVariant")

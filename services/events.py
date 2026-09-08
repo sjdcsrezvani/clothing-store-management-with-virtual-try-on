@@ -13,6 +13,7 @@ from models import (
     BUSINESS_EVENT_TYPES,
     BusinessEvent,
     CashSession,
+    CheckRecord,
     CheckoutSession,
     Expense,
     Payment,
@@ -124,7 +125,16 @@ def append_event(
         "occurred_at": occurred_at or _now(),
     }
     db.execute(insert(BusinessEvent).prefix_with("OR IGNORE").values(**values))
-    return db.query(BusinessEvent).filter(BusinessEvent.idempotency_key == key).one()
+    row = db.query(BusinessEvent).filter(BusinessEvent.idempotency_key == key).first()
+    if row is not None:
+        return row
+    # OR IGNORE silently skipped the insert (e.g. the key was committed by a
+    # concurrent request between the check above and this insert). Surface the
+    # state instead of raising a bare NoResultFound from the re-read.
+    raise RuntimeError(
+        f"Could not append {event_type} event for {aggregate_type}:{aggregate_id} "
+        f"(idempotency key {key} already exists but is not visible in this transaction)"
+    )
 
 
 def event_payload(event: BusinessEvent) -> dict[str, Any]:
@@ -388,7 +398,7 @@ def backfill_legacy_events(db: Session) -> int:
             "expense",
             expense.id,
             f"expense:{expense.id}:recorded",
-            payload={"amount": expense.amount, "category": expense.category, "payment_method": expense.payment_method},
+            payload={"amount": expense.amount, "category": expense.category, "expense_type": expense.expense_type, "payment_method": expense.payment_method},
             occurred_at=expense.created_at,
         )
         if expense.reversed_at:
@@ -413,6 +423,30 @@ def backfill_legacy_events(db: Session) -> int:
             payload={"supplier_id": supplier_payment.supplier_id, "amount": supplier_payment.amount, "method": supplier_payment.method},
             occurred_at=supplier_payment.created_at,
         )
+
+    for check in db.query(CheckRecord).order_by(CheckRecord.id.asc()).all():
+        created += _append_if_missing(
+            db,
+            "CheckIssued",
+            "check",
+            check.id,
+            f"check:{check.id}:issued",
+            actor_user_id=check.operator_user_id,
+            payload={"provider_name": check.provider_name, "amount_rials": check.amount_rials, "due_at": check.due_at},
+            occurred_at=check.created_at,
+        )
+        if check.status in {"paid", "cancelled", "bounced"}:
+            event_type = {"paid": "CheckPaid", "cancelled": "CheckCancelled", "bounced": "CheckBounced"}[check.status]
+            created += _append_if_missing(
+                db,
+                event_type,
+                "check",
+                check.id,
+                f"check:{check.id}:{check.status}",
+                actor_user_id=check.operator_user_id,
+                payload={"amount_rials": check.amount_rials},
+                occurred_at=check.paid_at or check.updated_at or check.created_at,
+            )
 
     for cash_session in db.query(CashSession).order_by(CashSession.id.asc()).all():
         created += _append_if_missing(

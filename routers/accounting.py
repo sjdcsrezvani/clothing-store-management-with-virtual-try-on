@@ -11,7 +11,7 @@ from database import get_db
 from models import (
     Customer, Expense, Payment, ProductVariant, Purchase, PurchaseItem,
     Sale, SaleItem, Settings, Supplier, StockMovement, CashSession, SupplierPayment,
-    FinancialEntry,
+    FinancialEntry, CheckRecord, CheckReminder,
 )
 from services._common import fmt, check_admin, jalali_str
 from services.accounting import (
@@ -24,10 +24,21 @@ from services.security import log_action, require_html_role
 from services.templating import templates
 from services.inventory import record_stock_movement, restore_cost_after_purchase_reversal
 from services.reporting import canonical_report, reconciliation_checks
+from services.checks import (
+    add_reminders,
+    check_alert_summary,
+    dismiss_reminders,
+    get_default_reminder_days,
+    normalize_reminder_days,
+    parse_amount_rials,
+    parse_check_date,
+    trigger_due_reminders,
+)
 from services.events import append_event
 
-router = APIRouter(prefix="/admin")
 PAYMENT_LABELS = {"card": "💳 کارت", "cash": "💵 نقد", "credit": "📒 نسیه"}
+EXPENSE_TYPE_LABELS = {"one_time": "یک‌باره", "monthly": "ماهانه"}
+EXPENSE_TYPE_LABELS = {"one_time": "یک‌باره", "monthly": "ماهانه"}
 
 
 def _csv_response(filename: str, rows: list[list]) -> Response:
@@ -39,6 +50,192 @@ def _csv_response(filename: str, rows: list[list]) -> Response:
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+router = APIRouter(prefix="/admin")
+
+
+# ── Issued checks ────────────────────────────────────────────────────────────
+
+@router.get("/checks", response_class=HTMLResponse)
+async def admin_checks(request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+
+    triggered_count = trigger_due_reminders(db)
+    if triggered_count:
+        db.commit()
+    summary = check_alert_summary(db)
+    checks = db.query(CheckRecord).order_by(CheckRecord.due_at.asc(), CheckRecord.id.asc()).all()
+    suppliers = db.query(Supplier).order_by(Supplier.name.asc()).all()
+    reminders_setting = db.query(Settings).filter(Settings.key == "check_reminders_enabled").first()
+    return templates.TemplateResponse(request, "admin/checks.html", {
+        "checks": checks,
+        "suppliers": suppliers,
+        "summary": summary,
+        "default_reminder_days": get_default_reminder_days(db),
+        "reminders_enabled": reminders_setting is None or reminders_setting.value not in {"0", "false", "False", "off"},
+        "now": datetime.now(timezone.utc).replace(tzinfo=None),
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
+        "fmt": fmt,
+        "jalali_str": jalali_str,
+    })
+
+
+@router.post("/checks/add", response_class=HTMLResponse)
+async def admin_check_add(
+    request: Request,
+    provider_name: str = Form(""),
+    supplier_id: str = Form(""),
+    check_number: str = Form(""),
+    amount_rials: str = Form("0"),
+    issue_date: str = Form(""),
+    due_date: str = Form(""),
+    bank_name: str = Form(""),
+    account_reference: str = Form(""),
+    reminder_days: str = Form(""),
+    note: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+
+    try:
+        amount = parse_amount_rials(amount_rials)
+        issue_at = parse_check_date(issue_date) or datetime.now(timezone.utc)
+        due_at = parse_check_date(due_date)
+        if due_at is None:
+            raise ValueError("تاریخ سررسید چک معتبر نیست")
+        if due_at <= issue_at:
+            raise ValueError("تاریخ سررسید باید بعد از تاریخ صدور باشد")
+        days = normalize_reminder_days(reminder_days or get_default_reminder_days(db))
+    except ValueError as error:
+        return RedirectResponse(url=f"/admin/checks?err={error}", status_code=303)
+
+    provider_name = provider_name.strip()
+    if not provider_name:
+        return RedirectResponse(url="/admin/checks?err=نام دریافت‌کننده چک الزامی است.", status_code=303)
+    supplier = None
+    if supplier_id.isdigit():
+        supplier = db.query(Supplier).filter(Supplier.id == int(supplier_id)).first()
+
+    check = CheckRecord(
+        supplier_id=supplier.id if supplier else None,
+        provider_name=provider_name[:200],
+        check_number=check_number.strip()[:100] or None,
+        amount_rials=amount,
+        issue_at=issue_at,
+        due_at=due_at,
+        bank_name=bank_name.strip()[:120] or None,
+        account_reference=account_reference.strip()[:120] or None,
+        note=note.strip() or None,
+        operator_user_id=guard.id,
+    )
+    db.add(check)
+    db.flush()
+    add_reminders(db, check, days)
+    append_event(
+        db,
+        "CheckIssued",
+        "check",
+        check.id,
+        idempotency_key=f"check:{check.id}:issued",
+        actor_user_id=guard.id,
+        request_id=request.headers.get("X-Request-ID"),
+        payload={"provider_name": check.provider_name, "amount_rials": check.amount_rials, "due_at": check.due_at.isoformat(), "reminder_days": days},
+        occurred_at=check.created_at,
+    )
+    db.commit()
+    log_action(db, "check_add", f"ثبت چک برای {provider_name}", request=request, target_type="check", target_id=check.id, after={"amount_rials": amount, "due_at": check.due_at.isoformat()})
+    return RedirectResponse(url="/admin/checks?msg=چک ثبت شد.", status_code=303)
+
+
+@router.post("/checks/settings", response_class=HTMLResponse)
+async def admin_check_settings(
+    request: Request,
+    reminder_days: str = Form(""),
+    enabled: str = Form("1"),
+    db: Session = Depends(get_db),
+):
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    try:
+        days = normalize_reminder_days(reminder_days or get_default_reminder_days(db))
+    except ValueError as error:
+        return RedirectResponse(url=f"/admin/checks?err={error}", status_code=303)
+    values = {
+        "check_default_reminders": ",".join(str(day) for day in days),
+        "check_reminders_enabled": "1" if enabled == "1" else "0",
+    }
+    for key, value in values.items():
+        setting = db.query(Settings).filter(Settings.key == key).first()
+        if setting:
+            setting.value = value
+        else:
+            db.add(Settings(key=key, value=value))
+    db.commit()
+    log_action(db, "check_settings", "تنظیم هشدار چک‌ها", request=request, target_type="settings", after=values)
+    return RedirectResponse(url="/admin/checks?msg=تنظیمات هشدار ذخیره شد.", status_code=303)
+
+
+@router.post("/checks/{check_id}/reminders", response_class=HTMLResponse)
+async def admin_check_reminders(check_id: int, request: Request, reminder_days: str = Form(""), db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    check = db.query(CheckRecord).filter(CheckRecord.id == check_id).first()
+    if not check:
+        raise HTTPException(status_code=404, detail="چک یافت نشد")
+    if check.status != "issued":
+        return RedirectResponse(url="/admin/checks?err=برای چک پرداخت‌شده یا لغوشده نمی‌توان هشدار جدید ساخت.", status_code=303)
+    try:
+        days = normalize_reminder_days(reminder_days)
+    except ValueError as error:
+        return RedirectResponse(url=f"/admin/checks?err={error}", status_code=303)
+    db.query(CheckReminder).filter(CheckReminder.check_id == check.id, CheckReminder.status == "pending").update({"status": "dismissed", "dismissed_at": datetime.now(timezone.utc)}, synchronize_session=False)
+    add_reminders(db, check, days)
+    db.commit()
+    return RedirectResponse(url="/admin/checks?msg=هشدارهای چک به‌روزرسانی شد.", status_code=303)
+
+
+@router.post("/checks/{check_id}/status", response_class=HTMLResponse)
+async def admin_check_status(check_id: int, request: Request, status: str = Form(""), db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    check = db.query(CheckRecord).filter(CheckRecord.id == check_id).first()
+    if not check:
+        raise HTTPException(status_code=404, detail="چک یافت نشد")
+    if status not in {"paid", "cancelled", "bounced"}:
+        return RedirectResponse(url="/admin/checks?err=وضعیت چک نامعتبر است.", status_code=303)
+    if check.status != "issued":
+        return RedirectResponse(url="/admin/checks?err=این چک قبلاً تعیین تکلیف شده است.", status_code=303)
+    check.status = status
+    if status == "paid":
+        check.paid_at = datetime.now(timezone.utc)
+    dismiss_reminders(db, check.id)
+    event_type = {"paid": "CheckPaid", "cancelled": "CheckCancelled", "bounced": "CheckBounced"}[status]
+    append_event(db, event_type, "check", check.id, idempotency_key=f"check:{check.id}:{status}", actor_user_id=guard.id, request_id=request.headers.get("X-Request-ID"), payload={"amount_rials": check.amount_rials})
+    db.commit()
+    log_action(db, "check_status", f"تغییر وضعیت چک #{check.id}", request=request, target_type="check", target_id=check.id, after={"status": status})
+    return RedirectResponse(url="/admin/checks?msg=وضعیت چک به‌روزرسانی شد.", status_code=303)
+
+
+@router.post("/checks/reminders/{reminder_id}/dismiss", response_class=HTMLResponse)
+async def admin_check_reminder_dismiss(reminder_id: int, request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    reminder = db.query(CheckReminder).filter(CheckReminder.id == reminder_id).first()
+    if reminder:
+        reminder.status = "dismissed"
+        reminder.dismissed_at = datetime.now(timezone.utc)
+        db.commit()
+    return RedirectResponse(url="/admin/checks?msg=هشدار بسته شد.", status_code=303)
 
 
 # ── Accounting dashboard (net P&L) ───────────────────────────────────────────
@@ -64,6 +261,8 @@ async def admin_accounting(
         "gross": report["gross_profit"],
         "gross_margin": report["gross_margin"],
         "expenses": report["operating_expenses"],
+        "one_time_expenses": report["one_time_expenses"],
+        "monthly_expenses": report["monthly_expenses"],
         "net": report["net_profit"],
         "net_margin": round(report["net_profit"] / report["net_sales"] * 100, 1) if report["net_sales"] else 0,
         "invoice_count": report["sale_count"],
@@ -129,10 +328,11 @@ async def admin_accounting_export(
         return _csv_response(f"purchases_{today}.csv", rows)
 
     if kind == "expenses":
-        rows = [["شماره", "تاریخ", "دسته", "مبلغ", "توضیح"]]
+        rows = [["شماره", "تاریخ", "نوع هزینه", "دسته", "مبلغ", "توضیح"]]
         for e in db.query(Expense).order_by(Expense.created_at.desc()).all():
             rows.append([
                 e.id, jalali_str(e.created_at, with_time=False),
+                EXPENSE_TYPE_LABELS.get(e.expense_type, EXPENSE_TYPE_LABELS["one_time"]),
                 e.category or "—", e.amount, e.note or "",
             ])
         return _csv_response(f"expenses_{today}.csv", rows)
@@ -655,10 +855,17 @@ async def admin_expenses(request: Request, db: Session = Depends(get_db)):
     if not hasattr(guard, "role"):
         return guard
     expenses = db.query(Expense).order_by(Expense.created_at.desc()).limit(100).all()
-    total = sum(e.amount for e in db.query(Expense).filter(Expense.reversed_at.is_(None)).all())
+    all_active_expenses = db.query(Expense).filter(Expense.reversed_at.is_(None)).all()
+    total = sum(expense.amount for expense in all_active_expenses)
+    expense_type_totals = {"one_time": 0, "monthly": 0}
+    for expense in all_active_expenses:
+        expense_type = expense.expense_type if expense.expense_type in EXPENSE_TYPE_LABELS else "one_time"
+        expense_type_totals[expense_type] += expense.amount
     return templates.TemplateResponse(request, "admin/expenses.html", {
         "expenses": expenses,
         "total": total,
+        "expense_type_totals": expense_type_totals,
+        "expense_type_labels": EXPENSE_TYPE_LABELS,
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
         "fmt": fmt,
@@ -671,6 +878,7 @@ async def admin_expense_add(
     request: Request,
     amount: str = Form(...),
     category: str = Form(""),
+    expense_type: str = Form("one_time"),
     note: str = Form(""),
     db: Session = Depends(get_db),
 ):
@@ -683,10 +891,13 @@ async def admin_expense_add(
         amount_int = 0
     if amount_int <= 0:
         return RedirectResponse(url="/admin/expenses?err=مبلغ معتبر نیست.", status_code=303)
+    if expense_type not in EXPENSE_TYPE_LABELS:
+        return RedirectResponse(url="/admin/expenses?err=نوع هزینه نامعتبر است.", status_code=303)
     open_session = db.query(CashSession).filter(CashSession.status == "open").order_by(CashSession.opened_at.desc()).first()
     expense = Expense(
         amount=amount_int,
         category=category.strip() or None,
+        expense_type=expense_type,
         payment_method="cash",
         cash_session_id=open_session.id if open_session else None,
         note=note.strip() or None,
@@ -704,12 +915,13 @@ async def admin_expense_add(
         payload={
             "amount": expense.amount,
             "category": expense.category,
+            "expense_type": expense.expense_type,
             "payment_method": expense.payment_method,
             "cash_session_id": expense.cash_session_id,
         },
     )
     db.commit()
-    log_action(db, "expense_add", f"{amount_int:,} تومان ({category or '—'})", request=request, target_type="expense", target_id=expense.id, after={"amount": amount_int, "category": category})
+    log_action(db, "expense_add", f"{amount_int:,} تومان ({category or '—'}, {EXPENSE_TYPE_LABELS[expense_type]})", request=request, target_type="expense", target_id=expense.id, after={"amount": amount_int, "category": category, "expense_type": expense_type})
     return RedirectResponse(url="/admin/expenses?msg=هزینه ثبت شد.", status_code=303)
 
 

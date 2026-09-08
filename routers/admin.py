@@ -1,14 +1,15 @@
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Form, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from database import get_db
 from datetime import datetime, timezone
 from models import (
     Customer, Referral, Settings, Sale, SaleItem, SaleCampaign, GeneratedImage, AdminLog, POSTransaction, StockMovement,
-    BusinessEvent,
+    BusinessEvent, StaffUser, SalaryPayment,
 )
 from config import ADMIN_PASSWORD, API_TOKEN
 from deployment import OWNER_MODE
@@ -18,7 +19,8 @@ from services.sms import (
     send_tier_up_gold_sms,
     send_tier_up_diamond_sms,
 )
-from services._common import fmt, check_admin, get_setting_int as get_discount_setting, jalali_str
+from services._common import fmt, check_admin, get_setting_int as get_discount_setting, jalali_str, parse_jalali_input
+from models import to_english_digits
 from services.backup import create_backup, list_backups, backup_download_path
 from services.operations import verify_sqlite_backup
 from services.security import (
@@ -46,6 +48,7 @@ from services.tier import (
     TIER_RANK,
 )
 from services.events import event_history, event_payload, append_event
+from services.payroll import create_salary_payment, current_period_key
 from services.themes import THEMES, DEFAULT_THEME_ID, THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY, all_theme_previews, validate_hex, contrast_ratio, get_theme
 
 router = APIRouter(prefix="/admin")
@@ -353,41 +356,232 @@ async def admin_delete_customer(customer_id: int, request: Request, db: Session 
     return RedirectResponse(url="/admin/customers", status_code=303)
 
 
+def _parse_staff_date(value: str):
+    value = (value or "").strip()
+    if not value:
+        return None
+    try:
+        if len(value) >= 4 and value[:4].isdigit() and int(value[:4]) >= 1900:
+            parsed = datetime.fromisoformat(value[:10])
+            return parsed.replace(tzinfo=timezone.utc)
+    except ValueError:
+        pass
+    return parse_jalali_input(value)
+
+
+def _staff_amount(value: str, default: int = 0) -> int:
+    try:
+        amount = int(to_english_digits((value or "").replace(",", "").strip()))
+    except (TypeError, ValueError):
+        return default
+    return amount
+
+
+def _staff_profile_data(form):
+    employment_type = str(form.get("employment_type", "full_time")).strip()
+    if employment_type not in {"full_time", "part_time", "contractor"}:
+        raise ValueError("نوع همکاری نامعتبر است.")
+    salary_amount = _staff_amount(str(form.get("salary_amount", "0")))
+    if salary_amount < 0:
+        raise ValueError("حقوق ماهانه نمی‌تواند منفی باشد.")
+    salary_day_value = to_english_digits(str(form.get("salary_payment_day", "")).strip())
+    salary_day = None
+    if salary_day_value:
+        try:
+            salary_day = int(salary_day_value)
+        except ValueError:
+            raise ValueError("روز پرداخت حقوق نامعتبر است.")
+        if not 1 <= salary_day <= 31:
+            raise ValueError("روز پرداخت حقوق باید بین ۱ تا ۳۱ باشد.")
+    return {
+        "full_name": str(form.get("full_name", "")).strip()[:200] or None,
+        "employee_code": str(form.get("employee_code", "")).strip()[:50] or None,
+        "national_id": str(form.get("national_id", "")).strip()[:30] or None,
+        "phone": str(form.get("phone", "")).strip()[:30] or None,
+        "email": str(form.get("email", "")).strip()[:150] or None,
+        "job_title": str(form.get("job_title", "")).strip()[:100] or None,
+        "employment_type": employment_type,
+        "hire_date": _parse_staff_date(str(form.get("hire_date", ""))),
+        "birth_date": _parse_staff_date(str(form.get("birth_date", ""))),
+        "contract_end_date": _parse_staff_date(str(form.get("contract_end_date", ""))),
+        "education": str(form.get("education", "")).strip()[:200] or None,
+        "work_schedule": str(form.get("work_schedule", "")).strip()[:200] or None,
+        "salary_payment_day": salary_day,
+        "address": str(form.get("address", "")).strip()[:2000] or None,
+        "emergency_contact": str(form.get("emergency_contact", "")).strip()[:200] or None,
+        "bank_account": str(form.get("bank_account", "")).strip()[:80] or None,
+        "iban": str(form.get("iban", "")).strip()[:40] or None,
+        "salary_amount": salary_amount,
+        "notes": str(form.get("notes", "")).strip()[:4000] or None,
+    }
+
+
 @router.get("/staff", response_class=HTMLResponse)
 async def admin_staff(request: Request, db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "owner")
     if not hasattr(guard, "role"):
         return guard
-    from models import StaffUser
     return templates.TemplateResponse(request, "admin/staff.html", {
         "staff_users": db.query(StaffUser).order_by(StaffUser.created_at.desc()).all(),
+        "owner_settings": {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()},
+        "current_period": current_period_key(),
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
+        "fmt": fmt,
+        "jalali_str": jalali_str,
+    })
+
+
+@router.post("/staff", response_class=HTMLResponse)
+async def admin_staff_create(request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    form = await request.form()
+    username = str(form.get("username", "")).strip().lower()
+    password = str(form.get("password", ""))
+    role = str(form.get("role", "cashier")).strip()
+    if not username or len(password) < 6 or role not in {"cashier", "manager", "owner"}:
+        return RedirectResponse(url="/admin/staff?err=اطلاعات ورود کاربر نامعتبر است.", status_code=303)
+    if db.query(StaffUser).filter(StaffUser.username == username).first():
+        return RedirectResponse(url="/admin/staff?err=نام کاربری تکراری است.", status_code=303)
+    try:
+        profile = _staff_profile_data(form)
+    except ValueError as error:
+        return RedirectResponse(url=f"/admin/staff?err={error}", status_code=303)
+    user = StaffUser(username=username, password_hash=hash_password(password), role=role, **profile)
+    db.add(user)
+    db.commit()
+    log_action(db, "staff_create", f"ایجاد کاربر {username}", request=request, target_type="staff_user", target_id=user.id, after={"username": username, "role": role, "full_name": user.full_name, "salary_amount": user.salary_amount})
+    return RedirectResponse(url="/admin/staff?msg=کاربر و اطلاعات پرسنلی ثبت شد.", status_code=303)
+
+
+@router.post("/staff/{staff_id}", response_class=HTMLResponse)
+async def admin_staff_update(staff_id: int, request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    user = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="کاربر یافت نشد")
+    form = await request.form()
+    role = str(form.get("role", user.role)).strip()
+    if role not in {"cashier", "manager", "owner"}:
+        return RedirectResponse(url="/admin/staff?err=نقش کاربر نامعتبر است.", status_code=303)
+    try:
+        profile = _staff_profile_data(form)
+    except ValueError as error:
+        return RedirectResponse(url=f"/admin/staff?err={error}", status_code=303)
+    before = {"role": user.role, "full_name": user.full_name, "salary_amount": user.salary_amount, "is_active": user.is_active}
+    user.role = role
+    for key, value in profile.items():
+        setattr(user, key, value)
+    password = str(form.get("password", ""))
+    if password:
+        if len(password) < 6:
+            return RedirectResponse(url="/admin/staff?err=رمز عبور باید حداقل ۶ کاراکتر باشد.", status_code=303)
+        user.password_hash = hash_password(password)
+    db.commit()
+    log_action(db, "staff_update", f"ویرایش کاربر {user.username}", request=request, target_type="staff_user", target_id=user.id, before=before, after={"role": user.role, "full_name": user.full_name, "salary_amount": user.salary_amount, "is_active": user.is_active})
+    return RedirectResponse(url="/admin/staff?msg=اطلاعات کارمند ذخیره شد.", status_code=303)
+
+
+@router.post("/staff/{staff_id}/salary", response_class=HTMLResponse)
+async def admin_staff_salary(staff_id: int, request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    user = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="کاربر یافت نشد")
+    form = await request.form()
+    try:
+        payment = create_salary_payment(
+            db,
+            user,
+            guard,
+            str(form.get("period_key", "")),
+            deductions=_staff_amount(str(form.get("deductions", "0"))),
+            payment_method=str(form.get("payment_method", "cash")),
+            note=str(form.get("note", "")),
+            request_id=request.headers.get("X-Request-ID"),
+        )
+        db.commit()
+    except (ValueError, IntegrityError) as error:
+        db.rollback()
+        message = str(error) if isinstance(error, ValueError) else "حقوق این کارمند برای این ماه قبلاً ثبت شده است."
+        return RedirectResponse(url=f"/admin/staff?err={message}", status_code=303)
+    log_action(db, "salary_payment", f"پرداخت حقوق {user.username} برای {payment.period_key}", request=request, target_type="salary_payment", target_id=payment.id, after={"net_amount": payment.net_amount, "expense_id": payment.expense_id})
+    return RedirectResponse(url=f"/admin/payroll/{payment.id}/receipt?msg=پرداخت حقوق ثبت شد.", status_code=303)
+
+
+@router.get("/payroll/{payment_id}/receipt", response_class=HTMLResponse)
+async def admin_salary_receipt(payment_id: int, request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    payment = db.query(SalaryPayment).filter(SalaryPayment.id == payment_id).first()
+    if not payment:
+        raise HTTPException(status_code=404, detail="رسید حقوق یافت نشد")
+    return templates.TemplateResponse(request, "admin/salary_receipt.html", {
+        "payment": payment,
+        "staff_user": payment.staff_user,
+        "owner_settings": {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()},
+        "store": get_store(db),
+        "msg": request.query_params.get("msg", ""),
+        "jalali_str": jalali_str,
+        "fmt": fmt,
+    })
+
+
+@router.get("/staff/{staff_id}/contract", response_class=HTMLResponse)
+async def admin_staff_contract(staff_id: int, request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    staff_user = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
+    if not staff_user:
+        raise HTTPException(status_code=404, detail="کارمند یافت نشد")
+    return templates.TemplateResponse(request, "admin/employment_contract.html", {
+        "staff_user": staff_user,
+        "owner_settings": {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()},
+        "store": get_store(db),
+        "jalali_str": jalali_str,
+        "fmt": fmt,
+    })
+
+
+@router.get("/owner-profile", response_class=HTMLResponse)
+async def admin_owner_profile(request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    settings = {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()}
+    return templates.TemplateResponse(request, "admin/owner_profile.html", {
+        "owner_settings": settings,
+        "store": get_store(db),
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
     })
 
 
-@router.post("/staff", response_class=HTMLResponse)
-async def admin_staff_create(
-    request: Request,
-    username: str = Form(...),
-    password: str = Form(...),
-    role: str = Form("cashier"),
-    db: Session = Depends(get_db),
-):
+@router.post("/owner-profile", response_class=HTMLResponse)
+async def admin_owner_profile_update(request: Request, db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "owner")
     if not hasattr(guard, "role"):
         return guard
-    from models import StaffUser
-    username = username.strip().lower()
-    if not username or len(password) < 6 or role not in {"cashier", "manager", "owner"}:
-        return RedirectResponse(url="/admin/staff?err=اطلاعات کاربر نامعتبر است.", status_code=303)
-    if db.query(StaffUser).filter(StaffUser.username == username).first():
-        return RedirectResponse(url="/admin/staff?err=نام کاربری تکراری است.", status_code=303)
-    user = StaffUser(username=username, password_hash=hash_password(password), role=role)
-    db.add(user)
+    form = await request.form()
+    allowed = {"owner_full_name", "owner_national_id", "owner_phone", "owner_email", "owner_address", "owner_business_name", "owner_business_registration", "owner_signatory_title"}
+    updates = {key: str(form.get(key, "")).strip()[:1000] for key in allowed}
+    for key, value in updates.items():
+        setting = db.query(Settings).filter(Settings.key == key).first()
+        if setting:
+            setting.value = value
+        else:
+            db.add(Settings(key=key, value=value))
     db.commit()
-    log_action(db, "staff_create", f"ایجاد کاربر {username}", request=request, target_type="staff_user", target_id=user.id, after={"username": username, "role": role})
-    return RedirectResponse(url="/admin/staff?msg=کاربر ایجاد شد.", status_code=303)
+    log_action(db, "owner_profile_update", "به‌روزرسانی اطلاعات مالک و قرارداد", request=request, target_type="owner_profile")
+    return RedirectResponse(url="/admin/owner-profile?msg=اطلاعات مالک ذخیره شد.", status_code=303)
 
 
 @router.post("/staff/{staff_id}/disable", response_class=HTMLResponse)
@@ -395,7 +589,6 @@ async def admin_staff_disable(staff_id: int, request: Request, db: Session = Dep
     guard = require_html_role(request, db, "owner")
     if not hasattr(guard, "role"):
         return guard
-    from models import StaffUser
     user = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="کاربر یافت نشد")
@@ -420,8 +613,6 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
         "settings": settings,
         "tier_config": tier_config,
         "store": get_store(db),
-        "themes": all_theme_previews(db),
-        "active_theme_id": get_theme_id(db),
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
     })
@@ -432,8 +623,25 @@ def get_theme_id(db: Session) -> str:
     return row.value if row and row.value in THEMES else DEFAULT_THEME_ID
 
 
-@router.post("/settings", response_class=HTMLResponse)
-async def admin_update_settings(request: Request, db: Session = Depends(get_db)):
+@router.get("/settings/appearance", response_class=HTMLResponse)
+async def admin_settings_appearance(request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+
+    settings = {s.key: s.value for s in db.query(Settings).all()}
+    return templates.TemplateResponse(request, "admin/settings_appearance.html", {
+        "settings": settings,
+        "store": get_store(db),
+        "themes": all_theme_previews(db),
+        "active_theme_id": get_theme_id(db),
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
+    })
+
+
+@router.post("/settings/appearance", response_class=HTMLResponse)
+async def admin_update_appearance(request: Request, db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "owner")
     if not hasattr(guard, "role"):
         return guard
@@ -443,49 +651,55 @@ async def admin_update_settings(request: Request, db: Session = Depends(get_db))
     primary = str(form.get(CUSTOM_PRIMARY_KEY, "#C94B68")).strip().upper()
     secondary = str(form.get(CUSTOM_SECONDARY_KEY, "#197A8C")).strip().upper()
     if theme_id not in THEMES:
-        return RedirectResponse(url="/admin/settings?err=تم انتخاب نامعتبر است.", status_code=303)
+        return RedirectResponse(url="/admin/settings/appearance?err=تم انتخاب نامعتبر است.", status_code=303)
     if theme_id == "custom-brand":
         if not validate_hex(primary) or not validate_hex(secondary):
-            return RedirectResponse(url="/admin/settings?err=رنگ‌ها باید به صورت HEX شش‌رقمی باشند.", status_code=303)
+            return RedirectResponse(url="/admin/settings/appearance?err=رنگ‌ها باید به صورت HEX شش‌رقمی باشند.", status_code=303)
         if contrast_ratio(primary, "#FFFFFF") < 4.5 and contrast_ratio(primary, "#000000") < 4.5:
-            return RedirectResponse(url="/admin/settings?err=رنگ اصلی کنتراست کافی ندارد.", status_code=303)
+            return RedirectResponse(url="/admin/settings/appearance?err=رنگ اصلی کنتراست کافی ندارد.", status_code=303)
         if contrast_ratio(secondary, "#FFFFFF") < 3 and contrast_ratio(secondary, "#000000") < 3:
-            return RedirectResponse(url="/admin/settings?err=رنگ دوم کنتراست کافی ندارد.", status_code=303)
+            return RedirectResponse(url="/admin/settings/appearance?err=رنگ دوم کنتراست کافی ندارد.", status_code=303)
+
     updates = {THEME_SETTING_KEY: theme_id, CUSTOM_PRIMARY_KEY: primary, CUSTOM_SECONDARY_KEY: secondary}
-    for key, value in form.items():
-        if key in {"csrf_token", THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY, "theme_logo"}:
-            continue
-        updates[key] = str(value)
     for key, value in updates.items():
         setting = db.query(Settings).filter(Settings.key == key).first()
         if setting:
             setting.value = value
         else:
             db.add(Settings(key=key, value=value))
-    logo = form.get("theme_logo")
-    if hasattr(logo, "filename") and hasattr(logo, "read") and logo.filename:
-        if logo.content_type not in {"image/png", "image/jpeg", "image/webp"}:
-            return RedirectResponse(url="/admin/settings?err=فرمت لوگو باید PNG، JPG یا WEBP باشد.", status_code=303)
-        content = await logo.read()
-        if len(content) > 2_000_000:
-            return RedirectResponse(url="/admin/settings?err=حجم لوگو نباید بیشتر از ۲ مگابایت باشد.", status_code=303)
-        from PIL import Image
-        from io import BytesIO
+    db.commit()
+    invalidate_store_cache()
+    log_action(db, "theme_update", "به‌روزرسانی ظاهر فروشگاه", request=request, target_type="settings", after={"theme": theme_id})
+
+    return RedirectResponse(url="/admin/settings/appearance?msg=ظاهر فروشگاه ذخیره شد.", status_code=303)
+
+
+@router.post("/settings", response_class=HTMLResponse)
+async def admin_update_settings(request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+
+    form = await request.form()
+    updates = {}
+    for key, value in form.items():
+        if key in {"csrf_token", THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY}:
+            continue
+        updates[key] = str(value)
+    raw_length = str(form.get("barcode_code_length", "")).strip()
+    if raw_length:
         try:
-            image = Image.open(BytesIO(content))
-            image.verify()
-        except Exception:
-            return RedirectResponse(url="/admin/settings?err=فایل لوگو معتبر نیست.", status_code=303)
-        logo_dir = Path("static/uploads/branding")
-        logo_dir.mkdir(parents=True, exist_ok=True)
-        suffix = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}[logo.content_type]
-        logo_path = logo_dir / ("store-logo" + suffix)
-        logo_path.write_bytes(content)
-        logo_setting = db.query(Settings).filter(Settings.key == "store_logo_path").first()
-        if logo_setting:
-            logo_setting.value = "/static/uploads/branding/store-logo" + suffix
+            code_length = int(to_english_digits(raw_length))
+        except (TypeError, ValueError):
+            code_length = 0
+        if code_length < 4 or code_length > 12:
+            return RedirectResponse(url="/admin/settings?err=تعداد رقم کد بارکد باید بین ۴ تا ۱۲ باشد.", status_code=303)
+    for key, value in updates.items():
+        setting = db.query(Settings).filter(Settings.key == key).first()
+        if setting:
+            setting.value = value
         else:
-            db.add(Settings(key="store_logo_path", value="/static/uploads/branding/store-logo" + suffix))
+            db.add(Settings(key=key, value=value))
     db.commit()
     invalidate_store_cache()
     log_action(db, "settings_update", "به‌روزرسانی تنظیمات", request=request, target_type="settings")

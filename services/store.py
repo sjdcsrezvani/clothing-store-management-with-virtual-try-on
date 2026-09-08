@@ -18,7 +18,6 @@ DEFAULT_STORE = {
     "tagline": "فروشگاه پوشاک کودک",
     "instagram": "",
     "footer": "",
-    "logo_path": "/static/logo.png",
 }
 
 
@@ -30,7 +29,7 @@ def _load(db=None) -> dict:
         db = SessionLocal()
     try:
         data = dict(DEFAULT_STORE)
-        for key in data:
+        for key in ("name", "tagline", "instagram", "footer"):
             row = db.query(Settings).filter(Settings.key == f"store_{key}").first()
             if row and row.value:
                 data[key] = row.value

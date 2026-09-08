@@ -1,20 +1,104 @@
+import json
 import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, quote_plus
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, File, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from database import get_db
-from models import Product, ProductVariant, ProductImage, Settings, generate_barcode, to_english_digits
+from models import (
+    Product,
+    ProductVariant,
+    ProductImage,
+    Settings,
+    Supplier,
+    TagPrintBatch,
+    TagPrintBatchLine,
+    generate_barcode,
+    to_english_digits,
+)
 from services.security import require_html_role
 from services._common import fmt, check_admin, jalali_str
-from services.barcode import generate_barcode_number
+from services.barcode import generate_barcode_image, generate_barcode_number
 from services.templating import templates
 from services.inventory import record_opening_stock, record_stock_adjustment, record_cost_adjustment
+from services.store import get_store
+from services.events import append_event
+from services.tags import (
+    PRESETS,
+    calculate_a4_fit,
+    item_from_variant,
+    load_tag_config,
+    render_tag_html,
+    save_tag_config,
+    save_tag_image,
+)
 
 router = APIRouter(prefix="/admin")
+MAX_TAG_PRINT_QUANTITY = 1000
+
+
+def _form_text(form, key: str, default: str = "") -> str:
+    value = form.get(key, default)
+    return str(value).strip() if value is not None else default
+
+
+def _form_nonnegative_int(form, key: str, default: int = 0) -> int:
+    value = _form_text(form, key, str(default))
+    try:
+        return max(0, int(to_english_digits(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _form_optional_int(form, key: str):
+    value = _form_text(form, key)
+    if not value:
+        return None
+    try:
+        return max(0, int(to_english_digits(value)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _selected_quantities(form) -> dict[int, int]:
+    quantities = {}
+
+    # Native form submission uses one quantity input per selected variant.
+    # Keep this path independent of JavaScript so the print actions still work
+    # when browser scripts are blocked or fail to load.
+    for key in form.keys():
+        if not str(key).startswith("selected_quantity_"):
+            continue
+        try:
+            variant_id = int(str(key).removeprefix("selected_quantity_"))
+            quantity = int(to_english_digits(str(form.get(key))))
+        except (TypeError, ValueError):
+            continue
+        if quantity > 0:
+            quantities[variant_id] = quantity
+
+    # The JSON payload remains supported for older clients and the enhanced
+    # JavaScript submission path.
+    raw_value = form.get("selected_quantities", "")
+    if raw_value:
+        try:
+            values = json.loads(str(raw_value))
+        except (TypeError, ValueError):
+            values = {}
+        if isinstance(values, dict):
+            for variant_id, quantity in values.items():
+                try:
+                    variant_id_int = int(variant_id)
+                    quantity_int = int(to_english_digits(str(quantity)))
+                except (TypeError, ValueError):
+                    continue
+                if quantity_int > 0:
+                    quantities[variant_id_int] = quantity_int
+    return quantities
 
 
 @router.get("/products", response_class=HTMLResponse)
@@ -36,7 +120,9 @@ async def admin_products(
         query = query.filter(
             Product.name.contains(search) |
             Product.base_sku.contains(search) |
-            Product.variants.any(ProductVariant.barcode.contains(search))
+            Product.category.contains(search) |
+            Product.variants.any(ProductVariant.barcode.contains(search)) |
+            Product.variants.any(ProductVariant.sku.contains(search))
         )
 
     if category:
@@ -44,13 +130,24 @@ async def admin_products(
 
     per_page = 10
     total = query.count()
-    products = query.order_by(Product.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
     total_pages = max(1, (total + per_page - 1) // per_page)
     page = min(max(page, 1), total_pages)
+    products = query.order_by(Product.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
 
-    # Get unique categories
     categories = db.query(Product.category).distinct().all()
     categories = [c[0] for c in categories if c[0]]
+    low_stock_count = (
+        db.query(ProductVariant)
+        .join(Product)
+        .filter(Product.is_active == True, ProductVariant.is_active == True, (ProductVariant.stock_quantity - func.coalesce(ProductVariant.reserved_quantity, 0)) <= 2)
+        .count()
+    )
+    out_stock_count = (
+        db.query(ProductVariant)
+        .join(Product)
+        .filter(Product.is_active == True, ProductVariant.is_active == True, (ProductVariant.stock_quantity - func.coalesce(ProductVariant.reserved_quantity, 0)) <= 0)
+        .count()
+    )
 
     return templates.TemplateResponse(request, "admin/products.html", {
         "products": products,
@@ -59,9 +156,80 @@ async def admin_products(
         "categories": categories,
         "page": page,
         "total_pages": total_pages,
+        "total_products": total,
+        "low_stock_count": low_stock_count,
+        "out_stock_count": out_stock_count,
         "fmt": fmt,
         "jalali_str": jalali_str,
     })
+
+
+@router.get("/settings/tags", response_class=HTMLResponse)
+async def admin_tag_settings(request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+
+    config = load_tag_config(db)
+    sample_variant = (
+        db.query(ProductVariant)
+        .join(Product)
+        .filter(Product.is_active == True, ProductVariant.is_active == True)
+        .order_by(Product.name, ProductVariant.id)
+        .first()
+    )
+    sample_item = item_from_variant(sample_variant, fmt) if sample_variant else {
+        "variant_id": None, "barcode": "12345", "product_name": "نمونه محصول",
+        "name": "نمونه محصول", "price": 250000, "price_display": fmt(250000),
+        "size": "۴ سال", "color": "آبی", "sku": "SKU-001", "brand": "رای کیدز",
+        "category": "لباس کودک", "image_path": None,
+    }
+    store = get_store(db)
+    barcode_preview_sources = {
+        density: generate_barcode_image(sample_item["barcode"], density=density)
+        for density in ("compact", "standard")
+    }
+    return templates.TemplateResponse(request, "admin/settings_tags.html", {
+        "tag_config": config,
+        "tag_presets": PRESETS,
+        "tag_fit": calculate_a4_fit(config),
+        "sample_item": sample_item,
+        "preview_html": render_tag_html(config, sample_item, store),
+        "barcode_preview_sources": barcode_preview_sources,
+        "store": store,
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
+    })
+
+
+@router.post("/settings/tags", response_class=HTMLResponse)
+async def admin_tag_settings_save(request: Request, tag_config: str = Form(""), db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    try:
+        save_tag_config(db, json.loads(tag_config))
+        db.commit()
+    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+        db.rollback()
+        return RedirectResponse(url="/admin/settings/tags?err=" + quote_plus(str(exc)), status_code=303)
+    return RedirectResponse(url="/admin/settings/tags?msg=تنظیمات تگ ذخیره شد.", status_code=303)
+
+
+@router.post("/settings/tags/image", response_class=HTMLResponse)
+async def admin_tag_settings_image(request: Request, image: UploadFile = File(...), db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    try:
+        config = load_tag_config(db)
+        config["custom_image_path"] = save_tag_image(await image.read(), image.filename or "", image.content_type)
+        save_tag_config(db, config)
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        return RedirectResponse(url="/admin/settings/tags?err=" + quote_plus(str(exc)), status_code=303)
+    return RedirectResponse(url="/admin/settings/tags?msg=تصویر تگ ذخیره شد.", status_code=303)
 
 
 @router.get("/products/add", response_class=HTMLResponse)
@@ -73,6 +241,7 @@ async def admin_product_add_form(request: Request, db: Session = Depends(get_db)
     return templates.TemplateResponse(request, "admin/product_form.html", {
         "product": None,
         "edit_mode": False,
+        "suppliers": db.query(Supplier).order_by(Supplier.name.asc()).all(),
     })
 
 
@@ -111,10 +280,22 @@ async def admin_product_add(
 
     # Create product
     product = Product(
-        name=name,
-        category=category if category else None,
-        brand=brand if brand else None,
-        description=description if description else None,
+        name=name.strip(),
+        category=category.strip() or None,
+        brand=brand.strip() or None,
+        description=description.strip() or None,
+        base_sku=_form_text(form, "base_sku") or None,
+        base_barcode=to_english_digits(_form_text(form, "base_barcode")) or None,
+        weight_grams=_form_optional_int(form, "weight_grams"),
+        garment_type=_form_text(form, "garment_type") or None,
+        gender=_form_text(form, "gender") or None,
+        material=_form_text(form, "material") or None,
+        season=_form_text(form, "season") or None,
+        collection=_form_text(form, "collection") or None,
+        care_instructions=_form_text(form, "care_instructions") or None,
+        supplier_id=_form_optional_int(form, "supplier_id"),
+        default_reorder_point=_form_nonnegative_int(form, "default_reorder_point"),
+        default_reorder_quantity=_form_nonnegative_int(form, "default_reorder_quantity"),
     )
     db.add(product)
     db.flush()
@@ -130,6 +311,11 @@ async def admin_product_add(
         stock_str = form.get(f"variant_stock_{idx}", "0")
         barcode = form.get(f"variant_barcode_{idx}", "")
         sku = form.get(f"variant_sku_{idx}", "")
+        reorder_point = _form_nonnegative_int(form, f"variant_reorder_point_{idx}", product.default_reorder_point)
+        reorder_quantity = _form_nonnegative_int(form, f"variant_reorder_quantity_{idx}", product.default_reorder_quantity)
+        storage_location = _form_text(form, f"variant_storage_location_{idx}") or None
+        size_system = _form_text(form, f"variant_size_system_{idx}") or None
+        color_code = _form_text(form, f"variant_color_code_{idx}") or None
 
         if not price_str:
             continue
@@ -151,9 +337,9 @@ async def admin_product_add(
 
         # Generate or validate barcode
         if not barcode:
-            barcode = generate_barcode_number()
+            barcode = generate_barcode_number(db)
             while db.query(ProductVariant).filter(ProductVariant.barcode == barcode).first():
-                barcode = generate_barcode_number()
+                barcode = generate_barcode_number(db)
         else:
             barcode = to_english_digits(barcode.strip())
             existing = db.query(ProductVariant).filter(ProductVariant.barcode == barcode).first()
@@ -188,6 +374,11 @@ async def admin_product_add(
             barcode=barcode,
             sku=sku if sku else None,
             image_path=variant_image_path,
+            reorder_point=reorder_point,
+            reorder_quantity=reorder_quantity,
+            storage_location=storage_location,
+            size_system=size_system,
+            color_code=color_code,
         )
         db.add(variant)
         created_variants.append((variant, stock_int))
@@ -220,6 +411,7 @@ async def admin_product_edit_form(product_id: int, request: Request, db: Session
     return templates.TemplateResponse(request, "admin/product_form.html", {
         "product": product,
         "edit_mode": True,
+        "suppliers": db.query(Supplier).order_by(Supplier.name.asc()).all(),
         "fmt": fmt,
         "jalali_str": jalali_str,
     })
@@ -244,17 +436,29 @@ async def admin_product_update(
         raise HTTPException(status_code=404, detail="محصول یافت نشد")
 
     # Update base product
-    product.name = name
-    product.category = category if category else None
-    product.brand = brand if brand else None
-    product.description = description if description else None
+    form = await request.form()
+    product.name = name.strip()
+    product.category = category.strip() or None
+    product.brand = brand.strip() or None
+    product.description = description.strip() or None
+    product.base_sku = _form_text(form, "base_sku") or None
+    product.base_barcode = to_english_digits(_form_text(form, "base_barcode")) or None
+    product.weight_grams = _form_optional_int(form, "weight_grams")
+    product.garment_type = _form_text(form, "garment_type") or None
+    product.gender = _form_text(form, "gender") or None
+    product.material = _form_text(form, "material") or None
+    product.season = _form_text(form, "season") or None
+    product.collection = _form_text(form, "collection") or None
+    product.care_instructions = _form_text(form, "care_instructions") or None
+    product.supplier_id = _form_optional_int(form, "supplier_id")
+    product.default_reorder_point = _form_nonnegative_int(form, "default_reorder_point")
+    product.default_reorder_quantity = _form_nonnegative_int(form, "default_reorder_quantity")
     product.updated_at = datetime.now(timezone.utc)
 
     upload_dir = Path("static/uploads/products")
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     # Parse dynamic new variant fields
-    form = await request.form()
     variant_indices = set()
     for key in form.keys():
         if key.startswith("variant_index_"):
@@ -273,6 +477,11 @@ async def admin_product_update(
         stock_str = form.get(f"variant_stock_{idx}", "0")
         barcode = form.get(f"variant_barcode_{idx}", "")
         sku = form.get(f"variant_sku_{idx}", "")
+        reorder_point = _form_nonnegative_int(form, f"variant_reorder_point_{idx}", product.default_reorder_point)
+        reorder_quantity = _form_nonnegative_int(form, f"variant_reorder_quantity_{idx}", product.default_reorder_quantity)
+        storage_location = _form_text(form, f"variant_storage_location_{idx}") or None
+        size_system = _form_text(form, f"variant_size_system_{idx}") or None
+        color_code = _form_text(form, f"variant_color_code_{idx}") or None
 
         if not price_str:
             continue
@@ -294,9 +503,9 @@ async def admin_product_update(
 
         # Generate or validate barcode
         if not barcode:
-            barcode = generate_barcode_number()
+            barcode = generate_barcode_number(db)
             while db.query(ProductVariant).filter(ProductVariant.barcode == barcode).first():
-                barcode = generate_barcode_number()
+                barcode = generate_barcode_number(db)
         else:
             barcode = to_english_digits(barcode.strip())
             existing = db.query(ProductVariant).filter(
@@ -335,6 +544,11 @@ async def admin_product_update(
             barcode=barcode,
             sku=sku if sku else None,
             image_path=variant_image_path,
+            reorder_point=reorder_point,
+            reorder_quantity=reorder_quantity,
+            storage_location=storage_location,
+            size_system=size_system,
+            color_code=color_code,
         )
         db.add(variant)
         created_variants.append((variant, stock_int))
@@ -400,6 +614,11 @@ async def admin_variant_update(
     barcode: str = Form(""),
     sku: str = Form(""),
     tryon_details: str = Form(""),
+    reorder_point: str = Form("0"),
+    reorder_quantity: str = Form("0"),
+    storage_location: str = Form(""),
+    size_system: str = Form(""),
+    color_code: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """Update a specific variant."""
@@ -417,15 +636,10 @@ async def admin_variant_update(
     except ValueError:
         price_int = variant.price
 
-    has_fake_cost_price = variant.fake_cost_price is not None
-    if has_fake_cost_price:
-        # The visible cost field is the display-only value; never overwrite the real cost.
+    try:
+        cost_price_int = int(to_english_digits(cost_price))
+    except ValueError:
         cost_price_int = variant.cost_price
-    else:
-        try:
-            cost_price_int = int(to_english_digits(cost_price))
-        except ValueError:
-            cost_price_int = variant.cost_price
 
     fake_cost_price_int = None
     if fake_cost_price.strip():
@@ -438,6 +652,21 @@ async def admin_variant_update(
         stock_int = int(to_english_digits(stock_quantity))
     except ValueError:
         stock_int = variant.stock_quantity
+    if stock_int < 0 or stock_int < (variant.reserved_quantity or 0):
+        return templates.TemplateResponse(request, "admin/variant_form.html", {
+            "variant": variant,
+            "product": variant.product,
+            "error": "موجودی نمی‌تواند کمتر از موجودی رزروشده باشد.",
+        })
+    try:
+        reorder_point_int = max(0, int(to_english_digits(reorder_point or "0")))
+        reorder_quantity_int = max(0, int(to_english_digits(reorder_quantity or "0")))
+    except ValueError:
+        return templates.TemplateResponse(request, "admin/variant_form.html", {
+            "variant": variant,
+            "product": variant.product,
+            "error": "مقدار نقطه سفارش معتبر نیست.",
+        })
 
     # Validate unique barcode
     if barcode and barcode != variant.barcode:
@@ -493,8 +722,13 @@ async def admin_variant_update(
         actor_user_id=guard.id,
         request_id=request.headers.get("X-Request-ID"),
     )
-    variant.sku = sku if sku else None
+    variant.sku = sku.strip() if sku else None
     variant.tryon_details = tryon_details.strip() if tryon_details.strip() else None
+    variant.reorder_point = reorder_point_int
+    variant.reorder_quantity = reorder_quantity_int
+    variant.storage_location = storage_location.strip() if storage_location else None
+    variant.size_system = size_system.strip() if size_system else None
+    variant.color_code = color_code.strip() if color_code else None
     variant.updated_at = datetime.now(timezone.utc)
 
     db.commit()
@@ -573,6 +807,9 @@ async def admin_barcodes_print(
     categories = db.query(Product.category).distinct().all()
     categories = [c[0] for c in categories if c[0]]
 
+    config = load_tag_config(db)
+    tag_fit = calculate_a4_fit(config)
+
     # Get printed barcode counts
     printed_settings = db.query(Settings).filter(
         Settings.key.like("barcode_printed_%")
@@ -585,41 +822,73 @@ async def admin_barcodes_print(
         except (ValueError, TypeError):
             pass
 
-    # Expand variants by stock quantity
+    # Keep one row per variant. The operator chooses the number of copies
+    # instead of being forced to select one checkbox per unit in stock.
     barcode_items = []
     for product in products:
         for variant in product.variants:
             if not variant.is_active:
                 continue
-            qty = variant.stock_quantity if variant.stock_quantity > 0 else 1
-            printed = printed_counts.get(variant.id, 0)
-            for i in range(qty):
-                barcode_items.append({
-                    "variant_id": variant.id,
-                    "barcode": variant.barcode,
-                    "name": variant.display_name,
-                    "price": variant.price,
-                    "already_printed": i < printed,
-                })
+            item = item_from_variant(variant, fmt)
+            printed = max(0, printed_counts.get(variant.id, 0))
+            available = max(0, (variant.stock_quantity or 0) - (variant.reserved_quantity or 0))
+            item["printed_count"] = printed
+            item["available_quantity"] = available
+            # Keep this value for compatibility with older templates, but label
+            # printing is intentionally independent of current stock.
+            item["unprinted_quantity"] = max(0, available - printed)
+            item["printable_quantity"] = MAX_TAG_PRINT_QUANTITY
+            item["is_out_of_stock"] = available <= 0
+            item["already_printed"] = printed > 0
+            barcode_items.append(item)
 
-    # Sort: unprinted first
-    barcode_items.sort(key=lambda x: (x["already_printed"], x["name"]))
+    barcode_items.sort(key=lambda x: (x["unprinted_quantity"] == 0, x["name"]))
 
-    # Paginate
-    page_size = 28
+    page_size = max(1, tag_fit["tags_per_page"])
     total_items = len(barcode_items)
     total_pages = max(1, (total_items + page_size - 1) // page_size)
     page = max(1, min(page, total_pages))
     start = (page - 1) * page_size
     page_items = barcode_items[start:start + page_size]
 
+    # Render the same validated tag markup used by the settings preview.
+    config = load_tag_config(db)
+    store = get_store(db)
+    millimeters_to_pixels = 96 / 25.4
+    tag_width_px = config["tag_width_mm"] * millimeters_to_pixels
+    tag_height_px = config["tag_height_mm"] * millimeters_to_pixels
+    # Show the tag at real print size when it fits, otherwise scale it down
+    # evenly; the preview frame is sized to the scaled tag so there is no
+    # dead space or clipping around it.
+    max_preview_width_px = 210
+    max_preview_height_px = 150
+    tag_preview_scale = min(
+        1.0,
+        max_preview_width_px / tag_width_px,
+        max_preview_height_px / tag_height_px,
+    )
+    tag_preview_scale = round(max(0.2, tag_preview_scale), 3)
+    tag_preview_width_px = round(tag_width_px * tag_preview_scale)
+    tag_preview_height_px = round(tag_height_px * tag_preview_scale)
+    rendered_items = []
+    for item in page_items:
+        rendered = dict(item)
+        rendered["tag_html"] = render_tag_html(config, rendered, store)
+        rendered_items.append(rendered)
+
     return templates.TemplateResponse(request, "admin/barcode_print.html", {
-        "barcode_items": page_items,
+        "barcode_items": rendered_items,
         "all_items_count": total_items,
         "page": page,
         "total_pages": total_pages,
         "categories": categories,
         "category_filter": category,
+        "tag_config": config,
+        "tag_fit": tag_fit,
+        "tag_preview_scale": tag_preview_scale,
+        "tag_preview_width_px": tag_preview_width_px,
+        "tag_preview_height_px": tag_preview_height_px,
+        "store": store,
         "fmt": fmt,
         "jalali_str": jalali_str,
     })
@@ -634,8 +903,12 @@ async def admin_barcodes_mark_printed(request: Request, db: Session = Depends(ge
 
     form = await request.form()
     selected_ids = form.getlist("selected_products")
+    if not selected_ids:
+        selected_ids = [value for value in str(form.get("selected_ids", "")).split(",") if value]
     category = str(form.get("category", ""))
     page = str(form.get("page", "1"))
+
+    selected_quantities = _selected_quantities(form)
 
     selected_counts = {}
     for variant_id in selected_ids:
@@ -645,7 +918,10 @@ async def admin_barcodes_mark_printed(request: Request, db: Session = Depends(ge
         except (TypeError, ValueError):
             pass
 
-    for variant_id, requested_count in selected_counts.items():
+    is_reprint = str(form.get("reprint", "")).lower() in {"1", "true", "yes"}
+    batch_lines = []
+    for variant_id, selected_count in selected_counts.items():
+        requested_count = selected_quantities.get(variant_id, selected_count)
         variant = db.query(ProductVariant).filter(
             ProductVariant.id == variant_id,
             ProductVariant.is_active == True,
@@ -653,20 +929,62 @@ async def admin_barcodes_mark_printed(request: Request, db: Session = Depends(ge
         if not variant:
             continue
 
-        maximum = variant.stock_quantity if variant.stock_quantity > 0 else 1
         key = f"barcode_printed_{variant_id}"
         existing = db.query(Settings).filter(Settings.key == key).first()
-        printed_count = int(existing.value) if existing and existing.value else 0
-        count = min(requested_count, max(0, maximum - printed_count))
+        try:
+            printed_count = max(0, int(existing.value)) if existing and existing.value else 0
+        except (TypeError, ValueError):
+            printed_count = 0
+        count = min(requested_count, MAX_TAG_PRINT_QUANTITY)
         if count <= 0:
             continue
-        if existing:
-            existing.value = str(printed_count + count)
-        else:
-            db.add(Settings(key=key, value=str(count)))
+        if not is_reprint:
+            if existing:
+                existing.value = str(printed_count + count)
+            else:
+                db.add(Settings(key=key, value=str(count)))
+        batch_lines.append((variant, count, is_reprint))
+
+    if batch_lines:
+        batch = TagPrintBatch(
+            operator_user_id=guard.id,
+            template_snapshot=json.dumps(load_tag_config(db), ensure_ascii=False, separators=(",", ":")),
+            item_count=len(batch_lines),
+            total_quantity=sum(line[1] for line in batch_lines),
+        )
+        db.add(batch)
+        db.flush()
+        for variant, count, line_is_reprint in batch_lines:
+            db.add(TagPrintBatchLine(
+                batch_id=batch.id,
+                variant_id=variant.id,
+                quantity=count,
+                product_name=variant.product.name if variant.product else "",
+                barcode=variant.barcode,
+                sku=variant.sku,
+                size=variant.size,
+                color=variant.color,
+                unit_price=variant.price,
+                is_reprint=line_is_reprint,
+            ))
+        append_event(
+            db,
+            "TagBatchPrinted",
+            "tag_print_batch",
+            batch.id,
+            idempotency_key=f"tag-batch:{batch.id}:printed",
+            actor_user_id=guard.id,
+            request_id=request.headers.get("X-Request-ID"),
+            payload={"item_count": batch.item_count, "total_quantity": batch.total_quantity, "is_reprint": is_reprint},
+        )
 
     db.commit()
-    query = urlencode({"page": page, "category": category})
+    query_values = {"page": page, "category": category}
+    if batch_lines:
+        query_values["msg"] = "وضعیت چاپ تگ‌ها ثبت شد."
+    else:
+        query_values["err"] = "هیچ تنوعی برای این عملیات انتخاب نشده است."
+    query = urlencode(query_values)
     return RedirectResponse(url=f"/admin/barcodes/print?{query}", status_code=303)
 
 
@@ -679,8 +997,12 @@ async def admin_barcodes_reset(request: Request, db: Session = Depends(get_db)):
 
     form = await request.form()
     selected_ids = form.getlist("selected_products")
+    if not selected_ids:
+        selected_ids = [value for value in str(form.get("selected_ids", "")).split(",") if value]
     category = str(form.get("category", ""))
     page = str(form.get("page", "1"))
+
+    selected_quantities = _selected_quantities(form)
 
     selected_counts = {}
     for variant_id in selected_ids:
@@ -690,17 +1012,28 @@ async def admin_barcodes_reset(request: Request, db: Session = Depends(get_db)):
         except (TypeError, ValueError):
             pass
 
-    for variant_id, count in selected_counts.items():
+    changed = False
+    for variant_id, selected_count in selected_counts.items():
+        count = min(selected_quantities.get(variant_id, selected_count), MAX_TAG_PRINT_QUANTITY)
         key = f"barcode_printed_{variant_id}"
         existing = db.query(Settings).filter(Settings.key == key).first()
         if not existing:
             continue
-        remaining = max(0, int(existing.value or 0) - count)
+        try:
+            printed_count = max(0, int(existing.value or 0))
+        except (TypeError, ValueError):
+            printed_count = 0
+        remaining = max(0, printed_count - count)
         if remaining:
             existing.value = str(remaining)
         else:
             db.delete(existing)
+        changed = True
 
     db.commit()
-    query = urlencode({"page": page, "category": category})
+    query_values = {"page": page, "category": category}
+    query_values["msg" if changed else "err"] = (
+        "تعداد چاپ تگ‌ها بازگردانی شد." if changed else "هیچ تگ چاپ‌شده‌ای برای بازگردانی انتخاب نشده است."
+    )
+    query = urlencode(query_values)
     return RedirectResponse(url=f"/admin/barcodes/print?{query}", status_code=303)

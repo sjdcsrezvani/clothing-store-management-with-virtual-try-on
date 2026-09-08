@@ -1,471 +1,250 @@
 {% extends "base.html" %}
-{% block title %}🏷️ چاپ تگ محصولات — {{ store.name }}{% endblock %}
+{% block title %}چاپ تگ محصولات — {{ store.name }}{% endblock %}
 {% block content %}
-
-<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem;">
-    <span style="font-size: 2rem;">🏷️</span>
-    <h2 style="margin: 0;">چاپ تگ محصولات</h2>
+<div class="page-heading">
+    <div>
+        <div class="eyebrow">محصولات و چاپ</div>
+        <h2>چاپ تگ محصولات</h2>
+        <p>تعداد تگ را برای هر تنوع مشخص کنید؛ بعد از چاپ، وضعیت چاپ را ثبت کنید.</p>
+    </div>
+    <div class="admin-nav">
+        <a href="/admin/settings/tags" class="btn btn-ghost">تنظیمات تگ</a>
+        <a href="/admin/products" class="btn btn-ghost">محصولات</a>
+    </div>
 </div>
 
-<div class="card" style="background: #FFFAF5;" id="controls">
+{% if request.query_params.get('msg') %}<div class="alert alert-success" role="status">{{ request.query_params.get('msg') }}</div>{% endif %}
+{% if request.query_params.get('err') %}<div class="alert alert-error" role="alert">{{ request.query_params.get('err') }}</div>{% endif %}
+
+<div class="card tag-print-controls" id="controls">
+    <div class="tag-print-help">
+        <strong>راهنمای سریع</strong>
+        <span>هر کارت یک تنوع محصول است. تعداد چاپ را وارد کنید و سپس یکی از عملیات را بزنید. چاپ تگ به موجودی فعلی وابسته نیست و می‌توانید برای کالای در راه هم تگ بسازید.</span>
+    </div>
     <form method="get" action="/admin/barcodes/print" class="search-form">
-        <select name="category">
-            <option value="">📂 همه دسته‌ها</option>
+        <label class="sr-only" for="tag-category">دسته‌بندی</label>
+        <select name="category" id="tag-category">
+            <option value="">همه دسته‌ها</option>
             {% for cat in categories %}
             <option value="{{ cat }}" {% if category_filter == cat %}selected{% endif %}>{{ cat }}</option>
             {% endfor %}
         </select>
-        <button type="submit" class="btn btn-primary">✅ اعمال فیلتر</button>
+        <button type="submit" class="btn btn-primary">اعمال فیلتر</button>
     </form>
-    <div class="print-controls" style="display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.8rem;">
-        <button type="button" onclick="selectAll()" class="btn btn-ghost">✅ انتخاب همه</button>
-        <button type="button" onclick="deselectAll()" class="btn btn-ghost">🔲 لغو انتخاب</button>
-        <button type="button" onclick="printSelected()" class="btn btn-primary">🖨️ چاپ تگ‌های انتخاب شده</button>
-        <span id="selected-count" style="font-weight: 700; color: var(--candy); margin-right: 0.5rem;">۰ تگ انتخاب شده</span>
-    </div>
-    <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem;">
-        <form method="post" action="/admin/barcodes/mark-printed" id="mark-printed-form" style="display: inline;">
-            <input type="hidden" name="selected_ids" id="selected_ids_input" value="">
-            <input type="hidden" name="category" value="{{ category_filter }}">
-            <input type="hidden" name="page" value="{{ page }}">
-            <button type="submit" class="btn btn-sm btn-ghost">✅ ثبت چاپ شده</button>
-        </form>
-        <form method="post" action="/admin/barcodes/reset" id="reset-printed-form" style="display: inline;"
-              onsubmit="return confirm('⚠️ موارد چاپ شده انتخاب شده دوباره قابل چاپ می‌شوند.')">
-            <input type="hidden" name="selected_ids" id="reset_ids_input" value="">
-            <input type="hidden" name="category" value="{{ category_filter }}">
-            <input type="hidden" name="page" value="{{ page }}">
-            <button type="submit" class="btn btn-sm btn-danger" id="reset-printed-btn" disabled>🔄 ریست موارد چاپ شده</button>
-        </form>
-    </div>
-</div>
 
-{% if total_pages > 1 %}
-{% set pagination = namespace(start=page - 2, end=page + 2) %}
-{% if pagination.start < 1 %}{% set pagination.start = 1 %}{% endif %}
-{% if pagination.end > total_pages %}{% set pagination.end = total_pages %}{% endif %}
-<nav class="tag-pagination" aria-label="صفحه‌بندی تگ‌ها">
-    {% if page > 1 %}
-    <a href="?page={{ page - 1 }}&category={{ category_filter }}" class="tag-page-btn tag-page-prev">→ قبلی</a>
-    {% else %}
-    <span class="tag-page-btn disabled">→ قبلی</span>
-    {% endif %}
-
-    <div class="tag-page-numbers">
-        {% if pagination.start > 1 %}
-        <a href="?page=1&category={{ category_filter }}" class="tag-page-number">۱</a>
-        {% if pagination.start > 2 %}<span class="tag-page-ellipsis">…</span>{% endif %}
-        {% endif %}
-
-        {% for page_number in range(pagination.start, pagination.end + 1) %}
-            {% if page_number == page %}
-            <span class="tag-page-number active" aria-current="page">{{ page_number }}</span>
-            {% else %}
-            <a href="?page={{ page_number }}&category={{ category_filter }}" class="tag-page-number">{{ page_number }}</a>
-            {% endif %}
-        {% endfor %}
-
-        {% if pagination.end < total_pages %}
-        {% if pagination.end < total_pages - 1 %}<span class="tag-page-ellipsis">…</span>{% endif %}
-        <a href="?page={{ total_pages }}&category={{ category_filter }}" class="tag-page-number">{{ total_pages }}</a>
-        {% endif %}
-    </div>
-
-    {% if page < total_pages %}
-    <a href="?page={{ page + 1 }}&category={{ category_filter }}" class="tag-page-btn tag-page-next">بعدی ←</a>
-    {% else %}
-    <span class="tag-page-btn disabled">بعدی ←</span>
-    {% endif %}
-</nav>
-{% endif %}
-
-<div class="card barcode-print-sheet" id="barcode-sheet">
-    {% if barcode_items %}
-    {# Screen view: flat grid for checkbox selection #}
-    <div class="barcode-grid screen-only">
-        {% for item in barcode_items %}
-        <label class="barcode-cell {% if item.already_printed %}printed{% endif %}" for="sel-{{ item.variant_id }}-{{ loop.index0 }}">
-            <input type="checkbox" class="barcode-checkbox {% if item.already_printed %}printed-checkbox{% endif %}"
-                   id="sel-{{ item.variant_id }}-{{ loop.index0 }}"
-                   name="selected_products" value="{{ item.variant_id }}"
-                   data-variant-id="{{ item.variant_id }}"
-                   data-product-name="{{ item.name }}"
-                   data-product-price="{{ item.price }}"
-                   {% if item.already_printed %}{% else %}checked{% endif %}>
-            <div class="barcode-label">
-                <div class="label-shop-name">🧸 {{ store.name }}</div>
-                <div class="label-instagram">{% if store.instagram %}<span class="ig-icon"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg></span> {{ store.instagram }}{% endif %}</div>
-                <div class="label-art" aria-hidden="true">
-                    <svg viewBox="0 0 320 150" role="presentation">
-                        <defs>
-                            <linearGradient id="tag-gradient-{{ loop.index0 }}" x1="0" y1="0" x2="1" y2="1">
-                                <stop offset="0" stop-color="#FF6B8A"/>
-                                <stop offset="0.52" stop-color="#A66CFF"/>
-                                <stop offset="1" stop-color="#45B7D1"/>
-                            </linearGradient>
-                        </defs>
-                        <rect width="320" height="150" rx="26" fill="url(#tag-gradient-{{ loop.index0 }})"/>
-                        <circle cx="35" cy="30" r="24" fill="#FFC857" opacity=".95"/>
-                        <circle cx="288" cy="119" r="42" fill="#51CF66" opacity=".42"/>
-                        <path d="M206 30c20 0 36 16 36 36" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" opacity=".82"/>
-                        <path d="M217 30c14 0 25 11 25 25" fill="none" stroke="#FFC857" stroke-width="7" stroke-linecap="round"/>
-                        <path d="M125 67l25-16 25 16-8 13-10-6v37h-14V74l-10 6z" fill="#fff" opacity=".96"/>
-                        <path d="M141 59c2 9 16 9 18 0" fill="none" stroke="#FF6B8A" stroke-width="3"/>
-                        <path d="M70 42l4 9 10 1-8 6 2 10-8-5-9 5 3-10-8-6 10-1z" fill="#fff" opacity=".9"/>
-                        <path d="M260 58l3 7 8 1-6 5 2 8-7-4-7 4 2-8-6-5 8-1z" fill="#FFC857"/>
-                        {% if store.instagram %}<text x="160" y="132" text-anchor="middle" fill="#fff" font-family="inherit" font-size="20" font-weight="800">{{ store.instagram }}</text>{% endif %}
-                    </svg>
-                </div>
-                <div class="label-code" dir="ltr">{{ item.barcode }}</div>
-                <div class="label-product-name">{{ item.name }}</div>
-                <div class="label-price">{{ fmt(item.price) }} تومان</div>
+    <form method="post" action="/admin/barcodes/mark-printed" id="tag-action-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="category" value="{{ category_filter }}">
+        <input type="hidden" name="page" value="{{ page }}">
+        <div class="tag-print-toolbar">
+            <div class="tag-print-selection-actions">
+                <button type="button" onclick="selectAll()" class="btn btn-ghost">انتخاب همه تنوع‌ها</button>
+                <button type="button" onclick="deselectAll()" class="btn btn-ghost">لغو انتخاب</button>
+                <button type="button" onclick="printSelected()" id="print-selected-btn" class="btn btn-primary">چاپ تگ‌های انتخاب‌شده</button>
             </div>
-            {% if item.already_printed %}
-            <span class="printed-badge">✅ چاپ شده</span>
+            <span id="selected-count" class="tag-selected-count" aria-live="polite">۰ تگ انتخاب شده</span>
+        </div>
+        <div class="tag-print-toolbar tag-print-secondary-actions">
+            <button type="submit" formmethod="post" formaction="/admin/barcodes/mark-printed" name="operation" value="mark" formnovalidate class="btn btn-sm btn-ghost" id="mark-printed-btn">ثبت به‌عنوان چاپ‌شده</button>
+            <button type="submit" formnovalidate class="btn btn-sm btn-ghost" id="reprint-btn" name="reprint" value="1" formaction="/admin/barcodes/mark-printed" disabled>ثبت چاپ مجدد</button>
+            <button type="submit" formnovalidate class="btn btn-sm btn-danger" id="reset-printed-btn" formaction="/admin/barcodes/reset" disabled>بازگردانی وضعیت چاپ</button>
+            <span class="muted">{{ all_items_count }} تنوع در این فیلتر · {{ tag_fit.columns }} ستون × {{ tag_fit.rows }} ردیف در هر صفحه A4</span>
+        </div>
+
+        {% if total_pages > 1 %}
+        <nav class="tag-pagination" aria-label="صفحه‌بندی تگ‌ها">
+            {% if page > 1 %}<a href="?page={{ page - 1 }}&category={{ category_filter }}" class="tag-page-btn">صفحه قبل</a>{% endif %}
+            <span class="tag-page-number active" aria-current="page">صفحه {{ page }} از {{ total_pages }}</span>
+            {% if page < total_pages %}<a href="?page={{ page + 1 }}&category={{ category_filter }}" class="tag-page-btn">صفحه بعد</a>{% endif %}
+        </nav>
+        {% endif %}
+
+        <div class="card barcode-print-sheet" id="barcode-sheet">
+            {% if barcode_items %}
+            <div class="tag-selection-grid" aria-label="انتخاب تگ‌ها">
+                {% for item in barcode_items %}
+                {% set max_quantity = item.printable_quantity %}
+                {% set default_quantity = [item.unprinted_quantity, 1]|max %}
+                {% set default_quantity = [default_quantity, max_quantity]|min %}
+                <article class="tag-selection-item {% if item.printed_count > 0 %}has-printed-tags{% endif %}">
+                    <div class="tag-selection-head">
+                        <label class="tag-selection-label" for="tag-select-{{ item.variant_id }}-{{ loop.index0 }}">
+                            <input type="checkbox"
+                                   class="barcode-checkbox {% if item.printed_count > 0 %}has-printed{% endif %}"
+                                   id="tag-select-{{ item.variant_id }}-{{ loop.index0 }}"
+                                   name="selected_products"
+                                   value="{{ item.variant_id }}"
+                                   data-variant-id="{{ item.variant_id }}"
+                                   data-printed-quantity="{{ item.printed_count }}"
+                                   checked>
+                            <span class="tag-selection-check" aria-hidden="true"></span>
+                            <span class="tag-selection-title">{{ item.name }}</span>
+                        </label>
+                        <span class="tag-quantity-row">
+                            <label for="tag-quantity-{{ item.variant_id }}-{{ loop.index0 }}">تعداد چاپ</label>
+                            <input type="number"
+                                   id="tag-quantity-{{ item.variant_id }}-{{ loop.index0 }}"
+                                   name="selected_quantity_{{ item.variant_id }}"
+                                   class="tag-quantity"
+                                   min="1"
+                                   max="{{ max_quantity }}"
+                                   value="{{ default_quantity }}"
+                                   aria-label="تعداد چاپ {{ item.name }}">
+                        </span>
+                    </div>
+                    <div class="tag-stock-meta" aria-label="اطلاعات موجودی و چاپ">
+                        <span>قابل فروش: <strong>{{ item.available_quantity }}</strong></span>
+                        <span>رزرو فعال: <strong>{{ item.reserved_quantity }}</strong></span>
+                        <span>چاپ‌شده: <strong>{{ item.printed_count }}</strong></span>
+                    </div>
+                    {% if item.printed_count > 0 %}<span class="printed-badge">چاپ‌شده: {{ item.printed_count }}</span>{% endif %}
+                    <div class="tag-selection-preview" style="--tag-scale: {{ tag_preview_scale }}; --tag-w-mm: {{ tag_config.tag_width_mm }}; --tag-h-mm: {{ tag_config.tag_height_mm }}; --frame-w: {{ tag_preview_width_px }}px; --frame-h: {{ tag_preview_height_px }}px;" role="img" aria-label="پیش‌نمایش تگ {{ tag_config.tag_width_mm }}×{{ tag_config.tag_height_mm }} میلی‌متر">{{ item.tag_html|safe }}</div>
+                </article>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <h3>تگی برای نمایش وجود ندارد</h3>
+                <p>برای چاپ، ابتدا یک محصول فعال و یک تنوع ثبت کنید.</p>
+                <a href="/admin/products" class="btn btn-primary">مدیریت محصولات</a>
+            </div>
             {% endif %}
-        </label>
-        {% endfor %}
-    </div>
-    {# Print container for dynamic print content #}
-    <div id="print-container" style="display: none;"></div>
-    {% else %}
-    <div style="text-align: center; padding: 2rem; color: var(--ink-soft);">
-        <div style="font-size: 3rem; margin-bottom: 0.5rem;">🏷️</div>
-        <p>محصولی یافت نشد.</p>
-    </div>
-    {% endif %}
+        </div>
+    </form>
 </div>
 
-<nav class="admin-nav" id="nav-controls">
-    <a href="/admin/products" class="btn btn-ghost">🔙 بازگشت به مدیریت محصولات</a>
-    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
+<nav class="admin-nav">
+    <a href="/admin/products" class="btn btn-ghost">بازگشت به محصولات</a>
+    <a href="/admin" class="btn btn-ghost">داشبورد</a>
 </nav>
-
-<style>
-    .tag-pagination {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.8rem;
-        flex-wrap: wrap;
-        margin: 0 0 1.2rem;
-        padding: 0.7rem;
-        background: linear-gradient(90deg, #FFF8F3, #F7F1FF, #EFFBFF);
-        border: 1px solid #E8DDD5;
-        border-radius: 14px;
-    }
-    .tag-page-numbers { display: flex; align-items: center; gap: 0.3rem; direction: ltr; }
-    .tag-page-btn,
-    .tag-page-number {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-width: 2.2rem;
-        height: 2.2rem;
-        padding: 0 0.65rem;
-        border: 2px solid #E8DDD5;
-        border-radius: 10px;
-        background: #fff;
-        color: var(--ink);
-        font-size: 0.82rem;
-        font-weight: 800;
-        text-decoration: none;
-        transition: transform 0.15s, border-color 0.15s, background 0.15s, color 0.15s;
-    }
-    .tag-page-btn:hover,
-    .tag-page-number:hover { border-color: var(--candy); color: var(--candy); transform: translateY(-1px); text-decoration: none; }
-    .tag-page-number.active { border-color: var(--candy); background: linear-gradient(135deg, var(--candy), var(--lavender)); color: #fff; box-shadow: 0 3px 8px rgba(166,108,255,0.25); }
-    .tag-page-ellipsis { color: var(--ink-soft); font-weight: 800; padding: 0 0.15rem; }
-    .tag-page-btn.disabled { opacity: 0.45; pointer-events: none; }
-
-    .screen-only { display: grid; }
-    #print-container { display: none; }
-
-    .barcode-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 3mm;
-        padding: 5mm;
-    }
-    .barcode-cell {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        border: 2px solid transparent;
-        border-image: linear-gradient(135deg, #FF6B8A, #FFC857, #45B7D1) 1;
-        border-radius: 8px;
-        padding: 2mm;
-        cursor: pointer;
-        transition: all 0.15s;
-        position: relative;
-        background: linear-gradient(155deg, #fff 0%, #FFF8F3 100%);
-    }
-    .barcode-cell:hover {
-        border-color: var(--candy);
-        box-shadow: 0 2px 8px rgba(255,107,138,0.1);
-    }
-    .barcode-cell.printed {
-        opacity: 0.5;
-        background: #f8f8f8;
-    }
-    .barcode-checkbox {
-        position: absolute;
-        top: 2mm;
-        right: 2mm;
-        width: 14px;
-        height: 14px;
-        accent-color: var(--candy);
-    }
-    .barcode-label {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        width: 100%;
-        padding: 1mm;
-    }
-    .label-shop-name {
-        font-size: 10pt;
-        font-weight: 800;
-        color: var(--candy);
-        text-align: center;
-        margin-bottom: 0.3mm;
-    }
-    .label-instagram {
-        font-size: 9pt;
-        color: var(--ink-soft);
-        text-align: center;
-        margin-bottom: 0.3mm;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.5mm;
-    }
-    .ig-icon { font-size: 10pt; display: inline-flex; align-items: center; }
-    .ig-icon svg { width: 10pt; height: 10pt; }
-    .label-art {
-        width: 100%;
-        max-width: 30mm;
-        height: 16mm;
-        margin: 0.6mm 0 0.5mm;
-        border-radius: 3mm;
-        overflow: hidden;
-        background: linear-gradient(135deg, #FF6B8A, #A66CFF, #45B7D1);
-        box-shadow: 0 1px 3px rgba(166,108,255,0.28);
-    }
-    .label-art svg { display: block; width: 100%; height: 100%; }
-    .label-code {
-        color: #27304A;
-        background: linear-gradient(90deg, #FFF0B8, #E5F9FF);
-        border: 1px solid #FFC857;
-        border-radius: 999px;
-        padding: 0 2mm;
-        font-family: 'Vazirmatn', monospace;
-        font-size: 11pt;
-        font-weight: 800;
-        line-height: 1.25;
-        letter-spacing: 0.18em;
-        margin-bottom: 0.4mm;
-        direction: ltr;
-    }
-    .label-product-name {
-        font-size: 7.5pt;
-        font-weight: 600;
-        text-align: center;
-        color: var(--ink);
-        margin-top: 0.5mm;
-        line-height: 1.3;
-    }
-    .label-price {
-        font-size: 8pt;
-        font-weight: 700;
-        color: var(--candy);
-        text-align: center;
-    }
-    .printed-badge {
-        position: absolute;
-        top: 2px;
-        left: 2px;
-        background: var(--candy);
-        color: #fff;
-        font-size: 6pt;
-        padding: 1px 4px;
-        border-radius: 3px;
-    }
-    .print-controls { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-    #selected-count { font-weight: 700; color: var(--candy); }
-    .disabled { opacity: 0.4; pointer-events: none; }
-
-    .print-page {
-        page-break-after: always;
-        width: 210mm;
-        height: 297mm;
-        overflow: hidden;
-    }
-    .print-page:last-child { page-break-after: auto; }
-
-    .print-page .barcode-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 0.8mm;
-        padding: 3mm 2mm;
-        direction: ltr;
-    }
-
-    .print-page .barcode-cell {
-        display: flex;
-        border: 0.4px solid #999;
-        padding: 0.5mm;
-        page-break-inside: avoid;
-    }
-
-    .print-page .label-art { max-width: 26mm; height: 13mm; margin: 0.3mm 0 0.4mm; }
-    .print-page .label-code { font-size: 9pt; padding: 0 1.5mm; margin-bottom: 0.3mm; }
-    .print-page .label-shop-name { font-size: 9pt; font-weight: 800; color: #FF6B8A; text-align: center; margin-bottom: 0.3mm; }
-    .print-page .label-instagram { font-size: 8pt; color: #888; margin-bottom: 0.3mm; display: flex; align-items: center; justify-content: center; gap: 0.5mm; }
-    .print-page .label-product-name { font-size: 7pt; font-weight: 600; text-align: center; margin-top: 0.3mm; }
-    .print-page .label-price { font-size: 8pt; font-weight: 700; color: #FF6B8A; text-align: center; }
-    .print-page .ig-icon { font-size: 9pt; display: inline-flex; align-items: center; }
-    .print-page .ig-icon svg { width: 9pt; height: 9pt; }
-</style>
 
 <script>
-function selectAll() {
-    document.querySelectorAll('.barcode-checkbox:not(.printed-checkbox)').forEach(cb => {
-        cb.checked = true;
-        cb.closest('.barcode-cell').classList.remove('unchecked');
-    });
-    updateCount();
+function selectedCheckboxes(selector) {
+    return Array.from(document.querySelectorAll(selector || '.barcode-checkbox:checked'));
 }
-function deselectAll() {
-    document.querySelectorAll('.barcode-checkbox:not(.printed-checkbox)').forEach(cb => {
-        cb.checked = false;
-        cb.closest('.barcode-cell').classList.add('unchecked');
-    });
-    updateCount();
+
+function quantityFor(checkbox) {
+    const input = checkbox.closest('.tag-selection-item')?.querySelector('.tag-quantity');
+    const max = input ? Math.max(1, Number.parseInt(input.max || '1', 10) || 1) : 1;
+    let quantity = input ? Number.parseInt(input.value || '1', 10) : 1;
+    if (!Number.isFinite(quantity)) quantity = 1;
+    quantity = Math.min(max, Math.max(1, quantity));
+    if (input) input.value = String(quantity);
+    return quantity;
 }
+
 function updateCount() {
-    const unprintedChecked = document.querySelectorAll('.barcode-checkbox:checked:not(.printed-checkbox)');
-    const printedChecked = document.querySelectorAll('.barcode-checkbox.printed-checkbox:checked');
+    const selected = selectedCheckboxes('.barcode-checkbox:checked');
+    const total = selected.reduce((sum, checkbox) => sum + quantityFor(checkbox), 0);
+    const printedSelected = selected.filter(checkbox => checkbox.classList.contains('has-printed'));
+    document.getElementById('selected-count').textContent = `${total} تگ انتخاب شده`;
 
-    document.getElementById('selected-count').textContent = unprintedChecked.length + ' تگ انتخاب شده';
-
-    const collect = cbs => Array.from(cbs).map(cb => cb.dataset.variantId).filter(Boolean).join(',');
-    document.getElementById('selected_ids_input').value = collect(unprintedChecked);
-    document.getElementById('reset_ids_input').value = collect(printedChecked);
-
-    const resetBtn = document.getElementById('reset-printed-btn');
-    if (resetBtn) resetBtn.disabled = printedChecked.length === 0;
-
-    document.querySelectorAll('.barcode-checkbox').forEach(cb => {
-        cb.closest('.barcode-cell').classList.toggle('unchecked', !cb.checked);
+    const printButton = document.getElementById('print-selected-btn');
+    const resetButton = document.getElementById('reset-printed-btn');
+    const reprintButton = document.getElementById('reprint-btn');
+    if (printButton) printButton.disabled = selected.length === 0;
+    if (resetButton) resetButton.disabled = printedSelected.length === 0;
+    if (reprintButton) reprintButton.disabled = printedSelected.length === 0;
+    document.querySelectorAll('.tag-selection-item').forEach(item => {
+        const checkbox = item.querySelector('.barcode-checkbox');
+        item.classList.toggle('is-selected', checkbox.checked);
     });
 }
-document.querySelectorAll('.barcode-checkbox').forEach(cb => {
-    cb.addEventListener('change', updateCount);
+
+function selectAll() {
+    document.querySelectorAll('.barcode-checkbox').forEach(cb => { cb.checked = true; });
+    updateCount();
+}
+
+function deselectAll() {
+    document.querySelectorAll('.barcode-checkbox').forEach(cb => { cb.checked = false; });
+    updateCount();
+}
+
+document.querySelectorAll('.barcode-checkbox').forEach(cb => cb.addEventListener('change', updateCount));
+document.querySelectorAll('.tag-quantity').forEach(input => input.addEventListener('input', updateCount));
+
+const tagActionForm = document.getElementById('tag-action-form');
+if (tagActionForm) tagActionForm.addEventListener('submit', function (event) {
+    if (!selectedCheckboxes('.barcode-checkbox:checked').length) {
+        event.preventDefault();
+        window.alert('ابتدا حداقل یک تنوع را انتخاب کنید.');
+    }
 });
-updateCount();
 
 function printSelected() {
-    const checked = document.querySelectorAll('.screen-only .barcode-checkbox:checked:not(.printed-checkbox)');
-    if (!checked.length) { alert('هیچ تگی انتخاب نشده'); return; }
+    const selected = selectedCheckboxes('.barcode-checkbox:checked');
+    if (!selected.length) {
+        window.alert('ابتدا حداقل یک تنوع را انتخاب کنید.');
+        return;
+    }
 
-    const ITEMS_PER_PAGE = 28;
-    let items = [];
-    checked.forEach(cb => {
-        const label = cb.closest('.barcode-cell').querySelector('.barcode-label');
-        const code = label.querySelector('.label-code')?.textContent?.trim() || '';
-        const name = label.querySelector('.label-product-name')?.textContent?.trim() || '';
-        const price = label.querySelector('.label-price')?.textContent?.trim() || '';
-        items.push({ code: code, name: name, price: price });
+    const perPage = {{ tag_fit.tags_per_page }};
+    const tagWidth = {{ tag_config.tag_width_mm }};
+    const tagHeight = {{ tag_config.tag_height_mm }};
+    const marginTop = {{ tag_config.margin_top_mm }};
+    const marginRight = {{ tag_config.margin_right_mm }};
+    const marginBottom = {{ tag_config.margin_bottom_mm }};
+    const marginLeft = {{ tag_config.margin_left_mm }};
+    const gapX = {{ tag_config.gap_horizontal_mm }};
+    const gapY = {{ tag_config.gap_vertical_mm }};
+    const columns = {{ tag_fit.columns }};
+    const rows = {{ tag_fit.rows }};
+    const tags = [];
+
+    selected.forEach(checkbox => {
+        const preview = checkbox.closest('.tag-selection-item').querySelector('.tag-selection-preview');
+        for (let copy = 0; copy < quantityFor(checkbox); copy += 1) tags.push(preview.innerHTML);
     });
 
-    const tagArtworkMarkup = () => `<div class="label-art" aria-hidden="true">
-        <svg viewBox="0 0 320 150" role="presentation">
-            <defs><linearGradient id="print-tag-gradient" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF6B8A"/><stop offset="0.52" stop-color="#A66CFF"/><stop offset="1" stop-color="#45B7D1"/></linearGradient></defs>
-            <rect width="320" height="150" rx="26" fill="url(#print-tag-gradient)"/>
-            <circle cx="35" cy="30" r="24" fill="#FFC857" opacity=".95"/><circle cx="288" cy="119" r="42" fill="#51CF66" opacity=".42"/>
-            <path d="M206 30c20 0 36 16 36 36" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" opacity=".82"/><path d="M217 30c14 0 25 11 25 25" fill="none" stroke="#FFC857" stroke-width="7" stroke-linecap="round"/>
-            <path d="M125 67l25-16 25 16-8 13-10-6v37h-14V74l-10 6z" fill="#fff" opacity=".96"/><path d="M141 59c2 9 16 9 18 0" fill="none" stroke="#FF6B8A" stroke-width="3"/>
-            <path d="M70 42l4 9 10 1-8 6 2 10-8-5-9 5 3-10-8-6 10-1z" fill="#fff" opacity=".9"/><path d="M260 58l3 7 8 1-6 5 2 8-7-4-7 4 2-8-6-5 8-1z" fill="#FFC857"/>
-            {% if store.instagram %}<text x="160" y="132" text-anchor="middle" fill="#fff" font-family="inherit" font-size="20" font-weight="800">{{ store.instagram }}</text>{% endif %}
-        </svg>
-    </div>`;
-    const escapeHTML = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
-
-    let bodyHTML = '';
-    items.forEach((item, idx) => {
-        if (idx % ITEMS_PER_PAGE === 0) {
-            if (idx > 0) bodyHTML += '</div></div>';
-            bodyHTML += '<div class="print-page"><div class="barcode-grid">';
+    const pages = [];
+    tags.forEach((tag, index) => {
+        if (index % perPage === 0) pages.push([]);
+        pages[pages.length - 1].push(tag);
+    });
+    const pageMarkup = pages.map(pageTags =>
+        `<section class="tag-print-page"><div class="tag-print-grid">${pageTags.join('')}</div></section>`
+    ).join('');
+    const style = `
+        @page { size: A4; margin: 0; }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; padding: 0; background: #fff; }
+        body { font-family: Vazirmatn, Arial, sans-serif; direction: rtl; }
+        .tag-print-page { width: 210mm; height: 297mm; padding: ${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm; page-break-after: always; overflow: hidden; }
+        .tag-print-page:last-child { page-break-after: auto; }
+        .tag-print-grid { display: grid; grid-template-columns: repeat(${columns}, ${tagWidth}mm); grid-template-rows: repeat(${rows}, ${tagHeight}mm); gap: ${gapY}mm ${gapX}mm; align-content: start; }
+        .tag-render { width: ${tagWidth}mm !important; height: ${tagHeight}mm !important; page-break-inside: avoid; }
+        .tag-render img { max-width: 100%; }
+    `;
+    const printStyle = document.createElement('style');
+    printStyle.id = 'tag-print-style';
+    printStyle.textContent = `
+        @media screen {
+            #tag-print-output { display: none; }
+            body.tag-printing #tag-print-output { display: block; position: fixed; inset: 0; overflow: auto; background: #fff; z-index: 9999; padding: 1rem; }
         }
-        bodyHTML += '<div class="barcode-cell"><div class="barcode-label">' +
-            '<div class="label-shop-name">🧸 {{ store.name }}</div>' +
-            '{% if store.instagram %}<div class="label-instagram"><span class="ig-icon"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg></span> {{ store.instagram }}</div>{% endif %}' +
-            tagArtworkMarkup() +
-            '<div class="label-code" dir="ltr">' + escapeHTML(item.code) + '</div>' +
-            '<div class="label-product-name">' + escapeHTML(item.name) + '</div>' +
-            '<div class="label-price">' + escapeHTML(item.price) + '</div>' +
-            '</div></div>';
-    });
-    bodyHTML += '</div></div>';
-
-    const style = `@page { size: A4; margin: 0; }
-* { margin: 0; padding: 0; box-sizing: border-box; font-family: Vazirmatn, sans-serif; }
-.print-page { page-break-after: always; width: 210mm; height: 297mm; overflow: hidden; }
-.print-page:last-child { page-break-after: auto; }
-.print-page .barcode-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 0.8mm; padding: 3mm 2mm; direction: ltr; }
-.print-page .barcode-cell { display: flex; border: 0.5px solid #A66CFF; border-radius: 2mm; background: linear-gradient(155deg, #fff 0%, #FFF8F3 100%); padding: 0.5mm; page-break-inside: avoid; }
-.print-page .barcode-label { display: flex; flex-direction: column; align-items: center; width: 100%; text-align: center; }
-.print-page .label-shop-name { font-size: 9pt; font-weight: 800; color: #FF6B8A; margin-bottom: 0.3mm; }
-.print-page .label-instagram { font-size: 8pt; color: #888; margin-bottom: 0.3mm; display: flex; align-items: center; justify-content: center; gap: 0.5mm; }
-.print-page .label-art { width: 26mm; height: 13mm; margin: 0.3mm 0 0.4mm; border-radius: 3mm; overflow: hidden; }
-.print-page .label-art svg { display: block; width: 100%; height: 100%; }
-.print-page .label-code { color: #27304A; background: linear-gradient(90deg, #FFF0B8, #E5F9FF); border: 1px solid #FFC857; border-radius: 999px; padding: 0 1.5mm; font-family: Vazirmatn, monospace; font-size: 9pt; font-weight: 800; line-height: 1.25; letter-spacing: 0.18em; margin-bottom: 0.3mm; direction: ltr; }
-.print-page .label-product-name { font-size: 7pt; font-weight: 600; text-align: center; margin-top: 0.3mm; }
-.print-page .label-price { font-size: 8pt; font-weight: 700; color: #FF6B8A; text-align: center; }
-.print-page .ig-icon { font-size: 9pt; display: inline-flex; align-items: center; }
-.print-page .ig-icon svg { width: 9pt; height: 9pt; }`;
-
-    const iframe = document.createElement('iframe');
-    iframe.style.position = 'fixed';
-    iframe.style.width = '210mm';
-    iframe.style.height = '297mm';
-    iframe.style.left = '-9999px';
-    iframe.style.top = '0';
-    iframe.style.border = 'none';
-    document.body.appendChild(iframe);
-
-    iframe.contentDocument.write('<!DOCTYPE html><html dir="ltr"><head><meta charset="UTF-8"><style>' + style + '</style></head><body>' + bodyHTML + '</body></html>');
-    iframe.contentDocument.close();
-
-    setTimeout(() => {
-        iframe.contentWindow.print();
-        setTimeout(() => { document.body.removeChild(iframe); }, 200);
-    }, 600);
+        @media print {
+            @page { size: A4; margin: 0; }
+            body.tag-printing > *:not(#tag-print-output) { display: none !important; }
+            body.tag-printing #tag-print-output { display: block !important; position: static; overflow: visible; padding: 0; background: #fff; }
+        }
+        ${style}
+    `;
+    const printOutput = document.createElement('div');
+    printOutput.id = 'tag-print-output';
+    printOutput.innerHTML = pageMarkup;
+    document.head.appendChild(printStyle);
+    document.body.appendChild(printOutput);
+    document.body.classList.add('tag-printing');
+    const cleanup = () => {
+        document.body.classList.remove('tag-printing');
+        printOutput.remove();
+        printStyle.remove();
+    };
+    window.addEventListener('afterprint', cleanup, { once: true });
+    window.setTimeout(() => window.print(), 50);
 }
 
-function submitSelection(form, idsFieldId) {
-    const idsStr = document.getElementById(idsFieldId).value;
-    form.querySelectorAll('input[name="selected_products"]').forEach(i => i.remove());
-    idsStr.split(',').filter(Boolean).forEach(id => {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = 'selected_products';
-        input.value = id;
-        form.appendChild(input);
-    });
-    ensureCsrf(form);
-    form.submit();
-}
-
-document.getElementById('mark-printed-form').addEventListener('submit', function(e) {
-    e.preventDefault();
-    submitSelection(this, 'selected_ids_input');
-});
-
-document.getElementById('reset-printed-form').addEventListener('submit', function(e) {
-    e.preventDefault();
-    submitSelection(this, 'reset_ids_input');
-});
+updateCount();
 </script>
 {% endblock %}

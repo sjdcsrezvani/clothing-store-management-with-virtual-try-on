@@ -52,6 +52,20 @@ def test_owner_appearance_page_is_protected(client, db_session):
     assert client.get("/admin/settings", follow_redirects=False).status_code == 403
 
 
+def test_shared_shell_and_theme_settings_do_not_render_or_upload_logo():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    base = (root / "templates/base.html").read_text()
+    settings = (root / "templates/admin/settings.html").read_text()
+    assert "logo_path" not in base
+    assert "/static/logo.png" not in base
+    assert "theme_logo" not in settings
+    assert "store_logo_path" not in settings
+    assert "multipart/form-data" not in settings
+
+
+
 def test_owner_can_persist_theme_and_shared_shell_loads_it(client, db_session):
     from tests.conftest import csrf_token
     from tests.test_roles import _staff, _session_as
@@ -59,9 +73,9 @@ def test_owner_can_persist_theme_and_shared_shell_loads_it(client, db_session):
 
     owner, password = _staff(db_session, "theme-saver", "owner")
     _session_as(client, owner, password)
-    token = csrf_token(client, "/admin/settings")
+    token = csrf_token(client, "/admin/settings/appearance")
     response = client.post(
-        "/admin/settings",
+        "/admin/settings/appearance",
         data={"csrf_token": token, "ui_theme": "midnight-operations", "theme_custom_primary": "#C94B68", "theme_custom_secondary": "#197A8C"},
         follow_redirects=False,
     )
@@ -77,7 +91,18 @@ def test_owner_can_load_appearance_gallery(client, db_session):
 
     owner, password = _staff(db_session, "theme-owner", "owner")
     _session_as(client, owner, password)
+    page = client.get("/admin/settings/appearance")
+    assert page.status_code == 200
+    assert page.text.count('data-theme-id="') == 10
+    assert "ui-theme-input" in page.text
+
+
+def test_general_settings_links_to_appearance_page(client, db_session):
+    from tests.test_roles import _staff, _session_as
+
+    owner, password = _staff(db_session, "theme-settings-link", "owner")
+    _session_as(client, owner, password)
     response = client.get("/admin/settings")
     assert response.status_code == 200
-    assert response.text.count('data-theme-id="') == 10
-    assert "ui-theme-input" in response.text
+    assert "/admin/settings/appearance" in response.text
+    assert 'data-theme-id="' not in response.text

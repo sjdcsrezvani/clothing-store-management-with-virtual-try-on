@@ -35,7 +35,7 @@ Settings and per-customer overrides on each customer's credit page.
 and the cost basis update automatically. Reversible (deleting a purchase
 restores stock).
 - **🏭 تأمین‌کنندگان** (`/admin/suppliers`) — supplier list with total purchased.
-- **💸 هزینه‌ها** (`/admin/expenses`) — rent, utilities, wages… with categories.
+- **💸 هزینه‌ها** (`/admin/expenses`) — rent, utilities, wages… with categories and separate one-time/monthly types.
 - **🧾 صندوق** (`/admin/cashbox`) — daily cash register: opening balance (set it
 in the page), cash sales + نسیه receipts in, refunds/expenses/purchases out,
 closing balance.

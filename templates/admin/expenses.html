@@ -14,10 +14,27 @@
 {% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
 {% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
 
+<div class="stats-grid expense-type-summary">
+    <div class="stat-card accent-sky">
+        <div class="stat-label">هزینه‌های یک‌باره</div>
+        <div class="stat-value tnum">{{ fmt(expense_type_totals.one_time) }} ت</div>
+        <div class="stat-sub">هزینه‌های غیرتکرارشونده</div>
+    </div>
+    <div class="stat-card accent-pine">
+        <div class="stat-label">هزینه‌های ماهانه</div>
+        <div class="stat-value tnum">{{ fmt(expense_type_totals.monthly) }} ت</div>
+        <div class="stat-sub">هزینه‌های ثابت ماهانه</div>
+    </div>
+</div>
+
 <div class="card">
     <h3>➕ ثبت هزینه</h3>
     <form method="post" action="/admin/expenses/add" class="filter-bar" style="margin: 0;">
         <input type="number" name="amount" min="1" placeholder="💰 مبلغ (تومان) *" required style="flex:1;">
+        <select name="expense_type" aria-label="نوع هزینه" style="flex:1;">
+            <option value="one_time">یک‌باره</option>
+            <option value="monthly">ماهانه</option>
+        </select>
         <input type="text" name="category" list="expense-cats" placeholder="🗂️ دسته (مثلاً: اجاره)" style="flex:1;">
         <datalist id="expense-cats">
             <option value="اجاره"><option value="برق و آب"><option value="اینترنت و تلفن">
@@ -35,6 +52,7 @@
         <thead>
             <tr>
                 <th>تاریخ</th>
+                <th>نوع هزینه</th>
                 <th>دسته</th>
                 <th>مبلغ</th>
                 <th>توضیح</th>
@@ -45,6 +63,7 @@
             {% for e in expenses %}
             <tr>
                 <td class="tnum">{{ jalali_str(e.created_at) }}</td>
+                <td><span class="badge {% if e.expense_type == 'monthly' %}badge-info{% else %}badge-used{% endif %}">{{ expense_type_labels.get(e.expense_type, expense_type_labels['one_time']) }}</span></td>
                 <td>{{ e.category or '—' }}</td>
                 <td class="tnum"><strong>{{ fmt(e.amount) }} ت</strong></td>
                 <td>{{ e.note or '—' }}</td>

@@ -1,119 +1,67 @@
 {% extends "base.html" %}
-{% block title %}✏️ ویرایش تنوع: {{ variant.display_name }} — {{ store.name }}{% endblock %}
+{% block title %}ویرایش تنوع — {{ store.name }}{% endblock %}
 {% block content %}
-
-<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem;">
-    <span style="font-size: 2rem;">✏️</span>
-    <h2 style="margin: 0;">ویرایش تنوع: {{ variant.display_name }}</h2>
-    <button type="button" class="page-secret-sticker" onclick="toggleFakeCost()" aria-label="تنظیمات">🌈</button>
-</div>
-
-{% if error %}
-<div class="alert alert-error">⚠️ {{ error }}</div>
-{% endif %}
-
-<div class="card">
-    <form method="post" action="/admin/variants/{{ variant.id }}" enctype="multipart/form-data">
-
-        <div class="form-row" style="grid-template-columns: 1fr 1fr 1fr;">
-            <div class="form-group">
-                <label for="size">📏 سایز</label>
-                <input type="text" id="size" name="size" value="{{ variant.size or '' }}" placeholder="مثال: 3-4 سال">
-            </div>
-            <div class="form-group">
-                <label for="color">🎨 رنگ</label>
-                <input type="text" id="color" name="color" value="{{ variant.color or '' }}" placeholder="مثال: آبی">
-            </div>
-            <div class="form-group">
-                <label for="price">💰 قیمت فروش (تومان) *</label>
-                <input type="number" id="price" name="price" required min="0" value="{{ variant.price }}">
-            </div>
-        </div>
-
-        <div class="form-row" style="grid-template-columns: 1fr 1fr 1fr;">
-            <div class="form-group">
-                <label for="cost_price">💵 قیمت خرید (تومان)</label>
-                <div class="cost-price-field">
-                    <input type="number" id="cost_price" name="cost_price" min="0" value="{{ variant.fake_cost_price if variant.fake_cost_price is not none else variant.cost_price }}">
-                </div>
-                <div id="fake-cost-editor" class="cost-note-editor" hidden>
-                    <input type="number" id="fake_cost_price" name="fake_cost_price" min="0" value="{{ variant.fake_cost_price if variant.fake_cost_price is not none else '' }}" placeholder="مقدار">
-                </div>
-            </div>
-            <div class="form-group">
-                <label for="stock_quantity">📦 موجودی</label>
-                <input type="number" id="stock_quantity" name="stock_quantity" min="0" value="{{ variant.stock_quantity }}">
-            </div>
-            <div class="form-group">
-                <label for="barcode">🔲 بارکد *</label>
-                <input type="text" id="barcode" name="barcode" required value="{{ variant.barcode }}">
-            </div>
-        </div>
-
-        <div class="form-group">
-            <label for="sku">🏷️ کد انبارداری (SKU)</label>
-            <input type="text" id="sku" name="sku" value="{{ variant.sku or '' }}">
-        </div>
-
-        <div class="form-group">
-            <label for="tryon_details">📝 توضیحات تکمیلی تنوع (برای پرو مجازی)</label>
-            <textarea id="tryon_details" name="tryon_details" rows="2"
-                      placeholder="مثال: دو تکه است؛ قد آستین تا آرنج"
-                      style="font-family:inherit; padding:0.6rem 0.8rem; border:2px solid #E8DDD5; border-radius:8px; width:100%;">{{ variant.tryon_details or '' }}</textarea>
-            <small>این توضیحات به پرامپت هوش مصنوعی پرو مجازی اضافه می‌شود تا لباس را دقیق‌تر تشخیص دهد.</small>
-        </div>
-
-        <div class="form-group">
-            <label for="variant_image">🖼️ تصویر تنوع</label>
-            <input type="file" id="variant_image" name="variant_image" accept="image/*" style="padding: 0.5rem;">
-            {% if variant.image_path and '/uploads/barcodes/' not in variant.image_path %}
-                <div style="margin-top: 0.5rem;">
-                    <img src="{{ variant.image_path }}" alt="تصویر فعلی" style="max-width: 120px; border-radius: 8px;">
-                </div>
-            {% endif %}
-        </div>
-
-        <div style="display: flex; gap: 0.5rem; margin-top: 1.5rem;">
-            <button type="submit" class="btn btn-primary btn-large">💾 ذخیره تغییرات</button>
-            <a href="/admin/products/{{ product.id }}" class="btn btn-ghost">🔙 بازگشت</a>
-        </div>
-    </form>
-
-    <div style="margin-top: 2rem; padding-top: 2rem; border-top: 1px solid var(--ink-light);">
-        <h4 style="color: var(--danger);">🗑️ حذف تنوع</h4>
-        <form method="post" action="/admin/variants/{{ variant.id }}/delete"
-              onsubmit="return confirm('⚠️ این تنوع حذف شود؟')">
-            <button type="submit" class="btn btn-danger">حذف این تنوع</button>
-        </form>
+<div class="page-heading product-form-heading">
+    <div>
+        <div class="eyebrow"><a href="/admin/products/{{ product.id }}">{{ product.name }}</a> / تنوع</div>
+        <h2>ویرایش تنوع</h2>
+        <p>{{ variant.display_name }} · تغییرات موجودی در دفتر انبار ثبت می‌شود.</p>
+    </div>
+    <div class="admin-nav">
+        <a href="/admin/barcodes/print" class="btn btn-ghost">چاپ تگ</a>
+        <a href="/admin/products/{{ product.id }}" class="btn btn-ghost">بازگشت به محصول</a>
     </div>
 </div>
+{% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
 
-<style>
-    .page-secret-sticker {
-        width: 1.8rem;
-        height: 1.8rem;
-        padding: 0;
-        border: 1px solid #E8C95B;
-        border-radius: 48% 52% 45% 55%;
-        background: #FFF4B8;
-        color: #D2A72A;
-        font-family: inherit;
-        font-size: 0.95rem;
-        line-height: 1;
-        opacity: 0.78;
-        transform: rotate(9deg);
-        box-shadow: 0 2px 3px rgba(210,167,42,0.18);
-    }
-    .cost-price-field { position: relative; }
-    .cost-note-editor { margin-top: 0.45rem; }
-    .cost-note-editor[hidden] { display: none; }
-    .cost-note-editor input { border-color: #D8D1A0; background: #FFFDF0; }
-</style>
-<script>
-function toggleFakeCost() {
-    const editor = document.getElementById('fake-cost-editor');
-    editor.hidden = !editor.hidden;
-    if (!editor.hidden) document.getElementById('fake_cost_price').focus();
-}
-</script>
+<div class="variant-edit-layout">
+<section class="card">
+    <form method="post" action="/admin/variants/{{ variant.id }}" enctype="multipart/form-data">
+        <div class="section-heading-row"><div><h3>مشخصات فروش</h3><p class="muted">قیمت‌ها و شناسه‌ها را دقیق و قابل جست‌وجو نگه دارید.</p></div><span class="section-step">۱</span></div>
+        <div class="form-row product-form-grid-wide">
+            <div class="form-group"><label for="size">سایز</label><input id="size" name="size" value="{{ variant.size or '' }}" placeholder="۳ تا ۴ سال"></div>
+            <div class="form-group"><label for="size_system">سیستم سایز</label><input id="size_system" name="size_system" value="{{ variant.size_system or '' }}" placeholder="ایران / EU"></div>
+            <div class="form-group"><label for="color">رنگ</label><input id="color" name="color" value="{{ variant.color or '' }}" placeholder="آبی"></div>
+            <div class="form-group"><label for="color_code">کد رنگ</label><input id="color_code" name="color_code" value="{{ variant.color_code or '' }}" dir="ltr" placeholder="#4AA3DF"></div>
+            <div class="form-group"><label for="price">قیمت فروش <span class="required-mark">*</span></label><input type="number" id="price" name="price" required min="0" value="{{ variant.price }}"></div>
+            <div class="form-group"><label for="cost_price">قیمت خرید</label><input type="number" id="cost_price" name="cost_price" min="0" value="{{ variant.cost_price }}"></div>
+            <div class="form-group"><label for="sku">SKU</label><input id="sku" name="sku" value="{{ variant.sku or '' }}" dir="ltr"></div>
+            <div class="form-group"><label for="barcode">بارکد <span class="required-mark">*</span></label><input id="barcode" name="barcode" required value="{{ variant.barcode }}" dir="ltr"></div>
+        </div>
+
+        <div class="section-heading-row section-heading-spaced"><div><h3>موجودی و سفارش</h3><p class="muted">رزرو فعلی: <strong>{{ variant.reserved_quantity or 0 }}</strong> عدد · قابل فروش: <strong>{{ variant.available_quantity }}</strong> عدد</p></div><span class="section-step">۲</span></div>
+        <div class="form-row product-form-grid-wide">
+            <div class="form-group"><label for="stock_quantity">موجودی کل</label><input type="number" id="stock_quantity" name="stock_quantity" min="{{ variant.reserved_quantity or 0 }}" value="{{ variant.stock_quantity }}"><small class="field-help">کل کالای انبار. «رزرو» کالاهایی است که مشتری در صندوق نگه داشته؛ پس کمتر از آن را نمی‌توان ثبت کرد.</small></div>
+            <div class="form-group"><label for="reorder_point">نقطه سفارش</label><input type="number" id="reorder_point" name="reorder_point" min="0" value="{{ variant.reorder_point or 0 }}"><small class="field-help">وقتی موجودی به این عدد برسد، در داشبورد هشدار «کم‌موجودی» می‌گیرید.</small></div>
+            <div class="form-group"><label for="reorder_quantity">مقدار سفارش</label><input type="number" id="reorder_quantity" name="reorder_quantity" min="0" value="{{ variant.reorder_quantity or 0 }}"><small class="field-help">تعداد پیشنهادی که هنگام سفارش به تأمین‌کننده می‌خرید (راهنما برای سفارش).</small></div>
+            <div class="form-group"><label for="storage_location">محل انبار</label><input id="storage_location" name="storage_location" value="{{ variant.storage_location or '' }}" placeholder="قفسه A-2"></div>
+        </div>
+        <div class="stock-status-callout {% if variant.needs_reorder %}is-warning{% endif %}">
+            <span class="status-dot" aria-hidden="true"></span>
+            {% if variant.needs_reorder %}این تنوع به نقطه سفارش رسیده است.{% else %}موجودی بالاتر از نقطه سفارش است.{% endif %}
+        </div>
+
+        <div class="section-heading-row section-heading-spaced"><div><h3>تصویر و توضیحات</h3><p class="muted">اطلاعات تکمیلی فقط برای تیم فروش و پرو مجازی استفاده می‌شود.</p></div><span class="section-step">۳</span></div>
+        <div class="form-group"><label for="tryon_details">جزئیات تکمیلی</label><textarea id="tryon_details" name="tryon_details" rows="3" placeholder="مثلاً دو تکه است؛ آستین کوتاه">{{ variant.tryon_details or '' }}</textarea></div>
+        <div class="form-group"><label for="variant_image">تصویر تنوع</label><input type="file" id="variant_image" name="variant_image" accept="image/png,image/jpeg,image/webp">
+            {% if variant.image_path and '/uploads/barcodes/' not in variant.image_path %}<img class="variant-current-image" src="{{ variant.image_path }}" alt="تصویر فعلی تنوع">{% endif %}
+        </div>
+        <div class="form-actions-row product-form-actions">
+            <button type="submit" class="btn btn-primary btn-large">ذخیره تغییرات</button>
+            <a href="/admin/products/{{ product.id }}" class="btn btn-ghost">لغو</a>
+        </div>
+    </form>
+</section>
+
+<aside>
+    <section class="card variant-summary-card">
+        <h3>خلاصه تنوع</h3>
+        <dl class="detail-list"><div><dt>محصول</dt><dd>{{ product.name }}</dd></div><div><dt>بارکد</dt><dd dir="ltr">{{ variant.barcode }}</dd></div><div><dt>موجودی کل</dt><dd>{{ variant.stock_quantity }}</dd></div><div><dt>رزرو</dt><dd>{{ variant.reserved_quantity or 0 }}</dd></div><div><dt>قابل فروش</dt><dd>{{ variant.available_quantity }}</dd></div><div><dt>تقاضای ثبت‌شده</dt><dd>{{ variant.demand_count or 0 }}</dd></div></dl>
+    </section>
+    <section class="card danger-zone">
+        <h3>غیرفعال‌سازی</h3><p class="muted">برای حفظ تاریخچه فروش، تنوع حذف نمی‌شود و فقط غیرفعال خواهد شد.</p>
+        <form method="post" action="/admin/variants/{{ variant.id }}/delete" onsubmit="return confirm('این تنوع غیرفعال شود؟')"><button type="submit" class="btn btn-danger">غیرفعال‌کردن تنوع</button></form>
+    </section>
+</aside>
+</div>
 {% endblock %}

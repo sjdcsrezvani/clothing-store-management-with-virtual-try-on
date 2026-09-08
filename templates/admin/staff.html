@@ -1,23 +1,75 @@
 {% extends "base.html" %}
 {% block title %}مدیریت کارکنان{% endblock %}
 {% block content %}
-<div class="page-header"><h2>👥 مدیریت کارکنان</h2></div>
+<div class="page-header"><div><span class="eyebrow">مدیریت منابع انسانی</span><h2>کارکنان و حقوق</h2><p>اطلاعات پرسنلی، سطح دسترسی، قرارداد و پرداخت حقوق را یکجا مدیریت کنید.</p></div><a class="btn btn-ghost" href="/admin/owner-profile">اطلاعات مالک و قرارداد</a></div>
 {% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
 {% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
 <div class="card">
-  <h3>ایجاد کاربر جدید</h3>
+  <h3>افزودن کارمند و حساب ورود</h3>
   <form method="post" action="/admin/staff" class="form-row">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>نام کاربری<input name="username" autocomplete="username" required></label>
     <label>رمز عبور<input name="password" type="password" minlength="6" autocomplete="new-password" required></label>
     <label>نقش<select name="role"><option value="cashier">صندوقدار</option><option value="manager">مدیر</option><option value="owner">مالک</option></select></label>
-    <button class="btn btn-primary" type="submit">ایجاد کاربر</button>
+    <label>نام و نام خانوادگی<input name="full_name"></label>
+    <label>کد پرسنلی<input name="employee_code"></label>
+    <label>عنوان شغلی<input name="job_title"></label>
+    <label>حقوق ماهانه<input name="salary_amount" inputmode="numeric" value="0" min="0"></label>
+    <label>نوع همکاری<select name="employment_type"><option value="full_time">تمام‌وقت</option><option value="part_time">پاره‌وقت</option><option value="contractor">قراردادی</option></select></label>
+    <button class="btn btn-primary" type="submit">ثبت کارمند</button>
   </form>
 </div>
 <div class="card">
-  <h3>کاربران</h3>
-  <div class="table-wrap"><table><thead><tr><th>نام کاربری</th><th>نقش</th><th>وضعیت</th><th>آخرین ورود</th><th>عملیات</th></tr></thead><tbody>
-  {% for user in staff_users %}<tr><td>{{ user.username }}</td><td>{{ user.role }}</td><td>{{ 'فعال' if user.is_active else 'غیرفعال' }}</td><td>{{ user.last_login_at or '—' }}</td><td>{% if user.is_active and user.username != 'owner' %}<form method="post" action="/admin/staff/{{ user.id }}/disable"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-sm btn-danger" type="submit">غیرفعال</button></form>{% else %}—{% endif %}</td></tr>{% else %}<tr><td colspan="5">کاربری ثبت نشده است.</td></tr>{% endfor %}
-  </tbody></table></div>
+  <h3>فهرست کارکنان</h3>
+  {% for user in staff_users %}
+  <details class="staff-record" {% if loop.first %}open{% endif %}>
+    <summary><strong>{{ user.full_name or user.username }}</strong><span>{{ user.job_title or 'بدون عنوان' }} · {{ user.role }} · {{ fmt(user.salary_amount) }} تومان</span></summary>
+    <div class="staff-record-body">
+      <form method="post" action="/admin/staff/{{ user.id }}" class="form-row">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>نام کاربری<input value="{{ user.username }}" disabled></label>
+        <label>رمز جدید<input name="password" type="password" minlength="6" autocomplete="new-password" placeholder="بدون تغییر"></label>
+        <label>نقش<select name="role"><option value="cashier" {% if user.role == 'cashier' %}selected{% endif %}>صندوقدار</option><option value="manager" {% if user.role == 'manager' %}selected{% endif %}>مدیر</option><option value="owner" {% if user.role == 'owner' %}selected{% endif %}>مالک</option></select></label>
+        <label>نام کامل<input name="full_name" value="{{ user.full_name or '' }}"></label>
+        <label>کد پرسنلی<input name="employee_code" value="{{ user.employee_code or '' }}"></label>
+        <label>کد ملی<input name="national_id" value="{{ user.national_id or '' }}"></label>
+        <label>تلفن<input name="phone" value="{{ user.phone or '' }}"></label>
+        <label>ایمیل<input name="email" type="email" value="{{ user.email or '' }}"></label>
+        <label>عنوان شغلی<input name="job_title" value="{{ user.job_title or '' }}"></label>
+        <label>نوع همکاری<select name="employment_type"><option value="full_time" {% if user.employment_type == 'full_time' %}selected{% endif %}>تمام‌وقت</option><option value="part_time" {% if user.employment_type == 'part_time' %}selected{% endif %}>پاره‌وقت</option><option value="contractor" {% if user.employment_type == 'contractor' %}selected{% endif %}>قراردادی</option></select></label>
+        <label>حقوق ماهانه<input name="salary_amount" value="{{ user.salary_amount or 0 }}" inputmode="numeric" min="0"></label>
+        <label>روز پرداخت ماهانه<input name="salary_payment_day" value="{{ user.salary_payment_day or '' }}" inputmode="numeric" min="1" max="31"></label>
+        <label>تاریخ شروع<input class="persian-date-input" name="hire_date" value="{{ jalali_str(user.hire_date, with_time=False) if user.hire_date else '' }}"></label>
+        <label>پایان قرارداد<input class="persian-date-input" name="contract_end_date" value="{{ jalali_str(user.contract_end_date, with_time=False) if user.contract_end_date else '' }}"></label>
+        <label>تحصیلات<input name="education" value="{{ user.education or '' }}"></label>
+        <label>برنامه کاری<input name="work_schedule" value="{{ user.work_schedule or '' }}"></label>
+        <label>حساب بانکی<input name="bank_account" value="{{ user.bank_account or '' }}"></label>
+        <label>شبا<input name="iban" value="{{ user.iban or '' }}" dir="ltr"></label>
+        <label>مخاطب اضطراری<input name="emergency_contact" value="{{ user.emergency_contact or '' }}"></label>
+        <label class="form-span-2">نشانی<textarea name="address" rows="2">{{ user.address or '' }}</textarea></label>
+        <label class="form-span-2">یادداشت<textarea name="notes" rows="2">{{ user.notes or '' }}</textarea></label>
+        <button class="btn btn-primary" type="submit">ذخیره اطلاعات</button>
+      </form>
+      <div class="staff-actions">
+        <a class="btn btn-ghost" href="/admin/staff/{{ user.id }}/contract" target="_blank">چاپ قرارداد</a>
+        {% if user.is_active and user.username != 'owner' %}<form method="post" action="/admin/staff/{{ user.id }}/disable"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-danger" type="submit">غیرفعال‌کردن دسترسی</button></form>{% endif %}
+      </div>
+      {% if user.is_active and user.salary_amount > 0 %}
+      <div class="salary-box">
+        <h4>ثبت پرداخت حقوق</h4>
+        <form method="post" action="/admin/staff/{{ user.id }}/salary" class="form-row">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label>ماه پرداخت<input name="period_key" value="{{ current_period }}" placeholder="YYYY-MM" dir="ltr" required></label>
+          <label>کسورات<input name="deductions" value="0" inputmode="numeric" min="0"></label>
+          <label>روش پرداخت<select name="payment_method"><option value="cash">نقدی</option><option value="card">کارت</option></select></label>
+          <label>توضیح<input name="note"></label>
+          <button class="btn btn-success" type="submit">ثبت حقوق و چاپ رسید</button>
+        </form>
+      </div>
+      {% endif %}
+      {% if user.salary_payments %}<div class="table-wrap"><table><thead><tr><th>ماه</th><th>ناخالص</th><th>کسورات</th><th>خالص</th><th>تاریخ</th><th>رسید</th></tr></thead><tbody>{% for payment in user.salary_payments[:12] %}<tr><td>{{ payment.period_key }}</td><td>{{ fmt(payment.gross_amount) }}</td><td>{{ fmt(payment.deductions) }}</td><td>{{ fmt(payment.net_amount) }}</td><td>{{ jalali_str(payment.paid_at) }}</td><td><a class="btn btn-sm btn-ghost" href="/admin/payroll/{{ payment.id }}/receipt" target="_blank">چاپ</a></td></tr>{% endfor %}</tbody></table></div>{% endif %}
+    </div>
+  </details>
+  {% else %}<p class="empty-state">هنوز کارمندی ثبت نشده است.</p>{% endfor %}
 </div>
 {% endblock %}

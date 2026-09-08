@@ -1,131 +1,167 @@
 {% extends "base.html" %}
-{% block title %}📦 مدیریت محصولات — {{ store.name }}{% endblock %}
+{% block title %}مدیریت محصولات — {{ store.name }}{% endblock %}
 {% block content %}
-
-<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem;">
-    <span style="font-size: 2rem;">📦</span>
-    <h2 style="margin: 0;">مدیریت محصولات</h2>
+<div class="page-heading product-page-heading">
+    <div>
+        <div class="eyebrow">فروشگاه / موجودی</div>
+        <h2>مدیریت محصولات</h2>
+        <p>محصولات، تنوع‌ها، قیمت و موجودی را از یک صفحه مدیریت کنید.</p>
+    </div>
+    <div class="admin-nav">
+        <a href="/admin/products/add" class="btn btn-primary">افزودن محصول</a>
+        <a href="/admin/barcodes/print" class="btn btn-ghost">چاپ تگ</a>
+        <a href="/admin/settings/tags" class="btn btn-ghost">تنظیمات تگ</a>
+    </div>
 </div>
 
-<div class="card" style="background: #FFFAF5;">
-    <h3>🔍 اسکن بارکد محصول</h3>
-    <form method="get" action="/admin/products" class="search-form">
-        <input type="text" id="barcode-scanner" name="search" placeholder="🔲 بارکد را اسکن کنید..." autofocus autocomplete="off">
-        <button type="submit" class="btn btn-primary">🔍 جستجو</button>
-    </form>
+<div class="stats-grid products-kpi" aria-label="خلاصه محصولات">
+    <div class="stat-card accent-sky">
+        <div class="stat-label">محصولات فعال</div>
+        <div class="stat-value">{{ total_products }}</div>
+        <div class="stat-sub">در فهرست فعلی</div>
+    </div>
+    <div class="stat-card accent-saffron">
+        <div class="stat-label">تنوع کم‌موجودی</div>
+        <div class="stat-value">{{ low_stock_count }}</div>
+        <div class="stat-sub">۲ عدد یا کمتر</div>
+    </div>
+    <div class="stat-card accent-persimmon">
+        <div class="stat-label">تنوع ناموجود</div>
+        <div class="stat-value">{{ out_stock_count }}</div>
+        <div class="stat-sub">نیازمند بررسی</div>
+    </div>
 </div>
 
-<div class="filter-bar">
-    <form method="get" action="/admin/products" class="search-form">
-        <input type="text" name="search" placeholder="🔍 جستجو بر اساس نام یا دسته‌بندی" value="{{ search }}">
-        <select name="category">
-            <option value="">📂 همه دسته‌ها</option>
+<section class="card product-search-card">
+    <div class="section-heading-row">
+        <div>
+            <h3>جست‌وجوی سریع</h3>
+            <p class="muted">بارکدخوان مانند صفحه‌کلید عمل می‌کند؛ کافی است کد را اسکن کنید.</p>
+        </div>
+    </div>
+    <form method="get" action="/admin/products" class="search-form product-search-form">
+        <label class="sr-only" for="barcode-scanner">بارکد یا نام محصول</label>
+        <input type="text" id="barcode-scanner" name="search" value="{{ search }}" placeholder="بارکد، SKU، نام یا دسته‌بندی" autofocus autocomplete="off">
+        <label class="sr-only" for="product-category">دسته‌بندی</label>
+        <select name="category" id="product-category">
+            <option value="">همه دسته‌ها</option>
             {% for cat in categories %}
             <option value="{{ cat }}" {% if category_filter == cat %}selected{% endif %}>{{ cat }}</option>
             {% endfor %}
         </select>
-        <button type="submit" class="btn btn-primary">✅ اعمال فیلتر</button>
+        <button type="submit" class="btn btn-primary">جست‌وجو</button>
+        {% if search or category_filter %}<a href="/admin/products" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
     </form>
-</div>
+</section>
 
-<div class="admin-nav" style="margin-bottom: 1.5rem;">
-    <a href="/admin/products/add" class="btn btn-primary">➕ افزودن محصول جدید</a>
-    <a href="/admin/barcodes/print" class="btn btn-ghost">🏷️ چاپ تگ محصولات</a>
-</div>
-
-<div class="card">
+<section class="card product-list-card">
+    <div class="section-heading-row product-list-heading">
+        <div>
+            <h3>فهرست محصولات</h3>
+            <p class="muted">صفحه {{ page }} از {{ total_pages }} · {{ total_products }} محصول</p>
+        </div>
+        <a href="/admin/barcodes/print" class="text-link">مدیریت چاپ تگ‌ها</a>
+    </div>
     {% if products %}
-    <table>
-        <thead>
-            <tr>
-                <th>🖼️</th>
-                <th>👕 نام محصول</th>
-                <th>📂 دسته</th>
-                <th>🎨 تنوع‌ها</th>
-                <th>💰 محدوده قیمت</th>
-                <th>📦 موجودی کل</th>
-                <th>🔧 عملیات</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for product in products %}
-            <tr>
-                <td>
-                    {% set ns = namespace(img_path=None) %}
-                    {% for v in product.variants %}
-                        {% if not ns.img_path and v.image_path and '/uploads/barcodes/' not in v.image_path %}
-                            {% set ns.img_path = v.image_path %}
+    <div class="table-scroll">
+        <table class="product-list-table">
+            <thead>
+                <tr>
+                    <th scope="col">محصول</th>
+                    <th scope="col">دسته‌بندی</th>
+                    <th scope="col">تنوع‌ها</th>
+                    <th scope="col">قیمت</th>
+                    <th scope="col">قابل فروش</th>
+                    <th scope="col">رزرو</th>
+                    <th scope="col">عملیات</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for product in products %}
+                {% set active_variants = product.variants|selectattr('is_active')|list %}
+                <tr>
+                    <td>
+                        <div class="product-identity">
+                            {% set ns = namespace(img_path=None) %}
+                            {% for v in active_variants %}
+                                {% if not ns.img_path and v.image_path and '/uploads/barcodes/' not in v.image_path %}
+                                    {% set ns.img_path = v.image_path %}
+                                {% endif %}
+                            {% endfor %}
+                            {% if ns.img_path %}
+                                <img class="product-thumb" src="{{ ns.img_path }}" alt="تصویر {{ product.name }}" loading="lazy">
+                            {% elif product.image_path %}
+                                <img class="product-thumb" src="{{ product.image_path }}" alt="تصویر {{ product.name }}" loading="lazy">
+                            {% else %}
+                                <span class="product-thumb product-thumb-empty" aria-hidden="true">—</span>
+                            {% endif %}
+                            <span>
+                                <strong>{{ product.name }}</strong>
+                                {% if product.brand %}<small>{{ product.brand }}</small>{% endif %}
+                            </span>
+                        </div>
+                    </td>
+                    <td>{{ product.category or '—' }}</td>
+                    <td>
+                        {% if active_variants %}
+                            <div class="variant-summary">
+                                <span class="badge badge-info">{{ active_variants|length }} تنوع</span>
+                                {% set sizes = active_variants|map(attribute='size')|unique|reject('none')|list %}
+                                {% set colors = active_variants|map(attribute='color')|unique|reject('none')|list %}
+                                {% if sizes %}<small>سایز: {{ sizes|join('، ') }}</small>{% endif %}
+                                {% if colors %}<small>رنگ: {{ colors|join('، ') }}</small>{% endif %}
+                            </div>
+                        {% else %}
+                            <span class="muted">بدون تنوع فعال</span>
                         {% endif %}
-                    {% endfor %}
-                    {% if ns.img_path %}
-                        <img src="{{ ns.img_path }}" alt="{{ product.name }}" style="width: 50px; height: 50px; object-fit: cover; border-radius: 8px;">
-                    {% elif product.image_path %}
-                        <img src="{{ product.image_path }}" alt="{{ product.name }}" style="width: 50px; height: 50px; object-fit: cover; border-radius: 8px;">
-                    {% else %}
-                        <span style="color: var(--ink-soft);">📷</span>
-                    {% endif %}
-                </td>
-                <td><strong>{{ product.name }}</strong></td>
-                <td>📂 {{ product.category or '—' }}</td>
-                <td>
-                    {% if product.variants %}
-                        {% set sizes = product.variants|map(attribute='size')|unique|reject('none')|list %}
-                        {% set colors = product.variants|map(attribute='color')|unique|reject('none')|list %}
-                        <span class="badge badge-info">{{ product.variants|length }} تنوع</span>
-                        {% if sizes %}<div style="font-size: 0.8rem; margin-top: 0.25rem;">📏 {{ sizes|join(', ') }}</div>{% endif %}
-                        {% if colors %}<div style="font-size: 0.8rem;">🎨 {{ colors|join(', ') }}</div>{% endif %}
-                    {% else %}
-                        <span style="color: var(--ink-soft);">بدون تنوع</span>
-                    {% endif %}
-                </td>
-                <td class="tnum">{{ product.price_range or '—' }}</td>
-                <td>
-                    {% set total_stock = product.total_stock %}
-                    {% if total_stock > 0 %}
-                        <span class="badge badge-available">{{ total_stock }}</span>
-                    {% else %}
-                        <span class="badge badge-none">❌ ناموجود</span>
-                    {% endif %}
-                </td>
-                <td style="display: flex; gap: 0.3rem;">
-                    <a href="/admin/products/{{ product.id }}" class="btn btn-sm btn-ghost">✏️ ویرایش</a>
-                    <form method="post" action="/admin/products/{{ product.id }}/delete" style="display:inline;"
-                          onsubmit="return confirm('⚠️ حذف شود؟')">
-                        <button type="submit" class="btn btn-sm btn-danger">🗑️</button>
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+                    </td>
+                    <td class="tnum">{{ product.price_range or '—' }}</td>
+                    <td>
+                        {% set total_stock = product.available_stock %}
+                        {% if total_stock > 0 %}
+                            <span class="badge badge-available">{{ total_stock }} عدد</span>
+                        {% else %}
+                            <span class="badge badge-none">ناموجود</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ product.total_reserved }} عدد</td>
+                    <td>
+                        <div class="table-actions">
+                            <a href="/admin/products/{{ product.id }}" class="btn btn-sm btn-ghost">ویرایش</a>
+                            <form method="post" action="/admin/products/{{ product.id }}/delete" onsubmit="return confirm('این محصول غیرفعال شود؟')">
+                                <button type="submit" class="btn btn-sm btn-danger">غیرفعال‌کردن</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
     {% else %}
-    <div style="text-align: center; padding: 2rem; color: var(--ink-soft);">
-        <div style="font-size: 3rem; margin-bottom: 0.5rem;">📦</div>
-        <p>محصولی یافت نشد.</p>
-        <a href="/admin/products/add" class="btn btn-primary" style="margin-top: 1rem;">➕ افزودن محصول جدید</a>
+    <div class="empty-state products-empty">
+        <h3>محصولی پیدا نشد</h3>
+        <p>{% if search or category_filter %}فیلترها را تغییر دهید یا یک محصول جدید اضافه کنید.{% else %}هنوز محصولی ثبت نشده است.{% endif %}</p>
+        <a href="/admin/products/add" class="btn btn-primary">افزودن محصول</a>
     </div>
     {% endif %}
     {% if total_pages > 1 %}
-    <div style="display: flex; align-items: center; justify-content: center; gap: 1rem; padding: 1rem;">
-        {% if page > 1 %}
-        <a class="btn btn-sm btn-ghost" href="/admin/products?page={{ page - 1 }}&search={{ search }}&category={{ category_filter }}">→ صفحه قبل</a>
-        {% endif %}
-        <span style="color: var(--ink-soft);">صفحه {{ page }} از {{ total_pages }}</span>
-        {% if page < total_pages %}
-        <a class="btn btn-sm btn-ghost" href="/admin/products?page={{ page + 1 }}&search={{ search }}&category={{ category_filter }}">صفحه بعد ←</a>
-        {% endif %}
-    </div>
+    <nav class="product-pagination" aria-label="صفحه‌بندی محصولات">
+        {% if page > 1 %}<a class="btn btn-sm btn-ghost" href="/admin/products?page={{ page - 1 }}&search={{ search }}&category={{ category_filter }}">صفحه قبل</a>{% endif %}
+        <span>صفحه {{ page }} از {{ total_pages }}</span>
+        {% if page < total_pages %}<a class="btn btn-sm btn-ghost" href="/admin/products?page={{ page + 1 }}&search={{ search }}&category={{ category_filter }}">صفحه بعد</a>{% endif %}
+    </nav>
     {% endif %}
-</div>
+</section>
 
 <nav class="admin-nav">
-    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
+    <a href="/admin" class="btn btn-ghost">بازگشت به داشبورد</a>
 </nav>
 
 <script>
-document.getElementById('barcode-scanner').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') {
-        e.preventDefault();
+document.getElementById('barcode-scanner').addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') {
+        event.preventDefault();
         this.form.submit();
     }
 });

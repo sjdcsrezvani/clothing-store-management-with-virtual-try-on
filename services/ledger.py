@@ -119,6 +119,6 @@ def reverse_expense_immutably(db, expense, operator_id, reason, request_id=None)
         idempotency_key=f"expense:{expense.id}:reversed",
         actor_user_id=operator_id,
         request_id=request_id,
-        payload={"amount": expense.amount, "reason": reason or "Expense reversal"},
+        payload={"amount": expense.amount, "expense_type": expense.expense_type, "reason": reason or "Expense reversal"},
     )
     return entry
