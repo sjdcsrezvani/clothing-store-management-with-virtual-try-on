@@ -112,6 +112,7 @@ def _apply_missing_columns(migration_engine=None):
             ("supplier_id", "INTEGER"),
             ("default_reorder_point", "INTEGER DEFAULT 0"),
             ("default_reorder_quantity", "INTEGER DEFAULT 0"),
+            ("tag_template_id", "INTEGER"),
         ],
         "product_variants": [
             ("reserved_quantity", "INTEGER DEFAULT 0"),

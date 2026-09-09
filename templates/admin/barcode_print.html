@@ -98,7 +98,8 @@
                         <span>چاپ‌شده: <strong>{{ item.printed_count }}</strong></span>
                     </div>
                     {% if item.printed_count > 0 %}<span class="printed-badge">چاپ‌شده: {{ item.printed_count }}</span>{% endif %}
-                    <div class="tag-selection-preview" style="--tag-scale: {{ tag_preview_scale }}; --tag-w-mm: {{ tag_config.tag_width_mm }}; --tag-h-mm: {{ tag_config.tag_height_mm }}; --frame-w: {{ tag_preview_width_px }}px; --frame-h: {{ tag_preview_height_px }}px;" role="img" aria-label="پیش‌نمایش تگ {{ tag_config.tag_width_mm }}×{{ tag_config.tag_height_mm }} میلی‌متر">{{ item.tag_html|safe }}</div>
+                    <div class="tag-template-label">{{ item.tag_template_name }}</div>
+                    <div class="tag-selection-preview" data-template-key="{{ item.tag_template_key }}" style="--tag-scale: {{ item.tag_preview_scale }}; --tag-w-mm: {{ item.tag_config.tag_width_mm }}; --tag-h-mm: {{ item.tag_config.tag_height_mm }}; --frame-w: {{ item.tag_preview_width_px }}px; --frame-h: {{ item.tag_preview_height_px }}px;" role="img" aria-label="پیش‌نمایش تگ {{ item.tag_config.tag_width_mm }}×{{ item.tag_config.tag_height_mm }} میلی‌متر">{{ item.tag_html|safe }}</div>
                 </article>
                 {% endfor %}
             </div>
@@ -179,41 +180,44 @@ function printSelected() {
         return;
     }
 
-    const perPage = {{ tag_fit.tags_per_page }};
-    const tagWidth = {{ tag_config.tag_width_mm }};
-    const tagHeight = {{ tag_config.tag_height_mm }};
-    const marginTop = {{ tag_config.margin_top_mm }};
-    const marginRight = {{ tag_config.margin_right_mm }};
-    const marginBottom = {{ tag_config.margin_bottom_mm }};
-    const marginLeft = {{ tag_config.margin_left_mm }};
-    const gapX = {{ tag_config.gap_horizontal_mm }};
-    const gapY = {{ tag_config.gap_vertical_mm }};
-    const columns = {{ tag_fit.columns }};
-    const rows = {{ tag_fit.rows }};
-    const tags = [];
-
+    const templateConfigs = {{ tag_template_configs|tojson }};
+    const groups = new Map();
     selected.forEach(checkbox => {
         const preview = checkbox.closest('.tag-selection-item').querySelector('.tag-selection-preview');
-        for (let copy = 0; copy < quantityFor(checkbox); copy += 1) tags.push(preview.innerHTML);
+        const key = preview.dataset.templateKey || 'default';
+        if (!groups.has(key)) groups.set(key, { config: templateConfigs[key] || templateConfigs.default, tags: [] });
+        for (let copy = 0; copy < quantityFor(checkbox); copy += 1) groups.get(key).tags.push(preview.innerHTML);
     });
 
-    const pages = [];
-    tags.forEach((tag, index) => {
-        if (index % perPage === 0) pages.push([]);
-        pages[pages.length - 1].push(tag);
+    const groupMarkup = [];
+    groups.forEach(group => {
+        const config = group.config;
+        const width = Number(config.tag_width_mm);
+        const height = Number(config.tag_height_mm);
+        const marginTop = Number(config.margin_top_mm);
+        const marginRight = Number(config.margin_right_mm);
+        const marginBottom = Number(config.margin_bottom_mm);
+        const marginLeft = Number(config.margin_left_mm);
+        const gapX = Number(config.gap_horizontal_mm);
+        const gapY = Number(config.gap_vertical_mm);
+        const columns = Number(config.columns);
+        const rows = Number(config.rows);
+        const perPage = Math.max(1, columns * rows);
+        for (let index = 0; index < group.tags.length; index += perPage) {
+            const pageTags = group.tags.slice(index, index + perPage);
+            groupMarkup.push(`<section class="tag-print-page" style="padding:${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm"><div class="tag-print-grid" style="grid-template-columns:repeat(${columns}, ${width}mm);grid-template-rows:repeat(${rows}, ${height}mm);gap:${gapY}mm ${gapX}mm">${pageTags.join('')}</div></section>`);
+        }
     });
-    const pageMarkup = pages.map(pageTags =>
-        `<section class="tag-print-page"><div class="tag-print-grid">${pageTags.join('')}</div></section>`
-    ).join('');
+    const pageMarkup = groupMarkup.join('');
     const style = `
         @page { size: A4; margin: 0; }
         * { box-sizing: border-box; }
         html, body { margin: 0; padding: 0; background: #fff; }
         body { font-family: Vazirmatn, Arial, sans-serif; direction: rtl; }
-        .tag-print-page { width: 210mm; height: 297mm; padding: ${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm; page-break-after: always; overflow: hidden; }
+        .tag-print-page { width: 210mm; height: 297mm; page-break-after: always; overflow: hidden; }
         .tag-print-page:last-child { page-break-after: auto; }
-        .tag-print-grid { display: grid; grid-template-columns: repeat(${columns}, ${tagWidth}mm); grid-template-rows: repeat(${rows}, ${tagHeight}mm); gap: ${gapY}mm ${gapX}mm; align-content: start; }
-        .tag-render { width: ${tagWidth}mm !important; height: ${tagHeight}mm !important; page-break-inside: avoid; }
+        .tag-print-grid { display: grid; align-content: start; }
+        .tag-render { page-break-inside: avoid; }
         .tag-render img { max-width: 100%; }
     `;
     const printStyle = document.createElement('style');

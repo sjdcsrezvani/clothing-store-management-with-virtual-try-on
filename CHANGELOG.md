@@ -1,3 +1,12 @@
+## 2.2.0 — 2026-09-08
+
+### Product tag templates and catalog workflow
+
+- Added reusable product-level tag templates so each product can use the appropriate tag detail and size.
+- Added default-first tag editing with a visible field palette, independent barcode image and code fields, live preview, and saved-template editing.
+- Applied assigned product templates to catalog views, product forms, barcode printing, mixed-template A4 output, and print-history snapshots.
+- Added safer product and variant validation, duplicate-barcode protection, CSRF coverage, stock/reservation display, and printable tag quantity controls.
+
 ## 2.1.0 — 2026-09-08
 
 ### Tag editor and barcode reliability

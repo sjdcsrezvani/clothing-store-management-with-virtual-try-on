@@ -174,6 +174,20 @@ class ProductImage(Base):
     product = relationship("Product", back_populates="images")
 
 
+class TagTemplate(Base):
+    """Reusable product-level tag layout."""
+    __tablename__ = "tag_templates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False, unique=True, index=True)
+    config_json = Column(Text, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+
+    products = relationship("Product", back_populates="tag_template")
+
+
 class Product(Base):
     """Base product - the template (e.g., 'Nike T-Shirt')"""
     __tablename__ = "products"
@@ -195,6 +209,8 @@ class Product(Base):
     supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True, index=True)
     default_reorder_point = Column(Integer, nullable=False, default=0)
     default_reorder_quantity = Column(Integer, nullable=False, default=0)
+    # Optional product-level tag layout; variants inherit this template.
+    tag_template_id = Column(Integer, ForeignKey("tag_templates.id"), nullable=True, index=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
@@ -206,6 +222,7 @@ class Product(Base):
     variants = relationship("ProductVariant", back_populates="product", cascade="all, delete-orphan")
     images = relationship("ProductImage", back_populates="product", order_by="ProductImage.sort_order", cascade="all, delete-orphan")
     supplier = relationship("Supplier", foreign_keys=[supplier_id])
+    tag_template = relationship("TagTemplate", back_populates="products", foreign_keys=[tag_template_id])
     sale_items = relationship("SaleItem", back_populates="product")
 
     @property

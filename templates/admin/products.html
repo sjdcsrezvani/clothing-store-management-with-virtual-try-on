@@ -98,6 +98,7 @@
                             <span>
                                 <strong>{{ product.name }}</strong>
                                 {% if product.brand %}<small>{{ product.brand }}</small>{% endif %}
+                                <small class="product-template-badge">{{ product.tag_template.name if product.tag_template and product.tag_template.is_active else 'قالب پیش‌فرض فروشگاه' }}</small>
                             </span>
                         </div>
                     </td>
@@ -129,6 +130,7 @@
                         <div class="table-actions">
                             <a href="/admin/products/{{ product.id }}" class="btn btn-sm btn-ghost">ویرایش</a>
                             <form method="post" action="/admin/products/{{ product.id }}/delete" onsubmit="return confirm('این محصول غیرفعال شود؟')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="btn btn-sm btn-danger">غیرفعال‌کردن</button>
                             </form>
                         </div>

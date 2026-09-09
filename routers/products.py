@@ -15,6 +15,7 @@ from models import (
     ProductImage,
     Settings,
     Supplier,
+    TagTemplate,
     TagPrintBatch,
     TagPrintBatchLine,
     generate_barcode,
@@ -35,6 +36,10 @@ from services.tags import (
     render_tag_html,
     save_tag_config,
     save_tag_image,
+    list_tag_templates,
+    save_tag_template,
+    tag_template_config,
+    FIELD_LABELS,
 )
 
 router = APIRouter(prefix="/admin")
@@ -62,6 +67,29 @@ def _form_optional_int(form, key: str):
         return max(0, int(to_english_digits(value)))
     except (TypeError, ValueError):
         return None
+
+
+def _form_tag_template_id(form, db):
+    value = _form_optional_int(form, "tag_template_id")
+    if not value:
+        return None
+    template = db.query(TagTemplate).filter(
+        TagTemplate.id == value,
+        TagTemplate.is_active == True,
+    ).first()
+    return template.id if template else None
+
+
+def _product_form_error(request, db, product, edit_mode: bool, message: str):
+    context = {
+        "product": product,
+        "edit_mode": edit_mode,
+        "suppliers": db.query(Supplier).order_by(Supplier.name.asc()).all(),
+        "error": message,
+    }
+    if edit_mode:
+        context.update({"fmt": fmt, "jalali_str": jalali_str})
+    return templates.TemplateResponse(request, "admin/product_form.html", context)
 
 
 def _selected_quantities(form) -> dict[int, int]:
@@ -171,6 +199,7 @@ async def admin_tag_settings(request: Request, db: Session = Depends(get_db)):
         return guard
 
     config = load_tag_config(db)
+    tag_templates = list_tag_templates(db)
     sample_variant = (
         db.query(ProductVariant)
         .join(Product)
@@ -192,6 +221,22 @@ async def admin_tag_settings(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse(request, "admin/settings_tags.html", {
         "tag_config": config,
         "tag_presets": PRESETS,
+        "tag_field_options": [
+            {
+                "name": name,
+                "label": FIELD_LABELS[name],
+                "visible": bool(config["fields"].get(name, {}).get("visible")),
+                "color": config["fields"].get(name, {}).get("color", "#888888"),
+            }
+            for name in (
+                "product_name", "price", "size", "color", "barcode", "barcode_text",
+                "sku", "brand", "category", "store_name", "instagram", "product_image", "custom_text",
+            )
+        ],
+        "tag_templates": [
+            {"id": template.id, "name": template.name, "config": tag_template_config(template, config)}
+            for template in tag_templates
+        ],
         "tag_fit": calculate_a4_fit(config),
         "sample_item": sample_item,
         "preview_html": render_tag_html(config, sample_item, store),
@@ -214,6 +259,41 @@ async def admin_tag_settings_save(request: Request, tag_config: str = Form(""), 
         db.rollback()
         return RedirectResponse(url="/admin/settings/tags?err=" + quote_plus(str(exc)), status_code=303)
     return RedirectResponse(url="/admin/settings/tags?msg=تنظیمات تگ ذخیره شد.", status_code=303)
+
+
+@router.post("/settings/tags/template", response_class=HTMLResponse)
+async def admin_tag_template_save(
+    request: Request,
+    template_name: str = Form(""),
+    template_id: str = Form(""),
+    tag_config: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    try:
+        parsed_id = int(template_id) if template_id.strip() else None
+        save_tag_template(db, template_name, json.loads(tag_config), parsed_id)
+        db.commit()
+    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+        db.rollback()
+        return RedirectResponse(url="/admin/settings/tags?err=" + quote_plus(str(exc)), status_code=303)
+    return RedirectResponse(url="/admin/settings/tags?msg=" + quote_plus("قالب تگ ذخیره شد."), status_code=303)
+
+
+@router.post("/settings/tags/template/{template_id}/delete", response_class=HTMLResponse)
+async def admin_tag_template_delete(template_id: int, request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    template = db.query(TagTemplate).filter(TagTemplate.id == template_id, TagTemplate.is_active == True).first()
+    if template:
+        if db.query(Product).filter(Product.tag_template_id == template.id, Product.is_active == True).first():
+            return RedirectResponse(url="/admin/settings/tags?err=" + quote_plus("این قالب به محصول اختصاص دارد و حذف نمی‌شود."), status_code=303)
+        template.is_active = False
+        db.commit()
+    return RedirectResponse(url="/admin/settings/tags?msg=" + quote_plus("قالب تگ حذف شد."), status_code=303)
 
 
 @router.post("/settings/tags/image", response_class=HTMLResponse)
@@ -242,6 +322,7 @@ async def admin_product_add_form(request: Request, db: Session = Depends(get_db)
         "product": None,
         "edit_mode": False,
         "suppliers": db.query(Supplier).order_by(Supplier.name.asc()).all(),
+        "tag_templates": list_tag_templates(db),
     })
 
 
@@ -258,6 +339,9 @@ async def admin_product_add(
     if not hasattr(guard, "role"):
         return guard
 
+    if not name.strip():
+        return _product_form_error(request, db, None, False, "نام محصول الزامی است.")
+
     # Parse dynamic variant fields
     form = await request.form()
     variant_indices = set()
@@ -272,6 +356,8 @@ async def admin_product_add(
         return templates.TemplateResponse(request, "admin/product_form.html", {
             "product": None,
             "edit_mode": False,
+            "suppliers": db.query(Supplier).order_by(Supplier.name.asc()).all(),
+            "tag_templates": list_tag_templates(db),
             "error": "حداقل یک تنوع اضافه کنید.",
         })
 
@@ -296,13 +382,17 @@ async def admin_product_add(
         supplier_id=_form_optional_int(form, "supplier_id"),
         default_reorder_point=_form_nonnegative_int(form, "default_reorder_point"),
         default_reorder_quantity=_form_nonnegative_int(form, "default_reorder_quantity"),
+        tag_template_id=_form_tag_template_id(form, db),
     )
     db.add(product)
     db.flush()
+    error_product = None
+    error_edit_mode = False
 
     # Create variants. Initial stock is recorded through the immutable ledger
     # after the new variant receives its database id.
     created_variants = []
+    seen_barcodes = set()
     for idx in sorted(variant_indices):
         size = form.get(f"variant_size_{idx}", "")
         color = form.get(f"variant_color_{idx}", "")
@@ -323,33 +413,41 @@ async def admin_product_add(
         try:
             price_int = int(to_english_digits(price_str))
         except ValueError:
-            continue
+            db.rollback()
+            return _product_form_error(request, db, error_product, error_edit_mode, "قیمت فروش معتبر نیست.")
+        if price_int < 0:
+            db.rollback()
+            return _product_form_error(request, db, error_product, error_edit_mode, "قیمت فروش نمی‌تواند منفی باشد.")
 
         try:
             cost_price_int = int(to_english_digits(cost_price_str))
         except ValueError:
             cost_price_int = 0
+        if cost_price_int < 0:
+            db.rollback()
+            return _product_form_error(request, db, error_product, error_edit_mode, "قیمت خرید نمی‌تواند منفی باشد.")
 
         try:
-            stock_int = max(0, int(to_english_digits(stock_str)))
+            stock_int = int(to_english_digits(stock_str))
         except ValueError:
             stock_int = 0
+        if stock_int < 0:
+            db.rollback()
+            return _product_form_error(request, db, error_product, error_edit_mode, "موجودی اولیه نمی‌تواند منفی باشد.")
 
         # Generate or validate barcode
+        barcode = to_english_digits(str(barcode or "").strip())
         if not barcode:
-            barcode = generate_barcode_number(db)
-            while db.query(ProductVariant).filter(ProductVariant.barcode == barcode).first():
+            while True:
                 barcode = generate_barcode_number(db)
+                if not db.query(ProductVariant).filter(ProductVariant.barcode == barcode).first() and barcode not in seen_barcodes:
+                    break
         else:
-            barcode = to_english_digits(barcode.strip())
             existing = db.query(ProductVariant).filter(ProductVariant.barcode == barcode).first()
-            if existing:
+            if existing or barcode in seen_barcodes:
                 db.rollback()
-                return templates.TemplateResponse(request, "admin/product_form.html", {
-                    "product": None,
-                    "edit_mode": False,
-                    "error": f"بارکد {barcode} تکراری است.",
-                })
+                return _product_form_error(request, db, None, False, f"بارکد {barcode} تکراری است.")
+        seen_barcodes.add(barcode)
 
         # Handle variant image upload
         variant_image_path = None
@@ -383,6 +481,10 @@ async def admin_product_add(
         db.add(variant)
         created_variants.append((variant, stock_int))
 
+    if not created_variants and not product.variants:
+        db.rollback()
+        return _product_form_error(request, db, None, False, "حداقل یک تنوع با قیمت فروش معتبر اضافه کنید.")
+
     db.flush()
     for variant, initial_stock in created_variants:
         record_opening_stock(
@@ -412,6 +514,7 @@ async def admin_product_edit_form(product_id: int, request: Request, db: Session
         "product": product,
         "edit_mode": True,
         "suppliers": db.query(Supplier).order_by(Supplier.name.asc()).all(),
+        "tag_templates": list_tag_templates(db),
         "fmt": fmt,
         "jalali_str": jalali_str,
     })
@@ -434,6 +537,8 @@ async def admin_product_update(
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="محصول یافت نشد")
+    if not name.strip():
+        return _product_form_error(request, db, product, True, "نام محصول الزامی است.")
 
     # Update base product
     form = await request.form()
@@ -453,6 +558,7 @@ async def admin_product_update(
     product.supplier_id = _form_optional_int(form, "supplier_id")
     product.default_reorder_point = _form_nonnegative_int(form, "default_reorder_point")
     product.default_reorder_quantity = _form_nonnegative_int(form, "default_reorder_quantity")
+    product.tag_template_id = _form_tag_template_id(form, db)
     product.updated_at = datetime.now(timezone.utc)
 
     upload_dir = Path("static/uploads/products")
@@ -469,6 +575,9 @@ async def admin_product_update(
 
     # Add new variants if any; their opening stock is ledgered below.
     created_variants = []
+    seen_barcodes = set()
+    error_product = product
+    error_edit_mode = True
     for idx in sorted(variant_indices):
         size = form.get(f"variant_size_{idx}", "")
         color = form.get(f"variant_color_{idx}", "")
@@ -489,37 +598,41 @@ async def admin_product_update(
         try:
             price_int = int(to_english_digits(price_str))
         except ValueError:
-            continue
+            db.rollback()
+            return _product_form_error(request, db, error_product, error_edit_mode, "قیمت فروش معتبر نیست.")
+        if price_int < 0:
+            db.rollback()
+            return _product_form_error(request, db, error_product, error_edit_mode, "قیمت فروش نمی‌تواند منفی باشد.")
 
         try:
             cost_price_int = int(to_english_digits(cost_price_str))
         except ValueError:
             cost_price_int = 0
+        if cost_price_int < 0:
+            db.rollback()
+            return _product_form_error(request, db, error_product, error_edit_mode, "قیمت خرید نمی‌تواند منفی باشد.")
 
         try:
-            stock_int = max(0, int(to_english_digits(stock_str)))
+            stock_int = int(to_english_digits(stock_str))
         except ValueError:
             stock_int = 0
+        if stock_int < 0:
+            db.rollback()
+            return _product_form_error(request, db, error_product, error_edit_mode, "موجودی اولیه نمی‌تواند منفی باشد.")
 
         # Generate or validate barcode
+        barcode = to_english_digits(str(barcode or "").strip())
         if not barcode:
-            barcode = generate_barcode_number(db)
-            while db.query(ProductVariant).filter(ProductVariant.barcode == barcode).first():
+            while True:
                 barcode = generate_barcode_number(db)
+                if not db.query(ProductVariant).filter(ProductVariant.barcode == barcode).first() and barcode not in seen_barcodes:
+                    break
         else:
-            barcode = to_english_digits(barcode.strip())
-            existing = db.query(ProductVariant).filter(
-                ProductVariant.barcode == barcode,
-                ProductVariant.product_id != product_id
-            ).first()
-            if existing:
-                return templates.TemplateResponse(request, "admin/product_form.html", {
-                    "product": product,
-                    "edit_mode": True,
-                    "error": f"بارکد {barcode} تکراری است.",
-                    "fmt": fmt,
-                    "jalali_str": jalali_str,
-                })
+            existing = db.query(ProductVariant).filter(ProductVariant.barcode == barcode).first()
+            if existing or barcode in seen_barcodes:
+                db.rollback()
+                return _product_form_error(request, db, product, True, f"بارکد {barcode} تکراری است.")
+        seen_barcodes.add(barcode)
 
         # Handle variant image upload
         variant_image_path = None
@@ -552,6 +665,10 @@ async def admin_product_update(
         )
         db.add(variant)
         created_variants.append((variant, stock_int))
+
+    if not created_variants and not product.variants:
+        db.rollback()
+        return _product_form_error(request, db, product, True, "حداقل یک تنوع با قیمت فروش معتبر اضافه کنید.")
 
     db.flush()
     for variant, initial_stock in created_variants:
@@ -634,12 +751,32 @@ async def admin_variant_update(
     try:
         price_int = int(to_english_digits(price))
     except ValueError:
-        price_int = variant.price
+        return templates.TemplateResponse(request, "admin/variant_form.html", {
+            "variant": variant,
+            "product": variant.product,
+            "error": "قیمت فروش معتبر نیست.",
+        })
+    if price_int < 0:
+        return templates.TemplateResponse(request, "admin/variant_form.html", {
+            "variant": variant,
+            "product": variant.product,
+            "error": "قیمت فروش نمی‌تواند منفی باشد.",
+        })
 
     try:
         cost_price_int = int(to_english_digits(cost_price))
     except ValueError:
-        cost_price_int = variant.cost_price
+        return templates.TemplateResponse(request, "admin/variant_form.html", {
+            "variant": variant,
+            "product": variant.product,
+            "error": "قیمت خرید معتبر نیست.",
+        })
+    if cost_price_int < 0:
+        return templates.TemplateResponse(request, "admin/variant_form.html", {
+            "variant": variant,
+            "product": variant.product,
+            "error": "قیمت خرید نمی‌تواند منفی باشد.",
+        })
 
     fake_cost_price_int = None
     if fake_cost_price.strip():
@@ -669,10 +806,16 @@ async def admin_variant_update(
         })
 
     # Validate unique barcode
-    if barcode and barcode != variant.barcode:
-        barcode = to_english_digits(barcode.strip())
+    normalized_barcode = to_english_digits(str(barcode or "").strip())
+    if not normalized_barcode:
+        return templates.TemplateResponse(request, "admin/variant_form.html", {
+            "variant": variant,
+            "product": variant.product,
+            "error": "بارکد الزامی است.",
+        })
+    if normalized_barcode != variant.barcode:
         existing = db.query(ProductVariant).filter(
-            ProductVariant.barcode == barcode,
+            ProductVariant.barcode == normalized_barcode,
             ProductVariant.id != variant_id
         ).first()
         if existing:
@@ -681,7 +824,7 @@ async def admin_variant_update(
                 "product": variant.product,
                 "error": "بارکد تکراری است.",
             })
-        variant.barcode = barcode
+        variant.barcode = normalized_barcode
 
     # Handle variant image upload
     form = await request.form()
@@ -825,11 +968,17 @@ async def admin_barcodes_print(
     # Keep one row per variant. The operator chooses the number of copies
     # instead of being forced to select one checkbox per unit in stock.
     barcode_items = []
+    template_configs = {"default": config}
     for product in products:
         for variant in product.variants:
             if not variant.is_active:
                 continue
             item = item_from_variant(variant, fmt)
+            template_key = str(product.tag_template.id) if product.tag_template and product.tag_template.is_active else "default"
+            item["tag_template_key"] = template_key
+            item["tag_config"] = tag_template_config(product.tag_template, config)
+            template_configs[template_key] = item["tag_config"]
+            item["tag_template_name"] = product.tag_template.name if product.tag_template and product.tag_template.is_active else "قالب پیش‌فرض فروشگاه"
             printed = max(0, printed_counts.get(variant.id, 0))
             available = max(0, (variant.stock_quantity or 0) - (variant.reserved_quantity or 0))
             item["printed_count"] = printed
@@ -851,7 +1000,8 @@ async def admin_barcodes_print(
     start = (page - 1) * page_size
     page_items = barcode_items[start:start + page_size]
 
-    # Render the same validated tag markup used by the settings preview.
+    # Render each product with its assigned layout. Products without an
+    # assignment inherit the current store default.
     config = load_tag_config(db)
     store = get_store(db)
     millimeters_to_pixels = 96 / 25.4
@@ -873,7 +1023,17 @@ async def admin_barcodes_print(
     rendered_items = []
     for item in page_items:
         rendered = dict(item)
-        rendered["tag_html"] = render_tag_html(config, rendered, store)
+        item_config = rendered.get("tag_config") or config
+        item_fit = calculate_a4_fit(item_config)
+        item_width_px = item_config["tag_width_mm"] * millimeters_to_pixels
+        item_height_px = item_config["tag_height_mm"] * millimeters_to_pixels
+        item_scale = min(1.0, max_preview_width_px / item_width_px, max_preview_height_px / item_height_px)
+        rendered["tag_config"] = item_config
+        rendered["tag_fit"] = item_fit
+        rendered["tag_preview_scale"] = round(max(0.2, min(1.0, item_scale)), 3)
+        rendered["tag_preview_width_px"] = round(item_width_px * rendered["tag_preview_scale"])
+        rendered["tag_preview_height_px"] = round(item_height_px * rendered["tag_preview_scale"])
+        rendered["tag_html"] = render_tag_html(item_config, rendered, store)
         rendered_items.append(rendered)
 
     return templates.TemplateResponse(request, "admin/barcode_print.html", {
@@ -888,6 +1048,7 @@ async def admin_barcodes_print(
         "tag_preview_scale": tag_preview_scale,
         "tag_preview_width_px": tag_preview_width_px,
         "tag_preview_height_px": tag_preview_height_px,
+        "tag_template_configs": template_configs,
         "store": store,
         "fmt": fmt,
         "jalali_str": jalali_str,
@@ -946,9 +1107,15 @@ async def admin_barcodes_mark_printed(request: Request, db: Session = Depends(ge
         batch_lines.append((variant, count, is_reprint))
 
     if batch_lines:
+        default_config = load_tag_config(db)
+        snapshot = {"default": default_config}
+        for variant, _, _ in batch_lines:
+            template = variant.product.tag_template if variant.product else None
+            if template and template.is_active:
+                snapshot[str(template.id)] = tag_template_config(template, default_config)
         batch = TagPrintBatch(
             operator_user_id=guard.id,
-            template_snapshot=json.dumps(load_tag_config(db), ensure_ascii=False, separators=(",", ":")),
+            template_snapshot=json.dumps(snapshot, ensure_ascii=False, separators=(",", ":")),
             item_count=len(batch_lines),
             total_quantity=sum(line[1] for line in batch_lines),
         )

@@ -66,7 +66,7 @@ def _purge_legacy_barcode_cache(directory: Path) -> None:
         return
     try:
         for path in directory.glob("barcode_*.png"):
-            if not path.name.startswith("barcode_v7_"):
+            if not path.name.startswith("barcode_v8_"):
                 path.unlink(missing_ok=True)
     except OSError:
         pass
@@ -107,16 +107,16 @@ def generate_barcode_image(
     profile = get_barcode_profile(density)
     profile_key = f"{density}:{profile['module_width']}:{profile['quiet_zone']}:{profile['module_height']}"
     cache_key = hashlib.sha256(f"{value}|{profile_key}".encode("utf-8")).hexdigest()[:24]
-    # v7: density is part of the cache key and the writer's text layer is
+    # v8: density is part of the cache key and the writer's text layer is
     # disabled; digits are rendered by the independent barcode_text field.
-    target = directory / f"barcode_v7_{cache_key}.png"
+    target = directory / f"barcode_v8_{cache_key}.png"
     if target.exists() and target.stat().st_size > 0:
         return f"/static/uploads/barcodes/{target.name}"
 
     try:
         generator = barcode.get("code128", value, writer=ImageWriter())
         saved_path = generator.save(
-            str(directory / f"barcode_v7_{cache_key}"),
+            str(directory / f"barcode_v8_{cache_key}"),
             options={
                 "module_width": profile["module_width"],
                 "module_height": profile["module_height"],

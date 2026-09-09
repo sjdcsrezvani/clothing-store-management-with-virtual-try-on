@@ -6,19 +6,20 @@ from PIL import Image
 
 from services.barcode import generate_barcode_image
 
-from models import Product, ProductVariant, Settings, TagPrintBatch
+from models import Product, ProductVariant, Settings, TagPrintBatch, TagTemplate
 from services.tags import (
     calculate_a4_fit,
     default_tag_config,
     render_tag_html,
     validate_tag_config,
+    save_tag_template,
 )
 from tests.conftest import csrf_token
 
 
 def test_generated_barcode_image_contains_only_bars_for_exact_code():
     image_url = generate_barcode_image("10093")
-    assert image_url.startswith("/static/uploads/barcodes/barcode_v7_")
+    assert image_url.startswith("/static/uploads/barcodes/barcode_v8_")
 
     image = Image.open(Path(image_url.lstrip("/"))).convert("L")
     dark_rows = [
@@ -28,6 +29,68 @@ def test_generated_barcode_image_contains_only_bars_for_exact_code():
     assert dark_rows
     assert dark_rows == list(range(min(dark_rows), max(dark_rows) + 1))
     assert max(dark_rows) - min(dark_rows) < image.height
+
+
+def test_catalog_and_tag_pages_render_together(client, db_session, authed):
+    product = Product(name="صفحات کاتالوگ", category="لباس")
+    db_session.add(product)
+    db_session.flush()
+    variant = ProductVariant(product_id=product.id, price=100, stock_quantity=1, barcode="PAGE-001")
+    db_session.add(variant)
+    db_session.commit()
+
+    paths = (
+        "/admin/products/add",
+        "/admin/products",
+        f"/admin/products/{product.id}",
+        f"/admin/variants/{variant.id}/edit",
+        "/admin/barcodes/print",
+        "/admin/settings/tags",
+    )
+    for path in paths:
+        response = client.get(path)
+        assert response.status_code == 200, path
+
+
+def test_catalog_forms_include_csrf_for_browser_mutations(client, db_session, authed):
+    product_form = client.get("/admin/products/add")
+    assert product_form.status_code == 200
+    assert '<input type="hidden" name="csrf_token"' in product_form.text
+
+    product = Product(name="محصول فرم", category="لباس")
+    db_session.add(product)
+    db_session.flush()
+    variant = ProductVariant(product_id=product.id, price=100, stock_quantity=1, barcode="FORM-001")
+    db_session.add(variant)
+    db_session.commit()
+
+    product_page = client.get(f"/admin/products/{product.id}")
+    variant_page = client.get(f"/admin/variants/{variant.id}/edit")
+    assert product_page.status_code == 200
+    assert variant_page.status_code == 200
+    assert product_page.text.count('<input type="hidden" name="csrf_token"') >= 1
+    assert variant_page.text.count('<input type="hidden" name="csrf_token"') >= 2
+
+
+def test_duplicate_barcodes_in_one_product_submission_are_rejected(client, db_session, authed):
+    token = csrf_token(client, "/admin/products/add")
+    response = client.post(
+        "/admin/products/add",
+        data={
+            "csrf_token": token,
+            "name": "محصول تکراری",
+            "variant_index_0": "0",
+            "variant_price_0": "100",
+            "variant_barcode_0": "DUP-001",
+            "variant_index_1": "1",
+            "variant_price_1": "200",
+            "variant_barcode_1": "DUP-001",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 200
+    assert "بارکد DUP-001 تکراری است" in response.text
+    assert db_session.query(Product).filter(Product.name == "محصول تکراری").count() == 0
 
 
 def test_tag_defaults_calculate_a4_capacity():
@@ -123,6 +186,42 @@ def test_tag_settings_persist_and_print_uses_saved_renderer(client, db_session, 
     assert "tag-render" in response.text
     assert "test.png" in response.text
     assert "tag-gradient" not in response.text
+
+
+def test_product_tag_template_can_be_saved_assigned_and_used_for_print(client, db_session, authed, monkeypatch):
+    monkeypatch.setattr(
+        "services.tags.generate_barcode_image",
+        lambda value, density="compact": "/static/uploads/barcodes/template.png",
+    )
+    config = default_tag_config("large")
+    config["custom_text"] = "کالای لوکس"
+    config["fields"]["custom_text"]["visible"] = True
+    template = save_tag_template(db_session, "تگ لوکس", config)
+    db_session.commit()
+
+    product = Product(name="محصول لوکس", tag_template_id=template.id)
+    db_session.add(product)
+    db_session.flush()
+    variant = ProductVariant(product_id=product.id, price=100, stock_quantity=1, barcode="LUX-001")
+    db_session.add(variant)
+    db_session.commit()
+
+    response = client.get("/admin/products/" + str(product.id))
+    assert response.status_code == 200
+    assert "تگ لوکس" in response.text
+
+    response = client.get("/admin/barcodes/print")
+    assert response.status_code == 200
+    assert "تگ لوکس" in response.text
+    assert "کالای لوکس" in response.text
+    assert "--tag-w-mm: 60.0" in response.text
+
+
+def test_tag_template_names_must_be_unique(db_session):
+    config = default_tag_config()
+    save_tag_template(db_session, "تگ ساده", config)
+    with pytest.raises(ValueError):
+        save_tag_template(db_session, "تگ ساده", config)
 
 
 def test_tag_print_count_updates_selected_variant_copies(client, db_session, authed):

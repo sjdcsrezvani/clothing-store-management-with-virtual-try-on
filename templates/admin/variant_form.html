@@ -17,6 +17,7 @@
 <div class="variant-edit-layout">
 <section class="card">
     <form method="post" action="/admin/variants/{{ variant.id }}" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="section-heading-row"><div><h3>مشخصات فروش</h3><p class="muted">قیمت‌ها و شناسه‌ها را دقیق و قابل جست‌وجو نگه دارید.</p></div><span class="section-step">۱</span></div>
         <div class="form-row product-form-grid-wide">
             <div class="form-group"><label for="size">سایز</label><input id="size" name="size" value="{{ variant.size or '' }}" placeholder="۳ تا ۴ سال"></div>
@@ -60,7 +61,7 @@
     </section>
     <section class="card danger-zone">
         <h3>غیرفعال‌سازی</h3><p class="muted">برای حفظ تاریخچه فروش، تنوع حذف نمی‌شود و فقط غیرفعال خواهد شد.</p>
-        <form method="post" action="/admin/variants/{{ variant.id }}/delete" onsubmit="return confirm('این تنوع غیرفعال شود؟')"><button type="submit" class="btn btn-danger">غیرفعال‌کردن تنوع</button></form>
+        <form method="post" action="/admin/variants/{{ variant.id }}/delete" onsubmit="return confirm('این تنوع غیرفعال شود؟')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit" class="btn btn-danger">غیرفعال‌کردن تنوع</button></form>
     </section>
 </aside>
 </div>

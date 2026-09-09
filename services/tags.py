@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import html
+from datetime import datetime, timezone
 import io
 import json
 import math
@@ -11,7 +12,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from models import Settings
+from models import Settings, TagTemplate
 from services.barcode import BARCODE_DENSITIES, BARCODE_DENSITY_DEFAULT, generate_barcode_image
 
 A4_WIDTH_MM = 210
@@ -313,9 +314,14 @@ def load_tag_config(db) -> dict[str, Any]:
     if not row or not row.value:
         return default_tag_config()
     try:
-        return validate_tag_config(json.loads(row.value))
+        validated = validate_tag_config(json.loads(row.value))
+        # An all-hidden layout is not an editable or printable default. Treat
+        # it as corrupted and restore the usable Kids Boutique baseline.
+        if not any(field.get("visible") for field in validated.get("fields", {}).values()):
+            return default_tag_config("kids_boutique")
+        return validated
     except (ValueError, TypeError, json.JSONDecodeError):
-        return default_tag_config()
+        return default_tag_config("kids_boutique")
 
 
 def save_tag_config(db, config: dict[str, Any]) -> dict[str, Any]:
@@ -327,6 +333,58 @@ def save_tag_config(db, config: dict[str, Any]) -> dict[str, Any]:
     else:
         db.add(Settings(key=TAG_CONFIG_KEY, value=payload))
     return validated
+
+
+def list_tag_templates(db) -> list[TagTemplate]:
+    return db.query(TagTemplate).filter(TagTemplate.is_active == True).order_by(TagTemplate.name.asc()).all()
+
+
+def tag_template_config(template: TagTemplate | None, fallback: dict[str, Any]) -> dict[str, Any]:
+    if not template or not template.config_json:
+        return copy.deepcopy(fallback)
+    try:
+        validated = validate_tag_config(json.loads(template.config_json))
+        if not any(field.get("visible") for field in validated.get("fields", {}).values()):
+            return copy.deepcopy(fallback)
+        return validated
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return copy.deepcopy(fallback)
+
+
+def save_tag_template(db, name: str, config: dict[str, Any], template_id: int | None = None) -> TagTemplate:
+    clean_name = " ".join(str(name or "").split())[:100]
+    if not clean_name:
+        raise ValueError("نام قالب الزامی است")
+    validated = validate_tag_config(config)
+    query = db.query(TagTemplate).filter(TagTemplate.name == clean_name)
+    if template_id is not None:
+        query = query.filter(TagTemplate.id != template_id)
+        if query.first():
+            raise ValueError("قالبی با این نام از قبل وجود دارد")
+    else:
+        active_duplicate = query.filter(TagTemplate.is_active == True).first()
+        if active_duplicate:
+            raise ValueError("قالبی با این نام از قبل وجود دارد")
+    template = db.query(TagTemplate).filter(TagTemplate.id == template_id, TagTemplate.is_active == True).first() if template_id is not None else None
+    if template_id is not None and not template:
+        raise ValueError("قالب انتخاب‌شده یافت نشد")
+    if not template and template_id is None:
+        # A soft-deleted layout can be recreated by name. Reusing that row
+        # preserves old product references and avoids the unique-name conflict.
+        template = db.query(TagTemplate).filter(TagTemplate.name == clean_name).first()
+        if template:
+            template.is_active = True
+            template.config_json = json.dumps(validated, ensure_ascii=False, separators=(",", ":"))
+            template.updated_at = datetime.now(timezone.utc)
+    if not template:
+        template = TagTemplate(name=clean_name, config_json=json.dumps(validated, ensure_ascii=False, separators=(",", ":")))
+        db.add(template)
+        db.flush()
+    else:
+        template.name = clean_name
+        template.config_json = json.dumps(validated, ensure_ascii=False, separators=(",", ":"))
+        template.updated_at = datetime.now(timezone.utc)
+    return template
 
 
 _IMG_FIT_STYLE = (
@@ -428,6 +486,8 @@ def item_from_variant(variant, fmt=None) -> dict[str, Any]:
         "brand": product.brand if product else "",
         "category": product.category if product else "",
         "image_path": variant.image_path or (product.image_path if product else None),
+        "reserved_quantity": variant.reserved_quantity or 0,
+        "available_quantity": variant.available_quantity,
     }
 
 

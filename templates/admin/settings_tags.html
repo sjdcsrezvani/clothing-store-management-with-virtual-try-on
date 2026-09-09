@@ -24,6 +24,7 @@
         </div>
         <div class="tag-head-actions">
             <span id="tag-unsaved" class="unsaved-chip" hidden>تغییرات ذخیره نشده است</span>
+            <button type="button" id="use-default-tag" class="btn btn-sm btn-ghost">شروع از قالب پیش‌فرض</button>
             <label class="compact-control"><span>قالب آماده</span><select id="tag-preset">
                 <option value="">— انتخاب قالب —</option>
                 <option value="kids_boutique">Kids Boutique — پیش‌فرض</option>
@@ -33,11 +34,49 @@
         </div>
     </div>
 
+    <div class="tag-template-manager">
+        <div>
+            <h4>قالب‌های اختصاصی محصولات</h4>
+            <p class="muted">قالب فعلی را با یک نام ذخیره کنید؛ بعداً در فرم محصول به هر محصول اختصاص دهید.</p>
+        </div>
+        <form method="post" action="/admin/settings/tags/template" id="tag-template-form" class="tag-template-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="tag_config" id="tag-template-config-json">
+            <input type="hidden" name="template_id" id="tag-template-id">
+            <label><span>نام قالب</span><input type="text" name="template_name" id="tag-template-name" maxlength="100" required placeholder="مثلاً تگ محصولات لوکس"></label>
+            <button type="submit" class="btn btn-primary">ذخیره قالب</button>
+        </form>
+        {% if tag_templates %}
+        <div class="tag-template-list" aria-label="قالب‌های ذخیره‌شده">
+            {% for template in tag_templates %}
+            <div class="tag-template-row">
+                <strong>{{ template.name }}</strong>
+                <div class="tag-template-actions">
+                    <button type="button" class="btn btn-sm btn-ghost tag-template-load" data-template-id="{{ template.id }}">ویرایش در بوم</button>
+                    <form method="post" action="/admin/settings/tags/template/{{ template.id }}/delete" onsubmit="return confirm('این قالب حذف شود؟')">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <button type="submit" class="btn btn-sm btn-danger">حذف</button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}<p class="muted tag-template-empty">هنوز قالب اختصاصی‌ای ذخیره نشده است.</p>{% endif %}
+    </div>
+
     <div class="tag-fields-strip-head">
         <div><h4>فیلدهای تگ</h4><span class="muted" id="fields-hint"></span></div>
         <p class="muted tag-strip-tip">برای نمایش/مخفی‌کردن هر فیلد روی آن بزنید.</p>
     </div>
-    <div class="tag-fields-strip" id="tag-fields-strip" aria-label="تغییر نمایش فیلدهای تگ"></div>
+    <div class="tag-fields-strip" id="tag-fields-strip" aria-label="تغییر نمایش فیلدهای تگ">
+        {% for field in tag_field_options %}
+        <button type="button" class="tag-field-chip{% if not field.visible %} is-off{% endif %}" data-field="{{ field.name }}" aria-pressed="{{ 'true' if field.visible else 'false' }}" title="{{ 'فعال — برای مخفی‌کردن کلیک کنید' if field.visible else 'مخفی — برای افزودن به تگ کلیک کنید' }} — {{ field.label }}">
+            <i class="chip-dot" aria-hidden="true" style="background: {{ field.color }}"></i>
+            <span>{{ field.label }}</span>
+            <small class="chip-state">{{ 'فعال' if field.visible else 'افزودن' }}</small>
+        </button>
+        {% endfor %}
+    </div>
 
     <div class="tag-editor-workspace">
         <div class="tag-editor-canvas-wrap">
@@ -100,7 +139,8 @@
     </div>
 
     <form method="post" action="/admin/settings/tags" id="tag-config-form">
-        <input type="hidden" name="tag_config" id="tag-config-json">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="tag_config" id="tag-config-json" value='{{ tag_config|tojson|forceescape }}'>
         <div class="tag-ctl-grid">
             <div class="tag-ctl-card">
                 <div class="tag-ctl-title">
@@ -180,6 +220,7 @@
     </form>
 
     <form method="post" action="/admin/settings/tags/image" enctype="multipart/form-data" class="tag-ctl-card tag-image-upload">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="tag-ctl-title">
             <span class="ctl-step">۴</span><div><h4>تصویر سفارشی بارکد</h4><p class="muted">وقتی حالت «تصویر سفارشی» فعال باشد این تصویر چاپ می‌شود.</p></div>
         </div>
@@ -214,6 +255,7 @@
 <script>
 const initialTagConfig = {{ tag_config|tojson }};
 const tagPresets = {{ tag_presets|tojson }};
+const savedTagTemplates = {{ tag_templates|tojson }};
 const fieldLabels = {{ {'product_name':'نام محصول','barcode':'تصویر بارکد','barcode_text':'کد بارکد','price':'قیمت فروش','size':'سایز','color':'رنگ','sku':'کد SKU','brand':'برند','category':'دسته‌بندی','store_name':'نام فروشگاه','instagram':'اینستاگرام','product_image':'تصویر محصول','custom_text':'متن سفارشی'}|tojson }};
 const tagSample = {{ {'product_name': sample_item.product_name, 'name': sample_item.name, 'barcode': sample_item.barcode, 'price': sample_item.price_display, 'size': sample_item.size, 'color': sample_item.color, 'sku': sample_item.sku, 'brand': sample_item.brand, 'category': sample_item.category, 'instagram': (store.instagram or ''), 'store_name': store.name, 'image_path': sample_item.image_path}|tojson }};
 const barcodePreviewSources = {{ barcode_preview_sources|tojson }};
@@ -404,31 +446,24 @@ function sensibleZoom(){
 
 // ---- Field chips (show / hide) ----
 const strip = $('tag-fields-strip');
-chipOrder.forEach(name => {
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'tag-field-chip';
-  btn.dataset.field = name;
-  btn.setAttribute('aria-pressed', 'false');
-  const dot = document.createElement('i');
-  dot.className = 'chip-dot';
-  btn.appendChild(dot);
-  const span = document.createElement('span');
-  span.textContent = fieldLabels[name] || name;
-  btn.appendChild(span);
-  btn.addEventListener('click', () => {
-    const f = workingConfig.fields[name];
-    if (!f) return;
-    pushUndo();
-    f.visible = !f.visible;
-    if (!f.visible && selectedField === name) selectedField = null;
-    workingConfig.preset = 'custom';
-    renderEditor();
-    applyLivePreview();
-    refreshDirty();
-    syncPanelEmpty();
-  });
-  strip.appendChild(btn);
+function toggleField(name){
+  const f = workingConfig.fields[name];
+  if (!f) return;
+  pushUndo();
+  f.visible = !f.visible;
+  if (!f.visible && selectedField === name) selectedField = null;
+  workingConfig.preset = 'custom';
+  renderEditor();
+  applyLivePreview();
+  refreshDirty();
+  syncPanelEmpty();
+}
+// The complete palette is rendered in HTML so it remains visible even when a
+// browser has a JavaScript error. Event delegation keeps all chips live after
+// preset/template changes without creating duplicate buttons.
+strip.addEventListener('click', e => {
+  const button = e.target.closest('.tag-field-chip');
+  if (button && strip.contains(button)) toggleField(button.dataset.field);
 });
 function syncFieldChips(){
   strip.querySelectorAll('.tag-field-chip').forEach(btn => {
@@ -436,7 +471,9 @@ function syncFieldChips(){
     const visible = !!(f && f.visible);
     btn.classList.toggle('is-off', !visible);
     btn.setAttribute('aria-pressed', visible ? 'true' : 'false');
-    btn.title = (visible ? 'فعال — برای مخفی‌کردن کلیک کنید' : 'مخفی — برای نمایش کلیک کنید') + ' — ' + (fieldLabels[btn.dataset.field] || btn.dataset.field);
+    btn.title = (visible ? 'فعال — برای مخفی‌کردن کلیک کنید' : 'مخفی — برای افزودن به تگ کلیک کنید') + ' — ' + (fieldLabels[btn.dataset.field] || btn.dataset.field);
+    const state = btn.querySelector('.chip-state');
+    if (state) state.textContent = visible ? 'فعال' : 'افزودن';
     const dot = btn.querySelector('.chip-dot');
     if (dot && f) dot.style.background = f.color || '#888';
   });
@@ -627,28 +664,34 @@ document.addEventListener('keydown', e => {
 });
 
 // ---- Preset switching & reset (never silently wipe work) ----
+function loadBuiltInLayout(key){
+  const next = tagPresets[key] || tagPresets.kids_boutique;
+  pushUndo();
+  workingConfig = copy(next);
+  // Built-in/default layouts are the starting point for a new saved template;
+  // never accidentally overwrite the last custom template.
+  $('tag-template-id').value = '';
+  $('tag-template-name').value = '';
+  refreshDirty();
+  syncInputsFromConfig();
+  renderEditor();
+  applyLivePreview();
+  applyZoom();
+}
 $('tag-preset').addEventListener('change', function () {
   const key = this.value;
   if (!key || !tagPresets[key]) { this.value = ''; return; }
   if (dirty && !window.confirm('با بارگذاری قالب آماده، تغییرات فعلی از بین می‌رود. ادامه می‌دهید؟')) { this.value = ''; return; }
-  pushUndo();
-  workingConfig = copy(tagPresets[key] || tagPresets.kids_boutique);
+  loadBuiltInLayout(key);
   this.value = '';
-  refreshDirty();
-  syncInputsFromConfig();
-  renderEditor();
-  applyLivePreview();
-  applyZoom();
+});
+$('use-default-tag').addEventListener('click', () => {
+  if (dirty && !window.confirm('شروع از قالب پیش‌فرض، تغییرات فعلی را جایگزین می‌کند. ادامه می‌دهید؟')) return;
+  loadBuiltInLayout('kids_boutique');
 });
 $('reset-kids-preset').addEventListener('click', () => {
   if (dirty && !window.confirm('بازنشانی به قالب Kids Boutique، تغییرات فعلی را از بین می‌برد. ادامه می‌دهید؟')) return;
-  pushUndo();
-  workingConfig = copy(tagPresets.kids_boutique);
-  refreshDirty();
-  syncInputsFromConfig();
-  renderEditor();
-  applyLivePreview();
-  applyZoom();
+  loadBuiltInLayout('kids_boutique');
 });
 
 // ---- Global inputs ----
@@ -661,6 +704,23 @@ document.querySelectorAll('input[name="barcode-mode"]').forEach(i => i.addEventL
   markUnsaved();
 }));
 $('tag-config-form').addEventListener('submit', () => { $('tag-config-json').value = JSON.stringify(workingConfig); });
+$('tag-template-form').addEventListener('submit', () => {
+  $('tag-template-config-json').value = JSON.stringify(workingConfig);
+});
+document.querySelectorAll('.tag-template-load').forEach(button => button.addEventListener('click', () => {
+  const template = savedTagTemplates.find(item => String(item.id) === String(button.dataset.templateId));
+  if (!template) return;
+  if (dirty && !window.confirm('بارگذاری این قالب تغییرات فعلی را جایگزین می‌کند. ادامه می‌دهید؟')) return;
+  pushUndo();
+  workingConfig = copy(template.config);
+  workingConfig.preset = 'custom';
+  $('tag-template-id').value = template.id;
+  $('tag-template-name').value = template.name;
+  syncInputsFromConfig();
+  renderEditor();
+  applyLivePreview();
+  applyZoom();
+}));
 
 // ---- Live preview ----
 const baseDisplay = {};
@@ -732,9 +792,9 @@ function ensureFieldElement(name, f){
 }
 function syncBarcodeField(){
   const root = liveRoot();
-  const el = root ? root.querySelector('.tag-field[data-field="barcode"]') : null;
-  if (!el) return;
   const f = workingConfig.fields.barcode;
+  const el = ensureFieldElement('barcode', f);
+  if (!el) return;
   const mode = workingConfig.barcode_mode;
   const visible = Boolean(f && f.visible && mode !== 'hidden' && !(mode === 'custom_image' && !workingConfig.custom_image_path));
   if (!(el.dataset.field in baseDisplay)) baseDisplay[el.dataset.field] = el.style.display || getComputedStyle(el).display;
@@ -777,8 +837,8 @@ function applyLivePreview(){
     const el = ensureFieldElement(name, f);
     if (el) applyFieldStyle(el, name, f);
   });
-  syncBarcodeField();
   updateBarcodeStatus();
+  syncBarcodeField();
 }
 
 // ---- Init ----

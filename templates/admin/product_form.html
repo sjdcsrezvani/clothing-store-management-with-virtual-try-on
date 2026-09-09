@@ -16,6 +16,7 @@
 {% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
 
 <form id="product-form" method="post" action="{% if edit_mode %}/admin/products/{{ product.id }}{% else %}/admin/products/add{% endif %}" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <section class="card catalog-section">
         <div class="section-heading-row">
             <div><h3>اطلاعات پایه</h3><p class="muted">این اطلاعات بین همه تنوع‌های محصول مشترک است.</p></div>
@@ -91,6 +92,16 @@
             <div class="form-group">
                 <label for="default_reorder_quantity">مقدار سفارش پیش‌فرض</label>
                 <input type="number" id="default_reorder_quantity" name="default_reorder_quantity" min="0" value="{{ product.default_reorder_quantity if product else 0 }}">
+            </div>
+            <div class="form-group form-span-2">
+                <label for="tag_template_id">قالب تگ محصول</label>
+                <select id="tag_template_id" name="tag_template_id">
+                    <option value="">قالب پیش‌فرض فروشگاه</option>
+                    {% for template in tag_templates or [] %}
+                    <option value="{{ template.id }}" {% if product and product.tag_template_id == template.id %}selected{% endif %}>{{ template.name }}</option>
+                    {% endfor %}
+                </select>
+                <small>این قالب به همه تنوع‌های این محصول اختصاص داده می‌شود.</small>
             </div>
         </div>
         <div class="form-row product-form-grid">

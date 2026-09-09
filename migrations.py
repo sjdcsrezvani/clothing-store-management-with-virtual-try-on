@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 15
+MIGRATION_VERSION = 16
 
 
 def migration_status(engine) -> int:
@@ -152,6 +152,27 @@ def _rebuild_business_events(conn) -> None:
 
 
 def _apply_revision(conn, version: int) -> None:
+    if version == 16:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS tag_templates (
+                id INTEGER PRIMARY KEY,
+                name VARCHAR(100) NOT NULL UNIQUE,
+                config_json TEXT NOT NULL,
+                is_active BOOLEAN NOT NULL DEFAULT 1,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            )
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tag_templates_name ON tag_templates (name)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tag_templates_is_active ON tag_templates (is_active)"))
+        _add_column_if_missing(conn, "products", "tag_template_id", "INTEGER")
+        products_exists = conn.execute(text(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='products'"
+        )).scalar()
+        if products_exists:
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_products_tag_template_id ON products (tag_template_id)"))
+        return
+
     if version == 15:
         # Rebuild business_events without the event-type CHECK constraint when a
         # stale copy is present. The constraint was frozen into the table at
