@@ -1,3 +1,10 @@
+## 2.2.1 — 2026-09-12
+
+### Maintenance release
+
+- Published the completed product catalog and tag-template workflows as the 2.2.1 maintenance release.
+- Kept this release focused on packaging and release metadata; no private databases, environment files, or generated runtime data are included.
+
 ## 2.2.0 — 2026-09-08
 
 ### Product tag templates and catalog workflow
