@@ -72,6 +72,44 @@ def test_catalog_forms_include_csrf_for_browser_mutations(client, db_session, au
     assert variant_page.text.count('<input type="hidden" name="csrf_token"') >= 2
 
 
+def test_variant_demand_counter_increments_and_resets(client, db_session, authed):
+    product = Product(name="محصول تقاضا", category="لباس")
+    db_session.add(product)
+    db_session.flush()
+    variant = ProductVariant(product_id=product.id, price=100, stock_quantity=0, barcode="DEM-001")
+    db_session.add(variant)
+    db_session.commit()
+
+    page = client.get(f"/admin/variants/{variant.id}/edit")
+    assert page.status_code == 200
+    assert "ثبت تقاضا" in page.text
+
+    token = csrf_token(client, f"/admin/variants/{variant.id}/edit")
+    response = client.post(
+        f"/admin/variants/{variant.id}/demand",
+        data={"csrf_token": token},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"].endswith(f"/admin/variants/{variant.id}/edit")
+
+    db_session.refresh(variant)
+    assert variant.demand_count == 1
+
+    page = client.get(f"/admin/variants/{variant.id}/edit")
+    assert "صفر کردن" in page.text
+
+    token = csrf_token(client, f"/admin/variants/{variant.id}/edit")
+    response = client.post(
+        f"/admin/variants/{variant.id}/demand/reset",
+        data={"csrf_token": token},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    db_session.refresh(variant)
+    assert variant.demand_count == 0
+
+
 def test_duplicate_barcodes_in_one_product_submission_are_rejected(client, db_session, authed):
     token = csrf_token(client, "/admin/products/add")
     response = client.post(

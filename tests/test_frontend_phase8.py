@@ -55,3 +55,16 @@ def test_frontend_assets_have_accessibility_and_loading_support():
     assert ":focus-visible" in css
     assert ".is-loading" in css
     assert "requestSubmit" in js
+
+
+def test_color_code_fields_open_a_native_colour_palette():
+    variant_form = (ROOT / "templates/admin/variant_form.html").read_text()
+    product_form = (ROOT / "templates/admin/product_form.html").read_text()
+    js = (ROOT / "static/js/app.js").read_text()
+    assert 'data-color-picker' in variant_form
+    assert 'data-color-picker' in product_form
+    # Variant blocks are added by script, so the hook must re-run for them.
+    assert "initColorPickers(container)" in product_form
+    assert "function initColorPickers" in js
+    assert "picker.type = 'color'" in js
+    assert "field.value = picker.value.toUpperCase()" in js

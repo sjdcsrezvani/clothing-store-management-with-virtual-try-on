@@ -34,6 +34,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (cashReceived) cashReceived.addEventListener('input', updateCashCalculator);
     updateCashCalculator();
 
+    initColorPickers();
+
     const barcode = document.getElementById('barcode-input');
     const scanForm = document.getElementById('scan-form');
     if (barcode && scanForm) {
@@ -47,6 +49,40 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
+/* کد رنگ fields (marked with data-color-picker): clicking the field opens the
+   native colour palette and the picked colour is written back as a hex code.
+   Nothing is drawn, so every theme keeps its own field styling. */
+function initColorPickers(scope) {
+    const hexCode = /^#?(?:([0-9a-f]{6})|([0-9a-f])([0-9a-f])([0-9a-f]))$/i;
+    (scope || document).querySelectorAll('input[data-color-picker]').forEach(field => {
+        if (field.dataset.colorPickerReady) return;
+        field.dataset.colorPickerReady = 'true';
+
+        const host = field.parentElement || document.body;
+        if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+
+        const picker = document.createElement('input');
+        picker.type = 'color';
+        picker.tabIndex = -1;
+        picker.setAttribute('aria-hidden', 'true');
+        picker.style.cssText = 'position:absolute;width:1px;height:1px;min-height:0;padding:0;border:0;opacity:0;pointer-events:none;bottom:0;inset-inline-start:0;';
+        host.appendChild(picker);
+
+        picker.addEventListener('input', () => {
+            field.value = picker.value.toUpperCase();
+            field.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+
+        field.addEventListener('click', () => {
+            const match = hexCode.exec((field.value || '').trim());
+            // Short #abc codes expand to aabbcc, the only form a colour input accepts.
+            const full = match && (match[1] || (match[2] + match[2] + match[3] + match[3] + match[4] + match[4]));
+            if (full) picker.value = '#' + full.toLowerCase();
+            picker.click();
+        });
+    });
+}
 
 function normalizeServerUrl(value, defaultPort = 8000) {
     value = (value || '').trim().replace(/^https?:\/\//i, '').replace(/\/$/, '');

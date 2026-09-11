@@ -170,7 +170,7 @@ function addVariant() {
                 <div class="form-group"><label>سایز</label><input type="text" name="variant_size_${index}" placeholder="مثلاً ۳ تا ۴ سال"></div>
                 <div class="form-group"><label>رنگ</label><input type="text" name="variant_color_${index}" placeholder="مثلاً آبی"></div>
                 <div class="form-group"><label>سیستم سایز</label><input type="text" name="variant_size_system_${index}" placeholder="ایران / EU"></div>
-                <div class="form-group"><label>کد رنگ</label><input type="text" name="variant_color_code_${index}" dir="ltr" placeholder="#4AA3DF"></div>
+                <div class="form-group"><label>کد رنگ</label><input type="text" name="variant_color_code_${index}" dir="ltr" placeholder="#4AA3DF" data-color-picker></div>
                 <div class="form-group"><label>قیمت فروش <span class="required-mark">*</span></label><input type="number" name="variant_price_${index}" required min="0"></div>
                 <div class="form-group"><label>قیمت خرید</label><input type="number" name="variant_cost_price_${index}" min="0"></div>
                 <div class="form-group"><label>موجودی اولیه</label><input type="number" name="variant_stock_${index}" min="0" value="0"></div>
@@ -183,6 +183,7 @@ function addVariant() {
             <div class="form-group"><label>تصویر تنوع</label><input type="file" name="variant_image_${index}" accept="image/png,image/jpeg,image/webp"></div>
             <input type="hidden" name="variant_index_${index}" value="${index}">
         </article>`);
+    initColorPickers(container);
 }
 {% if not edit_mode or not product.variants %}addVariant();{% endif %}
 </script>

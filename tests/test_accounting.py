@@ -1,4 +1,6 @@
 """Accounting-lite: نسیه (credit sales), payments, purchases, expenses, P&L, CSV."""
+import re
+
 from models import Customer, Expense, Payment, Purchase, PurchaseItem, Sale, Product, ProductVariant, StockMovement
 from tests.conftest import csrf_token
 from tests.test_sales_money import _confirm_sale, _make_customer, _make_variant
@@ -225,6 +227,102 @@ def test_manual_stock_edit_creates_adjustment_movement(client, db_session, authe
         StockMovement.movement_type == "adjustment",
     ).one()
     assert movement.quantity_delta == 2
+
+
+def _visible_cost_on_edit_page(client, variant):
+    """Read the value rendered in the single visible cost field of the edit page."""
+    page = client.get(f"/admin/variants/{variant.id}/edit")
+    assert page.status_code == 200
+    match = re.search(r'id="cost_price".*?value="(\d*)"', page.text, re.S)
+    assert match, "cost price field not rendered"
+    return match.group(1)
+
+
+def test_second_cost_price_is_display_only(client, db_session, authed):
+    """A second cost price mirrors into the cost field without touching the real cost basis."""
+    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=5, name="قیمت دوم")
+
+    _post(client, f"/admin/variants/{variant.id}", {
+        "size": "", "color": "", "price": "100000", "cost_price": "9000",
+        "fake_cost_price": "9000", "stock_quantity": "5", "barcode": variant.barcode,
+        "sku": "", "tryon_details": "",
+    }, authed)
+
+    db_session.refresh(variant)
+    assert variant.fake_cost_price == 9_000
+    assert variant.cost_price == 50_000
+    assert _visible_cost_on_edit_page(client, variant) == "9000"
+    # Display-only: no cost-basis adjustment is recorded for the real cost.
+    assert db_session.query(StockMovement).filter(
+        StockMovement.variant_id == variant.id,
+        StockMovement.movement_type == "cost_adjustment",
+    ).count() == 0
+
+
+def test_clearing_second_cost_price_falls_back_to_real_cost(client, db_session, authed):
+    """Clearing the second cost hides it and shows the real (creation) cost again."""
+    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=5, name="حذف قیمت دوم")
+    variant.fake_cost_price = 9_000
+    db_session.commit()
+
+    _post(client, f"/admin/variants/{variant.id}", {
+        "size": "", "color": "", "price": "100000", "cost_price": "9000",
+        "fake_cost_price": "", "stock_quantity": "5", "barcode": variant.barcode,
+        "sku": "", "tryon_details": "",
+    }, authed)
+
+    db_session.refresh(variant)
+    assert variant.fake_cost_price is None
+    assert variant.cost_price == 50_000
+    assert _visible_cost_on_edit_page(client, variant) == "50000"
+
+
+def test_second_cost_price_survives_app_restart(client, db_session, authed):
+    """The second cost is a real column: a fresh app start still reads it back."""
+    from fastapi.testclient import TestClient
+
+    from main import app
+
+    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=5, name="بقای قیمت دوم")
+    _post(client, f"/admin/variants/{variant.id}", {
+        "size": "", "color": "", "price": "100000", "cost_price": "9000",
+        "fake_cost_price": "9000", "stock_quantity": "5", "barcode": variant.barcode,
+        "sku": "", "tryon_details": "",
+    }, authed)
+
+    db_session.expire_all()
+    variant_id = variant.id
+
+    # A second TestClient boots the app afresh against the same database file.
+    with TestClient(app) as restarted:
+        token = csrf_token(restarted)
+        resp = restarted.post("/admin/login", data={
+            "username": "owner", "password": "test-admin-pass", "csrf_token": token,
+        }, follow_redirects=False)
+        assert resp.status_code == 303
+        page = restarted.get(f"/admin/variants/{variant_id}/edit")
+        assert page.status_code == 200
+        match = re.search(r'id="cost_price".*?value="(\d*)"', page.text, re.S)
+        assert match and match.group(1) == "9000"
+
+    stored = db_session.query(ProductVariant).filter(ProductVariant.id == variant_id).one()
+    assert stored.fake_cost_price == 9_000
+    assert stored.cost_price == 50_000
+
+
+def test_second_cost_price_cannot_be_set_on_creation(client, db_session, authed):
+    """Second cost price lives on the edit page only — creation must ignore it."""
+    _post(client, "/admin/products/add", {
+        "name": "محصول بدون قیمت دوم", "category": "", "brand": "", "description": "",
+        "variant_index_0": "0", "variant_size_0": "", "variant_color_0": "",
+        "variant_price_0": "100000", "variant_cost_price_0": "50000",
+        "variant_stock_0": "0", "variant_barcode_0": "", "variant_sku_0": "",
+        "fake_cost_price": "9999",
+    }, authed)
+
+    variant = db_session.query(ProductVariant).filter(ProductVariant.price == 100_000).one()
+    assert variant.cost_price == 50_000
+    assert variant.fake_cost_price is None
 
 
 def test_expense_types_are_saved_and_reported(client, db_session, authed):

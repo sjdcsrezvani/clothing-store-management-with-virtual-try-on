@@ -1,3 +1,11 @@
+## 2.2.2 — 2026-09-12
+
+### Variant colour palette, demand counter, and cost display
+
+- Clicking a کد رنگ field now opens the native colour palette and writes the chosen colour back as a hex code, on the variant edit page and on script-added variant blocks.
+- Added a demand counter to the variant page so repeated “do you have this size?” requests can be recorded, logged, and reset.
+- Prevented the second (display-only) purchase price from overwriting the real cost basis, including across restarts.
+
 ## 2.2.1 — 2026-09-12
 
 ### Maintenance release

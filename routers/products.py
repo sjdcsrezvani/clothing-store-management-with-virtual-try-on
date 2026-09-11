@@ -763,27 +763,32 @@ async def admin_variant_update(
             "error": "قیمت فروش نمی‌تواند منفی باشد.",
         })
 
-    try:
-        cost_price_int = int(to_english_digits(cost_price))
-    except ValueError:
-        return templates.TemplateResponse(request, "admin/variant_form.html", {
-            "variant": variant,
-            "product": variant.product,
-            "error": "قیمت خرید معتبر نیست.",
-        })
-    if cost_price_int < 0:
-        return templates.TemplateResponse(request, "admin/variant_form.html", {
-            "variant": variant,
-            "product": variant.product,
-            "error": "قیمت خرید نمی‌تواند منفی باشد.",
-        })
-
     fake_cost_price_int = None
     if fake_cost_price.strip():
         try:
-            fake_cost_price_int = int(to_english_digits(fake_cost_price.strip()))
+            fake_cost_price_int = max(0, int(to_english_digits(fake_cost_price.strip())))
         except ValueError:
             fake_cost_price_int = variant.fake_cost_price
+
+    if fake_cost_price_int is not None or variant.fake_cost_price is not None:
+        # A second (display-only) cost is in play, so the visible cost field is
+        # only a mirror of it: never let it rewrite the real cost basis.
+        cost_price_int = variant.cost_price
+    else:
+        try:
+            cost_price_int = int(to_english_digits(cost_price))
+        except ValueError:
+            return templates.TemplateResponse(request, "admin/variant_form.html", {
+                "variant": variant,
+                "product": variant.product,
+                "error": "قیمت خرید معتبر نیست.",
+            })
+        if cost_price_int < 0:
+            return templates.TemplateResponse(request, "admin/variant_form.html", {
+                "variant": variant,
+                "product": variant.product,
+                "error": "قیمت خرید نمی‌تواند منفی باشد.",
+            })
 
     try:
         stock_int = int(to_english_digits(stock_quantity))
@@ -911,7 +916,9 @@ async def admin_variant_demand_up(variant_id: int, request: Request, db: Session
 
     variant.demand_count = (variant.demand_count or 0) + 1
     db.commit()
-    return RedirectResponse(url=f"/admin/products/{variant.product_id}", status_code=303)
+    from services.security import log_action
+    log_action(db, "variant_demand_up", f"ثبت تقاضا برای تنوع #{variant.id}", request=request, target_type="variant", target_id=variant.id)
+    return RedirectResponse(url=f"/admin/variants/{variant.id}/edit", status_code=303)
 
 
 @router.post("/variants/{variant_id}/demand/reset", response_class=HTMLResponse)
@@ -927,7 +934,9 @@ async def admin_variant_demand_reset(variant_id: int, request: Request, db: Sess
 
     variant.demand_count = 0
     db.commit()
-    return RedirectResponse(url=f"/admin/products/{variant.product_id}", status_code=303)
+    from services.security import log_action
+    log_action(db, "variant_demand_reset", f"صفر کردن تقاضای تنوع #{variant.id}", request=request, target_type="variant", target_id=variant.id)
+    return RedirectResponse(url=f"/admin/variants/{variant.id}/edit", status_code=303)
 
 
 @router.get("/barcodes/print", response_class=HTMLResponse)

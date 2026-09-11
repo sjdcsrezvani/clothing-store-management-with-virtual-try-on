@@ -23,9 +23,9 @@
             <div class="form-group"><label for="size">سایز</label><input id="size" name="size" value="{{ variant.size or '' }}" placeholder="۳ تا ۴ سال"></div>
             <div class="form-group"><label for="size_system">سیستم سایز</label><input id="size_system" name="size_system" value="{{ variant.size_system or '' }}" placeholder="ایران / EU"></div>
             <div class="form-group"><label for="color">رنگ</label><input id="color" name="color" value="{{ variant.color or '' }}" placeholder="آبی"></div>
-            <div class="form-group"><label for="color_code">کد رنگ</label><input id="color_code" name="color_code" value="{{ variant.color_code or '' }}" dir="ltr" placeholder="#4AA3DF"></div>
+            <div class="form-group"><label for="color_code">کد رنگ</label><input id="color_code" name="color_code" value="{{ variant.color_code or '' }}" dir="ltr" placeholder="#4AA3DF" data-color-picker></div>
             <div class="form-group"><label for="price">قیمت فروش <span class="required-mark">*</span></label><input type="number" id="price" name="price" required min="0" value="{{ variant.price }}"></div>
-            <div class="form-group"><label for="cost_price">قیمت خرید</label><input type="number" id="cost_price" name="cost_price" min="0" value="{{ variant.cost_price }}"></div>
+            <div class="form-group"><label for="cost_price">قیمت خرید<span id="cost-key" class="cost-key" aria-hidden="true"></span></label><input type="number" id="cost_price" name="cost_price" min="0" value="{{ variant.fake_cost_price if variant.fake_cost_price is not none else variant.cost_price }}" data-real="{{ variant.cost_price }}"{% if variant.fake_cost_price is not none %} readonly{% endif %}><div id="second-cost-row" class="cost-note-editor" hidden><input type="number" id="fake_cost_price" name="fake_cost_price" min="0" value="{{ variant.fake_cost_price if variant.fake_cost_price is not none else '' }}" placeholder="مقدار"></div></div>
             <div class="form-group"><label for="sku">SKU</label><input id="sku" name="sku" value="{{ variant.sku or '' }}" dir="ltr"></div>
             <div class="form-group"><label for="barcode">بارکد <span class="required-mark">*</span></label><input id="barcode" name="barcode" required value="{{ variant.barcode }}" dir="ltr"></div>
         </div>
@@ -57,7 +57,23 @@
 <aside>
     <section class="card variant-summary-card">
         <h3>خلاصه تنوع</h3>
-        <dl class="detail-list"><div><dt>محصول</dt><dd>{{ product.name }}</dd></div><div><dt>بارکد</dt><dd dir="ltr">{{ variant.barcode }}</dd></div><div><dt>موجودی کل</dt><dd>{{ variant.stock_quantity }}</dd></div><div><dt>رزرو</dt><dd>{{ variant.reserved_quantity or 0 }}</dd></div><div><dt>قابل فروش</dt><dd>{{ variant.available_quantity }}</dd></div><div><dt>تقاضای ثبت‌شده</dt><dd>{{ variant.demand_count or 0 }}</dd></div></dl>
+        <dl class="detail-list"><div><dt>محصول</dt><dd>{{ product.name }}</dd></div><div><dt>بارکد</dt><dd dir="ltr">{{ variant.barcode }}</dd></div><div><dt>موجودی کل</dt><dd>{{ variant.stock_quantity }}</dd></div><div><dt>رزرو</dt><dd>{{ variant.reserved_quantity or 0 }}</dd></div><div><dt>قابل فروش</dt><dd>{{ variant.available_quantity }}</dd></div></dl>
+        <div class="demand-counter-group">
+            <div class="demand-counter-heading"><span>تقاضای ثبت‌شده</span><strong class="demand-counter-value" aria-live="polite">{{ variant.demand_count or 0 }}</strong></div>
+            <div class="demand-counter-row">
+                <form method="post" action="/admin/variants/{{ variant.id }}/demand" class="demand-counter-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="btn btn-sm btn-primary">+ ثبت تقاضا</button>
+                </form>
+                {% if variant.demand_count %}
+                <form method="post" action="/admin/variants/{{ variant.id }}/demand/reset" class="demand-counter-form" onsubmit="return confirm('تقاضای ثبت‌شده صفر شود؟')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="btn btn-sm btn-ghost">صفر کردن</button>
+                </form>
+                {% endif %}
+            </div>
+            <small class="field-help">هر بار مشتری کالای ناموجود را پرسید، یک بار ثبت کنید تا در گزارش سفارش دیده شود.</small>
+        </div>
     </section>
     <section class="card danger-zone">
         <h3>غیرفعال‌سازی</h3><p class="muted">برای حفظ تاریخچه فروش، تنوع حذف نمی‌شود و فقط غیرفعال خواهد شد.</p>
@@ -65,4 +81,49 @@
     </section>
 </aside>
 </div>
+
+<style>
+    /* The blank spot right after the cost label is the key to the second cost
+       price: nothing drawn, no colours, no hover, no pointer cursor. Deliberately
+       free of any colour or background so every theme keeps its own field look. */
+    .cost-key {
+        display: inline-block;
+        width: 1.6rem;
+        height: 1.1em;
+        margin-inline-start: 0.35rem;
+        vertical-align: middle;
+        cursor: default;
+        background: none;
+        border: 0;
+        -webkit-user-select: none;
+        user-select: none;
+    }
+    .cost-note-editor { margin-top: 0.45rem; }
+    .cost-note-editor[hidden] { display: none; }
+</style>
+<script>
+(function () {
+    const visible = document.getElementById('cost_price');
+    const second = document.getElementById('fake_cost_price');
+    const editor = document.getElementById('second-cost-row');
+    const realCost = visible.dataset.real;
+
+    function sync() {
+        // The visible field mirrors the second cost while one is set, and falls
+        // back to the real (creation) cost when the second one is empty.
+        const hasSecond = second.value.trim() !== '';
+        visible.value = hasSecond ? second.value : realCost;
+        visible.readOnly = hasSecond;
+    }
+
+    document.getElementById('cost-key').addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        editor.hidden = !editor.hidden;
+        if (!editor.hidden) second.focus();
+    });
+
+    second.addEventListener('input', sync);
+})();
+</script>
 {% endblock %}
