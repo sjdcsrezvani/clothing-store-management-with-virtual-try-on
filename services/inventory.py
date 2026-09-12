@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import text
+from sqlalchemy import func, text
 
-from models import ProductVariant, Purchase, StockMovement
+from models import ProductVariant, Purchase, PurchaseItem, StockMovement
 
 
 MOVEMENT_TYPES = {
@@ -170,8 +170,13 @@ def record_cost_adjustment(
     *,
     actor_user_id: int | None = None,
     request_id: str | None = None,
+    purchase_id: int | None = None,
 ):
-    """Record a cost-basis edit without changing stock or sale history."""
+    """Record a cost-basis edit without changing stock or sale history.
+
+    A purchase uses this too: buying stock updates what the goods cost, while
+    where the stock itself is counted is decided on the product screens.
+    """
     if int(old_cost or 0) == int(new_cost or 0):
         return None
     movement = StockMovement(
@@ -179,6 +184,7 @@ def record_cost_adjustment(
         quantity_delta=0,
         movement_type="cost_adjustment",
         unit_cost=max(0, int(new_cost or 0)),
+        purchase_id=purchase_id,
         note=(note or "")[:500] or None,
     )
     db.add(movement)
@@ -196,6 +202,7 @@ def record_cost_adjustment(
             "movement_id": movement.id,
             "old_cost": old_cost,
             "new_cost": new_cost,
+            "purchase_id": purchase_id,
         },
     )
     return movement
@@ -231,21 +238,25 @@ def record_stock_adjustment(
 
 
 def latest_active_purchase_cost(db, variant_id: int) -> int | None:
-    """Return the latest non-reversed purchase cost for a variant."""
-    movement = (
-        db.query(StockMovement)
-        .join(Purchase, StockMovement.purchase_id == Purchase.id)
+    """Return the latest non-reversed purchase cost for a variant.
+
+    Reads the purchase lines (not stock movements), because a purchase records
+    money and cost only and no longer writes a stock movement. Drafts have not
+    applied a cost yet, so they never count.
+    """
+    line = (
+        db.query(PurchaseItem)
+        .join(Purchase, PurchaseItem.purchase_id == Purchase.id)
         .filter(
-            StockMovement.variant_id == variant_id,
-            StockMovement.movement_type == "purchase",
-            StockMovement.quantity_delta > 0,
-            StockMovement.unit_cost.isnot(None),
+            PurchaseItem.variant_id == variant_id,
+            PurchaseItem.landed_unit_cost.isnot(None),
             Purchase.is_reversed == False,
+            Purchase.is_draft == False,
         )
-        .order_by(StockMovement.created_at.desc(), StockMovement.id.desc())
+        .order_by(func.coalesce(Purchase.purchase_date, Purchase.created_at).desc(), Purchase.id.desc(), PurchaseItem.id.desc())
         .first()
     )
-    return movement.unit_cost if movement else None
+    return line.landed_unit_cost if line else None
 
 
 def restore_cost_after_purchase_reversal(db, variant: ProductVariant, fallback: int | None = None):

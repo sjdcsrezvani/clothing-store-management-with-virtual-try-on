@@ -58,8 +58,8 @@
         <div class="stat-label">📤 خروجی‌ها</div>
         <div class="stat-value tnum">{{ fmt(register.cash_out) }} ت</div>
         <div class="stat-sub">استرداد: {{ fmt(register.refunds) }} ت</div>
-        <div class="stat-sub">هزینه‌ها: {{ fmt(register.expenses) }} ت • خرید: {{ fmt(register.purchases) }} ت</div>
-        <div class="stat-sub">پرداخت تأمین‌کننده: {{ fmt(register.supplier_payments) }} ت</div>
+        <div class="stat-sub">هزینه‌ها: {{ fmt(register.expenses) }} ت • پرداخت تأمین‌کننده: {{ fmt(register.supplier_payments) }} ت</div>
+        <div class="stat-sub">خرید فاکتوری این دوره (پول نقد نیست): {{ fmt(register.purchases) }} ت</div>
     </div>
     <div class="stat-card {% if register.closing >= 0 %}accent-candy{% else %}accent-ink{% endif %}">
         <div class="stat-label">🧾 موجودی پایان دوره</div>

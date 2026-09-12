@@ -48,7 +48,7 @@
                 </td>
                 <td class="tnum">{{ fmt(movement.unit_cost) if movement.unit_cost is not none else '—' }}</td>
                 <td class="tnum">
-                    {% if movement.purchase_id %}خرید #{{ movement.purchase_id }}{% endif %}
+                    {% if movement.purchase_id %}<a class="purchase-link" href="/admin/purchases/{{ movement.purchase_id }}">خرید #{{ movement.purchase_id }}</a>{% endif %}
                     {% if movement.sale_id %}فاکتور #{{ movement.sale_id }}{% endif %}
                     {% if not movement.purchase_id and not movement.sale_id %}—{% endif %}
                 </td>

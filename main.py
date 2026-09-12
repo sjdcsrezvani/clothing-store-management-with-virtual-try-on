@@ -131,11 +131,20 @@ def _apply_missing_columns(migration_engine=None):
             ("cash_session_id", "INTEGER"),
         ],
         "purchases": [
+            # Existing invoices are already final, so the added column defaults
+            # to 0 and only new drafts are marked.
+            ("is_draft", "BOOLEAN NOT NULL DEFAULT 0"),
             ("is_reversed", "BOOLEAN DEFAULT 0"),
             ("reversed_at", "DATETIME"),
+            ("amount_paid", "INTEGER DEFAULT 0"),
+            ("due_date", "DATETIME"),
+            ("purchase_date", "DATETIME"),
+            ("extra_cost", "INTEGER DEFAULT 0"),
+            ("extra_cost_in_landed", "BOOLEAN DEFAULT 1"),
         ],
         "purchase_items": [
             ("prev_cost_price", "INTEGER"),
+            ("landed_unit_cost", "INTEGER"),
         ],
         "checkout_sessions": [
             ("use_referrer_discount", "BOOLEAN DEFAULT 1"),
@@ -162,10 +171,6 @@ def _apply_missing_columns(migration_engine=None):
             ("reversal_id", "INTEGER"),
             ("payment_method", "VARCHAR(20) DEFAULT 'cash'"),
             ("cash_session_id", "INTEGER"),
-        ],
-        "purchases": [
-            ("amount_paid", "INTEGER DEFAULT 0"),
-            ("due_date", "DATETIME"),
         ],
         "supplier_payments": [
             ("cash_session_id", "INTEGER"),

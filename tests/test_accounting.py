@@ -13,6 +13,19 @@ def _post(client, url, data, authed):
     return client.post(url, data=data, follow_redirects=False)
 
 
+def _post_invoice(client, data, authed):
+    """Record a supplier invoice the way the UI does: draft, then finalise.
+
+    Only finalising touches the cost basis, the payable or the cash register.
+    """
+    response = _post(client, "/admin/purchases/add", data, authed)
+    match = re.search(r"/admin/purchases/(\d+)", response.headers.get("location", ""))
+    assert match, response.headers.get("location")
+    finalized = _post(client, f"/admin/purchases/{match.group(1)}/finalize", {}, authed)
+    assert finalized.status_code == 303
+    return response
+
+
 def test_credit_sale_creates_customer_debt(client, db_session):
     customer = _make_customer(db_session)
     _, variant = _make_variant(db_session, price=100_000, stock=5)
@@ -118,8 +131,9 @@ def test_new_product_initial_stock_creates_opening_movement(client, db_session, 
     assert movement.unit_cost == 50_000
 
 
-def test_purchase_updates_stock_and_cost(client, db_session, authed):
-    supplier = None
+def test_purchase_updates_cost_but_never_stock(client, db_session, authed):
+    """Buying stock records what it cost; where stock is counted is decided on
+    the product screens, so a purchase must leave quantities alone."""
     from models import Supplier
     supplier = Supplier(name="عمده‌فروش مرکزی")
     db_session.add(supplier)
@@ -127,7 +141,7 @@ def test_purchase_updates_stock_and_cost(client, db_session, authed):
     db_session.refresh(supplier)
 
     _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=5)
-    _post(client, "/admin/purchases/add", {
+    _post_invoice(client, {
         "supplier_id": str(supplier.id),
         "note": "فاکتور اول",
         "purchase_variant_0": str(variant.id),
@@ -136,14 +150,18 @@ def test_purchase_updates_stock_and_cost(client, db_session, authed):
     }, authed)
 
     db_session.refresh(variant)
-    assert variant.stock_quantity == 15
+    assert variant.stock_quantity == 5
     assert variant.cost_price == 45_000
     purchase = db_session.query(Purchase).order_by(Purchase.id.desc()).first()
     assert purchase.total_cost == 450_000
     assert db_session.query(PurchaseItem).filter(PurchaseItem.purchase_id == purchase.id).count() == 1
+    # The cost change is auditable, and writes no stock movement.
+    movements = db_session.query(StockMovement).filter(StockMovement.purchase_id == purchase.id).all()
+    assert [m.movement_type for m in movements] == ["cost_adjustment"]
+    assert movements[0].quantity_delta == 0
 
-    # Reversing an unused purchase preserves the purchase row, adds a
-    # compensating movement, and restores the prior cost basis.
+    # Reversing keeps the purchase row, restores the previous cost basis and
+    # leaves stock exactly where it was.
     _post(client, f"/admin/purchases/{purchase.id}/delete", {}, authed)
     db_session.refresh(variant)
     db_session.refresh(purchase)
@@ -151,8 +169,10 @@ def test_purchase_updates_stock_and_cost(client, db_session, authed):
     assert variant.cost_price == 50_000
     assert purchase.is_reversed is True
     assert db_session.query(Purchase).filter(Purchase.id == purchase.id).count() == 1
-    movements = db_session.query(StockMovement).filter(StockMovement.purchase_id == purchase.id).all()
-    assert [m.movement_type for m in movements] == ["purchase", "purchase_reversal"]
+    assert db_session.query(StockMovement).filter(
+        StockMovement.purchase_id == purchase.id,
+        StockMovement.movement_type == "purchase_reversal",
+    ).count() == 0
 
     from datetime import datetime, timezone, timedelta
     from services.accounting import debt_totals, get_cashbox
@@ -162,11 +182,18 @@ def test_purchase_updates_stock_and_cost(client, db_session, authed):
     assert get_cashbox(db_session, start, end, 0)["purchases"] == 0
 
 
-def test_purchase_reversal_is_blocked_after_stock_was_sold(client, db_session, authed):
-    """A receipt cannot be removed after a later sale could have consumed it."""
-    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=0, name="موجودی قفل‌شونده")
-    _post(client, "/admin/purchases/add", {
-        "supplier_id": "",
+def test_purchase_reversal_needs_no_stock_lock(client, db_session, authed):
+    """Sales cannot be invalidated by a reversal, because a purchase never put
+    the units into stock in the first place."""
+    from models import Supplier
+    supplier = Supplier(name="قفل موجودی")
+    db_session.add(supplier)
+    db_session.commit()
+    db_session.refresh(supplier)
+
+    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=10, name="بدون قفل موجودی")
+    _post_invoice(client, {
+        "supplier_id": str(supplier.id),
         "note": "خرید قابل تطبیق",
         "purchase_variant_0": str(variant.id),
         "purchase_qty_0": "10",
@@ -178,24 +205,29 @@ def test_purchase_reversal_is_blocked_after_stock_was_sold(client, db_session, a
                "unit_price": 100_000, "quantity": 8, "total_price": 800_000}]
     _confirm_sale(client, basket, extra={"payment_method": "cash"})
 
-    _post(client, f"/admin/purchases/{purchase.id}/delete", {}, authed)
+    response = _post(client, f"/admin/purchases/{purchase.id}/delete", {}, authed)
+    assert response.status_code == 303
     db_session.refresh(purchase)
     db_session.refresh(variant)
-    assert purchase.is_reversed is False
+    assert purchase.is_reversed is True
+    # Only the sale moved stock: 10 − 8.
     assert variant.stock_quantity == 2
-    assert db_session.query(StockMovement).filter(
-        StockMovement.purchase_id == purchase.id,
-        StockMovement.movement_type == "purchase_reversal",
-    ).count() == 0
+    assert variant.cost_price == 50_000
 
 
 def test_multiple_purchase_reversal_keeps_latest_cost_basis(client, db_session, authed):
-    """Reversing an older unused receipt never overwrites a later receipt cost."""
+    """Reversing an older receipt never overwrites a later receipt cost."""
+    from models import Supplier
+    supplier = Supplier(name="چند خرید تأمین‌کننده")
+    db_session.add(supplier)
+    db_session.commit()
+    db_session.refresh(supplier)
+
     _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=0, name="چند خرید")
     for qty, cost in ((10, 45_000), (5, 40_000)):
-        _post(client, "/admin/purchases/add", {
-            "supplier_id": "",
-            "note": "ورود موجودی",
+        _post_invoice(client, {
+            "supplier_id": str(supplier.id),
+            "note": "خرید کالا",
             "purchase_variant_0": str(variant.id),
             "purchase_qty_0": str(qty),
             "purchase_cost_0": str(cost),
@@ -206,7 +238,7 @@ def test_multiple_purchase_reversal_keeps_latest_cost_basis(client, db_session, 
     db_session.refresh(variant)
     db_session.refresh(purchases[0])
     assert purchases[0].is_reversed is True
-    assert variant.stock_quantity == 5
+    assert variant.stock_quantity == 0
     assert variant.cost_price == 40_000
     assert db_session.query(Purchase).count() == 2
 

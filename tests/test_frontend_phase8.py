@@ -57,6 +57,47 @@ def test_frontend_assets_have_accessibility_and_loading_support():
     assert "requestSubmit" in js
 
 
+def test_purchase_row_amount_follows_the_selected_variant():
+    page = (ROOT / "templates/admin/purchases.html").read_text()
+    # Choosing a product fills the row's amounts from that product.
+    assert "if (!cost.value) cost.value = variant.cost || '';" in page
+    assert "function afterSelectionChange(row, variant)" in page
+    # Regression: the price was only filled while the field was blank, so
+    # re-selecting a different variant kept the previous variant's amount.
+    assert "if (variant && !Number(cost.input.value || 0))" not in page
+
+
+def test_purchase_picker_is_a_scoped_search_not_a_giant_select():
+    """Selecting a product is a search inside the chosen supplier's catalogue."""
+    page = (ROOT / "templates/admin/purchases.html").read_text()
+    css = (ROOT / "static/css/style.css").read_text()
+    assert "input.setAttribute('role', 'combobox')" in page
+    assert "function scopedVariants()" in page
+    assert "function searchVariants(query)" in page
+    assert "product.supplier_id" in page
+    # Persian text is matched loosely: نیم‌فاصله، ي/ك عربی and Persian digits.
+    assert "function fold(value)" in page
+    assert "byBarcode[fold(variant.barcode)] = variant;" in page
+    # No <select> of products is built any more.
+    assert "function buildSelect" not in page
+    assert "optgroup" not in page
+    assert ".purchase-picker-list" in css
+    assert ".purchase-scope-note" in css
+
+
+def test_purchase_form_is_a_draft_until_finalized():
+    page = (ROOT / "templates/admin/purchases.html").read_text()
+    detail = (ROOT / "templates/admin/purchases_detail.html").read_text()
+    assert "ثبت پیش‌نویس فاکتور" in page
+    assert "/finalize" in detail
+    assert "نهایی‌سازی فاکتور" in detail
+    # The row amounts are optional: the product already knows quantity and cost.
+    assert "تعداد و قیمت واحد اختیاری‌اند" in page
+    # Money is recorded when the invoice is finalised, not while drafting it.
+    assert 'name="payment_amount"' not in page
+    assert 'name="payment_amount"' in detail
+
+
 def test_color_code_fields_open_a_native_colour_palette():
     variant_form = (ROOT / "templates/admin/variant_form.html").read_text()
     product_form = (ROOT / "templates/admin/product_form.html").read_text()

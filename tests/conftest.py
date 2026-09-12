@@ -52,8 +52,10 @@ def _clean_db(client, db_session):
                         Referral, Customer, ProductVariant, Product,
                         Campaign, Settings, AdminLog, Payment, Expense, CashSessionEntry,
                         Purchase, PurchaseItem, Supplier, Refund, RefundLine, PaymentReversal, FinancialEntry, SalaryPayment, CashSession, CashSessionEntry, SupplierPayment)
+    # Children before parents: supplier_payments reference purchases, so they
+    # must go first or a linked payment blocks the purchase delete.
     for model in (BusinessEvent, TagPrintBatchLine, TagPrintBatch, CheckoutEvent, StockReservation, CheckoutSession, CheckReminder, CheckRecord, RefundLine, FinancialEntry, PaymentReversal, Refund, SalaryPayment, SaleCampaign, SaleItem, StockMovement, POSTransaction, Payment, Sale, GeneratedImage,
-                  Referral, PurchaseItem, Purchase, ProductVariant, Product, Expense, SupplierPayment,
+                  Referral, SupplierPayment, PurchaseItem, Purchase, ProductVariant, Product, Expense,
                   Campaign, CashSession, CashSessionEntry, AdminLog, StaffUser, Settings, Customer):
         db_session.query(model).delete()
     db_session.commit()

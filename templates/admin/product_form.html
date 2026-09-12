@@ -36,6 +36,16 @@
                 <input type="text" id="brand" name="brand" value="{{ product.brand if product else '' }}" placeholder="مثال: رای کیدز">
             </div>
             <div class="form-group">
+                <label for="supplier_id">تأمین‌کننده</label>
+                <select id="supplier_id" name="supplier_id">
+                    <option value="">بدون تأمین‌کننده</option>
+                    {% for supplier in suppliers or [] %}
+                    <option value="{{ supplier.id }}" {% if product and product.supplier_id == supplier.id %}selected{% endif %}>{{ supplier.name }}</option>
+                    {% endfor %}
+                </select>
+                <small class="field-help">فقط محصولات همین تأمین‌کننده در صفحه <a class="text-link" href="/admin/purchases" target="_blank">خرید</a> قابل انتخاب‌اند. <a class="text-link" href="/admin/suppliers" target="_blank">افزودن تأمین‌کننده</a></small>
+            </div>
+            <div class="form-group">
                 <label for="base_sku">SKU پایه</label>
                 <input type="text" id="base_sku" name="base_sku" value="{{ product.base_sku if product else '' }}" dir="ltr" placeholder="مثال: RK-SHIRT-01">
             </div>
@@ -76,15 +86,6 @@
             </div>
         </div>
         <div class="form-row product-form-grid product-form-grid-wide">
-            <div class="form-group">
-                <label for="supplier_id">تأمین‌کننده پیش‌فرض</label>
-                <select id="supplier_id" name="supplier_id">
-                    <option value="">بدون تأمین‌کننده</option>
-                    {% for supplier in suppliers or [] %}
-                    <option value="{{ supplier.id }}" {% if product and product.supplier_id == supplier.id %}selected{% endif %}>{{ supplier.name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
             <div class="form-group">
                 <label for="default_reorder_point">نقطه سفارش پیش‌فرض</label>
                 <input type="number" id="default_reorder_point" name="default_reorder_point" min="0" value="{{ product.default_reorder_point if product else 0 }}">

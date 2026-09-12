@@ -371,15 +371,17 @@ def backfill_legacy_events(db: Session) -> int:
             )
 
     for purchase in db.query(Purchase).order_by(Purchase.id.asc()).all():
-        created += _append_if_missing(
-            db,
-            "PurchaseRecorded",
-            "purchase",
-            purchase.id,
-            f"purchase:{purchase.id}:recorded",
-            payload={"total_cost": purchase.total_cost, "supplier_id": purchase.supplier_id},
-            occurred_at=purchase.created_at,
-        )
+        # A draft was never recorded as an invoice, so it has no event to backfill.
+        if not purchase.is_draft:
+            created += _append_if_missing(
+                db,
+                "PurchaseRecorded",
+                "purchase",
+                purchase.id,
+                f"purchase:{purchase.id}:recorded",
+                payload={"total_cost": purchase.total_cost, "supplier_id": purchase.supplier_id},
+                occurred_at=purchase.created_at,
+            )
         if purchase.is_reversed:
             created += _append_if_missing(
                 db,

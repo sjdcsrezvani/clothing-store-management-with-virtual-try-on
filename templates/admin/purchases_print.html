@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}{% if purchase.is_draft %}پیش‌فاکتور{% else %}فاکتور خرید{% endif %} #{{ purchase.id }} — {{ store.name }}{% endblock %}
+{% block content %}
+<div class="document-actions">
+    <button type="button" class="btn btn-primary" onclick="window.print()">چاپ فاکتور خرید</button>
+    <a class="btn btn-ghost" href="/admin/purchases/{{ purchase.id }}">بازگشت به خرید</a>
+</div>
+
+<div class="print-document">
+    <div class="print-document-header">
+        <h1>{{ store.name }}</h1>
+        <h2>{% if purchase.is_draft %}پیش‌فاکتور خرید از عمده‌فروش{% else %}فاکتور خرید از عمده‌فروش{% endif %}</h2>
+        <div class="print-document-meta">
+            <span>شماره خرید: #{{ purchase.id }}</span>
+            <span>تاریخ فاکتور: {{ jalali_str(purchase.purchase_date or purchase.created_at, with_time=False) }}</span>
+            {% if purchase.is_draft %}<span>پیش‌نویس — سند نهایی نیست</span>{% endif %}
+        </div>
+    </div>
+
+    <table>
+        <tbody>
+            <tr>
+                <th scope="row">تأمین‌کننده</th>
+                <td>{{ purchase.supplier.name if purchase.supplier else '—' }}</td>
+                <th scope="row">وضعیت پرداخت</th>
+                <td>
+                    {% if settlement.status == 'draft' %}پیش‌نویس
+                    {% elif settlement.status == 'paid' %}تسویه‌شده
+                    {% elif settlement.status == 'partial' %}پرداخت جزئی
+                    {% elif settlement.status == 'reversed' %}برگشت‌خورده
+                    {% else %}پرداخت‌نشده{% endif %}
+                </td>
+            </tr>
+            <tr>
+                <th scope="row">تاریخ ثبت در سیستم</th>
+                <td>{{ jalali_str(purchase.created_at) }}</td>
+                <th scope="row">سررسید</th>
+                <td>{{ jalali_str(settlement.due_date, with_time=False) if settlement.due_date else '—' }}</td>
+            </tr>
+            {% if purchase.note %}
+            <tr>
+                <th scope="row">توضیح</th>
+                <td colspan="3">{{ purchase.note }}</td>
+            </tr>
+            {% endif %}
+        </tbody>
+    </table>
+
+    <table>
+        <thead>
+            <tr>
+                <th scope="col">#</th>
+                <th scope="col">کالا</th>
+                <th scope="col">تعداد</th>
+                <th scope="col">قیمت خرید</th>
+                <th scope="col">جمع</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for line in lines %}
+            <tr>
+                <td class="tnum">{{ loop.index }}</td>
+                <td>
+                    {{ line.item.product.name if line.item.product else '—' }}
+                    {% if line.item.variant and line.item.variant.display_name %} — {{ line.item.variant.display_name }}{% endif %}
+                </td>
+                <td class="tnum">{{ line.item.quantity }}</td>
+                <td class="tnum">{{ fmt(line.unit_cost) }}</td>
+                <td class="tnum">{{ fmt(line.line_total) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <th scope="row" colspan="4">جمع اقلام</th>
+                <td class="tnum">{{ fmt(items_subtotal) }} تومان</td>
+            </tr>
+            {% if purchase.extra_cost %}
+            <tr>
+                <th scope="row" colspan="4">هزینه حمل و سایر</th>
+                <td class="tnum">{{ fmt(purchase.extra_cost) }} تومان</td>
+            </tr>
+            {% endif %}
+            <tr>
+                <th scope="row" colspan="4">مبلغ کل فاکتور</th>
+                <td class="tnum"><strong>{{ fmt(settlement.total) }} تومان</strong></td>
+            </tr>
+            <tr>
+                <th scope="row" colspan="4">پرداخت‌شده</th>
+                <td class="tnum">{{ fmt(settlement.paid) }} تومان</td>
+            </tr>
+            <tr>
+                <th scope="row" colspan="4">مانده</th>
+                <td class="tnum">{{ fmt(settlement.remaining) }} تومان</td>
+            </tr>
+        </tfoot>
+    </table>
+
+    {% if payments %}
+    <h3>پرداخت‌های ثبت‌شده</h3>
+    <table>
+        <thead>
+            <tr>
+                <th scope="col">تاریخ</th>
+                <th scope="col">مبلغ</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for payment in payments %}
+            <tr>
+                <td class="tnum">{{ jalali_str(payment.created_at) }}</td>
+                <td class="tnum">{{ fmt(payment.amount) }} تومان</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    <div class="document-signatures">
+        <div>مهر و امضای فروشنده</div>
+        <div>امضای تحویل‌گیرنده</div>
+    </div>
+</div>
+{% endblock %}

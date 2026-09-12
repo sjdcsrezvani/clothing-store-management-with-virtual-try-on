@@ -2,7 +2,7 @@
 (نسیه) ledger, FIFO settlement of credit-sale payments, credit surcharge,
 and aged-receivables (collection) dashboard."""
 from datetime import datetime, timezone, timedelta
-from sqlalchemy import func
+from sqlalchemy import case, func
 
 from models import (
     Customer, Sale, SaleItem, Expense, Purchase, PurchaseItem, Payment, Supplier, SupplierPayment, CashSession,
@@ -254,8 +254,248 @@ def reverse_payment(
     return amount
 
 
+def as_utc(value: datetime | None) -> datetime | None:
+    """Attach UTC to a naive datetime (SQLite rows can come back without tzinfo)."""
+    if value is None:
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def purchase_effective_at(purchase) -> datetime | None:
+    """Invoice date of a purchase, falling back to when it was recorded.
+
+    Money and reporting key off this date; the stock ledger keeps using
+    ``created_at`` because that is when the units physically arrived.
+    """
+    return purchase.purchase_date or purchase.created_at
+
+
+def purchase_effective_column():
+    """SQL expression matching :func:`purchase_effective_at` for range filters."""
+    return func.coalesce(Purchase.purchase_date, Purchase.created_at)
+
+
+def purchase_paid_amount(db, purchase) -> int:
+    """Money settled against one purchase.
+
+    Payments linked to the purchase are the source of truth. ``amount_paid`` is
+    a cache refreshed whenever a linked payment is written; it is only trusted
+    for legacy rows that predate payment linking and have no rows at all.
+    """
+    entry = purchase_payment_rollup(db, [purchase.id]).get(purchase.id)
+    return purchase_paid_from_rollup(purchase, entry)
+
+
+def refresh_purchase_amount_paid(db, purchase) -> int:
+    """Rewrite the cached ``amount_paid`` from the live linked payments.
+
+    Flushes first: sessions here run with autoflush off, so pending changes
+    (a new payment, or a payment being detached on reversal) must be written
+    before the aggregate can see them.
+    """
+    db.flush()
+    paid = db.query(func.coalesce(func.sum(SupplierPayment.amount), 0)).filter(
+        SupplierPayment.purchase_id == purchase.id,
+        SupplierPayment.reversed_at.is_(None),
+    ).scalar() or 0
+    purchase.amount_paid = paid
+    return paid
+
+
+def purchase_settlement(db, purchase, paid: int | None = None, now: datetime | None = None) -> dict:
+    """Paid / remaining / due state of one purchase."""
+    total = purchase.total_cost or 0
+    if purchase.is_draft:
+        # A draft invoice is not a fact yet: no money can have been settled
+        # against it and it can never be past due.
+        return {
+            "total": total,
+            "paid": 0,
+            "remaining": total,
+            "due_date": as_utc(purchase.due_date),
+            "overdue": False,
+            "status": "draft",
+        }
+    if paid is None:
+        paid = purchase_paid_amount(db, purchase)
+    remaining = max(0, total - paid)
+    due = as_utc(purchase.due_date)
+    now = now or datetime.now(timezone.utc)
+    overdue = bool(
+        not purchase.is_reversed and remaining > 0 and due is not None and due < now
+    )
+    if purchase.is_reversed:
+        status = "reversed"
+    elif total > 0 and remaining <= 0:
+        status = "paid"
+    elif paid > 0:
+        status = "partial"
+    else:
+        status = "unpaid"
+    return {
+        "total": total,
+        "paid": paid,
+        "remaining": remaining,
+        "due_date": due,
+        "overdue": overdue,
+        "status": status,
+    }
+
+
+def purchase_payment_rollup(db, purchase_ids: list[int]) -> dict[int, dict]:
+    """Rows and live settled total per purchase, in one query (no N+1).
+
+    ``rows`` counts every linked payment including reversed ones, so a purchase
+    whose payments were all reversed reports rows > 0 and paid = 0 instead of
+    falling back to the cached ``amount_paid``.
+    """
+    ids = [pid for pid in (purchase_ids or []) if pid]
+    if not ids:
+        return {}
+    rows = db.query(
+        SupplierPayment.purchase_id,
+        func.count(SupplierPayment.id),
+        func.coalesce(func.sum(case((SupplierPayment.reversed_at.is_(None), SupplierPayment.amount), else_=0)), 0),
+    ).filter(SupplierPayment.purchase_id.in_(ids)) \
+        .group_by(SupplierPayment.purchase_id).all()
+    return {
+        purchase_id: {"rows": row_count or 0, "paid": paid or 0}
+        for purchase_id, row_count, paid in rows
+    }
+
+
+def purchase_paid_from_rollup(purchase, entry: dict | None) -> int:
+    """Live linked payments win; the cache only fills in for legacy rows."""
+    if not entry or not entry.get("rows"):
+        return max(0, purchase.amount_paid or 0)
+    return entry.get("paid") or 0
+
+
+def purchase_item_totals(db, purchase_ids: list[int]) -> dict[int, dict]:
+    """Line count and total units per purchase (for the history table)."""
+    if not purchase_ids:
+        return {}
+    rows = db.query(
+        PurchaseItem.purchase_id,
+        func.count(PurchaseItem.id),
+        func.coalesce(func.sum(PurchaseItem.quantity), 0),
+    ).filter(PurchaseItem.purchase_id.in_(purchase_ids)) \
+        .group_by(PurchaseItem.purchase_id).all()
+    return {
+        purchase_id: {"lines": lines, "units": units or 0}
+        for purchase_id, lines, units in rows
+    }
+
+
+def purchase_landed_unit_cost(
+    unit_cost: int,
+    quantity: int,
+    items_subtotal: int,
+    extra_cost: int,
+    apply_extra: bool = True,
+) -> int:
+    """Unit cost with this line's share of shipping spread by line value."""
+    if not apply_extra or extra_cost <= 0 or items_subtotal <= 0 or quantity <= 0:
+        return unit_cost
+    line_value = unit_cost * quantity
+    share = extra_cost * line_value / items_subtotal
+    return unit_cost + round(share / quantity)
+
+
+def apply_purchase_cost_basis(db, purchase, actor_user_id: int | None = None, request_id: str | None = None) -> int:
+    """Move a purchase's landed unit costs into the variants' cost basis.
+
+    Runs when a draft invoice is finalised, so an invoice still being assembled
+    cannot move a single cost. Returns how many lines actually changed.
+    """
+    from services.inventory import record_cost_adjustment
+
+    items = db.query(PurchaseItem).filter(
+        PurchaseItem.purchase_id == purchase.id
+    ).order_by(PurchaseItem.id).all()
+    items_subtotal = sum((item.unit_cost or 0) * (item.quantity or 0) for item in items)
+    applied = 0
+    for item in items:
+        variant = item.variant
+        if variant is None:
+            continue
+        # Shipping is spread across the lines, so the stored cost basis is the
+        # landed cost the shop actually paid per unit.
+        landed_unit = purchase_landed_unit_cost(
+            item.unit_cost or 0, item.quantity or 0, items_subtotal,
+            purchase.extra_cost or 0, purchase.extra_cost_in_landed,
+        )
+        # Cost basis before this line, restored if the purchase is reversed,
+        # plus the value this line actually applied.
+        item.prev_cost_price = variant.cost_price if item.unit_cost else None
+        item.landed_unit_cost = landed_unit if landed_unit > 0 else None
+        if landed_unit > 0:
+            record_cost_adjustment(
+                db,
+                variant,
+                variant.cost_price or 0,
+                landed_unit,
+                note=f"به‌روزرسانی بهای تمام‌شده از خرید #{purchase.id}",
+                actor_user_id=actor_user_id,
+                request_id=request_id,
+                purchase_id=purchase.id,
+            )
+            if (variant.cost_price or 0) != landed_unit:
+                variant.cost_price = landed_unit
+                applied += 1
+    return applied
+
+
+def purchase_overview(db, start, end, now: datetime | None = None) -> dict:
+    """Headline numbers for the purchases page: period spend, units and debt."""
+    now = now or datetime.now(timezone.utc)
+    in_range = [
+        purchase_effective_column().between(start, end),
+        Purchase.is_reversed == False,
+        # Draft invoices are still being assembled and are not spend yet.
+        Purchase.is_draft == False,
+    ]
+    spend = db.query(func.coalesce(func.sum(Purchase.total_cost), 0)).filter(*in_range).scalar() or 0
+    count = db.query(func.count(Purchase.id)).filter(*in_range).scalar() or 0
+    units = db.query(func.coalesce(func.sum(PurchaseItem.quantity), 0)) \
+        .join(Purchase, PurchaseItem.purchase_id == Purchase.id) \
+        .filter(*in_range).scalar() or 0
+
+    balances = get_supplier_balances(db)
+    owed = sum(row["owed"] for row in balances)
+
+    open_purchases = db.query(Purchase).filter(
+        Purchase.is_reversed == False,
+        Purchase.is_draft == False,
+        Purchase.due_date.isnot(None),
+    ).all()
+    rollup = purchase_payment_rollup(db, [p.id for p in open_purchases])
+    overdue_count = 0
+    overdue_amount = 0
+    for purchase in open_purchases:
+        paid = purchase_paid_from_rollup(purchase, rollup.get(purchase.id))
+        settlement = purchase_settlement(db, purchase, paid=paid, now=now)
+        if settlement["overdue"]:
+            overdue_count += 1
+            overdue_amount += settlement["remaining"]
+
+    return {
+        "period_spend": spend,
+        "period_count": count,
+        "period_units": units,
+        "supplier_owed": owed,
+        "overdue_count": overdue_count,
+        "overdue_amount": overdue_amount,
+    }
+
+
 def get_cashbox(db, start, end, opening_balance: int, cash_session_id: int | None = None) -> dict:
-    """Cash register for a period, optionally scoped to one cash session."""
+    """Cash register for a period, optionally scoped to one cash session.
+
+    Only real money movements count: purchase invoices are accrual entries and
+    stay out of ``cash_out``. The money they represent leaves the till as a
+    supplier payment (once), so counting both would double count it.
+    """
     sale_filter = [Sale.payment_confirmed == True, Sale.is_refunded == False, Sale.payment_method == "cash", Sale.created_at.between(start, end)]
     payment_filter = [Payment.method == "cash", Payment.reversed_at.is_(None), Payment.created_at.between(start, end)]
     refund_filter = [Sale.is_refunded == True, Sale.payment_method == "cash", Sale.refund_date.between(start, end)]
@@ -274,13 +514,17 @@ def get_cashbox(db, start, end, opening_balance: int, cash_session_id: int | Non
     cash_in_payments = db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(*payment_filter).scalar() or 0
     cash_out_refunds = db.query(func.coalesce(func.sum(Sale.refund_amount), 0)).filter(*refund_filter).scalar() or 0
     cash_out_expenses = db.query(func.coalesce(func.sum(Expense.amount), 0)).filter(*expense_filter).scalar() or 0
-    cash_out_purchases = db.query(func.coalesce(func.sum(Purchase.total_cost), 0)).filter(
-        Purchase.created_at.between(start, end), Purchase.is_reversed == False,
+    # Informational only: invoices recorded in the period, regardless of payment.
+    # Drafts are excluded: they are not invoices yet.
+    invoice_purchases = db.query(func.coalesce(func.sum(Purchase.total_cost), 0)).filter(
+        purchase_effective_column().between(start, end),
+        Purchase.is_reversed == False,
+        Purchase.is_draft == False,
     ).scalar() or 0
     cash_out_supplier_payments = db.query(func.coalesce(func.sum(SupplierPayment.amount), 0)).filter(*supplier_filter).scalar() or 0
 
     cash_in = cash_in_sales + cash_in_payments
-    cash_out = cash_out_refunds + cash_out_expenses + cash_out_purchases + cash_out_supplier_payments
+    cash_out = cash_out_refunds + cash_out_expenses + cash_out_supplier_payments
     closing = opening_balance + cash_in - cash_out
     return {
         "opening": opening_balance,
@@ -289,7 +533,7 @@ def get_cashbox(db, start, end, opening_balance: int, cash_session_id: int | Non
         "cash_in": cash_in,
         "refunds": cash_out_refunds,
         "expenses": cash_out_expenses,
-        "purchases": cash_out_purchases,
+        "purchases": invoice_purchases,
         "supplier_payments": cash_out_supplier_payments,
         "cash_out": cash_out,
         "closing": closing,
@@ -363,6 +607,7 @@ def get_supplier_balances(db) -> list:
         purchases = db.query(Purchase).filter(
             Purchase.supplier_id == supplier.id,
             Purchase.is_reversed == False,
+            Purchase.is_draft == False,
         ).all()
         invoiced = sum(p.total_cost or 0 for p in purchases)
         paid = db.query(func.coalesce(func.sum(SupplierPayment.amount), 0)).filter(
@@ -384,6 +629,7 @@ def debt_totals(db) -> dict:
         .scalar() or 0
     total_purchases = db.query(func.coalesce(func.sum(Purchase.total_cost), 0)).filter(
         Purchase.is_reversed == False,
+        Purchase.is_draft == False,
     ).scalar() or 0
     total_expenses = db.query(func.coalesce(func.sum(Expense.amount), 0)).filter(Expense.reversed_at.is_(None)).scalar() or 0
     return {

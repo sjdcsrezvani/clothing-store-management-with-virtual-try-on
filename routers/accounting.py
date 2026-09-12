@@ -1,28 +1,36 @@
 import csv
 import io
 from datetime import datetime, timezone
+from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy import case, func, or_
+from sqlalchemy.orm import Session, joinedload
 
 from database import get_db
 from models import (
-    Customer, Expense, Payment, ProductVariant, Purchase, PurchaseItem,
+    Customer, Expense, Payment, ProductVariant, Product, Purchase, PurchaseItem,
     Sale, SaleItem, Settings, Supplier, StockMovement, CashSession, SupplierPayment,
-    FinancialEntry, CheckRecord, CheckReminder,
+    FinancialEntry, CheckRecord, CheckReminder, to_english_digits,
 )
-from services._common import fmt, check_admin, jalali_str
+from services._common import fmt, check_admin, jalali_str, parse_jalali_input, parse_jalali_input_end
 from services.accounting import (
-    apply_customer_payment, debt_totals, get_cashbox, get_credit_limit,
-    get_customer_debts, get_net_pl, get_opening_balance, get_payment_history,
-    get_aged_receivables, reverse_payment, get_supplier_balances,
+    apply_customer_payment, apply_purchase_cost_basis, debt_totals, get_cashbox,
+    get_credit_limit, get_customer_debts, get_net_pl, get_opening_balance,
+    get_payment_history, get_aged_receivables, reverse_payment,
+    get_supplier_balances, purchase_effective_at, purchase_effective_column,
+    purchase_item_totals, purchase_landed_unit_cost, purchase_overview,
+    purchase_paid_amount, purchase_paid_from_rollup, purchase_payment_rollup,
+    purchase_settlement, refresh_purchase_amount_paid,
 )
 from services.analytics import get_date_range
 from services.security import log_action, require_html_role
 from services.templating import templates
-from services.inventory import record_stock_movement, restore_cost_after_purchase_reversal
+from services.inventory import (
+    record_cost_adjustment,
+    restore_cost_after_purchase_reversal,
+)
 from services.reporting import canonical_report, reconciliation_checks
 from services.checks import (
     add_reminders,
@@ -320,10 +328,16 @@ async def admin_accounting_export(
     if kind == "purchases":
         rows = [["شماره", "تاریخ", "تأمین‌کننده", "مبلغ کل", "وضعیت", "توضیح"]]
         for p in db.query(Purchase).order_by(Purchase.created_at.desc()).all():
+            if p.is_draft:
+                purchase_state = "پیش‌نویس"
+            elif p.is_reversed:
+                purchase_state = "برگشت‌خورده"
+            else:
+                purchase_state = "فعال"
             rows.append([
                 p.id, jalali_str(p.created_at, with_time=False),
                 p.supplier.name if p.supplier else "—",
-                p.total_cost or 0, "برگشت‌خورده" if p.is_reversed else "فعال", p.note or "",
+                p.total_cost or 0, purchase_state, p.note or "",
             ])
         return _csv_response(f"purchases_{today}.csv", rows)
 
@@ -641,41 +655,103 @@ async def admin_supplier_delete(supplier_id: int, request: Request, db: Session 
 
 # ── Purchases ────────────────────────────────────────────────────────────────
 
-@router.get("/purchases", response_class=HTMLResponse)
-async def admin_purchases(request: Request, db: Session = Depends(get_db)):
-    guard = require_html_role(request, db, "manager")
-    if not hasattr(guard, "role"):
-        return guard
-
-    from models import Product
-    products = db.query(Product).filter(Product.is_active == True) \
-        .order_by(Product.name).all()
-    suppliers = db.query(Supplier).order_by(Supplier.name).all()
-    purchases = db.query(Purchase).order_by(Purchase.created_at.desc()).limit(50).all()
-
-    return templates.TemplateResponse(request, "admin/purchases.html", {
-        "products": products,
-        "suppliers": suppliers,
-        "purchases": purchases,
-        "msg": request.query_params.get("msg", ""),
-        "err": request.query_params.get("err", ""),
-        "fmt": fmt,
-        "jalali_str": jalali_str,
-    })
+PURCHASE_PAGE_SIZE = 20
+PURCHASE_STATUSES = {
+    "all": "همه",
+    "draft": "پیش‌نویس",
+    "unpaid": "پرداخت‌نشده",
+    "partial": "پرداخت جزئی",
+    "paid": "تسویه‌شده",
+    "overdue": "سررسیدگذشته",
+    "reversed": "برگشت‌خورده",
+}
 
 
-@router.post("/purchases/add", response_class=HTMLResponse)
-async def admin_purchase_add(
-    request: Request,
-    supplier_id: str = Form(""),
-    note: str = Form(""),
-    db: Session = Depends(get_db),
-):
-    guard = require_html_role(request, db, "manager")
-    if not hasattr(guard, "role"):
-        return guard
 
-    form = await request.form()
+def _purchase_form_date(value) -> datetime | None:
+    """Persian (۱۴۰۵/۰۶/۲۱) or ISO date from a form → aware UTC datetime."""
+    value = str(value or "").strip()
+    if not value:
+        return None
+    if len(value) >= 10 and value[:4].isdigit() and int(value[:4]) >= 1900:
+        try:
+            return datetime.fromisoformat(value[:10]).replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+    return parse_jalali_input(value)
+
+
+def _purchase_form_date_end(value) -> datetime | None:
+    value = str(value or "").strip()
+    if not value:
+        return None
+    if len(value) >= 10 and value[:4].isdigit() and int(value[:4]) >= 1900:
+        try:
+            return datetime.fromisoformat(value[:10]).replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
+        except ValueError:
+            return None
+    return parse_jalali_input_end(value)
+
+
+def _purchase_money(value) -> int:
+    """Tolerant money reader: Persian digits and thousands separators allowed."""
+    try:
+        cleaned = to_english_digits(str(value or "").replace(",", "").strip() or "0")
+        return max(0, int(float(cleaned)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _record_purchase_payment(db, purchase, amount: int, note: str, guard, request: Request):
+    """Write one supplier payment against a purchase and refresh its paid cache.
+
+    Money paid to a supplier always leaves the business the same way, so these
+    are recorded as ``cash`` (the only value the cash register counts) and tied
+    to the open cash session. Cash-vs-card is a distinction that only matters
+    for the shop's own checks, not for paying a wholesaler.
+    """
+    open_session = db.query(CashSession).filter(CashSession.status == "open") \
+        .order_by(CashSession.opened_at.desc()).first()
+    payment = SupplierPayment(
+        supplier_id=purchase.supplier_id,
+        purchase_id=purchase.id,
+        amount=amount,
+        due_date=purchase.due_date,
+        operator_user_id=guard.id,
+        note=(note or "").strip() or None,
+        method="cash",
+        cash_session_id=open_session.id if open_session else None,
+    )
+    db.add(payment)
+    db.flush()
+    append_event(
+        db,
+        "SupplierPaymentRecorded",
+        "supplier_payment",
+        payment.id,
+        idempotency_key=f"supplier-payment:{payment.id}:recorded",
+        actor_user_id=guard.id,
+        request_id=request.headers.get("X-Request-ID"),
+        payload={
+            "supplier_id": payment.supplier_id,
+            "purchase_id": payment.purchase_id,
+            "amount": payment.amount,
+            "method": payment.method,
+            "cash_session_id": payment.cash_session_id,
+        },
+    )
+    refresh_purchase_amount_paid(db, purchase)
+    return payment
+
+
+def _purchase_items_from_form(form, db, supplier_pk: int | None):
+    """Read an invoice's product lines out of a posted form.
+
+    Quantity and unit cost are deliberately optional: the chosen product already
+    knows both, so a line with no numbers means "one unit at its current cost
+    basis". Returns ``(items, error)`` where each item is a
+    ``(variant, quantity, unit_cost)`` triple.
+    """
     indices = set()
     for key in form.keys():
         if key.startswith("purchase_variant_"):
@@ -685,14 +761,23 @@ async def admin_purchase_add(
                 pass
 
     items = []
+    merged = {}
     for idx in sorted(indices):
         try:
-            variant_id = int(form.get(f"purchase_variant_{idx}", "") or 0)
-            qty = int(form.get(f"purchase_qty_{idx}", "") or 0)
-            unit_cost = int(form.get(f"purchase_cost_{idx}", "") or 0)
+            variant_id = int(str(form.get(f"purchase_variant_{idx}", "") or ""))
         except (TypeError, ValueError):
             continue
-        if variant_id <= 0 or qty <= 0:
+        if variant_id <= 0:
+            continue
+        if variant_id in merged:
+            # The same product on two rows is one line: the quantities add up.
+            try:
+                extra = int(to_english_digits(
+                    str(form.get(f"purchase_qty_{idx}", "") or "").replace(",", "").strip() or "1"
+                ))
+            except ValueError:
+                extra = 1
+            merged[variant_id][1] += max(1, extra)
             continue
         variant = db.query(ProductVariant).filter(
             ProductVariant.id == variant_id,
@@ -700,44 +785,456 @@ async def admin_purchase_add(
         ).first()
         if not variant:
             continue
-        items.append((variant, qty, max(0, unit_cost)))
+        # One invoice covers one supplier's goods. Products with no supplier
+        # keep working so pre-existing catalogue data is not blocked.
+        product = variant.product
+        if product is not None and supplier_pk and product.supplier_id \
+                and product.supplier_id != supplier_pk:
+            return None, f"کالای {product.name} به تأمین‌کننده دیگری تعلق دارد."
+        raw_qty = str(form.get(f"purchase_qty_{idx}", "") or "").strip()
+        raw_cost = str(form.get(f"purchase_cost_{idx}", "") or "").strip()
+        quantity = (_purchase_money(raw_qty) or 1) if raw_qty else 1
+        unit_cost = _purchase_money(raw_cost) if raw_cost else (variant.cost_price or 0)
+        entry = [variant, max(1, quantity), max(0, unit_cost)]
+        merged[variant_id] = entry
+        items.append(entry)
+    return [(variant, quantity, unit_cost) for variant, quantity, unit_cost in items], None
 
-    if not items:
-        return RedirectResponse(url="/admin/purchases?err=حداقل یک قلم خرید وارد کنید.", status_code=303)
 
-    total_cost = sum(qty * cost for _, qty, cost in items)
-    purchase = Purchase(
-        supplier_id=int(supplier_id) if supplier_id.isdigit() and int(supplier_id) > 0 else None,
-        total_cost=total_cost,
-        note=note.strip() or None,
-    )
-    db.add(purchase)
+def _purchase_items_subtotal(items) -> int:
+    return sum(quantity * unit_cost for _, quantity, unit_cost in items)
+
+
+def _replace_purchase_items(db, purchase, items) -> None:
+    """Rewrite a purchase's lines (only ever called on a draft)."""
+    db.query(PurchaseItem).filter(PurchaseItem.purchase_id == purchase.id) \
+        .delete(synchronize_session=False)
     db.flush()
-
-    for variant, qty, unit_cost in items:
+    for variant, quantity, unit_cost in items:
         db.add(PurchaseItem(
             purchase_id=purchase.id,
             variant_id=variant.id,
             product_id=variant.product_id,
-            quantity=qty,
+            quantity=quantity,
             unit_cost=unit_cost,
-            # Retained as legacy context; current cost is restored only from
-            # surviving purchase movements during a safe reversal.
-            prev_cost_price=variant.cost_price if unit_cost > 0 else None,
         ))
-        record_stock_movement(
-            db,
-            variant,
-            qty,
-            "purchase",
-            unit_cost=unit_cost if unit_cost > 0 else None,
-            purchase_id=purchase.id,
-            note=f"ورود خرید #{purchase.id}",
-            actor_user_id=guard.id,
-            request_id=request.headers.get("X-Request-ID"),
+    db.flush()
+
+
+def _purchase_draft_lines(purchase) -> list[dict]:
+    """The draft form's rows, so reopening it shows what is already on it."""
+    lines = []
+    for item in purchase.items:
+        variant = item.variant
+        lines.append({
+            "variant_id": item.variant_id,
+            "label": variant.display_name if variant else "کالای حذف‌شده",
+            "barcode": (variant.barcode or "") if variant else "",
+            "supplier_id": (variant.product.supplier_id or 0) if variant and variant.product else 0,
+            "cost": (variant.cost_price or 0) if variant else 0,
+            "stock": (variant.stock_quantity or 0) if variant else 0,
+            "quantity": item.quantity,
+            "unit_cost": item.unit_cost,
+        })
+    return lines
+
+
+def _purchase_paid_subquery(db):
+    """Live settled total per purchase, plus whether any payment row exists."""
+    live_sum = func.coalesce(func.sum(
+        case((SupplierPayment.reversed_at.is_(None), SupplierPayment.amount), else_=0)
+    ), 0)
+    sub = db.query(
+        SupplierPayment.purchase_id.label("purchase_id"),
+        live_sum.label("paid"),
+        func.count(SupplierPayment.id).label("payment_rows"),
+    ).filter(SupplierPayment.purchase_id.isnot(None)) \
+        .group_by(SupplierPayment.purchase_id).subquery()
+    return sub
+
+
+def _purchase_with_lines(db, purchase_id: int):
+    """One purchase with the lines, products and supplier the detail pages need."""
+    return db.query(Purchase).options(
+        joinedload(Purchase.supplier),
+        joinedload(Purchase.items).joinedload(PurchaseItem.variant),
+        joinedload(Purchase.items).joinedload(PurchaseItem.product),
+    ).filter(Purchase.id == purchase_id).first()
+
+
+def _purchase_lines(purchase) -> list[dict]:
+    """Per-line amounts including each line's share of the shipping cost."""
+    items = purchase.items or []
+    items_subtotal = sum((item.unit_cost or 0) * item.quantity for item in items)
+    extra_cost = purchase.extra_cost or 0
+    lines = []
+    for item in items:
+        unit_cost = item.unit_cost or 0
+        landed = purchase_landed_unit_cost(
+            unit_cost, item.quantity, items_subtotal, extra_cost, purchase.extra_cost_in_landed,
         )
-        if unit_cost > 0:
-            variant.cost_price = unit_cost  # refresh the cost basis
+        lines.append({
+            "item": item,
+            "unit_cost": unit_cost,
+            "landed_unit_cost": landed,
+            "line_total": unit_cost * item.quantity,
+            "landed_line_total": landed * item.quantity,
+            "extra_share": (landed - unit_cost) * item.quantity,
+        })
+    return lines
+
+
+@router.get("/purchases", response_class=HTMLResponse)
+async def admin_purchases(
+    request: Request,
+    supplier_id: str = "",
+    status: str = "all",
+    q: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    page: int = 1,
+    db: Session = Depends(get_db),
+):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+
+    status = status if status in PURCHASE_STATUSES else "all"
+    page = max(1, page)
+    now = datetime.now(timezone.utc)
+
+    paid_sq = _purchase_paid_subquery(db)
+    paid_expr = func.coalesce(paid_sq.c.paid, 0)
+    total_expr = func.coalesce(Purchase.total_cost, 0)
+    remaining_expr = total_expr - paid_expr
+
+    query = db.query(Purchase, paid_expr.label("paid"), paid_sq.c.payment_rows) \
+        .outerjoin(paid_sq, paid_sq.c.purchase_id == Purchase.id)
+
+    search = (q or "").strip()
+    if supplier_id.isdigit():
+        query = query.filter(Purchase.supplier_id == int(supplier_id))
+    if search:
+        query = query.outerjoin(Supplier, Purchase.supplier_id == Supplier.id)
+        digits = search.lstrip("#").strip()
+        if digits.isdigit():
+            query = query.filter(Purchase.id == int(digits))
+        else:
+            query = query.filter(or_(
+                Purchase.note.ilike(f"%{search}%"),
+                Supplier.name.ilike(f"%{search}%"),
+            ))
+    start = _purchase_form_date(start_date)
+    end = _purchase_form_date_end(end_date)
+    if start:
+        query = query.filter(purchase_effective_column() >= start)
+    if end:
+        query = query.filter(purchase_effective_column() <= end)
+
+    if status == "draft":
+        query = query.filter(Purchase.is_draft == True)
+    elif status == "reversed":
+        query = query.filter(Purchase.is_reversed == True, Purchase.is_draft == False)
+    elif status == "overdue":
+        query = query.filter(
+            Purchase.is_reversed == False,
+            Purchase.is_draft == False,
+            Purchase.due_date.isnot(None),
+            Purchase.due_date < now,
+            remaining_expr > 0,
+        )
+    elif status == "paid":
+        query = query.filter(
+            Purchase.is_reversed == False, Purchase.is_draft == False, remaining_expr <= 0,
+        )
+    elif status == "partial":
+        query = query.filter(
+            Purchase.is_reversed == False, Purchase.is_draft == False,
+            paid_expr > 0, remaining_expr > 0,
+        )
+    elif status == "unpaid":
+        query = query.filter(
+            Purchase.is_reversed == False, Purchase.is_draft == False, paid_expr == 0,
+        )
+
+    total_count = query.count()
+    total_pages = max(1, -(-total_count // PURCHASE_PAGE_SIZE))
+    page = min(page, total_pages)
+    rows = query.order_by(purchase_effective_column().desc(), Purchase.id.desc()) \
+        .offset((page - 1) * PURCHASE_PAGE_SIZE).limit(PURCHASE_PAGE_SIZE).all()
+
+    item_totals = purchase_item_totals(db, [purchase.id for purchase, _, _ in rows])
+    purchases = []
+    for purchase, paid, payment_rows in rows:
+        settled = paid if payment_rows else max(0, purchase.amount_paid or 0)
+        counts = item_totals.get(purchase.id, {})
+        purchases.append({
+            "purchase": purchase,
+            "settlement": purchase_settlement(db, purchase, paid=settled, now=now),
+            "lines": counts.get("lines", 0),
+            "units": counts.get("units", 0),
+        })
+
+    month_start, month_end = get_date_range("month")
+    products = db.query(Product).filter(Product.is_active == True).order_by(Product.name).all()
+    suppliers = db.query(Supplier).order_by(Supplier.name).all()
+    draft_count = db.query(func.count(Purchase.id)).filter(
+        Purchase.is_draft == True, Purchase.is_reversed == False,
+    ).scalar() or 0
+
+    return templates.TemplateResponse(request, "admin/purchases.html", {
+        "products": products,
+        "suppliers": suppliers,
+        "purchases": purchases,
+        "draft_count": draft_count,
+        "edit_purchase": None,
+        "edit_lines": [],
+        "overview": purchase_overview(db, month_start, month_end, now=now),
+        "status": status,
+        "statuses": PURCHASE_STATUSES,
+        "supplier_filter": supplier_id,
+        "search": search,
+        "start_date_filter": start_date,
+        "end_date_filter": end_date,
+        "page": page,
+        "total_pages": total_pages,
+        "total_count": total_count,
+        "has_filters": bool(search or supplier_id or start_date or end_date or status != "all"),
+        "today_jalali": jalali_str(now, with_time=False),
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
+        "fmt": fmt,
+        "jalali_str": jalali_str,
+    })
+
+
+@router.post("/purchases/add", response_class=HTMLResponse)
+async def admin_purchase_add(request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+
+    form = await request.form()
+    supplier_id = str(form.get("supplier_id", "") or "")
+    note = str(form.get("note", "") or "")[:1000]
+    extra_cost = _purchase_money(form.get("extra_cost"))
+    # The form posts the checkbox plus a "0" companion, so accept whichever
+    # truthy value arrives; a client that sends nothing keeps landed costing on.
+    landed_values = [str(value).strip().lower() for value in form.getlist("extra_cost_in_landed")]
+    extra_in_landed = (
+        any(value in {"on", "1", "true", "yes"} for value in landed_values)
+        if landed_values else True
+    )
+    purchase_date = _purchase_form_date(form.get("purchase_date"))
+    due_date = _purchase_form_date(form.get("due_date"))
+    supplier_pk = int(supplier_id) if supplier_id.isdigit() and int(supplier_id) > 0 else None
+    if not supplier_pk:
+        return RedirectResponse(
+            url="/admin/purchases?err=برای ثبت فاکتور ابتدا تأمین‌کننده را انتخاب کنید.",
+            status_code=303,
+        )
+
+    items, item_error = _purchase_items_from_form(form, db, supplier_pk)
+    if item_error:
+        return RedirectResponse(
+            url=f"/admin/purchases?err={quote_plus(item_error)}", status_code=303,
+        )
+    if not items:
+        return RedirectResponse(
+            url="/admin/purchases?err=حداقل یک محصول را به فاکتور اضافه کنید.", status_code=303,
+        )
+
+    purchase = Purchase(
+        supplier_id=supplier_pk,
+        total_cost=_purchase_items_subtotal(items) + extra_cost,
+        note=note.strip() or None,
+        extra_cost=extra_cost,
+        extra_cost_in_landed=extra_in_landed,
+        purchase_date=purchase_date,
+        due_date=due_date,
+        # Assembly stage: no cost basis, no payable and no cash movement yet.
+        is_draft=True,
+    )
+    db.add(purchase)
+    db.flush()
+    _replace_purchase_items(db, purchase, items)
+    db.commit()
+    log_action(
+        db, "purchase_draft_add", f"پیش‌نویس فاکتور #{purchase.id}", request=request,
+        target_type="purchase", target_id=purchase.id,
+        after={"total_cost": purchase.total_cost, "lines": len(items)},
+    )
+    return RedirectResponse(
+        url=(
+            f"/admin/purchases/{purchase.id}?msg=پیش‌نویس فاکتور ثبت شد."
+            " بازبینی کنید و سپس نهایی‌سازی کنید تا بهای تمام‌شده و بدهی تأمین‌کننده ثبت شود."
+        ),
+        status_code=303,
+    )
+
+
+@router.get("/purchases/{purchase_id}/edit", response_class=HTMLResponse)
+async def admin_purchase_edit(purchase_id: int, request: Request, db: Session = Depends(get_db)):
+    """Reopen a draft invoice in the very form that created it."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    purchase = _purchase_with_lines(db, purchase_id)
+    if not purchase:
+        return RedirectResponse(url="/admin/purchases?err=خرید موردنظر پیدا نشد.", status_code=303)
+    if not purchase.is_draft:
+        return RedirectResponse(
+            url=f"/admin/purchases/{purchase_id}?err=فقط پیش‌نویس فاکتور قابل ویرایش است.",
+            status_code=303,
+        )
+
+    now = datetime.now(timezone.utc)
+    month_start, month_end = get_date_range("month")
+    return templates.TemplateResponse(request, "admin/purchases.html", {
+        "products": db.query(Product).filter(Product.is_active == True)
+            .order_by(Product.name).all(),
+        "suppliers": db.query(Supplier).order_by(Supplier.name).all(),
+        "purchases": [],
+        "draft_count": 0,
+        "edit_purchase": purchase,
+        "edit_lines": _purchase_draft_lines(purchase),
+        "overview": purchase_overview(db, month_start, month_end, now=now),
+        "status": "all",
+        "statuses": PURCHASE_STATUSES,
+        "supplier_filter": "",
+        "search": "",
+        "start_date_filter": "",
+        "end_date_filter": "",
+        "page": 1,
+        "total_pages": 1,
+        "total_count": 0,
+        "has_filters": False,
+        "today_jalali": jalali_str(now, with_time=False),
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
+        "fmt": fmt,
+        "jalali_str": jalali_str,
+    })
+
+
+@router.post("/purchases/{purchase_id}/update", response_class=HTMLResponse)
+async def admin_purchase_update(purchase_id: int, request: Request, db: Session = Depends(get_db)):
+    """Rewrite a draft invoice: its supplier, its details and its products."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    purchase = db.query(Purchase).filter(Purchase.id == purchase_id).first()
+    if not purchase:
+        return RedirectResponse(url="/admin/purchases?err=خرید موردنظر پیدا نشد.", status_code=303)
+    if not purchase.is_draft or purchase.is_reversed:
+        return RedirectResponse(
+            url=f"/admin/purchases/{purchase_id}?err=فقط پیش‌نویس نهایی‌نشده قابل ویرایش است.",
+            status_code=303,
+        )
+
+    form = await request.form()
+    supplier_id = str(form.get("supplier_id", "") or "")
+    supplier_pk = int(supplier_id) if supplier_id.isdigit() and int(supplier_id) > 0 else None
+    if not supplier_pk:
+        return RedirectResponse(
+            url=f"/admin/purchases/{purchase_id}/edit?err=برای ثبت فاکتور ابتدا تأمین‌کننده را انتخاب کنید.",
+            status_code=303,
+        )
+
+    items, item_error = _purchase_items_from_form(form, db, supplier_pk)
+    if item_error:
+        return RedirectResponse(
+            url=f"/admin/purchases/{purchase_id}/edit?err={quote_plus(item_error)}",
+            status_code=303,
+        )
+    if not items:
+        return RedirectResponse(
+            url=f"/admin/purchases/{purchase_id}/edit?err=حداقل یک محصول را به فاکتور اضافه کنید.",
+            status_code=303,
+        )
+
+    landed_values = [str(value).strip().lower() for value in form.getlist("extra_cost_in_landed")]
+    purchase.supplier_id = supplier_pk
+    purchase.note = str(form.get("note", "") or "")[:1000].strip() or None
+    purchase.extra_cost = _purchase_money(form.get("extra_cost"))
+    purchase.extra_cost_in_landed = (
+        any(value in {"on", "1", "true", "yes"} for value in landed_values)
+        if landed_values else True
+    )
+    purchase.purchase_date = _purchase_form_date(form.get("purchase_date"))
+    purchase.due_date = _purchase_form_date(form.get("due_date"))
+    purchase.total_cost = _purchase_items_subtotal(items) + purchase.extra_cost
+    _replace_purchase_items(db, purchase, items)
+    db.commit()
+    log_action(
+        db, "purchase_draft_update", f"ویرایش پیش‌نویس فاکتور #{purchase.id}", request=request,
+        target_type="purchase", target_id=purchase.id,
+        after={"total_cost": purchase.total_cost, "lines": len(items)},
+    )
+    return RedirectResponse(
+        url=f"/admin/purchases/{purchase.id}?msg=پیش‌نویس فاکتور به‌روز شد.", status_code=303,
+    )
+
+
+@router.post("/purchases/{purchase_id}/finalize", response_class=HTMLResponse)
+async def admin_purchase_finalize(
+    purchase_id: int,
+    request: Request,
+    payment_amount: str = Form("0"),
+    payment_note: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Turn a draft into a real invoice.
+
+    The only place a purchase touches the ledger: the lines' cost basis, the
+    payable to the supplier and — optionally — the first payment.
+    """
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    purchase = db.query(Purchase).filter(Purchase.id == purchase_id).first()
+    if not purchase:
+        return RedirectResponse(url="/admin/purchases?err=خرید موردنظر پیدا نشد.", status_code=303)
+    if purchase.is_reversed:
+        return RedirectResponse(
+            url=f"/admin/purchases/{purchase_id}?err=این خرید برگشت خورده است.",
+            status_code=303,
+        )
+    if not purchase.is_draft:
+        return RedirectResponse(
+            url=f"/admin/purchases/{purchase_id}?err=این فاکتور قبلاً نهایی شده است.",
+            status_code=303,
+        )
+    if not purchase.supplier_id:
+        return RedirectResponse(
+            url=f"/admin/purchases/{purchase_id}?err=برای نهایی‌سازی ابتدا تأمین‌کننده را مشخص کنید.",
+            status_code=303,
+        )
+
+    items = db.query(PurchaseItem).filter(PurchaseItem.purchase_id == purchase.id).all()
+    if not items:
+        return RedirectResponse(
+            url=f"/admin/purchases/{purchase_id}?err=فاکتور بدون قلم کالا قابل نهایی‌سازی نیست.",
+            status_code=303,
+        )
+
+    total_cost = sum((item.unit_cost or 0) * (item.quantity or 0) for item in items) \
+        + (purchase.extra_cost or 0)
+    value = _purchase_money(payment_amount)
+    if value > total_cost:
+        return RedirectResponse(
+            url=f"/admin/purchases/{purchase_id}?err=مبلغ پرداختی از مبلغ کل خرید بیشتر است.",
+            status_code=303,
+        )
+
+    purchase.total_cost = total_cost
+    purchase.is_draft = False
+    db.flush()
+    applied_lines = apply_purchase_cost_basis(
+        db, purchase, actor_user_id=guard.id, request_id=request.headers.get("X-Request-ID"),
+    )
+    if value > 0:
+        _record_purchase_payment(db, purchase, value, payment_note, guard, request)
 
     append_event(
         db,
@@ -747,11 +1244,24 @@ async def admin_purchase_add(
         idempotency_key=f"purchase:{purchase.id}:recorded",
         actor_user_id=guard.id,
         request_id=request.headers.get("X-Request-ID"),
-        payload={"total_cost": purchase.total_cost, "supplier_id": purchase.supplier_id},
+        payload={
+            "total_cost": purchase.total_cost,
+            "supplier_id": purchase.supplier_id,
+            "extra_cost": purchase.extra_cost or 0,
+            "purchase_date": purchase_effective_at(purchase).isoformat() if purchase_effective_at(purchase) else None,
+            "amount_paid": purchase.amount_paid or 0,
+        },
     )
     db.commit()
-    log_action(db, "purchase_add", f"خرید {total_cost:,} تومان", request=request, target_type="purchase", target_id=purchase.id, after={"total_cost": total_cost})
-    return RedirectResponse(url="/admin/purchases?msg=خرید با موفقیت ثبت شد و موجودی به‌روز شد.", status_code=303)
+    log_action(
+        db, "purchase_finalize", f"نهایی‌سازی فاکتور {total_cost:,} تومان", request=request,
+        target_type="purchase", target_id=purchase.id,
+        after={"total_cost": total_cost, "applied_lines": applied_lines},
+    )
+    message = "فاکتور نهایی شد و بهای تمام‌شده به‌روز شد."
+    if value > 0:
+        message += f" {value:,} تومان پرداخت ثبت شد."
+    return RedirectResponse(url=f"/admin/purchases/{purchase.id}?msg={message}", status_code=303)
 
 
 @router.get("/inventory-movements", response_class=HTMLResponse)
@@ -772,11 +1282,11 @@ async def admin_inventory_movements(request: Request, db: Session = Depends(get_
 
 @router.post("/purchases/{purchase_id}/delete", response_class=HTMLResponse)
 async def admin_purchase_delete(purchase_id: int, request: Request, db: Session = Depends(get_db)):
-    """Safely reverse a purchase without deleting its historical record.
+    """Reverse a purchase without deleting its historical record.
 
-    A purchase is locked once a later sale could have consumed its units. The
-    ledger cannot infer lots retroactively, so refusing that reversal is safer
-    than making stock or cost history negative.
+    A purchase only ever recorded money and cost — it never moved stock — so
+    reversing it unlinks its payments and puts the cost basis back, and needs no
+    stock lock.
     """
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
@@ -787,24 +1297,19 @@ async def admin_purchase_delete(purchase_id: int, request: Request, db: Session 
     if purchase.is_reversed:
         return RedirectResponse(url="/admin/purchases?err=این خرید قبلاً برگشت خورده است.", status_code=303)
 
-    locked_items = []
-    for item in purchase.items:
-        if not item.variant_id:
-            continue
-        later_sale = db.query(StockMovement).filter(
-            StockMovement.variant_id == item.variant_id,
-            StockMovement.movement_type == "sale",
-            StockMovement.created_at >= purchase.created_at,
-        ).first()
-        variant = db.query(ProductVariant).filter(ProductVariant.id == item.variant_id).first()
-        if later_sale or not variant or (variant.stock_quantity or 0) < item.quantity:
-            locked_items.append(item.variant_id)
-
-    if locked_items:
-        return RedirectResponse(
-            url="/admin/purchases?err=این خرید قابل برگشت نیست؛ بخشی از موجودی آن پس از خرید فروخته یا مصرف شده است.",
-            status_code=303,
+    if purchase.is_draft:
+        # A draft never became a business fact — it holds no cost basis, no
+        # payable and no payments — so discarding it simply removes it.
+        line_count = db.query(PurchaseItem).filter(PurchaseItem.purchase_id == purchase.id).count()
+        db.query(PurchaseItem).filter(PurchaseItem.purchase_id == purchase.id) \
+            .delete(synchronize_session=False)
+        db.delete(purchase)
+        db.commit()
+        log_action(
+            db, "purchase_draft_discard", f"حذف پیش‌نویس فاکتور #{purchase_id}", request=request,
+            target_type="purchase", target_id=purchase_id, before={"lines": line_count},
         )
+        return RedirectResponse(url="/admin/purchases?msg=پیش‌نویس فاکتور حذف شد.", status_code=303)
 
     # Mark first so cost recomputation ignores this purchase while preserving
     # the purchase and its items as immutable historical evidence.
@@ -812,24 +1317,33 @@ async def admin_purchase_delete(purchase_id: int, request: Request, db: Session 
     purchase.reversed_at = datetime.now(timezone.utc)
     db.flush()
 
+    # Money already handed to the supplier stays real: the payments are simply
+    # detached from the reversed purchase instead of being deleted with it.
+    unlinked_payments = 0
+    for payment in db.query(SupplierPayment).filter(SupplierPayment.purchase_id == purchase.id).all():
+        payment.purchase_id = None
+        unlinked_payments += 1
+    refresh_purchase_amount_paid(db, purchase)
+
     for item in purchase.items:
-        if not item.variant_id or not item.quantity:
+        if not item.variant_id:
             continue
         variant = db.query(ProductVariant).filter(ProductVariant.id == item.variant_id).first()
         if not variant:
             continue
-        record_stock_movement(
+        # Stock is untouched by design; only the cost basis goes back.
+        previous_cost = variant.cost_price or 0
+        restore_cost_after_purchase_reversal(db, variant, item.prev_cost_price)
+        record_cost_adjustment(
             db,
             variant,
-            -item.quantity,
-            "purchase_reversal",
-            unit_cost=item.unit_cost if item.unit_cost > 0 else None,
-            purchase_id=purchase.id,
-            note=f"برگشت خرید #{purchase.id}",
+            previous_cost,
+            variant.cost_price or 0,
+            note=f"بازگردانی بهای تمام‌شده پس از برگشت خرید #{purchase.id}",
             actor_user_id=guard.id,
             request_id=request.headers.get("X-Request-ID"),
+            purchase_id=purchase.id,
         )
-        restore_cost_after_purchase_reversal(db, variant, item.prev_cost_price)
 
     append_event(
         db,
@@ -839,12 +1353,113 @@ async def admin_purchase_delete(purchase_id: int, request: Request, db: Session 
         idempotency_key=f"purchase:{purchase.id}:reversed",
         actor_user_id=guard.id,
         request_id=request.headers.get("X-Request-ID"),
-        payload={"total_cost": purchase.total_cost},
+        payload={"total_cost": purchase.total_cost, "unlinked_payments": unlinked_payments},
         occurred_at=purchase.reversed_at,
     )
     db.commit()
     log_action(db, "purchase_reverse", f"برگشت خرید #{purchase_id}", request=request, target_type="purchase", target_id=purchase_id, after={"reversed": True})
-    return RedirectResponse(url="/admin/purchases?msg=خرید با ثبت حرکت برگشت، معکوس شد.", status_code=303)
+    message = "خرید برگشت داده شد و بهای تمام‌شده بازگردانی شد."
+    if unlinked_payments:
+        message += f" {unlinked_payments} پرداخت مرتبط آزاد شد و به عنوان بدهی تأمین‌کننده باقی ماند."
+    return RedirectResponse(url=f"/admin/purchases?msg={message}", status_code=303)
+
+
+@router.get("/purchases/{purchase_id}", response_class=HTMLResponse)
+async def admin_purchase_detail(purchase_id: int, request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    purchase = _purchase_with_lines(db, purchase_id)
+    if not purchase:
+        return RedirectResponse(url="/admin/purchases?err=خرید موردنظر پیدا نشد.", status_code=303)
+
+    now = datetime.now(timezone.utc)
+    return templates.TemplateResponse(request, "admin/purchases_detail.html", {
+        "purchase": purchase,
+        "settlement": purchase_settlement(db, purchase, now=now),
+        "lines": _purchase_lines(purchase),
+        "payments": db.query(SupplierPayment).filter(SupplierPayment.purchase_id == purchase.id)
+            .order_by(SupplierPayment.created_at.desc(), SupplierPayment.id.desc()).all(),
+        "movements": db.query(StockMovement).filter(StockMovement.purchase_id == purchase.id)
+            .order_by(StockMovement.created_at.asc(), StockMovement.id.asc()).all(),
+        "invoice_total": purchase.total_cost or 0,
+        "items_subtotal": sum((i.unit_cost or 0) * i.quantity for i in purchase.items),
+        "units": sum(i.quantity for i in purchase.items),
+        "now": now,
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
+        "fmt": fmt,
+        "jalali_str": jalali_str,
+    })
+
+
+@router.post("/purchases/{purchase_id}/payment", response_class=HTMLResponse)
+async def admin_purchase_payment(
+    purchase_id: int,
+    request: Request,
+    amount: str = Form("0"),
+    note: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    purchase = db.query(Purchase).filter(Purchase.id == purchase_id).first()
+    if not purchase:
+        return RedirectResponse(url="/admin/purchases?err=خرید موردنظر پیدا نشد.", status_code=303)
+    if purchase.is_reversed:
+        return RedirectResponse(
+            url=f"/admin/purchases/{purchase_id}?err=این خرید برگشت خورده و قابل پرداخت نیست.",
+            status_code=303,
+        )
+    if purchase.is_draft:
+        return RedirectResponse(
+            url=f"/admin/purchases/{purchase_id}?err=این فاکتور هنوز نهایی نشده است؛ ابتدا آن را نهایی کنید.",
+            status_code=303,
+        )
+    if not purchase.supplier_id:
+        return RedirectResponse(
+            url=f"/admin/purchases/{purchase_id}?err=برای ثبت پرداخت ابتدا تأمین‌کننده را روی خرید مشخص کنید.",
+            status_code=303,
+        )
+
+    value = _purchase_money(amount)
+    settlement = purchase_settlement(db, purchase)
+    if value <= 0 or value > settlement["remaining"]:
+        return RedirectResponse(
+            url=f"/admin/purchases/{purchase_id}?err=مبلغ پرداخت نامعتبر است یا از مانده خرید بیشتر است.",
+            status_code=303,
+        )
+
+    payment = _record_purchase_payment(db, purchase, value, note, guard, request)
+    db.commit()
+    log_action(
+        db, "purchase_payment", f"پرداخت {value:,} تومان برای خرید #{purchase.id}",
+        request=request, target_type="purchase", target_id=purchase.id,
+        after={"amount": value, "payment_id": payment.id},
+    )
+    return RedirectResponse(url=f"/admin/purchases/{purchase_id}?msg=پرداخت ثبت شد.", status_code=303)
+
+
+@router.get("/purchases/{purchase_id}/print", response_class=HTMLResponse)
+async def admin_purchase_print(purchase_id: int, request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    purchase = _purchase_with_lines(db, purchase_id)
+    if not purchase:
+        return RedirectResponse(url="/admin/purchases?err=خرید موردنظر پیدا نشد.", status_code=303)
+    return templates.TemplateResponse(request, "admin/purchases_print.html", {
+        "purchase": purchase,
+        "settlement": purchase_settlement(db, purchase),
+        "lines": _purchase_lines(purchase),
+        "items_subtotal": sum((i.unit_cost or 0) * i.quantity for i in purchase.items),
+        "units": sum(i.quantity for i in purchase.items),
+        "payments": db.query(SupplierPayment).filter(SupplierPayment.purchase_id == purchase.id)
+            .order_by(SupplierPayment.created_at.asc(), SupplierPayment.id.asc()).all(),
+        "fmt": fmt,
+        "jalali_str": jalali_str,
+    })
 
 
 # ── Expenses ─────────────────────────────────────────────────────────────────

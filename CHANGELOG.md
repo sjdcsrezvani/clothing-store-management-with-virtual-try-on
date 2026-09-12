@@ -1,3 +1,16 @@
+## 2.3.0 — 2026-09-12
+
+### Supplier invoices: draft first, with a scoped product picker
+
+- Rebuilt `/admin/purchases` in the catalog design language (page heading, AJAX-free KPI cards, numbered sections, filters, pagination, empty states, a full detail page and a printable receipt), with theme tokens instead of hardcoded colours.
+- One invoice covers one supplier: choosing a product is now a searchable picker that lists only the chosen supplier's products, and every product's supplier is set next to its brand on the product form. The server rejects lines belonging to another supplier.
+- An invoice is assembled as a **draft** and only finalising it applies the landed cost, books the payable and records an optional first payment. Drafts stay out of the cash register, supplier balances, P&L periods, CSV exports and the reverse-event backfill.
+- Quantity and unit price are optional on a line and default to the product's own stock and cost basis, so an invoice can be recorded by picking products alone.
+- A purchase records money and cost only: it never changes stock quantities, applies landed cost through an auditable zero-quantity `cost_adjustment` movement, and reversing it restores the previous cost basis and frees its payments.
+- The invoice date now drives reporting periods while the recorded date keeps the real entry time, and shipping can be spread into each variant's cost basis or left on the invoice total.
+- Fixed the cash register double-counting purchases and supplier payments as the same money: only money that actually left the till counts as cash out.
+- Paying a wholesaler is money out however it is handed over, so purchase payments are recorded as till movements instead of asking for cash-versus-card.
+
 ## 2.2.3 — 2026-09-12
 
 ### Variant page sidebar fix

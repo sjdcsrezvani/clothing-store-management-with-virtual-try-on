@@ -528,17 +528,32 @@ class CheckReminder(Base):
 
 
 class Purchase(Base):
-    """A stock purchase from a supplier. Items update variant stock + cost."""
+    """An invoice from a supplier. Lines carry the cost, never the quantities.
+
+    A purchase is assembled as a **draft** first: the supplier, the invoice
+    details and the products it covers. Nothing economic happens until it is
+    finalised — no cost basis movement, no supplier debt, no cash movement.
+    """
     __tablename__ = "purchases"
 
     id = Column(Integer, primary_key=True, index=True)
     supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True)
     total_cost = Column(Integer, default=0)
     note = Column(Text, nullable=True)
+    # Draft invoices are still being assembled and are invisible to the
+    # ledgers; finalising applies the cost basis and the payable exactly once.
+    is_draft = Column(Boolean, nullable=False, default=False)
     is_reversed = Column(Boolean, default=False, nullable=False)
     reversed_at = Column(DateTime, nullable=True)
     amount_paid = Column(Integer, nullable=True)
     due_date = Column(DateTime, nullable=True)
+    # Economic (invoice) date: reports and P&L periods key off this, while
+    # created_at stays the moment the stock physically entered the shop.
+    purchase_date = Column(DateTime, nullable=True)
+    # Shipping / other charges the wholesaler billed on top of the item lines.
+    extra_cost = Column(Integer, default=0, nullable=False)
+    # Whether extra_cost is spread into the variants' cost basis (landed cost).
+    extra_cost_in_landed = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     supplier = relationship("Supplier", back_populates="purchases")
@@ -562,6 +577,9 @@ class PurchaseItem(Base):
     # Cost basis of the variant BEFORE this purchase was applied, so deleting
     # the purchase can restore it (stock alone is not enough to undo a purchase).
     prev_cost_price = Column(Integer, nullable=True)
+    # Cost basis this line actually applied (unit cost plus its share of the
+    # shipping), so reversing a purchase can restore the previous value exactly.
+    landed_unit_cost = Column(Integer, nullable=True)
 
     purchase = relationship("Purchase", back_populates="items")
     variant = relationship("ProductVariant")

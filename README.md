@@ -31,9 +31,16 @@ you, record payments (cash/card) which settle the oldest unpaid invoices first
 (FIFO), per-customer history. A credit limit (سقف اعتبار) blocks new نسیه
 sales once a customer's debt exceeds it — set a store-wide default in
 Settings and per-customer overrides on each customer's credit page.
-- **📦 خرید از عمده‌فروش** (`/admin/purchases`) — record stock purchases; stock
-and the cost basis update automatically. Reversible (deleting a purchase
-restores stock).
+- **📦 خرید از عمده‌فروش** (`/admin/purchases`) — record what goods cost and what
+you owe. Pick a supplier, then choose its products with a searchable picker
+(the catalogue is scoped to that supplier, so a product's supplier on its own
+page decides where it can be bought). An invoice is assembled as a **draft**
+first — quantities and unit prices are optional because each product already
+knows its stock and its cost basis — and finalising it is the moment that
+applies the landed cost, books the payable and (optionally) records the first
+payment. Buying stock never changes stock quantities — inventory is counted on
+the product and variant screens — and reversing a purchase puts the cost basis
+back and frees its payments.
 - **🏭 تأمین‌کنندگان** (`/admin/suppliers`) — supplier list with total purchased.
 - **💸 هزینه‌ها** (`/admin/expenses`) — rent, utilities, wages… with categories and separate one-time/monthly types.
 - **🧾 صندوق** (`/admin/cashbox`) — daily cash register: opening balance (set it
