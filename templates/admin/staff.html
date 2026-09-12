@@ -39,8 +39,8 @@
         <label>نوع همکاری<select name="employment_type"><option value="full_time" {% if user.employment_type == 'full_time' %}selected{% endif %}>تمام‌وقت</option><option value="part_time" {% if user.employment_type == 'part_time' %}selected{% endif %}>پاره‌وقت</option><option value="contractor" {% if user.employment_type == 'contractor' %}selected{% endif %}>قراردادی</option></select></label>
         <label>حقوق ماهانه<input name="salary_amount" value="{{ user.salary_amount or 0 }}" inputmode="numeric" min="0"></label>
         <label>روز پرداخت ماهانه<input name="salary_payment_day" value="{{ user.salary_payment_day or '' }}" inputmode="numeric" min="1" max="31"></label>
-        <label>تاریخ شروع<input class="persian-date-input" name="hire_date" value="{{ jalali_str(user.hire_date, with_time=False) if user.hire_date else '' }}"></label>
-        <label>پایان قرارداد<input class="persian-date-input" name="contract_end_date" value="{{ jalali_str(user.contract_end_date, with_time=False) if user.contract_end_date else '' }}"></label>
+        <label>تاریخ شروع<input class="persian-date-input" id="hire_date" name="hire_date" data-pdp-pair="#contract_end_date" value="{{ jalali_str(user.hire_date, with_time=False) if user.hire_date else '' }}"></label>
+        <label>پایان قرارداد<input class="persian-date-input" id="contract_end_date" name="contract_end_date" value="{{ jalali_str(user.contract_end_date, with_time=False) if user.contract_end_date else '' }}"></label>
         <label>تحصیلات<input name="education" value="{{ user.education or '' }}"></label>
         <label>برنامه کاری<input name="work_schedule" value="{{ user.work_schedule or '' }}"></label>
         <label>حساب بانکی<input name="bank_account" value="{{ user.bank_account or '' }}"></label>

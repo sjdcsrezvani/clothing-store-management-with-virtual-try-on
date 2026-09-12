@@ -41,6 +41,19 @@ applies the landed cost, books the payable and (optionally) records the first
 payment. Buying stock never changes stock quantities — inventory is counted on
 the product and variant screens — and reversing a purchase puts the cost basis
 back and frees its payments.
+- **📚 دفتر انبار** (`/admin/inventory-movements`) — the append-only inventory
+ledger: every stock change (opening stock, sale, refund, manual adjustment, cost
+adjustment) with what the balance *became* at that moment, who recorded it, and
+a link to the invoice behind it. Filter by type, direction, product, user and
+date; paginated. Because purchases only record money and cost, the ledger is the
+single authoritative account of stock movement.
+  Stock that existed before the ledger (or that was entered outside a recorded
+  flow) has no rows, so the page reports it as **موجودی بدون سابقه** and,
+on request, writes one explanatory opening row per variant. That action never
+changes a stock quantity — those units are already on the shelf; it only gives
+the ledger a row that accounts for them. Any variant whose ledger total
+disagrees with its current balance is listed separately and is never corrected
+automatically.
 - **🏭 تأمین‌کنندگان** (`/admin/suppliers`) — supplier list with total purchased.
 - **💸 هزینه‌ها** (`/admin/expenses`) — rent, utilities, wages… with categories and separate one-time/monthly types.
 - **🧾 صندوق** (`/admin/cashbox`) — daily cash register: opening balance (set it
@@ -49,6 +62,12 @@ closing balance.
 - **🧮 سود و زیان** (`/admin/accounting`) — revenue − COGS − expenses = net
 profit for any period (today/week/month/year/custom, Persian dates), plus CSV
 exports of sales, customers, purchases and expenses (Excel-friendly).
+
+Every date field in the panel shares one Jalali picker: dates are shown and
+saved as `YYYY/MM/DD` in Persian digits, a birth date can never be later than
+today, a start/end pair can never cross, and typing a four-digit year jumps
+straight to it. It carries no JavaScript dependency and is drawn from the active
+theme, so it matches light, dark and high-contrast alike.
 
 ## Requirements
 

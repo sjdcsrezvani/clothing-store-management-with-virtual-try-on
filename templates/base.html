@@ -120,9 +120,8 @@
         </main>
     </div>
 
-    <script src="/static/js/jquery.min.js"></script>
     <script src="/static/js/app.js" defer></script>
-    <script src="/static/js/persian-datepicker.min.js"></script>
+    <script src="/static/js/datepicker.js" defer></script>
     <script>
     // Open the POS in a second native window (desktop app) or browser tab (web).
     // target="_blank" alone does nothing inside pywebview, so pages call this.
@@ -137,13 +136,8 @@
         return false;
     }
 
-    $(function() {
-        $('.persian-date-input').persianDatepicker({
-            format: 'YYYY/MM/DD',
-            autoClose: true,
-            initialValue: false
-        });
-    });
+    // The Persian date picker (datepicker.js) wires up every .persian-date-input
+    // itself, including fields added to the page later.
 
     // Responsive app sidebar.
     (function () {

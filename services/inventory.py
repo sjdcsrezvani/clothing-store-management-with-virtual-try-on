@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import func, text
+from sqlalchemy import func, select, text
 
 from models import ProductVariant, Purchase, PurchaseItem, StockMovement
 
@@ -23,6 +23,22 @@ MOVEMENT_TYPES = {
     "cost_adjustment",
 }
 
+# Persian labels live here so the ledger page does not branch on raw strings.
+MOVEMENT_LABELS = {
+    "opening_stock": "موجودی اولیه",
+    "purchase": "ورود از خرید",
+    "purchase_reversal": "برگشت خرید",
+    "sale": "فروش",
+    "sale_refund": "برگشت فروش",
+    "adjustment": "اصلاح دستی",
+    "cost_adjustment": "اصلاح بهای تمام‌شده",
+}
+
+# Since purchases stopped moving stock, only historical rows carry this type.
+LEGACY_MOVEMENT_TYPES = {"purchase", "purchase_reversal"}
+
+LEDGER_OPENING_NOTE = "ثبت اولیه دفتر انبار — موجودی از پیش موجود"
+
 _MOVEMENT_EVENT_TYPES = {
     "opening_stock": "StockReceived",
     "purchase": "StockReceived",
@@ -32,6 +48,20 @@ _MOVEMENT_EVENT_TYPES = {
     "adjustment": "StockAdjusted",
     "cost_adjustment": "StockCostAdjusted",
 }
+
+
+def movement_type_label(movement_type: str) -> str:
+    return MOVEMENT_LABELS.get(movement_type, movement_type)
+
+
+def movement_direction(quantity_delta: int) -> str:
+    """``in`` / ``out`` / ``zero`` — cost rows move no quantity but still matter."""
+    delta = int(quantity_delta or 0)
+    if delta > 0:
+        return "in"
+    if delta < 0:
+        return "out"
+    return "zero"
 
 
 def record_stock_movement(
@@ -266,3 +296,119 @@ def restore_cost_after_purchase_reversal(db, variant: ProductVariant, fallback: 
         variant.cost_price = cost
     elif fallback is not None:
         variant.cost_price = fallback
+
+
+def ledger_snapshot(db, variant_ids) -> dict:
+    """Balances and totals derived from the ledger alone.
+
+    Returns ``{"by_movement": {movement_id: balance_after}, "totals":
+    {variant_id: ledger_total}}``. Balances are a running sum of the deltas of
+    that variant's movements in id order, so they stay internally consistent
+    even when a variant's stock predates the ledger.
+
+    ``stock_quantity`` is deliberately not used as the anchor: the point of this
+    view is to expose where the ledger and the cached balance disagree, so
+    anchoring it would hide exactly what it exists to show.
+    """
+    variant_ids = [int(v) for v in dict.fromkeys(variant_ids or [])]
+    result = {"by_movement": {}, "totals": {}}
+    if not variant_ids:
+        return result
+    rows = db.query(
+        StockMovement.id, StockMovement.variant_id, StockMovement.quantity_delta,
+    ).filter(
+        StockMovement.variant_id.in_(variant_ids),
+    ).order_by(StockMovement.variant_id.asc(), StockMovement.id.asc()).all()
+
+    running = 0
+    current_variant = None
+    for movement_id, variant_id, delta in rows:
+        if variant_id != current_variant:
+            current_variant = variant_id
+            running = 0
+        running += int(delta or 0)
+        result["by_movement"][movement_id] = running
+        result["totals"][variant_id] = running
+    for variant_id in variant_ids:
+        result["totals"].setdefault(variant_id, 0)
+    return result
+
+
+def ledger_missing_variants(db) -> list[ProductVariant]:
+    """Active variants holding stock that the ledger has never seen.
+
+    These are the rows a shop accumulates before the ledger existed (or before a
+    variant's stock was ever edited through a recorded flow).
+    """
+    return db.query(ProductVariant).filter(
+        ProductVariant.is_active == True,
+        ProductVariant.stock_quantity > 0,
+        ProductVariant.id.notin_(select(StockMovement.variant_id)),
+    ).order_by(ProductVariant.product_id.asc(), ProductVariant.id.asc()).all()
+
+
+def ledger_mismatched_variants(db) -> list[tuple[ProductVariant, int]]:
+    """Active variants whose ledger total differs from the cached balance."""
+    ledger = db.query(
+        StockMovement.variant_id.label("variant_id"),
+        func.coalesce(func.sum(StockMovement.quantity_delta), 0).label("ledger_total"),
+    ).group_by(StockMovement.variant_id).subquery()
+    rows = db.query(ProductVariant, ledger.c.ledger_total).join(
+        ledger, ledger.c.variant_id == ProductVariant.id,
+    ).filter(
+        ProductVariant.is_active == True,
+        ProductVariant.stock_quantity != ledger.c.ledger_total,
+    ).order_by(ProductVariant.product_id.asc(), ProductVariant.id.asc()).all()
+    return [(variant, int(total or 0)) for variant, total in rows]
+
+
+def record_ledger_opening(
+    db,
+    variant: ProductVariant,
+    *,
+    actor_user_id: int | None = None,
+    request_id: str | None = None,
+) -> StockMovement | None:
+    """Explain stock that existed before the ledger, without changing it.
+
+    Used by the opt-in reconciliation on the inventory-ledger page: a variant
+    that holds stock but has no history gets one ``opening_stock`` row whose
+    delta accounts for the balance the shop already has. ``stock_quantity`` is
+    left untouched — going through :func:`record_stock_movement` here would add
+    the units a second time, which is the double count this ledger exists to
+    expose. Idempotent: a variant with any history is skipped.
+    """
+    quantity = int(variant.stock_quantity or 0)
+    if quantity <= 0:
+        return None
+    if db.query(StockMovement.id).filter(StockMovement.variant_id == variant.id).first():
+        return None
+
+    movement = StockMovement(
+        variant_id=variant.id,
+        quantity_delta=quantity,
+        movement_type="opening_stock",
+        unit_cost=variant.cost_price,
+        note=LEDGER_OPENING_NOTE,
+    )
+    db.add(movement)
+    db.flush()
+    from services.events import append_event
+    append_event(
+        db,
+        "StockReceived",
+        "variant",
+        variant.id,
+        idempotency_key=f"stock-movement:{movement.id}",
+        actor_user_id=actor_user_id,
+        request_id=request_id,
+        payload={
+            "movement_id": movement.id,
+            "quantity_delta": quantity,
+            "movement_type": "opening_stock",
+            "purchase_id": None,
+            "sale_id": None,
+            "ledger_opening": True,
+        },
+    )
+    return movement

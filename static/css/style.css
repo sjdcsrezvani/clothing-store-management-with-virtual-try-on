@@ -1548,3 +1548,234 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
   .purchase-item-remove { justify-self: end; }
   .purchase-filter-form { grid-template-columns: 1fr; }
 }
+
+/* ===================== Inventory ledger (دفتر انبار) ===================== */
+
+.movement-legacy-note { font-size: 0.78rem; margin: -0.6rem 0 1.1rem; }
+
+.movement-reconcile-card { margin-bottom: 1.2rem; }
+.reconcile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.9rem; margin-bottom: 1rem; }
+.reconcile-stat {
+  padding: 0.9rem 1rem;
+  border: 1px dashed var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  display: grid;
+  gap: 0.25rem;
+  align-content: start;
+}
+.reconcile-stat.is-warn { border-color: color-mix(in srgb, var(--sunshine) 60%, var(--rule)); }
+.reconcile-stat.is-danger { border-color: color-mix(in srgb, var(--candy) 55%, var(--rule)); }
+.reconcile-label { font-size: 0.78rem; color: var(--ink-soft); font-weight: 700; }
+.reconcile-value { font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
+.reconcile-sub { font-size: 0.75rem; color: var(--ink-soft); }
+.reconcile-ok { font-size: 0.75rem; color: var(--mint-dark); font-weight: 700; }
+.reconcile-action { margin: 0 0 0.4rem; }
+.reconcile-action .btn { align-self: flex-start; }
+
+.movement-results { margin: 0 0 0.7rem; font-size: 0.78rem; color: var(--ink-soft); }
+.movement-filter-form { align-items: end; margin-bottom: 1rem; }
+.movement-filter-form .form-group { margin-bottom: 0; flex: 1 1 190px; min-width: 170px; }
+/* The search field carries a long hint, so give it more room than the selects. */
+.movement-filter-form .form-group:first-child { flex: 1 1 330px; }
+
+.movement-table { min-width: 1080px; }
+.movement-table td small,
+.movement-table td strong { display: block; }
+.movement-id { color: var(--ink-soft); }
+.movement-time { white-space: nowrap; }
+.movement-meta { color: var(--ink-soft); font-size: 0.72rem; }
+.movement-cost { direction: ltr; unicode-bidi: isolate; white-space: nowrap; }
+.movement-ref { white-space: nowrap; }
+.movement-table .movement-note {
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  max-width: 230px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.movement-reconcile-table { min-width: 860px; }
+
+.movement-type {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--sky) 14%, var(--card));
+  color: var(--sky-dark);
+}
+.movement-type.is-in { background: color-mix(in srgb, var(--mint) 16%, var(--card)); color: var(--mint-dark); }
+.movement-type.is-out { background: color-mix(in srgb, var(--candy) 14%, var(--card)); color: var(--candy-dark); }
+.movement-type.is-zero { background: color-mix(in srgb, var(--sunshine) 22%, var(--card)); color: var(--ink); }
+
+.movement-delta {
+  display: inline-block;
+  min-width: 2.4rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  font-weight: 800;
+  text-align: center;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+.movement-delta.is-in { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--mint-dark); }
+.movement-delta.is-out { background: color-mix(in srgb, var(--candy) 16%, var(--card)); color: var(--candy-dark); }
+.movement-delta.is-zero { background: color-mix(in srgb, var(--sky) 12%, var(--card)); color: var(--ink-soft); }
+
+.movement-balance strong { font-size: 1rem; }
+.movement-flag {
+  display: inline-block;
+  margin-top: 0.15rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--sunshine) 26%, var(--card));
+  color: var(--ink);
+}
+.badge-legacy {
+  background: color-mix(in srgb, var(--ink-soft) 18%, var(--card));
+  color: var(--ink-soft);
+  margin-inline-start: 0.25rem;
+}
+
+@media (max-width: 1020px) {
+  .reconcile-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 700px) {
+  .movement-filter-form .form-group { flex: 1 1 100%; min-width: 0; }
+}
+
+/* ===================== Persian date picker ===================== */
+/* Every value here is a theme token, so the popup follows the active theme
+   (light, dark, high-contrast) instead of hardcoding its own palette. */
+
+.pdp-popup {
+  position: fixed;
+  z-index: 120;
+  min-width: 17rem;
+  padding: 0.7rem;
+  background: var(--card);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-hover);
+  direction: rtl;
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.pdp-head { display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.5rem; }
+.pdp-selects { display: flex; flex: 1; gap: 0.35rem; min-width: 0; }
+.pdp-nav {
+  flex: 0 0 auto;
+  width: 2.1rem;
+  min-height: 2.1rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  color: var(--ink-soft);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.pdp-nav:hover:not(:disabled) { border-color: var(--candy); color: var(--candy-dark); }
+.pdp-nav:disabled { cursor: not-allowed; opacity: 0.5; }
+.pdp-selects select {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  min-height: 2.1rem;
+  padding: 0.25rem 0.45rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--field-bg);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 0.82rem;
+}
+
+.pdp-weekdays,
+.pdp-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.15rem; text-align: center; }
+.pdp-weekdays { margin-bottom: 0.2rem; }
+.pdp-weekdays span { padding: 0.15rem 0; color: var(--ink-soft); font-size: 0.7rem; font-weight: 700; }
+
+.pdp-day {
+  min-height: 2.1rem;
+  padding: 0.3rem 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.pdp-day:hover:not(:disabled) { background: color-mix(in srgb, var(--candy) 12%, var(--card)); }
+.pdp-day.is-outside { color: var(--ink-soft); opacity: 0.7; }
+.pdp-day.is-today { border-color: var(--candy); font-weight: 800; }
+.pdp-day.is-selected { background: var(--candy); border-color: var(--candy); color: var(--button-text); font-weight: 800; }
+.pdp-day:disabled { cursor: not-allowed; color: var(--ink-soft); opacity: 0.4; text-decoration: line-through; }
+.pdp-day:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+.pdp-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--rule);
+}
+.pdp-btn {
+  min-height: 2.1rem;
+  padding: 0.3rem 0.9rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.pdp-today { background: var(--candy); color: var(--button-text); }
+.pdp-today:hover { background: var(--candy-dark); }
+.pdp-clear { background: transparent; border-color: var(--rule); color: var(--ink-soft); }
+.pdp-clear:hover { border-color: var(--candy); color: var(--candy-dark); }
+
+/* Type-ahead hint: how to jump to a year, and the digits typed so far. */
+.pdp-hint {
+  margin: 0.45rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  text-align: center;
+}
+
+/* A field that doesn't parse says so without blocking the server's verdict. */
+.persian-date-input.is-invalid { border-color: var(--candy); box-shadow: 0 0 0 3px color-mix(in srgb, var(--candy) 18%, transparent); }
+
+/* Narrow screens: a full-width bottom sheet with comfortable tap targets. */
+.pdp-popup.is-sheet {
+  left: 0 !important;
+  right: 0;
+  top: auto !important;
+  bottom: 0;
+  width: 100%;
+  min-width: 0;
+  padding: 0.9rem 0.9rem calc(0.9rem + env(safe-area-inset-bottom, 0px));
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.pdp-popup.is-sheet .pdp-day { min-height: var(--touch-target); font-size: 0.95rem; }
+@media (hover: none) {
+  .pdp-day { min-height: var(--touch-target); }
+}
+
+/* High-contrast: state must not depend on colour alone. */
+html[data-theme-mode="high-contrast"] .pdp-popup { border-width: 2px; }
+html[data-theme-mode="high-contrast"] .pdp-day.is-selected { outline: 2px solid var(--ink); outline-offset: -2px; }
+html[data-theme-mode="high-contrast"] .pdp-day.is-today { outline: 2px dashed var(--ink); outline-offset: -2px; }

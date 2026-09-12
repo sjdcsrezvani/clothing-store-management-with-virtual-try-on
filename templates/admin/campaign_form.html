@@ -37,11 +37,15 @@
         <div class="form-row">
             <div class="form-group">
                 <label for="start_date">📅 تاریخ شروع</label>
-                <input type="date" id="start_date" name="start_date" value="{{ campaign.start_date.strftime('%Y-%m-%d') if campaign and campaign.start_date else '' }}">
+                <input type="text" id="start_date" name="start_date" class="persian-date-input" data-pdp-pair="#end_date"
+                       value="{{ jalali_str(campaign.start_date, with_time=False) if campaign and campaign.start_date else '' }}"
+                       placeholder="از: ۱۴۰۵/۰۱/۰۱">
             </div>
             <div class="form-group">
                 <label for="end_date">📅 تاریخ پایان</label>
-                <input type="date" id="end_date" name="end_date" value="{{ campaign.end_date.strftime('%Y-%m-%d') if campaign and campaign.end_date else '' }}">
+                <input type="text" id="end_date" name="end_date" class="persian-date-input"
+                       value="{{ jalali_str(campaign.end_date, with_time=False) if campaign and campaign.end_date else '' }}"
+                       placeholder="تا: ۱۴۰۵/۱۲/۲۹">
             </div>
         </div>
 

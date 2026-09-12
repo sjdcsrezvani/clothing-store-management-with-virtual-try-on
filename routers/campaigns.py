@@ -4,7 +4,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Customer, Campaign, Settings, to_english_digits
-from services._common import fmt, check_admin, get_setting_int, parse_jalali_input, parse_jalali_input_end, jalali_str
+from services._common import fmt, check_admin, get_setting_int, parse_form_date, parse_form_date_end, jalali_str
 from services.security import log_action, require_html_role
 from services.sms import queue_sms
 from services.templating import templates
@@ -65,8 +65,8 @@ async def admin_campaign_add(
         min_purchase_int = 0
     
     # Parse Persian dates → Gregorian for storage.
-    start_dt = parse_jalali_input(start_date)
-    end_dt = parse_jalali_input_end(end_date)
+    start_dt = parse_form_date(start_date)
+    end_dt = parse_form_date_end(end_date)
 
     campaign = Campaign(
         name=name,
@@ -135,11 +135,11 @@ async def admin_campaign_update(
     campaign.is_active = is_active == "on"
     
     if start_date:
-        new_start = parse_jalali_input(start_date)
+        new_start = parse_form_date(start_date)
         if new_start:
             campaign.start_date = new_start
     if end_date:
-        new_end = parse_jalali_input_end(end_date)
+        new_end = parse_form_date_end(end_date)
         if new_end:
             campaign.end_date = new_end
 

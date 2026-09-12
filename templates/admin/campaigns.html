@@ -44,8 +44,8 @@
                         <span class="badge badge-used">⛔ غیرفعال</span>
                     {% endif %}
                 </td>
-                <td class="tnum">{{ campaign.start_date.strftime('%Y/%m/%d') if campaign.start_date else '—' }}</td>
-                <td class="tnum">{{ campaign.end_date.strftime('%Y/%m/%d') if campaign.end_date else '—' }}</td>
+                <td class="tnum">{{ jalali_str(campaign.start_date, with_time=False) if campaign.start_date else '—' }}</td>
+                <td class="tnum">{{ jalali_str(campaign.end_date, with_time=False) if campaign.end_date else '—' }}</td>
                 <td style="display: flex; gap: 0.3rem;">
                     <a href="/admin/campaigns/{{ campaign.id }}" class="btn btn-sm btn-ghost">✏️</a>
                     <form method="post" action="/admin/campaigns/{{ campaign.id }}/send" style="display:inline;"

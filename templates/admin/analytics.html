@@ -17,9 +17,9 @@
             <a href="/admin/analytics?period=all" class="btn {% if period == 'all' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">📅 همه</a>
         </div>
         <div class="search-form" style="margin-top: 0.7rem;">
-            <input type="text" name="start_date" value="{{ start_date }}" placeholder="📅 از تاریخ" class="persian-date-input">
+            <input type="text" id="analytics-start" name="start_date" value="{{ start_date }}" placeholder="📅 از تاریخ" class="persian-date-input" data-pdp-pair="#analytics-end">
             <span>تا</span>
-            <input type="text" name="end_date" value="{{ end_date }}" placeholder="📅 تا تاریخ" class="persian-date-input">
+            <input type="text" id="analytics-end" name="end_date" value="{{ end_date }}" placeholder="📅 تا تاریخ" class="persian-date-input">
             <input type="hidden" name="period" value="custom">
             <button type="submit" class="btn btn-primary btn-sm">✅ اعمال</button>
         </div>

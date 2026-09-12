@@ -85,7 +85,7 @@
             </div>
             <div class="form-group">
                 <label for="purchase_date">تاریخ فاکتور</label>
-                <input type="text" id="purchase_date" name="purchase_date" class="persian-date-input"
+                <input type="text" id="purchase_date" name="purchase_date" class="persian-date-input" data-pdp-pair="#due_date"
                        value="{% if editing and edit_purchase.purchase_date %}{{ jalali_str(edit_purchase.purchase_date, with_time=False) }}{% else %}{{ today_jalali }}{% endif %}"
                        placeholder="۱۴۰۵/۰۶/۲۱">
                 <small class="field-help">اگر خالی بماند، تاریخ امروز در نظر گرفته می‌شود.</small>
@@ -223,7 +223,7 @@
         </div>
         <div class="form-group">
             <label class="sr-only" for="filter-start">از تاریخ</label>
-            <input type="text" id="filter-start" name="start_date" class="persian-date-input" value="{{ start_date_filter }}" placeholder="از: ۱۴۰۵/۰۱/۰۱">
+            <input type="text" id="filter-start" name="start_date" class="persian-date-input" data-pdp-pair="#filter-end" value="{{ start_date_filter }}" placeholder="از: ۱۴۰۵/۰۱/۰۱">
         </div>
         <div class="form-group">
             <label class="sr-only" for="filter-end">تا تاریخ</label>

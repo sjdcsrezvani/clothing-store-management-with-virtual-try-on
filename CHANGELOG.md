@@ -1,3 +1,15 @@
+## 2.3.1 — 2026-09-12
+
+### Inventory ledger, and a date picker that follows every theme
+
+- Rebuilt `/admin/inventory-movements` in the catalogue design language (heading with the nav merged in, badge pills instead of emoji, theme tokens throughout, a real empty state) and turned it into an audit trail: filters for text/id/barcode, type, direction, product, user and date range, real pagination with a count instead of a silent 200-row cap, and new columns for the balance *after* each movement, the user who recorded it, cost before → new, and links to the sale or purchase behind the row. Pre-2.3.0 purchase rows are marked as historical so old behaviour can't be misread as current.
+- The ledger page reports stock it has no rows for (**موجودی بدون سابقه**) and variants whose ledger total disagrees with the balance, and offers one opt-in «ثبت موجودی اولیه دفتر» action that writes an opening row per variant without touching any stock quantity.
+- Replaced the jQuery date picker with a dependency-free one drawn entirely from theme tokens, so it follows light, dark and high-contrast instead of a hardcoded purple and white.
+- Fixed the picker's defaults and value handling: it opened on a fixed 1403/1 and read Persian digits as `NaN`, so every field holding a date reopened on the wrong month. It now opens on the field's own value (Jalali, dashed or ISO Gregorian), dates are typeable again, selecting fires `input`/`change`, the calendar is fully keyboard-operable with dialog semantics, and it becomes a bottom sheet with comfortable tap targets on narrow screens.
+- Added constraints across every date field: start/end pairs cannot cross, birth dates cannot be in the future, and typed input obeys the same limits the calendar enforces. The year list is a rolling window (120 years back, 10 forward, with a 1300 typo floor) so it keeps up as the years pass, and typing a four-digit year anywhere in the popup jumps straight to it.
+- Fixed campaigns storing a date 621 years out: their native Gregorian inputs were parsed as Jalali (`2026-09-12` → `2647-12-03`). They now use the shared picker and a parser that reads Jalali and ISO correctly, and their list shows Persian dates.
+- Removed roughly 140KB of dead assets: jQuery (whose only consumer was the old picker), its orphaned stylesheet, and the unused `persian-date.min.js`.
+
 ## 2.3.0 — 2026-09-12
 
 ### Supplier invoices: draft first, with a scoped product picker

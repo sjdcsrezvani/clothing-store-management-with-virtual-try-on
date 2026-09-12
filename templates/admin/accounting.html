@@ -24,8 +24,8 @@
             <option value="all" {% if period == 'all' %}selected{% endif %}>🌐 همه</option>
             <option value="custom" {% if period == 'custom' %}selected{% endif %}>✏️ دلخواه</option>
         </select>
-        <input type="text" name="start_date" class="persian-date-input" placeholder="از: ۱۴۰۵/۰۱/۰۱" value="{{ start_date }}">
-        <input type="text" name="end_date" class="persian-date-input" placeholder="تا: ۱۴۰۵/۰۶/۳۱" value="{{ end_date }}">
+        <input type="text" id="accounting-start" name="start_date" class="persian-date-input" data-pdp-pair="#accounting-end" placeholder="از: ۱۴۰۵/۰۱/۰۱" value="{{ start_date }}">
+        <input type="text" id="accounting-end" name="end_date" class="persian-date-input" placeholder="تا: ۱۴۰۵/۰۶/۳۱" value="{{ end_date }}">
         <button type="submit" class="btn btn-primary">🔍 نمایش</button>
     </form>
 </div>

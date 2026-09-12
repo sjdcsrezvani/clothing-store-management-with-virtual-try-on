@@ -72,6 +72,41 @@ def parse_jalali_input_end(value: str) -> datetime | None:
     return dt.replace(hour=23, minute=59, second=59)
 
 
+# Jalali years never reach 1900, so a form value starting with one can only be a
+# Gregorian ISO date. Without this check ``parse_jalali_input('2026-09-12')``
+# happily reads 2026 as a Jalali year and returns the year 2647.
+def _gregorian_prefix(value: str) -> datetime | None:
+    cleaned = value.strip()
+    if len(cleaned) < 10 or not _to_en(cleaned[:4]).isdigit():
+        return None
+    if int(_to_en(cleaned[:4])) < 1900:
+        return None
+    iso = _to_en(cleaned[:10]).replace("/", "-").replace(".", "-")
+    try:
+        return datetime.fromisoformat(iso).replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def parse_form_date(value) -> datetime | None:
+    """Canonical form-date reader: Persian Jalali (۱۴۰۵/۰۶/۲۱) or ISO Gregorian."""
+    cleaned = str(value or "").strip()
+    if not cleaned:
+        return None
+    return _gregorian_prefix(cleaned) or parse_jalali_input(cleaned)
+
+
+def parse_form_date_end(value) -> datetime | None:
+    """Like parse_form_date but at end-of-day (23:59:59 UTC)."""
+    cleaned = str(value or "").strip()
+    if not cleaned:
+        return None
+    gregorian = _gregorian_prefix(cleaned)
+    if gregorian is not None:
+        return gregorian.replace(hour=23, minute=59, second=59)
+    return parse_jalali_input_end(cleaned)
+
+
 def fmt(amount: int) -> str:
     return f"{amount:,}"
 

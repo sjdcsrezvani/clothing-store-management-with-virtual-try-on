@@ -1,18 +1,20 @@
 import csv
 import io
+import json
 from datetime import datetime, timezone
 from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy import case, func, or_
+from sqlalchemy import String, case, cast, func, literal, or_
 from sqlalchemy.orm import Session, joinedload
 
 from database import get_db
 from models import (
-    Customer, Expense, Payment, ProductVariant, Product, Purchase, PurchaseItem,
-    Sale, SaleItem, Settings, Supplier, StockMovement, CashSession, SupplierPayment,
-    FinancialEntry, CheckRecord, CheckReminder, to_english_digits,
+    BusinessEvent, Customer, Expense, Payment, ProductVariant, Product, Purchase,
+    PurchaseItem, Sale, SaleItem, Settings, StaffUser, Supplier, StockMovement,
+    CashSession, SupplierPayment, FinancialEntry, CheckRecord, CheckReminder,
+    to_english_digits,
 )
 from services._common import fmt, check_admin, jalali_str, parse_jalali_input, parse_jalali_input_end
 from services.accounting import (
@@ -28,7 +30,16 @@ from services.analytics import get_date_range
 from services.security import log_action, require_html_role
 from services.templating import templates
 from services.inventory import (
+    LEGACY_MOVEMENT_TYPES,
+    MOVEMENT_LABELS,
+    MOVEMENT_TYPES,
+    ledger_mismatched_variants,
+    ledger_missing_variants,
+    ledger_snapshot,
+    movement_direction,
+    movement_type_label,
     record_cost_adjustment,
+    record_ledger_opening,
     restore_cost_after_purchase_reversal,
 )
 from services.reporting import canonical_report, reconciliation_checks
@@ -46,7 +57,13 @@ from services.events import append_event
 
 PAYMENT_LABELS = {"card": "💳 کارت", "cash": "💵 نقد", "credit": "📒 نسیه"}
 EXPENSE_TYPE_LABELS = {"one_time": "یک‌باره", "monthly": "ماهانه"}
-EXPENSE_TYPE_LABELS = {"one_time": "یک‌باره", "monthly": "ماهانه"}
+
+MOVEMENT_PAGE_SIZE = 25
+MOVEMENT_DIRECTIONS = {"all": "همه حرکت‌ها", "in": "فقط ورودی", "out": "فقط خروجی"}
+RECONCILE_VIEWS = {
+    "missing": "تنوع‌های بدون سابقه در دفتر",
+    "mismatch": "تنوع‌های نامطابق با دفتر",
+}
 
 
 def _csv_response(filename: str, rows: list[list]) -> Response:
@@ -1264,20 +1281,241 @@ async def admin_purchase_finalize(
     return RedirectResponse(url=f"/admin/purchases/{purchase.id}?msg={message}", status_code=303)
 
 
+def _cost_change(payload: str | None):
+    """``(old_cost, new_cost)`` when a movement's event recorded a cost change."""
+    if not payload:
+        return None
+    try:
+        data = json.loads(payload)
+    except (TypeError, ValueError):
+        return None
+    old, new = data.get("old_cost"), data.get("new_cost")
+    if old is None or new is None:
+        return None
+    return (int(old), int(new))
+
+
+def _movement_event_join(query):
+    """Attach the business event written alongside every movement.
+
+    A ledger row and its event share the ``stock-movement:{id}`` idempotency
+    key, which is unique and indexed, so this join stays cheap. The event is
+    where the acting user and a cost row's before/after values live.
+    """
+    return query.outerjoin(
+        BusinessEvent,
+        BusinessEvent.idempotency_key == literal("stock-movement:") + cast(StockMovement.id, String),
+    )
+
+
 @router.get("/inventory-movements", response_class=HTMLResponse)
-async def admin_inventory_movements(request: Request, db: Session = Depends(get_db)):
-    """Read-only audit view of the append-only inventory ledger."""
+async def admin_inventory_movements(
+    request: Request,
+    q: str = "",
+    movement_type: str = "all",
+    direction: str = "all",
+    product_id: str = "",
+    variant_id: str = "",
+    actor: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    reconcile: str = "",
+    page: int = 1,
+    db: Session = Depends(get_db),
+):
+    """Read-only audit view of the append-only inventory ledger.
+
+    Each row shows what the movement did *and* what the balance became, so the
+    page can answer "what was the stock then". Balances are derived from the
+    ledger itself; a variant whose ledger disagrees with its cached balance is
+    flagged rather than hidden.
+    """
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
-    movements = db.query(StockMovement).order_by(
-        StockMovement.created_at.desc(), StockMovement.id.desc()
-    ).limit(200).all()
+
+    movement_type = movement_type if movement_type in MOVEMENT_TYPES else "all"
+    direction = direction if direction in MOVEMENT_DIRECTIONS else "all"
+    reconcile = reconcile if reconcile in RECONCILE_VIEWS else ""
+    search = (q or "").strip()
+    page = max(1, page)
+
+    missing_variants = ledger_missing_variants(db)
+    mismatched = ledger_mismatched_variants(db)
+    reconciliation = {
+        "missing_count": len(missing_variants),
+        "missing_units": sum(int(v.stock_quantity or 0) for v in missing_variants),
+        "missing_value": sum(
+            int(v.stock_quantity or 0) * int(v.cost_price or 0) for v in missing_variants
+        ),
+        "mismatch_count": len(mismatched),
+    }
+
+    movements = []
+    reconcile_rows = []
+
+    if reconcile == "missing":
+        listing = [(variant, 0) for variant in missing_variants]
+    elif reconcile == "mismatch":
+        listing = list(mismatched)
+    else:
+        listing = None
+
+    if listing is not None:
+        total_count = len(listing)
+        total_pages = max(1, -(-total_count // MOVEMENT_PAGE_SIZE))
+        page = min(page, total_pages)
+        window = listing[(page - 1) * MOVEMENT_PAGE_SIZE: page * MOVEMENT_PAGE_SIZE]
+        for variant, ledger_total in window:
+            current = int(variant.stock_quantity or 0)
+            reconcile_rows.append({
+                "variant": variant,
+                "product": variant.product,
+                "current_stock": current,
+                "ledger_total": ledger_total,
+                "difference": current - ledger_total,
+                "value": current * int(variant.cost_price or 0),
+            })
+    else:
+        query = db.query(StockMovement, BusinessEvent.actor_user_id, BusinessEvent.payload) \
+            .outerjoin(ProductVariant, StockMovement.variant_id == ProductVariant.id) \
+            .outerjoin(Product, ProductVariant.product_id == Product.id)
+        query = _movement_event_join(query)
+
+        if search:
+            text_match = or_(
+                StockMovement.note.ilike(f"%{search}%"),
+                ProductVariant.barcode.ilike(f"%{search}%"),
+                ProductVariant.size.ilike(f"%{search}%"),
+                ProductVariant.color.ilike(f"%{search}%"),
+                Product.name.ilike(f"%{search}%"),
+            )
+            digits = search.lstrip("#").strip()
+            if digits.isdigit():
+                # A bare number is usually a movement id, but numeric barcodes
+                # are common here, so it matches either instead of dead-ending.
+                query = query.filter(or_(StockMovement.id == int(digits), text_match))
+            else:
+                query = query.filter(text_match)
+        if variant_id.isdigit():
+            query = query.filter(StockMovement.variant_id == int(variant_id))
+        if product_id.isdigit():
+            query = query.filter(ProductVariant.product_id == int(product_id))
+        if movement_type != "all":
+            query = query.filter(StockMovement.movement_type == movement_type)
+        if direction == "in":
+            query = query.filter(StockMovement.quantity_delta > 0)
+        elif direction == "out":
+            query = query.filter(StockMovement.quantity_delta < 0)
+        if actor.isdigit():
+            query = query.filter(BusinessEvent.actor_user_id == int(actor))
+        start = _purchase_form_date(start_date)
+        end = _purchase_form_date_end(end_date)
+        if start:
+            query = query.filter(StockMovement.created_at >= start)
+        if end:
+            query = query.filter(StockMovement.created_at <= end)
+
+        total_count = query.count()
+        total_pages = max(1, -(-total_count // MOVEMENT_PAGE_SIZE))
+        page = min(page, total_pages)
+        window = query.order_by(
+            StockMovement.created_at.desc(), StockMovement.id.desc()
+        ).options(joinedload(StockMovement.variant)) \
+            .offset((page - 1) * MOVEMENT_PAGE_SIZE).limit(MOVEMENT_PAGE_SIZE).all()
+
+        snapshot = ledger_snapshot(db, [movement.variant_id for movement, _, _ in window])
+        actor_ids = {actor_id for _, actor_id, _ in window if actor_id}
+        actor_names: dict[int, str] = {}
+        if actor_ids:
+            for user in db.query(StaffUser).filter(StaffUser.id.in_(actor_ids)).all():
+                actor_names[user.id] = user.full_name or user.username
+
+        for movement, actor_id, payload in window:
+            variant = movement.variant
+            current_stock = int(variant.stock_quantity or 0) if variant else 0
+            ledger_total = snapshot["totals"].get(movement.variant_id, 0)
+            movements.append({
+                "movement": movement,
+                "product": variant.product if variant else None,
+                "direction": movement_direction(movement.quantity_delta),
+                "type_label": movement_type_label(movement.movement_type),
+                "is_legacy": movement.movement_type in LEGACY_MOVEMENT_TYPES,
+                "balance_after": snapshot["by_movement"].get(movement.id),
+                "ledger_total": ledger_total,
+                "current_stock": current_stock,
+                "balanced": ledger_total == current_stock,
+                "actor_name": actor_names.get(actor_id),
+                "cost_change": _cost_change(payload),
+            })
+
+    products = db.query(Product).filter(Product.is_active == True).order_by(Product.name).all()
+    actor_options = db.query(StaffUser).join(
+        BusinessEvent, BusinessEvent.actor_user_id == StaffUser.id
+    ).filter(BusinessEvent.idempotency_key.like("stock-movement:%")).distinct().all()
+
     return templates.TemplateResponse(request, "admin/inventory_movements.html", {
         "movements": movements,
+        "reconcile_rows": reconcile_rows,
+        "reconcile": reconcile,
+        "reconcile_label": RECONCILE_VIEWS.get(reconcile, ""),
+        "reconciliation": reconciliation,
+        "movement_labels": MOVEMENT_LABELS,
+        "directions": MOVEMENT_DIRECTIONS,
+        "products": products,
+        "actor_options": [(u.id, u.full_name or u.username) for u in actor_options],
+        "movement_type_filter": movement_type,
+        "direction_filter": direction,
+        "product_filter": product_id,
+        "variant_filter": variant_id,
+        "actor_filter": actor,
+        "search": search,
+        "start_date_filter": start_date,
+        "end_date_filter": end_date,
+        "page": page,
+        "total_pages": total_pages,
+        "total_count": total_count,
+        "page_size": MOVEMENT_PAGE_SIZE,
+        "has_filters": bool(
+            search or movement_type != "all" or direction != "all" or product_id
+            or variant_id or actor or start_date or end_date
+        ),
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
         "fmt": fmt,
         "jalali_str": jalali_str,
     })
+
+
+@router.post("/inventory-movements/reconcile", response_class=HTMLResponse)
+async def admin_inventory_movements_reconcile(request: Request, db: Session = Depends(get_db)):
+    """Explain stock that predates the ledger with one opening row per variant.
+
+    Deliberately opt-in rather than a startup migration: it writes to live data.
+    It never touches ``stock_quantity`` — those units are already on the shelf;
+    the ledger simply had no row explaining them.
+    """
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+
+    recorded = 0
+    for variant in ledger_missing_variants(db):
+        if record_ledger_opening(db, variant, actor_user_id=getattr(guard, "id", None)):
+            recorded += 1
+    db.commit()
+    log_action(
+        db, "inventory_ledger_opening", f"ثبت موجودی اولیه دفتر برای {recorded} تنوع",
+        request=request,
+    )
+    if not recorded:
+        return RedirectResponse(
+            url="/admin/inventory-movements?err=تنوعی برای ثبت باقی نمانده است.", status_code=303,
+        )
+    return RedirectResponse(
+        url=f"/admin/inventory-movements?msg=موجودی اولیه {recorded} تنوع در دفتر ثبت شد.",
+        status_code=303,
+    )
 
 
 @router.post("/purchases/{purchase_id}/delete", response_class=HTMLResponse)

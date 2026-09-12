@@ -1,73 +1,324 @@
 {% extends "base.html" %}
-{% block title %}📚 دفتر انبار — {{ store.name }}{% endblock %}
+{% block title %}دفتر انبار — {{ store.name }}{% endblock %}
 {% block content %}
+{% set filter_qs = '&movement_type=' ~ movement_type_filter ~ '&direction=' ~ direction_filter
+    ~ '&product_id=' ~ product_filter ~ '&variant_id=' ~ variant_filter
+    ~ '&actor=' ~ actor_filter ~ '&start_date=' ~ start_date_filter
+    ~ '&end_date=' ~ end_date_filter ~ '&q=' ~ (search|urlencode) %}
+{% set list_qs = ('&reconcile=' ~ reconcile) if reconcile else filter_qs %}
 
-<div class="page-heading">
+<div class="page-heading product-page-heading">
     <div>
-        <span class="eyebrow">ردیابی موجودی</span>
-        <h2>📚 دفتر انبار</h2>
-        <p>هر تغییر موجودی به‌صورت غیرقابل‌حذف ثبت می‌شود؛ این صفحه برای حسابرسی و بررسی اختلاف‌هاست.</p>
+        <div class="eyebrow">فروشگاه / موجودی</div>
+        <h2>دفتر انبار</h2>
+        <p>هر تغییر موجودی به‌صورت غیرقابل‌ویرایش ثبت می‌شود؛ این صفحه برای حسابرسی و بررسی اختلاف‌هاست.</p>
     </div>
-    <a href="/admin/products" class="btn btn-ghost">📦 محصولات</a>
+    <div class="admin-nav">
+        <a href="/admin/purchases" class="btn btn-ghost">خرید از عمده‌فروش</a>
+        <a href="/admin/products" class="btn btn-ghost">محصولات و موجودی</a>
+        <a href="/admin" class="btn btn-ghost">داشبورد</a>
+    </div>
 </div>
 
-<div class="card">
-    {% if movements %}
+{% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
+{% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}
+
+<p class="muted movement-legacy-note">
+    از نسخه ۲.۳.۰ خریدها موجودی را تغییر نمی‌دهند و فقط بهای تمام‌شده را به‌روز می‌کنند؛
+    ردیف‌های «ورود از خرید» و «برگشت خرید» مربوط به داده‌های قدیمی هستند.
+</p>
+
+<section class="card movement-reconcile-card">
+    <div class="section-heading-row">
+        <div>
+            <h3>همخوانی دفتر با موجودی</h3>
+            <p class="muted">
+                موجودی‌ای که پیش از شروع این دفتر روی قفسه بوده، ردیفی در دفتر ندارد؛
+                همچنین ممکن است جمع دفتر یک تنوع با موجودی فعلی آن نخواند.
+            </p>
+        </div>
+    </div>
+    <div class="reconcile-grid">
+        <div class="reconcile-stat{% if reconciliation.missing_count %} is-warn{% endif %}">
+            <div class="reconcile-label">تنوع با موجودی بدون سابقه</div>
+            <div class="reconcile-value tnum">{{ reconciliation.missing_count }}</div>
+            <div class="reconcile-sub tnum">
+                {{ reconciliation.missing_units }} عدد · {{ fmt(reconciliation.missing_value) }} تومان
+            </div>
+            {% if reconciliation.missing_count %}
+            <a class="text-link" href="/admin/inventory-movements?reconcile=missing">مشاهده فهرست</a>
+            {% else %}
+            <span class="reconcile-ok">همه موجودی‌ها در دفتر سابقه دارند</span>
+            {% endif %}
+        </div>
+        <div class="reconcile-stat{% if reconciliation.mismatch_count %} is-danger{% endif %}">
+            <div class="reconcile-label">تنوع نامطابق با دفتر</div>
+            <div class="reconcile-value tnum">{{ reconciliation.mismatch_count }}</div>
+            <div class="reconcile-sub">جمع دفتر با موجودی فعلی نمی‌خواند</div>
+            {% if reconciliation.mismatch_count %}
+            <a class="text-link" href="/admin/inventory-movements?reconcile=mismatch">بررسی اختلاف</a>
+            {% else %}
+            <span class="reconcile-ok">دفتر و موجودی می‌خوانند</span>
+            {% endif %}
+        </div>
+    </div>
+    {% if reconciliation.missing_count %}
+    <form method="post" action="/admin/inventory-movements/reconcile" class="reconcile-action"
+          onsubmit="return confirm('برای {{ reconciliation.missing_count }} تنوع یک ردیف «موجودی اولیه» ثبت می‌شود تا دفتر با موجودی فعلی بخواند. موجودی هیچ تنوعی تغییر نمی‌کند. ادامه؟')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn btn-primary">ثبت موجودی اولیه دفتر</button>
+    </form>
+    <p class="field-help">
+        این کار فقط یک ردیف توضیحی برای موجودی فعلی می‌سازد و عدد موجودی را دست نمی‌زند.
+        تنوع‌های نامطابق به‌صورت خودکار اصلاح نمی‌شوند و باید دستی بررسی شوند.
+    </p>
+    {% endif %}
+</section>
+
+{% if reconcile %}
+<section class="card">
+    <div class="section-heading-row">
+        <div>
+            <h3>{{ reconcile_label }}</h3>
+            <p class="muted">
+                {% if reconcile == 'missing' %}
+                این تنوع‌ها موجودی دارند اما هیچ ردیفی در دفتر ندارند؛ با «ثبت موجودی اولیه دفتر» سابقه‌دار می‌شوند.
+                {% else %}
+                جمع تغییرات دفتر این تنوع‌ها با موجودی فعلی آن‌ها یکسان نیست؛ اختلاف را روی صفحه محصول بررسی کنید.
+                {% endif %}
+            </p>
+        </div>
+        <a href="/admin/inventory-movements" class="btn btn-sm btn-ghost">بازگشت به دفتر</a>
+    </div>
+
+    {% if reconcile_rows %}
+    <p class="movement-results tnum">
+        نمایش {{ (page - 1) * page_size + 1 }}–{{ [page * page_size, total_count]|min }} از {{ total_count }} تنوع
+    </p>
     <div class="table-scroll">
-    <table>
-        <thead>
-            <tr>
-                <th>شناسه</th>
-                <th>زمان</th>
-                <th>محصول / تنوع</th>
-                <th>نوع حرکت</th>
-                <th>تغییر موجودی</th>
-                <th>بهای واحد</th>
-                <th>مرجع</th>
-                <th>توضیح</th>
-            </tr>
-        </thead>
-        <tbody>
-        {% for movement in movements %}
-            <tr>
-                <td class="tnum">#{{ movement.id }}</td>
-                <td class="tnum">{{ jalali_str(movement.created_at) }}</td>
-                <td>{{ movement.variant.display_name if movement.variant else '—' }}</td>
-                <td>
-                    {% if movement.movement_type == 'opening_stock' %}📥 موجودی اولیه
-                    {% elif movement.movement_type == 'purchase' %}📦 خرید
-                    {% elif movement.movement_type == 'purchase_reversal' %}↩️ برگشت خرید
-                    {% elif movement.movement_type == 'sale' %}🛒 فروش
-                    {% elif movement.movement_type == 'sale_refund' %}↩️ برگشت فروش
-                    {% elif movement.movement_type == 'adjustment' %}🛠️ اصلاح دستی
-                    {% elif movement.movement_type == 'cost_adjustment' %}💵 اصلاح بها
-                    {% else %}{{ movement.movement_type }}{% endif %}
-                </td>
-                <td class="tnum" style="color: {% if movement.quantity_delta < 0 %}var(--persimmon){% else %}var(--mint-dark){% endif %}; font-weight:700;">
-                    {% if movement.quantity_delta > 0 %}+{% endif %}{{ movement.quantity_delta }}
-                </td>
-                <td class="tnum">{{ fmt(movement.unit_cost) if movement.unit_cost is not none else '—' }}</td>
-                <td class="tnum">
-                    {% if movement.purchase_id %}<a class="purchase-link" href="/admin/purchases/{{ movement.purchase_id }}">خرید #{{ movement.purchase_id }}</a>{% endif %}
-                    {% if movement.sale_id %}فاکتور #{{ movement.sale_id }}{% endif %}
-                    {% if not movement.purchase_id and not movement.sale_id %}—{% endif %}
-                </td>
-                <td>{{ movement.note or '—' }}</td>
-            </tr>
-        {% endfor %}
-        </tbody>
-    </table>
+        <table class="movement-table movement-reconcile-table">
+            <thead>
+                <tr>
+                    <th scope="col">محصول / تنوع</th>
+                    <th scope="col">بارکد</th>
+                    <th scope="col">موجودی فعلی</th>
+                    <th scope="col">جمع دفتر</th>
+                    <th scope="col">اختلاف</th>
+                    <th scope="col">بهای تمام‌شده</th>
+                    <th scope="col">عملیات</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in reconcile_rows %}
+                <tr>
+                    <td>
+                        {% if row.product %}
+                        <a class="text-link" href="/admin/products/{{ row.product.id }}">{{ row.variant.display_name }}</a>
+                        {% else %}
+                        {{ row.variant.display_name }}
+                        {% endif %}
+                    </td>
+                    <td class="tnum">{{ row.variant.barcode or '—' }}</td>
+                    <td class="tnum"><strong>{{ row.current_stock }}</strong></td>
+                    <td class="tnum">{{ row.ledger_total }}</td>
+                    <td class="tnum">
+                        <span class="movement-delta {% if row.difference > 0 %}is-in{% elif row.difference < 0 %}is-out{% else %}is-zero{% endif %}">
+                            {% if row.difference > 0 %}+{% endif %}{{ row.difference }}
+                        </span>
+                    </td>
+                    <td class="tnum">{{ fmt(row.variant.cost_price or 0) }} ت</td>
+                    <td>
+                        <div class="table-actions">
+                            <a href="/admin/inventory-movements?variant_id={{ row.variant.id }}" class="btn btn-sm btn-ghost">حرکت‌های دفتر</a>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
     {% else %}
-    <div style="text-align:center; padding:2rem; color:var(--ink-soft);">
-        <div style="font-size:3rem;">📚</div>
-        <p>هنوز حرکت انباری ثبت نشده است.</p>
+    <div class="empty-state">
+        <h3>موردی در این فهرست نیست</h3>
+        <p>{% if reconcile == 'missing' %}همه موجودی‌ها سابقه دفتری دارند.{% else %}دفتر و موجودی فعلی همه تنوع‌ها می‌خوانند.{% endif %}</p>
+        <a href="/admin/inventory-movements" class="btn btn-ghost">بازگشت به دفتر</a>
     </div>
     {% endif %}
-</div>
 
-<nav class="admin-nav">
-    <a href="/admin/purchases" class="btn btn-ghost">🚚 خریدها</a>
-    <a href="/admin" class="btn btn-primary">🔙 داشبورد</a>
-</nav>
+    {% if total_pages > 1 %}
+    <nav class="product-pagination" aria-label="صفحه‌بندی فهرست همخوانی">
+        {% if page > 1 %}<a class="btn btn-sm btn-ghost" href="?page={{ page - 1 }}{{ list_qs }}">صفحه قبل</a>{% endif %}
+        <span>صفحه {{ page }} از {{ total_pages }}</span>
+        {% if page < total_pages %}<a class="btn btn-sm btn-ghost" href="?page={{ page + 1 }}{{ list_qs }}">صفحه بعد</a>{% endif %}
+    </nav>
+    {% endif %}
+</section>
+{% else %}
+
+<section class="card movement-card">
+    <div class="section-heading-row">
+        <div>
+            <h3>حرکت‌های ثبت‌شده</h3>
+            <p class="muted">ستون «موجودی پس از حرکت» از جمع تغییرات همین دفتر محاسبه می‌شود، نه از موجودی فعلی محصول.</p>
+        </div>
+        <span class="section-step">۱</span>
+    </div>
+
+    <form method="get" action="/admin/inventory-movements" class="search-form movement-filter-form">
+        <div class="form-group">
+            <label class="sr-only" for="filter-q">جست‌وجو</label>
+            <input type="text" id="filter-q" name="q" value="{{ search }}" placeholder="شماره حرکت، محصول، تنوع، بارکد یا توضیح">
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="filter-type">نوع حرکت</label>
+            <select id="filter-type" name="movement_type">
+                <option value="all" {% if movement_type_filter == 'all' %}selected{% endif %}>همه انواع حرکت</option>
+                {% for value, label in movement_labels.items() %}
+                <option value="{{ value }}" {% if movement_type_filter == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="filter-direction">جهت حرکت</label>
+            <select id="filter-direction" name="direction">
+                {% for value, label in directions.items() %}
+                <option value="{{ value }}" {% if direction_filter == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="filter-product">محصول</label>
+            <select id="filter-product" name="product_id">
+                <option value="">همه محصولات</option>
+                {% for product in products %}
+                <option value="{{ product.id }}" {% if product_filter == product.id|string %}selected{% endif %}>{{ product.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% if actor_options %}
+        <div class="form-group">
+            <label class="sr-only" for="filter-actor">کاربر</label>
+            <select id="filter-actor" name="actor">
+                <option value="">همه کاربران</option>
+                {% for user_id, label in actor_options %}
+                <option value="{{ user_id }}" {% if actor_filter == user_id|string %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+        <div class="form-group">
+            <label class="sr-only" for="filter-start">از تاریخ</label>
+            <input type="text" id="filter-start" name="start_date" class="persian-date-input" data-pdp-pair="#filter-end" value="{{ start_date_filter }}" placeholder="از: ۱۴۰۵/۰۱/۰۱">
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="filter-end">تا تاریخ</label>
+            <input type="text" id="filter-end" name="end_date" class="persian-date-input" value="{{ end_date_filter }}" placeholder="تا: ۱۴۰۵/۰۶/۳۱">
+        </div>
+        <button type="submit" class="btn btn-primary">اعمال فیلتر</button>
+        {% if has_filters %}<a href="/admin/inventory-movements" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
+    </form>
+
+    {% if movements %}
+    <p class="movement-results tnum">
+        نمایش {{ (page - 1) * page_size + 1 }}–{{ [page * page_size, total_count]|min }} از {{ total_count }} حرکت
+    </p>
+    <div class="table-scroll">
+        <table class="movement-table">
+            <thead>
+                <tr>
+                    <th scope="col">#</th>
+                    <th scope="col">تاریخ و ساعت</th>
+                    <th scope="col">محصول / تنوع</th>
+                    <th scope="col">نوع حرکت</th>
+                    <th scope="col">تغییر</th>
+                    <th scope="col">موجودی پس از حرکت</th>
+                    <th scope="col">بهای واحد</th>
+                    <th scope="col">کاربر</th>
+                    <th scope="col">مرجع</th>
+                    <th scope="col">توضیح</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in movements %}
+                {% set movement = row.movement %}
+                {% set delta = movement.quantity_delta %}
+                <tr>
+                    <td class="tnum movement-id">#{{ movement.id }}</td>
+                    <td class="tnum movement-time">{{ jalali_str(movement.created_at) }}</td>
+                    <td>
+                        {% if row.product %}
+                        <a class="text-link" href="/admin/products/{{ row.product.id }}">{{ movement.variant.display_name }}</a>
+                        {% elif movement.variant %}
+                        {{ movement.variant.display_name }}
+                        {% else %}
+                        —
+                        {% endif %}
+                        <small class="movement-meta">
+                            {% if movement.variant and movement.variant.barcode %}{{ movement.variant.barcode }}{% else %}بدون بارکد{% endif %}
+                        </small>
+                    </td>
+                    <td>
+                        <span class="movement-type is-{{ row.direction }}">{{ row.type_label }}</span>
+                        {% if row.is_legacy %}
+                        <span class="badge badge-legacy" title="خریدها از نسخه ۲.۳.۰ موجودی را تغییر نمی‌دهند">قدیمی</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="movement-delta is-{{ row.direction }} tnum">{% if delta > 0 %}+{% endif %}{{ delta }}</span>
+                    </td>
+                    <td class="tnum movement-balance">
+                        <strong>{{ row.balance_after }}</strong>
+                        {% if not row.balanced %}
+                        <span class="movement-flag" title="جمع دفتر این تنوع با موجودی فعلی محصول نمی‌خواند">نامطابق</span>
+                        {% endif %}
+                        <small class="movement-meta">اکنون: {{ row.current_stock }}</small>
+                    </td>
+                    <td class="tnum movement-cost">
+                        {% if row.cost_change %}
+                        {{ fmt(row.cost_change[0]) }} → {{ fmt(row.cost_change[1]) }}
+                        {% elif movement.unit_cost is not none %}
+                        {{ fmt(movement.unit_cost) }}
+                        {% else %}
+                        —
+                        {% endif %}
+                    </td>
+                    <td>{{ row.actor_name or '—' }}</td>
+                    <td class="movement-ref">
+                        {% if movement.purchase_id %}
+                        <a class="text-link" href="/admin/purchases/{{ movement.purchase_id }}">خرید #{{ movement.purchase_id }}</a>
+                        {% elif movement.sale_id %}
+                        <a class="text-link" href="/sales/invoice/{{ movement.sale_id }}">فاکتور #{{ movement.sale_id }}</a>
+                        {% else %}
+                        —
+                        {% endif %}
+                    </td>
+                    <td class="movement-note" title="{{ movement.note or '' }}">{{ movement.note or '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <h3>{% if has_filters %}حرکتی با این فیلترها پیدا نشد{% else %}هنوز حرکتی ثبت نشده است{% endif %}</h3>
+        <p>
+            {% if has_filters %}
+            فیلترها را تغییر دهید تا حرکت‌های دیگر را ببینید.
+            {% else %}
+            دفتر از اولین تغییر موجودی پر می‌شود: موجودی اولیه محصول، فروش، اصلاح دستی و نهایی‌سازی خرید.
+            {% endif %}
+        </p>
+        {% if has_filters %}<a href="/admin/inventory-movements" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
+    </div>
+    {% endif %}
+
+    {% if total_pages > 1 %}
+    <nav class="product-pagination" aria-label="صفحه‌بندی دفتر انبار">
+        {% if page > 1 %}<a class="btn btn-sm btn-ghost" href="?page={{ page - 1 }}{{ list_qs }}">صفحه قبل</a>{% endif %}
+        <span>صفحه {{ page }} از {{ total_pages }}</span>
+        {% if page < total_pages %}<a class="btn btn-sm btn-ghost" href="?page={{ page + 1 }}{{ list_qs }}">صفحه بعد</a>{% endif %}
+    </nav>
+    {% endif %}
+</section>
+{% endif %}
 {% endblock %}
