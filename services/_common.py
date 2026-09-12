@@ -157,9 +157,200 @@ def jtoday() -> jdatetime.date:
     return jdatetime.date.today()
 
 
+def jalali_month_start(reference: datetime | None = None) -> datetime:
+    """Midnight UTC on the first day of the current Persian month."""
+    reference = reference or datetime.now(timezone.utc)
+    jnow = jdatetime.date.fromgregorian(date=reference.astimezone(timezone.utc).date())
+    start = jdatetime.date(jnow.year, jnow.month, 1).togregorian()
+    return datetime(start.year, start.month, start.day, tzinfo=timezone.utc)
+
+
 def today_jalali_str() -> str:
     """Persian today, ASCII digits — useful in tests / templates."""
     return jdatetime.date.today().strftime("%Y/%m/%d")
+
+
+# ----- Customer birthdays and ages -------------------------------------------
+#
+# A birthday is stored twice: the Persian MM-DD (so it can be matched every
+# year) and the Persian year (so an age can be shown). The customer's own
+# birthday and the child's use the same shape; which of them a store celebrates
+# is a setting, because a children's shop and an adult clothing shop want
+# different answers.
+
+JALALI_MONTHS = (
+    "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
+    "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند",
+)
+
+CHILD_PROFILE_KEY = "child_profile_enabled"
+BIRTHDAY_TARGET_KEY = "birthday_target"
+BIRTHDAY_TARGETS = ("customer", "child", "both")
+BIRTHDAY_TARGET_LABELS = {
+    "customer": "تولد خود مشتری",
+    "child": "تولد فرزند",
+    "both": "هر دو",
+}
+BIRTHDAY_SUBJECT_LABELS = {"customer": "مشتری", "child": "فرزند"}
+# How a birthday reads in a sale's discount line and in an SMS (var2/var3), so a
+# single pattern text can serve both kinds of shop.
+BIRTHDAY_DISCOUNT_LABELS = {"customer": "تخفیف تولد شما", "child": "تخفیف تولد فرزند"}
+BIRTHDAY_SMS_NAMES = {"customer": "شما", "child": "فرزند شما"}
+
+
+def get_setting_bool(db: Session, key: str, default: bool = True) -> bool:
+    """Read a Settings row as a boolean. Missing/empty keeps the default."""
+    setting = db.query(Settings).filter(Settings.key == key).first()
+    if setting is None or setting.value is None or str(setting.value) == "":
+        return default
+    return str(setting.value).strip().lower() not in ("0", "false", "no", "off")
+
+
+def child_profile_enabled(db: Session) -> bool:
+    """Whether this store collects and shows child details (a children's shop)."""
+    return get_setting_bool(db, CHILD_PROFILE_KEY, True)
+
+
+def get_birthday_target(db: Session) -> str:
+    """Whose birthday drives the discount and the wish: customer, child or both."""
+    setting = db.query(Settings).filter(Settings.key == BIRTHDAY_TARGET_KEY).first()
+    value = (setting.value or "").strip() if setting is not None else ""
+    return value if value in BIRTHDAY_TARGETS else "child"
+
+
+def birthday_subjects(db: Session) -> tuple[str, ...]:
+    """Which birthdays this store celebrates, in priority order.
+
+    Child birthdays are only ever considered while the child module is on, and a
+    child-only configuration with that module off falls back to the customer's
+    own birthday rather than to no birthday at all.
+    """
+    target = get_birthday_target(db)
+    child_on = child_profile_enabled(db)
+    subjects = []
+    if target in ("customer", "both"):
+        subjects.append("customer")
+    if target in ("child", "both") and child_on:
+        subjects.append("child")
+    return tuple(subjects) or ("customer",)
+
+
+def marketing_opt_in(customer) -> bool:
+    """Only an explicit 0 opts out of marketing SMS; NULL means never asked."""
+    return customer.sms_opt_in is None or bool(customer.sms_opt_in)
+
+
+def is_archived_customer(customer) -> bool:
+    return bool(customer.is_archived)
+
+
+def parse_persian_month_day(value) -> tuple[int, int] | None:
+    """'06-21' / '1405/06/21' → (6, 21). None when it isn't a month-day."""
+    if not value:
+        return None
+    text = _to_en(str(value).replace("/", "-").strip())
+    tail = text.split("-")[-2:]
+    if len(tail) != 2:
+        return None
+    try:
+        month, day = int(tail[0]), int(tail[1])
+    except (ValueError, TypeError):
+        return None
+    if not (1 <= month <= 12 and 1 <= day <= 31):
+        return None
+    return month, day
+
+
+def parse_persian_birthday_full(value) -> tuple[str | None, int | None]:
+    """A form birthday → (Persian MM-DD, Persian year). Either half may be None.
+
+    Reads Jalali ('1405/06/21', Persian digits included) and, like every other
+    date field in the app, an ISO Gregorian value, so hand-typed input can't be
+    stored as a Jalali year.
+    """
+    if not value:
+        return (None, None)
+    text = _to_en(str(value).replace("/", "-").strip())
+    parts = text.split("-")
+    if len(parts) != 3:
+        return (None, None)
+    try:
+        year, month, day = (int(part) for part in parts)
+    except (ValueError, TypeError):
+        return (None, None)
+    if not (1 <= month <= 12 and 1 <= day <= 31):
+        return (None, None)
+    if year >= 1900:  # ISO Gregorian — convert instead of storing 2026 as a Jalali year
+        try:
+            jalali = jdatetime.date.fromgregorian(date=datetime(year, month, day).date())
+        except (ValueError, OverflowError):
+            return (None, None)
+        return (f"{jalali.month:02d}-{jalali.day:02d}", jalali.year)
+    if not (1200 <= year <= 1500):
+        return (None, None)
+    return (f"{month:02d}-{day:02d}", year)
+
+
+def days_until_jalali_birthday(month_day: str | None, today: jdatetime.date | None = None) -> int | None:
+    """Days from today to the next occurrence of a Persian MM-DD birthday."""
+    parts = parse_persian_month_day(month_day)
+    if not parts:
+        return None
+    month, day = parts
+    today = today or jdatetime.date.today()
+    try:
+        this_year = jdatetime.date(today.year, month, day)
+    except ValueError:
+        return None
+    if this_year >= today:
+        return (this_year - today).days
+    try:
+        next_year = jdatetime.date(today.year + 1, month, day)
+    except ValueError:
+        # 30 Esfand in a year that isn't a leap year — the day before marks it.
+        next_year = jdatetime.date(today.year + 1, month, max(1, day - 1))
+    return (next_year - today).days
+
+
+def jalali_age(year: int | None, month_day: str | None = None,
+               today: jdatetime.date | None = None) -> int | None:
+    """Age in Persian years, or None when the year was never recorded."""
+    if not year:
+        return None
+    today = today or jdatetime.date.today()
+    age = today.year - int(year)
+    parts = parse_persian_month_day(month_day)
+    if parts and (today.month, today.day) < parts:
+        age -= 1  # this year's birthday hasn't happened yet
+    return max(0, age)
+
+
+def birthday_form_value(month_day: str | None, year: int | None) -> str:
+    """Rebuild the field value: the full date when the year is known, else MM-DD.
+
+    Rendered in Persian digits, like `jalali_str` renders every other date held in
+    a form field — a picker re-emits Persian digits, so a Latin value here would
+    change its own appearance the first time the calendar was used.
+    """
+    parts = parse_persian_month_day(month_day)
+    if not parts:
+        return ""
+    month, day = parts
+    if year:
+        return _to_persian_digits(f"{int(year):04d}/{month:02d}/{day:02d}")
+    return _to_persian_digits(f"{month:02d}-{day:02d}")
+
+
+def birthday_display(month_day: str | None, year: int | None = None) -> str:
+    """Readable birthday: «۲۱ شهریور ۱۳۸۰» when the year is known, else «۲۱ شهریور»."""
+    parts = parse_persian_month_day(month_day)
+    if not parts:
+        return ""
+    month, day = parts
+    text = f"{day} {JALALI_MONTHS[month - 1]}"
+    if year:
+        text += f" {int(year)}"
+    return _to_persian_digits(text)
 
 
 if __name__ == "__main__":

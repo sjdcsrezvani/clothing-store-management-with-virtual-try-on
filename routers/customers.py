@@ -1,9 +1,19 @@
+from urllib.parse import quote_plus
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Customer, Referral, generate_referral_code, to_english_digits
-from services._common import fmt, get_setting_int as get_discount_setting, current_year_month, parse_persian_birthday, jalali_str
+from services._common import (
+    child_profile_enabled,
+    current_year_month,
+    fmt,
+    get_setting_int as get_discount_setting,
+    jalali_str,
+    parse_persian_birthday,
+    parse_persian_birthday_full,
+)
 from services.sms import queue_welcome_sms
 from services.templating import templates
 from services.tier import get_tier_config
@@ -54,13 +64,16 @@ async def create_customer(
     while db.query(Customer).filter(Customer.referral_code == code).first():
         code = generate_referral_code()
 
+    # Child details belong to the children's-shop module: a store that switched
+    # it off never stores them, however the form was posted.
+    child_on = child_profile_enabled(db)
     customer = Customer(
         phone=phone,
         first_name=first_name if first_name else None,
         last_name=last_name if last_name else None,
         referral_code=code,
-        child_name=child_name if child_name else None,
-        child_birthday=parse_persian_birthday(child_birthday),
+        child_name=(child_name if child_name else None) if child_on else None,
+        child_birthday=parse_persian_birthday(child_birthday) if child_on else None,
     )
     db.add(customer)
     db.commit()
@@ -141,17 +154,30 @@ async def update_child_info(customer_id: int, request: Request, db: Session = De
     if not customer:
         raise HTTPException(status_code=404, detail="مشتری یافت نشد")
 
+    tier_config = get_tier_config(db)
+    min_purchase = get_discount_setting(db, "min_purchase_for_discount", 500000)
+    monthly_limit = get_discount_setting(db, "monthly_referral_limit", 10)
+    if not child_profile_enabled(db):
+        return templates.TemplateResponse(request, "customer.html", {
+            "customer": customer,
+            "error": "این فروشگاه پرونده فرزند ندارد. برای فعال‌سازی به تنظیمات مراجعه کنید.",
+            "fmt": fmt,
+            "jalali_str": jalali_str,
+            "min_purchase": min_purchase,
+            "monthly_limit": monthly_limit,
+            "tier_config": tier_config,
+        })
+
     form = await request.form()
     child_name = form.get("child_name", "")
     child_birthday = form.get("child_birthday", "")
 
+    # Both halves of the birthday are stored, so the child's age is known while
+    # the existing MM-DD helpers keep matching it every year.
     customer.child_birthday = parse_persian_birthday(child_birthday)
+    customer.child_birth_year = parse_persian_birthday_full(child_birthday)[1]
     customer.child_name = child_name if child_name else None
     db.commit()
-
-    tier_config = get_tier_config(db)
-    min_purchase = get_discount_setting(db, "min_purchase_for_discount", 500000)
-    monthly_limit = get_discount_setting(db, "monthly_referral_limit", 10)
 
     return templates.TemplateResponse(request, "customer.html", {
         "customer": customer,
@@ -164,6 +190,51 @@ async def update_child_info(customer_id: int, request: Request, db: Session = De
     })
 
 
+def _admin_next(value) -> str | None:
+    """A posted `next` path is honoured only when it stays inside the admin panel.
+
+    The discount buttons live on both the cashier-facing customer page (which
+    answers with a render) and the admin profile (which wants a redirect back),
+    so the caller chooses by posting `next` — and anything that isn't a plain
+    admin path is ignored rather than trusted.
+    """
+    if not value:
+        return None
+    target = str(value).strip()
+    if not target.startswith("/admin/") or "//" in target or "\\" in target:
+        return None
+    return target
+
+
+def _back_or_panel(request, customer, db, next_url, message: str = "", error: str = ""):
+    """Answer the caller: the admin page that sent us, or the customer panel."""
+    if next_url:
+        param = "msg" if message else "err"
+        value = message or error
+        separator = "&" if "?" in next_url else "?"
+        return RedirectResponse(
+            url=f"{next_url}{separator}{param}={quote_plus(value)}", status_code=303,
+        )
+    return _customer_panel(request, customer, db, message=message, error=error)
+
+
+def _customer_panel(request, customer, db, message: str = "", error: str = ""):
+    """The cashier-facing customer panel, with the shared context it needs."""
+    context = {
+        "customer": customer,
+        "fmt": fmt,
+        "jalali_str": jalali_str,
+        "min_purchase": get_discount_setting(db, "min_purchase_for_discount", 500000),
+        "monthly_limit": get_discount_setting(db, "monthly_referral_limit", 10),
+        "tier_config": get_tier_config(db),
+    }
+    if message:
+        context["message"] = message
+    if error:
+        context["error"] = error
+    return templates.TemplateResponse(request, "customer.html", context)
+
+
 @router.post("/customers/{customer_id}/use-referred-discount", response_class=HTMLResponse)
 async def use_referred_discount(customer_id: int, request: Request, db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "manager")
@@ -174,43 +245,23 @@ async def use_referred_discount(customer_id: int, request: Request, db: Session 
     if not customer:
         raise HTTPException(status_code=404, detail="مشتری یافت نشد")
 
-    min_purchase = get_discount_setting(db, "min_purchase_for_discount", 500000)
-    monthly_limit = get_discount_setting(db, "monthly_referral_limit", 10)
-    tier_config = get_tier_config(db)
+    form = await request.form()
+    next_url = _admin_next(form.get("next"))
 
     if customer.has_used_referred_discount:
-        return templates.TemplateResponse(request, "customer.html", {
-            "customer": customer,
-            "error": "تخفیف معرفی قبلاً استفاده شده است.",
-            "fmt": fmt,
-            "jalali_str": jalali_str,
-            "min_purchase": min_purchase,
-            "monthly_limit": monthly_limit,
-            "tier_config": tier_config,
-        })
+        return _back_or_panel(request, customer, db, next_url, error="تخفیف معرفی قبلاً استفاده شده است.")
     if customer.referred_discount <= 0:
-        return templates.TemplateResponse(request, "customer.html", {
-            "customer": customer,
-            "error": "تخفیفی موجود نیست.",
-            "fmt": fmt,
-            "jalali_str": jalali_str,
-            "min_purchase": min_purchase,
-            "monthly_limit": monthly_limit,
-            "tier_config": tier_config,
-        })
+        return _back_or_panel(request, customer, db, next_url, error="تخفیفی موجود نیست.")
 
     customer.has_used_referred_discount = True
     db.commit()
-
-    return templates.TemplateResponse(request, "customer.html", {
-        "customer": customer,
-        "message": f"تخفیف {fmt(customer.referred_discount)} تومان با موفقیت اعمال شد!",
-        "fmt": fmt,
-        "jalali_str": jalali_str,
-        "min_purchase": min_purchase,
-        "monthly_limit": monthly_limit,
-        "tier_config": tier_config,
-    })
+    log_action(db, "customer_discount", f"اعمال تخفیف معرفی‌شده برای {customer.phone}",
+               request=request, target_type="customer", target_id=customer.id,
+               after={"amount": customer.referred_discount})
+    return _back_or_panel(
+        request, customer, db, next_url,
+        message=f"تخفیف {fmt(customer.referred_discount)} تومان با موفقیت اعمال شد!",
+    )
 
 
 @router.post("/customers/{customer_id}/use-referrer-discount", response_class=HTMLResponse)
@@ -223,30 +274,17 @@ async def use_referrer_discount(customer_id: int, request: Request, db: Session 
     if not customer:
         raise HTTPException(status_code=404, detail="مشتری یافت نشد")
 
-    min_purchase = get_discount_setting(db, "min_purchase_for_discount", 500000)
-    monthly_limit = get_discount_setting(db, "monthly_referral_limit", 10)
-    tier_config = get_tier_config(db)
+    form = await request.form()
+    next_url = _admin_next(form.get("next"))
 
     if customer.referrer_discount <= 0:
-        return templates.TemplateResponse(request, "customer.html", {
-            "customer": customer,
-            "error": "تخفیف معرفی موجود نیست.",
-            "fmt": fmt,
-            "jalali_str": jalali_str,
-            "min_purchase": min_purchase,
-            "monthly_limit": monthly_limit,
-            "tier_config": tier_config,
-        })
+        return _back_or_panel(request, customer, db, next_url, error="تخفیف معرفی موجود نیست.")
 
     customer.referrer_discount = 0
     db.commit()
-
-    return templates.TemplateResponse(request, "customer.html", {
-        "customer": customer,
-        "message": "تخفیف معرفی با موفقیت اعمال شد و به صفر بازگشت. اکنون می‌توانید دوباره معرفی کنید!",
-        "fmt": fmt,
-        "jalali_str": jalali_str,
-        "min_purchase": min_purchase,
-        "monthly_limit": monthly_limit,
-        "tier_config": tier_config,
-    })
+    log_action(db, "customer_discount", f"اعمال تخفیف معرف برای {customer.phone}",
+               request=request, target_type="customer", target_id=customer.id)
+    return _back_or_panel(
+        request, customer, db, next_url,
+        message="تخفیف معرفی با موفقیت اعمال شد و به صفر بازگشت. اکنون می‌توانید دوباره معرفی کنید!",
+    )

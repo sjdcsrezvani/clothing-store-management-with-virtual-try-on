@@ -47,6 +47,7 @@
                 <input type="text" id="last_name" name="last_name" placeholder="مثلاً: محمدی">
             </div>
         </div>
+        {% if child_profile %}
         <div class="form-row">
             <div class="form-group">
                 <label for="child_name">🧒 نام فرزند</label>
@@ -60,6 +61,7 @@
                 <small>تاریخ شمسی — برای تخفیف تولد 🎁</small>
             </div>
         </div>
+        {% endif %}
         <button type="submit" class="btn btn-primary btn-large btn-block">✨ ایجاد مشتری و شروع فروش</button>
     </form>
 </div>

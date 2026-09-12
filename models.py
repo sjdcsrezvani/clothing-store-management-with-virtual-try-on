@@ -82,8 +82,28 @@ class Customer(Base):
     monthly_referral_count = Column(Integer, default=0)
     monthly_referral_year = Column(Integer, default=0)
     monthly_referral_month = Column(Integer, default=0)
+    # The customer's own birthday — the field every kind of clothing shop can
+    # use. Same shape as the child's below: Persian MM-DD plus the Persian year,
+    # so a birthday can be matched every year and an age can be shown.
+    birth_month_day = Column(String(5), nullable=True)
+    birth_year = Column(Integer, nullable=True)
+    # Internal staff note (never shown to the customer).
+    notes = Column(Text, nullable=True)
+    # Comma-separated labels from a fixed palette (VIP / wholesale / follow-up /
+    # blocked). Stored wrapped by the query helper so "vip" can't match a longer
+    # label. A join table would need its own management screen for little gain.
+    tags = Column(String(200), default="")
+    # Marketing SMS consent (campaign blasts and birthday wishes). NULL and 1 both
+    # mean "yes" — only an explicit 0 opts out. Transactional SMS is not gated.
+    sms_opt_in = Column(Boolean, default=True)
+    # Archived customers keep their history but leave the list, the KPIs and the
+    # marketing sends; they can be restored at any time.
+    is_archived = Column(Boolean, default=False)
+    # Children's-shop module: these are only collected and shown when the store
+    # enables child profiles.
     child_name = Column(String(100), nullable=True)
     child_birthday = Column(String(5), nullable=True)
+    child_birth_year = Column(Integer, nullable=True)
     child_photo_path = Column(String(500), nullable=True)
     total_points = Column(Integer, default=0)
     tier = Column(String(20), default="silver")
@@ -104,6 +124,11 @@ class Customer(Base):
     def full_name(self):
         parts = [self.first_name, self.last_name]
         return " ".join(p for p in parts if p) or "—"
+
+    @property
+    def display_name(self):
+        """Name to greet in a message — never empty, unlike full_name's dash."""
+        return self.full_name if self.full_name != "—" else "مشتری"
 
 
 class GeneratedImage(Base):

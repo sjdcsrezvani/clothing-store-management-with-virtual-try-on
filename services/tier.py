@@ -2,7 +2,15 @@ from sqlalchemy.orm import Session
 from models import Customer, Settings
 from datetime import datetime, timezone, timedelta
 import jdatetime
-from services._common import current_year_month, get_setting_int, jtoday
+from services._common import (
+    birthday_subjects,
+    current_year_month,
+    days_until_jalali_birthday,
+    get_setting_int,
+    is_archived_customer,
+    jtoday,
+    marketing_opt_in,
+)
 
 
 def get_setting(db: Session, key: str, default) -> str:
@@ -62,31 +70,37 @@ def get_birthday_discount(tier: str, config: dict) -> int:
     return 0
 
 
-def _days_until_jalali_birthday(child_birthday: str, today: jdatetime.date) -> int:
-    """Days from today (Persian) to the next occurrence of (Persian) birthday."""
-    # child_birthday stored as "MM-DD" (Persian MM-DD).
-    m, d = (int(x) for x in child_birthday.split("-"))
-    this_year_bday = jdatetime.date(today.year, m, d)
-    if this_year_bday < today:
-        # Next year's. jdatetime handles leap-year rollover for Persian months.
-        try:
-            next_year_bday = jdatetime.date(today.year + 1, m, d)
-        except ValueError:
-            # 30-Farvardin in some leap-year Persian years; bump by 1 day.
-            next_year_bday = jdatetime.date(today.year + 1, m, d - 1)
-        return (next_year_bday - today).days
-    return (this_year_bday - today).days
+def birthday_on_file(customer: Customer, subject: str) -> str | None:
+    """The stored MM-DD for one kind of birthday."""
+    if subject == "customer":
+        return customer.birth_month_day
+    return customer.child_birthday
 
 
-def check_birthday_eligible(customer: Customer, config: dict) -> bool:
-    """Check if customer is eligible for birthday discount (days are Persian)."""
-    if not customer.child_birthday or customer.tier == "silver":
-        return False
-    try:
-        days_until = _days_until_jalali_birthday(customer.child_birthday, jtoday())
-    except (ValueError, AttributeError):
-        return False
-    return days_until <= config["birthday_sms_days_before"]
+def birthday_occasion_due(customer: Customer, config: dict,
+                          subjects=("child",), today: jdatetime.date | None = None) -> str | None:
+    """Which birthday falls inside the store's notice window, if any.
+
+    Returns "customer", "child" or None. The caller needs to know *whose* day
+    it is: the sale line and the SMS both name it, and congratulating a parent in
+    their child's name (or the reverse) is exactly what this avoids.
+    """
+    if customer.tier == "silver":
+        return None  # birthday perks are a Gold/Diamond benefit
+    today = today or jtoday()
+    window = config["birthday_sms_days_before"]
+    for subject in subjects:
+        month_day = birthday_on_file(customer, subject)
+        days_until = days_until_jalali_birthday(month_day, today)
+        if days_until is not None and days_until <= window:
+            return subject
+    return None
+
+
+def check_birthday_eligible(customer: Customer, config: dict,
+                            subjects=("child",)) -> bool:
+    """Birthday-discount eligibility. The default keeps the pre-setting behaviour."""
+    return birthday_occasion_due(customer, config, subjects) is not None
 
 
 def check_tier_downgrade(customer: Customer, config: dict, db: Session) -> bool:
@@ -164,24 +178,38 @@ def update_customer_after_purchase(customer: Customer, amount: int, db: Session)
     return points_earned
 
 
-def get_customers_for_birthday_check(db: Session, days_before: int = 3) -> list:
-    """Get customers whose child's Persian birthday is within N days."""
+def get_customers_for_birthday_check(db: Session, days_before: int = 3) -> dict:
+    """Who should be wished in the next N days, and who was skipped.
+
+    Returns ``{"eligible": [(customer, days_until, occasion), ...], "blocked": N}``.
+    "eligible" holds one entry per customer — a parent and child whose birthdays
+    fall in the same window get one message, the customer's own taking priority —
+    and "blocked" counts birthdays that were due but withheld because the
+    customer opted out of marketing SMS or is archived.
+    """
     today = jtoday()
-    customers_with_birthday = db.query(Customer).filter(
-        Customer.child_birthday.isnot(None),
-        Customer.tier != "silver"
-    ).all()
-
+    subjects = birthday_subjects(db)
     eligible = []
-    for customer in customers_with_birthday:
-        try:
-            days_until = _days_until_jalali_birthday(customer.child_birthday, today)
-        except (ValueError, AttributeError):
-            continue
-        if 0 < days_until <= days_before:
-            eligible.append((customer, days_until))
+    blocked = 0
 
-    return eligible
+    for customer in db.query(Customer).filter(Customer.tier != "silver").all():
+        best = None
+        for rank, subject in enumerate(subjects):
+            days_until = days_until_jalali_birthday(birthday_on_file(customer, subject), today)
+            if days_until is None or not (0 < days_until <= days_before):
+                continue
+            key = (days_until, rank)
+            if best is None or key < best[0]:
+                best = (key, subject, days_until)
+        if best is None:
+            continue
+        if is_archived_customer(customer) or not marketing_opt_in(customer):
+            blocked += 1
+            continue
+        eligible.append((customer, best[2], best[1]))
+
+    eligible.sort(key=lambda row: row[1])
+    return {"eligible": eligible, "blocked": blocked}
 
 
 def get_customers_for_downgrade_check(db: Session) -> list:

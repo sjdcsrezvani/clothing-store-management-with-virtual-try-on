@@ -1775,6 +1775,125 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
   .pdp-day { min-height: var(--touch-target); }
 }
 
+/* ===================== Customer club (مشتریان) ===================== */
+
+.customer-filter-form { align-items: end; margin-bottom: 1rem; }
+.customer-filter-form .form-group { margin-bottom: 0; flex: 1 1 175px; min-width: 160px; }
+/* The search field carries a long hint, so it gets more room than the selects. */
+.customer-filter-form .form-group:first-child { flex: 1 1 320px; }
+
+.customer-results { margin: 0 0 0.7rem; font-size: 0.78rem; color: var(--ink-soft); }
+/* The KPI cards are links to the matching filter, so they need block layout. */
+.customer-kpi a.stat-card { display: block; text-decoration: none; color: inherit; }
+.customer-kpi a.stat-card:hover { text-decoration: none; }
+.profile-tag-fieldset { border: 0; padding: 0; margin: 0 0 1rem; }
+.profile-tag-fieldset legend { padding: 0; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.3rem; }
+.customer-table { min-width: 1060px; }
+.customer-table td small,
+.customer-table td strong { display: block; }
+
+.customer-name a { font-weight: 700; text-decoration: none; color: inherit; }
+.customer-name a:hover { color: var(--candy-dark); text-decoration: underline; }
+.customer-phone { direction: ltr; unicode-bidi: isolate; color: var(--ink-soft); font-size: 0.78rem; }
+.customer-meta { color: var(--ink-soft); font-size: 0.72rem; }
+.customer-stale { color: var(--candy-dark); font-weight: 700; }
+.customer-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; white-space: nowrap; }
+.customer-actions .btn { min-height: 1.9rem; padding: 0.25rem 0.6rem; font-size: 0.74rem; }
+
+/* Status and tags are text, not colour alone. */
+.status-badge {
+  display: inline-block;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--mint) 16%, var(--card));
+  color: var(--mint-dark);
+}
+.status-badge.is-inactive { background: color-mix(in srgb, var(--sunshine) 26%, var(--card)); color: var(--ink); }
+.status-badge.is-archived { background: color-mix(in srgb, var(--ink-soft) 20%, var(--card)); color: var(--ink-soft); }
+
+.tag-chip {
+  display: inline-block;
+  margin: 0 0 0.15rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--sky) 14%, var(--card));
+  color: var(--sky-dark);
+}
+.tag-chip.is-vip { background: color-mix(in srgb, var(--sunshine) 30%, var(--card)); color: var(--ink); }
+.tag-chip.is-blocked { background: color-mix(in srgb, var(--candy) 16%, var(--card)); color: var(--candy-dark); }
+.tag-chip.is-wholesale { background: color-mix(in srgb, var(--mint) 16%, var(--card)); color: var(--mint-dark); }
+
+.birthday-line { display: block; white-space: nowrap; }
+.birthday-line .birthday-age { color: var(--ink-soft); font-size: 0.72rem; }
+.birthday-soon { color: var(--candy-dark); font-weight: 800; font-size: 0.72rem; }
+
+.drift-flag {
+  display: inline-block;
+  margin-top: 0.15rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--sunshine) 26%, var(--card));
+  color: var(--ink);
+}
+
+/* ── customer profile ── */
+.profile-layout { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(280px, 0.85fr); gap: 1.2rem; align-items: start; }
+.profile-main, .profile-side { display: grid; gap: 1.2rem; min-width: 0; }
+.profile-card h3 { margin-bottom: 0.2rem; }
+.profile-card .muted { margin-top: 0; }
+.profile-head { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; }
+.profile-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  border: 1px solid var(--rule);
+  font-size: 1.4rem;
+}
+.profile-facts { display: grid; gap: 0.55rem; margin: 0; padding: 0; list-style: none; }
+.profile-facts li { display: flex; justify-content: space-between; gap: 0.8rem; font-size: 0.84rem; }
+.profile-facts .label { color: var(--ink-soft); }
+.profile-facts .value { font-weight: 700; }
+.profile-note {
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  border: 1px dashed var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  font-size: 0.84rem;
+  white-space: pre-wrap;
+}
+.profile-tag-list { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.history-table { min-width: 620px; }
+.history-table td small { display: block; color: var(--ink-soft); font-size: 0.72rem; }
+.history-amount { font-weight: 700; white-space: nowrap; }
+.referral-list { display: grid; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
+.referral-list li { display: flex; justify-content: space-between; gap: 0.6rem; font-size: 0.82rem; border-bottom: 1px solid var(--rule); padding-bottom: 0.4rem; }
+.referral-list li:last-child { border-bottom: 0; padding-bottom: 0; }
+
+@media (max-width: 1020px) {
+  .profile-layout { grid-template-columns: 1fr; }
+}
+@media (max-width: 700px) {
+  .customer-filter-form .form-group { flex: 1 1 100%; min-width: 0; }
+}
+
+/* High-contrast: state must not depend on colour alone. */
+html[data-theme-mode="high-contrast"] .status-badge,
+html[data-theme-mode="high-contrast"] .tag-chip,
+html[data-theme-mode="high-contrast"] .drift-flag { border: 1px solid var(--ink); }
+
 /* High-contrast: state must not depend on colour alone. */
 html[data-theme-mode="high-contrast"] .pdp-popup { border-width: 2px; }
 html[data-theme-mode="high-contrast"] .pdp-day.is-selected { outline: 2px solid var(--ink); outline-offset: -2px; }

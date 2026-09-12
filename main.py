@@ -98,6 +98,16 @@ def _apply_missing_columns(migration_engine=None):
             ("child_photo_path", "VARCHAR(500)"),
             ("total_debt", "INTEGER"),
             ("credit_limit", "INTEGER"),
+            # Additive: existing rows keep their meaning. SMS consent and the
+            # archive flag default to the behaviour they already had (opted in,
+            # not archived) rather than to NULL.
+            ("birth_month_day", "VARCHAR(5)"),
+            ("birth_year", "INTEGER"),
+            ("notes", "TEXT"),
+            ("tags", "VARCHAR(200) DEFAULT ''"),
+            ("sms_opt_in", "INTEGER DEFAULT 1"),
+            ("is_archived", "INTEGER DEFAULT 0"),
+            ("child_birth_year", "INTEGER"),
         ],
         "products": [
             ("base_sku", "VARCHAR(50)"),

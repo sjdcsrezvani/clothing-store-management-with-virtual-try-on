@@ -2,6 +2,7 @@ import httpx
 import logging
 from sqlalchemy.orm import Session
 from models import Settings
+from services._common import BIRTHDAY_SMS_NAMES
 from services.jobs import enqueue
 from config import SMS_GATEWAY_URL, SMS_API_KEY, SMS_DEVICE_ID
 
@@ -105,9 +106,25 @@ async def send_welcome_sms(phone: str, first_name: str, referral_code: str, db: 
 
 
 # ========== Pattern 2: Birthday SMS (Gold & Diamond) ==========
-# Keys: var1=first_name, var2=child_name
-async def send_birthday_sms(phone: str, first_name: str, child_name: str, db: Session) -> bool:
-    """Send birthday SMS 7 days before child's birthday."""
+# Keys: var1=customer's name, var2=the name being celebrated, var3=whose birthday
+# it is. var1/var2 keep their original meaning when the occasion is the child's,
+# so a pattern written before this existed still reads correctly.
+def birthday_sms_vars(first_name: str, child_name: str, occasion: str) -> dict:
+    """Payload for the birthday pattern, covering both kinds of birthday."""
+    if occasion == "child":
+        celebrated = child_name or BIRTHDAY_SMS_NAMES["child"]
+    else:
+        celebrated = first_name or "مشتری"
+    return {
+        "var1": first_name or "مشتری",
+        "var2": celebrated,
+        "var3": BIRTHDAY_SMS_NAMES.get(occasion, BIRTHDAY_SMS_NAMES["child"]),
+    }
+
+
+async def send_birthday_sms(phone: str, first_name: str, child_name: str, db: Session,
+                            occasion: str = "child") -> bool:
+    """Send the birthday wish for whichever birthday the store celebrates."""
     config = get_sms_config(db)
     if not config["birthday_pattern"]:
         return False
@@ -115,7 +132,7 @@ async def send_birthday_sms(phone: str, first_name: str, child_name: str, db: Se
     return await send_pattern_sms(
         config["birthday_pattern"],
         phone,
-        {"var1": first_name or "مشتری", "var2": child_name or "فرزند شما"},
+        birthday_sms_vars(first_name, child_name, occasion),
         db,
     )
 

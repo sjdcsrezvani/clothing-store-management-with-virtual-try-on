@@ -15,11 +15,50 @@ from config import ADMIN_PASSWORD, API_TOKEN
 from deployment import OWNER_MODE
 from services.sms import (
     get_balance,
-    send_birthday_sms,
     send_tier_up_gold_sms,
     send_tier_up_diamond_sms,
 )
-from services._common import fmt, check_admin, get_setting_int as get_discount_setting, jalali_str, parse_jalali_input
+from services._common import (
+    BIRTHDAY_TARGET_KEY,
+    BIRTHDAY_TARGET_LABELS,
+    BIRTHDAY_TARGETS,
+    CHILD_PROFILE_KEY,
+    birthday_display,
+    birthday_subjects,
+    child_profile_enabled,
+    fmt,
+    check_admin,
+    get_birthday_target,
+    get_setting_int as get_discount_setting,
+    jalali_age,
+    jalali_str,
+    parse_jalali_input,
+)
+from services.customers import (
+    ACTIVE_DAYS,
+    INACTIVE_DAYS,
+    SORTS,
+    SORT_LABELS,
+    STATUSES,
+    STATUS_LABELS,
+    TAG_KEYS,
+    TAG_LABELS,
+    TAG_PALETTE,
+    archive_customer,
+    birthday_fields,
+    build_customer_rows,
+    can_delete_customer,
+    customer_overview,
+    customer_profile,
+    delete_customer,
+    invalidate_customer_cache,
+    is_archived_customer,
+    list_customers,
+    marketing_opt_in,
+    parse_tags,
+    serialize_tags,
+    update_customer_meta,
+)
 from models import to_english_digits
 from services.backup import create_backup, list_backups, backup_download_path
 from services.operations import verify_sqlite_backup
@@ -275,67 +314,131 @@ async def admin_customers(
     search: str = "",
     sort: str = "date",
     tier: str = "",
+    status: str = "all",
+    tag: str = "",
     page: int = 1,
     db: Session = Depends(get_db),
 ):
+    """The customer list: who they are, what they bought, and what is due."""
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
-    query = db.query(Customer)
-    
-    # Apply search filter
-    if search:
-        query = query.filter(
-            Customer.phone.contains(search) | 
-            Customer.first_name.contains(search) | 
-            Customer.last_name.contains(search) | 
-            Customer.referral_code.contains(search)
-        )
-    
-    # Apply tier filter
-    if tier and tier in ("silver", "gold", "diamond"):
-        query = query.filter(Customer.tier == tier)
-    
-    # Apply sorting
-    if sort == "tier":
-        # Custom tier order: diamond > gold > silver
-        from sqlalchemy import case
-        tier_order = case(
-            (Customer.tier == "diamond", 1),
-            (Customer.tier == "gold", 2),
-            (Customer.tier == "silver", 3),
-            else_=4
-        )
-        query = query.order_by(tier_order, Customer.total_points.desc())
-    elif sort == "purchase_desc":
-        query = query.order_by(Customer.total_spent.desc())
-    elif sort == "purchase_asc":
-        query = query.order_by(Customer.total_spent.asc())
-    elif sort == "points":
-        query = query.order_by(Customer.total_points.desc())
-    else:  # date (default)
-        query = query.order_by(Customer.created_at.desc())
-    
-    per_page = 10
-    total = query.count()
-    customers = query.offset((page - 1) * per_page).limit(per_page).all()
-    total_pages = max(1, (total + per_page - 1) // per_page)
-    page = min(max(page, 1), total_pages)
-
-    tier_config = get_tier_config(db)
+    listing = list_customers(
+        db, search=search, tier=tier, status=status, tag=tag, sort=sort, page=page,
+    )
 
     return templates.TemplateResponse(request, "admin/customers.html", {
-        "customers": customers,
-        "search": search,
-        "sort": sort,
-        "tier_filter": tier,
-        "page": page,
-        "total_pages": total_pages,
-        "tier_config": tier_config,
+        **listing,
+        "rows": build_customer_rows(db, listing["customers"]),
+        "overview": customer_overview(db),
+        "subjects": birthday_subjects(db),
+        "active_days": ACTIVE_DAYS,
+        "inactive_days": INACTIVE_DAYS,
+        "status_labels": STATUS_LABELS,
+        "sort_labels": SORT_LABELS,
+        "tag_palette": TAG_PALETTE,
+        "tag_labels": TAG_LABELS,
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
+        "tier_config": get_tier_config(db),
         "fmt": fmt,
         "jalali_str": jalali_str,
     })
+
+
+@router.get("/customers/{customer_id}", response_class=HTMLResponse)
+async def admin_customer_profile(
+    customer_id: int, request: Request, db: Session = Depends(get_db)
+):
+    """One customer's file: purchases, discounts, referrals, debt and details."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="مشتری یافت نشد")
+
+    may_delete, sale_count = can_delete_customer(db, customer)
+    return templates.TemplateResponse(request, "admin/customer_detail.html", {
+        "customer": customer,
+        "profile": customer_profile(db, customer),
+        "birthday_fields": birthday_fields(customer, db),
+        "birthday_display": birthday_display,
+        "jalali_age": jalali_age,
+        "tag_palette": TAG_PALETTE,
+        "tag_labels": TAG_LABELS,
+        "tag_keys": TAG_KEYS,
+        "may_delete": may_delete,
+        "sale_count": sale_count,
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
+        "tier_config": get_tier_config(db),
+        "monthly_limit": get_discount_setting(db, "monthly_referral_limit", 10),
+        "fmt": fmt,
+        "jalali_str": jalali_str,
+    })
+
+
+@router.post("/customers/{customer_id}/meta", response_class=HTMLResponse)
+async def admin_customer_meta(
+    customer_id: int, request: Request, db: Session = Depends(get_db)
+):
+    """Save the profile card: birthdays, note, tags and SMS consent."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="مشتری یافت نشد")
+
+    form = await request.form()
+    update_customer_meta(
+        db,
+        customer,
+        # Only send the fields the form actually owns, so an absent checkbox
+        # means "off" rather than "leave as it was".
+        notes=form.get("notes", None),
+        tags=form.getlist("tags") or [],
+        sms_opt_in="sms_opt_in" in form,
+        birth_value=form.get("birth_date"),
+        child_name=form.get("child_name"),
+        child_birth_value=form.get("child_birth_date"),
+    )
+    db.commit()
+    log_action(
+        db, "customer_update", f"به‌روزرسانی پرونده {customer.phone}", request=request,
+        target_type="customer", target_id=customer.id,
+        after={"tags": customer.tags, "sms_opt_in": marketing_opt_in(customer),
+               "birth_month_day": customer.birth_month_day},
+    )
+    return RedirectResponse(url=f"/admin/customers/{customer.id}?msg=پرونده ذخیره شد.", status_code=303)
+
+
+@router.post("/customers/{customer_id}/archive", response_class=HTMLResponse)
+async def admin_archive_customer(
+    customer_id: int, request: Request, db: Session = Depends(get_db)
+):
+    """Archive or restore a customer — the alternative to deleting a history."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="مشتری یافت نشد")
+
+    archived = archive_customer(db, customer, not is_archived_customer(customer))
+    db.commit()
+    log_action(
+        db, "customer_archive" if archived else "customer_restore",
+        f"{'بایگانی' if archived else 'بازگردانی'} مشتری {customer.phone}",
+        request=request, target_type="customer", target_id=customer.id,
+    )
+    message = "مشتری بایگانی شد." if archived else "مشتری از بایگانی بازگشت."
+    return RedirectResponse(url=f"/admin/customers/{customer.id}?msg={message}", status_code=303)
 
 
 @router.post("/customers/{customer_id}/delete", response_class=HTMLResponse)
@@ -345,15 +448,21 @@ async def admin_delete_customer(customer_id: int, request: Request, db: Session 
         return guard
 
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
-    if customer:
-        db.query(Referral).filter(
-            (Referral.referrer_id == customer_id) | (Referral.referred_id == customer_id)
-        ).delete()
-        db.delete(customer)
-        db.commit()
-        log_action(db, "customer_delete", f"مشتری {customer.phone}", request=request, target_type="customer", target_id=customer.id, before={"phone": customer.phone})
+    if not customer:
+        return RedirectResponse(url="/admin/customers", status_code=303)
 
-    return RedirectResponse(url="/admin/customers", status_code=303)
+    # Deleting a customer nulls Sale.customer_id, which silently detaches the
+    # purchase history the reports are built on. Archive instead.
+    may_delete, sale_count = can_delete_customer(db, customer)
+    if not may_delete:
+        message = f"این مشتری {sale_count} خرید ثبت‌شده دارد؛ به‌جای حذف، بایگانی کنید."
+        return RedirectResponse(url=f"/admin/customers/{customer.id}?err={message}", status_code=303)
+
+    phone = customer.phone
+    delete_customer(db, customer)
+    db.commit()
+    log_action(db, "customer_delete", f"مشتری {phone}", request=request, target_type="customer", before={"phone": phone})
+    return RedirectResponse(url="/admin/customers?msg=مشتری حذف شد.", status_code=303)
 
 
 def _parse_staff_date(value: str):
@@ -682,10 +791,19 @@ async def admin_update_settings(request: Request, db: Session = Depends(get_db))
 
     form = await request.form()
     updates = {}
+    # Later values win, which is what makes an unchecked checkbox work: the form
+    # posts a hidden companion (0) before the box itself (1).
     for key, value in form.items():
         if key in {"csrf_token", THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY}:
             continue
         updates[key] = str(value)
+    # A birthday target that names a module the store switched off would
+    # contradict itself, so it falls back rather than silently doing nothing.
+    child_off = str(updates.get(CHILD_PROFILE_KEY, "1")).strip().lower() in (
+        "0", "false", "no", "off",
+    )
+    if child_off and updates.get(BIRTHDAY_TARGET_KEY) == "child":
+        updates[BIRTHDAY_TARGET_KEY] = "customer"
     raw_length = str(form.get("barcode_code_length", "")).strip()
     if raw_length:
         try:
@@ -702,6 +820,7 @@ async def admin_update_settings(request: Request, db: Session = Depends(get_db))
             db.add(Settings(key=key, value=value))
     db.commit()
     invalidate_store_cache()
+    invalidate_customer_cache()
     log_action(db, "settings_update", "به‌روزرسانی تنظیمات", request=request, target_type="settings")
 
     return RedirectResponse(url="/admin/settings?msg=تنظیمات ذخیره شد.", status_code=303)
@@ -979,35 +1098,59 @@ async def admin_reset_database(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/check-birthdays", response_class=HTMLResponse)
 async def admin_check_birthdays(request: Request, db: Session = Depends(get_db)):
-    """Manually send birthday SMS to customers 7 days (or less) before their child's birthday.
+    """Queue birthday wishes for the customers whose birthday is due.
 
-    Each sent customer gets a marker, so pressing the button again (even next day)
-    won't re-send to the same customer for the same birthday."""
+    Whose birthday counts is the store's `birthday_target`, so this serves a
+    children's shop and an adult clothing shop alike. Each sent customer gets a
+    marker per occasion, so pressing the button again (even next day) won't
+    re-send — and a parent whose own birthday and child's fall together still
+    gets one message per occasion, not a collision.
+
+    The pattern text lives in the SMS settings; without one there is nothing to
+    send, which is reported rather than silently counted as zero.
+    """
     guard = require_html_role(request, db, "owner")
     if not hasattr(guard, "role"):
         return guard
 
+    from services.sms import birthday_sms_vars, get_sms_config, queue_sms
+
     config = get_tier_config(db)
+    pattern = get_sms_config(db)["birthday_pattern"]
+    if not pattern:
+        return RedirectResponse(
+            url="/admin?birthday_msg=0&birthday_skip=0&birthday_eligible=0&birthday_err=pattern",
+            status_code=303,
+        )
+
     days_before = config["birthday_sms_days_before"]
-    eligible = get_customers_for_birthday_check(db, days_before)
+    result = get_customers_for_birthday_check(db, days_before)
+    eligible = result["eligible"]
 
     sent = 0
     skipped = 0
-    for customer, days_until in eligible:
-        log_key = f"birthday_sms_{customer.id}_{datetime.now(timezone.utc).year}_{customer.child_birthday}"
+    year = datetime.now(timezone.utc).year
+    for customer, _days_until, occasion in eligible:
+        month_day = customer.birth_month_day if occasion == "customer" else customer.child_birthday
+        log_key = f"birthday_sms_{customer.id}_{year}_{occasion}_{month_day}"
         if db.query(Settings).filter(Settings.key == log_key).first():
             skipped += 1
             continue
 
-        from services.sms import queue_sms
-        success = await queue_sms(config.get("birthday_pattern", ""), customer.phone, {"var1": customer.first_name or "مشتری", "var2": customer.child_name or "فرزند شما"}, db) is not None
-        if success:
+        job = await queue_sms(
+            pattern,
+            customer.phone,
+            birthday_sms_vars(customer.first_name, customer.child_name, occasion),
+            db,
+        )
+        if job is not None:
             db.add(Settings(key=log_key, value="sent"))
             sent += 1
     db.commit()
 
     return RedirectResponse(
-        url=f"/admin?birthday_msg={sent}&birthday_skip={skipped}&birthday_eligible={len(eligible)}",
+        url=(f"/admin?birthday_msg={sent}&birthday_skip={skipped}"
+             f"&birthday_eligible={len(eligible)}&birthday_blocked={result['blocked']}"),
         status_code=303,
     )
 

@@ -27,6 +27,7 @@ from fastapi.testclient import TestClient
 
 from database import Base, engine, SessionLocal
 from main import app
+from services.customers import invalidate_customer_cache
 from services.store import invalidate_store_cache
 
 
@@ -61,6 +62,9 @@ def _clean_db(client, db_session):
     db_session.commit()
     db_session.expire_all()  # drop stale identity-map entries
     invalidate_store_cache()
+    # The customer-module flags (child profiles, birthday target) are cached the
+    # same way the store profile is, so they must be dropped between tests too.
+    invalidate_customer_cache()
     yield
 
 

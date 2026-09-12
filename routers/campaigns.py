@@ -4,7 +4,16 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Customer, Campaign, Settings, to_english_digits
-from services._common import fmt, check_admin, get_setting_int, parse_form_date, parse_form_date_end, jalali_str
+from services._common import (
+    fmt,
+    check_admin,
+    get_setting_int,
+    is_archived_customer,
+    jalali_str,
+    marketing_opt_in,
+    parse_form_date,
+    parse_form_date_end,
+)
 from services.security import log_action, require_html_role
 from services.sms import queue_sms
 from services.templating import templates
@@ -150,10 +159,12 @@ async def admin_campaign_update(
 
 @router.post("/campaigns/{campaign_id}/send", response_class=HTMLResponse)
 async def admin_campaign_send(campaign_id: int, request: Request, db: Session = Depends(get_db)):
-    """Send campaign SMS to all diamond customers.
+    """Send campaign SMS to diamond customers who consented to marketing.
 
     Safety: each customer gets a per-campaign dedup marker (like birthday SMS),
-    so double-clicks never re-send; a configurable cap stops runaway blasts."""
+    so double-clicks never re-send; a configurable cap stops runaway blasts;
+    and anyone who opted out of marketing SMS — or was archived — is skipped and
+    counted, rather than being messaged again."""
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
@@ -176,7 +187,11 @@ async def admin_campaign_send(campaign_id: int, request: Request, db: Session = 
     
     queued_count = 0
     skipped = 0
+    opted_out = 0
     for customer in diamond_customers:
+        if is_archived_customer(customer) or not marketing_opt_in(customer):
+            opted_out += 1
+            continue
         if queued_count >= limit:
             skipped += 1
             continue
@@ -196,11 +211,18 @@ async def admin_campaign_send(campaign_id: int, request: Request, db: Session = 
             queued_count += 1
     
     db.commit()
-    log_action(db, "campaign_sms", f"کمپین «{campaign.name}»: {queued_count} در صف، {skipped} رد شد", request=request, target_type="campaign", target_id=campaign.id, after={"queued_count": queued_count, "skipped": skipped})
+    log_action(
+        db, "campaign_sms",
+        f"کمپین «{campaign.name}»: {queued_count} در صف، {skipped} رد شد، {opted_out} انصراف",
+        request=request, target_type="campaign", target_id=campaign.id,
+        after={"queued_count": queued_count, "skipped": skipped, "opted_out": opted_out},
+    )
 
     message = f"پیامک کمپین برای {queued_count} مشتری الماس در صف قرار گرفت."
     if skipped:
         message += f" ({skipped} مشتری به دلیل ارسال قبلی یا سقف {limit} رد شدند.)"
+    if opted_out:
+        message += f" ({opted_out} مشتری انصراف از پیامک تبلیغاتی یا بایگانی داشتند.)"
     return templates.TemplateResponse(request, "admin/campaigns.html", {
         "campaigns": db.query(Campaign).order_by(Campaign.created_at.desc()).all(),
         "fmt": fmt,

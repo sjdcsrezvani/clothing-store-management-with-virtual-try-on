@@ -1,3 +1,15 @@
+## 2.3.2 — 2026-09-12
+
+### Customer club: a real customer record, and a page to open
+
+- Rebuilt `/admin/customers` in the catalogue design language: a page heading with the nav merged in, a KPI row where each card links to the matching filter, real filters (search across name, phone, referral code and child name; tier; tag; status), ten sort orders, 25-per-page pagination with a total, an empty state, and page links that URL-encode their query instead of breaking on a search term with a space or `&`.
+- Added the page that was missing: `/admin/customers/{id}` shows a customer's purchase history, the discounts actually applied, who referred whom, the نسیه summary, and a card for editing birthday, tags, a free-text note and SMS consent. Counters stored on the row are shown beside totals recomputed from the sales, and any disagreement is flagged as **نامطابق** instead of being silently trusted.
+- Made the customer record describe the customer: their own birthday (`birth_month_day` and `birth_year`, Jalali) is now the primary field, so the birthday discount works for any clothing shop rather than only one selling to children. Child details are an optional module controlled by `birthday_target` (مشتری / فرزند / هر دو) and `child_profile_enabled` in Owner → Settings, defaulting to the previous children's-shop behaviour so nothing changes until a toggle is flipped.
+- The birthday discount and its SMS now follow `birthday_target` — previously they read the child's birthday unconditionally, so a shop that celebrates the customer's own birthday got no discount at all, and the sale line always read «تخفیف تولد فرزند» regardless of whose birthday it was.
+- Added a child birth year alongside the stored month/day, so a child's age — the size-guide input for a children's shop — can finally be computed.
+- Replaced the bare delete with a lifecycle: a customer who has recorded sales is **archived** rather than deleted (deleting nulls the sale's customer and silently detaches purchase history), archived customers leave the list, the counts and the marketing sends, and reappear only under `?status=archived`. Marketing SMS skips archived customers and anyone who opted out.
+- Added customer columns for tags, a note, SMS consent, archive state and the customer's own birthday, applied as additive migrations.
+
 ## 2.3.1 — 2026-09-12
 
 ### Inventory ledger, and a date picker that follows every theme

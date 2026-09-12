@@ -1,108 +1,233 @@
 {% extends "base.html" %}
-{% block title %}👥 مدیریت مشتریان — {{ store.name }}{% endblock %}
+{% block title %}مشتریان — {{ store.name }}{% endblock %}
 {% block content %}
+{% set filter_qs = '&tier=' ~ tier ~ '&status=' ~ status ~ '&tag=' ~ tag ~ '&sort=' ~ sort
+    ~ '&search=' ~ (search|urlencode) %}
 
-<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem;">
-    <span style="font-size: 2rem;">👥</span>
-    <h2 style="margin: 0;">مدیریت مشتریان</h2>
+<div class="page-heading product-page-heading">
+    <div>
+        <div class="eyebrow">فروشگاه / مشتریان</div>
+        <h2>مشتریان</h2>
+        <p>پرونده هر مشتری: خریدها، امتیاز، بدهی و تولدها. برای دیدن پرونده کامل روی نام بزنید.</p>
+    </div>
+    <div class="admin-nav">
+        <a href="/sales/new" class="btn btn-ghost">فروش جدید</a>
+        <a href="/admin/credit" class="btn btn-ghost">حساب نسیه</a>
+        <a href="/admin/campaigns" class="btn btn-ghost">کمپین پیامکی</a>
+        <a href="/admin" class="btn btn-ghost">داشبورد</a>
+    </div>
 </div>
 
-<div class="filter-bar">
-    <form method="get" action="/admin/customers" class="search-form">
-        <input type="text" name="search" placeholder="🔍 جستجو بر اساس نام، شماره یا کد معرفی" value="{{ search }}">
-        <select name="sort">
-            <option value="date" {% if sort == 'date' %}selected{% endif %}>📅 تاریخ ثبت‌نام</option>
-            <option value="tier" {% if sort == 'tier' %}selected{% endif %}>🏷️ سطح</option>
-            <option value="purchase_desc" {% if sort == 'purchase_desc' %}selected{% endif %}>💰 بیشترین خرید</option>
-            <option value="purchase_asc" {% if sort == 'purchase_asc' %}selected{% endif %}>📉 کمترین خرید</option>
-            <option value="points" {% if sort == 'points' %}selected{% endif %}>🌟 بیشترین امتیاز</option>
-        </select>
-        <select name="tier">
-            <option value="">🏷️ همه سطوح</option>
-            <option value="silver" {% if tier_filter == 'silver' %}selected{% endif %}>🥈 نقره‌ای</option>
-            <option value="gold" {% if tier_filter == 'gold' %}selected{% endif %}>⭐ طلایی</option>
-            <option value="diamond" {% if tier_filter == 'diamond' %}selected{% endif %}>💎 الماس</option>
-        </select>
-        <button type="submit" class="btn btn-primary">✅ اعمال فیلتر</button>
+{% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
+{% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}
+
+<div class="stats-grid customer-kpi" aria-label="خلاصه مشتریان">
+    <a class="stat-card accent-sky" href="/admin/customers">
+        <div class="stat-label">کل مشتریان</div>
+        <div class="stat-value tnum">{{ overview.total }}</div>
+        <div class="stat-sub">
+            {{ overview.new_this_month }} نفر این ماه عضو شده‌اند
+            {%- if overview.archived_count %} · {{ overview.archived_count }} بایگانی{% endif %}
+        </div>
+    </a>
+    <a class="stat-card accent-pine" href="/admin/customers?status=active">
+        <div class="stat-label">فعال</div>
+        <div class="stat-value tnum">{{ overview.active }}</div>
+        <div class="stat-sub">خرید در {{ active_days }} روز اخیر</div>
+    </a>
+    <a class="stat-card accent-persimmon" href="/admin/customers?status=debtor">
+        <div class="stat-label">بدهکاران (نسیه)</div>
+        <div class="stat-value tnum">{{ overview.debtor_count }}</div>
+        <div class="stat-sub">{{ fmt(overview.total_debt) }} تومان مانده</div>
+    </a>
+    <a class="stat-card accent-saffron" href="/admin/customers?status=birthday">
+        <div class="stat-label">{{ overview.birthday_label }}</div>
+        <div class="stat-value tnum">{{ overview.birthday_count }}</div>
+        <div class="stat-sub">در {{ overview.birthday_window }} روز آینده</div>
+    </a>
+</div>
+
+<section class="card customer-card">
+    <div class="section-heading-row">
+        <div>
+            <h3>فهرست مشتریان</h3>
+            <p class="muted">وضعیت هر مشتری از آخرین خرید او می‌آید؛ بایگانی‌شده‌ها به‌صورت پیش‌فرض نمایش داده نمی‌شوند.</p>
+        </div>
+    </div>
+
+    <form method="get" action="/admin/customers" class="search-form customer-filter-form">
+        <div class="form-group">
+            <label class="sr-only" for="filter-search">جست‌وجو</label>
+            <input type="text" id="filter-search" name="search" value="{{ search }}"
+                   placeholder="نام، شماره، کد معرفی{% if child_profile %} یا نام فرزند{% endif %}">
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="filter-status">وضعیت</label>
+            <select id="filter-status" name="status">
+                {% for value in ['all', 'active', 'inactive', 'debtor', 'birthday', 'discount', 'archived'] %}
+                <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ status_labels[value] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="filter-tier">سطح</label>
+            <select id="filter-tier" name="tier">
+                <option value="">همه سطوح</option>
+                <option value="silver" {% if tier == 'silver' %}selected{% endif %}>نقره‌ای</option>
+                <option value="gold" {% if tier == 'gold' %}selected{% endif %}>طلایی</option>
+                <option value="diamond" {% if tier == 'diamond' %}selected{% endif %}>الماس</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="filter-tag">برچسب</label>
+            <select id="filter-tag" name="tag">
+                <option value="">همه برچسب‌ها</option>
+                {% for key, label in tag_palette %}
+                <option value="{{ key }}" {% if tag == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="filter-sort">ترتیب</label>
+            <select id="filter-sort" name="sort">
+                {% for key in ['date', 'oldest', 'tier', 'purchase_desc', 'purchase_asc', 'count_desc', 'points', 'debt', 'last_purchase', 'name'] %}
+                <option value="{{ key }}" {% if sort == key %}selected{% endif %}>{{ sort_labels[key] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary">اعمال فیلتر</button>
     </form>
-</div>
 
-<div class="card">
-    <table>
-        <thead>
-            <tr>
-                <th>👤 نام</th>
-                <th>📱 تلفن</th>
-                <th>🔑 کد معرفی</th>
-                <th>🏷️ سطح</th>
-                <th>🌟 امتیاز</th>
-                <th>💰 کل خرید</th>
-                <th>🛒 تعداد</th>
-                <th>🏷️ تخفیف معرفی‌شده</th>
-                <th>🎉 تخفیف معرف</th>
-                <th>📅 این ماه</th>
-                <th>🧒 فرزند</th>
-                <th>📅 ثبت‌نام</th>
-                <th>🔧</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for customer in customers %}
-            <tr>
-                <td><strong>{{ customer.full_name }}</strong></td>
-                <td class="tnum">{{ customer.phone }}</td>
-                <td><span style="font-family: monospace; letter-spacing: 0.15em; direction: ltr; display: inline-block;">{{ customer.referral_code }}</span></td>
-                <td>
-                    <span class="tier-badge tier-{{ customer.tier }}" style="font-size: 0.7rem;">
-                        {% if customer.tier == 'diamond' %}💎 الماس
-                        {% elif customer.tier == 'gold' %}⭐ طلایی
-                        {% else %}🥈 نقره‌ای{% endif %}
-                    </span>
-                </td>
-                <td class="tnum">{{ customer.total_points|default(0) }}</td>
-                <td class="tnum">{{ fmt(customer.total_spent|default(0)) }} تومان</td>
-                <td class="tnum">{{ customer.total_purchases|default(0) }}</td>
-                <td class="tnum">
-                    {{ fmt(customer.referred_discount) }}
-                    {% if customer.has_used_referred_discount %}
-                        <span class="badge badge-used">✅ استفاده شده</span>
-                    {% elif customer.referred_discount > 0 %}
-                        <span class="badge badge-available">✨ فعال</span>
-                    {% endif %}
-                </td>
-                <td class="tnum">{{ fmt(customer.referrer_discount) }}</td>
-                <td class="tnum">{{ customer.monthly_referral_count }}</td>
-                <td>
-                    {% if customer.child_name %}
-                        🧒 {{ customer.child_name }}
-                        {% if customer.child_birthday %}<br><small style="color: var(--ink-soft);">🎂 {{ customer.child_birthday }}</small>{% endif %}
-                    {% else %}—{% endif %}
-                </td>
-                <td class="tnum">{{ jalali_str(customer.created_at, false) }}</td>
-                <td>
-                    <form method="post" action="/admin/customers/{{ customer.id }}/delete" style="display:inline;"
-                          onsubmit="return confirm('⚠️ آیا مطمئن هستید؟')">
-                        <button type="submit" class="btn btn-sm btn-danger">🗑️</button>
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <p class="customer-results">
+        {{ total }} مشتری
+        {%- if has_filters %} با این فیلترها{% endif %}
+        {%- if total_pages > 1 %} · صفحه {{ page }} از {{ total_pages }}{% endif %}
+    </p>
+
+    {% if rows %}
+    <div class="table-scroll">
+        <table class="customer-table">
+            <thead>
+                <tr>
+                    <th scope="col">مشتری</th>
+                    <th scope="col">سطح</th>
+                    <th scope="col">خریدها</th>
+                    <th scope="col">امتیاز</th>
+                    <th scope="col">بدهی</th>
+                    <th scope="col">آخرین خرید</th>
+                    <th scope="col">{{ overview.birthday_column_label }}</th>
+                    <th scope="col">برچسب‌ها</th>
+                    <th scope="col">وضعیت</th>
+                    <th scope="col">عملیات</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                {% set customer = row.customer %}
+                <tr>
+                    <td class="customer-name">
+                        <strong><a href="/admin/customers/{{ customer.id }}">{{ customer.full_name }}</a></strong>
+                        <small class="customer-phone">{{ customer.phone }}</small>
+                        {% if child_profile and customer.child_name %}
+                        <small class="customer-meta">فرزند: {{ customer.child_name }}</small>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="tier-badge tier-{{ customer.tier }}">
+                            {% if customer.tier == 'diamond' %}الماس
+                            {% elif customer.tier == 'gold' %}طلایی
+                            {% else %}نقره‌ای{% endif %}
+                        </span>
+                    </td>
+                    <td class="tnum">
+                        <strong>{{ fmt(customer.total_spent or 0) }}</strong>
+                        <small>{{ customer.total_purchases or 0 }} خرید</small>
+                    </td>
+                    <td class="tnum">{{ customer.total_points or 0 }}</td>
+                    <td class="tnum">
+                        {% if customer.total_debt %}
+                        <strong>{{ fmt(customer.total_debt) }}</strong>
+                        <small><a class="text-link" href="/admin/credit/{{ customer.id }}">ثبت دریافت</a></small>
+                        {% else %}—{% endif %}
+                    </td>
+                    <td class="tnum">
+                        {% if row.days_since_purchase is none %}
+                        <small class="customer-meta">بدون خرید</small>
+                        {% else %}
+                        <strong>{{ jalali_str(customer.last_purchase_date, false) }}</strong>
+                        <small class="{% if row.days_since_purchase > inactive_days %}customer-stale{% else %}customer-meta{% endif %}">
+                            {{ row.days_since_purchase }} روز پیش
+                        </small>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if row.birthdays %}
+                        {% for entry in row.birthdays %}
+                        <span class="birthday-line">
+                            {% if entry.subject == 'child' %}<span class="customer-meta">فرزند:</span> {% endif %}
+                            {{ entry.text }}
+                            {% if entry.age is not none %}<span class="birthday-age">({{ entry.age }} ساله)</span>{% endif %}
+                            {% if entry.days_until is not none and entry.days_until <= overview.birthday_window %}
+                            <span class="birthday-soon">{{ entry.days_until }} روز دیگر</span>
+                            {% endif %}
+                        </span>
+                        {% endfor %}
+                        {% else %}
+                        <span class="customer-meta">—</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if row.tags %}
+                        {% for key in row.tags %}
+                        <span class="tag-chip is-{{ key }}">{{ tag_labels[key] }}</span>
+                        {% endfor %}
+                        {% else %}
+                        <span class="customer-meta">—</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if row.archived %}
+                        <span class="status-badge is-archived">بایگانی</span>
+                        {% elif row.status == 'active' %}
+                        <span class="status-badge">فعال</span>
+                        {% else %}
+                        <span class="status-badge is-inactive">کم‌فعال</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="customer-actions">
+                            <a href="/admin/customers/{{ customer.id }}" class="btn btn-sm btn-ghost">پرونده</a>
+                            {% if customer.total_debt %}
+                            <a href="/admin/credit/{{ customer.id }}" class="btn btn-sm btn-ghost">نسیه</a>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
     {% if total_pages > 1 %}
-    <div style="display: flex; align-items: center; justify-content: center; gap: 1rem; padding: 1rem;">
-        {% if page > 1 %}
-        <a class="btn btn-sm btn-ghost" href="/admin/customers?page={{ page - 1 }}&search={{ search }}&sort={{ sort }}&tier={{ tier_filter }}">→ صفحه قبل</a>
-        {% endif %}
-        <span style="color: var(--ink-soft);">صفحه {{ page }} از {{ total_pages }}</span>
-        {% if page < total_pages %}
-        <a class="btn btn-sm btn-ghost" href="/admin/customers?page={{ page + 1 }}&search={{ search }}&sort={{ sort }}&tier={{ tier_filter }}">صفحه بعد ←</a>
-        {% endif %}
+    <nav class="product-pagination" aria-label="صفحه‌بندی مشتریان">
+        {% if page > 1 %}<a class="btn btn-sm btn-ghost" href="?page={{ page - 1 }}{{ filter_qs }}">صفحه قبل</a>{% endif %}
+        <span>صفحه {{ page }} از {{ total_pages }}</span>
+        {% if page < total_pages %}<a class="btn btn-sm btn-ghost" href="?page={{ page + 1 }}{{ filter_qs }}">صفحه بعد</a>{% endif %}
+    </nav>
+    {% endif %}
+
+    {% elif has_filters %}
+    <div class="empty-state">
+        <h3>مشتری با این فیلترها پیدا نشد</h3>
+        <p>جست‌وجو یا فیلترها را تغییر دهید؛ شاید مشتری در بایگانی باشد.</p>
+        <a href="/admin/customers" class="btn btn-ghost">پاک‌کردن فیلتر</a>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <h3>هنوز مشتری‌ای ثبت نشده است</h3>
+        <p>مشتری‌ها از صفحه فروش جدید یا فرم ثبت‌نام مشتری ساخته می‌شوند و همین‌جا فهرست می‌شوند.</p>
+        <a href="/sales/new" class="btn btn-primary">فروش جدید</a>
     </div>
     {% endif %}
-</div>
-
-<nav class="admin-nav">
-    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
-</nav>
+</section>
 {% endblock %}

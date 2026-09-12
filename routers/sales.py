@@ -14,7 +14,14 @@ from models import (
     Customer, Product, ProductVariant, Sale, SaleItem, SaleCampaign,
     Referral, Settings, POSTransaction, CheckoutSession, Refund, CashSession, generate_referral_code, to_english_digits,
 )
-from services._common import fmt, get_setting_int as get_discount_setting, parse_persian_birthday, jalali_str
+from services._common import (
+    child_profile_enabled,
+    fmt,
+    get_setting_int as get_discount_setting,
+    jalali_str,
+    parse_persian_birthday,
+    parse_persian_birthday_full,
+)
 from services.accounting import credit_sale_allowed, apply_credit_surcharge
 from services.discount import calculate_discounts, apply_discounts_after_sale
 from services.security import log_action, require_html_role
@@ -395,13 +402,16 @@ async def sales_create_customer(
     while db.query(Customer).filter(Customer.referral_code == code).first():
         code = generate_referral_code()
 
+    # Child details are only collected when the store keeps child profiles.
+    child_on = child_profile_enabled(db)
     customer = Customer(
         phone=phone,
         first_name=first_name or None,
         last_name=last_name or None,
         referral_code=code,
-        child_name=child_name or None,
-        child_birthday=_parse_persian_birthday(child_birthday),
+        child_name=(child_name or None) if child_on else None,
+        child_birthday=_parse_persian_birthday(child_birthday) if child_on else None,
+        child_birth_year=(parse_persian_birthday_full(child_birthday)[1] if child_on else None),
     )
     db.add(customer)
     db.commit()

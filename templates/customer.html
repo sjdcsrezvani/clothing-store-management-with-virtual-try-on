@@ -58,10 +58,21 @@
             <span class="value tnum">{{ jalali_str(customer.last_purchase_date, false) }}</span>
         </div>
         {% endif %}
+        {% if customer.birth_month_day %}
+        <div class="info-item">
+            <span class="label">🎂 تولد</span>
+            <span class="value tnum">
+                {{ birthday_display(customer.birth_month_day, customer.birth_year) }}
+                {%- set age = jalali_age(customer.birth_year, customer.birth_month_day) %}
+                {% if age is not none %} ({{ age }} ساله){% endif %}
+            </span>
+        </div>
+        {% endif %}
     </div>
 </div>
 
-{# ─── Child Information ─── #}
+{% if child_profile %}
+{# ─── Child Information (children's shops only) ─── #}
 <div class="card">
     <h3>🧒 اطلاعات فرزند</h3>
     <form method="post" action="/customers/{{ customer.id }}/update-child">
@@ -74,7 +85,7 @@
             <div class="form-group">
                 <label for="child_birthday">🎂 تولد فرزند</label>
                 <input type="text" id="child_birthday" name="child_birthday"
-                       value="{{ '1400-' + customer.child_birthday if customer.child_birthday else '' }}"
+                       value="{{ birthday_form_value(customer.child_birthday, customer.child_birth_year) }}"
                        placeholder="۱۴۰۳/۰۳/۱۵" class="persian-date-input" data-pdp-max="today">
                 <small>🎁 با ثبت تاریخ تولد، در روز تولد فرزندتان تخفیف ویژه دریافت کنید!</small>
             </div>
@@ -82,6 +93,7 @@
         <button type="submit" class="btn btn-primary">💾 ذخیره اطلاعات فرزند</button>
     </form>
 </div>
+{% endif %}
 
 {# ─── Discounts Section ─── #}
 <div class="card">

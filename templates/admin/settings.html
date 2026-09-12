@@ -169,12 +169,40 @@
             </div>
         </div>
 
-        <h4>🎂 اطلاع‌رسانی تولد</h4>
+        <h4>🎂 مشتری و تولد</h4>
+        {% set target = settings.get('birthday_target', 'child') %}
+        {% set child_on = settings.get('child_profile_enabled', '1') not in ['0', 'false', 'False', 'no', 'off'] %}
+        <div class="form-group">
+            <label for="birthday_target">🎈 مبنای تخفیف و پیامک تولد</label>
+            <select id="birthday_target" name="birthday_target">
+                <option value="child" {% if target == 'child' %}selected{% endif %}>تولد فرزند (فروشگاه کودک)</option>
+                <option value="customer" {% if target == 'customer' %}selected{% endif %}>تولد خود مشتری</option>
+                <option value="both" {% if target == 'both' %}selected{% endif %}>هر دو</option>
+            </select>
+            <small>
+                همین گزینه تعیین می‌کند کدام تولد در صندوق تخفیف بگیرد و برای کدام پیامک برود.
+                فروشگاه پوشاک بزرگسال روی «تولد خود مشتری» بگذارد؛ نیازی به اطلاعات فرزند ندارد.
+            </small>
+        </div>
+        <div class="form-group">
+            {# The hidden companion comes first: the settings form stores the last
+               value it sees, so an unticked box still clears the flag. #}
+            <input type="hidden" name="child_profile_enabled" value="0">
+            <label class="checkbox-row" for="child_profile_enabled">
+                <input type="checkbox" id="child_profile_enabled" name="child_profile_enabled" value="1"
+                       {% if child_on %}checked{% endif %}>
+                <span>این فروشگاه اطلاعات فرزند را ثبت می‌کند (پوشاک کودک)</span>
+            </label>
+            <small>
+                با برداشتن تیک، فیلدهای فرزند از ثبت‌نام، صندوق و پرونده مشتری حذف می‌شوند؛
+                اطلاعات قبلی پاک نمی‌شود و با فعال‌کردن دوباره بازمی‌گردد.
+            </small>
+        </div>
         <div class="form-group">
             <label for="birthday_sms_days_before">📅 روزهای قبل از تولد</label>
             <input type="number" id="birthday_sms_days_before" name="birthday_sms_days_before"
                    value="{{ tier_config.birthday_sms_days_before }}" min="0">
-            <small>چند روز قبل از تولد فرزند پیامک ارسال شود</small>
+            <small>چند روز قبل از تولد، تخفیف فعال و پیامک ارسال شود (برای فروشگاه کودک: تولد فرزند)</small>
         </div>
 
         <h3 style="margin-top: 2rem;">📱 تنظیمات پیامک</h3>

@@ -69,6 +69,32 @@ today, a start/end pair can never cross, and typing a four-digit year jumps
 straight to it. It carries no JavaScript dependency and is drawn from the active
 theme, so it matches light, dark and high-contrast alike.
 
+## Customer club
+
+- **👥 مشتریان** (`/admin/customers`) — one row per customer with their tier,
+  points, lifetime spend, debt, tags, birthday and last purchase, filtered by
+  search (name, phone, referral code, child name), tier, tag and status
+  (فعال، کم‌فعال، بدهکار، تولد نزدیک، تخفیف استفاده‌نشده، بایگانی), sorted ten
+  ways, paginated 25 to a page. The KPI cards above the table each match a
+  filter below it, so a number is never a dead end.
+- **پرونده مشتری** (`/admin/customers/{id}`) — the page the list points at:
+  purchase history, the discounts actually applied, who referred whom, the نسیه
+  summary, and a card for editing the birthday, tags, a note and SMS consent.
+  Stored counters are shown beside totals recomputed from the sales, and a
+  disagreement is flagged as **نامطابق** rather than silently trusted.
+- **Store-agnostic birthdays.** The record describes *the customer* — their own
+  birthday is the primary field. Child details are a module for a children's
+  shop: **Owner → Settings** holds `birthday_target` (مشتری / فرزند / هر دو) and
+  `child_profile_enabled`. With the module off, no child field appears on any
+  form (registration, checkout, profile) and a hand-crafted post cannot store
+  one. Turning it off never deletes data already on file. Defaults reproduce a
+  kids' shop exactly, so nothing changes until a setting is flipped.
+- **Lifecycle.** A customer with recorded sales is **archived**, never deleted —
+  deleting one nulls the sale's customer and silently detaches purchase history.
+  Archived customers leave the list, the counts and the marketing sends, and
+  re-appear only under `?status=archived`. Marketing (birthday and campaign SMS)
+  skips archived customers and anyone who opted out.
+
 ## Requirements
 
 - Python 3.11+ (tested on 3.12)
@@ -234,7 +260,10 @@ PYTHONPATH=. pytest -q
 
 Tests cover the money logic and authorization: server-side price recomputation at checkout,
 stock clamping, refund reversal, referral settlement, CSRF protection, and the
-API-token gate. They use a throwaway SQLite database — never your real data.
+API-token gate, plus the inventory ledger's reconciliation contract, the Jalali
+date picker's calendar maths and constraints, and the customer club's filters,
+birthday targets and archive-instead-of-delete rule. They use a throwaway SQLite
+database — never your real data.
 
 ## Security notes
 

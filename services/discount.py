@@ -1,11 +1,16 @@
 from sqlalchemy.orm import Session
 from models import Customer, Referral
-from services._common import get_setting_int, current_year_month
+from services._common import (
+    BIRTHDAY_DISCOUNT_LABELS,
+    birthday_subjects,
+    current_year_month,
+    get_setting_int,
+)
 from services.tier import (
     get_tier_config,
     get_tier_discount_percent,
     get_birthday_discount,
-    check_birthday_eligible,
+    birthday_occasion_due,
 )
 
 
@@ -68,13 +73,17 @@ def calculate_discounts(
                 f"تخفیف {customer.tier} ({tier_percent}%): {tier_discount:,} تومان"
             )
 
-        # 4. Birthday discount
-        if check_birthday_eligible(customer, config):
+        # 4. Birthday discount. Whose birthday counts is a store setting, so a
+        #    children's shop and an adult clothing shop both get the perk; the
+        #    line names the occasion instead of assuming a child.
+        occasion = (birthday_occasion_due(customer, config, birthday_subjects(db))
+                    if db is not None else None)
+        if occasion:
             birthday_disc = get_birthday_discount(customer.tier, config)
             if birthday_disc > 0:
                 discounts["birthday_discount"] = birthday_disc
                 discounts["details"].append(
-                    f"تخفیف تولد فرزند: {birthday_disc:,} تومان"
+                    f"{BIRTHDAY_DISCOUNT_LABELS.get(occasion, 'تخفیف تولد')}: {birthday_disc:,} تومان"
                 )
 
     # 5. Custom discount — amount wins; else percent of total.
