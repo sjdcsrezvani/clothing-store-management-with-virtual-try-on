@@ -1270,7 +1270,9 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .variant-entry-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .variant-remove { position: absolute; top: 0.7rem; left: 0.7rem; width: 2rem; min-height: 2rem; border: 1px solid var(--rule); border-radius: 50%; background: var(--card); color: var(--candy-dark); font-size: 1.2rem; cursor: pointer; }
 .variant-edit-layout { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(250px, 0.65fr); gap: 1.2rem; align-items: start; }
-.variant-summary-card { position: sticky; top: 90px; }
+/* The whole side column sticks, not just the summary card: a single sticky
+   card would slide down over the danger card below it. */
+.variant-edit-side { position: sticky; top: 92px; align-self: start; min-width: 0; }
 .detail-list { display: grid; gap: 0.6rem; margin: 0; }
 .detail-list > div { display: flex; justify-content: space-between; gap: 0.75rem; padding-bottom: 0.45rem; border-bottom: 1px solid var(--rule); }
 .detail-list dt { color: var(--ink-soft); font-size: 0.8rem; }
@@ -1290,7 +1292,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 @media (max-width: 900px) {
   .product-form-grid-wide, .variant-entry-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .variant-edit-layout { grid-template-columns: 1fr; }
-  .variant-summary-card { position: static; }
+  .variant-edit-side { position: static; }
   .tag-settings-layout { grid-template-columns: 1fr; }
   .tag-editor-workspace { grid-template-columns: 1fr; }
   .tag-settings-side { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }

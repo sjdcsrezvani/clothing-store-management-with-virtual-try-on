@@ -1,3 +1,9 @@
+## 2.2.3 — 2026-09-12
+
+### Variant page sidebar fix
+
+- The «خلاصه تنوع» card no longer slides underneath the «غیرفعال‌سازی» card while scrolling: the whole side column now sticks to the top as one unit, and returns to normal flow on narrow screens.
+
 ## 2.2.2 — 2026-09-12
 
 ### Variant colour palette, demand counter, and cost display
