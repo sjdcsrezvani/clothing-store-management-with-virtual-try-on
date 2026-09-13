@@ -2035,3 +2035,140 @@ html[data-theme-mode="high-contrast"] .bucket-card.is-active { border-color: var
 html[data-theme-mode="high-contrast"] .pdp-popup { border-width: 2px; }
 html[data-theme-mode="high-contrast"] .pdp-day.is-selected { outline: 2px solid var(--ink); outline-offset: -2px; }
 html[data-theme-mode="high-contrast"] .pdp-day.is-today { outline: 2px dashed var(--ink); outline-offset: -2px; }
+
+/* ── کمپین‌ها (campaigns) ──
+   Everything here reads theme tokens only, so dark and high-contrast keep
+   working. State is always text next to the colour, never colour alone. */
+
+.campaign-kpi a.stat-card { display: block; text-decoration: none; color: inherit; }
+.campaign-kpi a.stat-card:hover { text-decoration: none; }
+.campaign-status-value { font-size: 1.05rem; }
+
+.campaign-filter-form .form-group { margin-bottom: 0; flex: 1 1 175px; min-width: 160px; }
+.campaign-filter-form .form-group:first-child { flex: 1 1 300px; }
+.campaign-results { margin: 0 0 0.7rem; font-size: 0.78rem; color: var(--ink-soft); }
+
+.campaign-table { min-width: 1120px; }
+.campaign-table td small, .campaign-table td strong { display: block; }
+.campaign-name a { font-weight: 700; text-decoration: none; color: inherit; }
+.campaign-name a:hover { color: var(--candy-dark); text-decoration: underline; }
+.campaign-code { direction: ltr; unicode-bidi: isolate; color: var(--ink-soft); font-size: 0.78rem; letter-spacing: 0.08em; }
+.campaign-meta { color: var(--ink-soft); font-size: 0.72rem; }
+.campaign-window { font-size: 0.78rem; color: var(--ink-soft); white-space: nowrap; }
+.campaign-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; white-space: nowrap; }
+.campaign-actions .btn { min-height: 1.9rem; padding: 0.25rem 0.6rem; font-size: 0.74rem; }
+
+/* Status badges: live / scheduled / expired / inactive, plus assignment states. */
+.status-badge.is-live { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--mint-dark); }
+.status-badge.is-scheduled { background: color-mix(in srgb, var(--sky) 20%, var(--card)); color: var(--sky-dark); }
+.status-badge.is-expired { background: color-mix(in srgb, var(--persimmon) 20%, var(--card)); color: var(--persimmon); }
+.status-badge.is-assignment-invited { background: color-mix(in srgb, var(--sunshine) 30%, var(--card)); color: var(--ink); }
+.status-badge.is-assignment-used { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--mint-dark); }
+.status-badge.is-assignment-removed { background: color-mix(in srgb, var(--ink-soft) 20%, var(--card)); color: var(--ink-soft); }
+
+/* The badge a customer carries: same chip on the list, the profile and checkout. */
+.campaign-chip {
+  display: inline-block;
+  margin: 0 0 0.15rem;
+  padding: 0.12rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--lavender) 40%, var(--rule));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--lavender) 12%, var(--card));
+  color: var(--ink);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.campaign-chip small { display: inline; margin-inline-start: 0.25rem; color: var(--ink-soft); font-weight: 600; }
+.campaign-chip:hover { text-decoration: none; border-color: var(--lavender); }
+.campaign-chip.is-used { border-color: var(--rule); background: var(--surface-soft); color: var(--ink-soft); font-weight: 600; }
+.customer-campaign { white-space: nowrap; }
+.customer-campaign-note { margin: 0 0 1rem; font-size: 0.82rem; color: var(--ink-soft); }
+
+/* Checkout: what the customer holds, plus the code field for anyone else. */
+.campaign-section .campaign-line { margin: 0 0 0.6rem; font-size: 0.88rem; }
+.campaign-section .badge-available { margin-inline-start: 0.35rem; }
+
+/* The send panel: each audience shows the number it would actually reach. */
+.campaign-send-form { display: grid; gap: 0.8rem; justify-items: start; }
+.audience-choices { border: 1px solid var(--rule); border-radius: var(--radius-sm); padding: 0.7rem 0.9rem; margin: 0; display: grid; gap: 0.45rem; }
+.audience-choices legend { padding: 0 0.35rem; font-size: 0.82rem; font-weight: 700; }
+.audience-choice {
+  display: flex; align-items: center; gap: 0.6rem;
+  min-height: var(--touch-target);
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.audience-choice:hover { background: var(--surface-soft); }
+.audience-choice.is-empty { cursor: not-allowed; color: var(--ink-soft); }
+.audience-choice input { width: auto; min-height: 0; accent-color: var(--candy); }
+.audience-label { font-weight: 600; font-size: 0.86rem; }
+.audience-count { margin-inline-start: auto; font-size: 0.78rem; color: var(--ink-soft); font-weight: 700; }
+
+.campaign-assign-form { display: flex; gap: 0.5rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: 1rem; }
+.campaign-assign-form .form-group { margin-bottom: 0; min-width: 220px; }
+
+.campaign-holders-table { min-width: 760px; }
+.campaign-holders-table td .btn { min-height: 1.9rem; padding: 0.25rem 0.6rem; font-size: 0.74rem; }
+.campaign-redemptions-table { min-width: 620px; }
+.campaign-danger .section-heading-row { align-items: center; }
+
+/* Add / edit form: one column of sections, one summary card beside it. */
+.campaign-form-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.9fr); gap: 1.2rem; align-items: start; }
+.campaign-form-layout > * { min-width: 0; }
+.form-section { padding-bottom: 1rem; margin-bottom: 1rem; border-bottom: 1px solid var(--rule); }
+.form-section:last-of-type { border-bottom: 0; }
+.form-section h3 { margin-bottom: 0.6rem; }
+.switch-row { display: flex; gap: 0.6rem; align-items: flex-start; min-height: var(--touch-target); cursor: pointer; }
+.switch-row input { width: auto; min-height: 0; margin-top: 0.35rem; accent-color: var(--candy); }
+.switch-row small { display: block; color: var(--ink-soft); font-size: 0.76rem; }
+.form-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-top: 1rem; }
+
+.campaign-preview-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
+.campaign-preview-list li { display: flex; justify-content: space-between; gap: 0.8rem; font-size: 0.84rem; }
+.campaign-preview-list li > span { color: var(--ink-soft); }
+.campaign-preview-list strong { text-align: end; }
+.campaign-preview-list strong small { display: block; color: var(--ink-soft); font-weight: 600; font-size: 0.74rem; }
+
+/* The customer's campaign card: one row per campaign, with its own action. */
+.campaign-history { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: 0.5rem; }
+.campaign-history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.3rem 0.8rem;
+  align-items: center;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+.campaign-history-row.is-inactive { background: var(--card); }
+.campaign-history-main { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; min-width: 0; }
+.campaign-history-row .customer-meta { grid-column: 1; }
+.campaign-history-row form { grid-row: 1 / span 2; grid-column: 2; }
+.campaign-history-row .btn { min-height: 1.9rem; padding: 0.25rem 0.6rem; font-size: 0.74rem; }
+
+@media (max-width: 900px) {
+  .campaign-form-layout { grid-template-columns: 1fr; }
+}
+@media (max-width: 700px) {
+  .campaign-filter-form .form-group { flex: 1 1 100%; min-width: 0; }
+  .campaign-assign-form .form-group { min-width: 0; flex: 1 1 100%; }
+  .campaign-history-row { grid-template-columns: minmax(0, 1fr); }
+  .campaign-history-row form { grid-row: auto; grid-column: 1; }
+}
+
+/* High-contrast: the campaign chip and audience rows must not rely on tint. */
+html[data-theme-mode="high-contrast"] .campaign-chip { border-width: 2px; }
+html[data-theme-mode="high-contrast"] .audience-choices { border-width: 2px; }
+html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px; }
+
+@media print {
+  /* A campaign report is a document: the send panel and filters are screen-only. */
+  .campaign-send, .campaign-filter-form, .campaign-danger, .audience-choices { display: none !important; }
+  .campaign-card, .campaign-holders, .campaign-redemptions { border: 0; box-shadow: none; padding: 0; }
+  .campaign-table, .campaign-holders-table, .campaign-redemptions-table { min-width: 0; width: 100%; font-size: 0.8rem; }
+  .campaign-card .table-scroll, .campaign-holders .table-scroll, .campaign-redemptions .table-scroll { overflow: visible; }
+}

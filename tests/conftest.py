@@ -50,12 +50,14 @@ def db_session():
 def _clean_db(client, db_session):
     """Reset all tables before each test so tests are independent."""
     from models import (BusinessEvent, StaffUser, CheckReminder, CheckRecord, TagPrintBatchLine, TagPrintBatch, SaleCampaign, SaleItem, Sale, POSTransaction, CheckoutEvent, CheckoutSession, StockReservation, StockMovement, GeneratedImage,
-                        Referral, Customer, ProductVariant, Product,
+                        Referral, Customer, ProductVariant, Product, CampaignAssignment,
                         Campaign, Settings, AdminLog, Payment, Expense, CashSessionEntry,
                         Purchase, PurchaseItem, Supplier, Refund, RefundLine, PaymentReversal, FinancialEntry, SalaryPayment, CashSession, CashSessionEntry, SupplierPayment)
     # Children before parents: supplier_payments reference purchases, so they
     # must go first or a linked payment blocks the purchase delete.
-    for model in (BusinessEvent, TagPrintBatchLine, TagPrintBatch, CheckoutEvent, StockReservation, CheckoutSession, CheckReminder, CheckRecord, RefundLine, FinancialEntry, PaymentReversal, Refund, SalaryPayment, SaleCampaign, SaleItem, StockMovement, POSTransaction, Payment, Sale, GeneratedImage,
+    # CampaignAssignment points at both campaigns and sales, so it must go before
+    # either of them or SQLite refuses the parent delete.
+    for model in (BusinessEvent, TagPrintBatchLine, TagPrintBatch, CheckoutEvent, StockReservation, CheckoutSession, CheckReminder, CheckRecord, RefundLine, FinancialEntry, PaymentReversal, Refund, SalaryPayment, CampaignAssignment, SaleCampaign, SaleItem, StockMovement, POSTransaction, Payment, Sale, GeneratedImage,
                   Referral, SupplierPayment, PurchaseItem, Purchase, ProductVariant, Product, Expense,
                   Campaign, CashSession, CashSessionEntry, AdminLog, StaffUser, Settings, Customer):
         db_session.query(model).delete()

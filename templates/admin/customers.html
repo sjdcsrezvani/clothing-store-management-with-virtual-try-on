@@ -47,6 +47,15 @@
     </a>
 </div>
 
+{% if overview.campaign_count %}
+<p class="customer-campaign-note">
+    <a class="text-link" href="/admin/customers?status=campaign">
+        {{ overview.campaign_count }} مشتری کمپین فعال دارند
+    </a>
+    — تخفیفشان در صندوق خودکار اعمال می‌شود.
+</p>
+{% endif %}
+
 <section class="card customer-card">
     <div class="section-heading-row">
         <div>
@@ -64,8 +73,10 @@
         <div class="form-group">
             <label class="sr-only" for="filter-status">وضعیت</label>
             <select id="filter-status" name="status">
-                {% for value in ['all', 'active', 'inactive', 'debtor', 'birthday', 'discount', 'archived'] %}
-                <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ status_labels[value] }}</option>
+                {% for value in ['all', 'active', 'inactive', 'debtor', 'birthday', 'discount', 'campaign', 'archived'] %}
+                <option value="{{ value }}" {% if status == value %}selected{% endif %}>
+                    {{ status_labels[value] }}{% if value == 'campaign' and overview.campaign_count %} ({{ overview.campaign_count }}){% endif %}
+                </option>
                 {% endfor %}
             </select>
         </div>
@@ -116,6 +127,7 @@
                     <th scope="col">بدهی</th>
                     <th scope="col">آخرین خرید</th>
                     <th scope="col">{{ overview.birthday_column_label }}</th>
+                    <th scope="col">کمپین</th>
                     <th scope="col">برچسب‌ها</th>
                     <th scope="col">وضعیت</th>
                     <th scope="col">عملیات</th>
@@ -172,6 +184,19 @@
                             {% endif %}
                         </span>
                         {% endfor %}
+                        {% else %}
+                        <span class="customer-meta">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="customer-campaign">
+                        {% if row.campaign %}
+                        <a class="campaign-chip" href="/admin/campaigns/{{ row.campaign.campaign.id }}"
+                           title="کمپین {{ row.campaign.campaign.name }} — {{ row.campaign.percent }}٪ تخفیف فعال در صندوق{% if row.campaign.reusable %} (چندباره){% endif %}">
+                            {{ row.campaign.campaign.name }}
+                            <small class="tnum">{{ row.campaign.percent }}٪</small>
+                        </a>
+                        {% elif row.campaigns_used %}
+                        <span class="campaign-chip is-used">{{ row.campaigns_used }} کمپین استفاده‌شده</span>
                         {% else %}
                         <span class="customer-meta">—</span>
                         {% endif %}

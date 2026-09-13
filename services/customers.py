@@ -138,7 +138,8 @@ def _matches_tag(tag: str):
 
 # ── filters ───────────────────────────────────────────────────────────────────
 
-STATUSES = ("all", "active", "inactive", "debtor", "birthday", "discount", "archived")
+STATUSES = ("all", "active", "inactive", "debtor", "birthday", "discount",
+            "campaign", "archived")
 STATUS_LABELS = {
     "all": "همه مشتریان",
     "active": "فعال (خرید ۳۰ روز اخیر)",
@@ -146,6 +147,7 @@ STATUS_LABELS = {
     "debtor": "بدهکار",
     "birthday": "تولد نزدیک",
     "discount": "تخفیف استفاده‌نشده",
+    "campaign": "کمپیندار (تخفیف فعال)",
     "archived": "بایگانی‌شده",
 }
 
@@ -292,8 +294,30 @@ def _filtered_query(db: Session, search: str = "", tier: str = "", status: str =
         condition = _birthday_condition(db, birthday_window_days(db))
         if condition is not None:
             query = query.filter(condition)
+    elif status == "campaign":
+        # «کمپیندار» means the counter would honour a campaign today: an open
+        # invitation on a campaign that is active and inside its window.
+        query = query.filter(
+            Customer.id.in_(_live_campaign_customer_ids(db))
+        )
 
     return query
+
+
+def _live_campaign_customer_ids(db: Session) -> list[int]:
+    """Customers holding a live, unspent campaign — the «کمپیندار» set."""
+    from models import Campaign, CampaignAssignment
+
+    now = datetime.now(timezone.utc)
+    rows = db.query(CampaignAssignment.customer_id).join(
+        Campaign, Campaign.id == CampaignAssignment.campaign_id,
+    ).filter(
+        CampaignAssignment.status == "invited",
+        Campaign.is_active == True,  # noqa: E712
+        or_(Campaign.start_date.is_(None), Campaign.start_date <= now),
+        or_(Campaign.end_date.is_(None), Campaign.end_date >= now),
+    ).all()
+    return [row[0] for row in rows]
 
 
 def _sorted(query, sort: str):
@@ -360,6 +384,7 @@ def customer_overview(db: Session) -> dict:
     birthday_condition = _birthday_condition(db, window)
 
     active = db.query(Customer).filter(_not_archived())
+    campaign_ids = _live_campaign_customer_ids(db)
     return {
         "total": active.count(),
         "new_this_month": db.query(Customer).filter(
@@ -377,6 +402,11 @@ def customer_overview(db: Session) -> dict:
             if birthday_condition is not None else 0
         ),
         "archived_count": db.query(Customer).filter(Customer.is_archived == True).count(),  # noqa: E712
+        "campaign_count": (
+            db.query(Customer).filter(
+                _not_archived(), Customer.id.in_(campaign_ids),
+            ).count() if campaign_ids else 0
+        ),
         # Every customer is counted on their own choice, so with the child
         # module on the list can be holding both kinds of birthday at once and
         # the heading stays neutral rather than claiming they are all children.
@@ -424,18 +454,26 @@ def build_customer_rows(db: Session, customers: list) -> list[dict]:
     """
     now = datetime.now(timezone.utc)
     rows = []
+    # One bulk lookup for the whole page, so a campaign badge never costs a
+    # query per row.
+    from services.campaigns import customer_campaign_map
+
+    campaign_map = customer_campaign_map(db, [c.id for c in customers])
     for customer in customers:
         last = customer.last_purchase_date
         if last is not None and last.tzinfo is None:
             last = last.replace(tzinfo=timezone.utc)
         days_since = None if last is None else max(0, (now - last).days)
         archived = is_archived_customer(customer)
+        campaign_entry = campaign_map.get(customer.id, {})
         rows.append({
             "customer": customer,
             "tags": parse_tags(customer.tags),
             "archived": archived,
             "birthdays": customer_birthdays(db, customer),
             "days_since_purchase": days_since,
+            "campaign": campaign_entry.get("offered"),
+            "campaigns_used": campaign_entry.get("used_count", 0),
             "status": ("archived" if archived else
                        "active" if days_since is not None and days_since <= ACTIVE_DAYS else
                        "inactive"),
@@ -464,6 +502,7 @@ def birthday_fields(customer: Customer, db: Session) -> dict:
 
 def customer_profile(db: Session, customer: Customer) -> dict:
     """Everything the customer's own page shows, computed from source."""
+    from services.campaigns import customer_campaign_history
     sales_query = db.query(Sale).filter(Sale.customer_id == customer.id)
 
     counted_sales = sales_query.filter(
@@ -510,6 +549,7 @@ def customer_profile(db: Session, customer: Customer) -> dict:
         "tags": parse_tags(customer.tags),
         "birthdays": customer_birthdays(db, customer),
         "child_profile": child_profile_enabled(db),
+        "campaign_history": customer_campaign_history(db, customer),
     }
 
 

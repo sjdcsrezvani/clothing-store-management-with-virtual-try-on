@@ -186,6 +186,63 @@
             <p class="muted">هنوز کسی را معرفی نکرده است. کد معرفی: <strong class="tnum">{{ customer.referral_code }}</strong></p>
             {% endif %}
         </section>
+
+        <section class="card profile-card campaign-history-card">
+            <div class="section-heading-row">
+                <div>
+                    <h3>کمپین‌ها</h3>
+                    <p class="muted">کمپینی که این مشتری دارد، در صندوق خودکار اعمال می‌شود — نیازی به واردکردن کد نیست.</p>
+                </div>
+            </div>
+
+            {% if campaign_history %}
+            <ul class="campaign-history">
+                {% for row in campaign_history %}
+                <li class="campaign-history-row{% if not row.live %} is-inactive{% endif %}">
+                    <div class="campaign-history-main">
+                        <a class="text-link" href="/admin/campaigns/{{ row.campaign.id }}">{{ row.campaign.name }}</a>
+                        <span class="campaign-chip tnum">{{ row.campaign.discount_percent }}٪</span>
+                        <span class="status-badge is-assignment-{{ row.status }}">{{ row.status_label }}</span>
+                        {% if not row.live %}
+                        <span class="status-badge is-inactive">{{ row.campaign_status_label }}</span>
+                        {% endif %}
+                    </div>
+                    <small class="customer-meta">
+                        {{ row.source_label }}
+                        {%- if row.invite_sent_at %} · پیامک {{ jalali_str(row.invite_sent_at, false) }}{% endif %}
+                        {%- if row.used_count %} · {{ row.used_count }} بار استفاده{% endif %}
+                    </small>
+                    <form method="post" action="/admin/campaigns/{{ row.campaign.id }}/unassign">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <input type="hidden" name="customer_id" value="{{ customer.id }}">
+                        <input type="hidden" name="next" value="/admin/customers/{{ customer.id }}">
+                        <button type="submit" class="btn btn-sm btn-ghost"
+                                {% if row.status == 'removed' %}disabled{% endif %}>برداشتن</button>
+                    </form>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="muted">این مشتری در هیچ کمپینی نیست.</p>
+            {% endif %}
+
+            {% if assignable_campaigns %}
+            <form method="post" action="/admin/campaigns/assign" class="campaign-assign-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="customer_id" value="{{ customer.id }}">
+                <input type="hidden" name="next" value="/admin/customers/{{ customer.id }}">
+                <div class="form-group">
+                    <label class="sr-only" for="assign-campaign">افزودن به کمپین</label>
+                    <select id="assign-campaign" name="campaign_id">
+                        {% for option in assignable_campaigns %}
+                        <option value="{{ option.campaign.id }}">{{ option.campaign.name }} — {{ option.campaign.discount_percent }}٪{% if not option.live %} ({{ option.campaign_status_label }}){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-ghost">افزودن به کمپین</button>
+            </form>
+            {% endif %}
+        </section>
     </div>
 
     <div class="profile-side">

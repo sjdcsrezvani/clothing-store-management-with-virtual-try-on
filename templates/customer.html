@@ -66,6 +66,16 @@
             </span>
         </div>
         {% endfor %}
+        {% if campaign %}
+        <div class="info-item">
+            <span class="label">📢 کمپین فعال</span>
+            <span class="value">
+                <span class="campaign-chip">
+                    {{ campaign.name }} <small class="tnum">{{ campaign.discount_percent }}٪</small>
+                </span>
+            </span>
+        </div>
+        {% endif %}
     </div>
 </div>
 

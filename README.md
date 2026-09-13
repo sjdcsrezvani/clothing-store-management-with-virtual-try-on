@@ -114,11 +114,47 @@ theme, so it matches light, dark and high-contrast alike.
   choice existed keep following the store's target, and the migration pins the
   ones already holding a child profile to «فرزند» so no existing customer's
   discount moves when the default is changed.
+- **Live campaign badge.** The list gained a کمپین column (and a «کمپیندار»
+  filter) that names the campaign the counter would honour today, so you can see
+  who is entitled to a discount without opening each file; already-used
+  campaigns are summarised instead, and the badge lookup is one bulk query for
+  the whole page.
 - **Lifecycle.** A customer with recorded sales is **archived**, never deleted —
   deleting one nulls the sale's customer and silently detaches purchase history.
   Archived customers leave the list, the counts and the marketing sends, and
   re-appear only under `?status=archived`. Marketing (birthday and campaign SMS)
   skips archived customers and anyone who opted out.
+
+## Campaigns (کمپین پیامکی)
+
+- **📢 کمپین‌ها** (`/admin/campaigns`) — a campaign is a code, a window and an
+  audience. The list shows status (در جریان / زمان‌بندی‌شده / منقضی / غیرفعال),
+  the window in Jalali dates, how many customers were messaged, how many bought
+  with it and what the campaign sold, all filterable and sortable.
+- **The code actually works.** Entering it at the counter applies the discount
+  immediately — the code is checked against the campaign's window and minimum
+  purchase, and the amount is computed server-side, so the figure the cashier
+  approves is the figure sent to the terminal. A code that is refusable is
+  refused with a sentence in Persian instead of a silent no-op.
+- **Assigned customers are automatic.** A customer holding a campaign gets the
+  discount without typing anything: the checkout card names the campaign and the
+  amount, the customer panel shows «کمپین فعال», and the customers list carries
+  the badge. Each redemption is written to the invoice (`SaleCampaign`) and to
+  the customer's assignment, which is what the report counts.
+- **One-use by default, «چندباره» on request.** A campaign is spent by the first
+  invoice unless it is flagged reusable, where it becomes a standing promo. A
+  refund returns the campaign to the customer instead of burning it.
+- **Sending is explicit.** The send panel offers everyone consented, one tier
+  (silver included — the old send was hardcoded to diamond), one tag or the
+  hand-picked list, and shows how many people each option would reach before you
+  confirm. Everyone archived, opted out or already messaged is skipped and
+  counted, so a double-click can never message the same customer twice; each
+  holder records the date their SMS went out. The blast is capped by the
+  «سقف پیامک کمپین در هر ارسال» setting, and the campaign page shows who was
+  invited, who used it, and which invoices it discounted.
+- **Deleting is limited on purpose.** A campaign that already discounted an
+  invoice cannot be deleted — the count is refused with the reason, because
+  removing it would orphan the sales it explains; deactivate it instead.
 
 ## Requirements
 

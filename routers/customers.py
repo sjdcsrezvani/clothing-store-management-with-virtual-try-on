@@ -205,12 +205,17 @@ def _panel_context(db, customer) -> dict:
     render has to prefill those fields and show the birthdays this customer is
     actually wished on — resolved per customer, not per store.
     """
+    from services.campaigns import campaign_for_customer
+
     return {
         "birthday_fields": birthday_fields(customer, db),
         "birthdays": customer_birthdays(db, customer),
         "min_purchase": get_discount_setting(db, "min_purchase_for_discount", 500000),
         "monthly_limit": get_discount_setting(db, "monthly_referral_limit", 10),
         "tier_config": get_tier_config(db),
+        # The cashier should see the campaign this customer holds before
+        # totalling the basket, not discover it after the fact.
+        "campaign": campaign_for_customer(db, customer),
     }
 
 

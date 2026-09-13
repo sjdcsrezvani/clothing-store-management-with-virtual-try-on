@@ -824,11 +824,17 @@ class Campaign(Base):
     discount_percent = Column(Integer, nullable=False)
     min_purchase = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
+    # A reusable campaign is a standing promo: it applies to every qualifying
+    # invoice while it is live. The default (once) burns on the first invoice,
+    # which is what most SMS promos mean.
+    is_reusable = Column(Boolean, default=False)
     start_date = Column(DateTime, nullable=True)
     end_date = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     sale_campaigns = relationship("SaleCampaign", back_populates="campaign")
+    assignments = relationship("CampaignAssignment", back_populates="campaign",
+                               cascade="all, delete-orphan")
 
 
 class SaleCampaign(Base):
@@ -841,6 +847,46 @@ class SaleCampaign(Base):
 
     sale = relationship("Sale", back_populates="campaigns")
     campaign = relationship("Campaign", back_populates="sale_campaigns")
+
+
+class CampaignAssignment(Base):
+    """A customer holding a campaign.
+
+    This is the row that makes a campaign visible: the customers page shows the
+    badge from it, the counter sees whose discount to give, and the campaign
+    page knows who was invited and who actually came. States:
+    'invited' → on the send list, discount offered at the counter but not yet
+    used; 'used' → redeemed on ``sale_id``; 'removed' → deliberately taken off.
+    ``is_reusable`` campaigns are not burned by a redemption.
+    """
+    __tablename__ = "campaign_assignments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=False, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
+    status = Column(String(20), nullable=False, default="invited")
+    # How the customer got it: 'sms' (the campaign blast), 'manual' (added from
+    # the profile or the campaign page) or 'checkout' (a code applied at the
+    # counter, their first evidence of the campaign).
+    source = Column(String(20), nullable=False, default="manual")
+    invited_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    # When the campaign SMS was actually queued for this customer. This is the
+    # re-send guard: a blast skips anyone who already carries it, so a
+    # double-click can never message the same person twice.
+    invite_sent_at = Column(DateTime, nullable=True)
+    used_at = Column(DateTime, nullable=True)
+    used_count = Column(Integer, nullable=False, default=0)
+    sale_id = Column(Integer, ForeignKey("sales.id"), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("campaign_id", "customer_id", name="uq_campaign_assignment"),
+        CheckConstraint("status IN ('invited', 'used', 'removed')", name="ck_campaign_assignment_status"),
+    )
+
+    campaign = relationship("Campaign", back_populates="assignments")
+    customer = relationship("Customer")
+    sale = relationship("Sale")
 
 
 # ── Checkout concurrency: server-owned drafts, reservations, state history ────
@@ -896,6 +942,10 @@ class CheckoutSession(Base):
     custom_discount_percent = Column(Integer, nullable=False, default=0)
     referrer_code = Column(String(50), nullable=True)
     referrer_phone = Column(String(20), nullable=True)
+    # The campaign code typed at the counter. Kept on the server-owned draft so
+    # ``finalize_basket`` recomputes the very same discount the cashier saw.
+    campaign_code = Column(String(50), nullable=True)
+    campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=True)
     state = Column(String(30), nullable=False, default="draft", index=True)
     pos_transaction_id = Column(Integer, ForeignKey("pos_transactions.id"), nullable=True, unique=True)
     sale_id = Column(Integer, ForeignKey("sales.id"), nullable=True, unique=True)
@@ -983,6 +1033,7 @@ BUSINESS_EVENT_TYPES = (
     "RefundIssued",
     "CheckoutRefunded",
     "TagBatchPrinted",
+    "CampaignRedeemed",
     "CreditSaleIssued",
     "CreditPaymentRecorded",
     "PaymentReversed",

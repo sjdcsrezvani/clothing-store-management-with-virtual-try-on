@@ -21,11 +21,17 @@ def calculate_discounts(
     use_referrer_discount: bool = True,
     custom_amount: int = 0,
     custom_percent: int = 0,
+    campaign=None,
 ) -> dict:
     """
     Calculate all applicable discounts for a customer.
     Anonymous sales (customer=None) get only the manual custom discount —
     no referral, tier, or birthday loyalty perks.
+
+    ``campaign`` is a resolved :class:`models.Campaign` — either the one the
+    customer holds or the one whose code was typed at the counter. It stacks
+    with the loyalty discounts (the total stays capped at the basket) and, like
+    every other discount, it is refused on نسیه by the checkout layer.
     """
     config = get_tier_config(db)
     min_purchase = get_setting_int(db, "min_purchase_for_discount", 500000)
@@ -39,6 +45,8 @@ def calculate_discounts(
         "referrer_discount": 0,
         "tier_discount": 0,
         "birthday_discount": 0,
+        "campaign_discount": 0,
+        "campaign": campaign,
         "custom_discount": 0,
         "total_amount": total_amount,
         "total_discount": 0,
@@ -89,6 +97,25 @@ def calculate_discounts(
                     f"{BIRTHDAY_DISCOUNT_LABELS.get(occasion, 'تخفیف تولد')}: {birthday_disc:,} تومان"
                 )
 
+    # 4b. Campaign discount — the code the cashier typed, or the campaign this
+    #     customer already holds. Read from the campaign row, never from the
+    #     client, and only while the campaign is live.
+    if campaign is not None:
+        from services.campaigns import (
+            campaign_discount_amount,
+            campaign_discount_line,
+            campaign_is_live,
+        )
+
+        campaign_amount = 0
+        if campaign_is_live(campaign):
+            campaign_amount = campaign_discount_amount(campaign, total_amount)
+        if campaign_amount > 0:
+            discounts["campaign_discount"] = campaign_amount
+            discounts["details"].append(
+                campaign_discount_line(campaign, campaign_amount)
+            )
+
     # 5. Custom discount — amount wins; else percent of total.
     if custom_amount > 0:
         discounts["custom_discount"] = custom_amount
@@ -109,6 +136,7 @@ def calculate_discounts(
         discounts["referrer_discount"] +
         discounts["tier_discount"] +
         discounts["birthday_discount"] +
+        discounts["campaign_discount"] +
         discounts["custom_discount"],
     )
 

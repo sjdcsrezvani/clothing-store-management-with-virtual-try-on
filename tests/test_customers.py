@@ -872,10 +872,16 @@ def test_defaults_keep_the_childrens_shop_behaviour(client, db_session):
     assert birthday_subjects(db_session) == ("child",)
 
 
-# ── campaign consent ─────────────────────────────────────────────────────────
+# ── campaign audience ────────────────────────────────────────────────────────
 
 def test_campaign_send_skips_opted_out_and_archived_customers(authed, db_session):
-    from models import Campaign
+    """Consent and archiving still decide who is messaged — but no tier does.
+
+    The send used to be hardcoded to diamond, which reached nobody in a shop
+    whose customers are all silver. The audience is now chosen per send and the
+    only filters left are the ones the customer controls: consent and archiving.
+    """
+    from models import Campaign, CampaignAssignment
 
     campaign = Campaign(name="کمپین", code="CMP1", discount_percent=10, min_purchase=0)
     db_session.add(campaign)
@@ -883,24 +889,42 @@ def test_campaign_send_skips_opted_out_and_archived_customers(authed, db_session
     db_session.refresh(campaign)
 
     set_setting(db_session, "sms_pattern_campaign", "کمپین {var2}")
-    willing = make_customer(db_session, tier="diamond", first_name="راضی", phone="09121110001")
-    unwilling = make_customer(db_session, tier="diamond", first_name="ناراضی", phone="09121110002",
+    willing = make_customer(db_session, tier="silver", first_name="راضی", phone="09121110001")
+    unwilling = make_customer(db_session, tier="silver", first_name="ناراضی", phone="09121110002",
                               sms_opt_in=False)
-    archived = make_customer(db_session, tier="diamond", first_name="بایگانی", phone="09121110003",
+    archived = make_customer(db_session, tier="silver", first_name="بایگانی", phone="09121110003",
                              is_archived=True)
 
     token = csrf_token(authed, "/admin/campaigns")
     response = authed.post(f"/admin/campaigns/{campaign.id}/send",
-                           data={"csrf_token": token}, follow_redirects=False)
+                           data={"csrf_token": token, "audience": "all"},
+                           follow_redirects=False)
 
-    assert response.status_code == 200
-    assert "1 مشتری الماس در صف" in response.text
-    assert "انصراف" in response.text
-    markers = db_session.query(Settings).filter(Settings.key.like("campaign_sms_%")).all()
-    assert len(markers) == 1
-    assert str(willing.id) in markers[0].key
-    assert str(unwilling.id) not in markers[0].key
-    assert str(archived.id) not in markers[0].key
+    # The send redirects to the report with the outcome, rather than rendering
+    # the list: the report is where the counts and the holders live.
+    assert response.status_code == 303
+    assert f"/admin/campaigns/{campaign.id}" in response.headers["location"]
+
+    db_session.expire_all()
+    invited = db_session.query(CampaignAssignment).filter(
+        CampaignAssignment.campaign_id == campaign.id,
+    ).all()
+    assert [row.customer_id for row in invited] == [willing.id]
+    assert invited[0].invite_sent_at is not None
+    assert invited[0].status == "invited"
+
+    # A second send must not message the same person again.
+    response = authed.post(f"/admin/campaigns/{campaign.id}/send",
+                           data={"csrf_token": csrf_token(authed, "/admin/campaigns"),
+                                 "audience": "all"},
+                           follow_redirects=False)
+    assert response.status_code == 303
+    db_session.expire_all()
+    assert db_session.query(CampaignAssignment).filter(
+        CampaignAssignment.campaign_id == campaign.id,
+    ).count() == 1
+    assert unwilling.id not in [row.customer_id for row in invited]
+    assert archived.id not in [row.customer_id for row in invited]
 
 
 # ── migration ────────────────────────────────────────────────────────────────

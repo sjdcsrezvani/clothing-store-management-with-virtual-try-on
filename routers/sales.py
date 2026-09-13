@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from database import get_db
 from models import (
-    Customer, Product, ProductVariant, Sale, SaleItem, SaleCampaign,
+    Campaign, Customer, Product, ProductVariant, Sale, SaleItem, SaleCampaign,
     Referral, Settings, POSTransaction, CheckoutSession, Refund, CashSession, generate_referral_code, to_english_digits,
 )
 from services._common import (
@@ -25,6 +25,13 @@ from services.accounting import (
     apply_credit_surcharge, credit_due_date_for, credit_sale_allowed, credit_terms_days,
 )
 from services.discount import calculate_discounts, apply_discounts_after_sale
+from services.campaigns import (
+    campaign_discount_amount,
+    campaign_for_customer,
+    mark_campaign_used,
+    resolve_campaign_code,
+    restore_campaign_after_refund,
+)
 from services.security import log_action, require_html_role
 from services.tier import (
     update_customer_after_purchase, get_tier_config, check_tier_upgrade,
@@ -207,7 +214,8 @@ def _resolve_customer(customer_id: int, db) -> Customer | None:
 def _render_scan(request, customer, basket, total_amount, db,
                  referrer_code="", referrer_phone="",
                  use_referrer_discount="1", custom_discount_amount=0,
-                 custom_discount_percent=0, error=None, success=None):
+                 custom_discount_percent=0, campaign_code="",
+                 error=None, success=None):
     staff_id = request.session.get("staff_user_id")
     active_nonce = request.session.get("checkout_nonce")
     checkout = get_checkout(db, active_nonce) if active_nonce else None
@@ -226,16 +234,40 @@ def _render_scan(request, customer, basket, total_amount, db,
             customer_id=customer.id if customer else None,
             basket_json=json.dumps(basket, ensure_ascii=False),
             payment_method="card",
+            campaign_code=campaign_code,
         )
+        db.commit()
+    # The typed code lives on the server-owned draft, so the amount recomputed
+    # when the sale is confirmed can never differ from what the cashier saw.
+    desired_code = (campaign_code or "")[:50] or None
+    if checkout.campaign_code != desired_code:
+        checkout.campaign_code = desired_code
         db.commit()
     checkout_nonce = checkout.checkout_nonce
     if customer:
         _grant_referred_discount(_resolve_referrer(referrer_code, referrer_phone, db), customer, db)
+    # A typed code wins; a customer who already holds a live campaign gets it
+    # without typing anything. A bad code is reported and falls back to what
+    # they hold rather than quietly blocking the discount they do have.
+    campaign = None
+    campaign_error = None
+    if customer:
+        # An empty basket still shows the badge — the cashier should know what
+        # this customer is entitled to before scanning anything — but the
+        # minimum-purchase rule is only judged once there is something to buy.
+        basket_total = total_amount if total_amount > 0 else None
+        if campaign_code:
+            campaign, campaign_error = resolve_campaign_code(
+                db, campaign_code, total_amount=basket_total,
+            )
+        if campaign is None:
+            campaign = campaign_for_customer(db, customer, basket_total)
     discounts = calculate_discounts(
         customer, total_amount, db,
         use_referrer_discount=(use_referrer_discount == "1"),
         custom_amount=custom_discount_amount,
         custom_percent=custom_discount_percent,
+        campaign=campaign,
     )
     # Owner-only profit meter: gross margin minus everything already discounted.
     gross_profit = sum(
@@ -276,6 +308,9 @@ def _render_scan(request, customer, basket, total_amount, db,
         "use_referrer_discount": use_referrer_discount,
         "custom_discount_amount": custom_discount_amount,
         "custom_discount_percent": custom_discount_percent,
+        "campaign": campaign,
+        "campaign_code": campaign_code,
+        "campaign_error": campaign_error,
         "discounts": discounts,
         "net_profit": net_profit,
         "credit_limit_info": credit_limit_info,
@@ -436,6 +471,7 @@ async def sales_apply_discount(
     use_referrer_discount: str = Form("1"),
     custom_discount_amount: str = Form(""),
     custom_discount_percent: str = Form(""),
+    campaign_code: str = Form(""),
     db: Session = Depends(get_db),
 ):
     guard = require_html_role(request, db, "cashier")
@@ -453,6 +489,7 @@ async def sales_apply_discount(
         use_referrer_discount=use_referrer_discount,
         custom_discount_amount=_discount_int(custom_discount_amount),
         custom_discount_percent=_discount_int(custom_discount_percent),
+        campaign_code=campaign_code,
     )
 
 
@@ -467,6 +504,7 @@ async def sales_add_to_basket(
     use_referrer_discount: str = Form("1"),
     custom_discount_amount: str = Form(""),
     custom_discount_percent: str = Form(""),
+    campaign_code: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """Add a product to the basket by barcode - looks up variant."""
@@ -484,6 +522,7 @@ async def sales_add_to_basket(
             use_referrer_discount=use_referrer_discount,
             custom_discount_amount=_discount_int(custom_discount_amount),
             custom_discount_percent=_discount_int(custom_discount_percent),
+            campaign_code=campaign_code,
             error=error,
             success=success,
         )
@@ -535,6 +574,7 @@ async def sales_remove_from_basket(
     use_referrer_discount: str = Form("1"),
     custom_discount_amount: str = Form(""),
     custom_discount_percent: str = Form(""),
+    campaign_code: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """Remove a variant from the basket."""
@@ -550,6 +590,7 @@ async def sales_remove_from_basket(
         use_referrer_discount=use_referrer_discount,
         custom_discount_amount=_discount_int(custom_discount_amount),
         custom_discount_percent=_discount_int(custom_discount_percent),
+        campaign_code=campaign_code,
     )
 
 
@@ -761,6 +802,7 @@ async def sales_confirm(
     use_referrer_discount: str = Form(""),
     custom_discount_amount: str = Form(""),
     custom_discount_percent: str = Form(""),
+    campaign_code: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """Confirm and complete the sale.
@@ -814,6 +856,7 @@ async def sales_confirm(
         custom_discount_percent=_discount_int(custom_discount_percent),
         referrer_code=referrer_code,
             referrer_phone=referrer_phone,
+        campaign_code=campaign_code,
         )
     try:
         if checkout.state in {"payment_pending", "payment_approved"}:
@@ -829,7 +872,8 @@ async def sales_confirm(
             reserve_basket(db, checkout, checkout_data["basket"])
     except InsufficientStockError as error:
         db.rollback()
-        return _render_scan(request, customer, [], 0, db, error="موجودی تغییر کرده است؛ لطفاً دوباره تلاش کنید.")
+        return _render_scan(request, customer, [], 0, db, campaign_code=campaign_code,
+                            error="موجودی تغییر کرده است؛ لطفاً دوباره تلاش کنید.")
     basket = checkout_data["basket"]
     total_amount = checkout_data["total_amount"]
     discounts = checkout_data["discounts"]
@@ -839,7 +883,7 @@ async def sales_confirm(
     basket = checkout_data["basket"]
 
     if payment_method == "credit" and customer is None:
-        return _render_scan(request, customer, [], 0, db,
+        return _render_scan(request, customer, [], 0, db, campaign_code=campaign_code,
                             error="فروش نسیه فقط برای مشتری ثبت‌شده ممکن است — ابتدا شماره مشتری را جستجو کنید.")
 
     # Referral rewards are applied only after the sale commits.
@@ -865,6 +909,7 @@ async def sales_confirm(
                 use_referrer_discount=use_referrer_discount,
                 custom_discount_amount=_discount_int(custom_discount_amount),
                 custom_discount_percent=_discount_int(custom_discount_percent),
+                campaign_code=campaign_code,
                 error="پرداخت کارت تأیید نشده است — ابتدا مبلغ را به کارت‌خوان ارسال کنید و نتیجه «تأیید شد» بگیرید.",
             )
 
@@ -879,6 +924,7 @@ async def sales_confirm(
                 use_referrer_discount=use_referrer_discount,
                 custom_discount_amount=_discount_int(custom_discount_amount),
                 custom_discount_percent=_discount_int(custom_discount_percent),
+                campaign_code=campaign_code,
                 error=(f"سقف اعتبار این مشتری {fmt(limit)} تومان است و بدهی فعلی {fmt(customer.total_debt or 0)} تومان — "
                        f"این خرید ({fmt(final_amount)} تومان) از سقف رد می‌شود. روش پرداخت را عوض کنید یا سقف را بالا ببرید."),
             )
@@ -927,7 +973,8 @@ async def sales_confirm(
             )
         except InsufficientStockError as error:
             db.rollback()
-            return _render_scan(request, customer, [], 0, db, error="موجودی تغییر کرده است؛ لطفاً دوباره تلاش کنید.")
+            return _render_scan(request, customer, [], 0, db, campaign_code=campaign_code,
+                                error="موجودی تغییر کرده است؛ لطفاً دوباره تلاش کنید.")
 
         db.add(SaleItem(
             sale_id=sale.id,
@@ -943,6 +990,47 @@ async def sales_confirm(
         points_earned = update_customer_after_purchase(customer, sale.final_amount, db)
         sale.points_earned = points_earned
         apply_discounts_after_sale(customer, discounts, db, referrer)
+
+    # ── Campaign redemption ────────────────────────────────────────────────
+    # The invoice records which campaign paid for part of the discount, so the
+    # campaign page can show what it earned. The customer's assignment is marked
+    # used unless the campaign is a reusable standing promo. In the terminal
+    # path ``discounts`` is the stored summary, so the campaign is read back from
+    # the checkout row and the same percentage is re-applied to the same total.
+    redeemed = None
+    redeemed_amount = 0
+    if isinstance(discounts, dict) and discounts.get("campaign_discount"):
+        redeemed = discounts.get("campaign")
+        redeemed_amount = discounts["campaign_discount"]
+    elif checkout.campaign_id:
+        # Terminal path: the checkout row is the server-owned truth, and the
+        # campaign on it was only ever pinned when it really took money off.
+        redeemed = db.query(Campaign).filter(Campaign.id == checkout.campaign_id).first()
+        if redeemed is not None:
+            redeemed_amount = campaign_discount_amount(redeemed, total_amount)
+    if redeemed is not None and redeemed_amount > 0:
+        db.add(SaleCampaign(
+            sale_id=sale.id,
+            campaign_id=redeemed.id,
+            discount_amount=redeemed_amount,
+        ))
+        mark_campaign_used(db, redeemed, customer, sale_id=sale.id)
+        append_event(
+            db,
+            "CampaignRedeemed",
+            "sale",
+            sale.id,
+            idempotency_key=f"sale:{sale.id}:campaign-redeemed",
+            actor_user_id=guard.id,
+            request_id=request.headers.get("X-Request-ID"),
+            payload={
+                "campaign_id": redeemed.id,
+                "campaign_code": redeemed.code,
+                "discount_amount": redeemed_amount,
+                "customer_id": customer.id if customer else None,
+            },
+        )
+        db.flush()
 
     if approval is not None:
         approval.status = "linked_to_sale"
@@ -1171,7 +1259,9 @@ async def sale_refund(sale_id: int, request: Request, refund_reason: str = Form(
             request_id=request.headers.get("X-Request-ID"),
         )
 
-    # Remove campaign-discount links for the voided sale.
+    # A refunded invoice must not burn the customer's campaign: put it back on
+    # offer first, then drop the redemption links for the voided sale.
+    restore_campaign_after_refund(db, sale.id)
     db.query(SaleCampaign).filter(SaleCampaign.sale_id == sale.id).delete()
 
     db.commit()

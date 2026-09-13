@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from database import get_db
 from datetime import datetime, timezone
 from models import (
-    Customer, Referral, Settings, Sale, SaleItem, SaleCampaign, GeneratedImage, AdminLog, POSTransaction, StockMovement,
+    Campaign, Customer, Referral, Settings, Sale, SaleItem, SaleCampaign, GeneratedImage, AdminLog, POSTransaction, StockMovement,
     BusinessEvent, StaffUser, SalaryPayment,
 )
 from config import ADMIN_PASSWORD, API_TOKEN
@@ -360,9 +360,36 @@ async def admin_customer_profile(
         raise HTTPException(status_code=404, detail="مشتری یافت نشد")
 
     may_delete, sale_count = can_delete_customer(db, customer)
+    # The campaign card: which campaigns this customer holds, plus the ones the
+    # owner can still put them on from right here.
+    from services.campaigns import (
+        ASSIGNMENT_STATUS_LABELS as CAMPAIGN_ASSIGNMENT_LABELS,
+        SOURCE_LABELS as CAMPAIGN_SOURCE_LABELS,
+        STATUS_LABELS as CAMPAIGN_STATUS_LABELS,
+        campaign_is_live,
+        campaign_status,
+        customer_campaign_history,
+    )
+
+    profile = customer_profile(db, customer)
+    held_ids = {row["campaign"].id for row in profile["campaign_history"]
+                if row["status"] != "removed"}
+    assignable = [
+        {
+            "campaign": campaign,
+            "live": campaign_is_live(campaign),
+            "campaign_status_label": CAMPAIGN_STATUS_LABELS[campaign_status(campaign)],
+        }
+        for campaign in db.query(Campaign).order_by(Campaign.created_at.desc()).all()
+        if campaign.id not in held_ids
+    ]
     return templates.TemplateResponse(request, "admin/customer_detail.html", {
         "customer": customer,
-        "profile": customer_profile(db, customer),
+        "profile": profile,
+        "campaign_history": profile["campaign_history"],
+        "assignable_campaigns": assignable,
+        "campaign_source_labels": CAMPAIGN_SOURCE_LABELS,
+        "campaign_assignment_labels": CAMPAIGN_ASSIGNMENT_LABELS,
         "birthday_fields": birthday_fields(customer, db),
         "birthday_display": birthday_display,
         "jalali_age": jalali_age,

@@ -213,16 +213,43 @@ def test_form_date_parser_reads_jalali_and_iso_without_confusing_them():
     assert parse_form_date("") is None and parse_form_date_end("   ") is None
 
 
-def test_campaign_form_uses_the_shared_jalali_picker():
+def test_campaign_form_uses_the_shared_jalali_picker(db_session):
+    """The form, the list and the detail page all show Persian dates.
+
+    The field values come from one route-built dict rather than the template
+    reaching into the model, so the picker always receives a Jalali string —
+    the same value for an edit form, a validation re-render and a fresh form.
+    """
     form = _template("admin/campaign_form.html")
     listing = _template("admin/campaigns.html")
+    detail = _template("admin/campaign_detail.html")
     assert 'type="date"' not in form
     assert form.count('class="persian-date-input"') == 2
     assert 'data-pdp-pair="#end_date"' in form
-    assert "jalali_str(campaign.start_date" in form
-    # The list shows Persian dates like the rest of the app, not Gregorian.
-    assert "strftime('%Y/%m/%d')" not in listing
-    assert "jalali_str(campaign.start_date" in listing
+    assert "values.start_date" in form and "values.end_date" in form
+
+    # …and the value the route builds really is a Jalali string with Persian
+    # digits, read back from a Gregorian row.
+    from models import Campaign
+    from routers.campaigns import _values_from_campaign
+    from services._common import parse_form_date
+
+    campaign = Campaign(
+        name="کمپین تاریخ", code="PDP-DATES", discount_percent=10,
+        start_date=parse_form_date("2026-09-12"),
+        end_date=parse_form_date("2026-09-20"),
+    )
+    db_session.add(campaign)
+    db_session.flush()
+    values = _values_from_campaign(campaign)
+    assert values["start_date"] == "۱۴۰۵/۰۶/۲۱"
+    assert values["end_date"] == "۱۴۰۵/۰۶/۲۹"
+
+    # Neither page formats a date itself, so none of them can drift to Gregorian.
+    for template in (listing, detail):
+        assert "strftime('%Y/%m/%d')" not in template
+    assert "row.window_label" in listing
+    assert "stats.window_label" in detail
 
 
 def test_campaign_route_stores_a_jalali_date_as_the_same_gregorian_day(client, db_session, authed):

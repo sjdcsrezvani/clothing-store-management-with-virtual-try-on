@@ -295,6 +295,13 @@ def _apply_missing_columns(migration_engine=None):
             ("before_json", "TEXT"),
             ("after_json", "TEXT"),
         ],
+        "campaigns": [
+            ("is_reusable", "BOOLEAN DEFAULT 0"),
+        ],
+        "checkout_sessions": [
+            ("campaign_code", "VARCHAR(50)"),
+            ("campaign_id", "INTEGER"),
+        ],
     }
     with migration_engine.begin() as conn:
         for table, cols in table_to_cols.items():

@@ -1,76 +1,180 @@
 {% extends "base.html" %}
-{% block title %}📢 کمپین‌ها — {{ store.name }}{% endblock %}
+{% block title %}کمپین‌ها — {{ store.name }}{% endblock %}
 {% block content %}
+{% set filter_qs = '&status=' ~ status ~ '&order=' ~ order ~ '&search=' ~ (search|urlencode) %}
 
-<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem;">
-    <span style="font-size: 2rem;">📢</span>
-    <h2 style="margin: 0;">مدیریت کمپین‌ها</h2>
+<div class="page-heading product-page-heading">
+    <div>
+        <div class="eyebrow">بازاریابی / کمپین‌ها</div>
+        <h2>کمپین‌های پیامکی</h2>
+        <p>
+            هر کمپین یک کد تخفیف، یک بازه و یک گروه مشتری دارد. مشتری‌ای که کمپین به او اختصاص یافته
+            تخفیف را در صندوق <strong>خودکار</strong> می‌گیرد؛ کد هم برای بقیه کار می‌کند.
+            روی هر کمپین بزنید تا ببینید پیامک به چه کسی رفت و چه کسی از آن خرید کرد.
+        </p>
+    </div>
+    <div class="admin-nav">
+        <a href="/admin/campaigns/add" class="btn btn-primary">کمپین جدید</a>
+        <a href="/admin/customers" class="btn btn-ghost">مشتریان</a>
+        <a href="/admin" class="btn btn-ghost">داشبورد</a>
+    </div>
 </div>
 
-{% if message %}
-<div class="alert alert-success">✅ {{ message }}</div>
-{% endif %}
+{% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
+{% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}
 
-<div class="admin-nav" style="margin-bottom: 1.5rem;">
-    <a href="/admin/campaigns/add" class="btn btn-primary">➕ افزودن کمپین جدید</a>
+<div class="stats-grid campaign-kpi" aria-label="خلاصه کمپین‌ها">
+    <a class="stat-card accent-sky" href="/admin/campaigns">
+        <div class="stat-label">کل کمپین‌ها</div>
+        <div class="stat-value tnum">{{ overview.total }}</div>
+        <div class="stat-sub">
+            {% if overview.scheduled %}{{ overview.scheduled }} زمان‌بندی‌شده{% else %}همه بررسی‌شده{% endif %}
+        </div>
+    </a>
+    <a class="stat-card accent-pine" href="/admin/campaigns?status=live">
+        <div class="stat-label">در جریان</div>
+        <div class="stat-value tnum">{{ overview.live }}</div>
+        <div class="stat-sub">آماده اعمال در صندوق</div>
+    </a>
+    <a class="stat-card accent-saffron" href="/admin/campaigns?order=used">
+        <div class="stat-label">پیامک‌شده</div>
+        <div class="stat-value tnum">{{ overview.messaged }}</div>
+        <div class="stat-sub">{{ overview.used }} مشتری استفاده کرده‌اند</div>
+    </a>
+    <a class="stat-card accent-persimmon" href="/admin/campaigns?order=used">
+        <div class="stat-label">تخفیف کمپین‌ها</div>
+        <div class="stat-value tnum">{{ fmt(overview.discount_given) }} ت</div>
+        <div class="stat-sub">جمع تخفیف اعمال‌شده روی فاکتورها</div>
+    </a>
 </div>
 
-<div class="card">
-    {% if campaigns %}
-    <table>
-        <thead>
-            <tr>
-                <th>📢 نام</th>
-                <th>🔑 کد</th>
-                <th>🏷️ تخفیف</th>
-                <th>🛒 حداقل خرید</th>
-                <th>🔵 وضعیت</th>
-                <th>📅 شروع</th>
-                <th>📅 پایان</th>
-                <th>🔧 عملیات</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for campaign in campaigns %}
-            <tr>
-                <td><strong>{{ campaign.name }}</strong></td>
-                <td><span style="font-family: monospace; letter-spacing: 0.15em; direction: ltr; display: inline-block;">{{ campaign.code }}</span></td>
-                <td class="tnum">{{ campaign.discount_percent }}٪</td>
-                <td class="tnum">{{ fmt(campaign.min_purchase) }}</td>
-                <td>
-                    {% if campaign.is_active %}
-                        <span class="badge badge-available">✅ فعال</span>
-                    {% else %}
-                        <span class="badge badge-used">⛔ غیرفعال</span>
-                    {% endif %}
-                </td>
-                <td class="tnum">{{ jalali_str(campaign.start_date, with_time=False) if campaign.start_date else '—' }}</td>
-                <td class="tnum">{{ jalali_str(campaign.end_date, with_time=False) if campaign.end_date else '—' }}</td>
-                <td style="display: flex; gap: 0.3rem;">
-                    <a href="/admin/campaigns/{{ campaign.id }}" class="btn btn-sm btn-ghost">✏️</a>
-                    <form method="post" action="/admin/campaigns/{{ campaign.id }}/send" style="display:inline;"
-                          onsubmit="return confirm('⚠️ آیا مطمئن هستید؟ پیامک کمپین به همه مشتریان الماس ارسال خواهد شد.')">
-                        <button type="submit" class="btn btn-sm btn-primary">📤 ارسال</button>
-                    </form>
-                    <form method="post" action="/admin/campaigns/{{ campaign.id }}/delete" style="display:inline;"
-                          onsubmit="return confirm('⚠️ آیا مطمئن هستید؟')">
-                        <button type="submit" class="btn btn-sm btn-danger">🗑️</button>
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+<section class="card campaign-card">
+    <div class="section-heading-row">
+        <div>
+            <h3>فهرست کمپین‌ها</h3>
+            <p class="muted">
+                «پیامک‌شده» تعداد مشتریانی است که این کمپین برایشان ارسال شده و «استفاده» نسبت کسانی
+                که واقعاً خرید کردند.
+            </p>
+        </div>
+    </div>
+
+    <form method="get" action="/admin/campaigns" class="search-form campaign-filter-form">
+        <div class="form-group">
+            <label class="sr-only" for="filter-search">جست‌وجو</label>
+            <input type="text" id="filter-search" name="search" value="{{ search }}"
+                   placeholder="نام یا کد کمپین">
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="filter-status">وضعیت</label>
+            <select id="filter-status" name="status">
+                {% for value, label in status_filters %}
+                <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="filter-order">ترتیب</label>
+            <select id="filter-order" name="order">
+                {% for value, label in order_labels.items() %}
+                <option value="{{ value }}" {% if order == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary">اعمال فیلتر</button>
+        {% if search or status != 'all' or order != 'newest' %}
+        <a href="/admin/campaigns" class="btn btn-ghost">پاک‌کردن فیلتر</a>
+        {% endif %}
+    </form>
+
+    <p class="campaign-results">
+        {{ total }} کمپین{% if search or status != 'all' %} با این فیلترها{% endif %}
+        {%- if total_pages > 1 %} · صفحه {{ page }} از {{ total_pages }}{% endif %}
+    </p>
+
+    {% if rows %}
+    <div class="table-scroll">
+        <table class="campaign-table">
+            <thead>
+                <tr>
+                    <th scope="col">کمپین</th>
+                    <th scope="col">تخفیف</th>
+                    <th scope="col">حداقل خرید</th>
+                    <th scope="col">بازه</th>
+                    <th scope="col">وضعیت</th>
+                    <th scope="col">پیامک‌شده</th>
+                    <th scope="col">استفاده</th>
+                    <th scope="col">فروش کمپین</th>
+                    <th scope="col">عملیات</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                {% set campaign = row.campaign %}
+                <tr>
+                    <td class="campaign-name">
+                        <strong><a href="/admin/campaigns/{{ campaign.id }}">{{ campaign.name }}</a></strong>
+                        <small class="campaign-code tnum" dir="ltr">{{ campaign.code }}</small>
+                        {% if campaign.is_reusable %}<small class="campaign-meta">چندباره</small>{% endif %}
+                    </td>
+                    <td class="tnum"><strong>{{ campaign.discount_percent }}٪</strong></td>
+                    <td class="tnum">
+                        {% if campaign.min_purchase %}{{ fmt(campaign.min_purchase) }}{% else %}—{% endif %}
+                    </td>
+                    <td class="tnum campaign-window">{{ row.window_label }}</td>
+                    <td>
+                        <span class="status-badge is-{{ row.status }}">{{ row.status_label }}</span>
+                    </td>
+                    <td class="tnum">{{ row.stats.messaged }}</td>
+                    <td class="tnum">
+                        {% if row.stats.reached %}
+                        <strong>{{ row.stats.used }}</strong>
+                        <small>{{ row.stats.response_rate }}٪ پاسخ</small>
+                        {% else %}—{% endif %}
+                    </td>
+                    <td class="tnum">
+                        {% if row.stats.revenue %}
+                        <strong>{{ fmt(row.stats.revenue) }}</strong>
+                        <small>{{ fmt(row.stats.used_money) }} تخفیف · {{ row.stats.redemptions }} فاکتور</small>
+                        {% else %}—{% endif %}
+                    </td>
+                    <td>
+                        <div class="campaign-actions">
+                            <a href="/admin/campaigns/{{ campaign.id }}" class="btn btn-sm btn-ghost">گزارش</a>
+                            <a href="/admin/campaigns/{{ campaign.id }}/edit" class="btn btn-sm btn-ghost">ویرایش</a>
+                            <a href="/admin/campaigns/{{ campaign.id }}#send" class="btn btn-sm btn-primary"
+                               aria-label="ارسال پیامک کمپین {{ campaign.name }}">ارسال</a>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if total_pages > 1 %}
+    <nav class="product-pagination" aria-label="صفحه‌بندی کمپین‌ها">
+        {% if page > 1 %}<a class="btn btn-sm btn-ghost" href="?page={{ page - 1 }}{{ filter_qs }}">صفحه قبل</a>{% endif %}
+        <span>صفحه {{ page }} از {{ total_pages }}</span>
+        {% if page < total_pages %}<a class="btn btn-sm btn-ghost" href="?page={{ page + 1 }}{{ filter_qs }}">صفحه بعد</a>{% endif %}
+    </nav>
+    {% endif %}
+
+    {% elif search or status != 'all' %}
+    <div class="empty-state">
+        <h3>کمپینی با این فیلترها پیدا نشد</h3>
+        <p>جست‌وجو یا وضعیت را تغییر دهید — شاید کمپین غیرفعال شده باشد.</p>
+        <a href="/admin/campaigns" class="btn btn-ghost">پاک‌کردن فیلتر</a>
+    </div>
     {% else %}
-    <div style="text-align: center; padding: 2rem; color: var(--ink-soft);">
-        <div style="font-size: 3rem; margin-bottom: 0.5rem;">📢</div>
-        <p>هنوز کمپینی ایجاد نشده است.</p>
-        <a href="/admin/campaigns/add" class="btn btn-primary" style="margin-top: 1rem;">➕ ایجاد کمپین جدید</a>
+    <div class="empty-state">
+        <h3>هنوز کمپینی ساخته نشده است</h3>
+        <p>
+            یک کمپین بسازید، گروه مشتریان را انتخاب کنید و پیامک را بفرستید؛
+            تخفیفش هم خودکار در صندوق اعمال می‌شود.
+        </p>
+        <a href="/admin/campaigns/add" class="btn btn-primary">ایجاد کمپین جدید</a>
     </div>
     {% endif %}
-</div>
-
-<nav class="admin-nav">
-    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
-</nav>
+</section>
 {% endblock %}

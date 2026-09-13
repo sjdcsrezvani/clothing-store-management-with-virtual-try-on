@@ -127,8 +127,14 @@ def update_checkout_options(
     custom_discount_percent: int = 0,
     referrer_code: str = "",
     referrer_phone: str = "",
+    campaign_code: str | None = None,
 ) -> CheckoutSession:
-    """Persist the current checkout inputs before calculating its amount."""
+    """Persist the current checkout inputs before calculating its amount.
+
+    ``campaign_code`` uses ``None`` (not ``""``) as "leave it alone", so a
+    caller that does not care about campaigns cannot wipe a code the cashier
+    already typed.
+    """
     checkout.customer_id = customer_id or None
     checkout.basket_json = basket_json
     checkout.payment_method = payment_method
@@ -137,6 +143,8 @@ def update_checkout_options(
     checkout.custom_discount_percent = min(100, max(0, int(custom_discount_percent or 0)))
     checkout.referrer_code = (referrer_code or "")[:50] or None
     checkout.referrer_phone = (referrer_phone or "")[:20] or None
+    if campaign_code is not None:
+        checkout.campaign_code = (campaign_code or "")[:50] or None
     db.flush()
     return checkout
 
@@ -418,6 +426,7 @@ def finalize_basket(db: Session, checkout: CheckoutSession) -> dict:
     quantities; price is always read from the variant."""
     from services.discount import calculate_discounts
     from services.accounting import apply_credit_surcharge, credit_sale_allowed
+    from services.campaigns import campaign_for_customer, resolve_campaign_code
     raw_basket = json.loads(checkout.basket_json or "[]")
     verified: list[dict] = []
     for item in raw_basket:
@@ -471,6 +480,18 @@ def finalize_basket(db: Session, checkout: CheckoutSession) -> dict:
             from routers.sales import _resolve_referrer, _grant_referred_discount
             referrer = _resolve_referrer(checkout.referrer_code or "", checkout.referrer_phone or "", db)
             _grant_referred_discount(referrer, customer, db)
+    # The campaign is resolved from the code on the server-owned draft, falling
+    # back to whatever this customer already holds — so the cashier sees the
+    # same discount whether it was typed or inherited.
+    campaign = None
+    if customer:
+        if checkout.campaign_code:
+            campaign, _reason = resolve_campaign_code(
+                db, checkout.campaign_code, total_amount=total_amount,
+            )
+        if campaign is None:
+            campaign = campaign_for_customer(db, customer, total_amount)
+
     discounts = calculate_discounts(
         customer,
         total_amount,
@@ -478,15 +499,20 @@ def finalize_basket(db: Session, checkout: CheckoutSession) -> dict:
         use_referrer_discount=checkout.use_referrer_discount,
         custom_amount=checkout.custom_discount_amount,
         custom_percent=checkout.custom_discount_percent,
+        campaign=campaign,
     )
 
     credit_surcharge = 0
     if checkout.payment_method == "credit":
         for k in ("referred_discount", "referrer_discount", "tier_discount",
-                  "birthday_discount", "custom_discount"):
+                  "birthday_discount", "campaign_discount", "custom_discount"):
             discounts[k] = 0
         discounts["details"] = ["فروش نسیه: تخفیف اعمال نمی‌شود"]
         discounts["total_discount"] = 0
+        # The campaign is dropped along with the other discounts it joined, so
+        # nothing downstream can redeem it — نسیه has no discounts at all.
+        campaign = None
+        discounts["campaign"] = None
         credit_surcharge, final_amount = apply_credit_surcharge(db, total_amount, 0)
         discounts["details"].append(f"افزایش نسیه: {credit_surcharge:,} تومان")
     else:
@@ -497,6 +523,9 @@ def finalize_basket(db: Session, checkout: CheckoutSession) -> dict:
     checkout.credit_surcharge = credit_surcharge
     checkout.final_amount = final_amount
     checkout.basket_json = json.dumps(verified, ensure_ascii=False)
+    # The campaign actually applied, pinned on the draft so confirming the sale
+    # cannot pick a different one than the amount the cashier approved.
+    checkout.campaign_id = campaign.id if (campaign is not None and discounts["campaign_discount"] > 0) else None
     db.flush()
     return {
         "basket": verified,
@@ -504,6 +533,7 @@ def finalize_basket(db: Session, checkout: CheckoutSession) -> dict:
         "discounts": discounts,
         "credit_surcharge": credit_surcharge,
         "final_amount": final_amount,
+        "campaign": campaign,
     }
 
 

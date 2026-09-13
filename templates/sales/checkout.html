@@ -119,6 +119,7 @@
                 <input type="hidden" name="basket_json" value="{{ basket_json }}">
                 <input type="hidden" name="referrer_code" value="{{ referrer_code|default('') }}">
                 <input type="hidden" name="referrer_phone" value="{{ referrer_phone|default('') }}">
+                <input type="hidden" name="campaign_code" value="{{ campaign_code|default('') }}">
                 <input type="hidden" name="use_referrer_discount" value="{{ '1' if use_referrer_discount == '1' else '0' }}">
                 <input type="hidden" name="custom_discount_amount" value="{{ custom_discount_amount|default(0) }}">
                 <input type="hidden" name="custom_discount_percent" value="{{ custom_discount_percent|default(0) }}">
@@ -163,6 +164,43 @@
         </div>
         {% endif %}
 
+        {% if customer %}
+        {# ── Campaign: what this customer holds, and the code field for anyone
+             else. The held campaign is applied by the server without typing. ── #}
+        <div class="card campaign-section">
+            <h4>📢 کمپین</h4>
+            {% if campaign %}
+            <p class="campaign-line">
+                کمپین <strong>{{ campaign.name }}</strong> ({{ campaign.discount_percent }}٪)
+                {% if discounts.campaign_discount %}
+                — <strong class="tnum">{{ fmt(discounts.campaign_discount) }}</strong> تومان تخفیف در این فاکتور
+                {% elif not basket %}
+                — با اسکن اولین کالا اعمال می‌شود
+                {% elif campaign.min_purchase %}
+                — با این سبد اعمال نمی‌شود (حداقل خرید <strong class="tnum">{{ fmt(campaign.min_purchase) }}</strong> تومان)
+                {% else %}
+                — با این سبد تخفیفی ندارد
+                {% endif %}
+                {% if campaign.is_reusable %}<span class="badge badge-available">چندباره</span>{% endif %}
+            </p>
+            {% else %}
+            <p class="muted">این مشتری کمپین فعالی ندارد.</p>
+            {% endif %}
+            {% if campaign_error %}
+            <div class="alert alert-error" role="alert">⚠️ {{ campaign_error }}</div>
+            {% endif %}
+            <div class="form-row">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label for="campaign-code-input">🔑 کد کمپین</label>
+                    <input type="text" id="campaign-code-input" value="{{ campaign_code|default('') }}"
+                           oninput="setAll('campaign_code', this.value.toUpperCase())"
+                           placeholder="مثال: SUMMER2025" autocomplete="off">
+                </div>
+            </div>
+            <small>کد را وارد کنید و «اعمال تخفیف» را بزنید. مشتریانی که کمپین به آن‌ها اختصاص یافته، تخفیف را خودکار می‌گیرند.</small>
+        </div>
+        {% endif %}
+
         <div class="card">
             <h4>🏷️ تخفیف ویژه</h4>
             <div class="form-row">
@@ -185,6 +223,7 @@
             <input type="hidden" name="basket_json" value="{{ basket_json }}">
             <input type="hidden" name="referrer_code" value="{{ referrer_code|default('') }}">
             <input type="hidden" name="referrer_phone" value="{{ referrer_phone|default('') }}">
+                <input type="hidden" name="campaign_code" value="{{ campaign_code|default('') }}">
             <input type="hidden" name="use_referrer_discount" value="{{ '1' if use_referrer_discount == '1' else '0' }}">
             <input type="hidden" name="custom_discount_amount" value="{{ custom_discount_amount|default(0) }}">
             <input type="hidden" name="custom_discount_percent" value="{{ custom_discount_percent|default(0) }}">
@@ -217,6 +256,7 @@
                         <input type="hidden" name="basket_json" value="{{ basket_json }}">
                         <input type="hidden" name="referrer_code" value="{{ referrer_code|default('') }}">
                         <input type="hidden" name="referrer_phone" value="{{ referrer_phone|default('') }}">
+                <input type="hidden" name="campaign_code" value="{{ campaign_code|default('') }}">
                         <input type="hidden" name="use_referrer_discount" value="{{ '1' if use_referrer_discount == '1' else '0' }}">
                         <input type="hidden" name="custom_discount_amount" value="{{ custom_discount_amount|default(0) }}">
                         <input type="hidden" name="custom_discount_percent" value="{{ custom_discount_percent|default(0) }}">
@@ -303,6 +343,7 @@
                     <input type="hidden" name="checkout_nonce" value="{{ checkout_nonce }}">
                     <input type="hidden" name="referrer_code" value="{{ referrer_code|default('') }}">
                     <input type="hidden" name="referrer_phone" value="{{ referrer_phone|default('') }}">
+                <input type="hidden" name="campaign_code" value="{{ campaign_code|default('') }}">
                     <input type="hidden" name="use_referrer_discount" value="{{ '1' if use_referrer_discount == '1' else '0' }}">
                     <input type="hidden" name="custom_discount_amount" value="{{ custom_discount_amount|default(0) }}">
                     <input type="hidden" name="custom_discount_percent" value="{{ custom_discount_percent|default(0) }}">
