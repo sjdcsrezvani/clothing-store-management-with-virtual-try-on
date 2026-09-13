@@ -14,17 +14,23 @@ the inventory ledger uses for balances.
 from datetime import datetime, timedelta, timezone
 
 import jdatetime
-from sqlalchemy import func, or_, text
+from sqlalchemy import and_, func, or_, text
 from sqlalchemy.orm import Session
 
 from models import Customer, Referral, Sale
 from services._common import (
     BIRTHDAY_SUBJECT_LABELS,
+    BUYS_FOR_CHILD,
+    BUYS_FOR_CHOICES,
+    BUYS_FOR_LABELS,
+    BUYS_FOR_SELF,
     birthday_form_value,
     birthday_display,
     birthday_subjects,
     child_profile_enabled,
+    customer_birthday_subjects,
     days_until_jalali_birthday,
+    default_buys_for,
     get_birthday_target,
     get_setting_int,
     is_archived_customer,
@@ -32,6 +38,7 @@ from services._common import (
     jalali_month_start,
     jtoday,
     marketing_opt_in,
+    normalise_buys_for,
     parse_persian_birthday_full,
     parse_persian_month_day,
 )
@@ -57,6 +64,14 @@ def _load_flags(db=None) -> dict:
         return {
             "child_profile": child_profile_enabled(db),
             "birthday_target": get_birthday_target(db),
+            # A signup form asks the customer themselves: these are the two
+            # options it offers and the one it pre-selects from the store's
+            # target. The choice is stored per customer and decides whose
+            # birthday the discount uses — the store setting is only the default
+            # for someone who has never chosen.
+            "default_buys_for": default_buys_for(db),
+            "buys_for_choices": BUYS_FOR_CHOICES,
+            "buys_for_labels": BUYS_FOR_LABELS,
         }
     finally:
         if close:
@@ -159,28 +174,13 @@ def _not_archived():
     return or_(Customer.is_archived.is_(None), Customer.is_archived == False)  # noqa: E712
 
 
-def display_subjects(db: Session) -> tuple[str, ...]:
-    """Birthdays the screens may show: the customer's own, plus the child's when
-    the store keeps child profiles.
+def effective_buys_for(db: Session, customer: Customer) -> str:
+    """What this customer's profile form shows selected.
 
-    Deliberately wider than `birthday_subjects`, which decides whose birthday is
-    *celebrated*. A store can put a child's birthday on file without wanting it to
-    drive the discount, and a birthday that is stored should never be invisible.
+    Their own choice, or the store's default while they have never chosen — and
+    never a stale 'child' in a shop that has since switched the child module off.
     """
-    subjects = ["customer"]
-    if child_profile_enabled(db):
-        subjects.append("child")
-    return tuple(subjects)
-
-
-def birthday_label(subjects, *, column: bool = False) -> str:
-    """A heading that reads correctly whichever birthdays this store celebrates."""
-    subjects = tuple(subjects)
-    if subjects == ("customer",):
-        return "تولد مشتری" if column else "تولد مشتریان"
-    if subjects == ("child",):
-        return "تولد فرزند" if column else "تولد فرزندان"
-    return "تولد" if column else "تولدها"
+    return normalise_buys_for(customer.buys_for, db) or default_buys_for(db)
 
 
 def birthday_column_label(db: Session) -> str:
@@ -209,16 +209,38 @@ def upcoming_month_days(days: int) -> list[str]:
 
 
 def _birthday_condition(db: Session, days: int):
-    """Upcoming birthdays for whichever birthday this store celebrates."""
-    subjects = birthday_subjects(db)
+    """Upcoming birthdays, each customer resolved on their own choice.
+
+    Written as one SQL condition rather than a loop because the list, its KPI
+    and the counts all filter on it in the database. Three groups: a customer
+    who chose for themselves is due on their own birthday in every kind of shop;
+    one who chose for a child is due on the child's while the module is on; and
+    one who has never chosen follows the store's default target.
+    """
     values = upcoming_month_days(days)
-    conditions = []
-    if "customer" in subjects:
-        conditions.append(Customer.birth_month_day.in_(values))
-    if "child" in subjects:
-        conditions.append(Customer.child_birthday.in_(values))
-    if not conditions:
-        return None
+    store = birthday_subjects(db)
+    child_on = child_profile_enabled(db)
+
+    def due(column):
+        return column.in_(values)
+
+    conditions = [
+        and_(Customer.buys_for == BUYS_FOR_SELF, due(Customer.birth_month_day)),
+    ]
+    if child_on:
+        conditions.append(and_(Customer.buys_for == BUYS_FOR_CHILD, due(Customer.child_birthday)))
+    else:
+        # No child programme left: the wish falls back to the customer, exactly
+        # as `customer_birthday_subjects` does for that row.
+        conditions.append(and_(Customer.buys_for == BUYS_FOR_CHILD, due(Customer.birth_month_day)))
+
+    legacy = []
+    if "customer" in store:
+        legacy.append(due(Customer.birth_month_day))
+    if "child" in store:
+        legacy.append(due(Customer.child_birthday))
+    if legacy:
+        conditions.append(and_(Customer.buys_for.is_(None), or_(*legacy)))
     return or_(*conditions)
 
 
@@ -355,10 +377,13 @@ def customer_overview(db: Session) -> dict:
             if birthday_condition is not None else 0
         ),
         "archived_count": db.query(Customer).filter(Customer.is_archived == True).count(),  # noqa: E712
-        "birthday_subjects": birthday_subjects(db),
-        "birthday_label": birthday_label(birthday_subjects(db)),
+        # Every customer is counted on their own choice, so with the child
+        # module on the list can be holding both kinds of birthday at once and
+        # the heading stays neutral rather than claiming they are all children.
+        "birthday_label": "تولدها" if child_profile_enabled(db) else "تولد مشتریان",
         "birthday_column_label": birthday_column_label(db),
         "child_profile": child_profile_enabled(db),
+        "default_buys_for": default_buys_for(db),
     }
 
 
@@ -366,13 +391,13 @@ def customer_overview(db: Session) -> dict:
 
 
 def customer_birthdays(db: Session, customer: Customer) -> list[dict]:
-    """The birthdays on file for this customer, in celebration priority order.
+    """The birthday this customer is wished on, when one is on file.
 
-    Only the subjects the store actually celebrates are returned, so an adult
-    clothing shop sees one row and a children's shop sees two.
+    Resolved per customer rather than per store: a self-buyer shows their own
+    birthday even in a children's shop, and a child-buyer shows the child's.
     """
     entries = []
-    for subject in display_subjects(db):
+    for subject in customer_birthday_subjects(db, customer):
         if subject == "customer":
             month_day, year = customer.birth_month_day, customer.birth_year
         else:
@@ -419,11 +444,16 @@ def build_customer_rows(db: Session, customers: list) -> list[dict]:
 
 
 def birthday_fields(customer: Customer, db: Session) -> dict:
-    """The editable birthday fields for the profile form (empty when unset)."""
+    """The editable fields for the profile form (empty when unset).
+
+    `buys_for` is the *effective* choice, so a customer who never chose shows the
+    store's default selected instead of the form looking unanswered.
+    """
     fields = {
+        "buys_for": effective_buys_for(db, customer),
         "birth_date": birthday_form_value(customer.birth_month_day, customer.birth_year),
         "child_name": customer.child_name or "",
-        "child_birth_date": birthday_form_value(customer.child_birthday, customer.child_birth_year),
+        "child_birthday": birthday_form_value(customer.child_birthday, customer.child_birth_year),
         "child_profile": child_profile_enabled(db),
     }
     return fields
@@ -514,13 +544,44 @@ def archive_customer(db: Session, customer: Customer, archived: bool = True) -> 
     return customer.is_archived
 
 
+def signup_birthday_fields(db: Session, *, buys_for=None, birth_value="",
+                           child_name="", child_birth_value="") -> dict:
+    """The birthday columns a new customer gets, from the mode they chose.
+
+    Shared by the registration form and the counter form so the two can't drift,
+    and it is the *server's* answer: whichever fields the form happened to post,
+    only the ones the chosen mode owns are stored. A self-buyer keeps no child
+    details and a child-buyer keeps no customer birthday — and with the child
+    module off the child option is not honoured at all.
+    """
+    mode = normalise_buys_for(buys_for, db) or default_buys_for(db)
+    fields = {
+        "buys_for": mode,
+        "birth_month_day": None,
+        "birth_year": None,
+        "child_name": None,
+        "child_birthday": None,
+        "child_birth_year": None,
+    }
+    if mode == BUYS_FOR_SELF or not child_profile_enabled(db):
+        fields["birth_month_day"], fields["birth_year"] = parse_persian_birthday_full(birth_value)
+        return fields
+    fields["child_name"] = (str(child_name).strip() or None)
+    fields["child_birthday"], fields["child_birth_year"] = \
+        parse_persian_birthday_full(child_birth_value)
+    return fields
+
+
 def update_customer_meta(db: Session, customer: Customer, *, notes=None, tags=None,
                          sms_opt_in=None, birth_value=None, child_name=None,
-                         child_birth_value=None) -> dict:
+                         child_birth_value=None, buys_for=None) -> dict:
     """Save the profile card.
 
-    Child fields are only written when the store has child profiles enabled, so
-    a hand-crafted post can't put child data into an adult clothing shop.
+    The customer's «for whom» choice decides which birthday fields are written:
+    a self-buyer's form only posts their own birthday and a child-buyer's only
+    posts the child's, so a hand-crafted post cannot put a birthday into a
+    profile that does not use it. The fields of the other side are left alone
+    rather than cleared — switching back must never lose what was typed before.
     """
     if notes is not None:
         notes = str(notes).strip()
@@ -532,30 +593,35 @@ def update_customer_meta(db: Session, customer: Customer, *, notes=None, tags=No
     if sms_opt_in is not None:
         customer.sms_opt_in = bool(sms_opt_in)
 
-    if birth_value is not None:
-        month_day, year = parse_persian_birthday_full(birth_value)
-        customer.birth_month_day = month_day
-        customer.birth_year = year
+    if buys_for is not None:
+        mode = normalise_buys_for(buys_for, db)
+        if mode is not None:
+            customer.buys_for = mode
 
-    if child_profile_enabled(db):
-        if child_name is not None:
-            child_name = str(child_name).strip()
-            customer.child_name = child_name or None
-        if child_birth_value is not None:
-            month_day, year = parse_persian_birthday_full(child_birth_value)
-            customer.child_birthday = month_day
-            customer.child_birth_year = year
-            if not month_day and not year:
-                # A cleared field clears both halves; otherwise MM-DD and the
-                # year would disagree about whether a birthday is on file.
-                customer.child_birthday = None
+    if birth_value is not None or child_name is not None or child_birth_value is not None:
+        if effective_buys_for(db, customer) == BUYS_FOR_SELF:
+            if birth_value is not None:
+                customer.birth_month_day, customer.birth_year = parse_persian_birthday_full(birth_value)
+        elif child_profile_enabled(db):
+            if child_name is not None:
+                child_name = str(child_name).strip()
+                customer.child_name = child_name or None
+            if child_birth_value is not None:
+                month_day, year = parse_persian_birthday_full(child_birth_value)
+                customer.child_birthday = month_day
+                customer.child_birth_year = year
+                if not month_day and not year:
+                    # A cleared field clears both halves; otherwise MM-DD and the
+                    # year would disagree about whether a birthday is on file.
+                    customer.child_birthday = None
+                    customer.child_birth_year = None
+            if not customer.child_name and customer.child_birthday is None:
                 customer.child_birth_year = None
-        if not customer.child_name and customer.child_birthday is None:
-            customer.child_birth_year = None
 
     return {
         "tags": parse_tags(customer.tags),
         "sms_opt_in": marketing_opt_in(customer),
+        "buys_for": effective_buys_for(db, customer),
         "birth_month_day": customer.birth_month_day,
         "birth_year": customer.birth_year,
     }

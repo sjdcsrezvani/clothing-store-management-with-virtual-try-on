@@ -99,6 +99,12 @@ class Customer(Base):
     # Archived customers keep their history but leave the list, the KPIs and the
     # marketing sends; they can be restored at any time.
     is_archived = Column(Boolean, default=False)
+    # Whose clothes this customer buys: 'self' or 'child'. This is the
+    # customer's own choice, not the store's — the counter asks once at signup
+    # and it decides which birthday the discount and the wish use, so a
+    # self-buyer in a children's shop is still wished on their own birthday.
+    # NULL means never chosen: those rows follow the store's default target.
+    buys_for = Column(String(8), nullable=True)
     # Children's-shop module: these are only collected and shown when the store
     # enables child profiles.
     child_name = Column(String(100), nullable=True)

@@ -58,42 +58,30 @@
             <span class="value tnum">{{ jalali_str(customer.last_purchase_date, false) }}</span>
         </div>
         {% endif %}
-        {% if customer.birth_month_day %}
+        {% for entry in birthdays %}
         <div class="info-item">
-            <span class="label">🎂 تولد</span>
+            <span class="label">🎂 تولد {{ entry.label }}</span>
             <span class="value tnum">
-                {{ birthday_display(customer.birth_month_day, customer.birth_year) }}
-                {%- set age = jalali_age(customer.birth_year, customer.birth_month_day) %}
-                {% if age is not none %} ({{ age }} ساله){% endif %}
+                {{ entry.text }}{% if entry.age is not none %} ({{ entry.age }} ساله){% endif %}
             </span>
         </div>
-        {% endif %}
+        {% endfor %}
     </div>
 </div>
 
-{% if child_profile %}
-{# ─── Child Information (children's shops only) ─── #}
+{# ─── Who this customer buys for, and that side's birthday ─── #}
 <div class="card">
-    <h3>🧒 اطلاعات فرزند</h3>
-    <form method="post" action="/customers/{{ customer.id }}/update-child">
-        <div class="form-row">
-            <div class="form-group">
-                <label for="child_name">🧒 نام فرزند</label>
-                <input type="text" id="child_name" name="child_name"
-                       value="{{ customer.child_name or '' }}" placeholder="نام فرزند">
-            </div>
-            <div class="form-group">
-                <label for="child_birthday">🎂 تولد فرزند</label>
-                <input type="text" id="child_birthday" name="child_birthday"
-                       value="{{ birthday_form_value(customer.child_birthday, customer.child_birth_year) }}"
-                       placeholder="۱۴۰۳/۰۳/۱۵" class="persian-date-input" data-pdp-max="today">
-                <small>🎁 با ثبت تاریخ تولد، در روز تولد فرزندتان تخفیف ویژه دریافت کنید!</small>
-            </div>
-        </div>
-        <button type="submit" class="btn btn-primary">💾 ذخیره اطلاعات فرزند</button>
+    <h3>🎂 تولد و پرونده</h3>
+    <form method="post" action="/customers/{{ customer.id }}/update-details">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        {% set selected_buys_for = birthday_fields.buys_for %}
+        {% set self_birthday_value = birthday_fields.birth_date %}
+        {% set child_name_value = birthday_fields.child_name %}
+        {% set child_birthday_value = birthday_fields.child_birthday %}
+        {% include "partials/buys_for.html" %}
+        <button type="submit" class="btn btn-primary">💾 ذخیره پرونده</button>
     </form>
 </div>
-{% endif %}
 
 {# ─── Discounts Section ─── #}
 <div class="card">

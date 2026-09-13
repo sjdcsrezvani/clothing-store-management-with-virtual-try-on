@@ -250,35 +250,18 @@
         <section class="card profile-card">
             <h3>ویرایش پرونده</h3>
             <p class="muted">
-                {% if birthday_target == 'customer' %}تخفیف و پیامک تولد بر پایه تولد خود مشتری است.
-                {% elif birthday_target == 'both' %}تخفیف و پیامک تولد برای مشتری و فرزند هر دو فعال است.
-                {% else %}تخفیف و پیامک تولد بر پایه تولد فرزند است.{% endif %}
+                تخفیف و پیامک تولد بر پایه انتخاب خود مشتری است: کسی که برای خودش خرید می‌کند
+                روی تولد خودش و کسی که برای فرزندش خرید می‌کند روی تولد فرزند.
+                {% if not child_profile %}این فروشگاه پرونده فرزند ندارد.{% endif %}
             </p>
             <form method="post" action="/admin/customers/{{ customer.id }}/meta">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
-                <div class="form-group">
-                    <label for="birth_date">تاریخ تولد مشتری</label>
-                    <input type="text" id="birth_date" name="birth_date"
-                           value="{{ birthday_fields.birth_date }}" placeholder="۱۳۶۰/۰۱/۰۱"
-                           class="persian-date-input" data-pdp-max="today">
-                    <small class="field-help">سال تولد برای نمایش سن لازم است؛ اگر ندانید، فقط ماه و روز را می‌توانید وارد کنید.</small>
-                </div>
-
-                {% if child_profile %}
-                <div class="form-group">
-                    <label for="child_name">نام فرزند</label>
-                    <input type="text" id="child_name" name="child_name"
-                           value="{{ birthday_fields.child_name }}" placeholder="نام فرزند">
-                </div>
-                <div class="form-group">
-                    <label for="child_birth_date">تاریخ تولد فرزند</label>
-                    <input type="text" id="child_birth_date" name="child_birth_date"
-                           value="{{ birthday_fields.child_birth_date }}" placeholder="۱۴۰۳/۰۳/۱۵"
-                           class="persian-date-input" data-pdp-max="today">
-                    <small class="field-help">سن فرزند برای راهنمای سایز و تخفیف تولد استفاده می‌شود.</small>
-                </div>
-                {% endif %}
+                {% set selected_buys_for = birthday_fields.buys_for %}
+                {% set self_birthday_value = birthday_fields.birth_date %}
+                {% set child_name_value = birthday_fields.child_name %}
+                {% set child_birthday_value = birthday_fields.child_birthday %}
+                {% include "partials/buys_for.html" %}
 
                 <fieldset class="form-group profile-tag-fieldset">
                     <legend>برچسب‌ها</legend>

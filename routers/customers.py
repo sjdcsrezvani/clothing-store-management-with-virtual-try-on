@@ -6,13 +6,16 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import Customer, Referral, generate_referral_code, to_english_digits
 from services._common import (
-    child_profile_enabled,
     current_year_month,
     fmt,
     get_setting_int as get_discount_setting,
     jalali_str,
-    parse_persian_birthday,
-    parse_persian_birthday_full,
+)
+from services.customers import (
+    birthday_fields,
+    customer_birthdays,
+    signup_birthday_fields,
+    update_customer_meta,
 )
 from services.sms import queue_welcome_sms
 from services.templating import templates
@@ -36,6 +39,8 @@ async def create_customer(
     last_name: str = Form(""),
     child_name: str = Form(""),
     child_birthday: str = Form(""),
+    birth_date: str = Form(""),
+    buys_for: str = Form(""),
     db: Session = Depends(get_db),
 ):
     guard = require_html_role(request, db, "cashier")
@@ -51,41 +56,40 @@ async def create_customer(
 
     existing = db.query(Customer).filter(Customer.phone == phone).first()
     if existing:
-        tier_config = get_tier_config(db)
         return templates.TemplateResponse(request, "customer.html", {
             "customer": existing,
             "message": "این شماره قبلاً ثبت شده است.",
             "fmt": fmt,
             "jalali_str": jalali_str,
-            "tier_config": tier_config,
+            **_panel_context(db, existing),
         })
 
     code = generate_referral_code()
     while db.query(Customer).filter(Customer.referral_code == code).first():
         code = generate_referral_code()
 
-    # Child details belong to the children's-shop module: a store that switched
-    # it off never stores them, however the form was posted.
-    child_on = child_profile_enabled(db)
+    # Who this customer buys for is their own choice, asked here; the fields
+    # that get stored follow from it, and the server is what enforces that.
     customer = Customer(
         phone=phone,
         first_name=first_name if first_name else None,
         last_name=last_name if last_name else None,
         referral_code=code,
-        child_name=(child_name if child_name else None) if child_on else None,
-        child_birthday=parse_persian_birthday(child_birthday) if child_on else None,
+        **signup_birthday_fields(
+            db, buys_for=buys_for, birth_value=birth_date,
+            child_name=child_name, child_birth_value=child_birthday,
+        ),
     )
     db.add(customer)
     db.commit()
     await queue_welcome_sms(phone, first_name, code, db)
 
-    tier_config = get_tier_config(db)
     return templates.TemplateResponse(request, "customer.html", {
         "customer": customer,
         "message": "ثبت‌نام با موفقیت انجام شد!",
         "fmt": fmt,
         "jalali_str": jalali_str,
-        "tier_config": tier_config,
+        **_panel_context(db, customer),
     })
 
 
@@ -128,66 +132,42 @@ async def lookup_customer(request: Request, phone: str = "", db: Session = Depen
         if referred:
             referred_customers.append({"customer": referred, "referral": r})
 
-    min_purchase = get_discount_setting(db, "min_purchase_for_discount", 500000)
-    monthly_limit = get_discount_setting(db, "monthly_referral_limit", 10)
-    tier_config = get_tier_config(db)
-
     return templates.TemplateResponse(request, "customer.html", {
         "customer": customer,
         "referrals": referred_customers,
         "fmt": fmt,
         "jalali_str": jalali_str,
-        "min_purchase": min_purchase,
-        "monthly_limit": monthly_limit,
-        "tier_config": tier_config,
+        **_panel_context(db, customer),
     })
 
 
-@router.post("/customers/{customer_id}/update-child", response_class=HTMLResponse)
-async def update_child_info(customer_id: int, request: Request, db: Session = Depends(get_db)):
-    """Update child information for a customer."""
+@router.post("/customers/{customer_id}/update-details", response_class=HTMLResponse)
+async def update_customer_details(customer_id: int, request: Request, db: Session = Depends(get_db)):
+    """Save the counter card: who this customer buys for, and that side's details.
+
+    One route because it is one decision — the choice decides which fields the
+    form asked for, and `update_customer_meta` writes only that side's fields, so
+    a hand-posted child birthday in «برای خودم» mode changes nothing. The other
+    side's stored data is kept rather than cleared, so switching back is safe.
+    """
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
-
     if not customer:
         raise HTTPException(status_code=404, detail="مشتری یافت نشد")
 
-    tier_config = get_tier_config(db)
-    min_purchase = get_discount_setting(db, "min_purchase_for_discount", 500000)
-    monthly_limit = get_discount_setting(db, "monthly_referral_limit", 10)
-    if not child_profile_enabled(db):
-        return templates.TemplateResponse(request, "customer.html", {
-            "customer": customer,
-            "error": "این فروشگاه پرونده فرزند ندارد. برای فعال‌سازی به تنظیمات مراجعه کنید.",
-            "fmt": fmt,
-            "jalali_str": jalali_str,
-            "min_purchase": min_purchase,
-            "monthly_limit": monthly_limit,
-            "tier_config": tier_config,
-        })
-
     form = await request.form()
-    child_name = form.get("child_name", "")
-    child_birthday = form.get("child_birthday", "")
-
-    # Both halves of the birthday are stored, so the child's age is known while
-    # the existing MM-DD helpers keep matching it every year.
-    customer.child_birthday = parse_persian_birthday(child_birthday)
-    customer.child_birth_year = parse_persian_birthday_full(child_birthday)[1]
-    customer.child_name = child_name if child_name else None
+    update_customer_meta(
+        db,
+        customer,
+        buys_for=form.get("buys_for"),
+        birth_value=form.get("birth_date"),
+        child_name=form.get("child_name"),
+        child_birth_value=form.get("child_birthday"),
+    )
     db.commit()
-
-    return templates.TemplateResponse(request, "customer.html", {
-        "customer": customer,
-        "message": "اطلاعات فرزند با موفقیت به‌روزرسانی شد.",
-        "fmt": fmt,
-        "jalali_str": jalali_str,
-        "min_purchase": min_purchase,
-        "monthly_limit": monthly_limit,
-        "tier_config": tier_config,
-    })
+    return _customer_panel(request, customer, db, message="پرونده مشتری به‌روزرسانی شد.")
 
 
 def _admin_next(value) -> str | None:
@@ -218,15 +198,29 @@ def _back_or_panel(request, customer, db, next_url, message: str = "", error: st
     return _customer_panel(request, customer, db, message=message, error=error)
 
 
+def _panel_context(db, customer) -> dict:
+    """Everything `customer.html` needs, whatever route rendered it.
+
+    The panel edits the same «for whom» choice the signup form asked, so every
+    render has to prefill those fields and show the birthdays this customer is
+    actually wished on — resolved per customer, not per store.
+    """
+    return {
+        "birthday_fields": birthday_fields(customer, db),
+        "birthdays": customer_birthdays(db, customer),
+        "min_purchase": get_discount_setting(db, "min_purchase_for_discount", 500000),
+        "monthly_limit": get_discount_setting(db, "monthly_referral_limit", 10),
+        "tier_config": get_tier_config(db),
+    }
+
+
 def _customer_panel(request, customer, db, message: str = "", error: str = ""):
     """The cashier-facing customer panel, with the shared context it needs."""
     context = {
         "customer": customer,
         "fmt": fmt,
         "jalali_str": jalali_str,
-        "min_purchase": get_discount_setting(db, "min_purchase_for_discount", 500000),
-        "monthly_limit": get_discount_setting(db, "monthly_referral_limit", 10),
-        "tier_config": get_tier_config(db),
+        **_panel_context(db, customer),
     }
     if message:
         context["message"] = message

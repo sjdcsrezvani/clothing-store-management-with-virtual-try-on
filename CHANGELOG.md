@@ -1,3 +1,14 @@
+## 2.3.3 — 2026-09-13
+
+### Who a customer buys for is now their choice, not the store's
+
+- Added a **«این مشتری برای چه کسی خرید می‌کند؟»** choice to the customer record (`buys_for`: «برای خودم» / «برای فرزندم»), asked at signup and editable afterwards. It is the customer's own decision, so one children's shop can serve a parent who records a child's name and birthday and an adult who records their own — on the same form, without a store-wide setting deciding for them.
+- The fields follow the choice: «برای خودم» asks for the customer's birthday, «برای فرزندم» asks for the child's name and birthday and takes no customer birthday. Registration, the counter's new-customer step, the counter panel and the admin profile all render one shared partial, so the four cannot drift apart.
+- The choice is enforced server-side, not by hiding fields: whichever side a form posts, only the chosen one is written, so a hand-crafted post cannot put a birthday into a profile that does not use it. Switching sides writes the new side and **keeps** the old, so switching back loses nothing.
+- The birthday discount, its sale line and its SMS now follow the customer's own choice rather than the store's target — a self-buyer in a kids' shop is wished on their own birthday («تخفیف تولد شما»), and a child-buyer on the child's. Rows that never chose keep following the store default, and a one-time additive backfill pins the ones already holding a child profile to «فرزند» so changing that default can never silently move an existing customer's discount.
+- A shop with `child_profile_enabled` off is never asked, because it has only one possible answer; posting the child option there is refused outright.
+- The counter panel now shows the birthday the customer is actually wished on, resolved per customer, and the admin customer list's «تولد» heading stays neutral instead of claiming every customer is a child.
+
 ## 2.3.2 — 2026-09-12
 
 ### Customer club: a real customer record, and a page to open

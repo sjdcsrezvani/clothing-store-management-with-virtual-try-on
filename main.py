@@ -53,6 +53,29 @@ def _migrate_unknown_customers():
             conn.execute(text("DELETE FROM customers WHERE id=:cid"), {"cid": row[0]})
 
 
+def _backfill_buys_for():
+    """One-time: pin each existing customer's «for whom» from the data on file.
+
+    Rows added before the choice existed have a NULL `buys_for` and fall back to
+    the store's target. Backfilling the ones that actually hold a child profile
+    to 'child' (and ones holding only their own birthday to 'self') freezes the
+    behaviour they already have, so changing the store default later can never
+    silently move an existing customer's birthday discount. Rows with neither
+    birthday are left NULL — nothing can move, because there is nothing to move.
+    Idempotent: it only ever touches NULL rows.
+    """
+    with engine.begin() as conn:
+        conn.execute(text(
+            "UPDATE customers SET buys_for='child' "
+            "WHERE buys_for IS NULL AND (child_birthday IS NOT NULL OR child_name IS NOT NULL)"
+        ))
+        conn.execute(text(
+            "UPDATE customers SET buys_for='self' "
+            "WHERE buys_for IS NULL AND birth_month_day IS NOT NULL "
+            "AND child_birthday IS NULL AND child_name IS NULL"
+        ))
+
+
 def _apply_missing_columns(migration_engine=None):
     """Additive migration: ALTER TABLE for columns that exist in models but not in the DB.
     SQLite-specific additive migration that scans each known table."""
@@ -108,6 +131,10 @@ def _apply_missing_columns(migration_engine=None):
             ("sms_opt_in", "INTEGER DEFAULT 1"),
             ("is_archived", "INTEGER DEFAULT 0"),
             ("child_birth_year", "INTEGER"),
+            # Whose clothes the customer buys. Added as NULL (never chosen) and
+            # then backfilled below from the data each row already has, so no
+            # existing profile changes the birthday its discount uses.
+            ("buys_for", "VARCHAR(8)"),
         ],
         "products": [
             ("base_sku", "VARCHAR(50)"),
@@ -279,6 +306,7 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     upgrade(engine)
     _apply_missing_columns()
+    _backfill_buys_for()
     from services.operations import validate_production_config
     configuration_errors = validate_production_config()
     if configuration_errors:

@@ -84,6 +84,41 @@ function initColorPickers(scope) {
     });
 }
 
+// ── «for whom» choice ───────────────────────────────────────────────────────
+// Each customer chooses whether they buy for themselves or for their child, and
+// that choice decides which birthday fields the form shows. Both groups stay in
+// the form and the *server* writes only the chosen side, so hiding here is
+// presentation only — a field that slips through can never be stored.
+function syncBuysFor(scope) {
+    const chosen = scope.querySelector('input[name="buys_for"]:checked');
+    scope.querySelectorAll('[data-buys-for-panel]').forEach((panel) => {
+        const hide = !!chosen && chosen.value !== panel.getAttribute('data-buys-for-panel');
+        panel.classList.toggle('is-hidden', hide);
+        // Keep the hidden side out of the accessibility tree and out of tab order.
+        panel.hidden = hide;
+        panel.querySelectorAll('input, select, textarea').forEach((field) => {
+            field.disabled = hide;
+        });
+    });
+}
+
+function initBuysFor() {
+    document.querySelectorAll('[data-buys-for-scope]').forEach(syncBuysFor);
+}
+
+document.addEventListener('change', (event) => {
+    const target = event.target;
+    if (!target.matches || !target.matches('input[name="buys_for"]')) return;
+    const scope = target.closest('[data-buys-for-scope]');
+    if (scope) syncBuysFor(scope);
+});
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initBuysFor);
+} else {
+    initBuysFor();
+}
+
 function normalizeServerUrl(value, defaultPort = 8000) {
     value = (value || '').trim().replace(/^https?:\/\//i, '').replace(/\/$/, '');
     if (!value) return '';

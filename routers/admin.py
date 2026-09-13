@@ -332,7 +332,6 @@ async def admin_customers(
         **listing,
         "rows": build_customer_rows(db, listing["customers"]),
         "overview": customer_overview(db),
-        "subjects": birthday_subjects(db),
         "active_days": ACTIVE_DAYS,
         "inactive_days": INACTIVE_DAYS,
         "status_labels": STATUS_LABELS,
@@ -403,9 +402,12 @@ async def admin_customer_meta(
         notes=form.get("notes", None),
         tags=form.getlist("tags") or [],
         sms_opt_in="sms_opt_in" in form,
+        # The «for whom» choice decides which of the two birthday groups is
+        # written, so the card can post both and the server still stores one.
+        buys_for=form.get("buys_for"),
         birth_value=form.get("birth_date"),
         child_name=form.get("child_name"),
-        child_birth_value=form.get("child_birth_date"),
+        child_birth_value=form.get("child_birthday"),
     )
     db.commit()
     log_action(

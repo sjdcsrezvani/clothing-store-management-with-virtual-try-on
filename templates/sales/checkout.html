@@ -47,21 +47,9 @@
                 <input type="text" id="last_name" name="last_name" placeholder="مثلاً: محمدی">
             </div>
         </div>
-        {% if child_profile %}
-        <div class="form-row">
-            <div class="form-group">
-                <label for="child_name">🧒 نام فرزند</label>
-                <input type="text" id="child_name" name="child_name" placeholder="مثلاً: سارا">
-                <small>برای ارسال پیامک تولد 🎂</small>
-            </div>
-            <div class="form-group">
-                <label for="child_birthday">🎂 تولد فرزند</label>
-                <input type="text" id="child_birthday" name="child_birthday"
-                       placeholder="۱۴۰۳/۰۳/۱۵" class="persian-date-input" data-pdp-max="today">
-                <small>تاریخ شمسی — برای تخفیف تولد 🎁</small>
-            </div>
-        </div>
-        {% endif %}
+        {# The customer says who they buy for; the birthday fields below follow
+           from it, and the server stores only the chosen side. #}
+        {% include "partials/buys_for.html" %}
         <button type="submit" class="btn btn-primary btn-large btn-block">✨ ایجاد مشتری و شروع فروش</button>
     </form>
 </div>

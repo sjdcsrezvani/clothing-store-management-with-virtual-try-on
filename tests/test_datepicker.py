@@ -272,10 +272,20 @@ def test_range_pairs_are_declared_once(template, fragment):
     assert fragment in _template(template)
 
 
-@pytest.mark.parametrize("template", ["index.html", "customer.html", "sales/checkout.html"])
+# Every birthday field is drawn by one partial now, so the ceiling is declared once.
+BIRTHDAY_SURFACES = ["index.html", "customer.html", "sales/checkout.html"]
+
+
+@pytest.mark.parametrize("template", ["partials/buys_for.html"])
 def test_birthdays_cannot_be_in_the_future(template):
     text = _template(template)
-    assert 'class="persian-date-input" data-pdp-max="today"' in text
+    assert text.count('class="persian-date-input" data-pdp-max="today"') == 2, \
+        "both birthdays — the customer's and the child's"
+
+
+@pytest.mark.parametrize("template", BIRTHDAY_SURFACES)
+def test_every_signup_surface_asks_the_same_question(template):
+    assert '{% include "partials/buys_for.html" %}' in _template(template)
 
 
 def test_picker_reads_an_iso_field_value_as_a_gregorian_date():

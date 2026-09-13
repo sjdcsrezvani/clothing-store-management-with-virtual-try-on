@@ -3,7 +3,7 @@ from models import Customer, Settings
 from datetime import datetime, timezone, timedelta
 import jdatetime
 from services._common import (
-    birthday_subjects,
+    customer_birthday_subjects,
     current_year_month,
     days_until_jalali_birthday,
     get_setting_int,
@@ -188,11 +188,14 @@ def get_customers_for_birthday_check(db: Session, days_before: int = 3) -> dict:
     customer opted out of marketing SMS or is archived.
     """
     today = jtoday()
-    subjects = birthday_subjects(db)
     eligible = []
     blocked = 0
 
     for customer in db.query(Customer).filter(Customer.tier != "silver").all():
+        # Per customer: the wish follows their own «for whom» choice, not the
+        # store's default, so one shop can wish some parents about a child and
+        # other customers about themselves.
+        subjects = customer_birthday_subjects(db, customer)
         best = None
         for rank, subject in enumerate(subjects):
             days_until = days_until_jalali_birthday(birthday_on_file(customer, subject), today)

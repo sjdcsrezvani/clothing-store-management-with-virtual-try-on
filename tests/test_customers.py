@@ -2,9 +2,9 @@
 
 The record belongs to the customer; child details are a module a children's shop
 keeps and an adult clothing shop switches off. These tests pin that the module
-switch really removes the fields everywhere, that the birthday rules follow the
-configured target, and that a customer with purchase history can be archived but
-never silently deleted.
+switch really removes the fields everywhere, that each customer's own «for whom»
+choice — not the store's — decides whose birthday the discount uses, and that a
+customer with purchase history can be archived but never silently deleted.
 """
 import itertools
 import re
@@ -279,15 +279,17 @@ def test_kpi_cards_count_what_they_claim(authed, db_session):
     body = list_html(authed)
     assert "کل مشتریان" in body
     assert "بدهکاران (نسیه)" in body
-    assert "تولد مشتریان" in body  # the label follows the configured target
+    # Every customer carries their own birthday choice, so the heading never
+    # claims they are all children once the child module is on.
+    assert "تولدها" in body
     assert "250,000" in body
 
 
 def test_kpi_birthday_label_follows_the_child_module(authed, db_session):
     make_customer(db_session)
-    assert "تولد فرزندان" in list_html(authed)
-    set_setting(db_session, "birthday_target", "both")
     assert "تولدها" in list_html(authed)
+    set_setting(db_session, "child_profile_enabled", "0")
+    assert "تولد مشتریان" in list_html(authed)
 
 
 # ── archive & delete ─────────────────────────────────────────────────────────
@@ -415,6 +417,7 @@ def test_the_persian_digits_the_picker_writes_are_saved_back(authed, db_session)
 
     authed.post(f"/admin/customers/{customer.id}/meta", data={
         "csrf_token": token,
+        "buys_for": "self",
         "birth_date": "۱۳۷۰/۰۸/۱۹",
     }, follow_redirects=False)
 
@@ -425,15 +428,18 @@ def test_the_persian_digits_the_picker_writes_are_saved_back(authed, db_session)
 
 # ── profile card save ────────────────────────────────────────────────────────
 
-def test_meta_saves_note_tags_consent_and_both_birthdays(authed, db_session):
-    customer = make_customer(db_session, child_name="آوا")
+def test_meta_saves_note_tags_consent_and_the_chosen_side(authed, db_session):
+    """A self-buyer keeps their own birthday; the child side of the form is not written."""
+    customer = make_customer(db_session, child_name="آوا", child_birthday="02-03",
+                             child_birth_year=1400)
     token = csrf_token(authed, f"/admin/customers/{customer.id}")
 
     response = authed.post(f"/admin/customers/{customer.id}/meta", data={
         "csrf_token": token,
+        "buys_for": "self",
         "birth_date": "۱۳۶۰/۰۵/۱۲",
-        "child_name": "آوا",
-        "child_birth_date": "1400/02/03",
+        "child_name": "نباید ذخیره شود",
+        "child_birthday": "1401/01/01",
         "notes": "  فقط سایز ۳ می‌خرد  ",
         "tags": ["vip", "followup"],
         "sms_opt_in": "1",
@@ -441,13 +447,38 @@ def test_meta_saves_note_tags_consent_and_both_birthdays(authed, db_session):
 
     assert response.status_code == 303
     db_session.refresh(customer)
+    assert customer.buys_for == "self"
     assert customer.birth_month_day == "05-12"
     assert customer.birth_year == 1360
+    # Posted, but «برای خودم» means the child's fields are left exactly as they were.
+    assert customer.child_name == "آوا"
     assert customer.child_birthday == "02-03"
     assert customer.child_birth_year == 1400
     assert customer.notes == "فقط سایز ۳ می‌خرد"
     assert customer.tags == "vip,followup"
     assert customer.sms_opt_in is True
+
+
+def test_meta_saves_the_child_side_when_that_is_the_choice(authed, db_session):
+    """…and a child-buyer keeps no birthday of their own, whatever was posted."""
+    customer = make_customer(db_session)
+    token = csrf_token(authed, f"/admin/customers/{customer.id}")
+
+    authed.post(f"/admin/customers/{customer.id}/meta", data={
+        "csrf_token": token,
+        "buys_for": "child",
+        "birth_date": "۱۳۶۰/۰۵/۱۲",
+        "child_name": "سارا",
+        "child_birthday": "1400/03/15",
+    }, follow_redirects=False)
+
+    db_session.refresh(customer)
+    assert customer.buys_for == "child"
+    assert customer.birth_month_day is None
+    assert customer.birth_year is None
+    assert customer.child_name == "سارا"
+    assert customer.child_birthday == "03-15"
+    assert customer.child_birth_year == 1400
 
 
 def test_meta_reads_an_iso_birthday_the_same_way_the_rest_of_the_app_does(authed, db_session):
@@ -456,6 +487,7 @@ def test_meta_reads_an_iso_birthday_the_same_way_the_rest_of_the_app_does(authed
 
     authed.post(f"/admin/customers/{customer.id}/meta", data={
         "csrf_token": token,
+        "buys_for": "self",
         "birth_date": "2026-09-12",  # what a hand-typed ISO value looks like
     }, follow_redirects=False)
 
@@ -488,8 +520,9 @@ def test_meta_ignores_child_fields_when_the_module_is_off(authed, db_session):
 
     authed.post(f"/admin/customers/{customer.id}/meta", data={
         "csrf_token": token,
+        "buys_for": "child",  # refused outright in a shop with no child module
         "child_name": "نباید ذخیره شود",
-        "child_birth_date": "1400/01/01",
+        "child_birthday": "1400/01/01",
     }, follow_redirects=False)
 
     db_session.refresh(customer)
@@ -507,8 +540,10 @@ def test_age_is_correct_before_and_after_this_years_birthday(authed, db_session)
     earlier = today - jdatetime.timedelta(days=40)
 
     older = make_customer(db_session, first_name="تولد گذشته", birth_year=today.year - 30,
+                          buys_for="self",
                           birth_month_day=f"{earlier.month:02d}-{earlier.day:02d}")
     younger = make_customer(db_session, first_name="تولد نیامده", birth_year=today.year - 30,
+                            buys_for="self",
                             birth_month_day=f"{later.month:02d}-{later.day:02d}")
 
     body = list_html(authed, "?search=%D8%AA%D9%88%D9%84%D8%AF")
@@ -518,7 +553,7 @@ def test_age_is_correct_before_and_after_this_years_birthday(authed, db_session)
 
 
 def test_birthday_without_a_year_shows_the_day_and_no_age(authed, db_session):
-    make_customer(db_session, first_name="بدون‌سال", birth_month_day="05-12")
+    make_customer(db_session, first_name="بدون‌سال", buys_for="self", birth_month_day="05-12")
     body = list_html(authed, "?search=%D8%A8%D8%AF%D9%88%D9%86")
     assert "۱۲ مرداد" in body
     assert "ساله" not in body
@@ -695,16 +730,22 @@ def test_child_block_is_absent_from_every_form_when_the_module_is_off(authed, db
     for name, body in (("registration", registration), ("checkout", checkout),
                        ("profile", profile)):
         assert "child_birthday" not in body, name
-        assert "child_birth_date" not in body, name
         assert "نام فرزند" not in body, name
         # The birthday picker that only exists for the child is gone with it.
         assert 'id="child_birthday"' not in body, name
+        # ...and with only one possible answer there is no choice to offer.
+        assert 'name="buys_for"' not in body, name
+        # ...while every one of those surfaces asks for a birthday this store
+        # can actually use instead: the customer's own.
+        assert 'id="birth_date"' in body, name
 
 
 def test_child_block_is_present_when_the_module_is_on(authed, db_session):
     registration = authed.get("/customers/lookup").text
     assert "child_birthday" in registration
     assert "نام فرزند" in registration
+    # ...and the customer is asked to choose, because the choice is theirs.
+    assert 'name="buys_for"' in registration
 
     checkout = _create_customer_step(authed, phone="09129998866")
     assert 'class="persian-date-input" data-pdp-max="today"' in checkout
@@ -712,8 +753,8 @@ def test_child_block_is_present_when_the_module_is_on(authed, db_session):
 
     customer = make_customer(db_session, first_name="با‌فرزند")
     profile = list_html(authed, f"/{customer.id}")
-    assert "child_birth_date" in profile
-    assert "تاریخ تولد فرزند" in profile
+    assert 'id="child_birthday"' in profile
+    assert "تولد فرزند" in profile
 
 
 def test_registration_does_not_store_child_data_when_the_module_is_off(client, authed, db_session):
@@ -735,21 +776,28 @@ def test_registration_does_not_store_child_data_when_the_module_is_off(client, a
     assert customer.child_birthday is None
 
 
-def test_update_child_refuses_when_the_module_is_off(authed, db_session):
+def test_the_panel_refuses_a_child_choice_when_the_module_is_off(authed, db_session):
+    """An adult shop cannot be made to run a child programme by posting the choice."""
     customer = make_customer(db_session, child_name="قبلی", child_birthday="01-01")
     set_setting(db_session, "child_profile_enabled", "0")
 
     token = csrf_token(authed, "/customers/lookup")
-    response = authed.post(f"/customers/{customer.id}/update-child", data={
+    response = authed.post(f"/customers/{customer.id}/update-details", data={
         "csrf_token": token,
+        "buys_for": "child",
         "child_name": "جدید",
         "child_birthday": "1401/02/02",
+        "birth_date": "1360/05/12",
     })
 
-    assert "پرونده فرزند ندارد" in response.text
+    assert response.status_code == 200
     db_session.refresh(customer)
+    # The child option was refused outright, and the child fields were untouched…
+    assert customer.buys_for is None
     assert customer.child_name == "قبلی"
     assert customer.child_birthday == "01-01"
+    # …so the choice that survives is the one this store can honour.
+    assert customer.birth_month_day == "05-12"
 
 
 def test_turning_the_module_off_keeps_the_data_on_file(authed, db_session):
@@ -929,3 +977,210 @@ def test_discount_buttons_refuse_an_external_next(authed, db_session):
 
     assert response.status_code == 200  # falls back to the customer panel
     assert "example.com" not in response.text
+
+
+# ── the customer's own birthday at the counter ───────────────────────────────
+# An adult clothing shop signing someone up has nothing to ask about a child, so
+# the birthday a counter form asks for follows the store's target rather than
+# being fixed to the child: a children's shop asks about the child, an adult shop
+# about the customer. The server gates writes on the same rule, so neither shop
+# can be made to store the other's birthday by hand-posting a form.
+
+def adult_shop(db):
+    """The configuration an adult clothing shop runs: no child module."""
+    set_setting(db, "child_profile_enabled", "0")
+    set_setting(db, "birthday_target", "customer")
+
+
+def panel_html(client, customer) -> str:
+    """The cashier-facing customer panel, which is what the counter sees."""
+    return client.get(f"/customers/lookup?phone={customer.phone}").text
+
+
+def test_a_childrens_shop_defaults_the_choice_to_the_child(authed, db_session):
+    """Defaults (target=child, module on) pre-select «برای فرزندم» and open its panel.
+
+    The customer's own panel ships too — the choice is theirs to switch — but it
+    starts hidden, so the form still asks what this shop's customers expect.
+    """
+    registration = authed.get("/customers/lookup").text
+    assert re.search(r'id="buys-for-child"[^>]*checked', registration)
+    assert not re.search(r'id="buys-for-self"[^>]*checked', registration)
+    assert re.search(r'data-buys-for-panel="self"[^>]*is-hidden', registration)
+    assert not re.search(r'data-buys-for-panel="child"[^>]*is-hidden', registration)
+
+    checkout = _create_customer_step(authed, phone="09121110099")
+    assert re.search(r'id="buys-for-child"[^>]*checked', checkout)
+    assert 'id="child_birthday"' in checkout
+
+
+def test_adult_shop_signup_asks_for_the_customers_own_birthday(authed, db_session):
+    adult_shop(db_session)
+
+    registration = authed.get("/customers/lookup").text
+    assert 'id="birth_date"' in registration
+    assert 'id="child_birthday"' not in registration
+    # With only one possible answer there is nothing to ask.
+    assert 'name="buys_for"' not in registration
+
+    checkout = _create_customer_step(authed)
+    assert 'id="birth_date"' in checkout
+    assert "نام فرزند" not in checkout
+
+
+def test_switching_the_child_module_off_still_asks_for_a_birthday(authed, db_session):
+    """The target may still read «فرزند»; with the module off it means the customer.
+
+    Otherwise an adult shop that only unticked the child box would collect no
+    birthday at all and its birthday discount could never fire on anyone.
+    """
+    set_setting(db_session, "child_profile_enabled", "0")
+    assert 'id="birth_date"' in authed.get("/customers/lookup").text
+
+
+def test_registration_stores_the_customers_own_birthday(authed, db_session):
+    adult_shop(db_session)
+
+    token = csrf_token(authed)
+    authed.post("/customers", data={
+        "csrf_token": token,
+        "phone": "09121234567",
+        "first_name": "بزرگسال",
+        "birth_date": "1360/05/12",
+    }, follow_redirects=False)
+
+    customer = db_session.query(Customer).filter(Customer.phone == "09121234567").first()
+    assert customer is not None
+    assert customer.birth_month_day == "05-12"
+    assert customer.birth_year == 1360
+
+
+def test_checkout_creates_the_customer_with_their_own_birthday(authed, db_session):
+    adult_shop(db_session)
+
+    token = csrf_token(authed, "/sales/new")
+    response = authed.post("/sales/create-customer", data={
+        "csrf_token": token,
+        "phone": "09129990011",
+        "first_name": "خریدار",
+        "birth_date": "1355/01/02",
+    }, follow_redirects=False)
+
+    assert response.status_code == 200
+    customer = db_session.query(Customer).filter(Customer.phone == "09129990011").first()
+    assert customer is not None
+    assert customer.birth_month_day == "01-02"
+    assert customer.birth_year == 1355
+
+
+def test_a_childrens_shop_never_stores_a_customer_birthday(authed, db_session):
+    """A hand-posted customer birthday is ignored while the target is the child."""
+    token = csrf_token(authed)
+    authed.post("/customers", data={
+        "csrf_token": token,
+        "phone": "09127654321",
+        "first_name": "والد",
+        "birth_date": "1360/05/12",
+        "child_name": "سارا",
+        "child_birthday": "1400/03/15",
+    }, follow_redirects=False)
+
+    customer = db_session.query(Customer).filter(Customer.phone == "09127654321").first()
+    assert customer.birth_month_day is None
+    assert customer.birth_year is None
+    # The child's birthday is still stored — now with its year, so the age the
+    # size guide needs can finally be worked out.
+    assert customer.child_birthday == "03-15"
+    assert customer.child_birth_year == 1400
+
+
+def test_the_panel_can_record_the_customers_birthday(authed, db_session):
+    adult_shop(db_session)
+    customer = make_customer(db_session, first_name="بدون‌تولد")
+
+    assert "/update-details" in panel_html(authed, customer)
+
+    token = csrf_token(authed, "/customers/lookup")
+    response = authed.post(f"/customers/{customer.id}/update-details", data={
+        "csrf_token": token,
+        "buys_for": "self",
+        "birth_date": "1362/07/08",
+    })
+
+    assert "پرونده مشتری به‌روزرسانی شد" in response.text
+    db_session.refresh(customer)
+    assert customer.buys_for == "self"
+    assert customer.birth_month_day == "07-08"
+    assert customer.birth_year == 1362
+
+
+def test_the_panel_stores_only_the_side_the_customer_chose(authed, db_session):
+    """A child-buyer's hand-posted customer birthday is never written."""
+    customer = make_customer(db_session, first_name="والد")
+
+    token = csrf_token(authed, "/customers/lookup")
+    response = authed.post(f"/customers/{customer.id}/update-details", data={
+        "csrf_token": token,
+        "buys_for": "child",
+        "birth_date": "1362/07/08",
+        "child_name": "سارا",
+        "child_birthday": "1400/03/15",
+    })
+
+    assert response.status_code == 200
+    db_session.refresh(customer)
+    assert customer.buys_for == "child"
+    assert customer.birth_month_day is None
+    assert customer.birth_year is None
+    assert customer.child_name == "سارا"
+    assert customer.child_birthday == "03-15"
+    assert customer.child_birth_year == 1400
+
+
+def test_the_panel_can_switch_the_choice_without_losing_the_other_side(authed, db_session):
+    """Switching writes the new side and keeps the old one, so going back is safe."""
+    customer = make_customer(db_session, first_name="تازه", child_name="آوا",
+                             child_birthday="03-15", child_birth_year=1400)
+
+    token = csrf_token(authed, "/customers/lookup")
+    authed.post(f"/customers/{customer.id}/update-details", data={
+        "csrf_token": token,
+        "buys_for": "self",
+        "birth_date": "1360/05/12",
+    })
+
+    db_session.refresh(customer)
+    assert customer.buys_for == "self"
+    assert customer.birth_month_day == "05-12"
+    assert customer.child_name == "آوا"
+    assert customer.child_birthday == "03-15"
+
+
+def test_one_childrens_shop_wishes_two_customers_differently(db_session):
+    """The choice is per customer, not per store — the money path follows it."""
+    set_setting(db_session, "birthday_target", "child")
+    parent = make_customer(db_session, tier="gold", first_name="والد", buys_for="child",
+                           child_birthday=month_day_in(2), child_birth_year=1400)
+    self_buyer = make_customer(db_session, tier="gold", first_name="خودم", buys_for="self",
+                               birth_month_day=month_day_in(2), birth_year=1360)
+
+    child_discounts = calculate_discounts(customer=parent, total_amount=1_000_000, db=db_session)
+    own_discounts = calculate_discounts(customer=self_buyer, total_amount=1_000_000, db=db_session)
+
+    assert "تخفیف تولد فرزند" in " ".join(child_discounts["details"])
+    # Same shop, same day — but this one asked to be wished on their own birthday.
+    assert "تخفیف تولد شما" in " ".join(own_discounts["details"])
+
+
+def test_a_customer_birthday_round_trips_through_the_form(authed, db_session):
+    """The picker must re-open on the stored date, in Persian digits."""
+    adult_shop(db_session)
+    customer = make_customer(db_session, birth_month_day="07-08", birth_year=1362)
+    assert 'value="۱۳۶۲/۰۷/۰۸"' in panel_html(authed, customer)
+
+    # The same round trip on the child's side of the form.
+    set_setting(db_session, "child_profile_enabled", "1")
+    set_setting(db_session, "birthday_target", "child")
+    child_customer = make_customer(db_session, buys_for="child", child_name="آوا",
+                                   child_birthday="02-03", child_birth_year=1400)
+    assert 'value="۱۴۰۰/۰۲/۰۳"' in panel_html(authed, child_customer)

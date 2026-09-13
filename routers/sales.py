@@ -19,9 +19,8 @@ from services._common import (
     fmt,
     get_setting_int as get_discount_setting,
     jalali_str,
-    parse_persian_birthday,
-    parse_persian_birthday_full,
 )
+from services.customers import signup_birthday_fields
 from services.accounting import credit_sale_allowed, apply_credit_surcharge
 from services.discount import calculate_discounts, apply_discounts_after_sale
 from services.security import log_action, require_html_role
@@ -368,10 +367,6 @@ async def sales_lookup_customer(request: Request, phone: str = Form(""), db: Ses
     })
 
 
-def _parse_persian_birthday(value: str) -> str | None:
-    return parse_persian_birthday(value)
-
-
 @router.post("/create-customer", response_class=HTMLResponse)
 async def sales_create_customer(
     request: Request,
@@ -380,6 +375,8 @@ async def sales_create_customer(
     last_name: str = Form(""),
     child_name: str = Form(""),
     child_birthday: str = Form(""),
+    birth_date: str = Form(""),
+    buys_for: str = Form(""),
     db: Session = Depends(get_db),
 ):
     guard = require_html_role(request, db, "cashier")
@@ -402,16 +399,17 @@ async def sales_create_customer(
     while db.query(Customer).filter(Customer.referral_code == code).first():
         code = generate_referral_code()
 
-    # Child details are only collected when the store keeps child profiles.
-    child_on = child_profile_enabled(db)
+    # Who this customer buys for is their own choice, asked on this form; the
+    # fields it stores follow from it, and the server is what enforces that.
     customer = Customer(
         phone=phone,
         first_name=first_name or None,
         last_name=last_name or None,
         referral_code=code,
-        child_name=(child_name or None) if child_on else None,
-        child_birthday=_parse_persian_birthday(child_birthday) if child_on else None,
-        child_birth_year=(parse_persian_birthday_full(child_birthday)[1] if child_on else None),
+        **signup_birthday_fields(
+            db, buys_for=buys_for, birth_value=birth_date,
+            child_name=child_name, child_birth_value=child_birthday,
+        ),
     )
     db.add(customer)
     db.commit()

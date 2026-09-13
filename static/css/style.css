@@ -1176,6 +1176,23 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .tag-global-controls label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.78rem; font-weight: 700; }
 .tag-global-controls input, .tag-global-controls select { min-height: 38px; padding: 0.4rem 0.55rem; font-size: 0.85rem; }
 .tag-barcode-modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6rem; }
+/* ── «for whom» choice ───────────────────────────────────────────────────────
+   One decision per customer, asked the same way on the signup forms, the
+   counter panel and the admin profile. It is the customer's own choice, not the
+   store's, and the fields beneath it follow from it. */
+.buys-for-fieldset { border: 0; padding: 0; margin: 0 0 0.9rem; }
+.buys-for-legend { display: block; font-weight: 700; color: var(--ink); margin-bottom: 0.4rem; }
+.buys-for-choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.6rem; margin: 0;
+    padding: 0; border: 0; }
+/* The side that is not chosen is hidden, and the chosen one is shown — purely
+   from the radio state, so the switch works before (and without) JavaScript.
+   The server still decides what is stored, so this is presentation only. */
+[data-buys-for-panel].is-hidden { display: none; }
+[data-buys-for-scope]:has(input[name="buys_for"][value="self"]:checked) [data-buys-for-panel="self"],
+[data-buys-for-scope]:has(input[name="buys_for"][value="child"]:checked) [data-buys-for-panel="child"] { display: block; }
+[data-buys-for-scope]:has(input[name="buys_for"][value="self"]:checked) [data-buys-for-panel="child"],
+[data-buys-for-scope]:has(input[name="buys_for"][value="child"]:checked) [data-buys-for-panel="self"] { display: none; }
+
 .choice-card { display: flex; flex-direction: column; gap: 0.2rem; padding: 0.8rem; border: 2px solid var(--rule); border-radius: var(--radius-sm); cursor: pointer; background: var(--surface-soft); }
 .choice-card:has(input:checked) { border-color: var(--candy); background: color-mix(in srgb, var(--candy) 8%, var(--card)); }
 .choice-card input { width: auto; min-height: 0; accent-color: var(--candy); }

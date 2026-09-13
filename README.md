@@ -89,6 +89,20 @@ theme, so it matches light, dark and high-contrast alike.
   form (registration, checkout, profile) and a hand-crafted post cannot store
   one. Turning it off never deletes data already on file. Defaults reproduce a
   kids' shop exactly, so nothing changes until a setting is flipped.
+- **«این مشتری برای چه کسی خرید می‌کند؟»** — who a customer buys for is *their*
+  own choice, not a store setting, so one children's shop can serve a parent
+  (`buys_for='child'`: child name + child birthday, and no birthday of their own)
+  and someone shopping for themselves (`buys_for='self'`: their own birthday) on
+  the same page. Asked once at signup — registration, the counter's new-customer
+  step and the counter panel all render the same partial — and changeable later
+  on the panel and the admin profile. The choice decides whose birthday the
+  discount and the wish use, which is why a self-buyer in a kids' shop is still
+  wished on their own birthday. Switching sides writes the new one and *keeps*
+  the old, so switching back loses nothing. A shop with the child module off is
+  never asked, because it has only one possible answer. Rows created before the
+  choice existed keep following the store's target, and the migration pins the
+  ones already holding a child profile to «فرزند» so no existing customer's
+  discount moves when the default is changed.
 - **Lifecycle.** A customer with recorded sales is **archived**, never deleted —
   deleting one nulls the sale's customer and silently detaches purchase history.
   Archived customers leave the list, the counts and the marketing sends, and

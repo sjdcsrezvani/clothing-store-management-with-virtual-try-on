@@ -30,21 +30,11 @@
                 <label for="last_name">👤 نام خانوادگی</label>
                 <input type="text" id="last_name" name="last_name" placeholder="مثال: محمدی">
             </div>
-            {% if child_profile %}
-            <div class="form-group">
-                <label for="child_name">🧒 نام فرزند</label>
-                <input type="text" id="child_name" name="child_name" placeholder="مثال: سارا">
-            </div>
-            {% endif %}
         </div>
-        {% if child_profile %}
-        <div class="form-group">
-            <label for="child_birthday">🎂 تولد فرزند</label>
-            <input type="text" id="child_birthday" name="child_birthday" placeholder="۱۴۰۳/۰۳/۱۵"
-                   class="persian-date-input" data-pdp-max="today">
-            <small>🎁 با ثبت تاریخ تولد، تخفیف ویژه دریافت کنید!</small>
-        </div>
-        {% endif %}
+        {# The customer says who they buy for; the birthday fields below follow
+           from it, and the server stores only the chosen side. #}
+        {% set selected_buys_for = default_buys_for %}
+        {% include "partials/buys_for.html" %}
         <button type="submit" class="btn btn-primary btn-large btn-block">✨ ثبت‌نام</button>
     </form>
 </div>

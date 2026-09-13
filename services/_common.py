@@ -197,6 +197,22 @@ BIRTHDAY_SUBJECT_LABELS = {"customer": "مشتری", "child": "فرزند"}
 BIRTHDAY_DISCOUNT_LABELS = {"customer": "تخفیف تولد شما", "child": "تخفیف تولد فرزند"}
 BIRTHDAY_SMS_NAMES = {"customer": "شما", "child": "فرزند شما"}
 
+# Who a customer buys for. This is the customer's own choice, asked once at
+# signup and editable afterwards — not the store's setting, which only supplies
+# the default for someone who has not chosen yet.
+BUYS_FOR_SELF = "self"
+BUYS_FOR_CHILD = "child"
+BUYS_FOR_CHOICES = (BUYS_FOR_SELF, BUYS_FOR_CHILD)
+BUYS_FOR_LABELS = {
+    BUYS_FOR_SELF: "برای خودم",
+    BUYS_FOR_CHILD: "برای فرزندم",
+}
+# The birthday each choice celebrates.
+BUYS_FOR_SUBJECTS = {
+    BUYS_FOR_SELF: ("customer",),
+    BUYS_FOR_CHILD: ("child",),
+}
+
 
 def get_setting_bool(db: Session, key: str, default: bool = True) -> bool:
     """Read a Settings row as a boolean. Missing/empty keeps the default."""
@@ -219,7 +235,13 @@ def get_birthday_target(db: Session) -> str:
 
 
 def birthday_subjects(db: Session) -> tuple[str, ...]:
-    """Which birthdays this store celebrates, in priority order.
+    """The store's *default* birthdays, in priority order.
+
+    This is no longer the authority on whose birthday a given customer is
+    wished: every customer carries their own `buys_for` choice, and
+    `customer_birthday_subjects` resolves one customer against it. What is left
+    here is the answer for a customer who has never chosen, plus the source of
+    the default a signup form pre-selects.
 
     Child birthdays are only ever considered while the child module is on, and a
     child-only configuration with that module off falls back to the customer's
@@ -233,6 +255,50 @@ def birthday_subjects(db: Session) -> tuple[str, ...]:
     if target in ("child", "both") and child_on:
         subjects.append("child")
     return tuple(subjects) or ("customer",)
+
+
+def default_buys_for(db: Session) -> str:
+    """The choice a signup form pre-selects, derived from the store's target.
+
+    A store with no child module can only ever be bought from for oneself, so
+    the child option is not offered there at all.
+    """
+    if not child_profile_enabled(db):
+        return BUYS_FOR_SELF
+    return BUYS_FOR_CHILD if get_birthday_target(db) in ("child", "both") else BUYS_FOR_SELF
+
+
+def normalise_buys_for(value, db: Session) -> str | None:
+    """A posted choice, or None when it isn't one this store can honour.
+
+    A store without the child module rejects the child option outright, so a
+    hand-posted form cannot put a customer into a programme the shop doesn't run.
+    """
+    mode = (value or "").strip()
+    if mode not in BUYS_FOR_CHOICES:
+        return None
+    if mode == BUYS_FOR_CHILD and not child_profile_enabled(db):
+        return None
+    return mode
+
+
+def customer_birthday_subjects(db: Session, customer) -> tuple[str, ...]:
+    """Which birthday *this* customer is wished on.
+
+    The customer's own choice wins over the store's default — that is the point
+    of asking, and it means a self-buyer is wished on their own birthday even in
+    a children's shop. A row that never chose keeps following the store's target
+    (which is why the column is nullable and the migration left it alone).
+    A stored child choice in a shop that has since switched the child module off
+    falls back to the customer's own birthday rather than to no birthday at all,
+    matching what `birthday_subjects` does for the store as a whole.
+    """
+    mode = (getattr(customer, "buys_for", None) or "").strip()
+    if mode == BUYS_FOR_SELF:
+        return BUYS_FOR_SUBJECTS[BUYS_FOR_SELF]
+    if mode == BUYS_FOR_CHILD:
+        return (("child",) if child_profile_enabled(db) else ("customer",))
+    return birthday_subjects(db)
 
 
 def marketing_opt_in(customer) -> bool:

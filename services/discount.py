@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 from models import Customer, Referral
 from services._common import (
     BIRTHDAY_DISCOUNT_LABELS,
-    birthday_subjects,
+    customer_birthday_subjects,
     current_year_month,
     get_setting_int,
 )
@@ -73,10 +73,13 @@ def calculate_discounts(
                 f"تخفیف {customer.tier} ({tier_percent}%): {tier_discount:,} تومان"
             )
 
-        # 4. Birthday discount. Whose birthday counts is a store setting, so a
-        #    children's shop and an adult clothing shop both get the perk; the
-        #    line names the occasion instead of assuming a child.
-        occasion = (birthday_occasion_due(customer, config, birthday_subjects(db))
+        # 4. Birthday discount. Whose birthday counts is the *customer's* own
+        #    choice — someone buying for themselves is wished on their own
+        #    birthday even in a children's shop, and someone buying for a child
+        #    on the child's. The line names the occasion rather than assuming
+        #    either, and a customer who never chose follows the store's target.
+        occasion = (birthday_occasion_due(
+                        customer, config, customer_birthday_subjects(db, customer))
                     if db is not None else None)
         if occasion:
             birthday_disc = get_birthday_discount(customer.tier, config)
