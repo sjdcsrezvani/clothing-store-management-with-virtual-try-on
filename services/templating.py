@@ -9,7 +9,9 @@ from services._common import (
     birthday_display,
     birthday_form_value,
     days_until_jalali_birthday,
+    fmt,
     jalali_age,
+    jalali_str,
 )
 from services.customers import customer_context_processor
 from services.security import csrf_context_processor
@@ -45,6 +47,11 @@ templates = Jinja2Templates(
 # `birthday_form_value` rebuilds a field value, so a stored MM-DD (with or
 # without a year) always renders as something the date picker can read back.
 templates.env.globals.update(
+    # The two helpers every page needs. They were passed per route, which meant
+    # any render that forgot one crashed the page — a date formatted with
+    # `fmt` — so they live here once and a route can still override them.
+    fmt=fmt,
+    jalali_str=jalali_str,
     birthday_form_value=birthday_form_value,
     birthday_display=birthday_display,
     jalali_age=jalali_age,

@@ -14,18 +14,32 @@ from models import (
     BusinessEvent, Customer, Expense, Payment, ProductVariant, Product, Purchase,
     PurchaseItem, Sale, SaleItem, Settings, StaffUser, Supplier, StockMovement,
     CashSession, SupplierPayment, FinancialEntry, CheckRecord, CheckReminder,
-    to_english_digits,
+    PaymentReversal, to_english_digits,
 )
-from services._common import fmt, check_admin, jalali_str, parse_jalali_input, parse_jalali_input_end
+from services._common import (
+    fmt, check_admin, get_setting_int, jalali_str, parse_form_date, parse_form_date_end,
+    parse_jalali_input, parse_jalali_input_end,
+)
 from services.accounting import (
-    apply_customer_payment, apply_purchase_cost_basis, debt_totals, get_cashbox,
-    get_credit_limit, get_customer_debts, get_net_pl, get_opening_balance,
-    get_payment_history, get_aged_receivables, reverse_payment,
+    AGE_BUCKET_LABELS,
+    AGE_BUCKETS,
+    DEBT_SORTS,
+    DEBT_STATUS_LABELS,
+    PER_PAGE as DEBTS_PER_PAGE,
+    apply_customer_payment, apply_purchase_cost_basis, assign_due_dates,
+    credit_due_date_for, credit_reminder_allowed, credit_reminder_cooldown_hours,
+    credit_reminder_vars, credit_terms_days, debt_totals, debt_drift, get_cashbox,
+    age_bucket, as_utc, build_debt_rows, days_past_due, due_effective_at,
+    get_credit_limit, get_net_pl, get_opening_balance, get_payment_history,
+    last_credit_reminder, list_debts, list_open_invoices,
+    mark_credit_reminder_sent, reverse_payment, sale_remaining,
+    unpaid_credit_sales,
     get_supplier_balances, purchase_effective_at, purchase_effective_column,
     purchase_item_totals, purchase_landed_unit_cost, purchase_overview,
     purchase_paid_amount, purchase_paid_from_rollup, purchase_payment_rollup,
     purchase_settlement, refresh_purchase_amount_paid,
 )
+from services.sms import queue_credit_reminder_sms
 from services.analytics import get_date_range
 from services.security import log_action, require_html_role
 from services.templating import templates
@@ -396,19 +410,88 @@ async def admin_accounting_export(
 
 # ── Credit sales (نسیه) ledger ───────────────────────────────────────────────
 
+def _clean(value, allowed, default=""):
+    """A query param is honoured only when it is one of the values we know."""
+    value = (value or "").strip()
+    return value if value in allowed else default
+
+
 @router.get("/credit", response_class=HTMLResponse)
-async def admin_credit(request: Request, db: Session = Depends(get_db)):
+async def admin_credit(
+    request: Request,
+    search: str = "",
+    status: str = "all",
+    bucket: str = "",
+    sort: str = "debt",
+    view: str = "customers",
+    page: int = 1,
+    db: Session = Depends(get_db),
+):
+    """نسیه, one page: who owes what, how late it is, and how to collect it.
+
+    Absorbs the old aged-receivables dashboard, which could only show one row per
+    customer and had no filters — the ageing is now the KPI row and the invoice
+    view here, and the page the shop actually works from.
+    """
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
+
+    status = _clean(status, DEBT_STATUS_LABELS, "all")
+    sort = _clean(sort, DEBT_SORTS, "debt")
+    bucket = _clean(bucket, AGE_BUCKETS, "")
+    view = _clean(view, ("customers", "invoices"), "customers")
+
+    listing = list_debts(db, search=search, status=status, bucket=bucket,
+                         sort=sort, page=page, per_page=DEBTS_PER_PAGE)
+    invoices = (list_open_invoices(db, search=search, status=status, bucket=bucket,
+                                   page=page, per_page=DEBTS_PER_PAGE)
+                if view == "invoices" else None)
     return templates.TemplateResponse(request, "admin/credit.html", {
-        "debts": get_customer_debts(db),
-        "total_debt": debt_totals(db)["total_debt"],
+        "overview": listing["overview"],
+        "rows": listing["rows"],
+        "total": listing["total"],
+        "page": listing["page"],
+        "total_pages": listing["total_pages"],
+        "has_filters": listing["has_filters"],
+        "invoice_page": invoices,
+        "view": view,
+        "search": search,
+        "status": status,
+        "sort": sort,
+        "bucket": bucket,
+        "status_labels": DEBT_STATUS_LABELS,
+        "sort_labels": DEBT_SORTS,
+        "bucket_labels": AGE_BUCKET_LABELS,
+        "due_soon_days": listing["overview"]["due_soon_days"],
+        "terms_days": credit_terms_days(db),
+        "reminder_cooldown": credit_reminder_cooldown_hours(db),
+        "has_reminder_pattern": bool(_setting_value(db, "sms_pattern_credit_reminder")),
+        "today": jalali_str(datetime.now(timezone.utc), with_time=False),
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
+        "sent": request.query_params.get("sent", ""),
         "fmt": fmt,
         "jalali_str": jalali_str,
     })
+
+
+def _setting_value(db, key: str) -> str:
+    row = db.query(Settings).filter(Settings.key == key).first()
+    return (row.value or "") if row else ""
+
+
+@router.get("/collections", response_class=HTMLResponse)
+async def admin_collections(request: Request, db: Session = Depends(get_db)):
+    """The aged-receivables dashboard now lives inside /admin/credit.
+
+    Kept as a redirect so old links, bookmarks and the dashboard card keep
+    working — one نسیه page to learn instead of two half-pages.
+    """
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    return RedirectResponse(url="/admin/credit?status=overdue", status_code=303)
 
 
 @router.get("/credit/{customer_id}", response_class=HTMLResponse)
@@ -420,12 +503,38 @@ async def admin_credit_customer(customer_id: int, request: Request, db: Session 
     if not customer:
         raise HTTPException(status_code=404, detail="مشتری یافت نشد")
 
-    unpaid = db.query(Sale).filter(
-        Sale.customer_id == customer.id,
-        Sale.payment_method == "credit",
-        Sale.is_refunded == False,
-        Sale.credit_settled == False,
-    ).order_by(Sale.created_at.asc()).all()
+    unpaid = unpaid_credit_sales(db, customer.id)
+    drift = debt_drift(db, customer)
+    allowed, reason = credit_reminder_allowed(db, customer)
+    # One ageing rule for the page: the same function the list and the report
+    # use, so an invoice cannot read «جاری» here and be late over there.
+    invoice_status = {}
+    overdue_amount = 0
+    oldest_overdue = None
+    for sale in unpaid:
+        key = age_bucket(sale)
+        late = days_past_due(sale)
+        invoice_status[sale.id] = {
+            "bucket": key,
+            "label": AGE_BUCKET_LABELS[key],
+            "days_late": max(0, late),
+            "due": as_utc(sale.credit_due_date),
+            "effective": due_effective_at(sale),
+        }
+        if key != "current":
+            overdue_amount += sale_remaining(sale)
+            effective = due_effective_at(sale)
+            if effective and (oldest_overdue is None or effective < oldest_overdue):
+                oldest_overdue = effective
+
+    payments = get_payment_history(db, customer.id)
+    reversal_reasons = {}
+    payment_ids = [payment.id for payment in payments]
+    if payment_ids:
+        for reversal in db.query(PaymentReversal).filter(
+            PaymentReversal.payment_id.in_(payment_ids)
+        ).all():
+            reversal_reasons[reversal.payment_id] = reversal
 
     return templates.TemplateResponse(request, "admin/credit_customer.html", {
         "customer": customer,
@@ -433,7 +542,18 @@ async def admin_credit_customer(customer_id: int, request: Request, db: Session 
         "credit_limit": get_credit_limit(db, customer),
         "custom_limit": customer.credit_limit,
         "unpaid_sales": unpaid,
-        "payments": get_payment_history(db, customer.id),
+        "payments": payments,
+        "reversal_reasons": reversal_reasons,
+        "invoice_status": invoice_status,
+        "overdue_amount": overdue_amount,
+        "oldest_overdue": oldest_overdue,
+        "drift": drift,
+        "bucket_labels": AGE_BUCKET_LABELS,
+        "terms_days": credit_terms_days(db),
+        "reminder_ready": allowed,
+        "reminder_reason": reason,
+        "last_reminder": last_credit_reminder(db, customer.id),
+        "has_reminder_pattern": bool(_setting_value(db, "sms_pattern_credit_reminder")),
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
         "fmt": fmt,
@@ -448,6 +568,7 @@ async def admin_credit_pay(
     amount: str = Form("0"),
     method: str = Form("cash"),
     note: str = Form(""),
+    sale_id: str = Form(""),
     db: Session = Depends(get_db),
 ):
     guard = require_html_role(request, db, "manager")
@@ -463,26 +584,250 @@ async def admin_credit_pay(
     except (TypeError, ValueError):
         amount_int = 0
 
+    target_id = int(sale_id) if str(sale_id or "").strip().isdigit() else None
     debt = customer.total_debt or 0
     if amount_int <= 0:
         return RedirectResponse(url=f"/admin/credit/{customer.id}?err=مبلغ معتبر نیست.", status_code=303)
 
+    invoice = None
+    if target_id:
+        invoice = db.query(Sale).filter(
+            Sale.id == target_id, Sale.customer_id == customer.id
+        ).first()
+        if invoice is None:
+            return RedirectResponse(url=f"/admin/credit/{customer.id}?err=فاکتور پیدا نشد.", status_code=303)
+        owed = sale_remaining(invoice)
+        if owed <= 0:
+            return RedirectResponse(url=f"/admin/credit/{customer.id}?err=این فاکتور تسویه شده است.", status_code=303)
+        if amount_int > owed:
+            return RedirectResponse(
+                url=(f"/admin/credit/{customer.id}?err="
+                     "مبلغ بیشتر از باقی‌مانده این فاکتور است؛ برای پرداخت گردشده از فرم دریافت کلی استفاده کنید."),
+                status_code=303,
+            )
+
     applied = apply_customer_payment(
         db,
         customer,
-        min(amount_int, debt),
+        amount_int if target_id else min(amount_int, debt),
         method=method,
         note=note,
+        sale_id=target_id,
         operator_user_id=guard.id,
         request_id=request.headers.get("X-Request-ID"),
     )
     db.commit()
     if applied > 0:
-        log_action(db, "credit_payment", f"دریافت {applied:,} از {customer.phone}", request=request, target_type="customer", target_id=customer.id, after={"amount": applied, "method": method})
+        target_note = f" (فاکتور #{target_id})" if target_id else ""
+        log_action(db, "credit_payment", f"دریافت {applied:,} از {customer.phone}{target_note}", request=request, target_type="customer", target_id=customer.id, after={"amount": applied, "method": method, "sale_id": target_id})
         return RedirectResponse(
             url=f"/admin/credit/{customer.id}?msg={applied:,} تومان ثبت شد.", status_code=303,
         )
     return RedirectResponse(url=f"/admin/credit/{customer.id}?err=بدهی‌ای برای تسویه وجود ندارد.", status_code=303)
+
+
+@router.post("/credit/{customer_id}/remind", response_class=HTMLResponse)
+async def admin_credit_remind(customer_id: int, request: Request, db: Session = Depends(get_db)):
+    """Send the owner's reminder pattern to one debtor, by hand.
+
+    A debt reminder is transactional — it is about the customer's own balance —
+    so it does not depend on marketing consent, but it is never automatic: the
+    cool-down refuses a second one too soon, and every send is logged.
+    """
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        return RedirectResponse(url="/admin/credit?err=مشتری یافت نشد.", status_code=303)
+    if not customer.phone:
+        return RedirectResponse(url=f"/admin/credit/{customer.id}?err=شماره موبایل ثبت نشده است.", status_code=303)
+
+    allowed, reason = credit_reminder_allowed(db, customer)
+    if not allowed:
+        return RedirectResponse(url=f"/admin/credit/{customer.id}?err={quote_plus(reason)}", status_code=303)
+
+    # Back to the customer, not the list: this was one deliberate send and the
+    # cool-down state is now part of their page.
+    return await _send_credit_reminders(
+        request, db, guard, [customer], back=f"/admin/credit/{customer.id}",
+    )
+
+
+@router.post("/credit/remind-overdue", response_class=HTMLResponse)
+async def admin_credit_remind_overdue(request: Request, db: Session = Depends(get_db)):
+    """Remind every overdue debtor, in one deliberate action.
+
+    Capped like a campaign so a click can never turn into a blast, and each
+    customer still has to pass their own cool-down.
+    """
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+
+    rows = build_debt_rows(db)
+    candidates = [row["customer"] for row in rows if row["overdue_amount"] > 0]
+    allowed_customers = []
+    skipped = 0
+    for customer in candidates:
+        allowed, _reason = credit_reminder_allowed(db, customer)
+        if allowed and customer.phone:
+            allowed_customers.append(customer)
+        else:
+            skipped += 1
+
+    limit = max(1, get_setting_int(db, "campaign_sms_limit", 100))
+    queued = allowed_customers[:limit]
+    not_sent = len(allowed_customers) - len(queued) + skipped
+    return await _send_credit_reminders(
+        request, db, guard, queued,
+        extra=f"&skipped={not_sent}" if not_sent else "",
+    )
+
+
+async def _send_credit_reminders(request: Request, db, guard, customers: list,
+                                 extra: str = "", back: str = "/admin/credit"):
+    """Shared send path for the single and bulk reminder actions."""
+    sent = 0
+    failed = 0
+    for customer in customers:
+        invoices = unpaid_credit_sales(db, customer.id)
+        amount = sum(sale_remaining(sale) for sale in invoices)
+        due = None
+        for sale in invoices:
+            candidate = sale.credit_due_date
+            if candidate is None:
+                continue
+            if due is None or candidate < due:
+                due = candidate
+        attributes = credit_reminder_vars(customer, amount, due)
+        job = await queue_credit_reminder_sms(customer.phone, attributes, db)
+        if job is not None:
+            mark_credit_reminder_sent(db, customer.id)
+            sent += 1
+        else:
+            failed += 1
+    db.commit()
+
+    message = f"یادآوری برای {sent} مشتری در صف ارسال قرار گرفت."
+    if failed:
+        message += " متن پیامک یادآوری تنظیم نشده است."
+    log_action(
+        db, "credit_reminder", message, request=request, target_type="customer",
+        after={"sent": sent, "failed": failed},
+    )
+    return RedirectResponse(
+        url=f"{back}?msg={quote_plus(message)}{extra}", status_code=303,
+    )
+
+
+@router.post("/credit/assign-due-dates", response_class=HTMLResponse)
+async def admin_assign_due_dates(request: Request, db: Session = Depends(get_db)):
+    """Opt-in: give the open invoices a سررسید from the store's terms.
+
+    Existing invoices are deliberately left untouched by the migration, so
+    ageing only changes when the owner asks for it — here.
+    """
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    terms = credit_terms_days(db)
+    if terms <= 0:
+        return RedirectResponse(
+            url="/admin/credit?err=مهلت پرداخت صفر است؛ ابتدا در تنظیمات یک مهلت تعیین کنید.",
+            status_code=303,
+        )
+    updated = assign_due_dates(db, terms)
+    db.commit()
+    log_action(db, "credit_due_dates", f"ثبت سررسید برای {updated} فاکتور باز", request=request,
+               after={"invoices": updated, "terms_days": terms})
+    return RedirectResponse(
+        url=f"/admin/credit?msg={quote_plus(f'سررسید برای {updated} فاکتور باز ثبت شد.')}",
+        status_code=303,
+    )
+
+
+@router.get("/credit/{customer_id}/statement", response_class=HTMLResponse)
+async def admin_credit_statement(customer_id: int, request: Request, db: Session = Depends(get_db)):
+    """A printable صورتحساب: invoices, receipts and reversals, one running balance."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="مشتری یافت نشد")
+
+    # The canonical reader, not parse_jalali_input: an ISO range (`2026-09-12`)
+    # would otherwise be read as a Jalali year and land the window in 2647.
+    start = parse_form_date(request.query_params.get("start_date", ""))
+    end = parse_form_date_end(request.query_params.get("end_date", ""))
+
+    sales = db.query(Sale).filter(
+        Sale.customer_id == customer.id,
+        Sale.payment_method == "credit",
+    ).order_by(Sale.created_at.asc(), Sale.id.asc()).all()
+    payments = db.query(Payment).filter(
+        Payment.customer_id == customer.id,
+    ).order_by(Payment.created_at.asc(), Payment.id.asc()).all()
+
+    entries = []
+    for sale in sales:
+        entries.append({
+            "kind": "invoice",
+            "at": sale.created_at,
+            "reference": f"#{sale.id}",
+            "detail": "فاکتور نسیه",
+            "debit": sale.final_amount or 0,
+            "credit": 0,
+            "link": f"/sales/invoice/{sale.id}",
+        })
+    for payment in payments:
+        reversed_later = payment.reversed_at is not None
+        entries.append({
+            "kind": "reversal" if reversed_later else "receipt",
+            "at": payment.reversed_at or payment.created_at,
+            "reference": f"#{payment.id}",
+            "detail": ("برگشت دریافت" if reversed_later else "دریافت") +
+                      (f" — {payment.note}" if payment.note else ""),
+            "debit": 0,
+            "credit": payment.amount or 0,
+            "link": None,
+        })
+    entries.sort(key=lambda entry: as_utc(entry["at"]) or datetime.now(timezone.utc))
+
+    opening = 0
+    rows = []
+    balance = 0
+    for entry in entries:
+        # SQLite hands datetimes back naive; the range bounds are aware.
+        at = as_utc(entry["at"])
+        after = bool(end and at and at > end)
+        before = bool(start and at and at < start)
+        delta = entry["debit"] - entry["credit"]
+        if before:
+            opening += delta
+            continue
+        if after:
+            continue
+        balance += delta
+        rows.append({**entry, "balance": balance})
+
+    in_range_debit = sum(row["debit"] for row in rows)
+    in_range_credit = sum(row["credit"] for row in rows)
+    return templates.TemplateResponse(request, "admin/credit_statement.html", {
+        "customer": customer,
+        "rows": rows,
+        "opening": opening,
+        "closing": opening + in_range_debit - in_range_credit,
+        "total_debit": in_range_debit,
+        "total_credit": in_range_credit,
+        "debt": customer.total_debt or 0,
+        "start": request.query_params.get("start_date", ""),
+        "end": request.query_params.get("end_date", ""),
+        "today": jalali_str(datetime.now(timezone.utc), with_time=False),
+        "fmt": fmt,
+        "jalali_str": jalali_str,
+    })
 
 
 @router.post("/credit/{customer_id}/limit", response_class=HTMLResponse)
@@ -506,8 +851,18 @@ async def admin_credit_limit(customer_id: int, request: Request, credit_limit: s
 
 
 @router.post("/payments/{payment_id}/reverse", response_class=HTMLResponse)
-async def admin_payment_reverse(payment_id: int, request: Request, db: Session = Depends(get_db)):
-    """Record a reversal while retaining the original payment record."""
+async def admin_payment_reverse(
+    payment_id: int,
+    request: Request,
+    reason: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Record a reversal while retaining the original payment record.
+
+    The reason is required and lands in `payment_reversals.reason`, which is an
+    immutable audit row — it used to be filled with the English constant
+    "Payment reversal" because nothing asked.
+    """
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
@@ -515,17 +870,23 @@ async def admin_payment_reverse(payment_id: int, request: Request, db: Session =
     if not payment:
         return RedirectResponse(url="/admin/credit", status_code=303)
     customer_id = payment.customer_id
+    reason = (reason or "").strip()
+    if not reason:
+        return RedirectResponse(
+            url=f"/admin/credit/{customer_id}?err=" + quote_plus("علت برگشت را بنویسید؛ این دلیل در دفتر تغییرات می‌ماند."),
+            status_code=303,
+        )
     reversed_amount = reverse_payment(
         db,
         payment,
         operator_id=guard.id,
-        reason="Payment reversal",
+        reason=reason,
         request_id=request.headers.get("X-Request-ID"),
     )
     db.commit()
     db.expire_all()
     payment = db.query(Payment).filter(Payment.id == payment_id).first()
-    log_action(db, "payment_reverse", f"برگشت دریافت {reversed_amount:,}", request=request, target_type="payment", target_id=payment_id, after={"reversed_amount": reversed_amount, "operator_user_id": guard.id})
+    log_action(db, "payment_reverse", f"برگشت دریافت {reversed_amount:,}", request=request, target_type="payment", target_id=payment_id, after={"reversed_amount": reversed_amount, "operator_user_id": guard.id, "reason": reason})
     return RedirectResponse(
         url=f"/admin/credit/{customer_id}?msg={reversed_amount:,} تومان برگشت ثبت شد.",
         status_code=303,
@@ -534,29 +895,11 @@ async def admin_payment_reverse(payment_id: int, request: Request, db: Session =
 
 @router.post("/payments/{payment_id}/delete", response_class=HTMLResponse)
 async def admin_payment_delete_compat(payment_id: int, request: Request, db: Session = Depends(get_db)):
-    return await admin_payment_reverse(payment_id, request, db)
-
-
-# ── Collections (aged receivables) ───────────────────────────────────────────
-
-@router.get("/collections", response_class=HTMLResponse)
-async def admin_collections(request: Request, db: Session = Depends(get_db)):
-    """Aged-receivables dashboard: bucket each customer's outstanding نسیه
-    balance by the age of their oldest unpaid invoice (≤30 / 31–60 / 61–90 / 90+).
-    Helps the owner chase overdue credit before it goes bad."""
-    guard = require_html_role(request, db, "manager")
-    if not hasattr(guard, "role"):
-        return guard
-    report = get_aged_receivables(db)
-    return templates.TemplateResponse(request, "admin/collections.html", {
-        "buckets": report["buckets"],
-        "totals": report["totals"],
-        "grand_total": report["grand_total"],
-        "now": report["now"],
-        "msg": request.query_params.get("msg", ""),
-        "fmt": fmt,
-        "jalali_str": jalali_str,
-    })
+    """The old path, kept working: a client that posts no reason still reverses,
+    and the audit row says which route it came from."""
+    return await admin_payment_reverse(
+        payment_id, request, reason="برگشت دریافت (مسیر قدیمی)", db=db,
+    )
 
 
 # ── Suppliers ────────────────────────────────────────────────────────────────

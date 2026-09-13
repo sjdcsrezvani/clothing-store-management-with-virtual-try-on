@@ -1,3 +1,24 @@
+## 2.3.4 — 2026-09-13
+
+### حساب نسیه: collection and the ageing report are one page
+
+- Merged `/admin/credit` and وصول مطالبات into one screen: the debtors list, the ageing summary, the open invoices and every collection action now live together. The list was rebuilt in the catalogue design language (heading with the nav merged in, a KPI row whose cards link to their own filter, filters for search/status/ageing bucket/sort, 25-per-page pagination and separate empty states for "no debt at all" and "nothing matched"), and it gained an **invoice-level view** the old dashboard could never show — every open فاکتور with its own customer, remainder, سررسید and status. `/admin/collections` is a redirect into the page and has left the sidebar.
+- Added a real **سررسید** per نسیه invoice (`sales.credit_due_date`), filled from the store's new «مهلت پرداخت نسیه» setting when the sale is confirmed and shown on the checkout form so the cashier can say the date out loud. Ageing is measured from that date, so an invoice that is late now reads as late even if it is young; invoices the shop never agreed a term for keep ageing by their own date, so no existing debtor jumped buckets when the column appeared, and one opt-in action («ثبت سررسید … روزه برای فاکتورهای باز») stamps a term on the open ones when the owner is ready. The KPI row, the ageing strip, the filters and the statement all read that single rule and cannot disagree about who is late.
+- Receipts can now close **one invoice**: the per-invoice «دریافت» form targets that فاکتور (the `Payment.sale_id` column existed but was never honoured), and paying more than that invoice's remainder is refused instead of spilling onto another one. The round «ثبت دریافت» form still settles oldest-first, and a reversal rebuilds every allocation while keeping tagged receipts on their own invoice.
+- The receipt record now says **who took the money** (`payments.received_by_id`), where it previously existed only in the event journal.
+- Reversing a receipt now asks for a **reason**, which is what the immutable `payment_reversals.reason` stores; it used to be filled with the English constant "Payment reversal" because nothing asked. The reason is shown beside the reversed receipt, and the legacy delete path still works while recording where it came from.
+- Added a printable **صورت‌حساب** per customer — invoices, receipts and reversals in one running balance, for the whole period or a date range with a «مانده از قبل» opening line — plus a one-click 🖨️ چاپ view and a footer that states the balance the customer actually owes.
+- Added **یادآوری پیامکی** for debt: the owner writes the message pattern in Settings (`var1` name, `var2` amount, `var3` سررسید), sends it per customer or to every overdue debtor in one confirm-guarded action that is capped like a campaign, and a configurable cool-down refuses a second reminder to the same customer too soon. The button says why it is disabled, and transactional reminders are not gated on marketing consent.
+- Removed the N+1 behind the old debtors list: it ran a query per debtor (one of them for payment history the page never rendered) and is now a fixed number of queries for the whole page, with the stored debt shown beside the total recomputed from the open invoices and any disagreement flagged as **نامطابق**.
+- Every hardcoded colour on these pages is gone — the نسیه styles come from theme tokens, with print and high-contrast rules of their own, so the statement prints clean and the dark and high-contrast themes stay readable.
+
+### Layout fixes
+
+- Fixed the page heading's actions being squeezed by a long description until its buttons wrapped onto a second line — on حساب نسیه «داشبورد» dropped below the other two. The nav is now sized to its own buttons and the description gives up the width, and short nav labels share one width so a set of them reads as a set instead of four differently sized pills.
+- Fixed a page that could be scrolled sideways for no visible reason: a card holding a wide table stretched to the table's width instead of letting the table scroll inside it (a 1020px table pushed the whole document to 1081px), and screen-reader-only labels sat at their static position — which inside a horizontally scrolled table is off the page — widening the document by a further 77px.
+- Buttons now reserve the same border box whether they draw a border or not: a primary or success button was 4px shorter than a ghost one, so a row mixing them (چاپ next to two link buttons, «اعمال فیلتر» next to «پاک‌کردن فیلتر») sat out of line.
+- Stacked form fields no longer leave a double gap: a `.form-row`'s own row gap added to each field's bottom margin, so fields that stacked had 2rem between them where every other field has 1rem.
+
 ## 2.3.3 — 2026-09-13
 
 ### Who a customer buys for is now their choice, not the store's

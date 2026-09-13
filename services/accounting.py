@@ -1,11 +1,13 @@
 """Accounting-lite: net profit & loss, cash box register, customer debt
 (نسیه) ledger, FIFO settlement of credit-sale payments, credit surcharge,
 and aged-receivables (collection) dashboard."""
+import math
 from datetime import datetime, timezone, timedelta
-from sqlalchemy import case, func
+from sqlalchemy import case, func, or_
 
 from models import (
-    Customer, Sale, SaleItem, Expense, Purchase, PurchaseItem, Payment, Supplier, SupplierPayment, CashSession,
+    Customer, Sale, SaleItem, Expense, Purchase, PurchaseItem, Payment, Settings,
+    Supplier, SupplierPayment, CashSession,
 )
 from services._common import get_setting_int
 
@@ -94,31 +96,481 @@ def credit_sale_allowed(db, customer, new_amount: int) -> tuple[bool, int]:
     return ((customer.total_debt or 0) + new_amount) <= limit, limit
 
 
-def get_customer_debts(db) -> list:
-    """Customers who owe money (نسیه), plus their unpaid credit sales."""
-    customers = db.query(Customer).filter(
-        Customer.total_debt > 0
-    ).order_by(Customer.total_debt.desc()).all()
-    result = []
+# ── نسیه (credit) ─────────────────────────────────────────────────────────────
+# One rule decides how an invoice ages: the date it was due, falling back to its
+# own date for invoices the shop never agreed a term for. The list, its KPIs, the
+# ageing report and the statement all read that one rule, so they cannot disagree
+# about who is late.
+
+CREDIT_TERMS_KEY = "credit_terms_days"
+CREDIT_REMINDER_PATTERN_KEY = "sms_pattern_credit_reminder"
+CREDIT_REMINDER_COOLDOWN_KEY = "credit_reminder_min_hours"
+DUE_SOON_DAYS = 7
+PER_PAGE = 25
+
+AGE_BUCKETS = ("current", "1_30", "31_60", "61_90", "over_90")
+AGE_BUCKET_LABELS = {
+    "current": "جاری",
+    "1_30": "۱–۳۰ روز دیرکرد",
+    "31_60": "۳۱–۶۰ روز دیرکرد",
+    "61_90": "۶۱–۹۰ روز دیرکرد",
+    "over_90": "بیش از ۹۰ روز دیرکرد",
+}
+# The status keys are shared by the route, the KPI cards and the tests instead of
+# being restated in each — a card links to the filter that reproduces its number.
+DEBT_STATUS_LABELS = {
+    "all": "همه بدهکاران",
+    "overdue": "سررسید گذشته",
+    "due_soon": f"سررسید تا {DUE_SOON_DAYS} روز",
+    "over_limit": "بالای سقف اعتبار",
+    "no_due_date": "بدون سررسید",
+}
+DEBT_SORTS = {
+    "debt": "بیشترین بدهی",
+    "oldest": "قدیمی‌ترین سررسید",
+    "lateness": "بیشترین دیرکرد",
+    "name": "نام مشتری",
+}
+
+
+def credit_terms_days(db) -> int:
+    """The agreed نسیه term in days. 0 means the shop sets no سررسید at all,
+    and every invoice falls back to ageing by its own date."""
+    return max(0, get_setting_int(db, CREDIT_TERMS_KEY, 30))
+
+
+def credit_due_date_for(db, when: datetime | None = None) -> datetime | None:
+    """The سررسید a نسیه sale recorded at `when` falls due, or None."""
+    days = credit_terms_days(db)
+    if days <= 0:
+        return None
+    base = as_utc(when) or datetime.now(timezone.utc)
+    return base + timedelta(days=days)
+
+
+def sale_remaining(sale) -> int:
+    """What is still owed on one invoice."""
+    return max(0, (sale.final_amount or 0) - (sale.credit_paid_amount or 0))
+
+
+def due_effective_at(sale) -> datetime | None:
+    """When ageing starts for an invoice: its سررسید, or its own date.
+
+    The fallback is what this page has always done, so an invoice recorded
+    before سررسید existed keeps the bucket it is already in.
+    """
+    return as_utc(sale.credit_due_date) or as_utc(sale.created_at)
+
+
+def days_past_due(sale, now: datetime | None = None) -> int:
+    """Whole days since the invoice fell due. Negative means not due yet."""
+    now = now or datetime.now(timezone.utc)
+    effective = due_effective_at(sale)
+    if effective is None:
+        return 0
+    return (now - effective).days
+
+
+def age_bucket(sale, now: datetime | None = None) -> str:
+    """Which ageing bucket an invoice sits in.
+
+    An invoice with a سررسید that has not arrived is جاری; one with no agreed
+    term is جاری until it is more than 30 days old, exactly as before, so no
+    existing debtor jumps buckets because a column appeared.
+    """
+    days = days_past_due(sale, now)
+    if days <= 0:
+        return "current"
+    if days <= 30:
+        return "1_30" if sale.credit_due_date is not None else "current"
+    if days <= 60:
+        return "31_60"
+    if days <= 90:
+        return "61_90"
+    return "over_90"
+
+
+def unpaid_credit_sales(db, customer_id: int) -> list:
+    """A customer's open نسیه invoices, oldest first — FIFO's settle order."""
+    return db.query(Sale).filter(
+        Sale.customer_id == customer_id,
+        Sale.payment_method == "credit",
+        Sale.is_refunded == False,  # noqa: E712
+        Sale.credit_settled == False,  # noqa: E712
+    ).order_by(Sale.created_at.asc(), Sale.id.asc()).all()
+
+
+def _open_invoices_by_customer(db, customer_ids: list, now: datetime) -> dict:
+    """Open invoices for a whole page of customers in one query, not one each."""
+    grouped: dict[int, list] = {cid: [] for cid in customer_ids}
+    if not customer_ids:
+        return grouped
+    sales = db.query(Sale).filter(
+        Sale.customer_id.in_(customer_ids),
+        Sale.payment_method == "credit",
+        Sale.is_refunded == False,  # noqa: E712
+        Sale.credit_settled == False,  # noqa: E712
+    ).order_by(Sale.created_at.asc(), Sale.id.asc()).all()
+    for sale in sales:
+        grouped.setdefault(sale.customer_id, []).append(sale)
+    return grouped
+
+
+def _last_payments_by_customer(db, customer_ids: list) -> dict:
+    """Each customer's most recent receipt, in one query."""
+    latest: dict[int, Payment] = {}
+    if not customer_ids:
+        return latest
+    payments = db.query(Payment).filter(
+        Payment.customer_id.in_(customer_ids),
+        Payment.reversed_at.is_(None),
+    ).order_by(Payment.created_at.desc(), Payment.id.desc()).all()
+    for payment in payments:
+        latest.setdefault(payment.customer_id, payment)
+    return latest
+
+
+def _stored_reminders(db, customer_ids: list) -> dict:
+    """When each customer was last reminded, from the marker settings."""
+    marks: dict[int, datetime] = {}
+    if not customer_ids:
+        return marks
+    keys = [f"credit_reminder_{cid}" for cid in customer_ids]
+    for row in db.query(Settings).filter(Settings.key.in_(keys)).all():
+        try:
+            marks[int(row.key.rsplit("_", 1)[1])] = as_utc(datetime.fromisoformat(row.value))
+        except (ValueError, TypeError, IndexError):
+            continue
+    return marks
+
+
+def build_debt_rows(db, *, search: str = "", now: datetime | None = None) -> list[dict]:
+    """Every debtor with the derived ageing the list, KPIs and filters share.
+
+    Built here, in a fixed number of queries, rather than in the template or per
+    row: the previous version ran four queries per debtor (two of them for data
+    the page never showed), which is what made this page slow to grow.
+    """
+    now = now or datetime.now(timezone.utc)
+    query = db.query(Customer).filter(Customer.total_debt > 0)
+    search = (search or "").strip()
+    if search:
+        query = query.filter(or_(
+            Customer.phone.contains(search),
+            Customer.first_name.contains(search),
+            Customer.last_name.contains(search),
+        ))
+    customers = query.order_by(Customer.total_debt.desc()).all()
+    ids = [customer.id for customer in customers]
+    invoices_by_customer = _open_invoices_by_customer(db, ids, now)
+    last_payments = _last_payments_by_customer(db, ids)
+    reminders = _stored_reminders(db, ids)
+    default_limit = get_setting_int(db, "default_credit_limit", 0)
+
+    rows = []
     for customer in customers:
-        unpaid = db.query(Sale).filter(
-            Sale.customer_id == customer.id,
-            Sale.payment_method == "credit",
-            Sale.is_refunded == False,
-            Sale.credit_settled == False,
-        ).order_by(Sale.created_at.asc()).all()
-        limit = get_credit_limit(db, customer)
+        invoices = invoices_by_customer.get(customer.id, [])
+        limit = customer.credit_limit or default_limit or 0
         debt = customer.total_debt or 0
-        result.append({
+        bucket_amounts = {key: 0 for key in AGE_BUCKETS}
+        bucket_counts = {key: 0 for key in AGE_BUCKETS}
+        overdue_amount = due_soon_amount = no_due_date_amount = 0
+        no_due_date_count = 0
+        days_late = 0
+        oldest_due = None
+        for sale in invoices:
+            left = sale_remaining(sale)
+            key = age_bucket(sale, now)
+            late = days_past_due(sale, now)
+            bucket_amounts[key] += left
+            bucket_counts[key] += 1
+            days_late = max(days_late, late)
+            if key != "current":
+                overdue_amount += left
+            elif sale.credit_due_date is not None and -DUE_SOON_DAYS <= late < 0:
+                due_soon_amount += left
+            if sale.credit_due_date is None:
+                no_due_date_count += 1
+                no_due_date_amount += left
+            effective = due_effective_at(sale)
+            if effective and (oldest_due is None or effective < oldest_due):
+                oldest_due = effective
+        worst = "current"
+        for key in reversed(AGE_BUCKETS):
+            if bucket_amounts[key] > 0:
+                worst = key
+                break
+        rows.append({
             "customer": customer,
             "debt": debt,
             "limit": limit,
+            "headroom": max(0, limit - debt) if limit > 0 else 0,
             "over_limit": limit > 0 and debt > limit,
-            "unpaid_sales": unpaid,
-            "payments": db.query(Payment).filter(Payment.customer_id == customer.id)
-                .order_by(Payment.created_at.desc()).limit(5).all(),
+            "invoices": invoices,
+            "invoice_count": len(invoices),
+            "bucket": worst,
+            "bucket_label": AGE_BUCKET_LABELS[worst],
+            "bucket_amounts": bucket_amounts,
+            "bucket_counts": bucket_counts,
+            "overdue_amount": overdue_amount,
+            "due_soon_amount": due_soon_amount,
+            "no_due_date_count": no_due_date_count,
+            "no_due_date_amount": no_due_date_amount,
+            "days_late": max(0, days_late),
+            "oldest_due": oldest_due,
+            "last_payment": last_payments.get(customer.id),
+            "last_reminder": reminders.get(customer.id),
+            "drift": debt != sum(sale_remaining(sale) for sale in invoices),
         })
-    return result
+    return rows
+
+
+def summarise_debts(rows: list, now: datetime | None = None) -> dict:
+    """The KPI numbers, aggregated from the same rows the table shows."""
+    now = now or datetime.now(timezone.utc)
+    bucket_totals = {key: 0 for key in AGE_BUCKETS}
+    bucket_counts = {key: 0 for key in AGE_BUCKETS}
+    total_debt = overdue_amount = overdue_customers = 0
+    over_limit_count = over_limit_amount = 0
+    due_soon_amount = due_soon_customers = 0
+    no_due_date_amount = no_due_date_count = 0
+    drift_count = 0
+    for row in rows:
+        total_debt += row["debt"]
+        for key in AGE_BUCKETS:
+            bucket_totals[key] += row["bucket_amounts"][key]
+            bucket_counts[key] += row["bucket_counts"][key]
+        if row["overdue_amount"] > 0:
+            overdue_customers += 1
+            overdue_amount += row["overdue_amount"]
+        if row["over_limit"]:
+            over_limit_count += 1
+            over_limit_amount += row["debt"] - row["limit"]
+        if row["due_soon_amount"] > 0:
+            due_soon_customers += 1
+            due_soon_amount += row["due_soon_amount"]
+        if row["no_due_date_count"]:
+            no_due_date_count += row["no_due_date_count"]
+            no_due_date_amount += row["no_due_date_amount"]
+        if row["drift"]:
+            drift_count += 1
+    return {
+        "total_debt": total_debt,
+        "debtor_count": len(rows),
+        "overdue_amount": overdue_amount,
+        "overdue_customers": overdue_customers,
+        "over_limit_count": over_limit_count,
+        "over_limit_amount": over_limit_amount,
+        "due_soon_amount": due_soon_amount,
+        "due_soon_customers": due_soon_customers,
+        "no_due_date_amount": no_due_date_amount,
+        "no_due_date_count": no_due_date_count,
+        "drift_count": drift_count,
+        "buckets": bucket_totals,
+        "bucket_counts": bucket_counts,
+        "bucket_labels": AGE_BUCKET_LABELS,
+        "due_soon_days": DUE_SOON_DAYS,
+        "now": now,
+    }
+
+
+def page_debts(rows: list, *, status: str = "all", bucket: str = "",
+               sort: str = "debt", page: int = 1, per_page: int = PER_PAGE) -> dict:
+    """Filter, order and cut one page out of the debtor rows."""
+    filtered = rows
+    if status == "overdue":
+        filtered = [row for row in filtered if row["overdue_amount"] > 0]
+    elif status == "due_soon":
+        filtered = [row for row in filtered if row["due_soon_amount"] > 0]
+    elif status == "over_limit":
+        filtered = [row for row in filtered if row["over_limit"]]
+    elif status == "no_due_date":
+        filtered = [row for row in filtered if row["no_due_date_count"] > 0]
+    if bucket in AGE_BUCKETS:
+        filtered = [row for row in filtered if row["bucket_amounts"].get(bucket, 0) > 0]
+
+    far_future = datetime.max.replace(tzinfo=timezone.utc)
+    sorters = {
+        "debt": lambda row: (-row["debt"], row["customer"].full_name or ""),
+        "oldest": lambda row: (row["oldest_due"] or far_future,),
+        "lateness": lambda row: (-row["days_late"], -row["debt"]),
+        "name": lambda row: (row["customer"].full_name or "",),
+    }
+    filtered = sorted(filtered, key=sorters.get(sort, sorters["debt"]))
+
+    total = len(filtered)
+    total_pages = max(1, math.ceil(total / per_page)) if total else 1
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * per_page
+    return {
+        "rows": filtered[start:start + per_page],
+        "total": total,
+        "page": page,
+        "total_pages": total_pages,
+        "per_page": per_page,
+    }
+
+
+def list_debts(db, *, search: str = "", status: str = "all", bucket: str = "",
+               sort: str = "debt", page: int = 1, per_page: int = PER_PAGE,
+               now: datetime | None = None) -> dict:
+    """One call for the credit page: the rows, the page and the KPI summary."""
+    now = now or datetime.now(timezone.utc)
+    rows = build_debt_rows(db, search=search, now=now)
+    paged = page_debts(rows, status=status, bucket=bucket, sort=sort,
+                       page=page, per_page=per_page)
+    return {
+        **paged,
+        "overview": summarise_debts(rows, now=now),
+        "has_filters": bool((search or "").strip() or status != "all" or bucket or sort != "debt"),
+    }
+
+
+def list_open_invoices(db, *, search: str = "", status: str = "all", bucket: str = "",
+                       page: int = 1, per_page: int = PER_PAGE,
+                       now: datetime | None = None) -> dict:
+    """Every open نسیه invoice, latest deadline first — the invoice-level view.
+
+    The old collections page could only show one row per customer, which hides
+    the fact that someone with six open invoices has five of them current.
+    """
+    now = now or datetime.now(timezone.utc)
+    query = db.query(Sale).join(Customer, Sale.customer_id == Customer.id).filter(
+        Sale.payment_method == "credit",
+        Sale.is_refunded == False,  # noqa: E712
+        Sale.credit_settled == False,  # noqa: E712
+    )
+    search = (search or "").strip()
+    if search:
+        query = query.filter(or_(
+            Customer.phone.contains(search),
+            Customer.first_name.contains(search),
+            Customer.last_name.contains(search),
+        ))
+    rows = []
+    for sale in query.order_by(Sale.created_at.asc(), Sale.id.asc()).all():
+        key = age_bucket(sale, now)
+        late = days_past_due(sale, now)
+        if bucket in AGE_BUCKETS and key != bucket:
+            continue
+        if status == "overdue" and key == "current":
+            continue
+        if status == "due_soon" and not (
+            sale.credit_due_date is not None and -DUE_SOON_DAYS <= late < 0
+        ):
+            continue
+        if status == "no_due_date" and sale.credit_due_date is not None:
+            continue
+        rows.append({
+            "sale": sale,
+            "customer": sale.customer,
+            "remaining": sale_remaining(sale),
+            "due": as_utc(sale.credit_due_date),
+            "effective": due_effective_at(sale),
+            "days_late": late,
+            "bucket": key,
+            "bucket_label": AGE_BUCKET_LABELS[key],
+        })
+    rows.sort(key=lambda row: -row["days_late"])
+    total = len(rows)
+    total_pages = max(1, math.ceil(total / per_page)) if total else 1
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * per_page
+    return {
+        "rows": rows[start:start + per_page],
+        "total": total,
+        "page": page,
+        "total_pages": total_pages,
+        "per_page": per_page,
+    }
+
+
+def debt_drift(db, customer) -> dict:
+    """Stored debt vs the open invoices that should add up to it.
+
+    The counter is adjusted in place at checkout, at every receipt and on a
+    reversal, so it can drift. The page says so rather than quietly trusting it.
+    """
+    stored = customer.total_debt or 0
+    recomputed = sum(sale_remaining(sale) for sale in unpaid_credit_sales(db, customer.id))
+    return {"stored": stored, "recomputed": recomputed, "mismatch": stored != recomputed}
+
+
+def assign_due_dates(db, terms_days: int | None = None) -> int:
+    """Stamp a سررسید on open invoices that have none. Opt-in, one click.
+
+    Existing invoices are deliberately left alone by the migration, so ageing
+    never changes behind the owner's back; this is the button that changes it.
+    """
+    days = credit_terms_days(db) if terms_days is None else max(0, terms_days)
+    if days <= 0:
+        return 0
+    updated = 0
+    sales = db.query(Sale).filter(
+        Sale.payment_method == "credit",
+        Sale.is_refunded == False,  # noqa: E712
+        Sale.credit_settled == False,  # noqa: E712
+        Sale.credit_due_date.is_(None),
+    ).all()
+    for sale in sales:
+        base = as_utc(sale.created_at) or datetime.now(timezone.utc)
+        sale.credit_due_date = base + timedelta(days=days)
+        updated += 1
+    return updated
+
+
+def last_credit_reminder(db, customer_id: int) -> datetime | None:
+    """When this customer was last sent a debt reminder (None = never)."""
+    return _stored_reminders(db, [customer_id]).get(customer_id)
+
+
+def credit_reminder_cooldown_hours(db) -> int:
+    """How long to wait before reminding the same customer again."""
+    return max(0, get_setting_int(db, CREDIT_REMINDER_COOLDOWN_KEY, 24))
+
+
+def credit_reminder_allowed(db, customer) -> tuple[bool, str]:
+    """Whether a reminder may go out now, with the reason when it may not."""
+    last = last_credit_reminder(db, customer.id)
+    hours = credit_reminder_cooldown_hours(db)
+    if last is None or hours <= 0:
+        return True, ""
+    ready_at = last + timedelta(hours=hours)
+    now = datetime.now(timezone.utc)
+    if ready_at <= now:
+        return True, ""
+
+    def _fa(number: int) -> str:
+        return str(number).translate(str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹"))
+
+    wait = ready_at - now
+    if wait >= timedelta(hours=1):
+        return False, f"آخرین یادآوری کمتر از {_fa(hours)} ساعت پیش بوده — {_fa(math.ceil(wait.total_seconds() / 3600))} ساعت دیگر دوباره تلاش کنید."
+    return False, f"آخرین یادآوری کمتر از {_fa(hours)} ساعت پیش بوده — {_fa(max(1, math.ceil(wait.total_seconds() / 60)))} دقیقه دیگر دوباره تلاش کنید."
+
+
+def mark_credit_reminder_sent(db, customer_id: int) -> datetime:
+    """Remember a reminder so the cool-down can be enforced."""
+    now = datetime.now(timezone.utc)
+    key = f"credit_reminder_{customer_id}"
+    row = db.query(Settings).filter(Settings.key == key).first()
+    if row:
+        row.value = now.isoformat()
+    else:
+        db.add(Settings(key=key, value=now.isoformat()))
+    return now
+
+
+def credit_reminder_vars(customer, amount: int, due_date: datetime | None = None) -> dict:
+    """Attributes an owner's reminder template can use: var1 نام، var2 مبلغ،
+    var3 سررسید."""
+    from services._common import jalali_str
+
+    return {
+        "var1": customer.full_name or "مشتری",
+        "var2": f"{int(amount):,}",
+        "var3": jalali_str(due_date, with_time=False) if due_date else "—",
+    }
 
 
 def get_payment_history(db, customer_id: int, limit: int = 50) -> list:
@@ -134,38 +586,52 @@ def apply_customer_payment(
     note: str = "",
     sale_id: int | None = None,
     operator_user_id: int | None = None,
+    received_by_id: int | None = None,
     request_id: str | None = None,
 ) -> int:
     """Record a payment toward a customer's نسیه debt.
 
-    Applied FIFO across their oldest unpaid credit sales; a `payments` row is
-    created for the total actually applied. Returns the applied amount (0 when
-    the customer had no debt)."""
+    With a `sale_id` the money lands on exactly that invoice, capped at what it
+    still owes: the cashier pointed at one فاکتور, so none of it spills onto
+    another behind their back. Without one it settles oldest-first (FIFO) across
+    every open invoice, which is how a round payment from a customer is handled.
+    A `payments` row records the applied amount; it returns that amount, or 0
+    when there was nothing to settle.
+    """
     amount = max(0, amount)
     if amount <= 0:
         return 0
 
-    unpaid = db.query(Sale).filter(
-        Sale.customer_id == customer.id,
-        Sale.payment_method == "credit",
-        Sale.is_refunded == False,
-        Sale.credit_settled == False,
-    ).order_by(Sale.created_at.asc()).all()
-
     applied = 0
-    for sale in unpaid:
-        remaining = sale.final_amount - (sale.credit_paid_amount or 0)
-        if remaining <= 0:
-            sale.credit_settled = True
-            continue
-        pay = min(remaining, amount - applied)
-        if pay > 0:
-            sale.credit_paid_amount = (sale.credit_paid_amount or 0) + pay
-            applied += pay
-            if sale.credit_paid_amount >= sale.final_amount:
+    if sale_id is not None:
+        target = db.query(Sale).filter(
+            Sale.id == sale_id,
+            Sale.customer_id == customer.id,
+            Sale.payment_method == "credit",
+            Sale.is_refunded == False,  # noqa: E712
+        ).first()
+        if target is None:
+            return 0
+        applied = min(amount, sale_remaining(target))
+        if applied <= 0:
+            return 0
+        target.credit_paid_amount = (target.credit_paid_amount or 0) + applied
+        if sale_remaining(target) <= 0:
+            target.credit_settled = True
+    else:
+        for sale in unpaid_credit_sales(db, customer.id):
+            remaining = sale_remaining(sale)
+            if remaining <= 0:
                 sale.credit_settled = True
-        if applied >= amount:
-            break
+                continue
+            pay = min(remaining, amount - applied)
+            if pay > 0:
+                sale.credit_paid_amount = (sale.credit_paid_amount or 0) + pay
+                applied += pay
+                if sale_remaining(sale) <= 0:
+                    sale.credit_settled = True
+            if applied >= amount:
+                break
 
     if applied > 0:
         open_session = db.query(CashSession).filter(CashSession.status == "open").order_by(CashSession.opened_at.desc()).first()
@@ -175,6 +641,7 @@ def apply_customer_payment(
             amount=applied,
             method=method,
             cash_session_id=open_session.id if open_session and method == "cash" else None,
+            received_by_id=received_by_id or operator_user_id,
             note=note or "",
         )
         db.add(payment)
@@ -194,6 +661,7 @@ def apply_customer_payment(
                 "amount": applied,
                 "method": method,
                 "cash_session_id": payment.cash_session_id,
+                "received_by_id": payment.received_by_id,
             },
         )
         customer.total_debt = max(0, (customer.total_debt or 0) - applied)
@@ -227,30 +695,40 @@ def reverse_payment(
         sale.credit_paid_amount = 0
         sale.credit_settled = False
 
+    by_id = {sale.id: sale for sale in sales}
     remaining_payments = db.query(Payment).filter(
         Payment.customer_id == customer.id,
         Payment.reversed_at.is_(None),
     ).order_by(Payment.created_at.asc(), Payment.id.asc()).all()
 
+    # A receipt aimed at one invoice keeps that invoice first; whatever it is
+    # worth beyond that then settles oldest-first with every other receipt. Money
+    # is never dropped on the floor: the remainder always lands somewhere.
+    leftovers = []
     for pay_row in remaining_payments:
-        applied = 0
+        pocket = pay_row.amount or 0
+        target = by_id.get(pay_row.sale_id) if pay_row.sale_id else None
+        if target is not None and pocket > 0:
+            take = min(sale_remaining(target), pocket)
+            if take > 0:
+                target.credit_paid_amount = (target.credit_paid_amount or 0) + take
+                if sale_remaining(target) <= 0:
+                    target.credit_settled = True
+                pocket -= take
+        leftovers.append(pocket)
+
+    for pocket in leftovers:
         for sale in sales:
-            rem = sale.final_amount - (sale.credit_paid_amount or 0)
-            if rem <= 0:
-                sale.credit_settled = True
-                continue
-            take = min(rem, (pay_row.amount or 0) - applied)
+            if pocket <= 0:
+                break
+            take = min(sale_remaining(sale), pocket)
             if take > 0:
                 sale.credit_paid_amount = (sale.credit_paid_amount or 0) + take
-                applied += take
-                if sale.credit_paid_amount >= sale.final_amount:
+                if sale_remaining(sale) <= 0:
                     sale.credit_settled = True
-            if applied >= (pay_row.amount or 0):
-                break
+                pocket -= take
 
-    customer.total_debt = max(0, sum(
-        s.final_amount - (s.credit_paid_amount or 0) for s in sales
-    ))
+    customer.total_debt = max(0, sum(sale_remaining(sale) for sale in sales))
     return amount
 
 
@@ -540,66 +1018,6 @@ def get_cashbox(db, start, end, opening_balance: int, cash_session_id: int | Non
     }
 
 
-def get_aged_receivables(db, now: datetime | None = None) -> dict:
-    """Aged-receivables (collection) report: bucket every customer's
-    outstanding نسیه balance by how long the oldest unpaid invoice has aged.
-
-    Buckets: current (≤30d), 31–60, 61–90, 90+ days. Each customer appears in
-    exactly one bucket (their oldest unpaid invoice's age decides it), with
-    their full outstanding balance and the invoice count.
-    """
-    now = now or datetime.now(timezone.utc)
-    d30 = now - timedelta(days=30)
-    d60 = now - timedelta(days=60)
-    d90 = now - timedelta(days=90)
-
-    customers = db.query(Customer).filter(Customer.total_debt > 0).all()
-    buckets = {"current": [], "31_60": [], "61_90": [], "over_90": []}
-    totals = {"current": 0, "31_60": 0, "61_90": 0, "over_90": 0}
-
-    for customer in customers:
-        unpaid = db.query(Sale).filter(
-            Sale.customer_id == customer.id,
-            Sale.payment_method == "credit",
-            Sale.is_refunded == False,
-            Sale.credit_settled == False,
-        ).order_by(Sale.created_at.asc()).all()
-        if not unpaid:
-            continue
-        # Age by the oldest unsettled invoice.
-        oldest = unpaid[0].created_at
-        if oldest.tzinfo is None:
-            oldest = oldest.replace(tzinfo=timezone.utc)
-        debt = customer.total_debt or 0
-        entry = {
-            "customer": customer,
-            "debt": debt,
-            "invoice_count": len(unpaid),
-            "oldest_date": oldest,
-            "oldest_unpaid": unpaid,
-        }
-        if oldest >= d30:
-            buckets["current"].append(entry)
-            totals["current"] += debt
-        elif oldest >= d60:
-            buckets["31_60"].append(entry)
-            totals["31_60"] += debt
-        elif oldest >= d90:
-            buckets["61_90"].append(entry)
-            totals["61_90"] += debt
-        else:
-            buckets["over_90"].append(entry)
-            totals["over_90"] += debt
-
-    grand_total = sum(totals.values())
-    return {
-        "buckets": buckets,
-        "totals": totals,
-        "grand_total": grand_total,
-        "now": now,
-    }
-
-
 def get_supplier_balances(db) -> list:
     suppliers = db.query(Supplier).order_by(Supplier.name.asc()).all()
     result = []
@@ -625,6 +1043,9 @@ def get_opening_balance(db) -> int:
 
 def debt_totals(db) -> dict:
     """Overall debt summary for the accounting dashboard."""
+    # Counts match the credit page's KPI row rather than being counted twice in
+    # two different ways.
+    overview = summarise_debts(build_debt_rows(db))
     total_debt = db.query(func.coalesce(func.sum(Customer.total_debt), 0)) \
         .scalar() or 0
     total_purchases = db.query(func.coalesce(func.sum(Purchase.total_cost), 0)).filter(
@@ -636,4 +1057,8 @@ def debt_totals(db) -> dict:
         "total_debt": total_debt,
         "total_purchases": total_purchases,
         "total_expenses": total_expenses,
+        "debtor_count": overview["debtor_count"],
+        "overdue_amount": overview["overdue_amount"],
+        "overdue_customers": overview["overdue_customers"],
+        "over_limit_count": overview["over_limit_count"],
     }

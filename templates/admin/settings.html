@@ -261,7 +261,29 @@
                 <small>حداکثر پیامک کمپین در هر بار ارسال (هر پیامک هزینه دارد)</small>
             </div>
         </div>
-        <h3 style="margin-top: 2rem;">🛡️ سقف اعتبار نسیه</h3>
+        <h3 style="margin-top: 2rem;">🛡️ سقف اعتبار و سررسید نسیه</h3>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="credit_terms_days">📅 مهلت پرداخت نسیه (روز)</label>
+                <input type="number" id="credit_terms_days" name="credit_terms_days" min="0"
+                       value="{{ settings.get('credit_terms_days', '30') }}">
+                <small>
+                    هر فاکتور نسیه با این مهلت سررسید می‌گیرد و «حساب نسیه» دیرکرد را از همان سررسید می‌سنجد.
+                    ۰ = بدون سررسید (سن بدهی از تاریخ فاکتور حساب می‌شود).
+                </small>
+            </div>
+            <div class="form-group">
+                <label for="credit_reminder_min_hours">⏳ فاصله مجاز بین دو یادآوری (ساعت)</label>
+                <input type="number" id="credit_reminder_min_hours" name="credit_reminder_min_hours" min="0"
+                       value="{{ settings.get('credit_reminder_min_hours', '24') }}">
+                <small>تا این مدت، یادآوری دوباره برای همان مشتری رد می‌شود؛ جلوی پیامک ناخواسته را می‌گیرد.</small>
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="sms_pattern_credit_reminder">📒 متن پیامک یادآوری بدهی</label>
+            <textarea id="sms_pattern_credit_reminder" name="sms_pattern_credit_reminder" rows="3">{{ settings.get('sms_pattern_credit_reminder', '') }}</textarea>
+            <small>var1=نام مشتری، var2=مبلغ بدهی، var3=سررسید. خالی بگذارید تا یادآوری در دسترس نباشد.</small>
+        </div>
         <div class="form-row">
             <div class="form-group">
                 <label for="default_credit_limit">📒 سقف اعتبار پیش‌فرض مشتریان</label>

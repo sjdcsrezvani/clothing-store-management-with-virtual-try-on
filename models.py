@@ -381,6 +381,10 @@ class Sale(Base):
     # Credit-sale (نسیه) tracking: how much of final_amount has been paid back.
     credit_settled = Column(Boolean, default=False)
     credit_paid_amount = Column(Integer, default=0)
+    # The date this نسیه invoice is due (سررسید). NULL means the shop agreed no
+    # date — those invoices keep ageing by their own date, exactly as the credit
+    # page did before this column existed, so nothing about them moves.
+    credit_due_date = Column(DateTime, nullable=True)
     points_earned = Column(Integer, default=0)
     is_refunded = Column(Boolean, default=False)
     refund_amount = Column(Integer, default=0)
@@ -772,6 +776,10 @@ class Payment(Base):
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
     sale_id = Column(Integer, ForeignKey("sales.id"), nullable=True)
     cash_session_id = Column(Integer, ForeignKey("cash_sessions.id"), nullable=True)
+    # Who took the money. The CreditPaymentRecorded event already names the
+    # operator; this puts the same fact on the row so the receipt history can
+    # show it without replaying the journal.
+    received_by_id = Column(Integer, ForeignKey("staff_users.id"), nullable=True)
     amount = Column(Integer, nullable=False)
     method = Column(String(20), default="cash")
     reversed_at = Column(DateTime, nullable=True)
@@ -785,6 +793,7 @@ class Payment(Base):
 
     customer = relationship("Customer")
     sale = relationship("Sale")
+    received_by = relationship("StaffUser", foreign_keys=[received_by_id])
 
 
 class AdminLog(Base):

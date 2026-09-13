@@ -166,6 +166,10 @@ def _apply_missing_columns(migration_engine=None):
             ("credit_paid_amount", "INTEGER"),
             ("credit_surcharge", "INTEGER"),
             ("cash_session_id", "INTEGER"),
+            # سررسید a نسیه invoice is due. Left NULL on existing rows on
+            # purpose: they keep being aged by their own date, so no debtor
+            # changes bucket just because the column appeared.
+            ("credit_due_date", "DATETIME"),
         ],
         "purchases": [
             # Existing invoices are already final, so the added column defaults
@@ -217,6 +221,7 @@ def _apply_missing_columns(migration_engine=None):
             ("reversal_id", "INTEGER"),
         ],
         "payments": [
+            ("received_by_id", "INTEGER"),
             ("cash_session_id", "INTEGER"),
             ("reversed_at", "DATETIME"),
             ("reversal_id", "INTEGER"),

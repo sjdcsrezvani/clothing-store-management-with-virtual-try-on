@@ -680,10 +680,14 @@ def test_credit_surcharge_off_by_default(client, db_session):
 # ── Aged receivables (collection dashboard) ─────────────────────────────────
 
 def test_aged_receivables_buckets(client, db_session, authed):
-    """Aged-receivables report buckets customers by the age of their oldest
-    unsettled نسیه invoice."""
+    """Debtors are bucketed by the age of their oldest unsettled نسیه invoice.
+
+    Invoices with no سررسید age by their own date, which is what the old
+    collections report did — so an existing debtor cannot jump buckets just
+    because the column appeared. (These three are cleared to model that.)
+    """
     from datetime import datetime, timezone, timedelta
-    from services.accounting import get_aged_receivables
+    from services.accounting import build_debt_rows, summarise_debts
     from models import Settings
     # No credit limit to interfere.
     db_session.add(Settings(key="default_credit_limit", value="0"))
@@ -699,6 +703,7 @@ def test_aged_receivables_buckets(client, db_session, authed):
                   customer_id=cust_a.id, extra={"payment_method": "credit"})
     sale_a = db_session.query(Sale).order_by(Sale.id.desc()).first()
     sale_a.created_at = now - timedelta(days=10)
+    sale_a.credit_due_date = None  # a row that predates سررسید
     db_session.flush()
 
     # Customer B: oldest invoice 45 days ago → 31-60 bucket
@@ -709,6 +714,7 @@ def test_aged_receivables_buckets(client, db_session, authed):
                   customer_id=cust_b.id, extra={"payment_method": "credit"})
     sale_b = db_session.query(Sale).order_by(Sale.id.desc()).first()
     sale_b.created_at = now - timedelta(days=45)
+    sale_b.credit_due_date = None
     db_session.flush()
 
     # Customer C: oldest invoice 120 days ago → over_90 bucket
@@ -719,37 +725,49 @@ def test_aged_receivables_buckets(client, db_session, authed):
                   customer_id=cust_c.id, extra={"payment_method": "credit"})
     sale_c = db_session.query(Sale).order_by(Sale.id.desc()).first()
     sale_c.created_at = now - timedelta(days=120)
+    sale_c.credit_due_date = None
     db_session.commit()
 
     # Refresh customer debt from the committed state.
     db_session.refresh(cust_a); db_session.refresh(cust_b); db_session.refresh(cust_c)
-    report = get_aged_receivables(db_session, now=now)
-    assert len(report["buckets"]["current"]) == 1
-    assert len(report["buckets"]["31_60"]) == 1
-    assert len(report["buckets"]["over_90"]) == 1
-    assert len(report["buckets"]["61_90"]) == 0
-    assert report["totals"]["current"] == 100_000
-    assert report["totals"]["31_60"] == 200_000
-    assert report["totals"]["over_90"] == 300_000
-    assert report["grand_total"] == 600_000
+    rows = build_debt_rows(db_session, now=now)
+    by_phone = {row["customer"].phone: row for row in rows}
+    assert by_phone["09120000011"]["bucket"] == "current"
+    assert by_phone["09120000022"]["bucket"] == "31_60"
+    assert by_phone["09120000033"]["bucket"] == "over_90"
 
-    # Fully settle customer A → removed from the report.
+    overview = summarise_debts(rows, now=now)
+    assert overview["buckets"]["current"] == 100_000
+    assert overview["buckets"]["31_60"] == 200_000
+    assert overview["buckets"]["over_90"] == 300_000
+    assert overview["buckets"]["61_90"] == 0
+    assert overview["total_debt"] == 600_000
+    assert overview["overdue_amount"] == 500_000
+
+    # Fully settle customer A → out of the report entirely.
     _post(client, "/admin/credit/pay",
           {"customer_id": cust_a.id, "amount": "100000", "method": "cash"}, authed)
     db_session.commit()
-    report = get_aged_receivables(db_session, now=now)
-    assert len(report["buckets"]["current"]) == 0
-    assert report["grand_total"] == 500_000
+    db_session.expire_all()
+    overview = summarise_debts(build_debt_rows(db_session, now=now), now=now)
+    assert overview["buckets"]["current"] == 0
+    assert overview["total_debt"] == 500_000
 
 
-def test_collections_page_loads(client, db_session, authed):
-    """The collections dashboard renders and shows the total debt."""
+def test_collections_redirects_into_the_credit_page(client, db_session, authed):
+    """There is one نسیه page now; the old dashboard URL forwards to it."""
     customer = _make_customer(db_session)
     _, variant = _make_variant(db_session, price=150_000, stock=10, name="شلوار تست")
     _confirm_sale(client, [{"variant_id": variant.id, "product_id": variant.product_id,
                            "unit_price": 150_000, "quantity": 1, "total_price": 150_000}],
                   customer_id=customer.id, extra={"payment_method": "credit"})
-    resp = client.get("/admin/collections")
-    assert resp.status_code == 200
-    assert "وصول مطالبات" in resp.text
-    assert "۱۵۰٬۰۰۰" in resp.text or "150,000" in resp.text
+
+    resp = client.get("/admin/collections", follow_redirects=False)
+    assert resp.status_code == 303
+    assert resp.headers["location"].startswith("/admin/credit")
+
+    # …and following it lands on the merged page with the money on it.
+    page = client.get("/admin/collections")
+    assert page.status_code == 200
+    assert "حساب نسیه" in page.text
+    assert "۱۵۰٬۰۰۰" in page.text or "150,000" in page.text

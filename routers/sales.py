@@ -21,7 +21,9 @@ from services._common import (
     jalali_str,
 )
 from services.customers import signup_birthday_fields
-from services.accounting import credit_sale_allowed, apply_credit_surcharge
+from services.accounting import (
+    apply_credit_surcharge, credit_due_date_for, credit_sale_allowed, credit_terms_days,
+)
 from services.discount import calculate_discounts, apply_discounts_after_sale
 from services.security import log_action, require_html_role
 from services.tier import (
@@ -254,6 +256,10 @@ def _render_scan(request, customer, basket, total_amount, db,
             "blocked": not allowed,
             "surcharge_amount": surcharge,
             "surcharge_percent": get_discount_setting(db, "credit_surcharge_percent", 0),
+            # The سررسید the invoice will carry when it is confirmed, so the
+            # cashier can say it out loud instead of the date appearing later.
+            "due_date": credit_due_date_for(db),
+            "terms_days": credit_terms_days(db),
         }
     return templates.TemplateResponse(request, "sales/checkout.html", {
         "step": "scan",
@@ -889,9 +895,13 @@ async def sales_confirm(
         credit_settled=False,
         credit_paid_amount=0,
     )
-    # Persist the نسیه surcharge on the sale row for the ledger/invoice.
+    # Persist the نسیه surcharge on the sale row for the ledger/invoice, and the
+    # سررسید it falls due on — the credit page ages by that date, falling back to
+    # the invoice date for anything recorded before terms existed.
     if credit_surcharge:
         sale.credit_surcharge = credit_surcharge
+    if payment_method == "credit":
+        sale.credit_due_date = credit_due_date_for(db)
     db.add(sale)
     db.flush()
 

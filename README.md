@@ -26,11 +26,22 @@ request ID when supplied, and before/after summaries where applicable.
 
 ## Accounting features (admin panel)
 
-- **📒 حساب نسیه** (`/admin/credit`) — sell on credit at checkout; see who owes
-you, record payments (cash/card) which settle the oldest unpaid invoices first
-(FIFO), per-customer history. A credit limit (سقف اعتبار) blocks new نسیه
-sales once a customer's debt exceeds it — set a store-wide default in
-Settings and per-customer overrides on each customer's credit page.
+- **📒 حساب نسیه** (`/admin/credit`) — sell on credit at checkout and collect
+it here: the debtors list, the ageing report, the open invoices and the
+collection actions are one page (the old وصول مطالبات dashboard is a redirect
+into it). A نسیه invoice carries its own **سررسید**, prefilled from the store's
+payment term (مهلت پرداخت); ageing is measured from that date, and invoices the
+shop never agreed a term for keep ageing by their own date — one opt-in action
+stamps a term on the open ones when you are ready. Receipts (cash/card) settle
+the oldest unpaid invoice first, or you can close **one invoice** directly, which
+is refunded back if it exceeds that invoice's remainder. Every receipt shows who
+took the money, and a reversal asks for a **reason** that lands in the immutable
+ledger. Each customer has a printable **صورت‌حساب** (whole period or a date
+range, with an opening balance) and a manual **یادآوری پیامکی** whose text you
+write in Settings, with a cool-down so nobody is reminded twice in a row. A
+credit limit (سقف اعتبار) blocks new نسیه sales once a customer's debt exceeds
+it — set a store-wide default in Settings and per-customer overrides on each
+customer's credit page.
 - **📦 خرید از عمده‌فروش** (`/admin/purchases`) — record what goods cost and what
 you owe. Pick a supplier, then choose its products with a searchable picker
 (the catalogue is scoped to that supplier, so a product's supplier on its own

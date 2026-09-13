@@ -1,119 +1,329 @@
 {% extends "base.html" %}
-{% block title %}📒 نسیه {{ customer.full_name }} — {{ store.name }}{% endblock %}
+{% block title %}نسیه {{ customer.full_name }} — {{ store.name }}{% endblock %}
 {% block content %}
 
-<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
-    <span style="font-size: 2rem;">📒</span>
-    <h2 style="margin: 0;">نسیه {{ customer.full_name }}</h2>
-    <div style="margin-right: auto;">
-        <span style="color: var(--ink-soft);">بدهی فعلی:</span>
-        <strong class="tnum" style="color: var(--persimmon); font-size: 1.3rem;">{{ fmt(debt) }} تومان</strong>
+<div class="page-heading product-page-heading">
+    <div>
+        <div class="eyebrow">مالی / حساب نسیه / پرونده</div>
+        <h2>نسیه {{ customer.full_name }}</h2>
+        <p>
+            <span class="customer-phone tnum">{{ customer.phone }}</span>
+            — دریافت‌ها قدیمی‌ترین فاکتور را اول تسویه می‌کنند، یا می‌توانید مستقیم یک فاکتور را ببندید.
+        </p>
+    </div>
+    <div class="admin-nav">
+        <a href="/admin/credit" class="btn btn-ghost">حساب نسیه</a>
+        <a href="/admin/credit/{{ customer.id }}/statement" class="btn btn-ghost">صورت‌حساب</a>
+        <a href="/admin/customers/{{ customer.id }}" class="btn btn-ghost">پرونده مشتری</a>
+        <a href="/admin" class="btn btn-ghost">داشبورد</a>
     </div>
 </div>
 
-{% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
-{% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
+{% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
+{% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}
 
-<div class="card" style="margin-bottom: 1rem;">
-    <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
-        <div>
-            <strong>🛡️ سقف اعتبار:</strong>
-            {% if credit_limit > 0 %}<span class="tnum">{{ fmt(credit_limit) }} تومان</span>
-            {% else %}<span>بدون محدودیت</span>{% endif %}
-            {% if custom_limit %}<small class="tnum" style="color: var(--ink-soft);">(سقف اختصاصی)</small>{% endif %}
-            {% if debt > credit_limit and credit_limit > 0 %}
-            <span style="color: var(--persimmon); font-weight: 700;">⚠️ بدهی بیشتر از سقف است — فروش نسیه جدید مسدود است.</span>
-            {% endif %}
+{% if drift.mismatch %}
+<div class="alert alert-error" role="alert">
+    ⚠️ بدهی ثبت‌شده این مشتری ({{ fmt(drift.stored) }} تومان) با جمع فاکتورهای باز ({{ fmt(drift.recomputed) }} تومان) نمی‌خواند.
+    یکی از این دو از یک دریافت یا برگشت عقب مانده است.
+</div>
+{% endif %}
+
+<div class="stats-grid credit-kpi" aria-label="خلاصه حساب نسیه مشتری">
+    <div class="stat-card accent-persimmon">
+        <div class="stat-label">بدهی فعلی</div>
+        <div class="stat-value tnum">{{ fmt(debt) }} ت</div>
+        <div class="stat-sub">{{ unpaid_sales|length }} فاکتور باز</div>
+    </div>
+    <div class="stat-card accent-ink">
+        <div class="stat-label">سررسید گذشته</div>
+        {% if overdue_amount %}
+        <div class="stat-value tnum">{{ fmt(overdue_amount) }} ت</div>
+        <div class="stat-sub">قدیمی‌ترین سررسید: {{ jalali_str(oldest_overdue, false) }}</div>
+        {% else %}
+        <div class="stat-value">—</div>
+        <div class="stat-sub">هیچ فاکتوری از سررسید نگذشته است</div>
+        {% endif %}
+    </div>
+    <div class="stat-card accent-sky">
+        <div class="stat-label">سقف اعتبار</div>
+        <div class="stat-value tnum">{% if credit_limit > 0 %}{{ fmt(credit_limit) }} ت{% else %}—{% endif %}</div>
+        <div class="stat-sub">
+            {% if credit_limit > 0 %}
+                {% if debt > credit_limit %}
+                <span class="credit-over-limit">{{ fmt(debt - credit_limit) }} ت بیش از سقف — نسیه جدید مسدود است</span>
+                {% else %}{{ fmt(credit_limit - debt) }} ت مانده{% endif %}
+            {% else %}بدون محدودیت{% endif %}
         </div>
-        <form method="post" action="/admin/credit/{{ customer.id }}/limit" style="display:flex; gap:0.4rem; align-items:center; margin-right:auto; flex-wrap:wrap;">
-            <label style="font-size:0.85rem; color: var(--ink-soft);">سقف اختصاصی (تومان، ۰ = پیش‌فرض فروشگاه):</label>
-            <input type="number" name="credit_limit" min="0" value="{{ custom_limit or '' }}" placeholder="پیش‌فرض" class="tnum" style="width: 130px; padding:0.4rem 0.6rem; border:2px solid #E8DDD5; border-radius:8px; font-family:inherit;">
-            <button type="submit" class="btn btn-sm btn-ghost">💾 ذخیره</button>
-        </form>
+    </div>
+    <div class="stat-card accent-pine">
+        <div class="stat-label">آخرین دریافت</div>
+        {% if payments and payments[0].reversed_at is none %}
+        <div class="stat-value tnum">{{ fmt(payments[0].amount) }} ت</div>
+        <div class="stat-sub">{{ jalali_str(payments[0].created_at, false) }}</div>
+        {% else %}
+        <div class="stat-value">—</div>
+        <div class="stat-sub">هنوز دریافتی ثبت نشده است</div>
+        {% endif %}
     </div>
 </div>
 
-<div class="checkout-layout">
-    <div class="checkout-left">
-        {# ── Payment form ── #}
-        <div class="card">
-            <h3>💵 ثبت دریافت</h3>
+<div class="profile-layout">
+    <div class="profile-main">
+        {# ── Receive: a round payment, else target one invoice below ── #}
+        <section class="card profile-card">
+            <div class="section-heading-row">
+                <div>
+                    <h3>💵 ثبت دریافت</h3>
+                    <p class="muted">مبلغ از قدیمی‌ترین فاکتور شروع می‌شود و تا تسویه ادامه پیدا می‌کند.</p>
+                </div>
+                <span class="section-step">۱</span>
+            </div>
+            {% if debt > 0 %}
             <form method="post" action="/admin/credit/pay">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input type="hidden" name="customer_id" value="{{ customer.id }}">
                 <div class="form-row">
                     <div class="form-group">
-                        <label>💰 مبلغ (تومان)</label>
-                        <input type="number" name="amount" min="1" max="{{ debt }}" value="{{ debt }}" required class="tnum">
+                        <label for="receive-amount">💰 مبلغ (تومان)</label>
+                        <input type="number" id="receive-amount" name="amount" min="1" max="{{ debt }}"
+                               value="{{ debt }}" required class="tnum">
                         <small>حداکثر بدهی: {{ fmt(debt) }} تومان</small>
                     </div>
                     <div class="form-group">
-                        <label>💳 روش</label>
-                        <select name="method" style="padding:0.6rem 0.8rem; border:2px solid #E8DDD5; border-radius:8px; font-family:inherit; width:100%;">
-                            <option value="cash">💵 نقد</option>
-                            <option value="card">💳 کارت</option>
+                        <label for="receive-method">💳 روش</label>
+                        <select id="receive-method" name="method">
+                            <option value="cash">💵 نقد (به صندوق می‌رود)</option>
+                            <option value="card">💳 کارت (به صندوق نمی‌رود)</option>
                         </select>
                     </div>
                 </div>
                 <div class="form-group">
-                    <label>📝 توضیح (اختیاری)</label>
-                    <input type="text" name="note" placeholder="مثلاً: قسط اول">
+                    <label for="receive-note">📝 توضیح (اختیاری)</label>
+                    <input type="text" id="receive-note" name="note" placeholder="مثلاً: قسط اول">
                 </div>
-                <button type="submit" class="btn btn-success btn-large btn-block">💵 ثبت دریافت</button>
+                <button type="submit" class="btn btn-success btn-large">💵 ثبت دریافت</button>
             </form>
-        </div>
+            {% else %}
+            <div class="empty-state">
+                <h3>بدهی‌ای باقی نمانده</h3>
+                <p>همه فاکتورهای نسیه این مشتری تسویه شده‌اند.</p>
+            </div>
+            {% endif %}
+        </section>
 
-        {# ── Unpaid invoices ── #}
-        <div class="card">
-            <h3>🧾 فاکتورهای نسیه باز</h3>
+        {# ── Open invoices: each one can be closed on its own ── #}
+        <section class="card profile-card">
+            <div class="section-heading-row">
+                <div>
+                    <h3>🧾 فاکتورهای نسیه باز</h3>
+                    <p class="muted">
+                        هر فاکتور سررسید خودش را دارد؛ اگر مبلغی بیشتر از یک فاکتور بدهید رد می‌شود،
+                        چون فقط همین فاکتور را می‌بندد.
+                    </p>
+                </div>
+                <span class="section-step">۲</span>
+            </div>
             {% if unpaid_sales %}
-            <table>
-                <thead><tr><th>شماره</th><th>تاریخ</th><th>مبلغ</th><th>پرداخت‌شده</th><th>باقی‌مانده</th></tr></thead>
-                <tbody>
-                    {% for sale in unpaid_sales %}
-                    <tr>
-                        <td><a href="/sales/invoice/{{ sale.id }}">#{{ sale.id }}</a></td>
-                        <td class="tnum">{{ jalali_str(sale.created_at, false) }}</td>
-                        <td class="tnum">{{ fmt(sale.final_amount) }}</td>
-                        <td class="tnum">{{ fmt(sale.credit_paid_amount or 0) }}</td>
-                        <td class="tnum"><strong style="color: var(--persimmon);">{{ fmt(sale.final_amount - (sale.credit_paid_amount or 0)) }}</strong></td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% else %}<p style="color: var(--ink-soft);">فاکتور نسیه بازی وجود ندارد.</p>{% endif %}
-        </div>
+            <div class="table-scroll">
+                <table class="credit-table">
+                    <thead>
+                        <tr>
+                            <th scope="col">فاکتور</th>
+                            <th scope="col">تاریخ</th>
+                            <th scope="col">مبلغ</th>
+                            <th scope="col">پرداخت‌شده</th>
+                            <th scope="col">باقی‌مانده</th>
+                            <th scope="col">سررسید</th>
+                            <th scope="col">وضعیت</th>
+                            <th scope="col">دریافت این فاکتور</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for sale in unpaid_sales %}
+                        <tr id="invoice-{{ sale.id }}">
+                            <td><a class="text-link" href="/sales/invoice/{{ sale.id }}">#{{ sale.id }}</a></td>
+                            <td class="tnum">{{ jalali_str(sale.created_at, false) }}</td>
+                            <td class="tnum">{{ fmt(sale.final_amount) }}</td>
+                            <td class="tnum">{{ fmt(sale.credit_paid_amount or 0) }}</td>
+                            <td class="tnum"><strong class="credit-amount">{{ fmt(sale.final_amount - (sale.credit_paid_amount or 0)) }}</strong></td>
+                            {% set status = invoice_status[sale.id] %}
+                            <td class="tnum">
+                                {% if status.due %}{{ jalali_str(status.due, false) }}
+                                {% else %}<span class="customer-meta">بدون سررسید</span>{% endif %}
+                            </td>
+                            <td>
+                                {% if status.bucket == 'current' %}
+                                <span class="status-badge">جاری</span>
+                                <small class="customer-meta">سن از {{ jalali_str(status.effective, false) }}</small>
+                                {% else %}
+                                <span class="status-badge is-overdue">{{ status.label }}</span>
+                                <small class="customer-meta">{{ status.days_late }} روز</small>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <form method="post" action="/admin/credit/pay" class="invoice-receive">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <input type="hidden" name="customer_id" value="{{ customer.id }}">
+                                    <input type="hidden" name="sale_id" value="{{ sale.id }}">
+                                    <label class="sr-only" for="invoice-amount-{{ sale.id }}">مبلغ فاکتور {{ sale.id }}</label>
+                                    <input type="number" id="invoice-amount-{{ sale.id }}" name="amount" min="1"
+                                           max="{{ sale.final_amount - (sale.credit_paid_amount or 0) }}"
+                                           value="{{ sale.final_amount - (sale.credit_paid_amount or 0) }}" class="tnum">
+                                    <label class="sr-only" for="invoice-method-{{ sale.id }}">روش</label>
+                                    <select id="invoice-method-{{ sale.id }}" name="method">
+                                        <option value="cash">نقد</option>
+                                        <option value="card">کارت</option>
+                                    </select>
+                                    <button type="submit" class="btn btn-sm btn-primary">دریافت</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <h3>فاکتور نسیه بازی وجود ندارد</h3>
+                <p>هر نسیه‌ای که این مشتری بگیرد، همین‌جا با سررسیدش فهرست می‌شود.</p>
+            </div>
+            {% endif %}
+        </section>
+
+        {# ── Receipts, with a reason for every reversal ── #}
+        <section class="card profile-card">
+            <div class="section-heading-row">
+                <div>
+                    <h3>📜 تاریخچه دریافت‌ها</h3>
+                    <p class="muted">برگشت یک دریافت، تخصیص همه دریافت‌های باقی‌مانده را از نو می‌سازد.</p>
+                </div>
+                <span class="section-step">۳</span>
+            </div>
+            {% if payments %}
+            <div class="table-scroll">
+                <table class="credit-table">
+                    <thead>
+                        <tr>
+                            <th scope="col">تاریخ</th>
+                            <th scope="col">مبلغ</th>
+                            <th scope="col">روش</th>
+                            <th scope="col">دریافت‌کننده</th>
+                            <th scope="col">توضیح</th>
+                            <th scope="col">وضعیت</th>
+                            <th scope="col">برگشت</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in payments %}
+                        <tr>
+                            <td class="tnum">{{ jalali_str(p.created_at) }}</td>
+                            <td class="tnum">{{ fmt(p.amount) }}</td>
+                            <td>{% if p.method == 'card' %}💳 کارت{% else %}💵 نقد{% endif %}</td>
+                            <td>
+                                {% if p.received_by %}
+                                {{ p.received_by.full_name or p.received_by.username }}
+                                {% else %}<span class="customer-meta">—</span>{% endif %}
+                            </td>
+                            <td>{{ p.note or '—' }}</td>
+                            <td>
+                                {% if p.reversed_at %}
+                                <span class="status-badge is-archived">برگشت‌شده</span>
+                                {% if reversal_reasons.get(p.id) %}
+                                <small class="customer-meta">{{ reversal_reasons[p.id].reason }}</small>
+                                {% endif %}
+                                {% else %}
+                                <span class="status-badge">ثبت‌شده</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if not p.reversed_at %}
+                                <form method="post" action="/admin/payments/{{ p.id }}/reverse" class="reversal-form"
+                                      onsubmit="return confirm('این دریافت برگشت شود؟ بدهی مشتری به‌روز می‌شود.');">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <label class="sr-only" for="reason-{{ p.id }}">علت برگشت</label>
+                                    <input type="text" id="reason-{{ p.id }}" name="reason" required
+                                           placeholder="علت برگشت" maxlength="200">
+                                    <button type="submit" class="btn btn-sm btn-ghost">برگشت</button>
+                                </form>
+                                {% else %}
+                                <span class="customer-meta">—</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <h3>هنوز دریافتی ثبت نشده است</h3>
+                <p>اولین دریافت این مشتری همین‌جا با تاریخ و دریافت‌کننده ثبت می‌شود.</p>
+            </div>
+            {% endif %}
+        </section>
     </div>
 
-    <div class="checkout-right">
-        {# ── Payment history ── #}
-        <div class="card">
-            <h3>📜 تاریخچه دریافت‌ها</h3>
-            {% if payments %}
-            <table>
-                <thead><tr><th>تاریخ</th><th>مبلغ</th><th>روش</th><th>توضیح</th><th>🔧</th></tr></thead>
-                <tbody>
-                    {% for p in payments %}
-                    <tr>
-                        <td class="tnum">{{ jalali_str(p.created_at, false) }}</td>
-                        <td class="tnum">{{ fmt(p.amount) }}</td>
-                        <td>{% if p.method == 'card' %}💳{% else %}💵{% endif %}</td>
-                        <td>{{ p.note or '—' }}</td>
-                        <td>
-                            <form method="post" action="/admin/payments/{{ p.id }}/reverse"
-                                  onsubmit="return confirm('این دریافت حذف شود؟ بدهی مشتری به‌روز می‌شود.');">
-                                <button type="submit" class="btn btn-ghost" style="padding:0.2rem 0.5rem;" title="حذف دریافت">🗑️</button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% else %}<p style="color: var(--ink-soft);">هنوز دریافتی ثبت نشده است.</p>{% endif %}
-        </div>
+    <div class="profile-side">
+        <section class="card profile-card">
+            <div class="profile-head">
+                <div class="profile-avatar" aria-hidden="true">ن</div>
+                <div>
+                    <h3>{{ customer.full_name }}</h3>
+                    <span class="tier-badge tier-{{ customer.tier }}">
+                        {% if customer.tier == 'diamond' %}الماس
+                        {% elif customer.tier == 'gold' %}طلایی
+                        {% else %}نقره‌ای{% endif %}
+                    </span>
+                </div>
+            </div>
+            <ul class="profile-facts">
+                <li><span class="label">تلفن</span><span class="value tnum customer-phone">{{ customer.phone }}</span></li>
+                <li><span class="label">بدهی</span><span class="value tnum">{{ fmt(debt) }} ت</span></li>
+                <li><span class="label">مجموع خرید</span><span class="value tnum">{{ fmt(customer.total_spent or 0) }} ت</span></li>
+                <li>
+                    <span class="label">آخرین خرید</span>
+                    <span class="value tnum">{% if customer.last_purchase_date %}{{ jalali_str(customer.last_purchase_date, false) }}{% else %}—{% endif %}</span>
+                </li>
+                <li>
+                    <span class="label">آخرین یادآوری</span>
+                    <span class="value tnum">{% if last_reminder %}{{ jalali_str(last_reminder, false) }}{% else %}—{% endif %}</span>
+                </li>
+            </ul>
+            <div class="credit-side-actions">
+                <a class="btn btn-sm btn-ghost" href="/admin/credit/{{ customer.id }}/statement">🖨️ صورت‌حساب</a>
+                {% if has_reminder_pattern %}
+                <form method="post" action="/admin/credit/{{ customer.id }}/remind">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="btn btn-sm btn-ghost" {% if not reminder_ready %}disabled{% endif %}>
+                        📱 یادآوری پیامکی
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+            {% if has_reminder_pattern and not reminder_ready %}
+            <p class="muted credit-reminder-note">{{ reminder_reason }}</p>
+            {% endif %}
+        </section>
+
+        <section class="card profile-card">
+            <h3>🛡️ سقف اعتبار</h3>
+            <p class="muted">
+                {% if credit_limit > 0 %}
+                سقف فعلی {{ fmt(credit_limit) }} تومان{% if custom_limit %} (اختصاصی همین مشتری){% else %} (پیش‌فرض فروشگاه){% endif %}.
+                {% else %}بدون محدودیت؛ فروش نسیه سقفی ندارد.{% endif %}
+            </p>
+            <form method="post" action="/admin/credit/{{ customer.id }}/limit">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <div class="form-group">
+                    <label for="credit-limit">سقف اختصاصی (تومان)</label>
+                    <input type="number" id="credit-limit" name="credit_limit" min="0"
+                           value="{{ custom_limit or '' }}" placeholder="خالی = پیش‌فرض فروشگاه" class="tnum">
+                    <small>۰ یا خالی یعنی همان پیش‌فرض فروشگاه.</small>
+                </div>
+                <button type="submit" class="btn btn-sm btn-primary">ذخیره سقف</button>
+            </form>
+        </section>
     </div>
 </div>
-
-<nav class="admin-nav">
-    <a href="/admin/credit" class="btn btn-ghost">🔙 حساب نسیه</a>
-</nav>
 {% endblock %}

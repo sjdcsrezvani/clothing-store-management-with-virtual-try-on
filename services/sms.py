@@ -25,6 +25,7 @@ def get_sms_config(db: Session) -> dict:
         "tier_up_gold_pattern": get_sms_setting(db, "sms_pattern_tier_up_gold"),
         "tier_up_diamond_pattern": get_sms_setting(db, "sms_pattern_tier_up_diamond"),
         "campaign_pattern": get_sms_setting(db, "sms_pattern_campaign"),
+        "credit_reminder_pattern": get_sms_setting(db, "sms_pattern_credit_reminder"),
     }
 
 
@@ -135,6 +136,25 @@ async def send_birthday_sms(phone: str, first_name: str, child_name: str, db: Se
         birthday_sms_vars(first_name, child_name, occasion),
         db,
     )
+
+
+# ========== نسیه reminder ==========
+# Keys: var1=customer's name, var2=what they still owe, var3=the سررسید they
+# passed (or — when the shop agreed no date). Transactional: it is about the
+# customer's own balance, so it does not depend on marketing consent — but it is
+# only ever sent by hand, and the cool-down in the credit service keeps one
+# customer from being reminded twice in an hour.
+async def queue_credit_reminder_sms(phone: str, attributes: dict, db: Session):
+    """Queue the owner's reminder pattern for one debtor.
+
+    Queued rather than sent inline, like the birthday and campaign messages, so
+    a slow gateway cannot fail a collection round and the shop can still see
+    what was accepted. Returns the job, or None when no pattern is written.
+    """
+    pattern = get_sms_config(db)["credit_reminder_pattern"]
+    if not pattern:
+        return None
+    return await queue_sms(pattern, phone, attributes, db)
 
 
 # ========== Pattern 3: Tier-up (Silver → Gold) ==========

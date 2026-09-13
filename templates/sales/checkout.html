@@ -261,6 +261,10 @@
                 {% if customer %}
                 <div style="font-size: 0.8rem; color: var(--ink-soft); margin-top: 0.4rem;">
                     📒 نسیه: مبلغ به حساب بدهی مشتری اضافه می‌شود و در «حساب نسیه» قابل دریافت است.
+                    {% if credit_limit_info and credit_limit_info.due_date %}
+                    <br>📅 سررسید این فاکتور: <strong class="tnum">{{ jalali_str(credit_limit_info.due_date, false) }}</strong>
+                    ({{ credit_limit_info.terms_days }} روز).
+                    {% endif %}
                     {% if credit_limit_info and credit_limit_info.surcharge_percent > 0 %}
                     <br>➕ <strong class="tnum">{{ credit_limit_info.surcharge_percent }}٪</strong> افزایش نسیه (<strong class="tnum">{{ fmt(credit_limit_info.surcharge_amount) }}</strong> تومان) اعمال می‌شود و تخفیف روی نسیه اعمال نمی‌گردد.
                     {% else %}

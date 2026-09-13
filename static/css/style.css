@@ -165,16 +165,21 @@ html[data-theme-mode="high-contrast"] .card, html[data-theme-mode="high-contrast
 .app-footer { max-width: 1240px; margin: 0 auto; padding: 1rem 1.5rem 1.4rem; color: var(--ink-soft); font-size: 0.75rem; text-align: center; border-top: 1px solid var(--rule); }
 .app-footer p + p { margin-top: 0.25rem; }
 
-/* Compatibility for any legacy page still using the old shell classes. */
-header:not(.app-topbar) { background: linear-gradient(135deg, var(--candy), var(--sky)); padding: 0.7rem 0; }
-header:not(.app-topbar) .container { display: flex; justify-content: space-between; align-items: center; gap: 0.8rem; }
-header:not(.app-topbar) h1 a { color: #fff; }
+/* The old `header:not(.app-topbar)` shell-compat rule is gone: no template uses
+   that shell any more, and it painted the topbar gradient onto any other
+   <header> — which is exactly what it did to the statement's own header. */
 .nav-btn { background: rgba(255,255,255,0.2); color: #fff; border: 1.5px solid rgba(255,255,255,0.4); padding: 0.3rem 0.8rem; border-radius: 999px; font-family: inherit; font-weight: 600; cursor: pointer; }
 main:not(.app-main) { padding: 1.5rem 0 3rem; min-height: calc(100vh - 160px); }
 footer:not(.app-footer) { text-align: center; padding: 1rem 0; color: var(--ink-soft); font-size: 0.8rem; border-top: 2px solid var(--rule); margin-top: 2rem; }
 
 /* ===================== Page headings ===================== */
 .page-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 1.5rem; }
+/* A long description must wrap, not squeeze the nav: the nav is sized to its
+   own buttons and keeps them on one row, and the text block gives up the width.
+   Without this the heading's paragraph could starve the nav until its buttons
+   broke 2 + 1 — which is what the credit page's three did. */
+.page-heading > div { min-width: 0; }
+.page-heading .admin-nav { flex: 0 0 auto; }
 .page-heading h2 { margin: 0.2rem 0 0.25rem; font-size: clamp(1.45rem, 2.5vw, 2rem); }
 .page-heading p { color: var(--ink-soft); font-size: 0.82rem; margin: 0; }
 .eyebrow { color: var(--candy-dark); font-size: 0.72rem; font-weight: 800; letter-spacing: 0.02em; }
@@ -262,7 +267,9 @@ button:disabled { cursor: wait; opacity: 0.62; transform: none !important; }
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1rem;
+  /* column-gap only: each .form-group already carries its own bottom margin,
+     so a row gap here doubled the space between stacked fields to 2rem. */
+  column-gap: 1rem;
 }
 
 /* ===================== Buttons — iconic ===================== */
@@ -273,7 +280,10 @@ button:disabled { cursor: wait; opacity: 0.62; transform: none !important; }
   justify-content: center;
   gap: 0.4rem;
   padding: 0.75rem 1.4rem;
-  border: none;
+  /* A transparent border, not `none`: `.btn-ghost` draws a 2px border, so every
+     other button reserved 4px less height and a row mixing the two — a primary
+     next to a ghost, a <button> next to a link — sat 4px out of line. */
+  border: 2px solid transparent;
   border-radius: var(--radius-sm);
   font-family: inherit;
   font-size: 0.95rem;
@@ -308,7 +318,7 @@ button:disabled { cursor: wait; opacity: 0.62; transform: none !important; }
 .btn-ghost {
   background: var(--field-bg);
   color: var(--ink);
-  border: 2px solid var(--rule);
+  border-color: var(--rule);
 }
 .btn-ghost:hover { border-color: var(--candy); color: var(--candy); box-shadow: none; }
 
@@ -735,7 +745,7 @@ tbody tr:last-child td { border-bottom: none; }
 .nav-icon::before, .icon-plus::before, .icon-logout::before, .icon-check::before { position: absolute; inset: 0; display: grid; place-items: center; font-family: system-ui, sans-serif; font-size: 1rem; font-weight: 800; line-height: 1; }
 .ui-icon { display: block; width: 1.18rem; height: 1.18rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .nav-icon .ui-icon, .icon-plus .ui-icon, .icon-logout .ui-icon { position: relative; z-index: 1; }
-.icon-sale::before, .icon-history::before, .icon-box::before, .icon-truck::before, .icon-ledger::before, .icon-users::before, .icon-credit::before, .icon-collections::before, .icon-campaign::before, .icon-dashboard::before, .icon-chart::before, .icon-accounting::before, .icon-cash::before, .icon-expenses::before, .icon-supplier::before, .icon-dress::before, .icon-backup::before, .icon-settings::before, .icon-palette::before, .icon-terminal::before, .icon-logs::before, .icon-staff::before, .icon-plus::before, .icon-logout::before, .icon-check::before { content: ""; }
+.icon-sale::before, .icon-history::before, .icon-box::before, .icon-truck::before, .icon-ledger::before, .icon-users::before, .icon-credit::before, .icon-campaign::before, .icon-dashboard::before, .icon-chart::before, .icon-accounting::before, .icon-cash::before, .icon-expenses::before, .icon-supplier::before, .icon-dress::before, .icon-backup::before, .icon-settings::before, .icon-palette::before, .icon-terminal::before, .icon-logs::before, .icon-staff::before, .icon-plus::before, .icon-logout::before, .icon-check::before { content: ""; }
 .quick-sale .icon-sale, .topbar-settings-icon { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 1.25rem; height: 1.25rem; flex: 0 0 1.25rem; font-size: 0; }
 .quick-sale .icon-sale .ui-icon, .topbar-settings-icon .ui-icon { position: relative; z-index: 1; width: 1.1rem; height: 1.1rem; }
 .context-mark, .footer-mark { display: inline-block; width: 0.8rem; height: 0.8rem; border-radius: 2px; background: var(--candy); vertical-align: -0.08rem; }
@@ -815,6 +825,9 @@ html[data-theme="kids-boutique"] .context-mark, html[data-theme="kids-boutique"]
   flex-wrap: wrap;
   margin-top: 1.2rem;
 }
+/* One width for the short labels, so a row of nav buttons reads as a set
+   instead of four pills of four different sizes. Longer labels still grow. */
+.admin-nav > .btn { min-width: 7.5rem; }
 .quick-actions-card { display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: linear-gradient(135deg, var(--surface-soft), var(--card)); }
 
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
@@ -1106,13 +1119,18 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 /* ===================== Product management and printable tags ===================== */
 
 .sr-only {
+  /* inset: 0, not an auto position: with no inset a screen-reader label sat at
+     its static position — which inside a wide, horizontally-scrolled table is
+     off the page — and that pushed the whole document ~77px wider. */
   position: absolute;
+  inset: 0;
   width: 1px;
   height: 1px;
   padding: 0;
   margin: -1px;
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
 }
@@ -1319,7 +1337,11 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
   .product-form-grid-wide, .variant-entry-grid { grid-template-columns: 1fr; }
   .products-kpi { grid-template-columns: 1fr; }
   .section-heading-row, .product-list-heading { align-items: stretch; flex-direction: column; }
-  .product-page-heading .admin-nav { display: grid; grid-template-columns: 1fr 1fr; }
+  /* The buttons share each row and grow to fill it: three of them fit one row
+     instead of the third being stranded at half width under the first two, and
+     a lone leftover takes the whole row. */
+  .product-page-heading .admin-nav { align-items: stretch; }
+  .product-page-heading .admin-nav > * { flex: 1 1 140px; }
   .product-search-form { align-items: stretch; }
   .product-search-form input, .product-search-form select, .product-search-form .btn { min-width: 100%; }
   .tag-settings-side { display: block; }
@@ -1863,7 +1885,11 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 
 /* ── customer profile ── */
 .profile-layout { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(280px, 0.85fr); gap: 1.2rem; align-items: start; }
-.profile-main, .profile-side { display: grid; gap: 1.2rem; min-width: 0; }
+/* minmax(0, …) + min-width: 0 on the cards themselves, not just the columns: a
+   card holding a wide table sized its track to the table's min-width, so the
+   table stretched the page instead of scrolling inside its own container. */
+.profile-main, .profile-side { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.2rem; min-width: 0; }
+.profile-main > *, .profile-side > * { min-width: 0; }
 .profile-card h3 { margin-bottom: 0.2rem; }
 .profile-card .muted { margin-top: 0; }
 .profile-head { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; }
@@ -1910,6 +1936,100 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 html[data-theme-mode="high-contrast"] .status-badge,
 html[data-theme-mode="high-contrast"] .tag-chip,
 html[data-theme-mode="high-contrast"] .drift-flag { border: 1px solid var(--ink); }
+
+/* ===================== نسیه (credit) ===================== */
+/* One page now: debtors, ageing, invoices and collection. Every colour here is
+   a theme token, so dark and high-contrast follow along. */
+
+.credit-kpi a.stat-card { display: block; text-decoration: none; color: inherit; }
+.credit-filter-form { align-items: end; margin-bottom: 1rem; }
+.credit-filter-form .form-group { margin-bottom: 0; flex: 1 1 170px; min-width: 150px; }
+.credit-filter-form .form-group:first-of-type { flex: 1 1 260px; }
+.credit-results { margin: 0 0 0.7rem; font-size: 0.78rem; color: var(--ink-soft); }
+.view-toggle { display: flex; gap: 0.35rem; }
+
+.credit-table { min-width: 1020px; }
+.credit-table td small,
+.credit-table td strong { display: block; }
+.credit-amount { color: var(--persimmon); }
+.credit-over-limit { color: var(--persimmon); font-weight: 700; font-size: 0.72rem; }
+.credit-drift-note { margin: 0.6rem 0 0; font-size: 0.78rem; color: var(--ink-soft); }
+
+/* Ageing buckets: the label carries the meaning, the tint only reinforces it. */
+.credit-buckets { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.7rem; }
+.bucket-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--rule);
+  border-top: 3px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  color: inherit;
+  text-decoration: none;
+}
+.bucket-card:hover { border-color: var(--candy); text-decoration: none; }
+.bucket-card.is-active { border-color: var(--candy-dark); border-top-color: var(--candy-dark); background: color-mix(in srgb, var(--candy) 10%, var(--card)); }
+.bucket-card.is-current { border-top-color: var(--mint); }
+.bucket-card.is-1_30 { border-top-color: var(--sunshine); }
+.bucket-card.is-31_60 { border-top-color: var(--sunshine); }
+.bucket-card.is-61_90 { border-top-color: var(--persimmon); }
+.bucket-card.is-over_90 { border-top-color: var(--ink); }
+.bucket-label { font-size: 0.74rem; font-weight: 700; color: var(--ink-soft); }
+.bucket-amount { font-size: 1.15rem; }
+.bucket-count { color: var(--ink-soft); font-size: 0.72rem; }
+
+.credit-maintenance { margin-top: 0.9rem; padding-top: 0.9rem; border-top: 1px dashed var(--rule); }
+.credit-maintenance p { margin: 0 0 0.6rem; font-size: 0.8rem; color: var(--ink-soft); }
+
+.status-badge.is-overdue { background: color-mix(in srgb, var(--persimmon) 20%, var(--card)); color: var(--persimmon); }
+.status-badge.is-due-soon { background: color-mix(in srgb, var(--sunshine) 30%, var(--card)); color: var(--ink); }
+
+/* Per-invoice receipt and reversal: compact enough to live in a table cell. */
+.invoice-receive, .reversal-form { display: flex; gap: 0.3rem; align-items: center; flex-wrap: wrap; }
+.invoice-receive input, .reversal-form input { width: 115px; min-height: 2rem; padding: 0.25rem 0.45rem; font-size: 0.78rem; }
+.invoice-receive select { min-height: 2rem; padding: 0.2rem 0.4rem; font-size: 0.78rem; }
+.invoice-receive .btn, .reversal-form .btn { min-height: 2rem; padding: 0.25rem 0.6rem; font-size: 0.75rem; }
+
+table tbody tr:target { background: color-mix(in srgb, var(--candy) 12%, var(--card)); outline: 2px solid var(--candy); outline-offset: -2px; }
+
+.credit-side-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.9rem; }
+.credit-reminder-note { margin: 0.5rem 0 0; font-size: 0.74rem; }
+
+/* ── صورت‌حساب (statement) ── */
+.statement-range { align-items: end; margin-bottom: 1rem; }
+.statement-range .form-group { margin-bottom: 0; flex: 1 1 170px; min-width: 150px; }
+.credit-statement { display: grid; gap: 1rem; }
+.statement-head { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; border-bottom: 1px solid var(--rule); padding-bottom: 0.8rem; }
+.statement-head h2, .statement-head h3 { margin: 0 0 0.2rem; }
+.statement-head p { margin: 0; font-size: 0.8rem; color: var(--ink-soft); }
+.statement-meta { text-align: left; }
+.statement-table { min-width: 760px; }
+.statement-opening { color: var(--ink-soft); }
+.statement-reversal td { color: var(--ink-soft); }
+.statement-summary { border-top: 1px solid var(--rule); padding-top: 0.7rem; font-size: 0.82rem; }
+.statement-summary p { margin: 0 0 0.3rem; }
+.statement-foot { color: var(--ink-soft); font-size: 0.74rem; }
+
+/* High-contrast: the ageing strip must not rely on its tint. */
+html[data-theme-mode="high-contrast"] .bucket-card { border-width: 2px; }
+html[data-theme-mode="high-contrast"] .bucket-card.is-active { border-color: var(--ink); }
+
+@media (max-width: 700px) {
+  .credit-filter-form .form-group { flex: 1 1 100%; min-width: 0; }
+  .statement-range .form-group { flex: 1 1 100%; min-width: 0; }
+}
+
+@media print {
+  /* A statement is a document: no chrome, no colour work, just the figures. */
+  .app-header, .app-sidebar, .app-footer, .screen-only, .admin-nav, .search-form { display: none !important; }
+  .credit-statement { border: 0; box-shadow: none; padding: 0; }
+  .credit-statement .table-scroll { overflow: visible; }
+  .statement-table { min-width: 0; width: 100%; font-size: 0.8rem; }
+  .statement-table th, .statement-table td { border-bottom: 1px solid var(--rule); }
+  body { background: white; }
+}
 
 /* High-contrast: state must not depend on colour alone. */
 html[data-theme-mode="high-contrast"] .pdp-popup { border-width: 2px; }

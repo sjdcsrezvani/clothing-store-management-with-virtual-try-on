@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}صورت‌حساب {{ customer.full_name }} — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div class="page-heading product-page-heading screen-only">
+    <div>
+        <div class="eyebrow">مالی / حساب نسیه / صورت‌حساب</div>
+        <h2>صورت‌حساب {{ customer.full_name }}</h2>
+        <p>
+            همه فاکتورهای نسیه و دریافت‌ها با مانده تجمعی — برای دادن به مشتری یا ضمیمه کردن به سفارش.
+        </p>
+    </div>
+    <div class="admin-nav">
+        <button type="button" class="btn btn-primary" onclick="window.print()">🖨️ چاپ</button>
+        <a href="/admin/credit/{{ customer.id }}" class="btn btn-ghost">حساب نسیه مشتری</a>
+        <a href="/admin/credit" class="btn btn-ghost">فهرست بدهکاران</a>
+    </div>
+</div>
+
+<form method="get" action="/admin/credit/{{ customer.id }}/statement" class="search-form screen-only statement-range">
+    <div class="form-group">
+        <label for="start_date">از تاریخ</label>
+        <input type="text" id="start_date" name="start_date" value="{{ start }}"
+               placeholder="{{ today }}" class="persian-date-input" data-pdp-pair="#end_date">
+    </div>
+    <div class="form-group">
+        <label for="end_date">تا تاریخ</label>
+        <input type="text" id="end_date" name="end_date" value="{{ end }}"
+               placeholder="{{ today }}" class="persian-date-input" data-pdp-pair="#start_date">
+    </div>
+    <button type="submit" class="btn btn-primary">اعمال بازه</button>
+    <a href="/admin/credit/{{ customer.id }}/statement" class="btn btn-ghost">همه تاریخ‌ها</a>
+</form>
+
+<section class="card credit-statement">
+    {# A div, not a `header`: the legacy-shell rule `header:not(.app-topbar)`
+       paints any other header with the topbar's gradient. #}
+    <div class="statement-head">
+        <div>
+            <h2>{{ store.name }}</h2>
+            <p>{{ store.tagline }}</p>
+        </div>
+        <div class="statement-meta">
+            <h3>صورت‌حساب نسیه</h3>
+            <p><strong>{{ customer.full_name }}</strong></p>
+            <p class="tnum">{{ customer.phone }}</p>
+            <p>
+                {% if start or end %}
+                بازه: {{ start or '—' }} تا {{ end or today }}
+                {% else %}کل دوره{% endif %}
+                · تاریخ صدور: {{ today }}
+            </p>
+        </div>
+    </div>
+
+    {% if rows %}
+    <div class="table-scroll">
+        <table class="credit-table statement-table">
+            <thead>
+                <tr>
+                    <th scope="col">تاریخ</th>
+                    <th scope="col">شرح</th>
+                    <th scope="col">مرجع</th>
+                    <th scope="col">بدهکار (فاکتور)</th>
+                    <th scope="col">بستانکار (دریافت)</th>
+                    <th scope="col">مانده</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if opening %}
+                <tr class="statement-opening">
+                    <td class="tnum">—</td>
+                    <td>مانده از قبل</td>
+                    <td>—</td>
+                    <td class="tnum">—</td>
+                    <td class="tnum">—</td>
+                    <td class="tnum">{% if opening < 0 %}−{% endif %}{{ fmt(opening if opening >= 0 else -opening) }}</td>
+                </tr>
+                {% endif %}
+                {% for row in rows %}
+                <tr class="statement-{{ row.kind }}">
+                    <td class="tnum">{{ jalali_str(row.at, false) }}</td>
+                    <td>{{ row.detail }}</td>
+                    <td class="tnum">
+                        {% if row.link %}<a class="text-link" href="{{ row.link }}">{{ row.reference }}</a>
+                        {% else %}{{ row.reference }}{% endif %}
+                    </td>
+                    <td class="tnum">{% if row.debit %}{{ fmt(row.debit) }}{% else %}—{% endif %}</td>
+                    <td class="tnum">{% if row.credit %}{{ fmt(row.credit) }}{% else %}—{% endif %}</td>
+                    <td class="tnum"><strong>{{ fmt(row.balance) }}</strong></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <th scope="row" colspan="3">جمع بازه</th>
+                    <td class="tnum">{{ fmt(total_debit) }}</td>
+                    <td class="tnum">{{ fmt(total_credit) }}</td>
+                    <td class="tnum"><strong>{{ fmt(closing) }}</strong></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <h3>در این بازه حرکتی ثبت نشده است</h3>
+        <p>یا بازه را تغییر دهید یا همه تاریخ‌ها را ببینید.</p>
+        <a href="/admin/credit/{{ customer.id }}/statement" class="btn btn-ghost">همه تاریخ‌ها</a>
+    </div>
+    {% endif %}
+
+    <div class="statement-summary">
+        <p>
+            مانده این صورت‌حساب: <strong class="tnum">{{ fmt(closing) }}</strong> تومان.
+            {% if closing != debt %}
+            بدهی ثبت‌شده در پرونده مشتری <strong class="tnum">{{ fmt(debt) }}</strong> تومان است؛
+            اختلاف به خاطر دریافت‌ها یا برگشت‌های بیرون از این بازه است.
+            {% endif %}
+        </p>
+        <p class="statement-foot">{{ store.name }}{% if store.instagram %} · {{ store.instagram }}{% endif %} — {{ store.footer }}</p>
+    </div>
+</section>
+{% endblock %}
