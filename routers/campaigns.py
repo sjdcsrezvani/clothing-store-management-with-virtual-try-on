@@ -21,7 +21,6 @@ from models import (
     Customer,
     Sale,
     SaleCampaign,
-    Settings,
     to_english_digits,
 )
 from services._common import (
@@ -47,6 +46,7 @@ from services.campaigns import (
 )
 from services.security import log_action, require_html_role
 from services.sms import queue_sms
+from services.sms_templates import get_template
 from services.templating import templates
 
 router = APIRouter(prefix="/admin")
@@ -435,10 +435,15 @@ async def admin_campaign_send(
     if not campaign:
         raise HTTPException(status_code=404, detail="کمپین یافت نشد")
 
-    pattern = db.query(Settings).filter(Settings.key == "sms_pattern_campaign").first()
-    if not pattern or not pattern.value:
+    # The campaign text lives in the new پیامک page now; a template switched off
+    # (or written as an empty pattern) still means «nothing to send», exactly as
+    # it did when this read the settings row directly.
+    template = get_template(db, "campaign")
+    pattern = (template.body or "") if template is not None and template.is_active else ""
+    if not pattern:
         return RedirectResponse(
-            url=f"/admin/campaigns/{campaign.id}?err=ابتدا متن پیامک کمپین را در صفحه تنظیمات بنویسید.",
+            url=f"/admin/campaigns/{campaign.id}?err="
+                "ابتدا متن پیامک کمپین را در صفحه پیامک بنویسید و فعال کنید.",
             status_code=303,
         )
 
@@ -448,7 +453,7 @@ async def admin_campaign_send(
         assignment = assign_campaign(db, campaign, customer, source="sms")
         db.flush()
         job = await queue_sms(
-            pattern.value,
+            pattern,
             customer.phone,
             {
                 "var1": customer.first_name or "مشتری",
@@ -457,6 +462,9 @@ async def admin_campaign_send(
                 "var4": str(campaign.discount_percent),
             },
             db,
+            template=template,
+            source="campaign",
+            customer=customer,
         )
         if job is None:
             continue

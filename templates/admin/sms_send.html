@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block title %}ارسال پیامک — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div class="page-heading product-page-heading">
+    <div>
+        <div class="eyebrow">بازاریابی / پیامک / ارسال</div>
+        <h2>ارسال پیامک</h2>
+        <p>
+            یک قالب انتخاب کنید، مخاطب‌ها را مشخص کنید و پیش‌نمایش بگیرید.
+            تا وقتی «ارسال» را نزنید هیچ پیامکی در صف قرار نمی‌گیرد؛ تعداد دقیق مخاطب‌ها هم قبل از ارسال نشان داده می‌شود.
+        </p>
+    </div>
+    <div class="admin-nav">
+        <a href="/admin/sms" class="btn btn-ghost">قالب‌ها</a>
+        <a href="/admin/sms/history" class="btn btn-ghost">تاریخچه</a>
+        <a href="/admin/campaigns" class="btn btn-ghost">کمپین‌ها</a>
+    </div>
+</div>
+
+{% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
+{% if error %}<div class="alert alert-error" role="alert">⚠️ {{ error }}</div>{% endif %}
+
+<div class="sms-send-layout">
+    <section class="card">
+        <form method="post" action="/admin/sms/send" id="sms-send-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+            <div class="form-section">
+                <h3>۱. قالب پیامک</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="template_id">قالب</label>
+                        <select id="template_id" name="template_id">
+                            {% for choice in template_choices %}
+                            <option value="{{ choice.id }}" {% if template and choice.id == template.id %}selected{% endif %}>
+                                {{ choice.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <small>فقط قالب‌های فعال در این فهرست می‌آیند.</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="none">&nbsp;</label>
+                        <a href="/admin/sms/templates/{{ template.id }}/edit" class="btn btn-ghost">ویرایش این قالب</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h3>۲. مخاطب‌ها</h3>
+                <div class="sms-audience-grid">
+                    {% for choice in choices %}
+                    <label class="sms-audience-option">
+                        <input type="radio" name="audience" value="{{ choice.key }}"
+                               {% if audience == choice.key %}checked{% endif %}>
+                        <span>
+                            <strong>{{ choice.label }}</strong>
+                            {% if choice.count is not none %}
+                            <small class="tnum">{{ choice.count }} نفر</small>
+                            {% endif %}
+                        </span>
+                    </label>
+                    {% endfor %}
+                </div>
+
+                <div class="form-group sms-picked-block">
+                    <label>مشتریان دست‌چین‌شده</label>
+                    <input type="search" id="sms-picker-search" class="sms-picker-search"
+                           placeholder="جست‌وجوی نام یا شماره…" dir="auto">
+                    <div class="sms-picker" id="sms-picker">
+                        {% for customer in customers %}
+                        <label class="sms-pick-row" data-search="{{ customer.full_name }} {{ customer.phone }}">
+                            <input type="checkbox" name="picked" value="{{ customer.id }}"
+                                   {% if customer.id|string in picked %}checked{% endif %}>
+                            <span>{{ customer.full_name }}</span>
+                            <small class="tnum" dir="ltr">{{ customer.phone }}</small>
+                        </label>
+                        {% endfor %}
+                    </div>
+                    <small class="tnum" id="sms-picked-count">۰ مشتری انتخاب شده</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="numbers">یا شماره‌های دستی</label>
+                    <textarea id="numbers" name="numbers" rows="3" dir="ltr"
+                              placeholder="۰۹۱۲۳۴۵۶۷۸۹، ۰۹۳۵۱۲۳۴۵۶۷">{{ numbers }}</textarea>
+                    <small>
+                        هر شماره در یک خط یا با کاما. شماره‌ای که در مشتریان باشد با نامش ثبت می‌شود.
+                    </small>
+                </div>
+
+                <label class="switch-row">
+                    <input type="checkbox" name="transactional" {% if transactional %}checked{% endif %}>
+                    <span>
+                        <strong>پیام تراکنشی است (بدون نیاز به رضایت تبلیغاتی)</strong>
+                        <small>
+                            برای پیام‌های مربوط به حساب خود مشتری — مثل یادآوری بدهی.
+                            برای پیام تبلیغاتی، رضایت مشتری شرط است.
+                        </small>
+                    </span>
+                </label>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" name="action" value="preview" class="btn btn-ghost">پیش‌نمایش مخاطب‌ها</button>
+                <button type="submit" name="action" value="send" class="btn btn-primary btn-large"
+                        onclick="return confirm('پیامک برای مخاطبان همین پیش‌نمایش در صف ارسال قرار بگیرد؟');">
+                    ارسال پیامک
+                </button>
+            </div>
+        </form>
+    </section>
+
+    <aside class="sms-send-side">
+        <section class="card sms-preview-card" aria-label="پیش‌نمایش پیامک">
+            <h3>مشتری چه می‌بیند</h3>
+            <div class="sms-phone">
+                <div class="sms-bubble" dir="auto">{{ body or 'متن این قالب خالی است.' }}</div>
+            </div>
+            <p class="muted">قالب: <strong>{{ template.name }}</strong></p>
+        </section>
+
+        <section class="card" aria-label="خلاصه ارسال">
+            <h3>خلاصه</h3>
+            {% if plan %}
+            <ul class="sms-summary">
+                <li><span>حالت</span><strong>{{ plan.mode_label }}</strong></li>
+                <li><span>واجد شرایط</span><strong class="tnum">{{ plan.matched }}</strong></li>
+                <li><span>در این ارسال</span><strong class="tnum">{{ plan.count }}</strong></li>
+                <li><span>سقف هر ارسال</span><strong class="tnum">{{ plan.limit }}</strong></li>
+            </ul>
+            {% if plan.capped %}
+            <p class="sms-warning">
+                {{ plan.matched - plan.count }} نفر به نوبت بعد ماندند — سقف هر ارسال
+                {{ plan.limit }} پیامک است و از صفحه پیامک قابل تغییر است.
+            </p>
+            {% endif %}
+            {% set skipped = plan.skipped %}
+            {% if skipped.opted_out or skipped.archived or skipped.blocked or skipped.invalid or skipped.duplicate %}
+            <p class="muted sms-skipped">
+                کنار گذاشته‌شده:
+                {% if skipped.opted_out %}انصراف {{ skipped.opted_out }}{% endif %}
+                {% if skipped.archived %} · بایگانی {{ skipped.archived }}{% endif %}
+                {% if skipped.blocked %} · بلاک {{ skipped.blocked }}{% endif %}
+                {% if skipped.invalid %} · شماره نامعتبر {{ skipped.invalid }}{% endif %}
+                {% if skipped.duplicate %} · تکراری {{ skipped.duplicate }}{% endif %}
+            </p>
+            {% endif %}
+
+            {% if plan.recipients %}
+            <details class="sms-recipients">
+                <summary>فهرست مخاطبان این ارسال ({{ plan.count }})</summary>
+                <ul>
+                    {% for recipient in plan.recipients %}
+                    <li>
+                        <span>{{ recipient.customer.full_name if recipient.customer else 'شماره مهمان' }}</span>
+                        <small class="tnum" dir="ltr">{{ recipient.phone }}</small>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </details>
+            {% endif %}
+            {% else %}
+            <p class="muted">
+                برای دیدن تعداد دقیق مخاطب‌ها و متن نهایی، «پیش‌نمایش مخاطب‌ها» را بزنید.
+                تا آن لحظه هیچ پیامکی صف نمی‌شود.
+            </p>
+            {% endif %}
+        </section>
+    </aside>
+</div>
+
+<script>
+(function () {
+    var picker = document.getElementById('sms-picker');
+    var counter = document.getElementById('sms-picked-count');
+    var search = document.getElementById('sms-picker-search');
+    if (picker) {
+        var boxes = picker.querySelectorAll('input[type="checkbox"]');
+        function update() {
+            if (!counter) return;
+            var count = 0;
+            boxes.forEach(function (box) { if (box.checked) count += 1; });
+            counter.textContent = count.toLocaleString('fa-IR') + ' مشتری انتخاب شده';
+        }
+        boxes.forEach(function (box) { box.addEventListener('change', update); });
+        update();
+    }
+    if (search && picker) {
+        search.addEventListener('input', function () {
+            var needle = search.value.trim().toLowerCase();
+            picker.querySelectorAll('.sms-pick-row').forEach(function (row) {
+                var haystack = (row.getAttribute('data-search') || '').toLowerCase();
+                row.hidden = needle.length > 0 && haystack.indexOf(needle) === -1;
+            });
+        });
+    }
+    // Choosing a template or an audience re-runs the preview (action defaults to
+    // «preview»), so the count and the message on the right always describe the
+    // choice currently on screen. Nothing is queued without the send button.
+    var form = document.getElementById('sms-send-form');
+    if (form) {
+        form.querySelectorAll('select, input[name="audience"]').forEach(function (field) {
+            field.addEventListener('change', function () {
+                if (form.requestSubmit) form.requestSubmit();
+            });
+        });
+    }
+})();
+</script>
+{% endblock %}

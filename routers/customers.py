@@ -82,7 +82,7 @@ async def create_customer(
     )
     db.add(customer)
     db.commit()
-    await queue_welcome_sms(phone, first_name, code, db)
+    await queue_welcome_sms(phone, first_name, code, db, customer=customer)
 
     return templates.TemplateResponse(request, "customer.html", {
         "customer": customer,

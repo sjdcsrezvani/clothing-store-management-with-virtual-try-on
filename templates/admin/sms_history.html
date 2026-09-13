@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}تاریخچه پیامک — {{ store.name }}{% endblock %}
+{% block content %}
+{% set filter_qs = '&status=' ~ status ~ '&source=' ~ source ~ '&order=' ~ order ~ '&search=' ~ (search|urlencode) %}
+
+<div class="page-heading product-page-heading">
+    <div>
+        <div class="eyebrow">بازاریابی / پیامک / تاریخچه</div>
+        <h2>تاریخچه پیامک‌ها</h2>
+        <p>
+            هر پیامکی که این فروشگاه فرستاده — خودکار یا دستی — همین‌جا با متن دقیق لحظه‌ی ارسال ثبت شده است.
+            وضعیت «در صف» یعنی درگاه هنوز آن را نبرده.
+        </p>
+    </div>
+    <div class="admin-nav">
+        <a href="/admin/sms" class="btn btn-ghost">قالب‌ها</a>
+        <a href="/admin/sms/send" class="btn btn-primary">ارسال پیامک</a>
+    </div>
+</div>
+
+{% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
+{% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}
+
+<div class="stats-grid sms-kpi" aria-label="خلاصه ارسال‌ها">
+    <a class="stat-card accent-sky" href="/admin/sms/history">
+        <div class="stat-label">کل پیامک‌ها</div>
+        <div class="stat-value tnum">{{ overview.total }}</div>
+        <div class="stat-sub">امروز: {{ overview.today }}</div>
+    </a>
+    <a class="stat-card accent-pine" href="/admin/sms/history?status=sent">
+        <div class="stat-label">ارسال‌شده</div>
+        <div class="stat-value tnum">{{ overview.sent }}</div>
+        <div class="stat-sub">تأییدشده توسط درگاه</div>
+    </a>
+    <a class="stat-card accent-saffron" href="/admin/sms/history?status=queued">
+        <div class="stat-label">در صف</div>
+        <div class="stat-value tnum">{{ overview.queued }}</div>
+        <div class="stat-sub">در انتظار ارسال</div>
+    </a>
+    <a class="stat-card accent-persimmon" href="/admin/sms/history?status=failed">
+        <div class="stat-label">ناموفق</div>
+        <div class="stat-value tnum">{{ overview.failed }}</div>
+        <div class="stat-sub">بعد از چند تلاش رد شده</div>
+    </a>
+</div>
+
+<section class="card sms-history-card">
+    <div class="section-heading-row">
+        <div>
+            <h3>گزارش ارسال</h3>
+            <p class="muted">
+                متن هر ردیف همان متنی است که در لحظه صف‌شدن رندر شده؛ ویرایش قالب بعداً آن را تغییر نمی‌دهد.
+            </p>
+        </div>
+    </div>
+
+    <form method="get" action="/admin/sms/history" class="search-form sms-filter-form">
+        <div class="form-group">
+            <label class="sr-only" for="filter-search">جست‌وجو</label>
+            <input type="text" id="filter-search" name="search" value="{{ search }}"
+                   placeholder="نام، شماره یا متن پیامک" dir="auto">
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="filter-status">وضعیت</label>
+            <select id="filter-status" name="status">
+                {% for value, label in status_filters %}
+                <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="filter-source">فرستنده</label>
+            <select id="filter-source" name="source">
+                {% for value, label in source_filters %}
+                <option value="{{ value }}" {% if source == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="filter-order">ترتیب</label>
+            <select id="filter-order" name="order">
+                {% for value, label in orders.items() %}
+                <option value="{{ value }}" {% if order == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary">اعمال فیلتر</button>
+        {% if search or status != 'all' or source != 'all' or order != 'newest' %}
+        <a href="/admin/sms/history" class="btn btn-ghost">پاک‌کردن فیلتر</a>
+        {% endif %}
+    </form>
+
+    <p class="sms-results">
+        {{ total }} پیامک{% if search or status != 'all' or source != 'all' %} با این فیلترها{% endif %}
+        {%- if total_pages > 1 %} · صفحه {{ page }} از {{ total_pages }}{% endif %}
+    </p>
+
+    {% if rows %}
+    <div class="table-scroll">
+        <table class="sms-table sms-history-table">
+            <thead>
+                <tr>
+                    <th scope="col">زمان</th>
+                    <th scope="col">مخاطب و متن</th>
+                    <th scope="col">وضعیت</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                {% set message = row.message %}
+                <tr>
+                    <td class="tnum sms-time">{{ jalali_str(message.created_at) }}</td>
+                    <td class="sms-name">
+                        {% if row.customer %}
+                        <a href="/admin/customers/{{ row.customer.id }}"><strong>{{ row.customer.full_name }}</strong></a>
+                        {% else %}
+                        <strong>شماره مهمان</strong>
+                        {% endif %}
+                        <small class="sms-meta tnum" dir="ltr">{{ message.phone }}</small>
+                        <small class="sms-meta">
+                            {{ row.source_label }}
+                            {%- if message.template_id %} ·
+                            <a href="/admin/sms/templates/{{ message.template_id }}/edit">{{ message.template_name }}</a>
+                            {%- elif message.template_name %} · {{ message.template_name }}{% endif %}
+                        </small>
+                        <span class="sms-body" dir="auto">{{ message.body|truncate(90, true) }}</span>
+                        <small class="sms-meta tnum">{{ row.segments }} پیامک</small>
+                    </td>
+                    <td>
+                        <span class="status-badge is-{{ message.status }}">{{ row.status_label }}</span>
+                        {% if message.error %}<small class="sms-error" title="{{ message.error }}">{{ message.error|truncate(30, true) }}</small>{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if total_pages > 1 %}
+    <nav class="product-pagination" aria-label="صفحه‌بندی تاریخچه پیامک">
+        {% if page > 1 %}<a class="btn btn-sm btn-ghost" href="?page={{ page - 1 }}{{ filter_qs }}">صفحه قبل</a>{% endif %}
+        <span>صفحه {{ page }} از {{ total_pages }}</span>
+        {% if page < total_pages %}<a class="btn btn-sm btn-ghost" href="?page={{ page + 1 }}{{ filter_qs }}">صفحه بعد</a>{% endif %}
+    </nav>
+    {% endif %}
+
+    {% elif search or status != 'all' or source != 'all' %}
+    <div class="empty-state">
+        <h3>پیامکی با این فیلترها پیدا نشد</h3>
+        <p>جست‌وجو یا وضعیت را تغییر دهید — شاید پیامک مربوط به بازه دیگری باشد.</p>
+        <a href="/admin/sms/history" class="btn btn-ghost">پاک‌کردن فیلتر</a>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <h3>هنوز پیامکی فرستاده نشده است</h3>
+        <p>
+            وقتی مشتری تازه ثبت‌نام کند، تولدش برسد یا از صفحه پیامک ارسال کنید،
+            همین‌جا با نام و متن ثبت می‌شود.
+        </p>
+        <a href="/admin/sms/send" class="btn btn-primary">ارسال پیامک</a>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

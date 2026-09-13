@@ -2,8 +2,9 @@
 
 FastAPI + SQLite point-of-sale for a local kids' & teens' clothing shop:
 products & variants with barcode tags, checkout with referral / tier / birthday
-discounts, customer loyalty (points, gold/diamond tiers), SMS gateway
-(welcome, birthday, tier-up, campaigns), virtual try-on product previews on
+discounts, customer loyalty (points, gold/diamond tiers), an SMS suite
+(template manager, manual sends, welcome / birthday / tier-up / campaign
+messages and a full send log), virtual try-on product previews on
 the child's picture), invoices (HTML + Persian PDF), a deep analytics suite,
 and accounting-lite: credit sales (نسیه) with a debt ledger, supplier purchases
 that update stock & cost, expenses, a cash register, a net profit & loss
@@ -38,7 +39,7 @@ is refunded back if it exceeds that invoice's remainder. Every receipt shows who
 took the money, and a reversal asks for a **reason** that lands in the immutable
 ledger. Each customer has a printable **صورت‌حساب** (whole period or a date
 range, with an opening balance) and a manual **یادآوری پیامکی** whose text you
-write in Settings, with a cool-down so nobody is reminded twice in a row. A
+write on the **پیامک** page, with a cool-down so nobody is reminded twice in a row. A
 credit limit (سقف اعتبار) blocks new نسیه sales once a customer's debt exceeds
 it — set a store-wide default in Settings and per-customer overrides on each
 customer's credit page.
@@ -150,11 +151,39 @@ theme, so it matches light, dark and high-contrast alike.
   confirm. Everyone archived, opted out or already messaged is skipped and
   counted, so a double-click can never message the same customer twice; each
   holder records the date their SMS went out. The blast is capped by the
-  «سقف پیامک کمپین در هر ارسال» setting, and the campaign page shows who was
+  «سقف هر ارسال» on the پیامک page, and the campaign page shows who was
   invited, who used it, and which invoices it discounted.
 - **Deleting is limited on purpose.** A campaign that already discounted an
   invoice cannot be deleted — the count is refused with the reason, because
   removing it would orphan the sales it explains; deactivate it instead.
+
+## SMS (پیامک)
+
+- **📱 پیامک** (`/admin/sms`) — every message the shop can send, in one place.
+  Each template states whether it is on, how many messages it has sent, and
+  which event fires it (a new signup, a birthday, a tier upgrade, a campaign
+  send, a نسیه reminder or nothing at all — a custom text you send by hand).
+  The gateway key, device and blast ceiling live here too, and stay owner-only.
+- **Editing is safe.** Each placeholder is a chip you click to insert; the
+  preview beside it redraws as you type and re-measures the message in
+  characters and segments, and «ارسال آزمایشی» queues one real message to your
+  own number so you see exactly what the customer will. Switching a built-in
+  off stops its automatic send **everywhere** — the counter, the profile and the
+  senders all read the same switch — without deleting its text.
+- **Custom templates.** Write your own message and name its placeholders, or
+  duplicate an existing template and edit the copy.
+- **📤 ارسال پیامک** (`/admin/sms/send`) — a manual blast with an honest
+  audience: everyone who consented, one tier, one tag, a hand-picked list with
+  its own search, or numbers pasted in. The count is shown before anything is
+  queued, and archived customers, opt-outs, «بلاک» tags, duplicates and bad
+  numbers are skipped and reported. A message about the customer's own account
+  (a نسیه reminder, a test) can be sent transactionally without marketing
+  consent; the blast stops at the store's ceiling and says how many were left.
+- **🧾 تاریخچه پیامک** (`/admin/sms/history`) — every message the shop has ever
+  sent, automatic or manual, with recipient, template, source, text and the
+  queue's verdict (در صف / ارسال‌شده / ناموفق), filterable and paginated. The
+  text is frozen when the message is queued, so editing a template later never
+  rewrites what a customer actually received.
 
 ## Requirements
 

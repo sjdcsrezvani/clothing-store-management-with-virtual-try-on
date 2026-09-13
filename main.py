@@ -7,7 +7,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from config import SESSION_SECRET
 from database import engine, Base, SessionLocal
-from routers import customers, api, admin, products, sales, analytics, campaigns, accounting
+from routers import customers, api, admin, products, sales, analytics, campaigns, accounting, sms
 from routers.clothes_images import admin_router as clothes_admin_router, api_router as clothes_api_router
 from services.security import CSRFMiddleware
 from services.store import get_store
@@ -332,6 +332,10 @@ async def lifespan(app: FastAPI):
         ensure_owner_account(db)
         from services.events import backfill_legacy_events
         backfill_legacy_events(db)
+        # Built-in SMS templates mirror the legacy settings rows, so seeding them
+        # at boot changes nothing a shop already had configured.
+        from services.sms_templates import ensure_seeded as seed_sms_templates
+        seed_sms_templates(db)
         db.commit()
     finally:
         db.close()
@@ -368,5 +372,6 @@ app.include_router(sales.router)
 app.include_router(analytics.router)
 app.include_router(campaigns.router)
 app.include_router(accounting.router)
+app.include_router(sms.router)
 app.include_router(clothes_admin_router)
 app.include_router(clothes_api_router)

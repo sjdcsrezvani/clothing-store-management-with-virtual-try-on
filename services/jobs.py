@@ -52,10 +52,24 @@ def claim_next(db, job_type: str | None = None) -> BackgroundJob | None:
 async def process_one(db, job: BackgroundJob) -> bool:
     payload = json.loads(job.payload)
     if job.job_type == "sms":
-        from services.sms import send_pattern_sms
-        if not await send_pattern_sms(payload["pattern"], payload["recipient"], payload["attributes"], db):
-            raise RuntimeError("SMS delivery failed")
-        return True
+        from services.sms import send_pattern_sms, send_sms
+        from services.sms_templates import mark_message
+        if "message" in payload:
+            # Rendered when it was queued: what the shop saw is what is sent.
+            delivered = await send_sms(payload["message"], payload["recipient"], db)
+        else:
+            # Jobs queued before the log existed carry the pattern instead.
+            delivered = await send_pattern_sms(
+                payload["pattern"], payload["recipient"], payload["attributes"], db, log=False,
+            )
+        if delivered:
+            mark_message(db, payload.get("message_id"), status="sent")
+            return True
+        # A retry is still coming, so the row stays «در صف» until the last
+        # attempt fails — the history should not cry wolf on attempt one.
+        mark_message(db, payload.get("message_id"), status="queued",
+                     error="ارسال ناموفق بود؛ تلاش دوباره")
+        raise RuntimeError("SMS delivery failed")
     if job.job_type == "tryon":
         from routers.clothes_images import image_gen, _remove_temp_file
         paths = payload["reference_paths"]
@@ -98,4 +112,13 @@ def fail(db, job: BackgroundJob, error: Exception) -> None:
     else:
         job.status = "pending"
         job.next_retry_at = datetime.now(timezone.utc) + timedelta(minutes=2 ** min(job.retry_count, 4))
+    if job.job_type == "sms":
+        from services.sms_templates import mark_message
+
+        payload = json.loads(job.payload or "{}")
+        mark_message(
+            db, payload.get("message_id"),
+            status="failed" if job.status == "failed" else "queued",
+            error=str(error)[:500] if job.status == "failed" else "ارسال ناموفق بود؛ تلاش دوباره",
+        )
     db.commit()

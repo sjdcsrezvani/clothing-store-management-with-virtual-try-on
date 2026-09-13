@@ -4,6 +4,13 @@ from sqlalchemy.orm import Session
 from models import Settings
 from services._common import BIRTHDAY_SMS_NAMES
 from services.jobs import enqueue
+from services.sms_templates import (
+    active_pattern,
+    customer_for_phone,
+    get_template,
+    log_message,
+    render_text,
+)
 from config import SMS_GATEWAY_URL, SMS_API_KEY, SMS_DEVICE_ID
 
 logger = logging.getLogger(__name__)
@@ -15,25 +22,33 @@ def get_sms_setting(db: Session, key: str) -> str:
     return setting.value if setting and setting.value else ""
 
 
+# The built-in patterns live in ``sms_templates`` now and mirror their old
+# settings rows, so a template switched off reads as an empty pattern — which is
+# exactly how the sending code has always spelled «off».
+PATTERN_KEYS = {
+    "welcome_pattern": "welcome",
+    "birthday_pattern": "birthday",
+    "tier_up_gold_pattern": "tier_up_gold",
+    "tier_up_diamond_pattern": "tier_up_diamond",
+    "campaign_pattern": "campaign",
+    "credit_reminder_pattern": "credit_reminder",
+}
+
+
 def get_sms_config(db: Session) -> dict:
     """Get all SMS configuration from database."""
-    return {
+    config = {
         "api_key": get_sms_setting(db, "sms_api_key") or SMS_API_KEY,
         "device_id": get_sms_setting(db, "sms_device_id") or SMS_DEVICE_ID,
-        "welcome_pattern": get_sms_setting(db, "sms_pattern_welcome"),
-        "birthday_pattern": get_sms_setting(db, "sms_pattern_birthday"),
-        "tier_up_gold_pattern": get_sms_setting(db, "sms_pattern_tier_up_gold"),
-        "tier_up_diamond_pattern": get_sms_setting(db, "sms_pattern_tier_up_diamond"),
-        "campaign_pattern": get_sms_setting(db, "sms_pattern_campaign"),
-        "credit_reminder_pattern": get_sms_setting(db, "sms_pattern_credit_reminder"),
     }
+    for field, key in PATTERN_KEYS.items():
+        config[field] = active_pattern(db, key)
+    return config
 
 
 def _render(template: str, attributes: dict) -> str:
     """Fill %varN% / {varN} placeholders in a pattern template to build the message string."""
-    for key, value in attributes.items():
-        template = template.replace(f"%{key}%", str(value)).replace(f"{{{key}}}", str(value))
-    return template
+    return render_text(template, attributes)
 
 
 async def send_sms(message: str, recipient: str, db: Session) -> bool:
@@ -67,32 +82,85 @@ async def send_sms(message: str, recipient: str, db: Session) -> bool:
         return False
 
 
-async def send_pattern_sms(pattern: str, recipient: str, attributes: dict, db: Session) -> bool:
-    """Render a pattern template into a message string and send it."""
+async def send_pattern_sms(pattern: str, recipient: str, attributes: dict, db: Session, *,
+                           source: str = "manual", template_key: str | None = None,
+                           customer=None, log: bool = True) -> bool:
+    """Render a pattern template into a message string and send it.
+
+    Direct sends (the birthday and tier-up paths) are logged too, so the history
+    page is the same story as the queue. The worker passes ``log=False`` because
+    it is finishing a row that already exists.
+    """
     message = _render(pattern, attributes)
+    if log:
+        template = get_template(db, template_key) if template_key else None
+        if customer is None:
+            customer = customer_for_phone(db, recipient)
+        row = log_message(db, phone=recipient, body=message, template=template,
+                          customer=customer, source=source)
+        ok = await send_sms(message, recipient, db)
+        row.status = "sent" if ok else "failed"
+        if ok:
+            from datetime import datetime, timezone
+            row.sent_at = datetime.now(timezone.utc)
+        else:
+            row.error = "درگاه پیامک پاسخ نداد"
+        db.commit()
+        return ok
     return await send_sms(message, recipient, db)
 
 
-# ========== Pattern 1: Welcome SMS ==========
-# Keys: var1=first_name, var2=referral_code
-async def queue_sms(pattern: str, recipient: str, attributes: dict, db: Session):
-    if not pattern:
+# ========== queueing ==========
+async def queue_sms(pattern: str, recipient: str, attributes: dict, db: Session, *,
+                    template=None, template_key: str | None = None,
+                    source: str = "manual", kind: str | None = None,
+                    customer=None, employee_id: int | None = None,
+                    body: str | None = None):
+    """Queue one message and record it in the log.
+
+    The body is rendered **now**, at queue time, and that rendered text is what
+    the worker sends — so editing a template afterwards can never rewrite a
+    message that is already on its way, and the history always shows what the
+    customer actually received.
+    """
+    if not pattern and not body:
         return None
-    job = enqueue(db, "sms", {"pattern": pattern, "recipient": recipient, "attributes": attributes})
+    rendered = body if body is not None else _render(pattern, attributes)
+    if template is None and template_key:
+        template = get_template(db, template_key)
+    if customer is None:
+        customer = customer_for_phone(db, recipient)
+    row = log_message(db, phone=recipient, body=rendered, template=template,
+                      customer=customer, source=source, kind=kind,
+                      employee_id=employee_id)
+    job = enqueue(db, "sms", {
+        "message": rendered,
+        "recipient": recipient,
+        "message_id": row.id,
+    })
+    row.job_id = job.id
     db.commit()
     return job
 
 
-async def queue_welcome_sms(phone: str, first_name: str, referral_code: str, db: Session):
+async def queue_welcome_sms(phone: str, first_name: str, referral_code: str, db: Session,
+                            customer=None):
     config = get_sms_config(db)
     if not config["welcome_pattern"]:
         return None
-    job = enqueue(db, "sms", {"pattern": config["welcome_pattern"], "recipient": phone, "attributes": {"var1": first_name or "مشتری", "var2": referral_code}})
-    db.commit()
-    return job
+    return await queue_sms(
+        config["welcome_pattern"],
+        phone,
+        {"var1": first_name or "مشتری", "var2": referral_code},
+        db,
+        template_key="welcome",
+        source="welcome",
+        customer=customer,
+    )
 
 
-async def send_welcome_sms(phone: str, first_name: str, referral_code: str, db: Session) -> bool:
+async def send_welcome_sms(phone: str, first_name: str, referral_code: str, db: Session,
+                           customer=None) -> bool:
     """Send welcome SMS after checkout completion."""
     config = get_sms_config(db)
     if not config["welcome_pattern"]:
@@ -103,6 +171,9 @@ async def send_welcome_sms(phone: str, first_name: str, referral_code: str, db: 
         phone,
         {"var1": first_name or "مشتری", "var2": referral_code},
         db,
+        source="welcome",
+        template_key="welcome",
+        customer=customer,
     )
 
 
@@ -124,7 +195,7 @@ def birthday_sms_vars(first_name: str, child_name: str, occasion: str) -> dict:
 
 
 async def send_birthday_sms(phone: str, first_name: str, child_name: str, db: Session,
-                            occasion: str = "child") -> bool:
+                            occasion: str = "child", customer=None) -> bool:
     """Send the birthday wish for whichever birthday the store celebrates."""
     config = get_sms_config(db)
     if not config["birthday_pattern"]:
@@ -135,6 +206,9 @@ async def send_birthday_sms(phone: str, first_name: str, child_name: str, db: Se
         phone,
         birthday_sms_vars(first_name, child_name, occasion),
         db,
+        source="birthday",
+        template_key="birthday",
+        customer=customer,
     )
 
 
@@ -144,7 +218,8 @@ async def send_birthday_sms(phone: str, first_name: str, child_name: str, db: Se
 # customer's own balance, so it does not depend on marketing consent — but it is
 # only ever sent by hand, and the cool-down in the credit service keeps one
 # customer from being reminded twice in an hour.
-async def queue_credit_reminder_sms(phone: str, attributes: dict, db: Session):
+async def queue_credit_reminder_sms(phone: str, attributes: dict, db: Session,
+                                    customer=None):
     """Queue the owner's reminder pattern for one debtor.
 
     Queued rather than sent inline, like the birthday and campaign messages, so
@@ -154,12 +229,14 @@ async def queue_credit_reminder_sms(phone: str, attributes: dict, db: Session):
     pattern = get_sms_config(db)["credit_reminder_pattern"]
     if not pattern:
         return None
-    return await queue_sms(pattern, phone, attributes, db)
+    return await queue_sms(pattern, phone, attributes, db, template_key="credit_reminder",
+                           source="credit_reminder", customer=customer)
 
 
 # ========== Pattern 3: Tier-up (Silver → Gold) ==========
 # Keys: var1=first_name, var2=points
-async def send_tier_up_gold_sms(phone: str, first_name: str, points: int, db: Session) -> bool:
+async def send_tier_up_gold_sms(phone: str, first_name: str, points: int, db: Session,
+                                customer=None) -> bool:
     """Send tier-up SMS to a customer who reached gold."""
     config = get_sms_config(db)
     if not config["tier_up_gold_pattern"]:
@@ -170,12 +247,16 @@ async def send_tier_up_gold_sms(phone: str, first_name: str, points: int, db: Se
         phone,
         {"var1": first_name or "مشتری", "var2": str(points)},
         db,
+        source="tier_up",
+        template_key="tier_up_gold",
+        customer=customer,
     )
 
 
 # ========== Pattern 4: Tier-up (Gold → Diamond) ==========
 # Keys: var1=first_name, var2=points
-async def send_tier_up_diamond_sms(phone: str, first_name: str, points: int, db: Session) -> bool:
+async def send_tier_up_diamond_sms(phone: str, first_name: str, points: int, db: Session,
+                                   customer=None) -> bool:
     """Send tier-up SMS to a customer who reached diamond."""
     config = get_sms_config(db)
     if not config["tier_up_diamond_pattern"]:
@@ -186,13 +267,17 @@ async def send_tier_up_diamond_sms(phone: str, first_name: str, points: int, db:
         phone,
         {"var1": first_name or "مشتری", "var2": str(points)},
         db,
+        source="tier_up",
+        template_key="tier_up_diamond",
+        customer=customer,
     )
 
 
-# ========== Pattern 5: Campaign SMS (Diamond only) ==========
+# ========== Pattern 5: Campaign SMS ==========
 # Keys: var1=first_name, var2=campaign_name, var3=campaign_code, var4=campaign_discount_percent
-async def send_campaign_sms(phone: str, first_name: str, campaign_name: str, campaign_code: str, campaign_discount: int, db: Session) -> bool:
-    """Send campaign SMS to diamond customers."""
+async def send_campaign_sms(phone: str, first_name: str, campaign_name: str, campaign_code: str,
+                            campaign_discount: int, db: Session, customer=None) -> bool:
+    """Send the campaign invitation to one customer."""
     config = get_sms_config(db)
     if not config["campaign_pattern"]:
         return False
@@ -207,6 +292,9 @@ async def send_campaign_sms(phone: str, first_name: str, campaign_name: str, cam
             "var4": str(campaign_discount),
         },
         db,
+        source="campaign",
+        template_key="campaign",
+        customer=customer,
     )
 
 

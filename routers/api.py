@@ -75,7 +75,7 @@ async def api_create_customer(body: CustomerCreate, db: Session = Depends(get_db
         db.add(referral)
 
     db.commit()
-    await queue_welcome_sms(phone, body.first_name, code, db)
+    await queue_welcome_sms(phone, body.first_name, code, db, customer=customer)
 
     return customer
 

@@ -1171,6 +1171,10 @@ async def admin_check_birthdays(request: Request, db: Session = Depends(get_db))
             customer.phone,
             birthday_sms_vars(customer.first_name, customer.child_name, occasion),
             db,
+            # The log can name the person and which kind of birthday it was.
+            template_key="birthday",
+            source="birthday",
+            customer=customer,
         )
         if job is not None:
             db.add(Settings(key=log_key, value="sent"))
@@ -1239,9 +1243,12 @@ async def admin_tier_up_send(request: Request, customer_ids: list[int] = Form([]
     if not hasattr(guard, "role"):
         return guard
 
-    gold_pattern = db.query(Settings).filter(Settings.key == "sms_pattern_tier_up_gold").first()
-    diamond_pattern = db.query(Settings).filter(Settings.key == "sms_pattern_tier_up_diamond").first()
-    if not gold_pattern or not gold_pattern.value or not diamond_pattern or not diamond_pattern.value:
+    from services.sms import get_sms_config
+
+    sms_config = get_sms_config(db)
+    gold_pattern = sms_config["tier_up_gold_pattern"]
+    diamond_pattern = sms_config["tier_up_diamond_pattern"]
+    if not gold_pattern or not diamond_pattern:
         return RedirectResponse(url="/admin/tier-up?skipped=no_pattern", status_code=303)
 
     sent = 0
@@ -1252,9 +1259,17 @@ async def admin_tier_up_send(request: Request, customer_ids: list[int] = Form([]
         if tier_up_sent_rank(db, customer) >= TIER_RANK[customer.tier]:
             continue
 
-        sms_fn = send_tier_up_gold_sms if customer.tier == "gold" else send_tier_up_diamond_sms
-        pattern = gold_pattern.value if customer.tier == "gold" else diamond_pattern.value
-        success = await queue_sms(pattern, customer.phone, {"var1": customer.first_name or "مشتری", "var2": str(customer.total_points)}, db) is not None
+        is_gold = customer.tier == "gold"
+        pattern = gold_pattern if is_gold else diamond_pattern
+        success = await queue_sms(
+            pattern,
+            customer.phone,
+            {"var1": customer.first_name or "مشتری", "var2": str(customer.total_points)},
+            db,
+            template_key="tier_up_gold" if is_gold else "tier_up_diamond",
+            source="tier_up",
+            customer=customer,
+        ) is not None
         if success:
             marker = db.query(Settings).filter(Settings.key == tier_up_marker_key(customer.id)).first()
             if marker:

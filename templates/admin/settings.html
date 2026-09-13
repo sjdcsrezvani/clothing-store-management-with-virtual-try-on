@@ -205,46 +205,14 @@
             <small>چند روز قبل از تولد، تخفیف فعال و پیامک ارسال شود (برای فروشگاه کودک: تولد فرزند)</small>
         </div>
 
-        <h3 style="margin-top: 2rem;">📱 تنظیمات پیامک</h3>
-        <div class="form-row">
-            <div class="form-group">
-                <label for="sms_api_key">🔑 کلید API درگاه پیامک</label>
-                <input type="text" id="sms_api_key" name="sms_api_key"
-                       value="{{ settings.get('sms_api_key', '') }}">
-            </div>
-            <div class="form-group">
-                <label for="sms_device_id">📱 آیدی دستگاه (device_id)</label>
-                <input type="text" id="sms_device_id" name="sms_device_id"
-                       value="{{ settings.get('sms_device_id', '') }}">
-            </div>
-        </div>
-        <div class="form-row">
-            <div class="form-group">
-                <label for="sms_pattern_welcome">👋 متن پیامک خوش‌آمدگویی</label>
-                <textarea id="sms_pattern_welcome" name="sms_pattern_welcome" rows="3">{{ settings.get('sms_pattern_welcome', '') }}</textarea>
-            </div>
-            <div class="form-group">
-                <label for="sms_pattern_birthday">🎂 متن پیامک تولد</label>
-                <textarea id="sms_pattern_birthday" name="sms_pattern_birthday" rows="3">{{ settings.get('sms_pattern_birthday', '') }}</textarea>
-            </div>
-        </div>
-        <div class="form-row">
-            <div class="form-group">
-                <label for="sms_pattern_tier_up_gold">📈 متن پیامک ارتقا (نقره‌ای ← طلایی)</label>
-                <textarea id="sms_pattern_tier_up_gold" name="sms_pattern_tier_up_gold" rows="3">{{ settings.get('sms_pattern_tier_up_gold', '') }}</textarea>
-                <small>var1=نام مشتری، var2=امتیاز</small>
-            </div>
-            <div class="form-group">
-                <label for="sms_pattern_tier_up_diamond">📈 متن پیامک ارتقا (طلایی ← الماس)</label>
-                <textarea id="sms_pattern_tier_up_diamond" name="sms_pattern_tier_up_diamond" rows="3">{{ settings.get('sms_pattern_tier_up_diamond', '') }}</textarea>
-                <small>var1=نام مشتری، var2=امتیاز</small>
-            </div>
-        </div>
-        <div class="form-row">
-            <div class="form-group">
-                <label for="sms_pattern_campaign">📢 متن پیامک کمپین</label>
-                <textarea id="sms_pattern_campaign" name="sms_pattern_campaign" rows="3">{{ settings.get('sms_pattern_campaign', '') }}</textarea>
-            </div>
+        <h3 style="margin-top: 2rem;">📱 پیامک</h3>
+        <div class="form-group">
+            <p class="muted" style="margin: 0 0 .5rem;">
+                متن همه پیامک‌ها (خوش‌آمدگویی، تولد، ارتقای سطح، کمپین و یادآوری بدهی)،
+                کلید درگاه و سقف ارسال به صفحه <strong>پیامک</strong> منتقل شده‌اند — همراه با
+                پیش‌نمایش، متغیرها و تاریخچه ارسال.
+            </p>
+            <a href="/admin/sms" class="btn btn-ghost">رفتن به صفحه پیامک</a>
         </div>
         <h3 style="margin-top: 2rem;">✨ سقف تولید تصویر هوش مصنوعی</h3>
         <div class="form-row">
@@ -253,12 +221,6 @@
                 <input type="number" id="tryon_daily_limit" name="tryon_daily_limit" min="0"
                        value="{{ settings.get('tryon_daily_limit', '20') }}">
                 <small>حداکثر تصویر تولیدشده با هوش مصنوعی در روز (هر تصویر هزینه دارد)</small>
-            </div>
-            <div class="form-group">
-                <label for="campaign_sms_limit">📢 سقف پیامک کمپین در هر ارسال</label>
-                <input type="number" id="campaign_sms_limit" name="campaign_sms_limit" min="1"
-                       value="{{ settings.get('campaign_sms_limit', '100') }}">
-                <small>حداکثر پیامک کمپین در هر بار ارسال (هر پیامک هزینه دارد)</small>
             </div>
         </div>
         <h3 style="margin-top: 2rem;">🛡️ سقف اعتبار و سررسید نسیه</h3>
@@ -280,9 +242,10 @@
             </div>
         </div>
         <div class="form-group">
-            <label for="sms_pattern_credit_reminder">📒 متن پیامک یادآوری بدهی</label>
-            <textarea id="sms_pattern_credit_reminder" name="sms_pattern_credit_reminder" rows="3">{{ settings.get('sms_pattern_credit_reminder', '') }}</textarea>
-            <small>var1=نام مشتری، var2=مبلغ بدهی، var3=سررسید. خالی بگذارید تا یادآوری در دسترس نباشد.</small>
+            <p class="muted" style="margin: 0;">
+                متن پیامک یادآوری بدهی در صفحه <a href="/admin/sms">پیامک</a> نوشته می‌شود؛
+                خالی‌گذاشتن آن یعنی یادآوری در حساب نسیه در دسترس نیست.
+            </p>
         </div>
         <div class="form-row">
             <div class="form-group">

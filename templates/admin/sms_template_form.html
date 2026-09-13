@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% block title %}{% if edit_mode %}ویرایش قالب پیامک{% else %}قالب پیامک جدید{% endif %} — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div class="page-heading product-page-heading">
+    <div>
+        <div class="eyebrow">پیامک / {% if edit_mode %}ویرایش قالب{% else %}قالب جدید{% endif %}</div>
+        <h2>{% if edit_mode %}{{ template.name }}{% else %}قالب پیامک جدید{% endif %}</h2>
+        <p>
+            متن را با متغیرها بنویسید؛ هر متغیر را با کلیک روی آن به متن اضافه کنید.
+            پیش‌نمایش همان چیزی است که مشتری می‌بیند.
+        </p>
+    </div>
+    <div class="admin-nav">
+        <a href="/admin/sms" class="btn btn-ghost">همه قالب‌ها</a>
+        <a href="/admin/sms/history" class="btn btn-ghost">تاریخچه ارسال</a>
+        <a href="/admin/sms/send" class="btn btn-ghost">ارسال دستی</a>
+    </div>
+</div>
+
+{% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
+{% if error %}<div class="alert alert-error" role="alert">⚠️ {{ error }}</div>{% endif %}
+{% if err %}<div class="alert alert-error" role="alert">⚠️ {{ err }}</div>{% endif %}
+
+<div class="sms-editor-layout">
+    <section class="card">
+        <form method="post"
+              action="{% if edit_mode %}/admin/sms/templates/{{ template.id }}{% else %}/admin/sms/templates/new{% endif %}"
+              id="sms-template-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+            <div class="form-section">
+                <h3>شناسه قالب</h3>
+                <div class="form-group">
+                    <label for="name">نام قالب *</label>
+                    <input type="text" id="name" name="name" required value="{{ values.name }}"
+                           maxlength="120" placeholder="مثال: تبریک عید">
+                    {% if edit_mode and template.is_builtin %}
+                    <small>این قالب خودکار است؛ نامش را برای خودتان نگه دارید تا در فهرست پیدا شود.</small>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h3>متن پیامک *</h3>
+                {% if variables %}
+                <div class="sms-variable-chips" role="group" aria-label="متغیرهای قابل استفاده">
+                    {% for variable in variables %}
+                    <button type="button" class="sms-chip" data-token="{{ variable.token }}"
+                            title="{{ variable.label }}{% if variable.sample %} — نمونه: {{ variable.sample }}{% endif %}">
+                        <span dir="ltr">%{{ variable.token }}%</span>
+                        <small>{{ variable.label }}</small>
+                    </button>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                <div class="form-group">
+                    <label class="sr-only" for="body">متن پیامک</label>
+                    <textarea id="body" name="body" rows="5" required maxlength="612"
+                              placeholder="مثال: %var1% عزیز، تولدت مبارک!">{{ values.body }}</textarea>
+                    <small class="sms-counter" id="sms-counter" aria-live="polite"></small>
+                </div>
+                {% if edit_mode and not template.is_builtin %}
+                <div class="sms-variable-editor">
+                    <p class="muted">نام و نمونه هر متغیر را خودتان بگذارید؛ پیش‌نمایش با همین نمونه‌ها ساخته می‌شود.</p>
+                    {% for variable in variables %}
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="label_{{ variable.token }}">برچسب <span dir="ltr">%{{ variable.token }}%</span></label>
+                            <input type="text" id="label_{{ variable.token }}" name="label_{{ variable.token }}"
+                                   value="{{ variable.label }}" maxlength="60">
+                        </div>
+                        <div class="form-group">
+                            <label for="sample_{{ variable.token }}">متن نمونه</label>
+                            <input type="text" id="sample_{{ variable.token }}" name="sample_{{ variable.token }}"
+                                   value="{{ variable.sample }}" maxlength="120">
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+
+            {% if edit_mode and template.is_builtin %}
+            <div class="form-section">
+                <h3>وضعیت</h3>
+                <label class="switch-row">
+                    <input type="checkbox" name="is_active" {% if values.is_active %}checked{% endif %}>
+                    <span>
+                        <strong>این پیامک خودکار فرستاده شود</strong>
+                        <small>
+                            خاموش‌کردن، متن را پاک نمی‌کند؛ فقط جلوی ارسال خودکار آن را می‌گیرد
+                            و در صندوق و پرونده مشتری هم چیزی از آن دیده نمی‌شود.
+                        </small>
+                    </span>
+                </label>
+            </div>
+            {% endif %}
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary btn-large">
+                    {% if edit_mode %}ذخیره متن{% else %}ساخت قالب{% endif %}
+                </button>
+                <a href="/admin/sms" class="btn btn-ghost">لغو</a>
+            </div>
+        </form>
+    </section>
+
+    <aside class="sms-editor-side">
+        <section class="card sms-preview-card" aria-label="پیش‌نمایش پیامک">
+            <h3>پیش‌نمایش</h3>
+            <div class="sms-phone">
+                <div class="sms-bubble" id="sms-bubble" dir="auto">{{ preview or 'متن پیامک اینجا نمایش داده می‌شود.' }}</div>
+            </div>
+            <p class="muted sms-preview-note" id="sms-preview-note">
+                {{ metrics.length }} نویسه · {{ metrics.segments }} پیامک · {{ metrics.encoding }}
+            </p>
+            {% if edit_mode and not values.is_active %}
+            <p class="sms-warning">این قالب خاموش است و خودکار فرستاده نمی‌شود.</p>
+            {% endif %}
+        </section>
+
+        {% if edit_mode %}
+        <section class="card">
+            <h3>ارسال آزمایشی</h3>
+            <p class="muted">
+                یک پیامک واقعی به این شماره در صف قرار می‌گیرد تا متن را روی گوشی ببینید.
+                متنِ ذخیره‌شده فرستاده می‌شود؛ اگر تغییرش داده‌اید اول ذخیره کنید.
+            </p>
+            <form method="post" action="/admin/sms/templates/{{ template.id }}/test" id="sms-test-form"
+                  class="sms-test-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <div class="form-group">
+                    <label for="test_phone">شماره موبایل</label>
+                    <input type="tel" id="test_phone" name="phone" dir="ltr" placeholder="۰۹۱۲۳۴۵۶۷۸۹" required>
+                </div>
+                <button type="submit" class="btn btn-ghost">ارسال آزمایشی</button>
+            </form>
+        </section>
+        {% endif %}
+
+        {% if edit_mode and template.is_builtin %}
+        <section class="card">
+            <h3>این قالب کجا استفاده می‌شود</h3>
+            <p>{{ triggers.get(template.key, '') }}</p>
+            <p class="muted">قالب‌های خودکار حذف نمی‌شوند؛ برای توقفشان خاموش کنید.</p>
+        </section>
+        {% endif %}
+    </aside>
+</div>
+
+<script>
+(function () {
+    var body = document.getElementById('body');
+    var bubble = document.getElementById('sms-bubble');
+    var counter = document.getElementById('sms-counter');
+    var note = document.getElementById('sms-preview-note');
+    if (!body) return;
+    var placeholders = [{% for variable in variables %}'%{{ variable.token }}%'{% if not loop.last %}, {% endif %}{% endfor %}];
+    var samples = { {% for variable in variables %}'%{{ variable.token }}%': {{ variable.sample|tojson }}{% if not loop.last %}, {% endif %}{% endfor %} };
+
+    function segments(text) {
+        var unicode = /[^\x00-\x7F]/.test(text);
+        var per = unicode ? 70 : 160;
+        return { count: text.length ? Math.ceil(text.length / per) : 0, per: per, unicode: unicode };
+    }
+
+    function render() {
+        var text = body.value;
+        var preview = text;
+        placeholders.forEach(function (token) {
+            var value = samples[token] || '';
+            preview = preview.split(token).join(value);
+        });
+        var metrics = segments(text);
+        if (bubble) bubble.textContent = preview || 'متن پیامک اینجا نمایش داده می‌شود.';
+        if (counter) {
+            counter.textContent = metrics.count
+                ? (text.length + ' نویسه · ' + metrics.count + ' پیامک' + (metrics.unicode ? ' (فارسی)' : ''))
+                : 'متن خالی است';
+            counter.classList.toggle('is-over', metrics.count > 3);
+        }
+        if (note) {
+            note.textContent = metrics.count
+                ? (text.length + ' نویسه · ' + metrics.count + ' پیامک · ' + (metrics.unicode ? 'یونیکد (فارسی)' : 'لاتین'))
+                : 'برای دیدن پیش‌نمایش، متن را بنویسید.';
+        }
+    }
+
+    body.addEventListener('input', render);
+    document.querySelectorAll('.sms-chip').forEach(function (chip) {
+        chip.addEventListener('click', function () {
+            var token = '%' + chip.getAttribute('data-token') + '%';
+            var start = body.selectionStart || body.value.length;
+            var end = body.selectionEnd || body.value.length;
+            body.value = body.value.slice(0, start) + token + body.value.slice(end);
+            body.focus();
+            body.selectionStart = body.selectionEnd = start + token.length;
+            render();
+        });
+    });
+    render();
+})();
+</script>
+{% endblock %}

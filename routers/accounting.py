@@ -701,7 +701,7 @@ async def _send_credit_reminders(request: Request, db, guard, customers: list,
             if due is None or candidate < due:
                 due = candidate
         attributes = credit_reminder_vars(customer, amount, due)
-        job = await queue_credit_reminder_sms(customer.phone, attributes, db)
+        job = await queue_credit_reminder_sms(customer.phone, attributes, db, customer=customer)
         if job is not None:
             mark_credit_reminder_sent(db, customer.id)
             sent += 1

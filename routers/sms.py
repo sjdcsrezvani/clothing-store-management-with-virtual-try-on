@@ -1,0 +1,527 @@
+"""پیامک: the dedicated page for every message the shop sends.
+
+The patterns and the gateway credentials used to be buried in the middle of the
+general settings form, and nothing anywhere recorded what was actually sent.
+This router owns four pages instead:
+
+* ``/admin/sms`` — the manager: the templates, their state, the gateway, and an
+  honest count of what has gone out.
+* ``/admin/sms/templates/...`` — the editor, with the variables and a live
+  preview, whatever the template's kind.
+* ``/admin/sms/send`` — a manual blast to a real audience, with the count shown
+  before anything is queued.
+* ``/admin/sms/history`` — the log: what was sent, to whom, and what the queue
+  said about it.
+
+Everything substantive lives in :mod:`services.sms_templates` and
+:mod:`services.sms_send`; this file is only HTTP.
+"""
+import json
+
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy.orm import Session
+
+from database import get_db
+from models import Customer, Settings, SmsTemplate, to_english_digits
+from services._common import fmt, jalali_str
+from services.security import log_action, require_html_role
+from services.sms import get_balance, queue_sms
+from services.sms_send import (
+    HISTORY_ORDERS,
+    MODE_LABELS,
+    audience_choices,
+    message_filtered,
+    message_overview,
+    parse_phone_list,
+    plan_from_form,
+    preview_body,
+    send_bulk,
+    template_card,
+)
+from services.sms_templates import (
+    CUSTOM_VARIABLES,
+    SOURCE_LABELS,
+    STATUS_LABELS,
+    TRIGGER_LABELS,
+    create_custom,
+    customer_for_phone,
+    delete_blocked_reason,
+    duplicate,
+    ensure_seeded,
+    grouped_templates,
+    sms_metrics,
+    sync_to_settings,
+    template_variables,
+    validate,
+    values_for_customer,
+)
+from services.templating import templates
+
+router = APIRouter(prefix="/admin")
+
+GATEWAY_KEYS = ("sms_api_key", "sms_device_id", "campaign_sms_limit")
+
+
+def _guard(request, db):
+    return require_html_role(request, db, "manager")
+
+
+def _owner_guard(request, db):
+    return require_html_role(request, db, "owner")
+
+
+def _settings_map(db: Session) -> dict:
+    return {row.key: row.value for row in db.query(Settings).filter(
+        Settings.key.in_(GATEWAY_KEYS),
+    ).all()}
+
+
+def _save_setting(db: Session, key: str, value: str) -> None:
+    row = db.query(Settings).filter(Settings.key == key).first()
+    if row:
+        row.value = value
+    else:
+        db.add(Settings(key=key, value=value))
+
+
+def get_template_by_id(db: Session, template_id: int) -> SmsTemplate | None:
+    """Fetch one template row, seeding the built-ins first so it always exists."""
+    ensure_seeded(db)
+    return db.query(SmsTemplate).filter(SmsTemplate.id == template_id).first()
+
+
+def _cards_for(groups) -> dict:
+    return {template.id: template for group in groups for template in group["templates"]}
+
+
+# ── manager ───────────────────────────────────────────────────────────────────
+
+@router.get("/sms", response_class=HTMLResponse)
+async def admin_sms(request: Request, db: Session = Depends(get_db)):
+    guard = _guard(request, db)
+    if not hasattr(guard, "role"):
+        return guard
+
+    groups = grouped_templates(db)
+    return templates.TemplateResponse(request, "admin/sms.html", {
+        "groups": groups,
+        "overview": message_overview(db),
+        "config": _settings_map(db),
+        "balance": await get_balance(db),
+        "can_configure": guard.role == "owner",
+        "cards": {template.id: template_card(db, template) for template in _cards_for(groups).values()},
+        "triggers": TRIGGER_LABELS,
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
+        "fmt": fmt,
+        "jalali_str": jalali_str,
+    })
+
+
+@router.post("/sms/config", response_class=HTMLResponse)
+async def admin_sms_config(
+    request: Request,
+    sms_api_key: str = Form(""),
+    sms_device_id: str = Form(""),
+    campaign_sms_limit: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """The gateway credentials — owner only, like the settings page they left."""
+    guard = _owner_guard(request, db)
+    if not hasattr(guard, "role"):
+        return guard
+
+    if sms_api_key.strip():
+        _save_setting(db, "sms_api_key", sms_api_key.strip())
+    if sms_device_id.strip():
+        _save_setting(db, "sms_device_id", sms_device_id.strip())
+    limit = campaign_sms_limit.strip()
+    if limit:
+        try:
+            value = int(to_english_digits(limit))
+        except (TypeError, ValueError):
+            value = 0
+        if value < 1:
+            return RedirectResponse(url="/admin/sms?err=سقف پیامک باید عددی بزرگ‌تر از صفر باشد.",
+                                    status_code=303)
+        _save_setting(db, "campaign_sms_limit", str(value))
+    db.commit()
+    log_action(db, "sms_config", "به‌روزرسانی تنظیمات درگاه پیامک",
+               request=request, target_type="settings")
+    return RedirectResponse(url="/admin/sms?msg=تنظیمات درگاه پیامک ذخیره شد.", status_code=303)
+
+
+# ── template editor ───────────────────────────────────────────────────────────
+
+def _form_context(request, db, *, template, edit_mode, values, error="", message=""):
+    return templates.TemplateResponse(request, "admin/sms_template_form.html", {
+        "template": template,
+        "edit_mode": edit_mode,
+        "values": values,
+        "variables": (template_variables(template) if template is not None
+                      else list(CUSTOM_VARIABLES)),
+        "preview": preview_body(template) if template is not None else "",
+        "metrics": sms_metrics(template.body or "") if template is not None else sms_metrics(""),
+        "triggers": TRIGGER_LABELS,
+        "error": error,
+        "msg": message,
+        "err": request.query_params.get("err", ""),
+        "fmt": fmt,
+    })
+
+
+def _values_from_form(name, body, is_active) -> dict:
+    return {"name": name or "", "body": body or "", "is_active": bool(is_active)}
+
+
+def _variables_from_form(form) -> list[dict]:
+    """Custom templates let the owner rename and sample their own tokens."""
+    out = []
+    for item in CUSTOM_VARIABLES:
+        token = item["token"]
+        label = str(form.get(f"label_{token}", "") or "").strip() or item["label"]
+        sample = str(form.get(f"sample_{token}", "") or "").strip() or item["sample"]
+        out.append({"token": token, "label": label[:60], "sample": sample[:120], "field": None})
+    return out
+
+
+@router.get("/sms/templates/new", response_class=HTMLResponse)
+async def admin_sms_template_new(request: Request, db: Session = Depends(get_db)):
+    guard = _guard(request, db)
+    if not hasattr(guard, "role"):
+        return guard
+    return _form_context(
+        request, db, template=None, edit_mode=False,
+        values={"name": "", "body": "", "is_active": True},
+    )
+
+
+@router.post("/sms/templates/new", response_class=HTMLResponse)
+async def admin_sms_template_create(
+    request: Request,
+    name: str = Form(""),
+    body: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    guard = _guard(request, db)
+    if not hasattr(guard, "role"):
+        return guard
+
+    error = validate(name, body)
+    if error:
+        return _form_context(request, db, template=None, edit_mode=False,
+                             values=_values_from_form(name, body, True), error=error)
+    form = await request.form()
+    template = create_custom(db, name=name, body=body, variables=_variables_from_form(form))
+    db.commit()
+    log_action(db, "sms_template_create", f"قالب پیامک «{template.name}» ساخته شد",
+               request=request, target_type="sms_template", target_id=template.id)
+    return RedirectResponse(
+        url=f"/admin/sms/templates/{template.id}/edit?msg=قالب ساخته شد — متن را ببینید و آزمایش کنید.",
+        status_code=303,
+    )
+
+
+@router.get("/sms/templates/{template_id}/edit", response_class=HTMLResponse)
+async def admin_sms_template_edit(template_id: int, request: Request, db: Session = Depends(get_db)):
+    guard = _guard(request, db)
+    if not hasattr(guard, "role"):
+        return guard
+
+    template = get_template_by_id(db, template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail="قالب پیامک یافت نشد")
+    return _form_context(
+        request, db, template=template, edit_mode=True,
+        values={"name": template.name, "body": template.body or "",
+                "is_active": bool(template.is_active)},
+        message=request.query_params.get("msg", ""),
+    )
+
+
+@router.post("/sms/templates/{template_id}", response_class=HTMLResponse)
+async def admin_sms_template_update(
+    template_id: int,
+    request: Request,
+    name: str = Form(""),
+    body: str = Form(""),
+    is_active: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    guard = _guard(request, db)
+    if not hasattr(guard, "role"):
+        return guard
+
+    template = get_template_by_id(db, template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail="قالب پیامک یافت نشد")
+
+    error = validate(name, body)
+    if error:
+        return _form_context(request, db, template=template, edit_mode=True,
+                             values=_values_from_form(name, body, is_active == "on"),
+                             error=error)
+
+    template.name = name.strip()
+    template.body = body
+    if template.is_builtin:
+        template.is_active = is_active == "on"
+    else:
+        template.is_active = True
+        form = await request.form()
+        template.variables = json.dumps(_variables_from_form(form), ensure_ascii=False)
+    # The legacy settings row is the contract every sender already reads, so it
+    # is written on save — «غیرفعال» lands there as an empty pattern.
+    sync_to_settings(db, template)
+    db.commit()
+    log_action(db, "sms_template_update", f"قالب پیامک «{template.name}» ویرایش شد",
+               request=request, target_type="sms_template", target_id=template.id)
+    return RedirectResponse(
+        url=f"/admin/sms/templates/{template.id}/edit?msg=متن پیامک ذخیره شد.", status_code=303,
+    )
+
+
+@router.post("/sms/templates/{template_id}/toggle", response_class=HTMLResponse)
+async def admin_sms_template_toggle(template_id: int, request: Request, db: Session = Depends(get_db)):
+    """Switch a template on or off. Off mirrors an empty legacy pattern."""
+    guard = _guard(request, db)
+    if not hasattr(guard, "role"):
+        return guard
+    template = get_template_by_id(db, template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail="قالب پیامک یافت نشد")
+
+    if not template.is_active and not (template.body or "").strip():
+        return RedirectResponse(
+            url="/admin/sms?err=این قالب متنی ندارد؛ اول متن را بنویسید.", status_code=303,
+        )
+    template.is_active = not template.is_active
+    sync_to_settings(db, template)
+    db.commit()
+    state = "فعال" if template.is_active else "غیرفعال"
+    log_action(db, "sms_template_toggle", f"قالب «{template.name}» {state} شد",
+               request=request, target_type="sms_template", target_id=template.id)
+    return RedirectResponse(url=f"/admin/sms?msg=قالب «{template.name}» {state} شد.", status_code=303)
+
+
+@router.post("/sms/templates/{template_id}/duplicate", response_class=HTMLResponse)
+async def admin_sms_template_duplicate(template_id: int, request: Request, db: Session = Depends(get_db)):
+    guard = _guard(request, db)
+    if not hasattr(guard, "role"):
+        return guard
+    template = get_template_by_id(db, template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail="قالب پیامک یافت نشد")
+    copy = duplicate(db, template)
+    db.commit()
+    log_action(db, "sms_template_duplicate", f"قالب «{template.name}» کپی شد",
+               request=request, target_type="sms_template", target_id=copy.id)
+    return RedirectResponse(
+        url=f"/admin/sms/templates/{copy.id}/edit?msg=یک کپی ساخته شد — نام و متن را دلخواه تغییر دهید.",
+        status_code=303,
+    )
+
+
+@router.post("/sms/templates/{template_id}/delete", response_class=HTMLResponse)
+async def admin_sms_template_delete(template_id: int, request: Request, db: Session = Depends(get_db)):
+    guard = _guard(request, db)
+    if not hasattr(guard, "role"):
+        return guard
+    template = get_template_by_id(db, template_id)
+    if template is None:
+        return RedirectResponse(url="/admin/sms", status_code=303)
+
+    reason = delete_blocked_reason(db, template)
+    if reason:
+        return RedirectResponse(url=f"/admin/sms?err={reason}", status_code=303)
+
+    name = template.name
+    db.delete(template)
+    db.commit()
+    log_action(db, "sms_template_delete", f"قالب پیامک «{name}» حذف شد",
+               request=request, target_type="sms_template", target_id=template_id)
+    return RedirectResponse(url=f"/admin/sms?msg=قالب «{name}» حذف شد.", status_code=303)
+
+
+@router.post("/sms/templates/{template_id}/test", response_class=HTMLResponse)
+async def admin_sms_template_test(
+    template_id: int,
+    request: Request,
+    phone: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Queue the template as it stands to one number, so the owner can see it."""
+    guard = _guard(request, db)
+    if not hasattr(guard, "role"):
+        return guard
+    template = get_template_by_id(db, template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail="قالب پیامک یافت نشد")
+
+    target = parse_phone_list(phone)
+    if not target:
+        return RedirectResponse(
+            url=f"/admin/sms/templates/{template.id}/edit?err=شماره آزمایشی معتبر نیست (مثال: ۰۹۱۲۳۴۵۶۷۸۹).",
+            status_code=303,
+        )
+    customer = customer_for_phone(db, target[0])
+    body = preview_body(template, values_for_customer(customer, template))
+    job = await queue_sms(body, target[0], {}, db, template=template, source="test",
+                          customer=customer, body=body)
+    if job is None:
+        return RedirectResponse(
+            url=f"/admin/sms/templates/{template.id}/edit?err=ارسال آزمایشی در صف قرار نگرفت.",
+            status_code=303,
+        )
+    log_action(db, "sms_template_test", f"ارسال آزمایشی قالب «{template.name}»",
+               request=request, target_type="sms_template", target_id=template.id)
+    return RedirectResponse(
+        url=(f"/admin/sms/templates/{template.id}/edit?msg="
+             "پیامک آزمایشی در صف قرار گرفت — دقیقاً همان متنی که در پیش‌نمایش دیدید."),
+        status_code=303,
+    )
+
+
+# ── manual send ───────────────────────────────────────────────────────────────
+
+def _active_choices(db) -> list[dict]:
+    return [
+        {"id": template.id, "name": template.name}
+        for group in grouped_templates(db)
+        for template in group["templates"]
+        if template.is_active
+    ]
+
+
+def _send_context(request, db, *, template, plan=None, body="", error="", message="",
+                  picked=None, numbers="", audience="all", transactional=False):
+    return templates.TemplateResponse(request, "admin/sms_send.html", {
+        "template_choices": _active_choices(db),
+        "template": template,
+        "choices": audience_choices(db, transactional=transactional),
+        "customers": db.query(Customer).order_by(Customer.first_name.asc(), Customer.id.asc()).all(),
+        "plan": plan,
+        "body": body,
+        "audience": audience,
+        "picked": picked or [],
+        "numbers": numbers,
+        "transactional": transactional,
+        "error": error,
+        "msg": message,
+        "fmt": fmt,
+        "mode_labels": MODE_LABELS,
+    })
+
+
+def _template_or_default(db: Session, template_id) -> SmsTemplate | None:
+    if template_id:
+        template = get_template_by_id(db, template_id)
+        if template is not None:
+            return template
+    from services.sms_templates import templates_for
+
+    rows = templates_for(db)
+    return next((row for row in rows if row.category == "custom"), rows[0] if rows else None)
+
+
+@router.get("/sms/send", response_class=HTMLResponse)
+async def admin_sms_send_form(request: Request, template_id: int = 0, db: Session = Depends(get_db)):
+    guard = _guard(request, db)
+    if not hasattr(guard, "role"):
+        return guard
+    template = _template_or_default(db, template_id)
+    if template is None:
+        return RedirectResponse(url="/admin/sms?err=قالب پیامک فعالی برای ارسال وجود ندارد.",
+                                status_code=303)
+    # The right panel shows the real message with its sample values, not an
+    # empty bubble, so the template choice is visible before any preview click.
+    return _send_context(request, db, template=template, body=preview_body(template),
+                         message=request.query_params.get("msg", ""),
+                         error=request.query_params.get("err", ""))
+
+
+@router.post("/sms/send", response_class=HTMLResponse)
+async def admin_sms_send(
+    request: Request,
+    template_id: int = Form(0),
+    audience: str = Form("all"),
+    picked: list[str] = Form([]),
+    numbers: str = Form(""),
+    action: str = Form("preview"),
+    transactional: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Preview the blast, then send it — the same form, two steps.
+
+    The preview re-resolves the audience on the spot, so the number the owner
+    approves is the number that gets queued (and the cap is applied to both).
+    """
+    guard = _guard(request, db)
+    if not hasattr(guard, "role"):
+        return guard
+
+    template = get_template_by_id(db, template_id)
+    if template is None:
+        return RedirectResponse(url="/admin/sms/send?err=قالب پیامک پیدا نشد.", status_code=303)
+
+    is_transactional = transactional == "on"
+    plan = plan_from_form(db, audience=audience, picked=picked, numbers=numbers,
+                          transactional=is_transactional)
+    sample_customer = plan["recipients"][0]["customer"] if plan["recipients"] else None
+    body = preview_body(template, values_for_customer(sample_customer, template))
+    if not plan["recipients"]:
+        return _send_context(request, db, template=template, plan=plan, body=body,
+                             error="با این انتخاب کسی برای ارسال پیدا نشد.",
+                             audience=audience, picked=picked, numbers=numbers,
+                             transactional=is_transactional)
+
+    if action != "send":
+        return _send_context(request, db, template=template, plan=plan, body=body,
+                             audience=audience, picked=picked, numbers=numbers,
+                             transactional=is_transactional)
+
+    summary = await send_bulk(db, template=template, plan=plan, source="manual",
+                              employee_id=guard.id)
+    message = f"{summary['queued']} پیامک در صف قرار گرفت."
+    if summary["empty"]:
+        message += f" {summary['empty']} نفر متن خالی داشتند و فرستاده نشدند."
+    if plan["capped"]:
+        message += f" (سقف هر ارسال {plan['limit']} پیامک است؛ بقیه به نوبت بعد ماندند.)"
+    log_action(
+        db, "sms_send",
+        f"ارسال دستی قالب «{template.name}» برای {summary['queued']} نفر ({plan['mode_label']})",
+        request=request, target_type="sms_template", target_id=template.id,
+        after={"queued": summary["queued"], "matched": plan["matched"], "audience": plan["mode"]},
+    )
+    return RedirectResponse(url=f"/admin/sms/history?msg={message}", status_code=303)
+
+
+# ── history ───────────────────────────────────────────────────────────────────
+
+@router.get("/sms/history", response_class=HTMLResponse)
+async def admin_sms_history(
+    request: Request,
+    search: str = "",
+    status: str = "all",
+    source: str = "all",
+    order: str = "newest",
+    page: int = 1,
+    db: Session = Depends(get_db),
+):
+    guard = _guard(request, db)
+    if not hasattr(guard, "role"):
+        return guard
+
+    listing = message_filtered(db, search=search, status=status, source=source,
+                              order=order, page=page)
+    return templates.TemplateResponse(request, "admin/sms_history.html", {
+        **listing,
+        "overview": message_overview(db),
+        "orders": HISTORY_ORDERS,
+        "status_filters": (("all", "همه وضعیت‌ها"),) + tuple(STATUS_LABELS.items()),
+        "source_filters": (("all", "همه فرستنده‌ها"),) + tuple(SOURCE_LABELS.items()),
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
+        "fmt": fmt,
+    })

@@ -456,7 +456,8 @@ async def sales_create_customer(
     db.commit()
     db.refresh(customer)
 
-    await queue_welcome_sms(customer.phone, customer.first_name or "", customer.referral_code, db)
+    await queue_welcome_sms(customer.phone, customer.first_name or "", customer.referral_code,
+                            db, customer=customer)
 
     return _render_scan(request, customer, [], 0, db)
 

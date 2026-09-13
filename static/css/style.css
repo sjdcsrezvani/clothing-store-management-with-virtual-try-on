@@ -745,7 +745,7 @@ tbody tr:last-child td { border-bottom: none; }
 .nav-icon::before, .icon-plus::before, .icon-logout::before, .icon-check::before { position: absolute; inset: 0; display: grid; place-items: center; font-family: system-ui, sans-serif; font-size: 1rem; font-weight: 800; line-height: 1; }
 .ui-icon { display: block; width: 1.18rem; height: 1.18rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .nav-icon .ui-icon, .icon-plus .ui-icon, .icon-logout .ui-icon { position: relative; z-index: 1; }
-.icon-sale::before, .icon-history::before, .icon-box::before, .icon-truck::before, .icon-ledger::before, .icon-users::before, .icon-credit::before, .icon-campaign::before, .icon-dashboard::before, .icon-chart::before, .icon-accounting::before, .icon-cash::before, .icon-expenses::before, .icon-supplier::before, .icon-dress::before, .icon-backup::before, .icon-settings::before, .icon-palette::before, .icon-terminal::before, .icon-logs::before, .icon-staff::before, .icon-plus::before, .icon-logout::before, .icon-check::before { content: ""; }
+.icon-sale::before, .icon-history::before, .icon-box::before, .icon-truck::before, .icon-ledger::before, .icon-users::before, .icon-credit::before, .icon-campaign::before, .icon-sms::before, .icon-dashboard::before, .icon-chart::before, .icon-accounting::before, .icon-cash::before, .icon-expenses::before, .icon-supplier::before, .icon-dress::before, .icon-backup::before, .icon-settings::before, .icon-palette::before, .icon-terminal::before, .icon-logs::before, .icon-staff::before, .icon-plus::before, .icon-logout::before, .icon-check::before { content: ""; }
 .quick-sale .icon-sale, .topbar-settings-icon { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 1.25rem; height: 1.25rem; flex: 0 0 1.25rem; font-size: 0; }
 .quick-sale .icon-sale .ui-icon, .topbar-settings-icon .ui-icon { position: relative; z-index: 1; width: 1.1rem; height: 1.1rem; }
 .context-mark, .footer-mark { display: inline-block; width: 0.8rem; height: 0.8rem; border-radius: 2px; background: var(--candy); vertical-align: -0.08rem; }
@@ -758,6 +758,7 @@ html[data-theme="kids-boutique"] .icon-ledger::before { content: "📚"; }
 html[data-theme="kids-boutique"] .icon-users::before { content: "👥"; }
 html[data-theme="kids-boutique"] .icon-credit::before { content: "📒"; }
 html[data-theme="kids-boutique"] .icon-campaign::before { content: "📢"; }
+html[data-theme="kids-boutique"] .icon-sms::before { content: "💬"; }
 html[data-theme="kids-boutique"] .icon-dashboard::before { content: "📊"; }
 html[data-theme="kids-boutique"] .icon-chart::before { content: "📈"; }
 html[data-theme="kids-boutique"] .icon-accounting::before { content: "🧮"; }
@@ -2171,4 +2172,166 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
   .campaign-card, .campaign-holders, .campaign-redemptions { border: 0; box-shadow: none; padding: 0; }
   .campaign-table, .campaign-holders-table, .campaign-redemptions-table { min-width: 0; width: 100%; font-size: 0.8rem; }
   .campaign-card .table-scroll, .campaign-holders .table-scroll, .campaign-redemptions .table-scroll { overflow: visible; }
+}
+
+/* ── پیامک ───────────────────────────────────────────────────────────────────
+   The templates manager, the editor with its live preview, the manual sender
+   and the log. Theme tokens only, and every state is written as text beside
+   its colour so dark and high-contrast themes lose nothing. */
+
+.sms-kpi a.stat-card { display: block; text-decoration: none; color: inherit; }
+.sms-kpi a.stat-card:hover { text-decoration: none; }
+
+.sms-gateway-card .form-group { flex: 1 1 190px; min-width: 170px; }
+.sms-gateway-card .form-actions { margin-top: 0.5rem; }
+
+/* Both SMS tables fit any width: the text, its metrics and the source live
+   under the name, so the state and the actions are never scrolled out of view. */
+.sms-table { min-width: 0; }
+.sms-history-table { min-width: 0; }
+.sms-history-table .sms-name { min-width: 14rem; }
+.sms-empty-body { display: block; font-size: 0.78rem; color: var(--ink-soft); }
+.sms-table td small, .sms-table td strong { display: block; }
+.sms-table td { vertical-align: top; }
+.sms-name a { font-weight: 700; text-decoration: none; color: inherit; }
+.sms-name a:hover { color: var(--candy-dark); text-decoration: underline; }
+.sms-meta { color: var(--ink-soft); font-size: 0.72rem; }
+.sms-body-cell { max-width: 22rem; }
+.sms-body { display: block; font-size: 0.82rem; line-height: 1.6; overflow-wrap: anywhere; }
+.sms-body-cell small { color: var(--ink-soft); font-size: 0.72rem; }
+.sms-failed { color: var(--persimmon); font-size: 0.72rem; }
+.sms-error { display: block; max-width: 12rem; color: var(--persimmon); font-size: 0.72rem; }
+.sms-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; align-items: center; }
+.sms-actions .btn { min-height: 1.9rem; padding: 0.25rem 0.6rem; font-size: 0.74rem; }
+.inline-form { display: inline-flex; margin: 0; }
+
+.sms-help-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+.sms-help-list li { display: flex; gap: 0.6rem; flex-wrap: wrap; font-size: 0.84rem; }
+.sms-help-list li > span { color: var(--ink-soft); }
+
+/* Editor: the form on one side, the phone preview on the other. */
+.sms-editor-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.9fr); gap: 1.2rem; align-items: start; }
+.sms-editor-layout > * { min-width: 0; }
+.sms-editor-side, .sms-send-side { display: grid; gap: 1rem; min-width: 0; }
+.sms-variable-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.6rem; }
+.sms-chip {
+  display: inline-flex; align-items: baseline; gap: 0.35rem;
+  min-height: 2rem; padding: 0.25rem 0.6rem;
+  border: 1px dashed color-mix(in srgb, var(--lavender) 55%, var(--rule));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--lavender) 10%, var(--card));
+  color: var(--ink); font: inherit; font-size: 0.76rem; cursor: pointer;
+}
+.sms-chip:hover { border-style: solid; border-color: var(--lavender); }
+.sms-chip small { color: var(--ink-soft); font-size: 0.72rem; }
+.sms-counter { display: block; margin-top: 0.35rem; color: var(--ink-soft); font-size: 0.76rem; }
+.sms-counter.is-over { color: var(--persimmon); font-weight: 700; }
+.sms-variable-editor { margin-top: 0.6rem; border-top: 1px dashed var(--rule); padding-top: 0.6rem; }
+
+/* The preview bubble: a plain phone bubble, no theme colour of its own. */
+.sms-preview-card .sms-phone {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  padding: 0.9rem;
+  min-height: 5rem;
+}
+.sms-bubble {
+  display: inline-block; max-width: 100%;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.9rem 0.9rem 0.9rem 0.25rem;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  font-size: 0.86rem; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.sms-preview-note { margin: 0.6rem 0 0; font-size: 0.78rem; }
+.sms-warning {
+  margin: 0.6rem 0 0; padding: 0.5rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--sunshine) 45%, var(--rule));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--sunshine) 14%, var(--card));
+  color: var(--ink); font-size: 0.8rem;
+}
+.sms-test-form { display: grid; gap: 0.6rem; justify-items: start; }
+
+/* Sender: audience choices with their counts, then the picker. */
+.sms-send-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.9fr); gap: 1.2rem; align-items: start; }
+.sms-send-layout > * { min-width: 0; }
+.sms-audience-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.4rem; margin-bottom: 0.8rem; }
+.sms-audience-option {
+  display: flex; align-items: center; gap: 0.55rem;
+  min-height: var(--touch-target);
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.sms-audience-option:hover { background: var(--surface-soft); }
+.sms-audience-option input { width: auto; min-height: 0; accent-color: var(--candy); }
+.sms-audience-option span { display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; font-size: 0.84rem; }
+.sms-audience-option small { color: var(--ink-soft); font-size: 0.74rem; font-weight: 700; }
+.sms-picked-block { border-top: 1px dashed var(--rule); padding-top: 0.7rem; }
+.sms-picker-search { margin-bottom: 0.4rem; }
+.sms-picker {
+  max-height: 15rem; overflow-y: auto;
+  border: 1px solid var(--rule); border-radius: var(--radius-sm);
+  background: var(--card);
+}
+.sms-pick-row {
+  display: flex; align-items: center; gap: 0.5rem;
+  min-height: 2.2rem; padding: 0.25rem 0.55rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--rule) 55%, transparent);
+  cursor: pointer; font-size: 0.82rem;
+}
+.sms-pick-row:last-child { border-bottom: 0; }
+.sms-pick-row:hover { background: var(--surface-soft); }
+.sms-pick-row input { width: auto; min-height: 0; accent-color: var(--candy); }
+.sms-pick-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sms-pick-row small { margin-inline-start: auto; color: var(--ink-soft); font-size: 0.74rem; }
+.sms-summary { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+.sms-summary li { display: flex; justify-content: space-between; gap: 0.8rem; font-size: 0.84rem; }
+.sms-summary li > span { color: var(--ink-soft); }
+.sms-skipped { margin: 0.7rem 0 0; font-size: 0.78rem; }
+.sms-recipients { margin-top: 0.7rem; font-size: 0.82rem; }
+.sms-recipients summary { cursor: pointer; font-weight: 700; }
+.sms-recipients ul { list-style: none; margin: 0.5rem 0 0; padding: 0; display: grid; gap: 0.3rem; max-height: 14rem; overflow-y: auto; }
+.sms-recipients li { display: flex; justify-content: space-between; gap: 0.6rem; }
+.sms-recipients li small { color: var(--ink-soft); }
+
+/* History. */
+.sms-filter-form .form-group { margin-bottom: 0; flex: 1 1 160px; min-width: 150px; }
+.sms-filter-form .form-group:first-child { flex: 1 1 260px; }
+.sms-results { margin: 0 0 0.7rem; font-size: 0.78rem; color: var(--ink-soft); }
+.sms-time { font-size: 0.78rem; color: var(--ink-soft); white-space: nowrap; }
+
+/* Queue states: the worker's own verdict, always with its label. */
+.status-badge.is-queued { background: color-mix(in srgb, var(--sunshine) 30%, var(--card)); color: var(--ink); }
+.status-badge.is-sent { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--mint-dark); }
+.status-badge.is-failed { background: color-mix(in srgb, var(--persimmon) 20%, var(--card)); color: var(--persimmon); }
+
+@media (max-width: 900px) {
+  .sms-editor-layout, .sms-send-layout { grid-template-columns: 1fr; }
+  /* The app-wide mobile rule turns every table into a horizontal scroller. These
+     two carry their detail inside a single cell, so they wrap instead and
+     nothing important ever needs a swipe to be read. */
+  .sms-table { white-space: normal; }
+}
+@media (max-width: 700px) {
+  .sms-filter-form .form-group { flex: 1 1 100%; min-width: 0; }
+  .sms-audience-grid { grid-template-columns: 1fr; }
+  .sms-gateway-card .form-group { min-width: 0; flex: 1 1 100%; }
+}
+
+/* High-contrast: chips, options and the picker must not rely on a tint. */
+html[data-theme-mode="high-contrast"] .sms-chip { border-width: 2px; }
+html[data-theme-mode="high-contrast"] .sms-audience-option { border-width: 2px; }
+html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
+
+@media print {
+  /* The log and the manager are documents; forms and pickers are screen-only. */
+  .sms-gateway-form, .sms-filter-form, .sms-test-form, .sms-variable-chips,
+  .sms-editor-layout form, .sms-send-layout form, .sms-actions { display: none !important; }
+  .sms-history-card, .sms-group-card, .sms-gateway-card { border: 0; box-shadow: none; padding: 0; }
+  .sms-table, .sms-history-table { min-width: 0; width: 100%; font-size: 0.78rem; }
+  .sms-history-card .table-scroll, .sms-group-card .table-scroll { overflow: visible; }
 }

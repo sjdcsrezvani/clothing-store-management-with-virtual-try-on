@@ -889,6 +889,87 @@ class CampaignAssignment(Base):
     sale = relationship("Sale")
 
 
+# ── پیامک: templates and the log of everything the shop has sent ─────────────
+
+SMS_CATEGORIES = ("welcome", "birthday", "tier_up", "campaign", "credit_reminder", "custom")
+SMS_MESSAGE_STATUSES = ("queued", "sent", "failed")
+SMS_MESSAGE_KINDS = ("marketing", "transactional")
+SMS_MESSAGE_SOURCES = ("manual", "welcome", "birthday", "tier_up", "campaign",
+                       "credit_reminder", "test")
+
+
+class SmsTemplate(Base):
+    """One message the shop can send, and who fills its blanks.
+
+    The six built-in templates mirror the legacy ``settings`` rows
+    (``sms_pattern_*``) through ``setting_key``: saving one writes the effective
+    body back to that row, so the code that already reads those keys keeps
+    working untouched and «غیرفعال» simply mirrors an empty pattern — exactly
+    what an empty pattern has always meant here.
+
+    ``variables`` is JSON: ``[{"token", "label", "sample", "field"}]`` where
+    ``field`` optionally names a real customer field used to fill the token for
+    a given recipient.
+    """
+    __tablename__ = "sms_templates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String(50), unique=True, nullable=False, index=True)
+    name = Column(String(200), nullable=False)
+    category = Column(String(30), nullable=False, default="custom")
+    body = Column(Text, nullable=False, default="")
+    variables = Column(Text, nullable=False, default="[]")
+    # Where the owner last wrote this text, for the built-ins only.
+    setting_key = Column(String(50), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    is_builtin = Column(Boolean, nullable=False, default=False)
+    sort_order = Column(Integer, nullable=False, default=100)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("category IN ('welcome', 'birthday', 'tier_up', 'campaign', 'credit_reminder', 'custom')",
+                        name="ck_sms_template_category"),
+    )
+
+
+class SmsMessage(Base):
+    """What was sent, to whom, and what the queue did with it.
+
+    The body is rendered **when the message is queued**, not when it is read, so
+    editing a template later can never rewrite the history of what a customer
+    actually received.
+    """
+    __tablename__ = "sms_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    template_id = Column(Integer, ForeignKey("sms_templates.id"), nullable=True)
+    template_key = Column(String(50), nullable=True)
+    template_name = Column(String(200), nullable=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True, index=True)
+    employee_id = Column(Integer, ForeignKey("staff_users.id"), nullable=True)
+    job_id = Column(Integer, ForeignKey("background_jobs.id"), nullable=True, index=True)
+    phone = Column(String(20), nullable=False)
+    body = Column(Text, nullable=False, default="")
+    status = Column(String(20), nullable=False, default="queued", index=True)
+    kind = Column(String(20), nullable=False, default="transactional")
+    source = Column(String(30), nullable=False, default="manual", index=True)
+    error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
+    sent_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("status IN ('queued', 'sent', 'failed')", name="ck_sms_message_status"),
+        CheckConstraint("kind IN ('marketing', 'transactional')", name="ck_sms_message_kind"),
+        CheckConstraint("source IN ('manual', 'welcome', 'birthday', 'tier_up', 'campaign', 'credit_reminder', 'test')",
+                        name="ck_sms_message_source"),
+    )
+
+    template = relationship("SmsTemplate")
+    customer = relationship("Customer")
+
+
 # ── Checkout concurrency: server-owned drafts, reservations, state history ────
 
 CHECKOUT_STATES = (
