@@ -126,7 +126,7 @@ async def _queue_one(db: Session, template: SmsTemplate, customer, *, trigger: s
         # silent skip (reported in the sweep) than a message of pure whitespace.
         return None
     return await queue_sms(body, phone, {}, db, template=template, source=trigger,
-                           customer=customer, body=body, ref=ref)
+                           customer=customer, body=body, ref=ref, values=values)
 
 
 # ── trigger 1: a completed sale ───────────────────────────────────────────────

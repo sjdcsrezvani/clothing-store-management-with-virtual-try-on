@@ -8,7 +8,9 @@ shop is written down with the text it actually carried.
 """
 import asyncio
 import itertools
+import json
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -27,10 +29,12 @@ from services.sms_send import (
     journey_label,
     message_filtered,
     message_overview,
+    message_values,
     normalise_phone,
     parse_phone_list,
     plan_from_form,
     preview_body,
+    recorded_rows,
     resolve_recipients,
     send_bulk,
     template_card,
@@ -312,6 +316,175 @@ def test_queue_welcome_is_silent_when_the_template_is_off(db_session):
     assert asyncio.run(queue_welcome_sms(customer.phone, "سارا", "REF1", db_session,
                                          customer=customer)) is None
     assert db_session.query(SmsMessage).count() == 0
+
+
+# ── what a message was built out of ──────────────────────────────────────────
+
+def queue_welcome(db, customer, body, values):
+    """Queue one welcome-pattern message the way the signup path does."""
+    set_setting(db, "sms_pattern_welcome", body)
+    ensure_seeded(db)
+    return asyncio.run(queue_sms(body, customer.phone, values, db,
+                                 template_key="welcome", source="welcome",
+                                 customer=customer))
+
+
+def test_the_log_records_which_values_the_text_was_built_from(db_session):
+    customer = make_customer(db_session, first_name="سارا")
+
+    row = queue_welcome(db_session, customer,
+                        "%var1% عزیز، کد معرف شما %var2% است.",
+                        {"var1": "سارا", "var2": "REF9"})
+
+    recorded = recorded_rows(row)
+    assert [item["token"] for item in recorded] == ["var1", "var2"]
+    # The shop's own label travels with the value, never the placeholder name —
+    # «var2» means nothing to whoever reads the history in a year.
+    assert recorded[0]["label"] == "نام مشتری"
+    assert recorded[1]["label"] == "کد معرف مشتری"
+    assert [item["value"] for item in recorded] == ["سارا", "REF9"]
+
+
+def test_a_value_the_text_never_uses_is_not_part_of_the_record(db_session):
+    """Only what shaped the sentence is written down, so an unused slot cannot
+    make the row read as if it contributed something."""
+    customer = make_customer(db_session, first_name="سارا")
+
+    row = queue_welcome(db_session, customer, "%var1% عزیز، خوش آمدید.",
+                        {"var1": "سارا", "var2": "REF9"})
+
+    assert [item["token"] for item in recorded_rows(row)] == ["var1"]
+
+
+def test_a_text_with_no_placeholders_says_so_rather_than_nothing(db_session):
+    """``"[]"`` و ``""`` دو چیز مختلف‌اند: یکی «سؤال پرسیده شد و جوابی نبود» و
+    دیگری «این ردیف پیش از وجود سابقه فرستاده شده». Merging them would let the
+    page claim a legacy row had no placeholders."""
+    customer = make_customer(db_session, first_name="سارا")
+
+    row = queue_welcome(db_session, customer, "به فروشگاه ما خوش آمدید.", {})
+
+    assert row.values_json == "[]"
+    assert message_values(row, get_template(db_session, "welcome"))["state"] == "none"
+
+
+def test_a_send_the_router_rendered_itself_still_records_its_values(client, authed, db_session):
+    """The bulk sender renders the body itself and then hands over a raw string,
+    so its values have to be passed explicitly — that is exactly the path where
+    the record would otherwise be silently empty."""
+    ensure_seeded(db_session)
+    template = create_custom(db_session, name="تشکر", body="%var1% عزیز، ممنون از خریدتان.")
+    make_customer(db_session, first_name="سارا")
+    token = csrf_token(client, "/admin/sms/send")
+
+    sent = authed.post("/admin/sms/send", data={
+        "csrf_token": token, "template_id": template.id, "audience": "all",
+        "numbers": "", "action": "send",
+    }, follow_redirects=False)
+
+    assert sent.status_code == 303
+    row = db_session.query(SmsMessage).one()
+    assert row.body == "سارا عزیز، ممنون از خریدتان."
+    assert recorded_rows(row) == [{"token": "var1", "label": "نام مشتری", "value": "سارا"}]
+    assert message_values(row, template)["state"] == "match"
+
+
+def test_a_replay_reproduces_what_the_customer_received(db_session):
+    customer = make_customer(db_session, first_name="سارا")
+    row = queue_welcome(db_session, customer, "%var1% عزیز، کد شما %var2% است.",
+                        {"var1": "سارا", "var2": "REF9"})
+
+    audit = message_values(row, get_template(db_session, "welcome"))
+
+    assert audit["state"] == "match"
+    assert audit["replay_body"] == row.body
+
+
+def test_editing_the_template_later_does_not_rewrite_the_record(db_session):
+    """The body is frozen for this reason; the record behind it has to be just
+    as durable, labels included, or the history becomes unreadable the first
+    time someone renames a slot."""
+    customer = make_customer(db_session, first_name="سارا")
+    row = queue_welcome(db_session, customer, "%var1% عزیز، سلام!", {"var1": "سارا"})
+    template = get_template(db_session, "welcome")
+    template.body = "%var1% عزیز، سلام! %var1% جان، منتظرتان هستیم."
+    template.variables = json.dumps([
+        {"token": "var1", "label": "اسم کوچک", "sample": "سارا", "field": "first_name"},
+    ], ensure_ascii=False)
+    db_session.commit()
+
+    audit = message_values(row, template)
+
+    assert audit["state"] == "differs"
+    assert audit["replay_body"] != row.body
+    # The record still carries the label and value of the day it was sent.
+    assert audit["recorded"] == [{"token": "var1", "label": "نام مشتری", "value": "سارا"}]
+    assert row.body == "سارا عزیز، سلام!"
+
+
+def test_a_deleted_template_leaves_its_recorded_values_readable(db_session):
+    customer = make_customer(db_session, first_name="سارا")
+    row = queue_welcome(db_session, customer, "%var1% عزیز، سلام!", {"var1": "سارا"})
+
+    audit = message_values(row, None)
+
+    assert audit["state"] == "template_gone"
+    assert audit["recorded"][0]["value"] == "سارا"
+    assert audit["recorded"][0]["label"] == "نام مشتری"
+
+
+def test_a_row_older_than_the_record_claims_nothing(db_session):
+    """An existing shop's history must not be dressed up as «no placeholders»:
+    those rows were sent before anything recorded it, and the page says exactly
+    that."""
+    customer = make_customer(db_session, first_name="سارا")
+    row = SmsMessage(phone=customer.phone, body="سلام سارا", status="sent",
+                     source="welcome", kind="marketing", customer_id=customer.id)
+    db_session.add(row)
+    db_session.commit()
+
+    assert row.values_json == ""
+    assert message_values(row, None)["state"] == "unrecorded"
+
+
+def test_an_unreadable_record_is_not_blamed_on_the_message(db_session):
+    """Odd JSON costs the explanation, never the message: the row stays, the
+    page opens, and the state says the record could not be trusted."""
+    customer = make_customer(db_session, first_name="سارا")
+    row = SmsMessage(phone=customer.phone, body="سلام سارا", status="sent",
+                     source="welcome", kind="marketing", customer_id=customer.id,
+                     values_json="{not json")
+    db_session.add(row)
+    db_session.commit()
+
+    assert recorded_rows(row) == []
+    assert message_values(row, None)["state"] == "unreadable"
+
+
+def test_the_history_page_shows_the_values_and_the_replay_verdict(client, authed, db_session):
+    customer = make_customer(db_session, first_name="سارا")
+    queue_welcome(db_session, customer, "%var1% عزیز، کد شما %var2% است.",
+                  {"var1": "سارا", "var2": "REF9"})
+
+    response = authed.get("/admin/sms/history")
+
+    assert response.status_code == 200
+    assert "مقادیری که این متن از آن‌ها ساخته شده" in response.text
+    assert "نام مشتری" in response.text and "REF9" in response.text
+    assert "بازپخش: همین مقادیر با قالب فعلی دقیقاً همین متن را می‌سازند." in response.text
+
+
+def test_the_history_page_is_honest_about_a_row_with_no_record(client, authed, db_session):
+    customer = make_customer(db_session, first_name="سارا")
+    db_session.add(SmsMessage(phone=customer.phone, body="سلام سارا", status="sent",
+                              source="welcome", kind="marketing", customer_id=customer.id))
+    db_session.commit()
+
+    response = authed.get("/admin/sms/history")
+
+    assert response.status_code == 200
+    assert "مقادیر این پیامک ثبت نشده" in response.text
+    assert "بازپخش" not in response.text
 
 
 def test_worker_passes_legacy_sms_jobs_through(db_session, monkeypatch):

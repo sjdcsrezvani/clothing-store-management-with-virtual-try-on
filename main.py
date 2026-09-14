@@ -313,6 +313,10 @@ def _apply_missing_columns(migration_engine=None):
             # Which event an automatic message belongs to; '' for everything
             # sent by hand, so a shop's existing history keeps its meaning.
             ("ref", "VARCHAR(60) DEFAULT ''"),
+            # The customer values the body was rendered from, as a JSON list.
+            # '' on the rows that predate it, so an old message is never made to
+            # look as if it was built out of nothing.
+            ("values_json", "TEXT DEFAULT ''"),
         ],
         "sms_templates": [
             # Empty trigger = hand-sent, which is what every existing template

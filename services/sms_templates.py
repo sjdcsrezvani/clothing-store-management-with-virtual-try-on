@@ -665,13 +665,11 @@ def unfilled_in_body(body: str, variables) -> list[dict]:
     « عزیز، عید مبارک». A built-in is judged by :func:`slot_is_filled` instead,
     because its own sender does fill its slots.
     """
-    text = body or ""
     used = []
     for item in variables or ():
         if item.get("field"):
             continue
-        token = re.escape(str(item["token"]))
-        if re.search(rf"%{token}%", text) or re.search(r"\{" + token + r"\}", text):
+        if uses_token(body or "", item["token"]):
             used.append(item)
     return used
 
@@ -803,6 +801,65 @@ def delete_blocked_reason(db: Session, template: SmsTemplate) -> str:
 
 # ── the log ───────────────────────────────────────────────────────────────────
 
+def uses_token(text: str, token: str) -> bool:
+    """Whether this text carries the placeholder at all, in either syntax."""
+    escaped = re.escape(str(token))
+    return bool(re.search(rf"%{escaped}%", text or "")
+                or re.search(r"\{" + escaped + r"\}", text or ""))
+
+
+def recorded_values(template: SmsTemplate | None, values, pattern: str = "") -> list[dict]:
+    """Which customer values a message was rendered from, labelled for the log.
+
+    The frozen body says what went out; this says what it was built out of. The
+    shop's own label travels with each value («نام مشتری», «بدهی نسیه») rather
+    than the placeholder name, because the template may be renamed, re-bound or
+    deleted long before anyone reads this row — and a record that needs the
+    template to still exist to be readable is not a record.
+
+    Only the placeholders the text actually *carries* are kept. A slot the
+    template declares but the sentence never mentions, and a value handed in for
+    a token that is not in the text (a campaign's code on a template that never
+    asks for it), both changed nothing about what the customer read — so neither
+    belongs in the record of why it reads the way it does.
+    """
+    provided = dict(values or {})
+    text = ((template.body if template is not None else pattern) or "")
+    out: list[dict] = []
+
+    if template is not None:
+        for item in template_variables(template):
+            token = item["token"]
+            if not uses_token(text, token):
+                continue
+            value = provided.get(token)
+            out.append({
+                "token": token,
+                "label": item.get("label") or token,
+                "value": "" if value is None else str(value),
+            })
+        return out
+
+    # No template row: the values came from the ``attributes`` of a raw pattern,
+    # so the only honest question is whether the text uses that token at all.
+    for token, value in provided.items():
+        if uses_token(text, str(token)):
+            out.append({
+                "token": str(token),
+                "label": str(token),
+                "value": "" if value is None else str(value),
+            })
+    return out
+
+
+def dump_recorded(recorded) -> str:
+    """The recorded values as the log stores them — never a crash on odd input."""
+    try:
+        return json.dumps(list(recorded or []), ensure_ascii=False)
+    except (TypeError, ValueError):
+        return "[]"
+
+
 def log_message(
     db: Session,
     *,
@@ -816,7 +873,16 @@ def log_message(
     status: str = "queued",
     error: str | None = None,
     ref: str = "",
+    values=None,
+    pattern: str = "",
 ) -> SmsMessage:
+    """Write one row of the log — the single writer every message goes through.
+
+    ``values`` are the customer values this body was rendered from and
+    ``pattern`` the raw text when there is no template row to declare them; the
+    two are turned into the recorded list here rather than by each caller, so a
+    new sender cannot log a message without saying what it was made of.
+    """
     # The vocabulary lives in SOURCE_LABELS. A sender that invents a source is a
     # bug, not a new kind of message: log it and file the row under «دستی» so the
     # history never shows an unlabelled sender. (The table has no CHECK on this
@@ -837,6 +903,10 @@ def log_message(
         source=source,
         error=error,
         ref=ref or "",
+        # Always written, even when there is nothing to write: ``"[]"`` records
+        # that the question was asked, which is how an old row (``""``) can be
+        # told apart from a message that genuinely had no placeholders.
+        values_json=dump_recorded(recorded_values(template, values, pattern)),
     )
     db.add(row)
     db.flush()

@@ -15,6 +15,8 @@ Two rules are enforced here rather than trusted to the form:
 """
 from __future__ import annotations
 
+import json
+import logging
 from datetime import datetime, timezone
 
 import jdatetime
@@ -34,6 +36,8 @@ from services.sms_templates import (
     template_variables,
     values_for_customer,
 )
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_LIMIT = 100
 
@@ -276,7 +280,7 @@ async def send_bulk(
             continue
         job = await queue_sms(body, recipient["phone"], {}, db, template=template,
                               source=source, customer=customer,
-                              employee_id=employee_id, body=body)
+                              employee_id=employee_id, body=body, values=values)
         if job is not None:
             queued += 1
     db.commit()
@@ -382,6 +386,90 @@ def journey_label(message: SmsMessage) -> str:
     return ""
 
 
+def _recorded_state(message) -> tuple[str, list[dict]]:
+    """Read one row's recorded values, keeping "absent" apart from "broken".
+
+    Never raises, and never guesses: a history page that cannot be opened
+    because one row holds odd JSON would hide every other message with it, but
+    blaming a broken record on the message itself would be a lie. The body
+    survives either way, so a bad record costs the explanation, never the
+    message.
+    """
+    raw = str(getattr(message, "values_json", "") or "").strip()
+    if not raw:
+        return "unrecorded", []
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        parsed = None
+    if not isinstance(parsed, list):
+        logger.warning("SMS message %s has unreadable recorded values",
+                       getattr(message, "id", "?"))
+        return "unreadable", []
+    out: list[dict] = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        token = str(item.get("token") or "")
+        if not token:
+            continue
+        value = item.get("value")
+        out.append({
+            "token": token,
+            "label": str(item.get("label") or token),
+            "value": "" if value is None else str(value),
+        })
+    if not out:
+        return "none", []
+    return "recorded", out
+
+
+def recorded_rows(message) -> list[dict]:
+    """The values this message was rendered from, or ``[]`` when there are none.
+
+    The forgiving accessor: for anything that needs the values and does not care
+    why they are missing (a report, an export, a test) rather than a page that
+    must say which of the three it is.
+    """
+    return _recorded_state(message)[1]
+
+
+def message_values(message, template=None) -> dict:
+    """What one log entry was built out of, and whether it can be replayed.
+
+    Reading the frozen body tells you what the customer received; this tells you
+    *why* it reads that way — which customer values were behind it at that
+    moment. Replaying those values through the template answers the question a
+    log is actually kept for: does this row still add up?
+
+    ``state`` is deliberately fine-grained, because "no values" has three
+    different meanings and only one of them is a problem:
+
+    * ``unrecorded`` — the row predates the record, so nothing is claimed;
+    * ``unreadable`` — the record is there but cannot be trusted;
+    * ``none`` — recorded, and the text used no placeholders at all;
+    * ``match`` — a replay through the template reproduces the body exactly;
+    * ``differs`` — the template changed since, so the replay does not;
+    * ``template_gone`` — the template was deleted; the values survive without it.
+    """
+    state, recorded = _recorded_state(message)
+    empty = {"recorded": [], "replay_body": None, "template": template}
+    if state != "recorded":
+        # «unrecorded» (the row predates the record), «unreadable» (the record is
+        # there but cannot be trusted) and «none» (recorded: the text used no
+        # placeholders) are three different facts and are never merged into one.
+        return {"state": state, **empty}
+    if template is None:
+        return {"state": "template_gone", "recorded": recorded, "replay_body": None, "template": None}
+    replay = render_template(template, {item["token"]: item["value"] for item in recorded})
+    return {
+        "state": "match" if replay == (message.body or "") else "differs",
+        "recorded": recorded,
+        "replay_body": replay,
+        "template": template,
+    }
+
+
 def message_filtered(
     db: Session,
     *,
@@ -428,6 +516,16 @@ def message_filtered(
             Customer.id.in_(ids),
         ).all()}
 
+    # The templates behind these rows, for one query rather than one per row:
+    # a replay needs the template, and the audit line goes on every row that has
+    # a record — including the rows whose template was deleted since.
+    templates: dict[int, SmsTemplate] = {}
+    template_ids = [row.template_id for row in rows if row.template_id]
+    if template_ids:
+        templates = {row.id: row for row in db.query(SmsTemplate).filter(
+            SmsTemplate.id.in_(template_ids),
+        ).all()}
+
     return {
         "rows": [{
             "message": row,
@@ -436,6 +534,10 @@ def message_filtered(
             "journey_label": journey_label(row),
             "source_label": SOURCE_LABELS.get(row.source, row.source),
             "segments": sms_metrics(row.body or "")["segments"],
+            # Not called ``values``: on a dict, Jinja resolves ``row.values`` to
+            # the built-in method before it ever looks for the key, so the page
+            # would render a bound method instead of the record.
+            "audit": message_values(row, templates.get(row.template_id)),
         } for row in rows],
         "total": total,
         "page": page,

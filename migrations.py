@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 17
+MIGRATION_VERSION = 18
 
 
 def migration_status(engine) -> int:
@@ -238,6 +238,14 @@ def _rebuild_sms_messages(conn) -> None:
 
 
 def _apply_revision(conn, version: int) -> None:
+    if version == 18:
+        # Which customer values a message was rendered from, so a history entry
+        # can be replayed and audited rather than merely read. Purely additive:
+        # an existing shop's rows keep their meaning, and an empty string says
+        # plainly that they were sent before anything recorded it.
+        _add_column_if_missing(conn, "sms_messages", "values_json", "TEXT DEFAULT ''")
+        return
+
     if version == 17:
         _rebuild_sms_messages(conn)
         _add_column_if_missing(conn, "sms_templates", "trigger_key", "VARCHAR(30) DEFAULT ''")

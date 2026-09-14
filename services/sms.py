@@ -86,7 +86,8 @@ async def send_pattern_sms(pattern: str, recipient: str, attributes: dict, db: S
         # Direct sends go straight into the queue too — same table, same phone,
         # same honest verdict from the device report instead of a guessed one.
         return await queue_sms("", recipient, {}, db, template=template,
-                               source=source, customer=customer, body=message)
+                               source=source, customer=customer, body=message,
+                               values=attributes)
     return None
 
 
@@ -95,13 +96,20 @@ async def queue_sms(pattern: str, recipient: str, attributes: dict, db: Session,
                     template=None, template_key: str | None = None,
                     source: str = "manual", kind: str | None = None,
                     customer=None, employee_id: int | None = None,
-                    body: str | None = None, ref: str = ""):
+                    body: str | None = None, ref: str = "", values=None):
     """Queue one message and record it in the log.
 
     The body is rendered **now**, at queue time, and that rendered text is what
     the worker sends — so editing a template afterwards can never rewrite a
     message that is already on its way, and the history always shows what the
     customer actually received.
+
+    The customer values behind that text are recorded beside it, so the entry
+    can be read, replayed and audited later. A caller that rendered the body
+    itself (``body=``) must hand those values over in ``values=``; a caller
+    passing a ``pattern`` needs to do nothing, because ``attributes`` are
+    already exactly what the text was built from — and recording anything else
+    would be a guess.
     """
     if not pattern and not body:
         return None
@@ -110,9 +118,12 @@ async def queue_sms(pattern: str, recipient: str, attributes: dict, db: Session,
         template = get_template(db, template_key)
     if customer is None:
         customer = customer_for_phone(db, recipient)
+    if values is None and body is None:
+        values = attributes
     row = log_message(db, phone=recipient, body=rendered, template=template,
                       customer=customer, source=source, kind=kind,
-                      employee_id=employee_id, ref=ref)
+                      employee_id=employee_id, ref=ref, values=values,
+                      pattern=pattern if body is None else "")
     # No BackgroundJob: the scheduler batch used to add up to five minutes in
     # front of every message, and the gateway claim is atomic on its own. The
     # log row *is* the queue item now; ``job_id`` stays for old rows.

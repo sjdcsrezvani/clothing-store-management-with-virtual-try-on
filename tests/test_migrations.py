@@ -146,6 +146,56 @@ def test_upgrade_rebuilds_stale_sms_message_source_constraint(tmp_path):
         )).scalar()
         assert "ck_sms_message_source" not in ddl
         assert "ck_sms_message_status" in ddl               # the rest is kept
+        # Revision 18 added the record of what each message was built from. An
+        # old row must come out empty — «never recorded» — and not as '[]',
+        # which would claim the sentence had no placeholders in it.
+        columns = {row[1] for row in conn.execute(text("PRAGMA table_info(sms_messages)"))}
+        assert "values_json" in columns
+        assert conn.execute(text("SELECT values_json FROM sms_messages WHERE id=1")).scalar() == ""
+
+
+def test_upgrade_records_values_without_rewriting_what_came_before(tmp_path):
+    """The path every shop that already ran revision 17 takes: the column simply
+    appears, the history it already had keeps its meaning, and a message queued
+    afterwards can say what it was made of."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'v17.db'}")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE schema_version (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)"))
+        conn.execute(text("INSERT INTO schema_version (id, version) VALUES (1, 17)"))
+        conn.execute(text("""
+            CREATE TABLE sms_messages (
+                id INTEGER NOT NULL,
+                template_id INTEGER,
+                phone VARCHAR(20) NOT NULL,
+                body TEXT NOT NULL,
+                status VARCHAR(20) NOT NULL,
+                kind VARCHAR(20) NOT NULL,
+                source VARCHAR(30) NOT NULL,
+                ref VARCHAR(60) NOT NULL DEFAULT '',
+                delivery_state VARCHAR(20) NOT NULL DEFAULT '',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                created_at DATETIME NOT NULL,
+                PRIMARY KEY (id)
+            )
+        """))
+        conn.execute(text("""
+            INSERT INTO sms_messages (phone, body, status, kind, source, created_at)
+            VALUES ('09120000000', 'سارا عزیز، سلام!', 'sent', 'marketing', 'welcome', '2026-01-01 00:00:00')
+        """))
+
+    assert upgrade(engine) == 18
+
+    with engine.begin() as conn:
+        conn.execute(text("""
+            INSERT INTO sms_messages (phone, body, status, kind, source, values_json, created_at)
+            VALUES ('09120000001', 'سارا عزیز، سلام!', 'queued', 'marketing', 'welcome',
+                    '[{"token": "var1", "label": "نام مشتری", "value": "سارا"}]', '2026-01-02 00:00:00')
+        """))
+    with engine.connect() as conn:
+        rows = conn.execute(text("SELECT body, values_json FROM sms_messages ORDER BY id")).all()
+        assert rows[0][1] == ""                      # the old row claims nothing
+        assert rows[0][0] == "سارا عزیز، سلام!"       # and kept its text
+        assert "سارا" in rows[1][1]                  # the new one explains itself
 
 
 def test_backup_database_creates_copy(tmp_path):

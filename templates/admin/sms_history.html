@@ -125,6 +125,52 @@
                         </small>
                         <span class="sms-body" dir="auto">{{ message.body|truncate(90, true) }}</span>
                         <small class="sms-meta tnum">{{ row.segments }} پیامک</small>
+                        {# What the text was built out of, not just what it says. #}
+                        {% if row.audit.state == 'unrecorded' %}
+                        <small class="sms-meta sms-values-none">
+                            مقادیر این پیامک ثبت نشده — پیش از آن فرستاده شده که این سابقه نگه داشته شود.
+                        </small>
+                        {% elif row.audit.state == 'none' %}
+                        <small class="sms-meta sms-values-none">
+                            این متن جای خالی نداشت؛ چیزی از مشتری در آن پر نشده است.
+                        </small>
+                        {% elif row.audit.state == 'unreadable' %}
+                        <small class="sms-meta sms-values-none">
+                            سابقه مقادیر این پیامک خوانده نشد؛ فقط متن بالا قابل اتکاست.
+                        </small>
+                        {% else %}
+                        <details class="sms-values">
+                            <summary>
+                                مقادیری که این متن از آن‌ها ساخته شده
+                                <span class="tnum">({{ row.audit.recorded|length }})</span>
+                            </summary>
+                            <ul class="sms-values-list">
+                                {% for item in row.audit.recorded %}
+                                <li>
+                                    <span class="sms-values-label">{{ item.label }}</span>
+                                    <span class="sms-values-name tnum" dir="ltr">%{{ item.token }}%</span>
+                                    <span class="sms-values-value" dir="auto">
+                                        {%- if item.value %}{{ item.value }}{% else %}<em>خالی</em>{% endif -%}
+                                    </span>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                            {% if row.audit.state == 'match' %}
+                            <p class="sms-replay is-match">
+                                بازپخش: همین مقادیر با قالب فعلی دقیقاً همین متن را می‌سازند.
+                            </p>
+                            {% elif row.audit.state == 'differs' %}
+                            <p class="sms-replay is-differs">
+                                قالب از آن زمان ویرایش شده؛ بازپخش همین مقادیر متن زیر را می‌سازد، نه متن بالا.
+                            </p>
+                            <p class="sms-replay-body" dir="auto">{{ row.audit.replay_body }}</p>
+                            {% elif row.audit.state == 'template_gone' %}
+                            <p class="sms-replay is-gone">
+                                قالب این پیامک حذف شده؛ فقط مقادیر ثبت‌شده و متن بالا باقی مانده است.
+                            </p>
+                            {% endif %}
+                        </details>
+                        {% endif %}
                     </td>
                     <td>
                         <span class="status-badge is-{{ message.status }}">{{ row.status_label }}</span>

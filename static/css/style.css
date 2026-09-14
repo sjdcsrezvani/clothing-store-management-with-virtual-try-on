@@ -2236,6 +2236,42 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
 .sms-body-cell { max-width: 22rem; }
 .sms-body { display: block; font-size: 0.82rem; line-height: 1.6; overflow-wrap: anywhere; }
 .sms-body-cell small { color: var(--ink-soft); font-size: 0.72rem; }
+/* Which values the frozen text was built out of, and whether a replay through
+   the current template still reproduces it. Kept quiet until asked for: the
+   body is what the reader came for, the audit is what they check next. */
+.sms-values { margin-top: 0.25rem; font-size: 0.72rem; }
+.sms-values summary { cursor: pointer; color: var(--sky-dark); }
+.sms-values summary::marker { color: var(--ink-soft); }
+.sms-values-list {
+  list-style: none; margin: 0.3rem 0 0; padding: 0.35rem 0.5rem;
+  display: grid; gap: 0.2rem;
+  background: var(--surface-soft); border-radius: var(--radius-sm);
+}
+.sms-values-list li { display: flex; gap: 0.45rem; flex-wrap: wrap; align-items: baseline; }
+.sms-values-label { min-width: 7rem; color: var(--ink-soft); }
+.sms-values-name { color: var(--ink-soft); font-size: 0.68rem; direction: ltr; }
+.sms-values-value { font-weight: 600; overflow-wrap: anywhere; }
+.sms-values-value em { color: var(--persimmon); font-style: normal; }
+.sms-replay { margin: 0.3rem 0 0; color: var(--ink-soft); }
+.sms-replay.is-match { color: var(--mint-dark); }
+.sms-replay.is-differs, .sms-replay.is-gone { color: var(--persimmon); }
+.sms-replay-body {
+  margin: 0.2rem 0 0; padding: 0.3rem 0.5rem;
+  background: var(--surface-soft); border-radius: var(--radius-sm);
+  overflow-wrap: anywhere;
+}
+.sms-values-none { display: block; margin-top: 0.2rem; }
+/* پیگیری: one section per template, because a shop may point several texts at
+   the same moment and each keeps its own wait and its own guard. */
+.follow-up-group { margin-top: 1.2rem; }
+.follow-up-group:first-of-type { margin-top: 0.4rem; }
+.follow-up-group h4 {
+  display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap;
+  margin: 0 0 0.15rem; font-size: 1rem;
+}
+.follow-up-group > p.muted { margin: 0 0 0.5rem; font-size: 0.8rem; }
+.follow-up-table .sms-body-cell { max-width: 24rem; }
+.follow-up-table .sms-name small { display: block; }
 .sms-failed { color: var(--persimmon); font-size: 0.72rem; }
 .sms-error { display: block; max-width: 12rem; color: var(--persimmon); font-size: 0.72rem; }
 .sms-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; align-items: center; }

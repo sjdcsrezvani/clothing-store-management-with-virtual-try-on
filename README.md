@@ -213,6 +213,14 @@ theme, so it matches light, dark and high-contrast alike.
   known: «دست گوشی» once the phone claims it, «تحویل شد» / «نرسید» from the
   carrier's own report. The text is frozen when the message is queued, so
   editing a template later never rewrites what a customer actually received.
+- **An entry says what it was built from, not only what it said.** The customer
+  values behind each message are recorded beside it — every placeholder the
+  sentence used, with the shop's own label and the value of that moment («نام
+  مشتری: سارا»، «بدهی نسیه: ۴۵۰,۰۰۰») — so a row can be replayed through its
+  template and audited long afterwards. The page states the verdict: that a
+  replay still produces exactly this text, or that the template has been edited
+  since and now yields something else. A message sent before the record existed
+  says so plainly rather than being shown as «no placeholders».
 
 ### The SMS gateway (درگاه پیامک)
 

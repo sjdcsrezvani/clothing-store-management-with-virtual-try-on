@@ -1001,6 +1001,17 @@ class SmsMessage(Base):
     # that keeps a trigger from messaging the same person about the same thing
     # twice, and it is visible in the history like everything else.
     ref = Column(String(60), nullable=False, default="", index=True)
+    # Which customer values the body was rendered *from*, as the shop's own
+    # labels rather than the template's placeholder names:
+    # ``[{"token": "var1", "label": "نام مشتری", "value": "سارا"}]``.
+    #
+    # The frozen body says what went out; this says what it was built out of, so
+    # an old message can be read, replayed and audited years later. It carries
+    # its own labels because the template may be edited or deleted afterwards —
+    # the same reason the body is frozen in the first place. ``""`` means the row
+    # predates this column; ``"[]"`` means it was recorded and there was nothing
+    # to record (the text used no placeholders).
+    values_json = Column(Text, nullable=False, default="")
     # Gateway journey columns. ``claimed_at`` is when the phone took the
     # message; ``delivery_state`` is the carrier's verdict where it exists.
     # ``attempts`` counts how many times a claim was handed out, so a phone

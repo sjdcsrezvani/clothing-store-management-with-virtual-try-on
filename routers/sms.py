@@ -575,9 +575,13 @@ async def admin_sms_template_test(
             status_code=303,
         )
     customer = customer_for_phone(db, target[0])
-    body = preview_body(template, values_for_customer(customer, template))
+    # A test send goes into the same log as everything else, so the values it
+    # was rendered from are recorded with it — otherwise the one row the owner
+    # reads to check a template would be the one row that cannot explain itself.
+    values = values_for_customer(customer, template)
+    body = preview_body(template, values)
     job = await queue_sms(body, target[0], {}, db, template=template, source="test",
-                          customer=customer, body=body)
+                          customer=customer, body=body, values=values)
     if job is None:
         return RedirectResponse(
             url=f"/admin/sms/templates/{template.id}/edit?err=ارسال آزمایشی در صف قرار نگرفت.",
