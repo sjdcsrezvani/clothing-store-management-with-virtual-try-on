@@ -119,6 +119,39 @@
                 <div class="sms-bubble" dir="auto">{{ body or 'متن این قالب خالی است.' }}</div>
             </div>
             <p class="muted">قالب: <strong>{{ template.name }}</strong></p>
+            {% if unfilled %}
+            <p class="sms-warning">
+                <span>{% for item in unfilled %}<span dir="ltr">%{{ item.token }}%</span>{% if not loop.last %}، {% endif %}{% endfor %}</span>
+                به هیچ مقداری وصل نیست و خالی فرستاده می‌شود — یا در ویرایش قالب یک مقدار
+                برایش انتخاب کنید یا خودِ متن را جای متغیر بنویسید.
+            </p>
+            {% endif %}
+        </section>
+
+        {# The same line the manager and the editor show, from the same function:
+           sending a welcome blast by hand is a different act from sending a
+           template that nothing queues, and the page should say which this is. #}
+        {% set info = send_info(template) %}
+        <section class="card sms-fire-card" aria-label="نحوه ارسال این قالب">
+            <h3>این قالب چگونه فرستاده می‌شود؟</h3>
+            <p class="sms-fireline is-{{ info.mode }}">
+                <span class="sms-fire-badge is-{{ info.mode }}">{{ info.label }}</span>
+                <span>{{ info.text }}</span>
+            </p>
+            {% if info.mode == 'auto' %}
+            <p class="muted">
+                این پیامک خودبه‌خود فرستاده می‌شود؛ فرستادنش از این صفحه جداگانه است و
+                می‌تواند پیام تکراری برای همان مشتری بشود.
+            </p>
+            {% elif info.url and info.url != '/admin/sms/send' %}
+            <a href="{{ info.url }}" class="btn btn-sm btn-ghost">{{ info.action }} ←</a>
+            <p class="muted">
+                این قالب از آن صفحه فرستاده می‌شود — همان‌جا مخاطبانش را می‌بینید و تیک
+                می‌زنید. اگر ارسال گروهی می‌خواهید، همین صفحه هم کار می‌کند.
+            </p>
+            {% else %}
+            <p class="muted">همین صفحه جای فرستادن آن است.</p>
+            {% endif %}
         </section>
 
         <section class="card" aria-label="خلاصه ارسال">

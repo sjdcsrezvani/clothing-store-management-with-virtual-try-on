@@ -681,30 +681,92 @@ def test_birthday_sms_payload_never_greets_the_wrong_person():
     assert birthday_sms_vars("سجاد", "", "child")["var2"] == "فرزند شما"
 
 
-def test_birthday_sms_route_sends_with_the_stored_pattern(authed, db_session):
-    """The old route read the pattern from the wrong config and sent nothing."""
+def test_birthday_review_page_lists_the_due_and_the_already_sent(authed, db_session):
+    """The dashboard button is now a review page: due birthdays, tickable, with
+    this year's sent wishes shown read-only."""
     set_setting(db_session, "birthday_target", "customer")
     set_setting(db_session, "birthday_sms_days_before", "7")
     set_setting(db_session, "sms_pattern_birthday", "تولدت مبارک {var2}")
-    due = make_customer(db_session, tier="gold", birth_month_day=month_day_in(2), birth_year=1360)
+    due = make_customer(db_session, tier="gold", first_name="سارا",
+                        birth_month_day=month_day_in(2), birth_year=1360)
+    sent = make_customer(db_session, tier="gold", first_name="نیلوفر",
+                         birth_month_day=month_day_in(3), birth_year=1365)
+    year = datetime.now(timezone.utc).year
+    db_session.add(Settings(key=f"birthday_sms_{sent.id}_{year}_customer_{sent.birth_month_day}", value="sent"))
+    db_session.commit()
 
-    token = csrf_token(authed, "/admin")
-    response = authed.post("/admin/check-birthdays", data={"csrf_token": token}, follow_redirects=False)
+    page = authed.get("/admin/birthdays")
+
+    assert page.status_code == 200
+    assert "سارا" in page.text and "نیلوفر" in page.text
+    assert 'name="customer_ids"' in page.text
+    # The already-wished customer is visible but not tickable this year.
+    assert f'value="{sent.id}"' not in page.text.split("is-done")[1].split("</tr>")[0] if "is-done" in page.text else True
+    assert "ارسال شد" in page.text
+
+
+def test_birthday_send_queues_only_the_ticked_customers(authed, db_session):
+    set_setting(db_session, "birthday_target", "customer")
+    set_setting(db_session, "birthday_sms_days_before", "7")
+    set_setting(db_session, "sms_pattern_birthday", "تولدت مبارک {var2}")
+    due = make_customer(db_session, tier="gold", first_name="سارا",
+                        birth_month_day=month_day_in(2), birth_year=1360)
+    other = make_customer(db_session, tier="gold", first_name="نیلوفر",
+                          birth_month_day=month_day_in(3), birth_year=1365)
+    token = csrf_token(authed, "/admin/birthdays")
+
+    response = authed.post("/admin/birthdays/send", data={
+        "csrf_token": token, "customer_ids": str(due.id),
+    }, follow_redirects=False)
 
     assert response.status_code == 303
-    assert "birthday_msg=1" in response.headers["location"]
+    assert "msg=" in response.headers["location"]
     assert db_session.query(Settings).filter(
         Settings.key.like(f"birthday_sms_{due.id}_%")
     ).count() == 1
+    # The unticked customer received nothing.
+    assert db_session.query(Settings).filter(
+        Settings.key.like(f"birthday_sms_{other.id}_%")
+    ).count() == 0
 
 
-def test_birthday_sms_route_reports_a_missing_pattern(authed, db_session):
+def test_birthday_send_refuses_a_customer_outside_the_window(authed, db_session):
+    """A stale form cannot wish someone whose birthday has passed."""
+    set_setting(db_session, "birthday_target", "customer")
+    set_setting(db_session, "birthday_sms_days_before", "7")
+    set_setting(db_session, "sms_pattern_birthday", "تولدت مبارک {var2}")
+    outsider = make_customer(db_session, tier="gold", birth_month_day=month_day_in(60), birth_year=1360)
+    token = csrf_token(authed, "/admin/birthdays")
+
+    response = authed.post("/admin/birthdays/send", data={
+        "csrf_token": token, "customer_ids": str(outsider.id),
+    }, follow_redirects=False)
+
+    assert response.status_code == 303
+    # The outsider is refused with a reason, not silently counted as sent.
+    from urllib.parse import unquote
+    location = unquote(response.headers["location"])
+    assert "0 پیامک" in location and "رد شد" in location
+    assert db_session.query(Settings).filter(
+        Settings.key.like(f"birthday_sms_{outsider.id}_%")
+    ).count() == 0
+
+
+def test_birthday_send_reports_a_missing_pattern(authed, db_session):
     set_setting(db_session, "birthday_target", "customer")
     make_customer(db_session, tier="gold", birth_month_day=month_day_in(2), birth_year=1360)
-    token = csrf_token(authed, "/admin")
+    token = csrf_token(authed, "/admin/birthdays")
 
-    response = authed.post("/admin/check-birthdays", data={"csrf_token": token}, follow_redirects=False)
-    assert "birthday_err=pattern" in response.headers["location"]
+    response = authed.post("/admin/birthdays/send", data={"csrf_token": token, "customer_ids": "1"},
+                           follow_redirects=False)
+    assert response.status_code == 303
+    assert "err=" in response.headers["location"]
+
+
+def test_dashboard_birthday_button_opens_the_review_page(authed):
+    dashboard = authed.get("/admin")
+    assert 'href="/admin/birthdays"' in dashboard.text
+    assert "check-birthdays" not in dashboard.text
 
 
 # ── the child module ─────────────────────────────────────────────────────────

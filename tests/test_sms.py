@@ -30,23 +30,30 @@ from services.sms_send import (
     normalise_phone,
     parse_phone_list,
     plan_from_form,
+    preview_body,
     resolve_recipients,
     send_bulk,
     template_card,
 )
 from services.sms_templates import (
     BUILTIN_TEMPLATES,
+    CUSTOM_SEND_URL,
     active_pattern,
     create_custom,
     delete_blocked_reason,
     ensure_seeded,
+    fire_summary,
     get_template,
     render_template,
     render_text,
+    send_info,
     sms_metrics,
     sync_to_settings,
     template_variables,
+    templates_for,
+    unfilled_tokens,
     validate,
+    values_for_customer,
 )
 from tests.conftest import csrf_token
 
@@ -361,19 +368,69 @@ def test_history_filters_by_status_source_and_search(db_session):
 
 
 def test_template_card_counts_what_it_sent(db_session):
+    """The row separates the queue's verdicts, so «ارسال‌شده» can no longer
+    flatter a message that is still waiting or that the gateway refused."""
     ensure_seeded(db_session)
     template = get_template(db_session, "welcome")
     db_session.add(SmsMessage(phone="09120000000", body="سلام", status="sent",
                               source="welcome", template_id=template.id, template_key=template.key))
     db_session.add(SmsMessage(phone="09120000001", body="سلام", status="failed",
                               source="welcome", template_id=template.id, template_key=template.key))
+    db_session.add(SmsMessage(phone="09120000002", body="سلام", status="queued",
+                              source="welcome", template_id=template.id, template_key=template.key))
     db_session.commit()
 
     card = template_card(db_session, template)
 
-    assert card["sent"] == 2
+    assert card["total"] == 3
+    assert card["sent"] == 1
     assert card["failed"] == 1
+    assert card["queued"] == 1
     assert [variable["token"] for variable in card["variables"]] == ["var1", "var2"]
+
+
+def test_template_card_dates_the_last_send_and_flags_a_never_used_one(db_session):
+    """«آخرین ارسال» needs a date even for a row written before ``sent_at``
+    existed, and a template nobody ever sent must say so rather than show a zero."""
+    ensure_seeded(db_session)
+    welcome = get_template(db_session, "welcome")
+    birthday = get_template(db_session, "birthday")
+    # status «sent» with no ``sent_at``: the row's creation time is the honest
+    # fallback for the date it actually went out.
+    db_session.add(SmsMessage(phone="09120000000", body="سلام", status="sent",
+                              source="welcome", template_id=welcome.id,
+                              template_key=welcome.key))
+    db_session.commit()
+
+    used = template_card(db_session, welcome)
+    unused = template_card(db_session, birthday)
+
+    assert used["last_sent_at"] is not None
+    assert used["last_activity_at"] is not None
+    assert unused["total"] == 0
+    assert unused["last_sent_at"] is None
+
+
+def test_manager_row_shows_the_last_send_and_the_total(client, authed, db_session):
+    """A silent template used to read like any other row; now it says «هنوز ارسال
+    نشده» and carries the badge, while a used one shows its total and last date."""
+    ensure_seeded(db_session)
+    welcome = get_template(db_session, "welcome")
+    db_session.add(SmsMessage(phone="09120000000", body="سلام", status="sent",
+                              source="welcome", template_id=welcome.id,
+                              template_key=welcome.key))
+    db_session.add(SmsMessage(phone="09120000001", body="سلام", status="failed",
+                              source="welcome", template_id=welcome.id,
+                              template_key=welcome.key))
+    db_session.commit()
+
+    page = authed.get("/admin/sms").text
+
+    assert "sms-unused-badge" in page
+    assert "هنوز پیامکی از این قالب فرستاده نشده" in page
+    assert "2 پیامک · 1 ناموفق · آخرین ارسال" in page
+    # The last-sent date is a Persian date, not a raw Gregorian timestamp.
+    assert re.search(r"آخرین ارسال ۱۴\d\d/\d\d/\d\d", page)
 
 
 def test_delete_is_refused_for_builtins_and_for_anything_already_sent(db_session):
@@ -406,6 +463,117 @@ def test_manager_page_lists_every_template(client, authed, db_session):
     assert "پیامک تبریک تولد" in response.text
     assert "درگاه پیامک" in response.text
     assert "تاریخچه ارسال" in response.text
+
+
+def test_manager_page_says_how_each_template_fires(client, authed, db_session):
+    """«خودکار» used to be pinned on every built-in, so the four that are sent by
+    hand read as automatic. Each row now carries its real mode and, when it is
+    manual, the page it is sent from."""
+    ensure_seeded(db_session)
+    create_custom(db_session, name="تبریک عید", body="%var1% عزیز، عید مبارک")
+    db_session.commit()
+
+    page = authed.get("/admin/sms").text
+
+    assert "sms-fire-badge is-auto" in page and "sms-fire-badge is-manual" in page
+    for url in ("/admin/birthdays", "/admin/tier-up", "/admin/campaigns", "/admin/credit"):
+        assert f'href="{url}"' in page
+    # The custom one spells out that nothing queues it, instead of implying a trigger.
+    assert "این قالب خودبه‌خود فرستاده نمی‌شود" in page
+    assert 'href="/admin/sms/send"' in page
+
+
+def test_only_the_welcome_message_leaves_without_a_click(db_session):
+    """The pages' claim comes from one function, so it cannot drift: only
+    «خوش‌آمدگویی» is automatic, and a custom template is always hand-sent."""
+    ensure_seeded(db_session)
+    modes = {template.key: send_info(template)["mode"] for template in templates_for(db_session)}
+    assert modes["welcome"] == "auto"
+    assert [key for key, mode in modes.items() if mode == "auto"] == ["welcome"]
+
+    custom = send_info(create_custom(db_session, name="تبریک عید", body="عید مبارک"))
+    assert custom["mode"] == "manual"
+    assert custom["url"] == CUSTOM_SEND_URL
+    assert "ارسال پیامک" in custom["text"]
+
+    summary = fire_summary(db_session)
+    assert [template.key for template in summary["auto"]] == ["welcome"]
+    assert {template.key for template in summary["manual"]} >= {
+        "birthday", "tier_up_gold", "campaign", "credit_reminder",
+    }
+
+
+def test_editor_states_how_the_template_fires(client, authed, db_session):
+    """A custom template's editor used to say nothing at all about sending; now it
+    says in words that nothing queues it and it goes out by hand."""
+    custom = create_custom(db_session, name="تبریک عید", body="%var1% عزیز، عید مبارک")
+    db_session.commit()
+
+    editor = authed.get(f"/admin/sms/templates/{custom.id}/edit").text
+    assert "این قالب چگونه فرستاده می‌شود؟" in editor
+    assert "sms-fire-badge is-manual" in editor
+    assert "این قالب خودبه‌خود فرستاده نمی‌شود" in editor
+    assert 'href="/admin/sms/send"' in editor
+
+    welcome = get_template(db_session, "welcome")
+    welcome.body, welcome.is_active = "خوش آمدی %var1%", True
+    db_session.commit()
+    auto_editor = authed.get(f"/admin/sms/templates/{welcome.id}/edit").text
+    assert "sms-fire-badge is-auto" in auto_editor
+    assert "این پیامک خودکار فرستاده شود" in auto_editor
+
+
+def test_the_new_template_page_says_it_will_be_hand_sent(client, authed):
+    page = authed.get("/admin/sms/templates/new").text
+    assert "این قالب چگونه فرستاده می‌شود؟" in page
+    assert "sms-fire-badge is-manual" in page
+    # The slot editor is there before anything exists, so the first slot is bound
+    # to the customer's name from the start — and the owner is told the token's
+    # position in the text is free.
+    assert 'name="source_var1"' in page
+    assert "نه ترتیبش" in page
+
+
+def test_the_send_page_says_how_the_chosen_template_fires(client, authed, db_session):
+    """The person holding the send button gets the same answer as the manager and
+    the editor: this one is hand-sent from here, that one is normally automatic."""
+    ensure_seeded(db_session)
+    custom = create_custom(db_session, name="تبریک عید", body="%var1% عزیز، عید مبارک")
+    db_session.commit()
+
+    page = authed.get(f"/admin/sms/send?template_id={custom.id}").text
+    assert "این قالب چگونه فرستاده می‌شود؟" in page
+    assert "sms-fire-badge is-manual" in page
+    assert "این قالب خودبه‌خود فرستاده نمی‌شود" in page
+    assert "همین صفحه جای فرستادن آن است." in page
+
+    welcome = get_template(db_session, "welcome")
+    welcome.body, welcome.is_active = "خوش آمدی %var1%", True
+    birthday = get_template(db_session, "birthday")
+    birthday.body, birthday.is_active = "تولدت مبارک %var1%", True
+    db_session.commit()
+
+    auto_page = authed.get(f"/admin/sms/send?template_id={welcome.id}").text
+    assert "sms-fire-badge is-auto" in auto_page
+    assert "پیام تکراری" in auto_page
+
+    # A manual built-in points at its own page, so the sender is not left guessing
+    # why they have never sent it from here.
+    birthday_page = authed.get(f"/admin/sms/send?template_id={birthday.id}").text
+    assert "sms-fire-badge is-manual" in birthday_page
+    assert 'href="/admin/birthdays"' in birthday_page
+
+
+def test_the_send_page_warns_before_sending_a_message_with_a_hole(client, authed, db_session):
+    ensure_seeded(db_session)
+    custom = create_custom(db_session, name="تبریک عید", body="%var1% عزیز، عید مبارک! %var2%")
+    db_session.commit()
+
+    page = authed.get(f"/admin/sms/send?template_id={custom.id}").text
+
+    assert "%var2%" in page
+    assert "به هیچ مقداری وصل نیست" in page
+    assert "عید مبارک!" in page
 
 
 def test_editor_saves_the_text_and_toggles_it_off(client, authed, db_session):
@@ -456,6 +624,103 @@ def test_custom_template_lifecycle_through_the_pages(client, authed, db_session)
                           data={"csrf_token": token}, follow_redirects=False)
     assert deleted.status_code == 303
     assert db_session.query(SmsTemplate).filter(SmsTemplate.id == template.id).first() is None
+
+
+# ── where a variable sits in the text, and what fills it ─────────────────────
+
+def test_a_variable_is_filled_by_its_name_not_its_place_in_the_text(db_session):
+    """The owner asked whether the order of variables matters. It does not: the
+    token's name decides the value, so «نام آخر پیامک» is just a move of %var1%."""
+    set_setting(db_session, "sms_pattern_welcome", "خوش آمدی %var1%! کد معرف تو: %var2%")
+    db_session.commit()
+    customer = make_customer(db_session, first_name="سارا")
+
+    welcome = get_template(db_session, "welcome")
+    welcome.body = "کد معرف تو %var2% است، %var1% جان!"
+    welcome.is_active = True
+    db_session.commit()
+
+    rendered = render_template(welcome, values_for_customer(customer, welcome))
+
+    assert rendered == f"کد معرف تو {customer.referral_code} است، سارا جان!"
+
+
+def test_saving_a_custom_template_keeps_what_each_slot_reads(client, authed, db_session):
+    """Saving used to rebuild every slot as «no source», so the name a custom
+    template was showing in its preview silently vanished from the real send."""
+    ensure_seeded(db_session)
+    custom = create_custom(db_session, name="تبریک عید",
+                           body="عید مبارک! %var1% عزیز، منتظرتان هستیم.")
+    db_session.commit()
+    customer = make_customer(db_session, first_name="سارا")
+    token = csrf_token(client, f"/admin/sms/templates/{custom.id}/edit")
+
+    saved = authed.post(f"/admin/sms/templates/{custom.id}", data={
+        "csrf_token": token, "name": "تبریک عید",
+        "body": "عید مبارک! %var1% عزیز، منتظرتان هستیم.",
+        "label_var1": "نام مشتری", "sample_var1": "سارا",
+        "source_var1": "first_name",
+    }, follow_redirects=False)
+    assert saved.status_code == 303
+    db_session.expire_all()
+
+    custom = db_session.query(SmsTemplate).filter(SmsTemplate.id == custom.id).one()
+    assert template_variables(custom)[0]["field"] == "first_name"
+    assert render_template(custom, values_for_customer(customer, custom)) == \
+        "عید مبارک! سارا عزیز، منتظرتان هستیم."
+
+
+def test_a_custom_slot_can_be_pointed_at_any_customer_value(client, authed, db_session):
+    """A slot is a choice, so the money or the level can go anywhere in the text."""
+    ensure_seeded(db_session)
+    custom = create_custom(db_session, name="یادآوری بدهی",
+                           body="%var1% عزیز، %var2% تومان بدهی دارید.")
+    db_session.commit()
+    customer = make_customer(db_session, first_name="سارا", total_debt=450_000, tier="gold")
+    token = csrf_token(client, f"/admin/sms/templates/{custom.id}/edit")
+
+    authed.post(f"/admin/sms/templates/{custom.id}", data={
+        "csrf_token": token, "name": "یادآوری بدهی",
+        "body": "%var1% عزیز، %var2% تومان بدهی دارید.",
+        "source_var1": "tier", "source_var2": "total_debt",
+    }, follow_redirects=False)
+    db_session.expire_all()
+
+    custom = db_session.query(SmsTemplate).filter(SmsTemplate.id == custom.id).one()
+    rendered = render_template(custom, values_for_customer(customer, custom))
+    # The level arrives in Persian and the money with its separators.
+    assert rendered == "طلایی عزیز، 450,000 تومان بدهی دارید."
+
+
+def test_a_slot_left_without_a_source_is_blank_and_the_editor_says_so(client, authed, db_session):
+    """Nothing can fill an unbound custom slot, so the preview shows the hole
+    instead of a sample the customer would never receive."""
+    ensure_seeded(db_session)
+    custom = create_custom(db_session, name="تبریک عید",
+                           body="%var1% عزیز، عید مبارک! %var2%")
+    db_session.commit()
+
+    preview = preview_body(custom)
+    assert "متن نمونه" not in preview
+    assert preview.startswith("سارا عزیز، عید مبارک!")
+
+    editor = authed.get(f"/admin/sms/templates/{custom.id}/edit").text
+    assert "sms-unfilled" in editor and "%var2%" in editor
+    assert 'name="source_var2"' in editor
+    assert "نام و نام خانوادگی" in editor          # the source catalog is offered
+
+
+def test_a_builtin_slot_nobody_has_yet_is_still_previewed_with_its_sample(db_session):
+    """Built-ins are filled by their own sender (the campaign row, the amount),
+    so their unfilled slots must keep previewing a sample."""
+    ensure_seeded(db_session)
+    campaign = get_template(db_session, "campaign")
+    campaign.body = "%var1% عزیز، %var2% با کد %var3%"
+    campaign.is_active = True
+    db_session.commit()
+
+    assert preview_body(campaign) == "سارا عزیز، جشنواره پاییز با کد AUTUMN20"
+    assert unfilled_tokens(campaign) == []
 
 
 def test_a_builtin_cannot_be_deleted_from_the_page(client, authed, db_session):
@@ -588,8 +853,8 @@ def test_the_sms_tables_never_hide_their_state_behind_a_sideways_scroll():
     assert ".sms-table { min-width: 0; }" in STYLE_CSS
     assert ".sms-history-table { min-width: 0; }" in STYLE_CSS
     assert "  .sms-table { white-space: normal; }" in STYLE_CSS
-    # Three columns each: something, its detail, its state (and actions).
-    assert 'قالب و متن' in SMS_HTML and "عملیات" in SMS_HTML
+    # Three columns each: something (plus how it fires), its state, its actions.
+    assert 'قالب، متن و نحوه ارسال' in SMS_HTML and "عملیات" in SMS_HTML
     assert 'مخاطب و متن' in HISTORY_HTML
     assert "status-badge is-{{ message.status }}" in HISTORY_HTML
 

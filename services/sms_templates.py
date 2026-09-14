@@ -18,6 +18,7 @@ the live preview, the test send, and the queue.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import secrets
 from datetime import datetime, timezone
@@ -25,7 +26,9 @@ from datetime import datetime, timezone
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from models import Settings, SmsMessage, SmsTemplate
+from models import Settings, SmsMessage, SmsTemplate, to_english_digits
+
+logger = logging.getLogger(__name__)
 
 # ── vocabulary ────────────────────────────────────────────────────────────────
 
@@ -42,7 +45,9 @@ CATEGORY_ORDER = ("welcome", "birthday", "tier_up", "campaign", "credit_reminder
 
 # Which sends count as marketing (gated by the customer's consent) and which are
 # transactional (about the customer's own money, so always allowed).
-MARKETING_SOURCES = ("welcome", "birthday", "tier_up", "campaign", "manual")
+# «follow_up» nags a lapsed customer to come back, so it needs their consent;
+# «purchase» thanks them for their own order, so it does not.
+MARKETING_SOURCES = ("welcome", "birthday", "tier_up", "campaign", "manual", "follow_up")
 SOURCE_LABELS = {
     "manual": "ارسال دستی",
     "welcome": "خوش‌آمدگویی",
@@ -50,6 +55,8 @@ SOURCE_LABELS = {
     "tier_up": "ارتقای سطح",
     "campaign": "کمپین",
     "credit_reminder": "یادآوری نسیه",
+    "purchase": "پس از خرید",
+    "follow_up": "پیگیری",
     "test": "آزمایشی",
 }
 STATUS_LABELS = {"queued": "در صف", "sent": "ارسال‌شده", "failed": "ناموفق"}
@@ -70,7 +77,8 @@ BUILTIN_TEMPLATES = (
         "category": "welcome",
         "setting_key": "sms_pattern_welcome",
         "sort_order": 10,
-        "trigger": "با ثبت‌نام مشتری تازه، خودکار در صف قرار می‌گیرد.",
+        "mode": "auto",
+        "trigger": "با ثبت‌نام هر مشتری تازه، خودبه‌خود در صف ارسال قرار می‌گیرد.",
         "variables": (
             {"token": "var1", "label": "نام مشتری", "sample": "سارا", "field": "first_name"},
             {"token": "var2", "label": "کد معرف مشتری", "sample": "REF1234", "field": "referral_code"},
@@ -82,7 +90,11 @@ BUILTIN_TEMPLATES = (
         "category": "birthday",
         "setting_key": "sms_pattern_birthday",
         "sort_order": 20,
-        "trigger": "روزی که برای تولد مشتری یا فرزندش تخفیف فعال می‌شود.",
+        "mode": "manual",
+        "send_url": "/admin/birthdays",
+        "send_action": "صفحه تولدها",
+        "trigger": ("تولدهای نزدیک را در صفحه «تولدها» می‌بینید، هرکدام را که خواستید تیک "
+                    "می‌زنید و می‌فرستید."),
         "variables": (
             {"token": "var1", "label": "نام مشتری", "sample": "سارا", "field": "first_name"},
             {"token": "var2", "label": "نام صاحب تولد", "sample": "نیلوفر", "field": "child_name"},
@@ -95,7 +107,11 @@ BUILTIN_TEMPLATES = (
         "category": "tier_up",
         "setting_key": "sms_pattern_tier_up_gold",
         "sort_order": 30,
-        "trigger": "لحظه‌ای که سطح مشتری به طلایی می‌رسد.",
+        "mode": "manual",
+        "send_url": "/admin/tier-up",
+        "send_action": "صفحه ارتقای سطح",
+        "trigger": ("مشتریان واجد شرایط را در صفحه «ارتقای سطح» می‌بینید، تیک می‌زنید و "
+                    "می‌فرستید."),
         "variables": (
             {"token": "var1", "label": "نام مشتری", "sample": "سارا", "field": "first_name"},
             {"token": "var2", "label": "امتیاز", "sample": "1200", "field": "total_points"},
@@ -107,7 +123,11 @@ BUILTIN_TEMPLATES = (
         "category": "tier_up",
         "setting_key": "sms_pattern_tier_up_diamond",
         "sort_order": 40,
-        "trigger": "لحظه‌ای که سطح مشتری به الماس می‌رسد.",
+        "mode": "manual",
+        "send_url": "/admin/tier-up",
+        "send_action": "صفحه ارتقای سطح",
+        "trigger": ("مشتریان واجد شرایط را در صفحه «ارتقای سطح» می‌بینید، تیک می‌زنید و "
+                    "می‌فرستید."),
         "variables": (
             {"token": "var1", "label": "نام مشتری", "sample": "سارا", "field": "first_name"},
             {"token": "var2", "label": "امتیاز", "sample": "5000", "field": "total_points"},
@@ -119,7 +139,11 @@ BUILTIN_TEMPLATES = (
         "category": "campaign",
         "setting_key": "sms_pattern_campaign",
         "sort_order": 50,
-        "trigger": "وقتی از صفحه کمپین، پیامک ارسال می‌کنید.",
+        "mode": "manual",
+        "send_url": "/admin/campaigns",
+        "send_action": "صفحه کمپین‌ها",
+        "trigger": ("از صفحه کمپین، مخاطبان را می‌بینید و برایشان می‌فرستید؛ خودبه‌خود "
+                    "فرستاده نمی‌شود."),
         "variables": (
             {"token": "var1", "label": "نام مشتری", "sample": "سارا", "field": "first_name"},
             {"token": "var2", "label": "نام کمپین", "sample": "جشنواره پاییز", "field": None},
@@ -133,7 +157,11 @@ BUILTIN_TEMPLATES = (
         "category": "credit_reminder",
         "setting_key": "sms_pattern_credit_reminder",
         "sort_order": 60,
-        "trigger": "دستی، از صفحه حساب نسیه برای یک بدهکار.",
+        "mode": "manual",
+        "send_url": "/admin/credit",
+        "send_action": "صفحه نسیه",
+        "trigger": ("از صفحه «نسیه»، برای یک بدهکار یا همه بدهکاران سررسیدشده "
+                    "می‌فرستید."),
         "variables": (
             {"token": "var1", "label": "نام مشتری", "sample": "سارا", "field": "first_name"},
             {"token": "var2", "label": "مبلغ بدهی (تومان)", "sample": "1,250,000", "field": None},
@@ -142,9 +170,163 @@ BUILTIN_TEMPLATES = (
     },
 )
 
-# What fires each built-in, shown on the manager page so «فعال» is never a
-# mystery — the owner can see which automatic message they just switched on.
-TRIGGER_LABELS = {spec["key"]: spec["trigger"] for spec in BUILTIN_TEMPLATES}
+MODE_LABELS = {"auto": "خودکار", "manual": "دستی"}
+
+# Nothing in the app queues a custom template, so its answer to «چگونه فرستاده
+# می‌شود؟» is the hand-send page — spelled out rather than left to be guessed.
+CUSTOM_TRIGGER = (
+    "این قالب خودبه‌خود فرستاده نمی‌شود — از صفحه «ارسال پیامک» مخاطبان را انتخاب "
+    "می‌کنید (همه، یک سطح، یک برچسب یا شماره‌های دستی)، تعدادشان را می‌بینید و "
+    "دستی می‌فرستید."
+)
+CUSTOM_SEND_URL = "/admin/sms/send"
+CUSTOM_SEND_ACTION = "ارسال پیامک"
+
+# ── triggers: leaving the building without a click ────────────────────────────
+# A custom template can opt into exactly one of these. The vocabulary lives here
+# beside the rest of the labelled words, while the code that actually fires them
+# lives in ``services.sms_triggers`` — so a template can never *say* «خودکار»
+# somewhere that nothing sends it.
+#
+# ``kind`` is the consent rule the trigger obeys: a thank-you for the customer's
+# own purchase is transactional, while a nudge to come back is marketing and
+# needs their consent like any campaign.
+TRIGGER_NONE = ""
+DEFAULT_FOLLOW_UP_DAYS = 30
+MAX_TRIGGER_DAYS = 365
+AUTO_SEND_LIMIT_DEFAULT = 50
+
+TRIGGERS = (
+    {
+        "key": "purchase",
+        "label": "پس از هر خرید",
+        "mode": "auto",
+        "kind": "transactional",
+        "source": "purchase",
+        "action_label": "خرید",
+        "needs_days": False,
+        "text": ("هر بار که برای این مشتری فروشی ثبت می‌شود، خودبه‌خود برای همان مشتری "
+                 "فرستاده می‌شود."),
+        "hint": ("متن باید دربارهٔ همان خرید باشد — چیزی مثل «ممنون از خریدتان». "
+                 "برای هر فاکتور فقط یک‌بار فرستاده می‌شود."),
+    },
+    {
+        "key": "follow_up",
+        "label": "پیگیری پس از چند روز",
+        "mode": "auto",
+        "kind": "marketing",
+        "source": "follow_up",
+        "action_label": "پیگیری",
+        "needs_days": True,
+        "text": ("هر روز بررسی می‌شود و برای مشتریانی که {days} روز است خرید نکرده‌اند "
+                 "فرستاده می‌شود — برای هر دورهٔ خرید فقط یک‌بار."),
+        "hint": ("به‌خاطر تبلیغاتی بودن، فقط برای مشتریانی می‌رود که رضایت پیامک "
+                 "تبلیغاتی داده‌اند؛ بایگانی‌شده‌ها و برچسب «بلاک» کنار گذاشته می‌شوند."),
+    },
+)
+TRIGGERS_BY_KEY = {item["key"]: item for item in TRIGGERS}
+
+
+def trigger_days(template) -> int:
+    """The wait this template asks for, clamped to something a shop can mean."""
+    raw = getattr(template, "trigger_days", 0) or 0
+    try:
+        days = int(raw)
+    except (TypeError, ValueError):
+        days = 0
+    if days <= 0:
+        return DEFAULT_FOLLOW_UP_DAYS
+    return min(days, MAX_TRIGGER_DAYS)
+
+
+def trigger_from_form(key: str, days) -> tuple[str, int]:
+    """What the editor asked for, with anything unrecognised meaning hand-sent.
+
+    A form is not a trusted source of behaviour: an unknown trigger must fail
+    towards «دستی» rather than towards a message going out on its own.
+    """
+    spec = TRIGGERS_BY_KEY.get((key or "").strip())
+    if spec is None:
+        return TRIGGER_NONE, 0
+    if not spec["needs_days"]:
+        return spec["key"], 0
+    cleaned = to_english_digits(str(days or "")).strip()
+    try:
+        value = int(cleaned) if cleaned else DEFAULT_FOLLOW_UP_DAYS
+    except (TypeError, ValueError):
+        value = DEFAULT_FOLLOW_UP_DAYS
+    return spec["key"], max(1, min(value, MAX_TRIGGER_DAYS))
+
+
+def trigger_info(template) -> dict | None:
+    """This template's trigger, or None while it is hand-sent.
+
+    Built-ins keep their own senders, so an automatic mode is only ever read off
+    a *custom* template's stored trigger.
+    """
+    if template is None or getattr(template, "is_builtin", False):
+        return None
+    spec = TRIGGERS_BY_KEY.get(getattr(template, "trigger_key", "") or "")
+    if spec is None:
+        return None
+    return {
+        **spec,
+        "days": trigger_days(template),
+        "text": spec["text"].format(days=trigger_days(template)),
+    }
+
+
+def send_info(template) -> dict:
+    """How this template actually fires: the mode, the sentence, and where from.
+
+    The manager page and the editor both ask this one function, so a template
+    can never be labelled «خودکار» in one place and sent by hand in another.
+    """
+    key = getattr(template, "key", None)
+    spec = next((item for item in BUILTIN_TEMPLATES if item["key"] == key), None)
+    if spec is None:
+        # A custom template that opted into a trigger is no longer hand-sent, and
+        # telling the owner to go send it from «ارسال پیامک» would be a lie.
+        trigger = trigger_info(template)
+        if trigger is not None:
+            return {"mode": "auto", "label": MODE_LABELS["auto"], "text": trigger["text"],
+                    "url": None, "action": "", "trigger": trigger["key"]}
+        return {"mode": "manual", "label": MODE_LABELS["manual"], "text": CUSTOM_TRIGGER,
+                "url": CUSTOM_SEND_URL, "action": CUSTOM_SEND_ACTION, "trigger": ""}
+    mode = spec.get("mode", "manual")
+    return {
+        "mode": mode,
+        "label": MODE_LABELS.get(mode, MODE_LABELS["manual"]),
+        "text": spec.get("trigger", ""),
+        "url": spec.get("send_url"),
+        "action": spec.get("send_action", ""),
+        "trigger": spec["key"],
+    }
+
+# ── what a placeholder can be filled from ─────────────────────────────────────
+# `field` names the customer column a token reads at send time. The names here
+# are the ones a message can honestly promise: money and level arrive formatted
+# (a customer never reads «gold» or «1250000»), and everything else is a column.
+
+TIER_LABELS = {"silver": "نقره‌ای", "gold": "طلایی", "diamond": "الماس"}
+
+CUSTOMER_SOURCES = (
+    {"field": "first_name", "label": "نام مشتری", "sample": "سارا"},
+    {"field": "last_name", "label": "نام خانوادگی", "sample": "رضایی"},
+    {"field": "full_name", "label": "نام و نام خانوادگی", "sample": "سارا رضایی"},
+    {"field": "phone", "label": "شماره موبایل", "sample": "09121110000"},
+    {"field": "tier", "label": "سطح باشگاه", "sample": "طلایی"},
+    {"field": "total_points", "label": "امتیاز", "sample": "1,200"},
+    {"field": "total_purchases", "label": "تعداد خرید", "sample": "7"},
+    {"field": "total_spent", "label": "مجموع خرید (تومان)", "sample": "1,250,000"},
+    {"field": "total_debt", "label": "بدهی نسیه (تومان)", "sample": "450,000"},
+    {"field": "referral_code", "label": "کد معرف", "sample": "REF1234"},
+    {"field": "child_name", "label": "نام فرزند", "sample": "نیلوفر"},
+)
+SOURCE_FIELDS = {item["field"]: item for item in CUSTOMER_SOURCES}
+
+# Columns a message should show with thousands separators rather than raw.
+MONEY_FIELDS = ("total_points", "total_purchases", "total_spent", "total_debt")
 
 CUSTOM_VARIABLES = (
     {"token": "var1", "label": "نام مشتری", "sample": "سارا", "field": "first_name"},
@@ -242,17 +424,24 @@ def get_template(db: Session, key: str) -> SmsTemplate | None:
 def active_pattern(db: Session, key: str) -> str:
     """The body a send should use, or "" when there is nothing to send.
 
-    Falls back to the settings row so a pattern written before this table
-    existed is still honoured even if seeding has not run yet.
+    The template row wins when it has ever been *saved* (any body at all, on or
+    off). A template that was seeded inactive and empty — the shop never wrote
+    that message — falls through to the legacy settings row, so a pattern
+    written outside this page (a direct settings write, an older import) is
+    still honoured: the row exists to mirror those writes, and an owner who
+    sets ``sms_pattern_birthday`` by hand expects the wish to start.
     """
     ensure_seeded(db)
     template = db.query(SmsTemplate).filter(SmsTemplate.key == key).first()
     if template is None:
         spec = next((item for item in BUILTIN_TEMPLATES if item["key"] == key), None)
         return _setting_value(db, spec["setting_key"]) if spec else ""
-    if not template.is_active:
-        return ""
-    return template.body or ""
+    if template.is_active:
+        return template.body or ""
+    if (template.body or "").strip():
+        return ""                             # deliberately switched off
+    setting = _setting_value(db, template.setting_key) if template.setting_key else ""
+    return setting
 
 
 def templates_for(db: Session, *, category: str = "", search: str = "") -> list[SmsTemplate]:
@@ -286,6 +475,20 @@ def grouped_templates(db: Session) -> list[dict]:
     return groups
 
 
+def fire_summary(db: Session) -> dict:
+    """Templates split by how they fire, for the manager page's help card.
+
+    Custom templates land in «دستی» beside the manual built-ins, so the page
+    answers the whole question in one place instead of only naming a trigger per
+    row.
+    """
+    auto: list[SmsTemplate] = []
+    manual: list[SmsTemplate] = []
+    for template in templates_for(db):
+        (auto if send_info(template)["mode"] == "auto" else manual).append(template)
+    return {"auto": auto, "manual": manual}
+
+
 # ── rendering ─────────────────────────────────────────────────────────────────
 
 _PLACEHOLDER = re.compile(r"%(\w+)%|\{(\w+)\}")
@@ -300,9 +503,78 @@ def render_text(body: str, values: dict) -> str:
     return text
 
 
+def source_value(customer, field: str) -> str:
+    """One customer column, formatted the way a message should read it.
+
+    Money arrives with thousands separators and the level as its Persian name,
+    because a customer must never read «gold» or «1250000».
+    """
+    if customer is None or not field:
+        return ""
+    if field == "full_name":
+        value = getattr(customer, "full_name", None) or \
+            f"{getattr(customer, 'first_name', '') or ''} {getattr(customer, 'last_name', '') or ''}".strip()
+    elif field == "tier":
+        return TIER_LABELS.get(getattr(customer, "tier", "") or "", "")
+    else:
+        value = getattr(customer, field, None)
+    if value in (None, ""):
+        return ""
+    if field in MONEY_FIELDS:
+        try:
+            return f"{int(value):,}"
+        except (TypeError, ValueError):
+            return str(value)
+    return str(value)
+
+
+def slot_is_filled(template: SmsTemplate, item: dict) -> bool:
+    """Whether anything will ever fill this token at send time.
+
+    A built-in's unfilled slots are handed over by its own sender (the campaign
+    row, the debt amount); a custom template has no sender at all, so a slot
+    bound to no customer field is simply blank on the phone.
+    """
+    if item.get("field"):
+        return True
+    return template.category != "custom"
+
+
+def slot_sample(template: SmsTemplate, item: dict) -> str:
+    """What the preview should show for a token — a sample, or the truth."""
+    return item["sample"] if slot_is_filled(template, item) else ""
+
+
 def sample_values(template: SmsTemplate) -> dict:
-    """Preview values: the declared samples, with a real name where there is one."""
-    return {item["token"]: item["sample"] for item in template_variables(template)}
+    """Preview values: the declared samples, blanked where nothing can fill one."""
+    return {item["token"]: slot_sample(template, item)
+            for item in template_variables(template)}
+
+
+def unfilled_in_body(body: str, variables) -> list[dict]:
+    """Slots this text *uses* that nothing will ever fill — a hole on the phone.
+
+    Honest for a custom template, where there is no sender to hand the slot a
+    value: writing ``%var2%`` and leaving it unbound is how a customer gets
+    « عزیز، عید مبارک». A built-in is judged by :func:`slot_is_filled` instead,
+    because its own sender does fill its slots.
+    """
+    text = body or ""
+    used = []
+    for item in variables or ():
+        if item.get("field"):
+            continue
+        token = re.escape(str(item["token"]))
+        if re.search(rf"%{token}%", text) or re.search(r"\{" + token + r"\}", text):
+            used.append(item)
+    return used
+
+
+def unfilled_tokens(template: SmsTemplate | None) -> list[dict]:
+    """The same question about a stored template, so the editor can warn."""
+    if template is None or template.category != "custom":
+        return []
+    return unfilled_in_body(template.body or "", template_variables(template))
 
 
 def render_template(template: SmsTemplate, values: dict | None = None, *,
@@ -311,7 +583,9 @@ def render_template(template: SmsTemplate, values: dict | None = None, *,
 
     A placeholder that survives into an outgoing message would show a literal
     ``%var2%`` on the customer's phone, so unresolved **declared** tokens are
-    removed rather than left in place.
+    removed rather than left in place. The token's *name* is what decides its
+    value — never its position — so moving ``%var1%`` to the end of the text
+    simply moves the name there.
     """
     provided = dict(values or {})
     resolved = {}
@@ -320,7 +594,7 @@ def render_template(template: SmsTemplate, values: dict | None = None, *,
         if token in provided and provided[token] is not None:
             resolved[token] = provided[token]
         elif use_samples:
-            resolved[token] = item["sample"]
+            resolved[token] = slot_sample(template, item)
         else:
             resolved[token] = ""
     text = render_text(template.body or "", resolved)
@@ -334,11 +608,11 @@ def values_for_customer(customer, template: SmsTemplate | None = None,
     if customer is None:
         return values
     for item in template_variables(template) if template is not None else ():
-        field = item.get("field")
-        if field and field not in values:
-            value = getattr(customer, field, None)
-            if value not in (None, ""):
-                values[item["token"]] = value
+        token, field = item["token"], item.get("field")
+        if field and token not in values:
+            value = source_value(customer, field)
+            if value:
+                values[token] = value
     return values
 
 
@@ -373,7 +647,8 @@ def validate(name: str, body: str) -> str:
     return ""
 
 
-def create_custom(db: Session, *, name: str, body: str, variables=None) -> SmsTemplate:
+def create_custom(db: Session, *, name: str, body: str, variables=None,
+                  trigger_key: str = TRIGGER_NONE, trigger_days: int = 0) -> SmsTemplate:
     template = SmsTemplate(
         key=f"custom-{secrets.token_hex(6)}",
         name=name.strip(),
@@ -381,6 +656,8 @@ def create_custom(db: Session, *, name: str, body: str, variables=None) -> SmsTe
         body=body,
         variables=_dump_variables(variables or CUSTOM_VARIABLES),
         setting_key=None,
+        trigger_key=trigger_key,
+        trigger_days=trigger_days,
         is_active=True,
         is_builtin=False,
         sort_order=100,
@@ -391,7 +668,12 @@ def create_custom(db: Session, *, name: str, body: str, variables=None) -> SmsTe
 
 
 def duplicate(db: Session, template: SmsTemplate) -> SmsTemplate:
-    """A starting point for a custom message, without touching the original."""
+    """A starting point for a custom message, without touching the original.
+
+    The copy starts hand-sent even when the original fires on its own: copying a
+    live trigger would quietly double every message, and switching one on is
+    meant to be a deliberate act.
+    """
     return create_custom(
         db,
         name=f"{template.name} (کپی)",
@@ -427,7 +709,15 @@ def log_message(
     employee_id: int | None = None,
     status: str = "queued",
     error: str | None = None,
+    ref: str = "",
 ) -> SmsMessage:
+    # The vocabulary lives in SOURCE_LABELS. A sender that invents a source is a
+    # bug, not a new kind of message: log it and file the row under «دستی» so the
+    # history never shows an unlabelled sender. (The table has no CHECK on this
+    # column any more — see the note in ``models.SmsMessage``.)
+    if source not in SOURCE_LABELS:
+        logger.warning("Unknown SMS source %r; recording it as manual", source)
+        source = "manual"
     row = SmsMessage(
         template_id=template.id if template is not None else None,
         template_key=template.key if template is not None else None,
@@ -440,6 +730,7 @@ def log_message(
         kind=kind or kind_for_source(source),
         source=source,
         error=error,
+        ref=ref or "",
     )
     db.add(row)
     db.flush()

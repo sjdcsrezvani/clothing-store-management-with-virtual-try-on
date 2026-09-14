@@ -8,7 +8,8 @@
         <h2>{% if edit_mode %}{{ template.name }}{% else %}قالب پیامک جدید{% endif %}</h2>
         <p>
             متن را با متغیرها بنویسید؛ هر متغیر را با کلیک روی آن به متن اضافه کنید.
-            پیش‌نمایش همان چیزی است که مشتری می‌بیند.
+            پیش‌نمایش همان چیزی است که مشتری می‌بیند. در ستون کنار هم نوشته شده که
+            این قالب <strong>خودکار</strong> فرستاده می‌شود یا <strong>دستی</strong>، و از کجا.
         </p>
     </div>
     <div class="admin-nav">
@@ -60,20 +61,46 @@
                               placeholder="مثال: %var1% عزیز، تولدت مبارک!">{{ values.body }}</textarea>
                     <small class="sms-counter" id="sms-counter" aria-live="polite"></small>
                 </div>
-                {% if edit_mode and not template.is_builtin %}
+                {% if not template or not template.is_builtin %}
                 <div class="sms-variable-editor">
-                    <p class="muted">نام و نمونه هر متغیر را خودتان بگذارید؛ پیش‌نمایش با همین نمونه‌ها ساخته می‌شود.</p>
+                    <p class="muted">
+                        جای متغیر در متن آزاد است: هر کجای پیامک <span dir="ltr">%var1%</span> بنویسید، همان‌جا
+                        پر می‌شود — اول، وسط یا آخر. فقط اسم متغیر مهم است، نه ترتیبش.
+                        برای هر متغیر بگویید از کدام مقدار مشتری پر شود؛ متغیری که به هیچ مقداری
+                        وصل نباشد، در پیامک خالی می‌ماند.
+                    </p>
                     {% for variable in variables %}
-                    <div class="form-row">
+                    <div class="sms-slot">
                         <div class="form-group">
-                            <label for="label_{{ variable.token }}">برچسب <span dir="ltr">%{{ variable.token }}%</span></label>
-                            <input type="text" id="label_{{ variable.token }}" name="label_{{ variable.token }}"
-                                   value="{{ variable.label }}" maxlength="60">
+                            <label for="source_{{ variable.token }}">
+                                مقدار <span dir="ltr">%{{ variable.token }}%</span>
+                            </label>
+                            <select id="source_{{ variable.token }}" name="source_{{ variable.token }}"
+                                    class="sms-slot-source" data-token="{{ variable.token }}">
+                                <option value=""{% if not variable.field %} selected{% endif %}>
+                                    — بدون مقدار (خالی فرستاده می‌شود) —
+                                </option>
+                                {% for source in sources %}
+                                <option value="{{ source.field }}"
+                                        data-label="{{ source.label }}"
+                                        data-sample="{{ source.sample }}"
+                                        {% if variable.field == source.field %}selected{% endif %}>
+                                    {{ source.label }}
+                                </option>
+                                {% endfor %}
+                            </select>
                         </div>
-                        <div class="form-group">
-                            <label for="sample_{{ variable.token }}">متن نمونه</label>
-                            <input type="text" id="sample_{{ variable.token }}" name="sample_{{ variable.token }}"
-                                   value="{{ variable.sample }}" maxlength="120">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="label_{{ variable.token }}">برچسب</label>
+                                <input type="text" id="label_{{ variable.token }}" name="label_{{ variable.token }}"
+                                       value="{{ variable.label }}" maxlength="60">
+                            </div>
+                            <div class="form-group">
+                                <label for="sample_{{ variable.token }}">متن نمونه</label>
+                                <input type="text" id="sample_{{ variable.token }}" name="sample_{{ variable.token }}"
+                                       value="{{ variable.sample }}" maxlength="120">
+                            </div>
                         </div>
                     </div>
                     {% endfor %}
@@ -81,16 +108,70 @@
                 {% endif %}
             </div>
 
+            {% if not template or not template.is_builtin %}
+            {% set active_trigger = (template.trigger_key if template else '') or '' %}
+            <div class="form-section">
+                <h3>چه زمانی خودش فرستاده شود؟</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="trigger_key">نحوه ارسال</label>
+                        <select id="trigger_key" name="trigger_key" class="sms-trigger-select">
+                            <option value=""{% if not active_trigger %} selected{% endif %}>
+                                فقط دستی — از صفحه «ارسال پیامک»
+                            </option>
+                            {% for trigger in triggers %}
+                            <option value="{{ trigger.key }}"
+                                    data-mode="{{ trigger.mode }}"
+                                    data-text="{{ trigger.text }}"
+                                    data-label="{{ template_mode_labels[trigger.mode] }}"
+                                    data-hint="{{ trigger.hint }}"
+                                    data-needs-days="{{ '1' if trigger.needs_days else '0' }}"
+                                    {% if active_trigger == trigger.key %}selected{% endif %}>
+                                {{ trigger.label }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <small>
+                            تا وقتی اینجا «فقط دستی» باشد، این قالب هیچ‌وقت خودبه‌خود فرستاده
+                            نمی‌شود — فقط وقتی خودتان از صفحه «ارسال پیامک» بفرستید.
+                        </small>
+                    </div>
+                    <div class="form-group sms-trigger-days" id="trigger-days-group">
+                        <label for="trigger_days">چند روز پس از آخرین خرید؟</label>
+                        <input type="number" id="trigger_days" name="trigger_days" min="1" max="365"
+                               value="{{ template.trigger_days if template and template.trigger_days else trigger_days_default }}">
+                        <small>
+                            خرید تازه این شمارش را از نو شروع می‌کند؛ برای هر دورهٔ خرید فقط یک پیام می‌رود.
+                        </small>
+                    </div>
+                </div>
+                <p class="muted sms-trigger-hint" id="sms-trigger-hint">
+                    {%- for trigger in triggers %}{% if trigger.key == active_trigger %}{{ trigger.hint }}{% endif %}{% endfor -%}
+                </p>
+            </div>
+            {% endif %}
+
             {% if edit_mode and template.is_builtin %}
             <div class="form-section">
                 <h3>وضعیت</h3>
                 <label class="switch-row">
                     <input type="checkbox" name="is_active" {% if values.is_active %}checked{% endif %}>
                     <span>
-                        <strong>این پیامک خودکار فرستاده شود</strong>
+                        <strong>
+                            {% if send_info(template).mode == 'auto' %}
+                            این پیامک خودکار فرستاده شود
+                            {% else %}
+                            این پیامک قابل فرستادن باشد
+                            {% endif %}
+                        </strong>
                         <small>
+                            {% if send_info(template).mode == 'auto' %}
                             خاموش‌کردن، متن را پاک نمی‌کند؛ فقط جلوی ارسال خودکار آن را می‌گیرد
                             و در صندوق و پرونده مشتری هم چیزی از آن دیده نمی‌شود.
+                            {% else %}
+                            خاموش‌کردن، متن را پاک نمی‌کند؛ فقط تا روشن‌کردن دوباره، این متن
+                            از صفحه‌ای که می‌فرستد فرستاده نمی‌شود.
+                            {% endif %}
                         </small>
                     </span>
                 </label>
@@ -116,8 +197,17 @@
                 {{ metrics.length }} نویسه · {{ metrics.segments }} پیامک · {{ metrics.encoding }}
             </p>
             {% if edit_mode and not values.is_active %}
-            <p class="sms-warning">این قالب خاموش است و خودکار فرستاده نمی‌شود.</p>
+            <p class="sms-warning">این قالب خاموش است؛ تا روشنش نکنید، چیزی از آن فرستاده نمی‌شود.</p>
             {% endif %}
+            {# A declared token nothing fills used to preview as a fake sample and
+               then leave a hole on the phone; say it here instead. #}
+            <p class="sms-warning" id="sms-unfilled" {% if not unfilled %}hidden{% endif %}>
+                <span id="sms-unfilled-tokens">
+                    {%- for item in unfilled %}<span dir="ltr">%{{ item.token }}%</span>{% if not loop.last %}، {% endif %}{% endfor -%}
+                </span>
+                به هیچ مقداری وصل نیست و در پیامک خالی می‌ماند — یک مقدار برایش انتخاب کنید یا
+                خودِ متن را جای متغیر بنویسید.
+            </p>
         </section>
 
         {% if edit_mode %}
@@ -139,13 +229,22 @@
         </section>
         {% endif %}
 
-        {% if edit_mode and template.is_builtin %}
-        <section class="card">
-            <h3>این قالب کجا استفاده می‌شود</h3>
-            <p>{{ triggers.get(template.key, '') }}</p>
-            <p class="muted">قالب‌های خودکار حذف نمی‌شوند؛ برای توقفشان خاموش کنید.</p>
+        {# Every template answers this — a custom one that nothing queues used to
+           say nothing at all, so «وقتی لازم شد می‌فرستم» was a guess. #}
+        {% set info = send_info(template) %}
+        <section class="card sms-fire-card">
+            <h3>این قالب چگونه فرستاده می‌شود؟</h3>
+            <p class="sms-fireline is-{{ info.mode }}" id="sms-fire-line">
+                <span class="sms-fire-badge is-{{ info.mode }}" id="sms-fire-badge">{{ info.label }}</span>
+                <span id="sms-fire-text">{{ info.text }}</span>
+            </p>
+            {% if info.url and edit_mode %}
+            <a href="{{ info.url }}" class="btn btn-sm btn-ghost" id="sms-fire-link">{{ info.action }} ←</a>
+            {% endif %}
+            {% if edit_mode and template.is_builtin %}
+            <p class="muted">قالب‌های پیش‌فرض حذف نمی‌شوند؛ برای توقفشان خاموش کنید.</p>
+            {% endif %}
         </section>
-        {% endif %}
     </aside>
 </div>
 
@@ -158,6 +257,11 @@
     if (!body) return;
     var placeholders = [{% for variable in variables %}'%{{ variable.token }}%'{% if not loop.last %}, {% endif %}{% endfor %}];
     var samples = { {% for variable in variables %}'%{{ variable.token }}%': {{ variable.sample|tojson }}{% if not loop.last %}, {% endif %}{% endfor %} };
+    // Tokens no source fills: they leave the phone empty, so the preview shows
+    // them empty too instead of promising a sample that never gets sent.
+    var blanked = [{% for item in unfilled %}'%{{ item.token }}%'{% if not loop.last %}, {% endif %}{% endfor %}];
+    var unfilledNote = document.getElementById('sms-unfilled');
+    var unfilledTokens = document.getElementById('sms-unfilled-tokens');
 
     function segments(text) {
         var unicode = /[^\x00-\x7F]/.test(text);
@@ -165,11 +269,25 @@
         return { count: text.length ? Math.ceil(text.length / per) : 0, per: per, unicode: unicode };
     }
 
+    function refreshUnfilled() {
+        if (!unfilledNote) return;
+        if (!blanked.length) {
+            unfilledNote.hidden = true;
+            return;
+        }
+        unfilledNote.hidden = false;
+        if (unfilledTokens) {
+            unfilledTokens.innerHTML = blanked.map(function (token) {
+                return '<span dir="ltr">' + token + '</span>';
+            }).join('، ');
+        }
+    }
+
     function render() {
         var text = body.value;
         var preview = text;
         placeholders.forEach(function (token) {
-            var value = samples[token] || '';
+            var value = blanked.indexOf(token) !== -1 ? '' : (samples[token] || '');
             preview = preview.split(token).join(value);
         });
         var metrics = segments(text);
@@ -186,6 +304,67 @@
                 : 'برای دیدن پیش‌نمایش، متن را بنویسید.';
         }
     }
+
+    // Choosing a trigger is what turns «فقط دستی» into «خودکار». The card on the
+    // right answers the same question from the server after saving, so the page
+    // never says «دستی» about something the shop just switched on.
+    var triggerSelect = document.getElementById('trigger_key');
+    if (triggerSelect) {
+        var daysGroup = document.getElementById('trigger-days-group');
+        var daysInput = document.getElementById('trigger_days');
+        var hint = document.getElementById('sms-trigger-hint');
+        var badge = document.getElementById('sms-fire-badge');
+        var fireText = document.getElementById('sms-fire-text');
+        var fireLink = document.getElementById('sms-fire-link');
+        function syncTrigger() {
+            var option = triggerSelect.options[triggerSelect.selectedIndex];
+            var auto = option.getAttribute('data-mode') === 'auto';
+            var needsDays = option.getAttribute('data-needs-days') === '1';
+            if (daysGroup) daysGroup.hidden = !needsDays;
+            if (hint) hint.textContent = option.getAttribute('data-hint') || '';
+            if (badge) {
+                badge.className = 'sms-fire-badge is-' + (auto ? 'auto' : 'manual');
+                badge.textContent = auto ? (option.getAttribute('data-label') || '')
+                                         : '{{ template_mode_labels["manual"] }}';
+            }
+            if (fireText) {
+                // Plain digits, like every other count on these pages — the
+                // manager and the send page render the same sentence.
+                var days = daysInput ? parseInt(daysInput.value, 10) || 0 : 0;
+                fireText.textContent = auto
+                    ? (option.getAttribute('data-text') || '').replace('{days}', String(days))
+                    : '{{ CUSTOM_TRIGGER }}';
+            }
+            // The hand-send link is only true while the template is hand-sent.
+            if (fireLink) fireLink.hidden = auto;
+        }
+        triggerSelect.addEventListener('change', syncTrigger);
+        if (daysInput) daysInput.addEventListener('input', syncTrigger);
+        syncTrigger();
+    }
+
+    // Picking a source for a slot is what makes its token real: the label and
+    // sample follow the choice, and the «خالی می‌ماند» warning clears.
+    document.querySelectorAll('.sms-slot-source').forEach(function (select) {
+        select.addEventListener('change', function () {
+            var token = '%' + select.getAttribute('data-token') + '%';
+            var option = select.options[select.selectedIndex];
+            var labelInput = document.getElementById('label_' + select.getAttribute('data-token'));
+            var sampleInput = document.getElementById('sample_' + select.getAttribute('data-token'));
+            var chipLabel = document.querySelector('.sms-chip[data-token="' + select.getAttribute('data-token') + '"] small');
+            if (select.value) {
+                samples[token] = option.getAttribute('data-sample') || '';
+                if (labelInput) labelInput.value = option.getAttribute('data-label') || '';
+                if (sampleInput) sampleInput.value = samples[token];
+                if (chipLabel) chipLabel.textContent = option.getAttribute('data-label') || '';
+                blanked = blanked.filter(function (item) { return item !== token; });
+            } else if (blanked.indexOf(token) === -1) {
+                blanked.push(token);
+            }
+            refreshUnfilled();
+            render();
+        });
+    });
 
     body.addEventListener('input', render);
     document.querySelectorAll('.sms-chip').forEach(function (chip) {

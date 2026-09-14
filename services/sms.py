@@ -95,7 +95,7 @@ async def queue_sms(pattern: str, recipient: str, attributes: dict, db: Session,
                     template=None, template_key: str | None = None,
                     source: str = "manual", kind: str | None = None,
                     customer=None, employee_id: int | None = None,
-                    body: str | None = None):
+                    body: str | None = None, ref: str = ""):
     """Queue one message and record it in the log.
 
     The body is rendered **now**, at queue time, and that rendered text is what
@@ -112,7 +112,7 @@ async def queue_sms(pattern: str, recipient: str, attributes: dict, db: Session,
         customer = customer_for_phone(db, recipient)
     row = log_message(db, phone=recipient, body=rendered, template=template,
                       customer=customer, source=source, kind=kind,
-                      employee_id=employee_id)
+                      employee_id=employee_id, ref=ref)
     # No BackgroundJob: the scheduler batch used to add up to five minutes in
     # front of every message, and the gateway claim is atomic on its own. The
     # log row *is* the queue item now; ``job_id`` stays for old rows.

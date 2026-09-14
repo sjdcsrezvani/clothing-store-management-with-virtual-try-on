@@ -59,6 +59,13 @@ async def scheduler_task():
             try:
                 trigger_due_reminders(db)
                 db.commit()
+                # Templates the owner pointed at «پیگیری پس از چند روز». Every
+                # pass is safe to repeat: each message records the purchase it
+                # belongs to, so a customer is only ever asked once per buy.
+                from services.sms_triggers import fire_follow_up_sms
+                summary = await fire_follow_up_sms(db)
+                if summary["sent"]:
+                    logger.info("Queued %s follow-up SMS", summary["sent"])
                 expire_stale(db)
                 reclaim_stale(db)
                 # Gateway self-healing: a claim whose phone died mid-send goes

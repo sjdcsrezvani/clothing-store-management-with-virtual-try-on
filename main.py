@@ -310,6 +310,15 @@ def _apply_missing_columns(migration_engine=None):
             ("claimed_at", "DATETIME"),
             ("sent_by_device_id", "INTEGER"),
             ("attempts", "INTEGER DEFAULT 0"),
+            # Which event an automatic message belongs to; '' for everything
+            # sent by hand, so a shop's existing history keeps its meaning.
+            ("ref", "VARCHAR(60) DEFAULT ''"),
+        ],
+        "sms_templates": [
+            # Empty trigger = hand-sent, which is what every existing template
+            # is. A shop upgrades into exactly the behaviour it already had.
+            ("trigger_key", "VARCHAR(30) DEFAULT ''"),
+            ("trigger_days", "INTEGER DEFAULT 0"),
         ],
     }
     with migration_engine.begin() as conn:

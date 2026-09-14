@@ -1050,6 +1050,12 @@ async def sales_confirm(
     # older approval so it cannot accidentally authorize a later card sale.
     _clear_pos_approval(request)
 
+    # Templates the owner pointed at «پس از هر خرید» go out now, for this one
+    # customer. Deliberately after the commit and error-proof: the sale is done
+    # and a message problem must never disturb it.
+    from services.sms_triggers import fire_purchase_sms
+    await fire_purchase_sms(db, sale=sale, customer=customer)
+
     sale_items = db.query(SaleItem).filter(SaleItem.sale_id == sale.id).all()
     for item in sale_items:
         item.variant = db.query(ProductVariant).filter(ProductVariant.id == item.variant_id).first()

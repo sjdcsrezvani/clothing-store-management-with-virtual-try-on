@@ -46,20 +46,33 @@ from services.sms_send import (
     send_bulk,
     template_card,
 )
+from services.sms_triggers import SETTING_AUTO_SEND_LIMIT
 from services.sms_templates import (
+    CUSTOMER_SOURCES,
+    CUSTOM_TRIGGER,
     CUSTOM_VARIABLES,
+    DEFAULT_FOLLOW_UP_DAYS,
+    # «خودکار/دستی» for a template — not to be confused with the audience
+    # MODE_LABELS imported above, which name how a *blast* picks its people.
+    MODE_LABELS as TEMPLATE_MODE_LABELS,
+    SOURCE_FIELDS,
     SOURCE_LABELS,
     STATUS_LABELS,
-    TRIGGER_LABELS,
+    TRIGGERS,
     create_custom,
     customer_for_phone,
     delete_blocked_reason,
     duplicate,
     ensure_seeded,
+    fire_summary,
     grouped_templates,
+    send_info,
     sms_metrics,
     sync_to_settings,
     template_variables,
+    trigger_from_form,
+    unfilled_in_body,
+    unfilled_tokens,
     validate,
     values_for_customer,
 )
@@ -67,7 +80,7 @@ from services.templating import templates
 
 router = APIRouter(prefix="/admin")
 
-GATEWAY_KEYS = ("sms_api_key", "sms_device_id", "campaign_sms_limit")
+GATEWAY_KEYS = ("sms_api_key", "sms_device_id", "campaign_sms_limit", SETTING_AUTO_SEND_LIMIT)
 
 # A just-issued device key lives only for this long in the request cycle — long
 # enough to render the pairing QR, never persisted anywhere it could be read back.
@@ -133,7 +146,8 @@ async def admin_sms(request: Request, db: Session = Depends(get_db)):
         "gateway_port": GATEWAY_PORT,
         "can_configure": guard.role == "owner",
         "cards": {template.id: template_card(db, template) for template in _cards_for(groups).values()},
-        "triggers": TRIGGER_LABELS,
+        "send_info": send_info,
+        "fire": fire_summary(db),
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
         "fmt": fmt,
@@ -145,24 +159,32 @@ async def admin_sms(request: Request, db: Session = Depends(get_db)):
 async def admin_sms_config(
     request: Request,
     campaign_sms_limit: str = Form(""),
+    trigger_sms_limit: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    """The bulk-send ceiling — owner only. The gateway's key and device id left
+    """The send ceilings — owner only. The gateway's key and device id left
     with the VPS: pairing below issues a fresh key to *this* phone instead."""
     guard = _owner_guard(request, db)
     if not hasattr(guard, "role"):
         return guard
 
-    limit = campaign_sms_limit.strip()
-    if limit:
+    for field, key, label in (
+        (campaign_sms_limit, "campaign_sms_limit", "سقف هر ارسال گروهی"),
+        # Templates the owner gave a trigger can spend money with nobody
+        # watching, so their pace is a setting rather than a constant.
+        (trigger_sms_limit, SETTING_AUTO_SEND_LIMIT, "سقف ارسال خودکار در هر بررسی"),
+    ):
+        limit = field.strip()
+        if not limit:
+            continue
         try:
             value = int(to_english_digits(limit))
         except (TypeError, ValueError):
             value = 0
         if value < 1:
-            return RedirectResponse(url="/admin/sms?err=سقف پیامک باید عددی بزرگ‌تر از صفر باشد.",
+            return RedirectResponse(url=f"/admin/sms?err={label} باید عددی بزرگ‌تر از صفر باشد.",
                                     status_code=303)
-        _save_setting(db, "campaign_sms_limit", str(value))
+        _save_setting(db, key, str(value))
     db.commit()
     log_action(db, "sms_config", "به‌روزرسانی تنظیمات درگاه پیامک",
                request=request, target_type="settings")
@@ -211,7 +233,8 @@ async def admin_sms_gateway_pair(request: Request, db: Session = Depends(get_db)
         "balance": device_status_label(db),
         "can_configure": guard.role == "owner",
         "cards": {template.id: template_card(db, template) for template in _cards_for(groups).values()},
-        "triggers": TRIGGER_LABELS,
+        "send_info": send_info,
+        "fire": fire_summary(db),
         "fmt": fmt,
         "jalali_str": jalali_str,
     })
@@ -262,9 +285,15 @@ def _form_context(request, db, *, template, edit_mode, values, error="", message
         "values": values,
         "variables": (template_variables(template) if template is not None
                       else list(CUSTOM_VARIABLES)),
+        "sources": CUSTOMER_SOURCES,
+        "unfilled": unfilled_tokens(template),
+        "triggers": TRIGGERS,
+        "trigger_days_default": DEFAULT_FOLLOW_UP_DAYS,
+        "template_mode_labels": TEMPLATE_MODE_LABELS,
+        "CUSTOM_TRIGGER": CUSTOM_TRIGGER,
         "preview": preview_body(template) if template is not None else "",
         "metrics": sms_metrics(template.body or "") if template is not None else sms_metrics(""),
-        "triggers": TRIGGER_LABELS,
+        "send_info": send_info,
         "error": error,
         "msg": message,
         "err": request.query_params.get("err", ""),
@@ -276,14 +305,48 @@ def _values_from_form(name, body, is_active) -> dict:
     return {"name": name or "", "body": body or "", "is_active": bool(is_active)}
 
 
-def _variables_from_form(form) -> list[dict]:
-    """Custom templates let the owner rename and sample their own tokens."""
+def _auto_send_hole(body, variables, trigger_key) -> str:
+    """Why this template cannot be automatic yet, or "" when it can.
+
+    An automatic message has nobody reading it before it leaves, so a slot the
+    text uses but nothing fills would put a hole on the customer's phone with no
+    one to notice. A hand-sent template may keep that hole (the owner sees it in
+    the preview); an automatic one is refused here, at the door, rather than
+    silently refusing to fire later — a switch that lies is worse than a
+    sentence that complains.
+    """
+    if not trigger_key:
+        return ""
+    holes = unfilled_in_body(body, variables)
+    if not holes:
+        return ""
+    names = "، ".join(f"%{item['token']}%" for item in holes)
+    return (f"برای ارسال خودکار، هر متغیر متن باید یک مقدار داشته باشد: {names} "
+            f"به هیچ مقداری وصل نیست. یک مقدار برایش انتخاب کنید یا خودِ متن را جای "
+            f"متغیر بنویسید.")
+
+
+def _variables_from_form(form, existing=None) -> list[dict]:
+    """Custom templates let the owner name, sample and *bind* their own tokens.
+
+    The binding is what a token is filled from at send time, so it has to survive
+    a save: rebuilding the list from scratch used to reset every slot to «no
+    source», which quietly dropped the customer's name out of a template the
+    first time it was edited.
+    """
+    previous = {item["token"]: item for item in (existing or CUSTOM_VARIABLES)}
     out = []
     for item in CUSTOM_VARIABLES:
         token = item["token"]
-        label = str(form.get(f"label_{token}", "") or "").strip() or item["label"]
-        sample = str(form.get(f"sample_{token}", "") or "").strip() or item["sample"]
-        out.append({"token": token, "label": label[:60], "sample": sample[:120], "field": None})
+        before = previous.get(token, item)
+        label = str(form.get(f"label_{token}", "") or "").strip() or before.get("label") or item["label"]
+        sample = str(form.get(f"sample_{token}", "") or "").strip() or before.get("sample") or item["sample"]
+        # Absent field (an older form, a scripted post) keeps the binding;
+        # present-but-empty is the owner choosing «no value» on purpose.
+        chosen = form.get(f"source_{token}")
+        field = (before.get("field") or "") if chosen is None else str(chosen).strip()
+        out.append({"token": token, "label": label[:60], "sample": sample[:120],
+                    "field": field if field in SOURCE_FIELDS else None})
     return out
 
 
@@ -314,7 +377,15 @@ async def admin_sms_template_create(
         return _form_context(request, db, template=None, edit_mode=False,
                              values=_values_from_form(name, body, True), error=error)
     form = await request.form()
-    template = create_custom(db, name=name, body=body, variables=_variables_from_form(form))
+    trigger_key, trigger_value = trigger_from_form(
+        str(form.get("trigger_key", "") or ""), form.get("trigger_days"))
+    variables = _variables_from_form(form)
+    hole = _auto_send_hole(body, variables, trigger_key)
+    if hole:
+        return _form_context(request, db, template=None, edit_mode=False,
+                             values=_values_from_form(name, body, True), error=hole)
+    template = create_custom(db, name=name, body=body, variables=variables,
+                             trigger_key=trigger_key, trigger_days=trigger_value)
     db.commit()
     log_action(db, "sms_template_create", f"قالب پیامک «{template.name}» ساخته شد",
                request=request, target_type="sms_template", target_id=template.id)
@@ -371,7 +442,18 @@ async def admin_sms_template_update(
     else:
         template.is_active = True
         form = await request.form()
-        template.variables = json.dumps(_variables_from_form(form), ensure_ascii=False)
+        submitted = _variables_from_form(form, template_variables(template))
+        # Only a custom template can fire on its own; the built-ins have their
+        # own senders, so their trigger stays empty however the form is posted.
+        trigger_key, trigger_value = trigger_from_form(
+            str(form.get("trigger_key", "") or ""), form.get("trigger_days"))
+        hole = _auto_send_hole(body, submitted, trigger_key)
+        if hole:
+            return _form_context(request, db, template=template, edit_mode=True,
+                                 values=_values_from_form(name, body, is_active == "on"),
+                                 error=hole)
+        template.variables = json.dumps(submitted, ensure_ascii=False)
+        template.trigger_key, template.trigger_days = trigger_key, trigger_value
     # The legacy settings row is the contract every sender already reads, so it
     # is written on save — «غیرفعال» lands there as an empty pattern.
     sync_to_settings(db, template)
@@ -500,6 +582,10 @@ def _send_context(request, db, *, template, plan=None, body="", error="", messag
     return templates.TemplateResponse(request, "admin/sms_send.html", {
         "template_choices": _active_choices(db),
         "template": template,
+        # Whoever is holding the send button should know whether this template is
+        # normally automatic, normally sent from another page, or hand-sent here.
+        "send_info": send_info,
+        "unfilled": unfilled_tokens(template),
         "choices": audience_choices(db, transactional=transactional),
         "customers": db.query(Customer).order_by(Customer.first_name.asc(), Customer.id.asc()).all(),
         "plan": plan,

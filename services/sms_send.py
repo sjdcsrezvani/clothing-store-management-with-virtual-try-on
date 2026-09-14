@@ -51,6 +51,26 @@ MODE_LABELS = {
 BLOCKING_TAGS = ("blocked",)
 
 
+def message_block_reason(customer, *, transactional: bool = False) -> str:
+    """Why this customer must not be messaged, or "" when they may be.
+
+    The audience picker and the automatic triggers both ask *here*, so an
+    opted-in answer cannot drift into an opted-out send: archived customers
+    asked to be forgotten, «بلاک» meant it, and a marketing message needs
+    consent while a transactional one (the customer's own order or balance)
+    does not.
+    """
+    if customer is None:
+        return ""
+    if is_archived_customer(customer):
+        return "archived"
+    if any(key in parse_tags(customer.tags) for key in BLOCKING_TAGS):
+        return "blocked"
+    if not transactional and not marketing_opt_in(customer):
+        return "opted_out"
+    return ""
+
+
 # ── phone numbers ─────────────────────────────────────────────────────────────
 
 def normalise_phone(value) -> str:
@@ -129,15 +149,9 @@ def resolve_recipients(
         if phone in seen:
             skipped["duplicate"] += 1
             return
-        if customer is not None:
-            if is_archived_customer(customer):
-                skipped["archived"] += 1
-                return
-            if any(key in parse_tags(customer.tags) for key in BLOCKING_TAGS):
-                skipped["blocked"] += 1
-                return
-        if not transactional and customer is not None and not marketing_opt_in(customer):
-            skipped["opted_out"] += 1
+        reason = message_block_reason(customer, transactional=transactional)
+        if reason:
+            skipped[reason] += 1
             return
         seen.add(phone)
         recipients.append(
@@ -275,21 +289,39 @@ def preview_body(template: SmsTemplate, values: dict | None = None) -> str:
 
 
 def template_card(db: Session, template: SmsTemplate) -> dict:
-    """Everything the editor and the manager list show about one template."""
+    """Everything the editor and the manager list show about one template.
+
+    The row answers «has this one ever spoken?» without opening the history,
+    because a template nobody has ever sent is usually a template somebody
+    forgot to switch on — and «هرگز» is a more useful thing to see than a zero.
+    """
     metrics = sms_metrics(template.body or "")
-    sent = db.query(func.count(SmsMessage.id)).filter(
-        SmsMessage.template_id == template.id,
-    ).scalar() or 0
-    failed = db.query(func.count(SmsMessage.id)).filter(
-        SmsMessage.template_id == template.id,
-        SmsMessage.status == "failed",
-    ).scalar() or 0
+    mine = SmsMessage.template_id == template.id
+
+    def count(*conditions) -> int:
+        return int(db.query(func.count(SmsMessage.id)).filter(mine, *conditions).scalar() or 0)
+
+    # The four states kept apart, so «ارسال‌شده» can no longer flatter a message
+    # that is still in the queue or that the gateway refused.
+    total = count()
+    sent = count(SmsMessage.status == "sent")
+    failed = count(SmsMessage.status == "failed")
+    # When a message was sent, but its `sent_at` predates that column, the row's
+    # own creation time is the honest answer — never the epoch.
+    last_sent_at = db.query(
+        func.max(func.coalesce(SmsMessage.sent_at, SmsMessage.created_at)),
+    ).filter(mine, SmsMessage.status == "sent").scalar()
+    last_activity_at = db.query(func.max(SmsMessage.created_at)).filter(mine).scalar()
     return {
         "template": template,
         "variables": template_variables(template),
         "metrics": metrics,
-        "sent": int(sent),
-        "failed": int(failed),
+        "total": total,
+        "sent": sent,
+        "failed": failed,
+        "queued": total - sent - failed,
+        "last_sent_at": last_sent_at,
+        "last_activity_at": last_activity_at,
         "preview": preview_body(template),
         "category_label": CATEGORY_LABELS.get(template.category, template.category),
     }

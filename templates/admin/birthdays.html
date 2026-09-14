@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}🎂 پیامک تولد — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div class="page-heading product-page-heading">
+    <div>
+        <div class="eyebrow">بازاریابی / پیامک / تولد</div>
+        <h2>پیامک تولد</h2>
+        <p>
+            تولدهای {{ days_before }} روز آینده. هر کسی را خواستید تیک بزنید و ارسال کنید —
+            تا وقتی تأیید نکنید هیچ پیامی در صف قرار نمی‌گیرد. مشتریِ پیام‌گرفته تا سال بعد دوباره در این فهرست نمی‌آید.
+        </p>
+    </div>
+    <div class="admin-nav">
+        <a href="/admin/sms" class="btn btn-ghost">قالب پیامک تولد</a>
+        <a href="/admin/tier-up" class="btn btn-ghost">پیامک ارتقای سطح</a>
+    </div>
+</div>
+
+{% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
+{% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}
+
+{% if not pattern_ready %}
+<div class="alert alert-error" role="alert">
+    متن پیامک تولد نوشته نشده یا خاموش است — از <a href="/admin/sms">صفحه پیامک</a> آن را بنویسید و فعال کنید.
+    تا آن زمان چیزی قابل ارسال نیست.
+</div>
+{% endif %}
+
+<section class="card birthdays-card">
+    <div class="section-heading-row">
+        <div>
+            <h3>تولدهای پیش‌رو</h3>
+            <p class="muted">
+                {{ rows|length }} تولد در پنجره {{ days_before }} روزه
+                {% if blocked %} · {{ blocked }} تولد به دلیل انصراف از پیامک تبلیغاتی یا بایگانی رد شده است{% endif %}
+            </p>
+        </div>
+    </div>
+
+    {% if rows %}
+    <form method="post" action="/admin/birthdays/send">
+        <div class="table-scroll">
+            <table class="sms-table birthdays-table">
+                <thead>
+                    <tr>
+                        <th scope="col">ارسال</th>
+                        <th scope="col">مشتری</th>
+                        <th scope="col">مناسبت</th>
+                        <th scope="col">تاریخ تولد</th>
+                        <th scope="col">فاصله</th>
+                        <th scope="col">وضعیت</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                    <tr class="{{ 'is-done' if row.already_sent }}">
+                        <td>
+                            {% if row.already_sent %}
+                            <input type="checkbox" disabled aria-label="قبلاً ارسال شده">
+                            {% else %}
+                            <input type="checkbox" name="customer_ids" value="{{ row.customer.id }}" checked
+                                   aria-label="ارسال پیامک به {{ row.customer.full_name }}">
+                            {% endif %}
+                        </td>
+                        <td class="sms-name">
+                            <a href="/admin/customers/{{ row.customer.id }}"><strong>{{ row.customer.full_name }}</strong></a>
+                            <small class="sms-meta tnum" dir="ltr">{{ row.customer.phone }}</small>
+                        </td>
+                        <td>تولد {{ row.occasion_label }}{% if row.occasion == 'child' %} ({{ row.celebrated }}){% endif %}</td>
+                        <td class="tnum">{{ row.date }}</td>
+                        <td class="tnum">{{ row.days_label }}</td>
+                        <td>
+                            {% if row.already_sent %}
+                            <span class="status-badge is-sent">ارسال شد</span>
+                            {% else %}
+                            <span class="status-badge is-queued">در انتظار تصمیم</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary btn-large" {% if not pattern_ready %}disabled{% endif %}>
+                🎂 ارسال پیامک‌های انتخاب‌شده
+            </button>
+        </div>
+    </form>
+    {% else %}
+    <div class="empty-state">
+        <h3>تولدی در {{ days_before }} روز آینده نیست</h3>
+        <p>وقتی تولدی نزدیک شود، همین‌جا فهرست می‌شود و شما تصمیم می‌گیرید پیامک برود یا نه.</p>
+        <a href="/admin/sms" class="btn btn-ghost">تنظیم قالب پیامک تولد</a>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

@@ -19,10 +19,12 @@ from services.sms import (
     send_tier_up_diamond_sms,
 )
 from services._common import (
+    BIRTHDAY_SUBJECT_LABELS,
     BIRTHDAY_TARGET_KEY,
     BIRTHDAY_TARGET_LABELS,
     BIRTHDAY_TARGETS,
     CHILD_PROFILE_KEY,
+    _to_persian_digits as to_persian_digits,
     birthday_display,
     birthday_subjects,
     child_profile_enabled,
@@ -1125,44 +1127,104 @@ async def admin_reset_database(request: Request, db: Session = Depends(get_db)):
     return RedirectResponse(url="/admin", status_code=303)
 
 
-@router.post("/check-birthdays", response_class=HTMLResponse)
-async def admin_check_birthdays(request: Request, db: Session = Depends(get_db)):
-    """Queue birthday wishes for the customers whose birthday is due.
+def _birthday_marker(db: Session, customer, occasion: str) -> Settings | None:
+    """This year's marker row for one customer's one occasion, if it exists."""
+    year = datetime.now(timezone.utc).year
+    month_day = customer.birth_month_day if occasion == "customer" else customer.child_birthday
+    key = f"birthday_sms_{customer.id}_{year}_{occasion}_{month_day}"
+    return db.query(Settings).filter(Settings.key == key).first()
 
-    Whose birthday counts is the store's `birthday_target`, so this serves a
-    children's shop and an adult clothing shop alike. Each sent customer gets a
-    marker per occasion, so pressing the button again (even next day) won't
-    re-send — and a parent whose own birthday and child's fall together still
-    gets one message per occasion, not a collision.
 
-    The pattern text lives in the SMS settings; without one there is nothing to
-    send, which is reported rather than silently counted as zero.
+@router.get("/birthdays", response_class=HTMLResponse)
+async def admin_birthdays(request: Request, db: Session = Depends(get_db)):
+    """Review the due birthdays before anything is queued.
+
+    The dashboard's old one-click button queued every wish sight-unseen; this
+    page is the same list tier-up has: who is due, whose birthday it is, how
+    soon, and who already received this year's wish — nothing sends until the
+    owner ticks and confirms.
+    """
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+
+    from services.sms import get_sms_config
+    from services.tier import get_customers_for_birthday_check, get_tier_config
+
+    days_before = get_tier_config(db)["birthday_sms_days_before"]
+    result = get_customers_for_birthday_check(db, days_before)
+    pattern_ready = bool(get_sms_config(db)["birthday_pattern"])
+
+    rows = []
+    for customer, days_until, occasion in result["eligible"]:
+        month_day = customer.birth_month_day if occasion == "customer" else customer.child_birthday
+        year = None if occasion == "customer" else customer.child_birth_year
+        rows.append({
+            "customer": customer,
+            "occasion": occasion,
+            "occasion_label": BIRTHDAY_SUBJECT_LABELS.get(occasion, occasion),
+            "celebrated": (customer.first_name or "مشتری") if occasion == "customer"
+                          else (customer.child_name or "فرزند"),
+            "date": birthday_display(month_day, year),
+            "days_until": days_until,
+            "days_label": ("امروز" if days_until == 1
+                           else (f"{to_persian_digits(str(days_until - 1))} روز دیگر" if days_until > 1 else "")),
+            "already_sent": _birthday_marker(db, customer, occasion) is not None,
+        })
+    rows.sort(key=lambda row: row["days_until"])
+
+    return templates.TemplateResponse(request, "admin/birthdays.html", {
+        "rows": rows,
+        "blocked": result["blocked"],
+        "days_before": days_before,
+        "pattern_ready": pattern_ready,
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
+        "fmt": fmt,
+        "jalali_str": jalali_str,
+    })
+
+
+@router.post("/birthdays/send", response_class=HTMLResponse)
+async def admin_birthdays_send(request: Request, customer_ids: list[int] = Form([]),
+                               db: Session = Depends(get_db)):
+    """Queue the wishes the owner ticked on the review page.
+
+    Only listed, still-eligible customers are honoured — a stale form cannot
+    message someone whose window has passed. The per-customer marker (one per
+    occasion, per year) still guards a double-send, so a re-submit of the same
+    selection reports skips instead of repeat wishes.
     """
     guard = require_html_role(request, db, "owner")
     if not hasattr(guard, "role"):
         return guard
 
     from services.sms import birthday_sms_vars, get_sms_config, queue_sms
+    from services.tier import get_customers_for_birthday_check, get_tier_config
 
-    config = get_tier_config(db)
     pattern = get_sms_config(db)["birthday_pattern"]
     if not pattern:
-        return RedirectResponse(
-            url="/admin?birthday_msg=0&birthday_skip=0&birthday_eligible=0&birthday_err=pattern",
-            status_code=303,
-        )
+        return RedirectResponse(url="/admin/birthdays?err=ابتدا متن پیامک تولد را در صفحه پیامک بنویسید و فعال کنید.",
+                                status_code=303)
 
-    days_before = config["birthday_sms_days_before"]
-    result = get_customers_for_birthday_check(db, days_before)
-    eligible = result["eligible"]
+    wanted = {int(value) for value in customer_ids if str(value).strip().isdigit()}
+    if not wanted:
+        return RedirectResponse(url="/admin/birthdays?err=هیچ مشتری انتخاب نشده است.", status_code=303)
+
+    days_before = get_tier_config(db)["birthday_sms_days_before"]
+    eligible = {customer.id: (customer, occasion)
+                for customer, _days, occasion in get_customers_for_birthday_check(db, days_before)["eligible"]}
 
     sent = 0
     skipped = 0
-    year = datetime.now(timezone.utc).year
-    for customer, _days_until, occasion in eligible:
-        month_day = customer.birth_month_day if occasion == "customer" else customer.child_birthday
-        log_key = f"birthday_sms_{customer.id}_{year}_{occasion}_{month_day}"
-        if db.query(Settings).filter(Settings.key == log_key).first():
+    rejected = 0
+    for customer_id in wanted:
+        pair = eligible.get(customer_id)
+        if pair is None:                     # window passed or no longer eligible
+            rejected += 1
+            continue
+        customer, occasion = pair
+        if _birthday_marker(db, customer, occasion) is not None:
             skipped += 1
             continue
 
@@ -1177,15 +1239,20 @@ async def admin_check_birthdays(request: Request, db: Session = Depends(get_db))
             customer=customer,
         )
         if job is not None:
-            db.add(Settings(key=log_key, value="sent"))
+            year = datetime.now(timezone.utc).year
+            month_day = customer.birth_month_day if occasion == "customer" else customer.child_birthday
+            db.add(Settings(key=f"birthday_sms_{customer.id}_{year}_{occasion}_{month_day}", value="sent"))
             sent += 1
     db.commit()
+    log_action(db, "birthday_sms", f"{sent} پیامک تولد ارسال شد ({skipped} تکراری، {rejected} خارج از پنجره)",
+               request=request, target_type="customer")
 
-    return RedirectResponse(
-        url=(f"/admin?birthday_msg={sent}&birthday_skip={skipped}"
-             f"&birthday_eligible={len(eligible)}&birthday_blocked={result['blocked']}"),
-        status_code=303,
-    )
+    message = f"{sent} پیامک تولد در صف قرار گرفت."
+    if skipped:
+        message += f" {skipped} مورد قبلاً ارسال شده بود."
+    if rejected:
+        message += f" {rejected} مورد دیگر در پنجره تولد نیست و رد شد."
+    return RedirectResponse(url=f"/admin/birthdays?msg={message}", status_code=303)
 
 
 @router.post("/check-downgrades", response_class=HTMLResponse)

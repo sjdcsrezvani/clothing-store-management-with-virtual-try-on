@@ -2222,6 +2222,17 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
 .sms-name a { font-weight: 700; text-decoration: none; color: inherit; }
 .sms-name a:hover { color: var(--candy-dark); text-decoration: underline; }
 .sms-meta { color: var(--ink-soft); font-size: 0.72rem; }
+/* «آخرین ارسال» و تعداد کل، تا یک قالب بی‌استفاده همین‌جا دیده شود. The badge
+   is dashed on purpose: it is the absence of a state, not another state. */
+.sms-usage { margin-top: 0.1rem; }
+.sms-unused-badge {
+  display: inline-block; vertical-align: middle;
+  margin-inline-start: 0.45rem; padding: 0.04rem 0.5rem;
+  border: 1px dashed color-mix(in srgb, var(--sunshine) 70%, var(--rule));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sunshine) 20%, var(--card));
+  font-size: 0.66rem; font-weight: 800; color: var(--ink);
+}
 .sms-body-cell { max-width: 22rem; }
 .sms-body { display: block; font-size: 0.82rem; line-height: 1.6; overflow-wrap: anywhere; }
 .sms-body-cell small { color: var(--ink-soft); font-size: 0.72rem; }
@@ -2234,6 +2245,22 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
 .sms-help-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
 .sms-help-list li { display: flex; gap: 0.6rem; flex-wrap: wrap; font-size: 0.84rem; }
 .sms-help-list li > span { color: var(--ink-soft); }
+
+/* «خودکار» یا «دستی»: the manager table, the help card and the editor all answer
+   the same question in the same shape, so a template's trigger is never a guess. */
+.sms-fireline { display: flex; gap: 0.45rem; align-items: baseline; flex-wrap: wrap;
+  margin: 0.2rem 0 0.1rem; font-size: 0.76rem; line-height: 1.7; color: var(--ink-soft); }
+.sms-fireline > span:not(.sms-fire-badge) { flex: 1 1 12rem; min-width: 0; }
+.sms-fireline a, .sms-help-list a { color: var(--candy-dark); font-weight: 700; text-decoration: none; white-space: nowrap; }
+.sms-fireline a:hover, .sms-help-list a:hover { text-decoration: underline; }
+.sms-fire-badge { display: inline-block; flex: 0 0 auto; padding: 0.05rem 0.45rem;
+  border-radius: 999px; font-size: 0.68rem; font-weight: 800; }
+.sms-fire-badge.is-auto { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--mint-dark); }
+.sms-fire-badge.is-manual { background: color-mix(in srgb, var(--sky) 20%, var(--card)); color: var(--sky-dark); }
+.sms-help-row { display: flex; gap: 0.45rem; align-items: center; flex-wrap: wrap;
+  margin: 0.9rem 0 0.45rem; font-size: 0.82rem; color: var(--ink-soft); }
+.sms-help-row:first-of-type { margin-top: 0.4rem; }
+.sms-fire-card .sms-fireline { margin: 0 0 0.6rem; font-size: 0.84rem; }
 
 /* Editor: the form on one side, the phone preview on the other. */
 .sms-editor-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.9fr); gap: 1.2rem; align-items: start; }
@@ -2253,6 +2280,12 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
 .sms-counter { display: block; margin-top: 0.35rem; color: var(--ink-soft); font-size: 0.76rem; }
 .sms-counter.is-over { color: var(--persimmon); font-weight: 700; }
 .sms-variable-editor { margin-top: 0.6rem; border-top: 1px dashed var(--rule); padding-top: 0.6rem; }
+
+/* One editable slot: what it reads, what it is called, what the preview shows. */
+.sms-slot { display: grid; gap: 0.35rem; padding: 0.5rem 0; border-bottom: 1px dashed var(--rule); }
+.sms-slot:last-child { border-bottom: 0; }
+.sms-slot .form-row { margin: 0; }
+.sms-slot-source { width: 100%; }
 
 /* The preview bubble: a plain phone bubble, no theme colour of its own. */
 .sms-preview-card .sms-phone {
@@ -2323,6 +2356,10 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
 .sms-recipients ul { list-style: none; margin: 0.5rem 0 0; padding: 0; display: grid; gap: 0.3rem; max-height: 14rem; overflow-y: auto; }
 .sms-recipients li { display: flex; justify-content: space-between; gap: 0.6rem; }
 .sms-recipients li small { color: var(--ink-soft); }
+
+/* Birthdays review: a row already wished this year is visible but untickable. */
+.birthdays-table tr.is-done { opacity: 0.55; }
+.birthdays-table tr.is-done .sms-name a { text-decoration: line-through; }
 
 /* History. */
 .sms-filter-form .form-group { margin-bottom: 0; flex: 1 1 160px; min-width: 150px; }

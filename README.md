@@ -160,18 +160,39 @@ theme, so it matches light, dark and high-contrast alike.
 ## SMS (پیامک)
 
 - **📱 پیامک** (`/admin/sms`) — every message the shop can send, in one place.
-  Each template states whether it is on, how many messages it has sent, and
-  which event fires it (a new signup, a birthday, a tier upgrade, a campaign
-  send, a نسیه reminder or nothing at all — a custom text you send by hand).
-  The gateway key, device and blast ceiling live here too, and stay owner-only.
+  Each template states whether it is on, its **total** count, how many failed and
+  the date it **last went out**, and a template that has never sent anything is
+  flagged «هنوز ارسال نشده» so a forgotten one is visible at a glance. Each row
+  also says which event fires it — a new signup, a birthday, a tier upgrade, a
+  campaign send, a نسیه reminder, a trigger you gave it yourself, or nothing at
+  all (a text you always send by hand). The gateway key, device and blast
+  ceiling live here too, and stay owner-only.
 - **Editing is safe.** Each placeholder is a chip you click to insert; the
   preview beside it redraws as you type and re-measures the message in
   characters and segments, and «ارسال آزمایشی» queues one real message to your
   own number so you see exactly what the customer will. Switching a built-in
   off stops its automatic send **everywhere** — the counter, the profile and the
   senders all read the same switch — without deleting its text.
-- **Custom templates.** Write your own message and name its placeholders, or
-  duplicate an existing template and edit the copy.
+- **Custom templates.** Write your own message and name its placeholders — each
+  slot picks the customer field it is filled from (نام، نام خانوادگی، شماره،
+  سطح، امتیاز، مجموع خرید، بدهی نسیه، کد معرف، نام فرزند) or is deliberately left
+  blank, and only its **name** matters, never where it sits in the sentence. The
+  preview shows a value only where one will really arrive, so an unfilled slot is
+  visibly blank rather than flattered by a sample. You can also duplicate an
+  existing template and edit the copy.
+- **Texts that send themselves.** A custom template can be given a trigger:
+  **پس از هر خرید** (a thank-you for that customer's own order, the moment the
+  sale is confirmed) or **پیگیری پس از چند روز** (a sweep over customers whose
+  last purchase is further back than the wait you choose). Both are guarded —
+  consent, the archive flag and the «بلاک» tag apply, each purchase is only ever
+  asked about once, a template whose text uses a slot nothing fills is refused,
+  and the sweep stops at «سقف ارسال خودکار در هر بررسی» and picks up the rest on
+  the next pass.
+- **🎂 پیامک تولد** (`/admin/birthdays`) — the customers whose birthday falls in
+  the next N days, with whose birthday it is, how soon, and who already received
+  this year's wish. You tick who to wish and confirm; nothing is queued before
+  that, a stale form cannot reach someone whose window has passed, and nobody is
+  wished twice in the same year.
 - **📤 ارسال پیامک** (`/admin/sms/send`) — a manual blast with an honest
   audience: everyone who consented, one tier, one tag, a hand-picked list with
   its own search, or numbers pasted in. The count is shown before anything is

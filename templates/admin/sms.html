@@ -9,7 +9,8 @@
         <p>
             هر پیامکی که این فروشگاه می‌فرستد یک قالب دارد. متن هر قالب را همین‌جا می‌نویسید،
             متغیرها را می‌بینید و پیش‌نمایش می‌گیرید — و هر پیامکی که فرستاده شود در
-            <strong>تاریخچه</strong> ثبت می‌شود.
+            <strong>تاریخچه</strong> ثبت می‌شود. زیر نام هر قالب نوشته شده که
+            <strong>خودکار</strong> فرستاده می‌شود یا <strong>دستی</strong>، و اگر دستی است از کدام صفحه.
         </p>
     </div>
     <div class="admin-nav">
@@ -115,6 +116,16 @@
                            value="{{ config.get('campaign_sms_limit', '100') }}">
                     <small>هر پیامک هزینه دارد؛ ارسال گروهی به همین تعداد محدود می‌شود.</small>
                 </div>
+                <div class="form-group">
+                    <label for="trigger_sms_limit">سقف ارسال خودکار در هر بررسی</label>
+                    <input type="number" id="trigger_sms_limit" name="trigger_sms_limit" min="1"
+                           value="{{ config.get('trigger_sms_limit', '50') }}">
+                    <small>
+                        قالب‌هایی که برایشان «پیگیری» انتخاب کرده‌اید هر چند دقیقه یک‌بار بررسی
+                        می‌شوند؛ در هر بررسی حداکثر همین تعداد پیامک فرستاده می‌شود تا هزینه یک‌جا
+                        بالا نرود. بقیه در نوبت بعد می‌روند — هیچ‌کس جا نمی‌ماند.
+                    </small>
+                </div>
                 <div class="form-actions">
                     <button type="submit" class="btn btn-sm btn-primary">ذخیره سقف</button>
                 </div>
@@ -140,7 +151,7 @@
         <table class="sms-table">
             <thead>
                 <tr>
-                    <th scope="col">قالب و متن</th>
+                    <th scope="col">قالب، متن و نحوه ارسال</th>
                     <th scope="col">وضعیت</th>
                     <th scope="col">عملیات</th>
                 </tr>
@@ -148,12 +159,29 @@
             <tbody>
                 {% for template in group.templates %}
                 {% set card = cards.get(template.id) %}
+                {% set info = send_info(template) %}
                 <tr>
                     <td class="sms-name">
-                        <strong><a href="/admin/sms/templates/{{ template.id }}/edit">{{ template.name }}</a></strong>
-                        <small class="sms-meta">
-                            {% if template.is_builtin %}خودکار · {% endif %}
-                            ارسال‌شده: {{ card.sent }}{% if card.failed %} · {{ card.failed }} ناموفق{% endif %}
+                        <strong>
+                            <a href="/admin/sms/templates/{{ template.id }}/edit">{{ template.name }}</a>
+                            {% if not card.total %}<span class="sms-unused-badge">هنوز ارسال نشده</span>{% endif %}
+                        </strong>
+                        <span class="sms-fireline is-{{ info.mode }}">
+                            <span class="sms-fire-badge is-{{ info.mode }}">{{ info.label }}</span>
+                            <span>{{ info.text }}</span>
+                            {% if info.url %}
+                            <a href="{{ info.url }}">{{ info.action }} ←</a>
+                            {% endif %}
+                        </span>
+                        <small class="sms-meta tnum sms-usage"
+                               {% if card.last_sent_at %}title="آخرین ارسال: {{ jalali_str(card.last_sent_at) }}"{% endif %}>
+                            {% if not card.total %}
+                                هنوز پیامکی از این قالب فرستاده نشده
+                            {% elif card.last_sent_at %}
+                                {{ card.total }} پیامک{% if card.failed %} · {{ card.failed }} ناموفق{% endif %} · آخرین ارسال {{ jalali_str(card.last_sent_at, false) }}
+                            {% else %}
+                                {{ card.total }} پیامک{% if card.failed %} · {{ card.failed }} ناموفق{% endif %} · هنوز فرستاده نشده (آخرین تلاش {{ jalali_str(card.last_activity_at, false) }})
+                            {% endif %}
                         </small>
                         {% if template.body %}
                         <span class="sms-body" dir="auto">{{ template.body|truncate(90, true) }}</span>
@@ -207,18 +235,39 @@
 {% endif %}
 
 <section class="card sms-help-card">
-    <h3>هر قالب خودکار چه زمانی فرستاده می‌شود؟</h3>
+    <h3>هر قالب چگونه فرستاده می‌شود؟</h3>
+
+    {% if fire.auto %}
+    <p class="sms-help-row">
+        <span class="sms-fire-badge is-auto">خودکار</span>
+        بدون کار شما فرستاده می‌شود
+    </p>
     <ul class="sms-help-list">
-        {% for group in groups %}
-            {% for template in group.templates %}
-            {% if template.is_builtin %}
-            <li>
-                <strong>{{ template.name }}</strong>
-                <span>{{ triggers.get(template.key, '') }}</span>
-            </li>
-            {% endif %}
-            {% endfor %}
+        {% for template in fire.auto %}
+        <li>
+            <strong>{{ template.name }}</strong>
+            <span>{{ send_info(template).text }}</span>
+        </li>
         {% endfor %}
     </ul>
+    {% endif %}
+
+    {% if fire.manual %}
+    <p class="sms-help-row">
+        <span class="sms-fire-badge is-manual">دستی</span>
+        خودتان می‌فرستید — از صفحه‌ای که هر قالب نامش نوشته شده
+    </p>
+    <ul class="sms-help-list">
+        {% for template in fire.manual %}
+        <li>
+            <strong>{{ template.name }}</strong>
+            <span>{{ send_info(template).text }}</span>
+            {% if send_info(template).url %}
+            <a href="{{ send_info(template).url }}">{{ send_info(template).action }} ←</a>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
 </section>
 {% endblock %}

@@ -87,6 +87,67 @@ def test_upgrade_rebuilds_stale_business_events_constraint(tmp_path):
         assert "ck_business_events_aggregate_id" in ddl
 
 
+def test_upgrade_rebuilds_stale_sms_message_source_constraint(tmp_path):
+    """A log table created before the automatic triggers existed must accept them.
+
+    The frozen ``ck_sms_message_source`` listed the senders of the day, so the new
+    «پس از خرید» and «پیگیری» rows were rejected outright — an automatic trigger
+    that silently could not record anything it sent. History has to survive the
+    rebuild, because it is the only account of what customers received.
+    """
+    engine = create_engine(f"sqlite:///{tmp_path / 'stale-sms.db'}")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE schema_version (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)"))
+        conn.execute(text("INSERT INTO schema_version (id, version) VALUES (1, 16)"))
+        conn.execute(text("""
+            CREATE TABLE sms_messages (
+                id INTEGER NOT NULL,
+                template_id INTEGER,
+                template_key VARCHAR(50),
+                template_name VARCHAR(200),
+                customer_id INTEGER,
+                employee_id INTEGER,
+                job_id INTEGER,
+                phone VARCHAR(20) NOT NULL,
+                body TEXT NOT NULL,
+                status VARCHAR(20) NOT NULL,
+                kind VARCHAR(20) NOT NULL,
+                source VARCHAR(30) NOT NULL,
+                error TEXT,
+                created_at DATETIME NOT NULL,
+                sent_at DATETIME,
+                PRIMARY KEY (id),
+                CONSTRAINT ck_sms_message_status CHECK (status IN ('queued', 'sent', 'failed')),
+                CONSTRAINT ck_sms_message_kind CHECK (kind IN ('marketing', 'transactional')),
+                CONSTRAINT ck_sms_message_source CHECK (source IN
+                    ('manual', 'welcome', 'birthday', 'tier_up', 'campaign', 'credit_reminder', 'test'))
+            )
+        """))
+        conn.execute(text("""
+            INSERT INTO sms_messages (phone, body, status, kind, source, created_at)
+            VALUES ('09120000000', 'خوش آمدی سارا', 'sent', 'marketing', 'welcome', '2026-01-01 00:00:00')
+        """))
+
+    assert upgrade(engine) == MIGRATION_VERSION
+
+    with engine.begin() as conn:
+        conn.execute(text("""
+            INSERT INTO sms_messages (phone, body, status, kind, source, ref, delivery_state,
+                                      attempts, created_at)
+            VALUES ('09120000001', 'ممنون از خریدت', 'queued', 'transactional', 'purchase',
+                    'sale:9', '', 0, '2026-01-02 00:00:00')
+        """))
+    with engine.connect() as conn:
+        rows = conn.execute(text("SELECT source, body FROM sms_messages ORDER BY id")).all()
+        assert rows[0] == ("welcome", "خوش آمدی سارا")     # history survived
+        assert rows[1][0] == "purchase"                     # and the new sender fits
+        ddl = conn.execute(text(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='sms_messages'"
+        )).scalar()
+        assert "ck_sms_message_source" not in ddl
+        assert "ck_sms_message_status" in ddl               # the rest is kept
+
+
 def test_backup_database_creates_copy(tmp_path):
     source = tmp_path / "store.db"
     source.write_bytes(b"database contents")

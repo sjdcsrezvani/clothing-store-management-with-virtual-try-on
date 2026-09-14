@@ -954,6 +954,13 @@ class SmsTemplate(Base):
     variables = Column(Text, nullable=False, default="[]")
     # Where the owner last wrote this text, for the built-ins only.
     setting_key = Column(String(50), nullable=True)
+    # What fires this message *without a click*. Empty means hand-sent, which is
+    # where every template starts: the built-ins already have their own senders
+    # and a custom one has to be opted in on the editor before it leaves alone.
+    # The vocabulary lives in ``services.sms_templates.TRIGGERS``; ``trigger_days``
+    # is the wait the «چند روز است خرید نکرده» trigger uses.
+    trigger_key = Column(String(30), nullable=False, default="")
+    trigger_days = Column(Integer, nullable=False, default=0)
     is_active = Column(Boolean, nullable=False, default=True)
     is_builtin = Column(Boolean, nullable=False, default=False)
     sort_order = Column(Integer, nullable=False, default=100)
@@ -989,6 +996,11 @@ class SmsMessage(Base):
     kind = Column(String(20), nullable=False, default="transactional")
     source = Column(String(30), nullable=False, default="manual", index=True)
     error = Column(Text, nullable=True)
+    # What this message was about, for an automatic send: ``sale:12`` for a
+    # purchase trigger, ``purchase:2026-09-01`` for a follow-up. It is the guard
+    # that keeps a trigger from messaging the same person about the same thing
+    # twice, and it is visible in the history like everything else.
+    ref = Column(String(60), nullable=False, default="", index=True)
     # Gateway journey columns. ``claimed_at`` is when the phone took the
     # message; ``delivery_state`` is the carrier's verdict where it exists.
     # ``attempts`` counts how many times a claim was handed out, so a phone
@@ -1003,8 +1015,12 @@ class SmsMessage(Base):
     __table_args__ = (
         CheckConstraint("status IN ('queued', 'sent', 'failed')", name="ck_sms_message_status"),
         CheckConstraint("kind IN ('marketing', 'transactional')", name="ck_sms_message_kind"),
-        CheckConstraint("source IN ('manual', 'welcome', 'birthday', 'tier_up', 'campaign', 'credit_reminder', 'test')",
-                        name="ck_sms_message_source"),
+        # There is deliberately no CHECK on ``source``. It was frozen into the
+        # table at creation time, so a database created before a new sender
+        # existed *silently rejected* its rows — the same trap revision 15 had to
+        # rebuild ``business_events`` to escape. The vocabulary is
+        # ``services.sms_templates.SOURCE_LABELS`` and every writer goes through
+        # ``log_message``, which refuses a source it does not recognise.
         CheckConstraint("delivery_state IN ('', 'claimed', 'delivered', 'undelivered')",
                         name="ck_sms_message_delivery_state"),
     )

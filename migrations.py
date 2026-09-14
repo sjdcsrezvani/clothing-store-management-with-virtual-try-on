@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 16
+MIGRATION_VERSION = 17
 
 
 def migration_status(engine) -> int:
@@ -151,7 +151,99 @@ def _rebuild_business_events(conn) -> None:
     _create_business_event_indexes(conn)
 
 
+def _rebuild_sms_messages(conn) -> None:
+    """Rebuild ``sms_messages`` without the frozen CHECK on ``source``.
+
+    A database created before the automatic triggers existed carries
+    ``ck_sms_message_source`` listing the senders of that day, so the new
+    «پس از خرید» and «پیگیری» rows were rejected outright at INSERT — the same
+    trap revision 15 rebuilt ``business_events`` to escape. The column is
+    validated in code instead (``services.sms_templates.log_message``).
+
+    A fresh install has no such constraint and is left alone, and every other
+    column and constraint is carried over untouched.
+    """
+    ddl = conn.execute(text(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='sms_messages'"
+    )).scalar()
+    if not ddl or "ck_sms_message_source" not in ddl:
+        return
+    # The additive pass may not have run yet, so make sure every column this
+    # rebuild copies actually exists before it copies it.
+    for column_name, column_type in (
+        ("delivery_state", "VARCHAR(20) DEFAULT ''"),
+        ("claimed_at", "DATETIME"),
+        ("sent_by_device_id", "INTEGER"),
+        ("attempts", "INTEGER DEFAULT 0"),
+        ("ref", "VARCHAR(60) DEFAULT ''"),
+    ):
+        _add_column_if_missing(conn, "sms_messages", column_name, column_type)
+    conn.execute(text("""
+        CREATE TABLE sms_messages_v17 (
+            id INTEGER NOT NULL,
+            template_id INTEGER,
+            template_key VARCHAR(50),
+            template_name VARCHAR(200),
+            customer_id INTEGER,
+            employee_id INTEGER,
+            job_id INTEGER,
+            phone VARCHAR(20) NOT NULL,
+            body TEXT NOT NULL,
+            status VARCHAR(20) NOT NULL,
+            kind VARCHAR(20) NOT NULL,
+            source VARCHAR(30) NOT NULL,
+            error TEXT,
+            ref VARCHAR(60) NOT NULL DEFAULT '',
+            delivery_state VARCHAR(20) NOT NULL DEFAULT '',
+            claimed_at DATETIME,
+            sent_by_device_id INTEGER,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL,
+            sent_at DATETIME,
+            PRIMARY KEY (id),
+            CONSTRAINT ck_sms_message_status CHECK (status IN ('queued', 'sent', 'failed')),
+            CONSTRAINT ck_sms_message_kind CHECK (kind IN ('marketing', 'transactional')),
+            CONSTRAINT ck_sms_message_delivery_state
+                CHECK (delivery_state IN ('', 'claimed', 'delivered', 'undelivered')),
+            FOREIGN KEY(template_id) REFERENCES sms_templates (id),
+            FOREIGN KEY(customer_id) REFERENCES customers (id),
+            FOREIGN KEY(employee_id) REFERENCES staff_users (id),
+            FOREIGN KEY(job_id) REFERENCES background_jobs (id),
+            FOREIGN KEY(sent_by_device_id) REFERENCES sms_devices (id)
+        )
+    """))
+    conn.execute(text("""
+        INSERT INTO sms_messages_v17 (
+            id, template_id, template_key, template_name, customer_id, employee_id,
+            job_id, phone, body, status, kind, source, error, ref, delivery_state,
+            claimed_at, sent_by_device_id, attempts, created_at, sent_at
+        )
+        SELECT
+            id, template_id, template_key, template_name, customer_id, employee_id,
+            job_id, phone, body, status, kind, source, error, ref, delivery_state,
+            claimed_at, sent_by_device_id, attempts, created_at, sent_at
+        FROM sms_messages
+    """))
+    conn.execute(text("DROP TABLE sms_messages"))
+    conn.execute(text("ALTER TABLE sms_messages_v17 RENAME TO sms_messages"))
+    for index_name, column_name in (
+        ("ix_sms_messages_customer_id", "customer_id"),
+        ("ix_sms_messages_job_id", "job_id"),
+        ("ix_sms_messages_status", "status"),
+        ("ix_sms_messages_source", "source"),
+        ("ix_sms_messages_ref", "ref"),
+        ("ix_sms_messages_created_at", "created_at"),
+    ):
+        conn.execute(text(f"CREATE INDEX IF NOT EXISTS {index_name} ON sms_messages ({column_name})"))
+
+
 def _apply_revision(conn, version: int) -> None:
+    if version == 17:
+        _rebuild_sms_messages(conn)
+        _add_column_if_missing(conn, "sms_templates", "trigger_key", "VARCHAR(30) DEFAULT ''")
+        _add_column_if_missing(conn, "sms_templates", "trigger_days", "INTEGER DEFAULT 0")
+        return
+
     if version == 16:
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS tag_templates (
