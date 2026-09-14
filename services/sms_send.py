@@ -336,6 +336,20 @@ def message_overview(db: Session) -> dict:
 HISTORY_ORDERS = {"newest": "جدیدترین", "oldest": "قدیمی‌ترین"}
 
 
+def journey_label(message: SmsMessage) -> str:
+    """The gateway leg beyond the three queue states, in the owner's words.
+
+    «در صف» → the phone has not claimed it; «دست گوشی» → claimed, not yet
+    reported; «تحویل شد» → the carrier confirmed it; «نرسید» → the carrier
+    refused. Empty for everything the queue already says plainly.
+    """
+    if message.status == "queued":
+        return "دست گوشی" if message.delivery_state == "claimed" else ""
+    if message.status == "sent":
+        return {"delivered": "تحویل شد", "undelivered": "نرسید"}.get(message.delivery_state, "")
+    return ""
+
+
 def message_filtered(
     db: Session,
     *,
@@ -387,6 +401,7 @@ def message_filtered(
             "message": row,
             "customer": names.get(row.customer_id),
             "status_label": STATUS_LABELS.get(row.status, row.status),
+            "journey_label": journey_label(row),
             "source_label": SOURCE_LABELS.get(row.source, row.source),
             "segments": sms_metrics(row.body or "")["segments"],
         } for row in rows],

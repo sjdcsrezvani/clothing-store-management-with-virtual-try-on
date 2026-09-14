@@ -893,6 +893,39 @@ class CampaignAssignment(Base):
 
 SMS_CATEGORIES = ("welcome", "birthday", "tier_up", "campaign", "credit_reminder", "custom")
 SMS_MESSAGE_STATUSES = ("queued", "sent", "failed")
+
+# The journey of one message through the on-premise gateway: the store queues
+# it, the phone claims it, the phone reports the send, and (where the carrier
+# confirms it) the delivery note arrives last. None of these replace ``status``
+# — they ride on it, so the existing three-state log keeps its meaning.
+SMS_DELIVERY_STATES = ("", "claimed", "delivered", "undelivered")
+
+
+class SmsDevice(Base):
+    """The one phone that sends the shop's messages.
+
+    The APK polls :8101 with the key below, claims waiting messages, reports the
+    send, and later the delivery. ``api_key`` is stored **hashed** — the raw
+    value is shown exactly once, in the pairing QR on the پیامک page, and the
+    phone keeps its own copy in its SharedPreferences.
+    """
+    __tablename__ = "sms_devices"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(120), nullable=False, default="گوشی فروشگاه")
+    phone = Column(String(20), nullable=True)
+    api_key_hash = Column(String(255), nullable=False, default="")
+    status = Column(String(20), nullable=False, default="never_connected")
+    battery_level = Column(Integer, nullable=True)
+    signal_strength = Column(Integer, nullable=True)
+    app_version = Column(String(40), nullable=True)
+    last_seen_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("status IN ('online', 'offline', 'never_connected')",
+                        name="ck_sms_device_status"),
+    )
 SMS_MESSAGE_KINDS = ("marketing", "transactional")
 SMS_MESSAGE_SOURCES = ("manual", "welcome", "birthday", "tier_up", "campaign",
                        "credit_reminder", "test")
@@ -956,6 +989,14 @@ class SmsMessage(Base):
     kind = Column(String(20), nullable=False, default="transactional")
     source = Column(String(30), nullable=False, default="manual", index=True)
     error = Column(Text, nullable=True)
+    # Gateway journey columns. ``claimed_at`` is when the phone took the
+    # message; ``delivery_state`` is the carrier's verdict where it exists.
+    # ``attempts`` counts how many times a claim was handed out, so a phone
+    # that died mid-send cannot wedge a message forever.
+    delivery_state = Column(String(20), nullable=False, default="")
+    claimed_at = Column(DateTime, nullable=True)
+    sent_by_device_id = Column(Integer, ForeignKey("sms_devices.id"), nullable=True)
+    attempts = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
     sent_at = Column(DateTime, nullable=True)
 
@@ -964,10 +1005,13 @@ class SmsMessage(Base):
         CheckConstraint("kind IN ('marketing', 'transactional')", name="ck_sms_message_kind"),
         CheckConstraint("source IN ('manual', 'welcome', 'birthday', 'tier_up', 'campaign', 'credit_reminder', 'test')",
                         name="ck_sms_message_source"),
+        CheckConstraint("delivery_state IN ('', 'claimed', 'delivered', 'undelivered')",
+                        name="ck_sms_message_delivery_state"),
     )
 
     template = relationship("SmsTemplate")
     customer = relationship("Customer")
+    device = relationship("SmsDevice")
 
 
 # ── Checkout concurrency: server-owned drafts, reservations, state history ────

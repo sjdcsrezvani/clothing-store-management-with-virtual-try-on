@@ -61,6 +61,13 @@ async def scheduler_task():
                 db.commit()
                 expire_stale(db)
                 reclaim_stale(db)
+                # Gateway self-healing: a claim whose phone died mid-send goes
+                # back to the queue, so the next poll hands it out again.
+                from services.sms_gateway import release_stale_claims
+                released = release_stale_claims(db)
+                if released:
+                    logger.info("Released %s stale SMS claims", released)
+                db.commit()
                 for _ in range(10):
                     job = claim_next(db)
                     if not job:
@@ -73,7 +80,9 @@ async def scheduler_task():
             finally:
                 db.close()
 
-            # Sleep for 5 minutes before checking again
+            # The scheduler batch no longer gates SMS: the phone polls the log
+            # directly every 15s. Five minutes here is for backups, downgrades,
+            # try-on jobs and stale-check upkeep only.
             await asyncio.sleep(300)
 
         except Exception as e:

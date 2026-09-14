@@ -4,11 +4,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SMS_GATEWAY_URL = os.getenv("SMS_GATEWAY_URL", "http://185.214.101.206")
-# No usable API-key fallback belongs in source. Configure this in .env or
-# the Settings table; an empty value safely disables SMS until configured.
+# Legacy VPS gateway coordinates, kept only so old .env files do not crash the
+# import; nothing reads them any more — the store app IS the gateway now.
+SMS_GATEWAY_URL = os.getenv("SMS_GATEWAY_URL", "")
 SMS_API_KEY = os.getenv("SMS_API_KEY", "")
-SMS_DEVICE_ID = os.getenv("SMS_DEVICE_ID", "2")  # saj1093
+SMS_DEVICE_ID = os.getenv("SMS_DEVICE_ID", "")
 # First-run admin password (seeded into the settings table as a hash on
 # startup). If unset, admin login is disabled — never fall back to a
 # publicly-known default.

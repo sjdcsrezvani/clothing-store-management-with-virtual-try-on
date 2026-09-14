@@ -181,15 +181,32 @@ theme, so it matches light, dark and high-contrast alike.
   consent; the blast stops at the store's ceiling and says how many were left.
 - **🧾 تاریخچه پیامک** (`/admin/sms/history`) — every message the shop has ever
   sent, automatic or manual, with recipient, template, source, text and the
-  queue's verdict (در صف / ارسال‌شده / ناموفق), filterable and paginated. The
-  text is frozen when the message is queued, so editing a template later never
-  rewrites what a customer actually received.
+  queue's verdict (در صف / ارسال‌شده / ناموفق) plus the gateway journey where
+  known: «دست گوشی» once the phone claims it, «تحویل شد» / «نرسید» from the
+  carrier's own report. The text is frozen when the message is queued, so
+  editing a template later never rewrites what a customer actually received.
+
+### The SMS gateway (درگاه پیامک)
+
+- The shop **is** the gateway. The Android app (`free-sms-gateway`) polls the
+  store app directly — same paths and headers it has always used — so there is
+  no VPS to rent and no middleman to reach over the internet. The phone only
+  needs to share the shop's Wi-Fi (or a forwarded port); the desktop launcher
+  serves the device endpoints on **port 8101**, separate from the admin UI, so
+  only the gateway is ever exposed to the network.
+- **Pairing is one QR.** «جفت‌کردن گوشی» on the پیامک page issues a key shown
+  exactly once as a QR; the phone's app scans it and stores the address and
+  key. Re-pairing rotates the key, «قطع اتصال» removes the phone, and queued
+  messages wait — an offline phone never loses a message, it just sends later.
+  A claim whose phone died is released back to the queue after five minutes,
+  so nothing wedges when a handset is switched off mid-send.
 
 ## Requirements
 
 - Python 3.11+ (tested on 3.12)
 - A barcode scanner that acts as a keyboard (any USB scanner works)
-- Optional: an SMS gateway device + API key, and a try-on API key
+- Optional: an Android phone with the free-sms-gateway app for SMS (pairs by
+  QR over the local network), and a try-on API key
 
 ## Install
 
@@ -289,7 +306,7 @@ values editable in the admin panel). See `.env.example` for every variable.
 | `ADMIN_PASSWORD` | First-run admin password (seeded as a hash; changeable in Settings) |
 | `SESSION_SECRET` | Signs login sessions; set once, keep it secret |
 | `API_TOKEN` | Unlocks `/api/*` for the phone app (photo upload / try-on) |
-| `SMS_GATEWAY_URL` / `SMS_API_KEY` / `SMS_DEVICE_ID` | Self-hosted SMS gateway |
+| `RAYKID_GATEWAY_PORT` | Port for the SMS device gateway (default 8101) |
 | `TRYON_API_URL` / `TRYON_API_KEY` | Virtual try-on image API |
 
 > **Never commit `.env`** — it contains secrets. It is already in `.gitignore`.

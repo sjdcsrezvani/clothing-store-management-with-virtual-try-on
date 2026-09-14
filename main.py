@@ -9,6 +9,7 @@ from config import SESSION_SECRET
 from database import engine, Base, SessionLocal
 from routers import customers, api, admin, products, sales, analytics, campaigns, accounting, sms
 from routers.clothes_images import admin_router as clothes_admin_router, api_router as clothes_api_router
+from routers.sms_device import gateway_app as _sms_gateway_app  # noqa: F401  (supervised on :8101 by desktop_entry)
 from services.security import CSRFMiddleware
 from services.store import get_store
 from services.scheduler import scheduler_task
@@ -302,6 +303,14 @@ def _apply_missing_columns(migration_engine=None):
             ("campaign_code", "VARCHAR(50)"),
             ("campaign_id", "INTEGER"),
         ],
+        "sms_messages": [
+            # The gateway journey. ``delivery_state`` starts as '' (nothing
+            # known beyond the queue) so existing rows keep their meaning.
+            ("delivery_state", "VARCHAR(20) DEFAULT ''"),
+            ("claimed_at", "DATETIME"),
+            ("sent_by_device_id", "INTEGER"),
+            ("attempts", "INTEGER DEFAULT 0"),
+        ],
     }
     with migration_engine.begin() as conn:
         for table, cols in table_to_cols.items():
@@ -375,3 +384,8 @@ app.include_router(accounting.router)
 app.include_router(sms.router)
 app.include_router(clothes_admin_router)
 app.include_router(clothes_api_router)
+
+# The device gateway is *also* mounted here so tests and the browser preview can
+# exercise it through one server; in production desktop_entry additionally runs
+# it as a real second listener on :8101, which is the port the phone pairs to.
+app.mount("/gateway", _sms_gateway_app)

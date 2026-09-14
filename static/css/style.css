@@ -2185,6 +2185,32 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
 .sms-gateway-card .form-group { flex: 1 1 190px; min-width: 170px; }
 .sms-gateway-card .form-actions { margin-top: 0.5rem; }
 
+/* The درگاه card: pairing QR on one side, the queue's numbers and the ceiling
+   on the other. The QR is a real <img> from a data URI — no canvas, no JS. */
+.sms-gateway-grid { display: grid; grid-template-columns: minmax(200px, 0.9fr) minmax(0, 1.4fr); gap: 1.2rem; align-items: start; }
+.sms-gateway-grid > * { min-width: 0; }
+.sms-gateway-pairing { display: grid; gap: 0.6rem; justify-items: center; text-align: center; }
+.sms-qr {
+  display: block; width: 180px; height: 180px;
+  padding: 0.45rem; background: var(--card);
+  border: 1px solid var(--rule); border-radius: var(--radius);
+}
+.sms-pairing-help { max-width: 24rem; font-size: 0.78rem; }
+.sms-gateway-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
+.sms-gateway-status { display: grid; gap: 0.8rem; }
+.sms-gateway-facts {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 0.5rem; margin: 0;
+}
+.sms-gateway-facts > div {
+  border: 1px solid var(--rule); border-radius: var(--radius-sm);
+  background: var(--surface-soft); padding: 0.55rem 0.7rem;
+}
+.sms-gateway-facts dt { font-size: 0.72rem; color: var(--ink-soft); }
+.sms-gateway-facts dd { margin: 0.15rem 0 0; font-size: 1.15rem; font-weight: 800; }
+.sms-journey { display: block; color: var(--ink-soft); font-size: 0.72rem; }
+.sms-gateway-note { font-size: 0.78rem; color: var(--ink-soft); }
+
 /* Both SMS tables fit any width: the text, its metrics and the source live
    under the name, so the state and the actions are never scrolled out of view. */
 .sms-table { min-width: 0; }
@@ -2311,6 +2337,7 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
 
 @media (max-width: 900px) {
   .sms-editor-layout, .sms-send-layout { grid-template-columns: 1fr; }
+  .sms-gateway-grid { grid-template-columns: 1fr; }
   /* The app-wide mobile rule turns every table into a horizontal scroller. These
      two carry their detail inside a single cell, so they wrap instead and
      nothing important ever needs a swipe to be read. */

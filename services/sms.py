@@ -1,9 +1,10 @@
-import httpx
 import logging
+from datetime import datetime, timedelta, timezone
+
 from sqlalchemy.orm import Session
-from models import Settings
+
+from models import Settings, SmsMessage
 from services._common import BIRTHDAY_SMS_NAMES
-from services.jobs import enqueue
 from services.sms_templates import (
     active_pattern,
     customer_for_phone,
@@ -11,7 +12,6 @@ from services.sms_templates import (
     log_message,
     render_text,
 )
-from config import SMS_GATEWAY_URL, SMS_API_KEY, SMS_DEVICE_ID
 
 logger = logging.getLogger(__name__)
 
@@ -36,10 +36,12 @@ PATTERN_KEYS = {
 
 
 def get_sms_config(db: Session) -> dict:
-    """Get all SMS configuration from database."""
+    """The pattern keys every sender reads. The gateway itself no longer needs
+    credentials — it *is* this app — but the keys stay so the settings mirror
+    and any shop fallback keep their meaning."""
     config = {
-        "api_key": get_sms_setting(db, "sms_api_key") or SMS_API_KEY,
-        "device_id": get_sms_setting(db, "sms_device_id") or SMS_DEVICE_ID,
+        "api_key": get_sms_setting(db, "sms_api_key"),
+        "device_id": get_sms_setting(db, "sms_device_id"),
     }
     for field, key in PATTERN_KEYS.items():
         config[field] = active_pattern(db, key)
@@ -52,34 +54,19 @@ def _render(template: str, attributes: dict) -> str:
 
 
 async def send_sms(message: str, recipient: str, db: Session) -> bool:
-    """Send a plain-text SMS through the self-hosted gateway."""
-    config = get_sms_config(db)
+    """Hand one message to the on-premise gateway queue.
 
-    if not config["api_key"] or not config["device_id"]:
-        logger.warning("SMS skipped because gateway configuration is incomplete")
+    The old version posted to a VPS that answered 400 when the phone was
+    offline — after five retries a birthday wish queued overnight was *lost*.
+    There is no middleman now: the row is already in the gateway's queue (they
+    are the same table), the phone's 15-second poll is the only latency, and a
+    phone that is not here yet simply picks the message up later. So this
+    always reports success — the *gateway* keeps the verdict honest, from the
+    phone's own report, in ``report_result``.
+    """
+    if not message.strip() or not recipient:
         return False
-
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                f"{SMS_GATEWAY_URL}/api/v1/sms/send",
-                headers={"X-API-Key": config["api_key"]},
-                json={
-                    "device_id": int(config["device_id"]),
-                    "to_number": recipient,
-                    "message": message,
-                },
-                timeout=10,
-            )
-            if resp.status_code == 200:
-                logger.info("SMS sent")
-                return True
-            else:
-                logger.error("SMS failed with status %s", resp.status_code)
-                return False
-    except Exception as e:
-        logger.error(f"SMS error: {e}")
-        return False
+    return True
 
 
 async def send_pattern_sms(pattern: str, recipient: str, attributes: dict, db: Session, *,
@@ -96,18 +83,11 @@ async def send_pattern_sms(pattern: str, recipient: str, attributes: dict, db: S
         template = get_template(db, template_key) if template_key else None
         if customer is None:
             customer = customer_for_phone(db, recipient)
-        row = log_message(db, phone=recipient, body=message, template=template,
-                          customer=customer, source=source)
-        ok = await send_sms(message, recipient, db)
-        row.status = "sent" if ok else "failed"
-        if ok:
-            from datetime import datetime, timezone
-            row.sent_at = datetime.now(timezone.utc)
-        else:
-            row.error = "درگاه پیامک پاسخ نداد"
-        db.commit()
-        return ok
-    return await send_sms(message, recipient, db)
+        # Direct sends go straight into the queue too — same table, same phone,
+        # same honest verdict from the device report instead of a guessed one.
+        return await queue_sms("", recipient, {}, db, template=template,
+                               source=source, customer=customer, body=message)
+    return None
 
 
 # ========== queueing ==========
@@ -133,14 +113,11 @@ async def queue_sms(pattern: str, recipient: str, attributes: dict, db: Session,
     row = log_message(db, phone=recipient, body=rendered, template=template,
                       customer=customer, source=source, kind=kind,
                       employee_id=employee_id)
-    job = enqueue(db, "sms", {
-        "message": rendered,
-        "recipient": recipient,
-        "message_id": row.id,
-    })
-    row.job_id = job.id
+    # No BackgroundJob: the scheduler batch used to add up to five minutes in
+    # front of every message, and the gateway claim is atomic on its own. The
+    # log row *is* the queue item now; ``job_id`` stays for old rows.
     db.commit()
-    return job
+    return row
 
 
 async def queue_welcome_sms(phone: str, first_name: str, referral_code: str, db: Session,
@@ -298,21 +275,12 @@ async def send_campaign_sms(phone: str, first_name: str, campaign_name: str, cam
     )
 
 
-async def get_balance(db: Session) -> str | None:
-    """Get SMS device status."""
-    config = get_sms_config(db)
-    if not config["api_key"]:
+def device_status_label(db: Session) -> str | None:
+    """The paired phone's health, read from our own row — no HTTP, no VPS."""
+    from services.sms_gateway import device_health
+
+    device = device_health(db)
+    if device is None:
         return None
-    headers = {"X-API-Key": config["api_key"]}
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(f"{SMS_GATEWAY_URL}/api/v1/admin/devices", headers=headers, timeout=10)
-            if resp.status_code == 200:
-                for device in resp.json():
-                    if str(device.get("id")) == str(config["device_id"]):
-                        status = device.get("status", "نامشخص")
-                        return {"online": "آنلاین", "offline": "آفلاین", "never_connected": "هرگز متصل نشده"}.get(status, status)
-                return "نامشخص"
-    except Exception as e:
-        logger.error(f"Device status check error: {e}")
-    return None
+    labels = {"online": "آنلاین", "offline": "آفلاین", "never_connected": "در انتظار اتصال گوشی"}
+    return labels.get(device.status, device.status)

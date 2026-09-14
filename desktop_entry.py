@@ -187,6 +187,32 @@ def _start_server(port: int, host: str):
     return server, thread
 
 
+def _start_gateway(port: int):
+    """The SMS device gateway on its own listener (:8101).
+
+    The phone polls this port every 15 seconds, so it lives apart from the
+    admin UI on purpose: the firewall rule and any port-forward expose only the
+    device endpoints, never a single admin page, and a slow device request can
+    never queue behind a sale. Same process, same database — one truth about
+    what was sent.
+    """
+    import uvicorn
+    from routers.sms_device import gateway_app
+    config = uvicorn.Config(app=gateway_app, host="0.0.0.0", port=port,
+                            log_level="warning", reload=False, workers=1)
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    deadline = time.time() + 10
+    while not server.started and time.time() < deadline:
+        time.sleep(0.05)
+    if not server.started:
+        print(f"SMS gateway could not bind port {port} — پیامک‌ها تا رفع آن در صف می‌مانند.")
+        return None, None
+    print(f"SMS gateway: http://{_lan_ip()}:{port}  (گوشی به این آدرس وصل می‌شود)")
+    return server, thread
+
+
 def _open_browser_fallback(url: str) -> None:
     webbrowser.open(url)
     print(f"Server running at {url}")
@@ -212,6 +238,9 @@ def main() -> None:
             f"Port {port} is unavailable. Change DESKTOP_PORT in deployment.py "
             "or set RAYKID_DESKTOP_PORT before starting the app."
         ) from exc
+
+    gateway_port = int(os.environ.get("RAYKID_GATEWAY_PORT", "8101"))
+    gateway_server, gateway_thread = _start_gateway(gateway_port)
 
     try:
         import webview
@@ -244,10 +273,16 @@ def main() -> None:
         webview.start(func=lambda: None)
         server.should_exit = True
         thread.join(timeout=5)
+        if gateway_server is not None:
+            gateway_server.should_exit = True
+            gateway_thread.join(timeout=5)
     except ImportError:
         _open_browser_fallback(url)
         server.should_exit = True
         thread.join(timeout=5)
+        if gateway_server is not None:
+            gateway_server.should_exit = True
+            gateway_thread.join(timeout=5)
 
 
 if __name__ == "__main__":

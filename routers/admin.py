@@ -14,7 +14,7 @@ from models import (
 from config import ADMIN_PASSWORD, API_TOKEN
 from deployment import OWNER_MODE
 from services.sms import (
-    get_balance,
+    device_status_label,
     send_tier_up_gold_sms,
     send_tier_up_diamond_sms,
 )
@@ -242,7 +242,7 @@ async def admin_dashboard(request: Request, db: Session = Depends(get_db)):
     total_customers = db.query(Customer).count()
     total_referrals = db.query(Referral).count()
     customers_with_discount = db.query(Customer).filter(Customer.referrer_discount > 0).count()
-    sms_balance = await get_balance(db)
+    sms_balance = device_status_label(db)
     
     # Count by tier
     silver_count = db.query(Customer).filter(Customer.tier == "silver").count()

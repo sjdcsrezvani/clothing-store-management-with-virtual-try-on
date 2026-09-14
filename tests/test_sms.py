@@ -21,9 +21,10 @@ from models import (
     SmsMessage,
     SmsTemplate,
 )
-from services.jobs import MAX_RETRIES, claim_next, complete, fail, process_one
+from services.jobs import claim_next, complete, process_one
 from services.sms import get_sms_config, queue_sms, queue_welcome_sms
 from services.sms_send import (
+    journey_label,
     message_filtered,
     message_overview,
     normalise_phone,
@@ -281,22 +282,17 @@ def test_queue_renders_once_and_logs_the_message(db_session):
     ensure_seeded(db_session)
     customer = make_customer(db_session)
 
-    job = asyncio.run(queue_sms("سلام %var1%", customer.phone, {"var1": "سارا"}, db_session,
+    row = asyncio.run(queue_sms("سلام %var1%", customer.phone, {"var1": "سارا"}, db_session,
                                 template_key="welcome", source="welcome", customer=customer))
 
-    assert job is not None
-    row = db_session.query(SmsMessage).one()
+    assert row is not None
     assert row.body == "سلام سارا"
     assert row.status == "queued"
     assert row.source == "welcome"
     assert row.kind == "marketing"
     assert row.customer_id == customer.id
-    assert row.job_id == job.id
-    payload = job.payload
-    # The text is frozen at queue time: editing the template later cannot change
-    # what this message says.
-    assert "سلام سارا" in payload
-    assert str(row.id) in payload
+    # The log row *is* the gateway queue item now; no BackgroundJob in front.
+    assert row.job_id is None
 
 
 def test_queue_welcome_is_silent_when_the_template_is_off(db_session):
@@ -308,47 +304,21 @@ def test_queue_welcome_is_silent_when_the_template_is_off(db_session):
     assert db_session.query(SmsMessage).count() == 0
 
 
-def test_worker_marks_the_row_sent(db_session, monkeypatch):
-    set_setting(db_session, "sms_pattern_welcome", "سلام %var1%")
-    ensure_seeded(db_session)
-    customer = make_customer(db_session)
-    asyncio.run(queue_sms("سلام %var1%", customer.phone, {"var1": "سارا"}, db_session,
-                          template_key="welcome", source="welcome", customer=customer))
+def test_worker_passes_legacy_sms_jobs_through(db_session, monkeypatch):
+    """BackgroundJob("sms") rows queued before the gateway existed are no-ops:
+    the message row itself is the queue item, and completing the job keeps it
+    from spinning forever in the scheduler."""
+    from models import BackgroundJob
+    from datetime import datetime, timezone
+    job = BackgroundJob(job_type="sms", payload='{"message": "سلام", "recipient": "09120000000", "message_id": null}',
+                        status="pending", next_retry_at=datetime.now(timezone.utc))
+    db_session.add(job)
+    db_session.commit()
 
-    async def fake_send(message, recipient, db):
-        assert message == "سلام سارا"
-        return True
-
-    monkeypatch.setattr("services.sms.send_sms", fake_send)
-    job = claim_next(db_session, "sms")
-    assert asyncio.run(process_one(db_session, job)) is True
-    complete(db_session, job)
-
-    row = db_session.query(SmsMessage).one()
-    assert row.status == "sent"
-    assert row.sent_at is not None
-
-
-def test_worker_marks_the_row_failed_only_after_the_last_retry(db_session, monkeypatch):
-    ensure_seeded(db_session)
-    customer = make_customer(db_session)
-    asyncio.run(queue_sms("سلام", customer.phone, {}, db_session, source="manual",
-                          customer=customer))
-
-    async def fake_send(message, recipient, db):
-        return False
-
-    monkeypatch.setattr("services.sms.send_sms", fake_send)
-    job = claim_next(db_session, "sms")
-    with pytest.raises(RuntimeError):
-        asyncio.run(process_one(db_session, job))
-    assert db_session.query(SmsMessage).one().status == "queued"
-
-    job.retry_count = MAX_RETRIES - 1
-    fail(db_session, job, RuntimeError("SMS delivery failed"))
-    row = db_session.query(SmsMessage).one()
-    assert row.status == "failed"
-    assert row.error
+    claimed = claim_next(db_session, "sms")
+    assert asyncio.run(process_one(db_session, claimed)) is True
+    complete(db_session, claimed)
+    assert claimed.status == "completed"
 
 
 def test_send_bulk_queues_one_message_per_recipient(db_session):

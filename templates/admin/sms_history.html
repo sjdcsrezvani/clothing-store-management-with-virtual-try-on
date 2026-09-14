@@ -128,6 +128,7 @@
                     </td>
                     <td>
                         <span class="status-badge is-{{ message.status }}">{{ row.status_label }}</span>
+                        {% if row.journey_label %}<small class="sms-journey">{{ row.journey_label }}</small>{% endif %}
                         {% if message.error %}<small class="sms-error" title="{{ message.error }}">{{ message.error|truncate(30, true) }}</small>{% endif %}
                     </td>
                 </tr>

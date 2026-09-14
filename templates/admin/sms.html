@@ -49,47 +49,81 @@
     {{ overview.all_templates }} قالب دارید که {{ overview.active_templates }} موردشان فعال است.
 </p>
 
-<section class="card sms-gateway-card">
+<section class="card sms-gateway-card" id="gateway">
     <div class="section-heading-row">
         <div>
             <h3>درگاه پیامک</h3>
             <p class="muted">
-                کلید و دستگاه همان مقادیر همیشگی تنظیمات هستند؛ فقط جایشان این‌جاست.
-                {% if balance %}وضعیت دستگاه: <strong>{{ balance }}</strong>.{% endif %}
+                {% if device %}
+                وضعیت گوشی: <strong>{{ device_status }}</strong>.
+                {% if device.last_seen_at %}آخرین ارتباط: {{ jalali_str(device.last_seen_at) }}.{% endif %}
+                {% if device.battery_level is not none %} · باتری {{ device.battery_level }}٪{% endif %}
+                {% else %}
+                گوشی هنوز جفت نشده است — با اسکن QR زیر، پیامک‌ها از همان گوشی فروشگاه فرستاده می‌شوند.
+                {% endif %}
             </p>
         </div>
+        <div class="admin-nav">
+            <span class="status-badge is-{{ 'live' if device and device.status == 'online' else 'inactive' }}">
+                {{ device_status if device else 'بدون گوشی' }}
+            </span>
+        </div>
     </div>
-    {% if can_configure %}
-    <form method="post" action="/admin/sms/config" class="sms-gateway-form">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <div class="form-row">
-            <div class="form-group">
-                <label for="sms_api_key">کلید API درگاه</label>
-                <input type="text" id="sms_api_key" name="sms_api_key" dir="ltr"
-                       value="{{ config.get('sms_api_key', '') }}" placeholder="خالی بگذارید تا تغییر نکند">
-                <small>برای تغییر ننویسید و ذخیره کنید؛ فقط وقتی مقدار بگذارید بازنویسی می‌شود.</small>
-            </div>
-            <div class="form-group">
-                <label for="sms_device_id">آیدی دستگاه (device_id)</label>
-                <input type="text" id="sms_device_id" name="sms_device_id" dir="ltr"
-                       value="{{ config.get('sms_device_id', '') }}" placeholder="مثال: ۲">
-            </div>
-            <div class="form-group">
-                <label for="campaign_sms_limit">سقف هر ارسال گروهی</label>
-                <input type="number" id="campaign_sms_limit" name="campaign_sms_limit" min="1"
-                       value="{{ config.get('campaign_sms_limit', '100') }}">
-                <small>هر پیامک هزینه دارد؛ ارسال گروهی به همین تعداد محدود می‌شود.</small>
+
+    <div class="sms-gateway-grid">
+        <div class="sms-gateway-pairing">
+            {% if pairing_key %}
+            <img src="{{ pairing_qr }}" alt="QR جفت‌کردن گوشی" class="sms-qr" width="180" height="180">
+            <p class="muted sms-pairing-help">
+                یک‌بار اسکن کنید: اپ «SMS Gateway» روی گوشی، همین نشانی و کلید را ذخیره می‌کند.
+                کلید فقط همین‌جا دیده می‌شود — بعد از بستن صفحه هرگز.
+                {% if device %}جفت‌کردن دوباره، کلید قبلی را باطل می‌کند.{% endif %}
+            </p>
+            {% else %}
+            <p class="muted">
+                برای وصل‌کردن گوشی، «جفت‌کردن گوشی» را بزنید و QR نمایش‌داده‌شده را با اپ اسکن کنید.
+            </p>
+            {% endif %}
+            <div class="sms-gateway-actions">
+                <form method="post" action="/admin/sms/gateway/pair" class="inline-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="btn btn-primary">{{ 'جفت‌کردن دوباره گوشی' if device else 'جفت‌کردن گوشی' }}</button>
+                </form>
+                {% if device %}
+                <form method="post" action="/admin/sms/gateway/unpair" class="inline-form"
+                      onsubmit="return confirm('جفت‌شدن گوشی برداشته شود؟ پیامک‌های در صف می‌مانند تا گوشی دوباره وصل شود.');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="btn btn-ghost">قطع اتصال گوشی</button>
+                </form>
+                {% endif %}
             </div>
         </div>
-        <div class="form-actions">
-            <button type="submit" class="btn btn-primary">ذخیره تنظیمات درگاه</button>
+
+        <div class="sms-gateway-status">
+            <dl class="sms-gateway-facts">
+                <div><dt>در صف</dt><dd class="tnum">{{ gateway_queue.queued }}</dd></div>
+                <div><dt>دست گوشی</dt><dd class="tnum">{{ gateway_queue.claimed }}</dd></div>
+                <div><dt>تحویل‌شده</dt><dd class="tnum">{{ gateway_queue.delivered }}</dd></div>
+                <div><dt>سقف هر ارسال</dt><dd class="tnum">{{ config.get('campaign_sms_limit', '100') }}</dd></div>
+            </dl>
+            {% if can_configure %}
+            <form method="post" action="/admin/sms/config" class="sms-gateway-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <div class="form-group">
+                    <label for="campaign_sms_limit">سقف هر ارسال گروهی</label>
+                    <input type="number" id="campaign_sms_limit" name="campaign_sms_limit" min="1"
+                           value="{{ config.get('campaign_sms_limit', '100') }}">
+                    <small>هر پیامک هزینه دارد؛ ارسال گروهی به همین تعداد محدود می‌شود.</small>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-sm btn-primary">ذخیره سقف</button>
+                </div>
+            </form>
+            {% else %}
+            <p class="muted">سقف ارسال فقط توسط مالک فروشگاه قابل تغییر است.</p>
+            {% endif %}
         </div>
-    </form>
-    {% else %}
-    <p class="muted">
-        کلید درگاه و سقف ارسال فقط توسط مالک فروشگاه قابل تغییر است. برای تغییر، از حساب مالک وارد شوید.
-    </p>
-    {% endif %}
+    </div>
 </section>
 
 {% for group in groups %}

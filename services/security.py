@@ -216,7 +216,10 @@ def log_action(db, action: str, detail: str = "", request: Request | None = None
 
 # /api/* endpoints are protected by the API token (or admin session), not CSRF,
 # because the phone app is a separate client that can't read our session cookie.
-CSRF_EXEMPT_PREFIXES = ("/api",)
+# /gateway/* is the SMS device listener: it authenticates with the phone's own
+# device key (X-Device-API-Key) and never sees a browser session, so CSRF has
+# nothing to protect there either.
+CSRF_EXEMPT_PREFIXES = ("/api", "/gateway")
 
 
 class CSRFMiddleware:

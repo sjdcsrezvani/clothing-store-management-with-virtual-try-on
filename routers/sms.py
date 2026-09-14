@@ -26,7 +26,14 @@ from database import get_db
 from models import Customer, Settings, SmsTemplate, to_english_digits
 from services._common import fmt, jalali_str
 from services.security import log_action, require_html_role
-from services.sms import get_balance, queue_sms
+from services.sms import device_status_label, queue_sms
+from services.sms_gateway import (
+    GATEWAY_PORT,
+    device_health,
+    pairing_qr_data_uri,
+    queue_snapshot,
+    unpair_device,
+)
 from services.sms_send import (
     HISTORY_ORDERS,
     MODE_LABELS,
@@ -62,6 +69,10 @@ router = APIRouter(prefix="/admin")
 
 GATEWAY_KEYS = ("sms_api_key", "sms_device_id", "campaign_sms_limit")
 
+# A just-issued device key lives only for this long in the request cycle — long
+# enough to render the pairing QR, never persisted anywhere it could be read back.
+_PAIRING_FLASH_LIMIT_SECONDS = 60
+
 
 def _guard(request, db):
     return require_html_role(request, db, "manager")
@@ -75,6 +86,10 @@ def _settings_map(db: Session) -> dict:
     return {row.key: row.value for row in db.query(Settings).filter(
         Settings.key.in_(GATEWAY_KEYS),
     ).all()}
+
+
+def _sms_device(db: Session):
+    return device_health(db)
 
 
 def _save_setting(db: Session, key: str, value: str) -> None:
@@ -104,11 +119,18 @@ async def admin_sms(request: Request, db: Session = Depends(get_db)):
         return guard
 
     groups = grouped_templates(db)
+    device = _sms_device(db)
     return templates.TemplateResponse(request, "admin/sms.html", {
         "groups": groups,
         "overview": message_overview(db),
         "config": _settings_map(db),
-        "balance": await get_balance(db),
+        "balance": device_status_label(db),
+        "device": device,
+        "device_status": device_status_label(db),
+        "gateway_queue": queue_snapshot(db),
+        "pairing_key": None,
+        "pairing_qr": None,
+        "gateway_port": GATEWAY_PORT,
         "can_configure": guard.role == "owner",
         "cards": {template.id: template_card(db, template) for template in _cards_for(groups).values()},
         "triggers": TRIGGER_LABELS,
@@ -122,20 +144,15 @@ async def admin_sms(request: Request, db: Session = Depends(get_db)):
 @router.post("/sms/config", response_class=HTMLResponse)
 async def admin_sms_config(
     request: Request,
-    sms_api_key: str = Form(""),
-    sms_device_id: str = Form(""),
     campaign_sms_limit: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    """The gateway credentials — owner only, like the settings page they left."""
+    """The bulk-send ceiling — owner only. The gateway's key and device id left
+    with the VPS: pairing below issues a fresh key to *this* phone instead."""
     guard = _owner_guard(request, db)
     if not hasattr(guard, "role"):
         return guard
 
-    if sms_api_key.strip():
-        _save_setting(db, "sms_api_key", sms_api_key.strip())
-    if sms_device_id.strip():
-        _save_setting(db, "sms_device_id", sms_device_id.strip())
     limit = campaign_sms_limit.strip()
     if limit:
         try:
@@ -150,6 +167,90 @@ async def admin_sms_config(
     log_action(db, "sms_config", "به‌روزرسانی تنظیمات درگاه پیامک",
                request=request, target_type="settings")
     return RedirectResponse(url="/admin/sms?msg=تنظیمات درگاه پیامک ذخیره شد.", status_code=303)
+
+
+# ── the device gateway (درگاه) ───────────────────────────────────────────────
+
+def _gateway_context(request, db, guard, *, pairing=None, message="", error="") -> dict:
+    """Everything the درگاه card re-renders after a pair/unpair."""
+    device = _sms_device(db)
+    return {
+        "device": device,
+        "device_status": device_status_label(db),
+        "gateway_queue": queue_snapshot(db),
+        "pairing_key": pairing[0] if pairing else None,
+        "pairing_qr": (pairing_qr_data_uri({"base_url": pairing[1], "api_key": pairing[0]})
+                       if pairing else None),
+        "gateway_port": GATEWAY_PORT,
+        "msg": message,
+        "err": error,
+    }
+
+
+@router.post("/sms/gateway/pair", response_class=HTMLResponse)
+async def admin_sms_gateway_pair(request: Request, db: Session = Depends(get_db)):
+    """Issue (or rotate) the phone's key and show its QR exactly once."""
+    guard = _owner_guard(request, db)
+    if not hasattr(guard, "role"):
+        return guard
+
+    from services.sms_gateway import pair_device
+
+    device, raw_key = pair_device(db)
+    db.commit()
+    log_action(db, "sms_gateway_pair", f"درگاه پیامک جفت شد (دستگاه «{device.name}»)",
+               request=request, target_type="sms_device", target_id=device.id)
+
+    groups = grouped_templates(db)
+    context = _gateway_context(request, db, guard,
+                               pairing=(raw_key, _lan_base_url(request)))
+    context.update({
+        "groups": groups,
+        "overview": message_overview(db),
+        "config": _settings_map(db),
+        "balance": device_status_label(db),
+        "can_configure": guard.role == "owner",
+        "cards": {template.id: template_card(db, template) for template in _cards_for(groups).values()},
+        "triggers": TRIGGER_LABELS,
+        "fmt": fmt,
+        "jalali_str": jalali_str,
+    })
+    return templates.TemplateResponse(request, "admin/sms.html", context)
+
+
+@router.post("/sms/gateway/unpair", response_class=HTMLResponse)
+async def admin_sms_gateway_unpair(request: Request, db: Session = Depends(get_db)):
+    guard = _owner_guard(request, db)
+    if not hasattr(guard, "role"):
+        return guard
+
+    unpair_device(db)
+    db.commit()
+    log_action(db, "sms_gateway_unpair", "اتصال گوشی درگاه پیامک قطع شد",
+               request=request, target_type="sms_device")
+    return RedirectResponse(url="/admin/sms?err=اتصال گوشی قطع شد؛ پیامک‌های در صف می‌مانند تا گوشی دوباره جفت شود.",
+                            status_code=303)
+
+
+def _lan_base_url(request: Request) -> str:
+    """What the phone should dial. The desktop launcher binds 0.0.0.0 on :8101
+    and prints the LAN IP; here we echo the request host with the gateway port.
+    When served through the preview/tests the hostname is loopback — correct
+    for that context, and the QR text is always editable on the phone anyway."""
+    from services.sms_gateway import GATEWAY_PORT as port
+
+    host = (request.url.hostname or "127.0.0.1").strip()
+    # A LAN-hosted request already carries the machine's own address; loopback
+    # names are swapped for the configured LAN IP the launcher computed.
+    if host in {"127.0.0.1", "localhost", "0.0.0.0"}:
+        import socket
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.connect(("192.0.2.1", 80))
+            host = sock.getsockname()[0]
+        finally:
+            sock.close()
+    return f"http://{host}:{port}"
 
 
 # ── template editor ───────────────────────────────────────────────────────────
