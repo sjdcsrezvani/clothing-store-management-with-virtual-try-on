@@ -167,8 +167,12 @@ theme, so it matches light, dark and high-contrast alike.
   campaign send, a نسیه reminder, a trigger you gave it yourself, or nothing at
   all (a text you always send by hand). The gateway key, device and blast
   ceiling live here too, and stay owner-only.
-- **Editing is safe.** Each placeholder is a chip you click to insert; the
-  preview beside it redraws as you type and re-measures the message in
+- **Editing is safe.** Each chip is a whole sentence you click to insert —
+  «... عزیز، سلام! امیدواریم حالتان خوب باشد.»، a birthday wish, a نسیه reminder
+  that names the amount, a tier-up congratulation — rather than a bare `%var1%`,
+  and choosing one fills that sentence's own placeholders without overwriting a
+  value you already picked, so a chip can never hand you a text the save refuses.
+  The preview beside it redraws as you type and re-measures the message in
   characters and segments, and «ارسال آزمایشی» queues one real message to your
   own number so you see exactly what the customer will. Switching a built-in
   off stops its automatic send **everywhere** — the counter, the profile and the
@@ -178,8 +182,11 @@ theme, so it matches light, dark and high-contrast alike.
   سطح، امتیاز، مجموع خرید، بدهی نسیه، کد معرف، نام فرزند) or is deliberately left
   blank, and only its **name** matters, never where it sits in the sentence. The
   preview shows a value only where one will really arrive, so an unfilled slot is
-  visibly blank rather than flattered by a sample. You can also duplicate an
-  existing template and edit the copy.
+  visibly blank rather than flattered by a sample. A placeholder the text *uses*
+  while nothing fills it is refused on save, with the tokens named — you only ever
+  see a preview, and the customer is who reads that gap — while a slot your text
+  never uses may stay blank. You can also duplicate an existing template and edit
+  the copy.
 - **Texts that send themselves.** A custom template can be given a trigger:
   **پس از هر خرید** (a thank-you for that customer's own order, the moment the
   sale is confirmed) or **پیگیری پس از چند روز** (a sweep over customers whose
@@ -392,6 +399,11 @@ API-token gate, plus the inventory ledger's reconciliation contract, the Jalali
 date picker's calendar maths and constraints, and the customer club's filters,
 birthday targets and archive-instead-of-delete rule. They use a throwaway SQLite
 database — never your real data.
+
+Continuous integration runs this suite plus `compileall`, refuses a tracked
+`.env`, `.db` or `.log` file, and refuses any commit **message** that credits a
+tool or a bot instead of a person — a message is public the moment it lands, so
+every commit in the push is checked, not only the newest one.
 
 ## Security notes
 
