@@ -4,7 +4,7 @@ FastAPI + SQLite point-of-sale for a local kids' & teens' clothing shop:
 products & variants with barcode tags, checkout with referral / tier / birthday
 discounts, customer loyalty (points, gold/diamond tiers), an SMS suite
 (template manager, manual sends, welcome / birthday / tier-up / campaign
-messages and a full send log), virtual try-on product previews on
+messages, and a send log whose entries can be replayed), virtual try-on previews on
 the child's picture), invoices (HTML + Persian PDF), a deep analytics suite,
 and accounting-lite: credit sales (نسیه) with a debt ledger, supplier purchases
 that update stock & cost, expenses, a cash register, a net profit & loss
@@ -417,9 +417,12 @@ PYTHONPATH=. pytest -q
 Tests cover the money logic and authorization: server-side price recomputation at checkout,
 stock clamping, refund reversal, referral settlement, CSRF protection, and the
 API-token gate, plus the inventory ledger's reconciliation contract, the Jalali
-date picker's calendar maths and constraints, and the customer club's filters,
-birthday targets and archive-instead-of-delete rule. They use a throwaway SQLite
-database — never your real data.
+date picker's calendar maths and constraints, the customer club's filters,
+birthday targets and archive-instead-of-delete rule, the SMS log's record of what
+each message was built from and the verdict a replay gives it, the follow-up
+review page's rule that it sends only what was ticked and loses politely to a
+sweep that went first, and the SMS manager's usage filter and date order. They
+use a throwaway SQLite database — never your real data.
 
 Continuous integration runs this suite plus `compileall`, refuses a tracked
 `.env`, `.db` or `.log` file, and refuses any commit **message** that credits a
