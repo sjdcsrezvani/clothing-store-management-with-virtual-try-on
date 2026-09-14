@@ -38,6 +38,8 @@ from services.sms_send import (
 from services.sms_templates import (
     BUILTIN_TEMPLATES,
     CUSTOM_SEND_URL,
+    SMS_SENTENCES,
+    SOURCE_FIELDS,
     active_pattern,
     create_custom,
     delete_blocked_reason,
@@ -47,6 +49,7 @@ from services.sms_templates import (
     render_template,
     render_text,
     send_info,
+    sentences_for,
     sms_metrics,
     sync_to_settings,
     template_variables,
@@ -795,6 +798,65 @@ def test_a_slot_the_text_does_not_use_may_stay_empty(client, authed, db_session)
     assert db_session.query(SmsTemplate).filter(
         SmsTemplate.id == custom.id,
     ).one().body == "%var1% عزیز"
+
+
+# ── the chips insert whole sentences, not bare tokens ───────────────────────
+
+def test_the_editor_offers_whole_sentences_instead_of_bare_tokens(client, authed, db_session):
+    """A chip used to insert «%var1%», which is not something a shop writes. Each
+    one now carries a sentence, with the wording visible on the chip itself."""
+    page = authed.get("/admin/sms/templates/new").text
+
+    assert "جمله‌های آماده" in page
+    assert 'data-sentence="custom-greeting"' in page
+    assert "سلام! امیدواریم حالتان خوب باشد" in page
+    assert 'class="sms-chip" data-token=' not in page       # no bare-token chip left
+
+
+def test_a_custom_sentence_only_uses_values_a_customer_really_has():
+    """Every token in a custom sentence is bound to a real customer field, which
+    is what keeps a chip from handing over a template the save would refuse."""
+    custom = [item for item in SMS_SENTENCES if "custom" in item["categories"]]
+    assert custom
+
+    for sentence in custom:
+        used = re.findall(r"%(\w+)%", sentence["text"])
+        assert used, sentence["key"]
+        for name in used:
+            assert sentence["bind"].get(name) in SOURCE_FIELDS, (sentence["key"], name)
+
+
+def test_every_suggested_custom_sentence_can_actually_be_saved(client, authed, db_session):
+    """Posted exactly as the chip would leave the form — its text plus its own
+    bindings — because a suggestion that cannot be saved is a trap, not a help."""
+    create = csrf_token(client, "/admin/sms/templates/new")
+    custom = [item for item in SMS_SENTENCES if "custom" in item["categories"]]
+
+    for index, sentence in enumerate(custom):
+        data = {"csrf_token": create, "name": f"جملهٔ {index}", "body": sentence["text"]}
+        for slot, field in sentence["bind"].items():
+            data[f"source_{slot}"] = field
+        response = authed.post("/admin/sms/templates/new", data=data, follow_redirects=False)
+        assert response.status_code == 303, sentence["key"]
+
+    assert db_session.query(SmsTemplate).filter(
+        SmsTemplate.category == "custom",
+    ).count() == len(custom)
+
+
+def test_a_builtin_sentence_uses_only_the_tokens_that_template_declares(db_session):
+    """A built-in is filled by its own sender, so a sentence may only name tokens
+    that sender really hands over — and it needs no binding of its own."""
+    ensure_seeded(db_session)
+
+    for template in templates_for(db_session):
+        if not template.is_builtin:
+            continue
+        declared = {item["token"] for item in template_variables(template)}
+        for sentence in sentences_for(template.category):
+            used = set(re.findall(r"%(\w+)%", sentence["text"]))
+            assert used <= declared, (template.key, sentence["key"], used - declared)
+            assert sentence["bind"] == {}, sentence["key"]
 
 
 def test_a_builtin_slot_nobody_has_yet_is_still_previewed_with_its_sample(db_session):

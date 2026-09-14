@@ -44,16 +44,20 @@
 
             <div class="form-section">
                 <h3>متن پیامک *</h3>
-                {% if variables %}
-                <div class="sms-variable-chips" role="group" aria-label="متغیرهای قابل استفاده">
-                    {% for variable in variables %}
-                    <button type="button" class="sms-chip" data-token="{{ variable.token }}"
-                            title="{{ variable.label }}{% if variable.sample %} — نمونه: {{ variable.sample }}{% endif %}">
-                        <span dir="ltr">%{{ variable.token }}%</span>
-                        <small>{{ variable.label }}</small>
+                {% if sentences %}
+                <div class="sms-variable-chips" role="group" aria-label="جمله‌های آماده">
+                    {% for sentence in sentences %}
+                    <button type="button" class="sms-chip sms-sentence-chip"
+                            data-sentence="{{ sentence.key }}" title="{{ sentence.text }}">
+                        <small>{{ sentence.label }}</small>
+                        <span class="sms-chip-text" dir="auto">{{ sentence.text }}</span>
                     </button>
                     {% endfor %}
                 </div>
+                <p class="muted sms-sentence-note">
+                    روی یک جمله بزنید تا کامل در متن بیاید؛ مقدار متغیرهایش هم خودکار انتخاب
+                    می‌شود. بعد می‌توانید هر کجایش را دلخواه تغییر دهید.
+                </p>
                 {% endif %}
                 <div class="form-group">
                     <label class="sr-only" for="body">متن پیامک</label>
@@ -258,6 +262,8 @@
     if (!body) return;
     var placeholders = [{% for variable in variables %}'%{{ variable.token }}%'{% if not loop.last %}, {% endif %}{% endfor %}];
     var samples = { {% for variable in variables %}'%{{ variable.token }}%': {{ variable.sample|tojson }}{% if not loop.last %}, {% endif %}{% endfor %} };
+    // The ready-made sentences, each with the values it reads.
+    var sentenceCatalog = { {% for sentence in sentences %}{{ sentence.key|tojson }}: {text: {{ sentence.text|tojson }}, bind: {{ sentence.bind|tojson }}}{% if not loop.last %}, {% endif %}{% endfor %} };
     // Tokens no source fills: they leave the phone empty, so the preview shows
     // them empty too instead of promising a sample that never gets sent. The
     // list is read from the form itself, so it follows the dropdowns and the
@@ -370,26 +376,39 @@
             var option = select.options[select.selectedIndex];
             var labelInput = document.getElementById('label_' + select.getAttribute('data-token'));
             var sampleInput = document.getElementById('sample_' + select.getAttribute('data-token'));
-            var chipLabel = document.querySelector('.sms-chip[data-token="' + select.getAttribute('data-token') + '"] small');
             if (select.value) {
                 samples[token] = option.getAttribute('data-sample') || '';
                 if (labelInput) labelInput.value = option.getAttribute('data-label') || '';
                 if (sampleInput) sampleInput.value = samples[token];
-                if (chipLabel) chipLabel.textContent = option.getAttribute('data-label') || '';
             }
             render();
         });
     });
 
     body.addEventListener('input', render);
-    document.querySelectorAll('.sms-chip').forEach(function (chip) {
+
+    // A chip inserts a whole sentence, not a bare token: «%var1% عزیز، سلام!» is
+    // something a shop would write and «%var1%» is not. The sentence carries the
+    // values it reads, so choosing one also fills its own slots — a chip that
+    // handed the owner a template the save then refused would be a trap.
+    document.querySelectorAll('.sms-chip[data-sentence]').forEach(function (chip) {
         chip.addEventListener('click', function () {
-            var token = '%' + chip.getAttribute('data-token') + '%';
+            var sentence = sentenceCatalog[chip.getAttribute('data-sentence')];
+            if (!sentence) return;
             var start = body.selectionStart || body.value.length;
             var end = body.selectionEnd || body.value.length;
-            body.value = body.value.slice(0, start) + token + body.value.slice(end);
+            var before = body.value.slice(0, start);
+            // Sentence follows sentence needs the space between them.
+            var glue = (before && !/\s$/.test(before)) ? ' ' : '';
+            body.value = before + glue + sentence.text + body.value.slice(end);
             body.focus();
-            body.selectionStart = body.selectionEnd = start + token.length;
+            body.selectionStart = body.selectionEnd = start + glue.length + sentence.text.length;
+            Object.keys(sentence.bind || {}).forEach(function (slot) {
+                var select = document.getElementById('source_' + slot);
+                if (!select || select.value) return;      // never overwrite a choice
+                select.value = sentence.bind[slot];
+                select.dispatchEvent(new Event('change'));   // label, sample, preview
+            });
             render();
         });
     });

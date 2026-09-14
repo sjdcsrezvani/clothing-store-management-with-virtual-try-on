@@ -2277,6 +2277,15 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
 }
 .sms-chip:hover { border-style: solid; border-color: var(--lavender); }
 .sms-chip small { color: var(--ink-soft); font-size: 0.72rem; }
+/* Ready-made sentences: the chip shows the whole wording, clipped when it runs
+   past the row, because the sentence is the point of the chip. */
+.sms-sentence-chip { align-items: center; }
+.sms-sentence-chip small { color: var(--ink); font-weight: 800; }
+.sms-chip-text {
+  max-width: 22rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ink-soft); font-size: 0.72rem;
+}
+.sms-sentence-note { margin: -0.15rem 0 0.6rem; font-size: 0.76rem; }
 .sms-counter { display: block; margin-top: 0.35rem; color: var(--ink-soft); font-size: 0.76rem; }
 .sms-counter.is-over { color: var(--persimmon); font-weight: 700; }
 .sms-variable-editor { margin-top: 0.6rem; border-top: 1px dashed var(--rule); padding-top: 0.6rem; }

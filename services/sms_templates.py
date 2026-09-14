@@ -334,6 +334,112 @@ CUSTOM_VARIABLES = (
     {"token": "var3", "label": "متن دلخواه", "sample": "متن نمونه", "field": None},
 )
 
+# ── ready-made sentences ─────────────────────────────────────────────
+# What the editor's chips insert. A shop writes «%var1% عزیز، سلام!», not
+# «%var1%»: a bare token is a blank to fill in, while a sentence is something to
+# say. Each entry names the tokens it uses and what should read them.
+#
+# A custom sentence may only use values a customer row really holds, because an
+# unbound token is refused on save — a chip that offered an unsaveable template
+# would be worse than no chip at all. A built-in needs no binding, since its own
+# sender hands it the values; its sentences therefore use exactly the tokens that
+# sender fills (the campaign code, the birthday relationship, the amount owed),
+# which the tests hold to the template's own declaration.
+SMS_SENTENCES = (
+    # ── a message the shop writes by hand ──
+    {
+        "key": "custom-greeting",
+        "label": "سلام و احوال‌پرسی",
+        "text": "%var1% عزیز، سلام! امیدواریم حالتان خوب باشد.",
+        "bind": {"var1": "first_name"},
+        "categories": ("custom",),
+    },
+    {
+        "key": "custom-birthday",
+        "label": "تبریک تولد",
+        "text": "%var1% عزیز، تولدت مبارک! برایتان آرزوی سلامتی و شادی داریم.",
+        "bind": {"var1": "first_name"},
+        "categories": ("custom",),
+    },
+    {
+        "key": "custom-debt",
+        "label": "یادآوری بدهی نسیه",
+        "text": "%var1% عزیز، %var2% تومان بدهی نسیه دارید. لطفاً هرچه زودتر تسویه کنید.",
+        "bind": {"var1": "first_name", "var2": "total_debt"},
+        "categories": ("custom",),
+    },
+    {
+        "key": "custom-tier",
+        "label": "ارتقای سطح باشگاه",
+        "text": "%var1% عزیز، تبریک! سطح باشگاه شما %var2% شد و امتیازتان %var3% است.",
+        "bind": {"var1": "first_name", "var2": "tier", "var3": "total_points"},
+        "categories": ("custom",),
+    },
+    {
+        "key": "custom-order-ready",
+        "label": "آماده بودن سفارش",
+        "text": "%var1% عزیز، سفارش شما آماده تحویل است. منتظر حضورتان هستیم.",
+        "bind": {"var1": "first_name"},
+        "categories": ("custom",),
+    },
+    {
+        "key": "custom-come-back",
+        "label": "دعوت دوباره",
+        "text": "%var1% عزیز، دلمان برایتان تنگ شده! منتظرتان هستیم.",
+        "bind": {"var1": "first_name"},
+        "categories": ("custom",),
+    },
+    # ── the built-ins, worded with the tokens their own sender fills ──
+    {
+        "key": "welcome-join",
+        "label": "خوش‌آمدگویی",
+        "text": "%var1% عزیز، خوش آمدید! کد معرف شما %var2% است.",
+        "bind": {},
+        "categories": ("welcome",),
+    },
+    {
+        "key": "birthday-you",
+        "label": "تبریک تولد",
+        "text": "%var1% عزیز، تولدت مبارک!",
+        "bind": {},
+        "categories": ("birthday",),
+    },
+    {
+        "key": "birthday-whose",
+        "label": "تبریک با ذکر صاحب تولد",
+        "text": "%var1% عزیز، تولد %var3% مبارک!",
+        "bind": {},
+        "categories": ("birthday",),
+    },
+    {
+        "key": "tier-up-reached",
+        "label": "ارتقای سطح",
+        "text": "%var1% عزیز، تبریک! به سطح بالاتر باشگاه رسیدید و امتیاز شما %var2% است.",
+        "bind": {},
+        "categories": ("tier_up",),
+    },
+    {
+        "key": "campaign-invite",
+        "label": "دعوت کمپین",
+        "text": "%var1% عزیز، %var2% با کد %var3% و %var4%٪ تخفیف منتظر شماست.",
+        "bind": {},
+        "categories": ("campaign",),
+    },
+    {
+        "key": "credit-overdue",
+        "label": "یادآوری سررسید",
+        "text": "%var1% عزیز، %var2% تومان بدهی نسیه دارید؛ سررسید %var3% بود. لطفاً تسویه کنید.",
+        "bind": {},
+        "categories": ("credit_reminder",),
+    },
+)
+
+
+def sentences_for(category: str) -> list[dict]:
+    """The ready-made sentences the editor offers for this kind of template."""
+    return [item for item in SMS_SENTENCES if category in item["categories"]]
+
+
 MAX_BODY = 612  # 9 segments of 68 — past this the send is almost certainly wrong
 MAX_NAME = 120
 
