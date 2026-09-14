@@ -165,8 +165,13 @@ theme, so it matches light, dark and high-contrast alike.
   flagged «هنوز ارسال نشده» so a forgotten one is visible at a glance. Each row
   also says which event fires it — a new signup, a birthday, a tier upgrade, a
   campaign send, a نسیه reminder, a trigger you gave it yourself, or nothing at
-  all (a text you always send by hand). The gateway key, device and blast
-  ceiling live here too, and stay owner-only.
+  all (a text you always send by hand). The list itself can be **sliced by how
+  each template has been used** — هرگز فرستاده‌نشده / فرستاده‌شده / دارای ارسال
+  ناموفق — and **ordered by the date it last went out**, newest or oldest first,
+  with the ones that have never spoken at the old end. «فرستاده شده» means a
+  message actually went out: still queued on the phone or refused by the gateway
+  does not count, and the row's own line says which it was. The gateway key,
+  device and blast ceiling live here too, and stay owner-only.
 - **Editing is safe.** Each chip is a whole sentence you click to insert —
   «... عزیز، سلام! امیدواریم حالتان خوب باشد.»، a birthday wish, a نسیه reminder
   that names the amount, a tier-up congratulation — rather than a bare `%var1%`,

@@ -37,14 +37,16 @@ from services.sms_gateway import (
 from services.sms_send import (
     HISTORY_ORDERS,
     MODE_LABELS,
+    TEMPLATE_SORTS,
+    USAGE_FILTERS,
     audience_choices,
+    manager_view,
     message_filtered,
     message_overview,
     parse_phone_list,
     plan_from_form,
     preview_body,
     send_bulk,
-    template_card,
 )
 from services.sms_triggers import SETTING_AUTO_SEND_LIMIT
 from services.sms_templates import (
@@ -120,10 +122,6 @@ def get_template_by_id(db: Session, template_id: int) -> SmsTemplate | None:
     return db.query(SmsTemplate).filter(SmsTemplate.id == template_id).first()
 
 
-def _cards_for(groups) -> dict:
-    return {template.id: template for group in groups for template in group["templates"]}
-
-
 # ── manager ───────────────────────────────────────────────────────────────────
 
 @router.get("/sms", response_class=HTMLResponse)
@@ -132,28 +130,13 @@ async def admin_sms(request: Request, db: Session = Depends(get_db)):
     if not hasattr(guard, "role"):
         return guard
 
-    groups = grouped_templates(db)
-    device = _sms_device(db)
-    return templates.TemplateResponse(request, "admin/sms.html", {
-        "groups": groups,
-        "overview": message_overview(db),
-        "config": _settings_map(db),
-        "balance": device_status_label(db),
-        "device": device,
-        "device_status": device_status_label(db),
-        "gateway_queue": queue_snapshot(db),
-        "pairing_key": None,
-        "pairing_qr": None,
-        "gateway_port": GATEWAY_PORT,
-        "can_configure": guard.role == "owner",
-        "cards": {template.id: template_card(db, template) for template in _cards_for(groups).values()},
-        "send_info": send_info,
-        "fire": fire_summary(db),
-        "msg": request.query_params.get("msg", ""),
-        "err": request.query_params.get("err", ""),
-        "fmt": fmt,
-        "jalali_str": jalali_str,
-    })
+    return templates.TemplateResponse(request, "admin/sms.html", _manager_context(
+        request, db, guard,
+        usage=request.query_params.get("usage", "all"),
+        sort=request.query_params.get("sort", "default"),
+        msg=request.query_params.get("msg", ""),
+        err=request.query_params.get("err", ""),
+    ))
 
 
 @router.post("/sms/config", response_class=HTMLResponse)
@@ -194,10 +177,55 @@ async def admin_sms_config(
 
 # ── the device gateway (درگاه) ───────────────────────────────────────────────
 
-def _gateway_context(request, db, guard, *, pairing=None, message="", error="") -> dict:
-    """Everything the درگاه card re-renders after a pair/unpair."""
+# The list's two query parameters, each with the vocabulary it may hold: a link
+# may only carry a value the page itself understands.
+_FILTER_PARAMS = (("usage", USAGE_FILTERS), ("sort", TEMPLATE_SORTS))
+
+
+def _filter_qs(request: Request) -> str:
+    """The manager page's filter as a query string, for anything that returns there.
+
+    Filtering to «هرگز فرستاده‌نشده» and switching one on is the whole point of the
+    filter, so the row's own buttons carry it — landing back on the unfiltered
+    catalogue would throw the list away and make the owner find their place again.
+    """
+    parts = []
+    for key, vocabulary in _FILTER_PARAMS:
+        value = (request.query_params.get(key) or "").strip()
+        # «همه» و «ترتیب قالب‌ها» are the page's defaults, so they are left out of
+        # the URL rather than spelled out in every link.
+        if value in vocabulary and value not in {"all", "default"}:
+            parts.append(f"{key}={value}")
+    return "&".join(parts)
+
+
+def _manager_redirect(request: Request, *, msg: str = "", err: str = "") -> RedirectResponse:
+    """Back to the manager page, with whatever filter was in force still in force."""
+    filter_qs = _filter_qs(request)
+    suffix = f"&{filter_qs}" if filter_qs else ""
+    key = "err" if err else "msg"
+    return RedirectResponse(url=f"/admin/sms?{key}={err or msg}{suffix}", status_code=303)
+
+
+def _manager_context(request, db, guard, *, usage="all", sort="default",
+                     pairing=None, msg="", err="") -> dict:
+    """Everything ``admin/sms.html`` needs — built once for both of its callers.
+
+    The gateway's pair route re-renders this whole page to show the QR once, so a
+    second copy of the list context is exactly how the usage filter would silently
+    vanish (or a renamed key would break the page) the moment either side changed.
+    """
+    view = manager_view(db, usage=usage, sort=sort)
     device = _sms_device(db)
     return {
+        "groups": view["sections"],
+        "view": view,
+        "filter_qs": _filter_qs(request),
+        "usage_filters": USAGE_FILTERS,
+        "template_sorts": TEMPLATE_SORTS,
+        "overview": message_overview(db),
+        "config": _settings_map(db),
+        "balance": device_status_label(db),
         "device": device,
         "device_status": device_status_label(db),
         "gateway_queue": queue_snapshot(db),
@@ -205,8 +233,14 @@ def _gateway_context(request, db, guard, *, pairing=None, message="", error="") 
         "pairing_qr": (pairing_qr_data_uri({"base_url": pairing[1], "api_key": pairing[0]})
                        if pairing else None),
         "gateway_port": GATEWAY_PORT,
-        "msg": message,
-        "err": error,
+        "can_configure": guard.role == "owner",
+        "cards": view["cards"],
+        "send_info": send_info,
+        "fire": fire_summary(db),
+        "msg": msg,
+        "err": err,
+        "fmt": fmt,
+        "jalali_str": jalali_str,
     }
 
 
@@ -224,22 +258,9 @@ async def admin_sms_gateway_pair(request: Request, db: Session = Depends(get_db)
     log_action(db, "sms_gateway_pair", f"درگاه پیامک جفت شد (دستگاه «{device.name}»)",
                request=request, target_type="sms_device", target_id=device.id)
 
-    groups = grouped_templates(db)
-    context = _gateway_context(request, db, guard,
-                               pairing=(raw_key, _lan_base_url(request)))
-    context.update({
-        "groups": groups,
-        "overview": message_overview(db),
-        "config": _settings_map(db),
-        "balance": device_status_label(db),
-        "can_configure": guard.role == "owner",
-        "cards": {template.id: template_card(db, template) for template in _cards_for(groups).values()},
-        "send_info": send_info,
-        "fire": fire_summary(db),
-        "fmt": fmt,
-        "jalali_str": jalali_str,
-    })
-    return templates.TemplateResponse(request, "admin/sms.html", context)
+    return templates.TemplateResponse(request, "admin/sms.html", _manager_context(
+        request, db, guard, pairing=(raw_key, _lan_base_url(request)),
+    ))
 
 
 @router.post("/sms/gateway/unpair", response_class=HTMLResponse)
@@ -502,16 +523,14 @@ async def admin_sms_template_toggle(template_id: int, request: Request, db: Sess
         raise HTTPException(status_code=404, detail="قالب پیامک یافت نشد")
 
     if not template.is_active and not (template.body or "").strip():
-        return RedirectResponse(
-            url="/admin/sms?err=این قالب متنی ندارد؛ اول متن را بنویسید.", status_code=303,
-        )
+        return _manager_redirect(request, err="این قالب متنی ندارد؛ اول متن را بنویسید.")
     template.is_active = not template.is_active
     sync_to_settings(db, template)
     db.commit()
     state = "فعال" if template.is_active else "غیرفعال"
     log_action(db, "sms_template_toggle", f"قالب «{template.name}» {state} شد",
                request=request, target_type="sms_template", target_id=template.id)
-    return RedirectResponse(url=f"/admin/sms?msg=قالب «{template.name}» {state} شد.", status_code=303)
+    return _manager_redirect(request, msg=f"قالب «{template.name}» {state} شد.")
 
 
 @router.post("/sms/templates/{template_id}/duplicate", response_class=HTMLResponse)
@@ -543,14 +562,14 @@ async def admin_sms_template_delete(template_id: int, request: Request, db: Sess
 
     reason = delete_blocked_reason(db, template)
     if reason:
-        return RedirectResponse(url=f"/admin/sms?err={reason}", status_code=303)
+        return _manager_redirect(request, err=reason)
 
     name = template.name
     db.delete(template)
     db.commit()
     log_action(db, "sms_template_delete", f"قالب پیامک «{name}» حذف شد",
                request=request, target_type="sms_template", target_id=template_id)
-    return RedirectResponse(url=f"/admin/sms?msg=قالب «{name}» حذف شد.", status_code=303)
+    return _manager_redirect(request, msg=f"قالب «{name}» حذف شد.")
 
 
 @router.post("/sms/templates/{template_id}/test", response_class=HTMLResponse)

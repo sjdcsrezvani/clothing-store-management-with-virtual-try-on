@@ -46,8 +46,41 @@
     </a>
 </div>
 
+<form method="get" action="/admin/sms" class="search-form sms-filter-form">
+    <div class="form-group">
+        <label class="sr-only" for="filter-usage">نمایش</label>
+        <select id="filter-usage" name="usage">
+            {% for value, label in usage_filters.items() %}
+            <option value="{{ value }}" {% if view.usage == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="form-group">
+        <label class="sr-only" for="filter-sort">ترتیب</label>
+        <select id="filter-sort" name="sort">
+            {% for value, label in template_sorts.items() %}
+            <option value="{{ value }}" {% if view.sort == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn btn-primary">اعمال فیلتر</button>
+    {% if view.filters_active %}
+    <a href="/admin/sms" class="btn btn-ghost">پاک‌کردن فیلتر</a>
+    {% endif %}
+</form>
+
 <p class="sms-results">
-    {{ overview.all_templates }} قالب دارید که {{ overview.active_templates }} موردشان فعال است.
+    {{ view.total }} قالب ·
+    {% if view.never %}
+    <a href="/admin/sms?usage=never">{{ view.never }} هرگز فرستاده‌نشده</a> ·
+    {% else %}
+    همه حداقل یک‌بار فرستاده‌اند ·
+    {% endif %}
+    {{ view.active }} فعال
+    {%- if view.filters_active %}
+    · نمایش: {{ view.usage_label }}{% if view.sort != 'default' %}، {{ view.sort_label }}{% endif %}
+    — {{ view.shown }} قالب
+    {%- endif %}
 </p>
 
 <section class="card sms-gateway-card" id="gateway">
@@ -167,7 +200,12 @@
                     <td class="sms-name">
                         <strong>
                             <a href="/admin/sms/templates/{{ template.id }}/edit">{{ template.name }}</a>
-                            {% if not card.total %}<span class="sms-unused-badge">هنوز ارسال نشده</span>{% endif %}
+                            {# «هرگز فرستاده نشده» is one fact on this page: nothing has
+                               been sent through this template. A message that is still
+                               waiting on the phone or was refused is not a send, and the
+                               line under it says so — the filter, the badge and the date
+                               order all read the same answer. #}
+                            {% if not card.last_sent_at %}<span class="sms-unused-badge">هنوز ارسال نشده</span>{% endif %}
                         </strong>
                         <span class="sms-fireline is-{{ info.mode }}">
                             <span class="sms-fire-badge is-{{ info.mode }}">{{ info.label }}</span>
@@ -202,7 +240,7 @@
                         <div class="sms-actions">
                             <a href="/admin/sms/templates/{{ template.id }}/edit" class="btn btn-sm btn-ghost">ویرایش</a>
                             <a href="/admin/sms/send?template_id={{ template.id }}" class="btn btn-sm btn-primary">ارسال</a>
-                            <form method="post" action="/admin/sms/templates/{{ template.id }}/toggle" class="inline-form">
+                            <form method="post" action="/admin/sms/templates/{{ template.id }}/toggle{% if filter_qs %}?{{ filter_qs }}{% endif %}" class="inline-form">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="btn btn-sm btn-ghost">
                                     {{ 'خاموش‌کردن' if template.is_active else 'فعال‌کردن' }}
@@ -213,7 +251,7 @@
                                 <button type="submit" class="btn btn-sm btn-ghost">کپی</button>
                             </form>
                             {% if not template.is_builtin %}
-                            <form method="post" action="/admin/sms/templates/{{ template.id }}/delete" class="inline-form"
+                            <form method="post" action="/admin/sms/templates/{{ template.id }}/delete{% if filter_qs %}?{{ filter_qs }}{% endif %}" class="inline-form"
                                   onsubmit="return confirm('این قالب حذف شود؟');">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="btn btn-sm btn-ghost btn-danger">حذف</button>
@@ -229,7 +267,19 @@
 </section>
 {% endfor %}
 
-{% if not groups %}
+{% if not groups and view.filters_active %}
+<div class="empty-state">
+    <h3>قالبی با «{{ view.usage_label }}» پیدا نشد</h3>
+    <p>
+        {% if view.usage == 'never' %}
+        همه قالب‌ها حداقل یک‌بار پیام فرستاده‌اند — قالب بی‌استفاده‌ای نمانده است.
+        {% else %}
+        فیلتر را عوض کنید یا همه قالب‌ها را ببینید.
+        {% endif %}
+    </p>
+    <a href="/admin/sms" class="btn btn-ghost">پاک‌کردن فیلتر</a>
+</div>
+{% elif not groups %}
 <div class="empty-state">
     <h3>هنوز قالبی وجود ندارد</h3>
     <p>یک قالب بسازید تا بتوانید متن پیامک را بنویسید و برای مشتریان بفرستید.</p>

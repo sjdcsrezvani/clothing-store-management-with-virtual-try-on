@@ -12,6 +12,7 @@ import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import unquote
 
 import pytest
 
@@ -1204,3 +1205,177 @@ def test_campaign_send_is_refused_when_the_template_is_switched_off(client, auth
     assert response.status_code == 303
     assert "err=" in response.headers["location"]
     assert db_session.query(SmsMessage).count() == 0
+
+# ── slicing the manager list by how each template has been used ──────────────
+# The row's figures are the filter's figures, so these tests are as much about
+# the two agreeing as about the filtering itself.
+
+def manager_list(page: str) -> str:
+    """The page's list of templates, without the «چطور فرستاده می‌شود» legend.
+
+    The legend names every template on purpose — it explains the modes rather
+    than being a second list — so an assertion about a filter has to look at the
+    list, and an assertion about order has to look at where the list puts things.
+    """
+    return page.split('class="card sms-help-card"')[0]
+
+
+def a_message(db, template, *, status="sent", when=None, source="manual"):
+    """One log row against a template, so its usage figures mean something."""
+    stamp = when or datetime.now(timezone.utc)
+    row = SmsMessage(phone="09120000000", body="متن", status=status, source=source,
+                     kind="marketing", template_id=template.id,
+                     template_name=template.name, created_at=stamp)
+    if status == "sent":
+        row.sent_at = stamp
+    db.add(row)
+    db.commit()
+    return row
+
+
+def test_the_manager_page_lists_only_the_templates_that_never_spoke(client, authed, db_session):
+    ensure_seeded(db_session)
+    welcome = get_template(db_session, "welcome")
+    a_message(db_session, welcome)
+
+    page = manager_list(authed.get("/admin/sms?usage=never").text)
+
+    assert welcome.name not in page
+    assert get_template(db_session, "birthday").name in page
+    # …and the unfiltered page still shows everything.
+    assert welcome.name in manager_list(authed.get("/admin/sms").text)
+
+
+def test_a_template_whose_only_message_failed_has_still_never_been_sent(client, authed, db_session):
+    """One meaning of «فرستاده شده» for the badge, the filter and the date order:
+    a refused or still-queued message is not a send, and the row says so."""
+    template = create_custom(db_session, name="خاموش", body="سلام")
+    a_message(db_session, template, status="failed")
+
+    page = manager_list(authed.get("/admin/sms?usage=never").text)
+
+    assert "sms-unused-badge" in page                  # the badge agrees
+    assert template.name in page                       # and so does the filter
+    assert template.name not in manager_list(authed.get("/admin/sms?usage=used").text)
+
+
+def test_the_filter_and_the_badge_agree_on_a_template_that_has_sent(client, authed, db_session):
+    template = create_custom(db_session, name="گویا", body="سلام")
+    a_message(db_session, template)
+
+    never = manager_list(authed.get("/admin/sms?usage=never").text)
+    used = manager_list(authed.get("/admin/sms?usage=used").text)
+
+    assert template.name not in never
+    assert template.name in used
+
+
+def test_the_manager_page_can_list_templates_by_how_often_they_failed(client, authed, db_session):
+    ensure_seeded(db_session)
+    welcome = get_template(db_session, "welcome")
+    a_message(db_session, welcome, status="failed")
+
+    page = manager_list(authed.get("/admin/sms?usage=failed").text)
+
+    assert welcome.name in page
+    assert get_template(db_session, "birthday").name not in page
+
+
+def test_the_manager_page_can_order_templates_by_when_each_last_spoke(client, authed, db_session):
+    """«جدیدترین» first is the shop's recent activity; «قدیمی‌ترین» first is the one
+    that has gone quiet, and a template that never spoke belongs at that end."""
+    ensure_seeded(db_session)
+    welcome = get_template(db_session, "welcome")
+    birthday = get_template(db_session, "birthday")
+    a_message(db_session, welcome, when=datetime(2026, 1, 1, tzinfo=timezone.utc))
+    a_message(db_session, birthday, when=datetime(2026, 6, 1, tzinfo=timezone.utc))
+
+    newest = manager_list(authed.get("/admin/sms?sort=last_sent_desc").text)
+    oldest = manager_list(authed.get("/admin/sms?sort=last_sent_asc").text)
+
+    # Newest first: the June send leads, the never-used templates close the list.
+    assert newest.index(birthday.name) < newest.index(welcome.name)
+    # Oldest first: the January send leads the ones that have spoken.
+    assert oldest.index(welcome.name) < oldest.index(birthday.name)
+
+
+def test_ordering_puts_the_never_sent_templates_at_the_old_end(client, authed, db_session):
+    """They have no date to sort on, so they must land where the eye is looking
+    for «what has gone quiet» rather than being scattered by a made-up date."""
+    ensure_seeded(db_session)
+    welcome = get_template(db_session, "welcome")
+    a_message(db_session, welcome, when=datetime(2026, 6, 1, tzinfo=timezone.utc))
+    silent = get_template(db_session, "birthday")
+
+    oldest = manager_list(authed.get("/admin/sms?sort=last_sent_asc").text)
+    newest = manager_list(authed.get("/admin/sms?sort=last_sent_desc").text)
+
+    assert oldest.index(silent.name) < oldest.index(welcome.name)
+    assert newest.index(welcome.name) < newest.index(silent.name)
+
+
+def test_the_untouched_manager_page_keeps_its_categories(client, authed, db_session):
+    """The grouping is the catalogue, not a filter result: asking for nothing must
+    leave it exactly as it was, or the page loses the shape it is read for."""
+    ensure_seeded(db_session)
+    create_custom(db_session, name="قالب من", body="سلام")
+    db_session.commit()
+
+    page = authed.get("/admin/sms").text
+
+    for label in ("خوش‌آمدگویی", "تولد", "یادآوری نسیه", "سفارشی"):
+        assert label in page
+    assert 'name="usage"' in page and 'name="sort"' in page
+    # Nothing filtered, so no «پاک‌کردن فیلتر» and no single-list heading.
+    assert "پاک‌کردن فیلتر" not in page
+    assert "قالب‌های این فهرست" not in page
+
+
+def test_a_hand_edited_filter_falls_back_instead_of_emptying_the_page(client, authed, db_session):
+    """A URL is not a trusted source of behaviour: nonsense must show everything,
+    never a blank page that looks like a broken shop."""
+    ensure_seeded(db_session)
+
+    page = authed.get("/admin/sms?usage=nonsense&sort=whatever").text
+
+    assert page.count("sms-group-card") >= 3
+    assert get_template(db_session, "welcome").name in manager_list(page)
+    assert 'value="all" selected' in page
+
+
+def test_a_filter_that_matches_nothing_says_so_and_offers_the_way_back(client, authed, db_session):
+    ensure_seeded(db_session)
+
+    page = authed.get("/admin/sms?usage=used").text
+
+    assert "قالبی با" in page and "پیدا نشد" in page
+    assert "sms-group-card" not in page          # not an empty table with a heading
+    assert 'href="/admin/sms"' in page           # …and a link back to everything
+
+
+def test_a_row_action_comes_back_to_the_filtered_list(client, authed, db_session):
+    """Filtering to «هرگز فرستاده‌نشده» and switching one on is the whole point of
+    the filter; landing on the unfiltered catalogue would throw the list away."""
+    ensure_seeded(db_session)
+    welcome = get_template(db_session, "welcome")
+
+    page = authed.get("/admin/sms?usage=never").text
+    assert f'/admin/sms/templates/{welcome.id}/toggle?usage=never' in page
+
+    response = authed.post(f"/admin/sms/templates/{welcome.id}/toggle?usage=never",
+                           data={"csrf_token": csrf_token(client, "/admin/sms?usage=never")},
+                           follow_redirects=False)
+
+    assert response.status_code == 303
+    assert unquote(response.headers["location"]).endswith("usage=never")
+
+
+def test_the_count_of_never_used_templates_links_to_its_own_filter(client, authed, db_session):
+    """The fact that was only visible at a glance is now actable from where it is
+    read: the number in the results line is the filter."""
+    ensure_seeded(db_session)
+
+    page = authed.get("/admin/sms").text
+
+    assert re.search(r'<a href="/admin/sms\?usage=never">\d+ هرگز فرستاده‌نشده</a>', page)
+

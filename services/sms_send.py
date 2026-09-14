@@ -31,9 +31,11 @@ from services.sms_templates import (
     CATEGORY_LABELS,
     SOURCE_LABELS,
     STATUS_LABELS,
+    grouped_templates,
     render_template,
     sms_metrics,
     template_variables,
+    templates_for,
     values_for_customer,
 )
 
@@ -328,6 +330,123 @@ def template_card(db: Session, template: SmsTemplate) -> dict:
         "last_activity_at": last_activity_at,
         "preview": preview_body(template),
         "category_label": CATEGORY_LABELS.get(template.category, template.category),
+    }
+
+
+# ── the manager page's list ───────────────────────────────────────────────────
+# A shop with forty templates cannot see which of them have gone quiet, so the
+# list can be sliced by how a template has actually been used and ordered by when
+# it last spoke. Both read the same four figures each row already shows, so the
+# filter can never disagree with the badge beside the name.
+
+# The words the owner reads, next to the card they describe.
+USAGE_FILTERS = {
+    "all": "همه قالب‌ها",
+    "never": "هرگز فرستاده‌نشده",
+    "used": "فرستاده‌شده",
+    "failed": "دارای ارسال ناموفق",
+}
+
+TEMPLATE_SORTS = {
+    "default": "ترتیب قالب‌ها (دسته‌بندی)",
+    "last_sent_desc": "آخرین ارسال — جدیدترین",
+    "last_sent_asc": "آخرین ارسال — قدیمی‌ترین",
+}
+
+
+def last_sent_stamp(card: dict) -> str:
+    """When this template last actually sent something, or "" when it never has.
+
+    ``sent_at`` only, on a row the queue has already accepted: a message that is
+    still waiting on the phone, or one the gateway refused, is not a send. This is
+    the single answer to «has this one ever spoken?», and the badge, the filter and
+    the date order all read it — three different notions of «never sent» on one
+    page is how a filter comes to disagree with the badge beside the name.
+    """
+    stamp = (card or {}).get("last_sent_at")
+    return stamp.isoformat() if stamp is not None else ""
+
+
+def usage_matches(card: dict, usage: str) -> bool:
+    """Whether one template belongs in the slice of usage the owner asked for."""
+    if usage == "never":
+        return not last_sent_stamp(card)
+    if usage == "used":
+        return bool(last_sent_stamp(card))
+    if usage == "failed":
+        return bool(card.get("failed"))
+    return True
+
+
+def ordered_templates(templates, cards: dict, sort: str):
+    """The templates in the order asked for; «default» keeps the catalogue order.
+
+    A template that has never sent anything has no date to sort on. It sits at
+    the *oldest* end of the list either way, because that is where the eye is
+    when someone sorts by date: with «قدیمی‌ترین» first the ones that have never
+    spoken lead, and with «جدیدترین» first they close the list rather than being
+    scattered through it by a made-up date.
+    """
+    if sort not in TEMPLATE_SORTS or sort == "default":
+        return list(templates)
+    spoken = [row for row in templates if last_sent_stamp(cards.get(row.id) or {})]
+    never = [row for row in templates if not last_sent_stamp(cards.get(row.id) or {})]
+    spoken.sort(key=lambda row: (last_sent_stamp(cards.get(row.id) or {}), row.id or 0),
+                reverse=(sort == "last_sent_desc"))
+    # A stable tie-break, so two templates that have never sent anything do not
+    # swap places between one page load and the next.
+    never.sort(key=lambda row: (row.sort_order or 0, row.id or 0))
+    return never + spoken if sort == "last_sent_asc" else spoken + never
+
+
+def manager_view(db: Session, *, usage: str = "all", sort: str = "default") -> dict:
+    """What the manager page lists, filtered and ordered by how it has been used.
+
+    Untouched, the page keeps its category grouping — the built-ins read as a
+    catalogue, each in its place. As soon as a usage filter or a date order is
+    asked for, the answer is *one* list: grouping by category would scatter the
+    thing being looked for (the oldest-used text can be in any group) and would
+    quietly defeat the very sort that was requested.
+
+    Unknown values fall back to «همه» and the catalogue order rather than
+    emptying the page — a hand-edited URL is not a reason to show nothing.
+    """
+    usage = usage if usage in USAGE_FILTERS else "all"
+    sort = sort if sort in TEMPLATE_SORTS else "default"
+
+    templates = templates_for(db)
+    cards = {row.id: template_card(db, row) for row in templates}
+    matched = [row for row in templates if usage_matches(cards[row.id], usage)]
+    ordered = ordered_templates(matched, cards, sort)
+    filtered = usage != "all" or sort != "default"
+
+    if not filtered:
+        sections = grouped_templates(db)
+    elif ordered:
+        sections = [{
+            "key": "filtered",
+            "label": USAGE_FILTERS[usage] if usage != "all" else "قالب‌های این فهرست",
+            "templates": ordered,
+            "active": sum(1 for row in ordered if row.is_active),
+        }]
+    else:
+        # No match at all: an empty heading over an empty table reads like a bug,
+        # so the page says so instead and offers the way back.
+        sections = []
+
+    never = sum(1 for row in templates if not last_sent_stamp(cards[row.id]))
+    return {
+        "sections": sections,
+        "cards": cards,
+        "usage": usage,
+        "sort": sort,
+        "usage_label": USAGE_FILTERS[usage],
+        "sort_label": TEMPLATE_SORTS[sort],
+        "filters_active": filtered,
+        "total": len(templates),
+        "shown": len(ordered),
+        "never": never,
+        "active": sum(1 for row in templates if row.is_active),
     }
 
 
