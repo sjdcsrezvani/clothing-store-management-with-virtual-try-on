@@ -124,6 +124,9 @@
                         قالب‌هایی که برایشان «پیگیری» انتخاب کرده‌اید هر چند دقیقه یک‌بار بررسی
                         می‌شوند؛ در هر بررسی حداکثر همین تعداد پیامک فرستاده می‌شود تا هزینه یک‌جا
                         بالا نرود. بقیه در نوبت بعد می‌روند — هیچ‌کس جا نمی‌ماند.
+                        می‌خواهید زودتر تصمیم بگیرید؟ در <a href="/admin/follow-ups">صفحه پیگیری</a>
+                        فهرست موعددارها را می‌بینید و هر کدام را خواستید همان‌جا می‌فرستید —
+                        مستقل از این سقف.
                     </small>
                 </div>
                 <div class="form-actions">
@@ -244,9 +247,17 @@
     </p>
     <ul class="sms-help-list">
         {% for template in fire.auto %}
+        <!-- An automatic trigger can still have a page of its own: «پیگیری» keeps
+             sending by itself, and its page is where the owner can see who is
+             waiting and get there first. -->
+        {% set info = send_info(template) %}
         <li>
             <strong>{{ template.name }}</strong>
-            <span>{{ send_info(template).text }}</span>
+            <span>{{ info.text }}</span>
+            {% if info.also %}<span class="muted">{{ info.also }}</span>{% endif %}
+            {% if info.url %}
+            <a href="{{ info.url }}">{{ info.action }} ←</a>
+            {% endif %}
         </li>
         {% endfor %}
     </ul>

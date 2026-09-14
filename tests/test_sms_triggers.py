@@ -9,6 +9,7 @@ disturb the sale it hangs off.
 import asyncio
 import json
 from datetime import datetime, timedelta, timezone
+from urllib.parse import unquote
 
 from models import Customer, Product, ProductVariant, Sale, Settings, SmsMessage, SmsTemplate
 from services.sms_templates import (
@@ -454,3 +455,197 @@ def test_completing_a_sale_in_the_app_fires_the_thanks_sms(client, authed, db_se
     assert [row.body for row in rows] == ["سارا جان، ممنون از خریدت"]
     assert rows[0].ref == f"sale:{sale.id}"
     assert rows[0].customer_id == customer.id
+
+
+# ── the review page ──────────────────────────────────────────────────────────
+# The page sits *beside* the sweep rather than in front of it, so the tests pin
+# both halves of that: it sends exactly what was ticked and nothing on its own,
+# and it cannot be used to ask a customer twice about one purchase — including
+# when the automatic pass got there first.
+
+def another_customer(db, index, *, days_since_purchase=40, **kwargs) -> Customer:
+    """The helper above pins one phone number, so a second customer needs its own."""
+    return make_customer(db, days_since_purchase=days_since_purchase,
+                         phone=f"09120000{index:03d}", referral_code=f"TRG{index:03d}", **kwargs)
+
+
+def test_the_review_page_lists_who_is_due_and_sends_nothing_by_itself(client, authed, db_session):
+    make_follow_up_template(db_session)
+    another_customer(db_session, 11, first_name="سارا")
+    another_customer(db_session, 12, days_since_purchase=3, first_name="نیلوفر")  # too soon
+
+    page = authed.get("/admin/follow-ups")
+
+    assert page.status_code == 200
+    assert "سارا" in page.text
+    assert "نیلوفر" not in page.text
+    assert "دلمان برایتان تنگ شده" in page.text        # the text as it would leave
+    assert "کنار گذاشته شدند" in page.text            # and who was left out
+    assert db_session.query(SmsMessage).count() == 0  # looking sends nothing
+
+
+def test_the_review_page_is_owner_only(client):
+    assert client.get("/admin/follow-ups", follow_redirects=False).status_code == 303
+
+
+def test_the_page_sends_only_what_was_ticked(client, authed, db_session):
+    template = make_follow_up_template(db_session)
+    first = another_customer(db_session, 11, first_name="سارا")
+    second = another_customer(db_session, 12, first_name="نیلوفر")
+
+    sent = authed.post("/admin/follow-ups/send", data={
+        "csrf_token": csrf_token(client, "/admin/follow-ups"),
+        "template_id": template.id, "customer_ids": [first.id],
+    }, follow_redirects=False)
+
+    assert sent.status_code == 303
+    db_session.expire_all()
+    rows = db_session.query(SmsMessage).all()
+    assert len(rows) == 1
+    assert rows[0].customer_id == first.id
+    assert rows[0].body == "سارا عزیز، دلمان برایتان تنگ شده"
+    assert rows[0].source == "follow_up"
+    assert rows[0].ref.startswith("purchase:")       # the same event the sweep uses
+    assert [customer.id for customer in
+            follow_up_candidates(db_session, template=template)["due"]] == [second.id]
+
+
+def test_a_resubmitted_form_cannot_ask_the_same_customer_twice(client, authed, db_session):
+    """A refresh or a double-click is the likeliest accident on a page like this."""
+    template = make_follow_up_template(db_session)
+    customer = another_customer(db_session, 11)
+    data = {"csrf_token": csrf_token(client, "/admin/follow-ups"),
+            "template_id": template.id, "customer_ids": [customer.id]}
+
+    authed.post("/admin/follow-ups/send", data=data, follow_redirects=False)
+    again = authed.post("/admin/follow-ups/send", data=data, follow_redirects=False)
+
+    assert again.status_code == 303
+    assert "در این فاصله" in unquote(again.headers["location"])
+    assert db_session.query(SmsMessage).count() == 1
+
+
+def test_the_page_loses_politely_to_a_sweep_that_got_there_first(client, authed, db_session):
+    """The sweep is not gated by the page, so a form left open can arrive after a
+    message has already gone. The one that left wins, and the page says so."""
+    template = make_follow_up_template(db_session)
+    customer = another_customer(db_session, 11)
+    assert asyncio.run(fire_follow_up_sms(db_session))["sent"] == 1
+
+    page = authed.get("/admin/follow-ups")
+    assert customer.first_name not in page.text      # the list is a snapshot, not a queue
+
+    response = authed.post("/admin/follow-ups/send", data={
+        "csrf_token": csrf_token(client, "/admin/follow-ups"),
+        "template_id": template.id, "customer_ids": [customer.id],
+    }, follow_redirects=False)
+
+    assert response.status_code == 303
+    assert "در این فاصله" in unquote(response.headers["location"])
+    assert db_session.query(SmsMessage).count() == 1  # one buy, one text
+
+
+def test_the_page_leaves_out_whoever_the_audience_rules_leave_out(client, authed, db_session):
+    """It is the same test the send page applies — the page must not become a way
+    around consent, the archive flag or the «بلاک» tag."""
+    make_follow_up_template(db_session)
+    another_customer(db_session, 11, first_name="سارا")
+    another_customer(db_session, 12, first_name="نیلوفر", sms_opt_in=False)
+    another_customer(db_session, 13, first_name="مریم", is_archived=True)
+    another_customer(db_session, 14, first_name="زهرا", tags="blocked")
+
+    page = authed.get("/admin/follow-ups")
+
+    assert "سارا" in page.text
+    for name in ("نیلوفر", "مریم", "زهرا"):
+        assert name not in page.text
+
+
+def test_the_cap_throttles_the_sweep_and_not_the_owners_view(client, authed, db_session):
+    """Capping the query would hide exactly the people the page exists to surface,
+    and would report a half-scanned shop's skip counts as if they were all of it."""
+    db_session.add(Settings(key=SETTING_AUTO_SEND_LIMIT, value="1"))
+    db_session.commit()
+    make_follow_up_template(db_session)
+    for index in (11, 12, 13):
+        another_customer(db_session, index, first_name=f"مشتری{index}")
+
+    assert asyncio.run(fire_follow_up_sms(db_session))["sent"] == 1     # the sweep's cap
+
+    page = authed.get("/admin/follow-ups")
+    for index in (12, 13):
+        assert f"مشتری{index}" in page.text
+
+
+def test_the_page_handles_several_follow_up_templates_separately(client, authed, db_session):
+    make_follow_up_template(db_session, name="یادت نرود", days=30)
+    make_follow_up_template(db_session, name="برگرد", days=10,
+                            body="%var1% عزیز، منتظرتان هستیم")
+    another_customer(db_session, 11)
+    another_customer(db_session, 12, days_since_purchase=15)
+
+    page = authed.get("/admin/follow-ups")
+
+    assert page.status_code == 200
+    assert 'name="template_id"' in page.text
+    # The thirty-day text is due for the 40-day customer only; the ten-day one for
+    # both of them — each rendered into its own row, under its own template.
+    assert page.text.count("دلمان برایتان تنگ شده") == 1
+    assert page.text.count("منتظرتان هستیم") == 2
+
+
+def test_a_form_for_a_template_that_is_no_longer_a_follow_up_is_refused(client, authed, db_session):
+    """The form carries the template, so the template is checked too — not just
+    believed because the page once drew it."""
+    template = make_follow_up_template(db_session)
+    customer = another_customer(db_session, 11)
+    template.trigger_key = ""
+    db_session.commit()
+
+    response = authed.post("/admin/follow-ups/send", data={
+        "csrf_token": csrf_token(client, "/admin/follow-ups"),
+        "template_id": template.id, "customer_ids": [customer.id],
+    }, follow_redirects=False)
+
+    assert response.status_code == 303
+    assert db_session.query(SmsMessage).count() == 0
+
+
+# ── the page is offered, never promised as a gate ─────────────────────────────
+
+def test_the_trigger_sentence_never_claims_the_page_holds_things_back(db_session):
+    """«قبل از اینکه چیزی برود» would be a lie while the sweep runs, so the
+    sentence keeps «خودکار» and offers the page as something you may also do."""
+    template = make_follow_up_template(db_session, days=21)
+    info = send_info(template)
+
+    assert info["mode"] == "auto"
+    assert info["url"] == "/admin/follow-ups"
+    assert info["action"] == "صفحه پیگیری"
+    assert "21 روز" in info["text"]
+    assert "متوقف نمی‌شود" in info["also"]
+
+
+def test_the_manager_card_points_at_the_review_page(client, authed, db_session):
+    make_follow_up_template(db_session)
+
+    page = authed.get("/admin/sms")
+
+    assert page.status_code == 200
+    assert "/admin/follow-ups" in page.text
+    assert "متوقف نمی‌شود" in page.text
+
+
+def test_the_editor_offers_the_page_for_the_follow_up_trigger(client, authed, db_session):
+    page = authed.get("/admin/sms/templates/new")
+
+    assert page.status_code == 200
+    assert 'data-url="/admin/follow-ups"' in page.text
+    assert 'data-action="صفحه پیگیری"' in page.text
+
+def test_the_dashboard_offers_the_review_page(client, authed, db_session):
+    """پیامک تولد sits in the dashboard's periodic actions, so its sibling does too."""
+    page = authed.get("/admin")
+
+    assert page.status_code == 200
+    assert "/admin/follow-ups" in page.text

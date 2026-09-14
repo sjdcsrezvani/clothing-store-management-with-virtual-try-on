@@ -30,6 +30,13 @@ be taken back:
 The follow-up sweep is *throttled, never truncated*: at most
 ``trigger_sms_limit`` messages go out per run, and whoever was left over is
 picked up by the next run five minutes later.
+
+The follow-up also has a **review page** (`/admin/follow-ups`) beside the sweep,
+where the owner sees who is waiting and can send any of them now instead of
+waiting for the next pass. The sweep is not gated by it, and the page says so:
+the list is a snapshot of who is still waiting, not a queue that nothing leaves
+without. Both paths record the same ``ref``, so whichever gets there first, the
+customer is asked about that purchase exactly once.
 """
 from __future__ import annotations
 
@@ -39,9 +46,9 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from models import Customer, SmsMessage, SmsTemplate
-from services._common import get_setting_int
+from services._common import _to_persian_digits as to_persian_digits, get_setting_int
 from services.sms import queue_sms
-from services.sms_send import normalise_phone, message_block_reason
+from services.sms_send import TIER_LABELS, normalise_phone, message_block_reason
 from services.sms_templates import (
     AUTO_SEND_LIMIT_DEFAULT,
     TRIGGERS_BY_KEY,
@@ -170,19 +177,24 @@ def _follow_up_ref(customer: Customer) -> str:
     return f"purchase:{stamp.date().isoformat()}"
 
 
-def follow_up_candidates(db: Session, *, template: SmsTemplate, at: datetime | None = None,
-                         limit: int | None = None) -> dict:
+def follow_up_candidates(db: Session, *, template: SmsTemplate,
+                         at: datetime | None = None) -> dict:
     """Who is due a follow-up now, and who was left out.
 
     Only customers who have *bought before* qualify: «پیگیری پس از آخرین خرید»
     is about a customer the shop already has a relationship with, and someone who
     never bought is not late — they were never there. The sweep reports them as
     «بدون خرید» instead of guessing that a welcome nudge is what the owner meant.
+
+    Finds the whole shop, deliberately: how many may go out in one pass is the
+    *sweep's* business (see :func:`fire_follow_up_sms`), while the review page has
+    to be able to show everyone who is waiting. Capping the query instead would
+    hide exactly the people that page exists to surface, and would report the
+    skip counts of a half-scanned shop as if they were the whole of it.
     """
     at = at or datetime.now(timezone.utc)
     days = trigger_days(template)
     cutoff = at - timedelta(days=days)
-    cap = limit if limit is not None else auto_send_limit(db)
 
     due: list[Customer] = []
     skipped = {"no_purchase": 0, "too_soon": 0, "already_sent": 0,
@@ -210,9 +222,7 @@ def follow_up_candidates(db: Session, *, template: SmsTemplate, at: datetime | N
             skipped["empty"] += 1
             continue
         due.append(customer)
-        if len(due) >= cap:
-            break
-    return {"due": due, "skipped": skipped, "days": days, "limit": cap}
+    return {"due": due, "skipped": skipped, "days": days}
 
 
 async def fire_follow_up_sms(db: Session, *, at: datetime | None = None) -> dict:
@@ -228,7 +238,9 @@ async def fire_follow_up_sms(db: Session, *, at: datetime | None = None) -> dict
     try:
         for template in triggered_templates(db, "follow_up"):
             plan = follow_up_candidates(db, template=template, at=at)
-            for customer in plan["due"]:
+            # The cap is per template and per pass, as it always was: whoever is
+            # left over is picked up by the next run five minutes later.
+            for customer in plan["due"][:auto_send_limit(db)]:
                 row = await _queue_one(db, template, customer, trigger="follow_up",
                                        ref=_follow_up_ref(customer))
                 if row is None:
@@ -242,6 +254,92 @@ async def fire_follow_up_sms(db: Session, *, at: datetime | None = None) -> dict
         db.rollback()
         return {"sent": 0, "empty": 0}
     return {"sent": sent, "empty": empty}
+
+
+def _days_since(customer: Customer, at: datetime) -> int | None:
+    """How long the shop has been quiet with this customer, in whole days."""
+    last = _as_utc(customer.last_purchase_date)
+    return None if last is None else max(0, (at - last).days)
+
+
+def follow_up_plans(db: Session, *, at: datetime | None = None) -> list[dict]:
+    """Every follow-up template with the people it is due to message right now.
+
+    The review page's data, one entry per template: a shop may point several
+    texts at the follow-up moment, and each has its own wait, its own audience
+    rules and its own once-per-purchase guard. Each row carries the message it
+    would actually send, rendered from that customer's real values, so the owner
+    reads what would leave rather than a sample.
+    """
+    at = at or datetime.now(timezone.utc)
+    plans: list[dict] = []
+    for template in triggered_templates(db, "follow_up"):
+        candidates = follow_up_candidates(db, template=template, at=at)
+        rows = []
+        for customer in candidates["due"]:
+            rows.append({
+                "customer": customer,
+                "phone": normalise_phone(customer.phone),
+                # The level the owner recognises, not the column's English word.
+                "tier_label": TIER_LABELS.get(customer.tier or "", ""),
+                "last_purchase": _as_utc(customer.last_purchase_date),
+                "days_since": _days_since(customer, at),
+                "body": render_template(template, values_for_customer(customer, template)),
+            })
+        rows.sort(key=lambda row: (row["days_since"] or 0), reverse=True)
+        for row in rows:
+            # Formatted here rather than in the template, like every other label
+            # this page shows: the shop reads Persian digits, not 45.
+            row["days_label"] = "—" if row["days_since"] is None else \
+                f"{to_persian_digits(str(row['days_since']))} روز"
+        plans.append({
+            "template": template,
+            "days": candidates["days"],
+            "days_label": f"{to_persian_digits(str(candidates['days']))} روز",
+            "rows": rows,
+            "skipped": candidates["skipped"],
+            "skipped_total": sum(candidates["skipped"].values()),
+            "skipped_label": to_persian_digits(str(sum(candidates["skipped"].values()))),
+        })
+    return plans
+
+
+async def send_follow_ups(db: Session, *, template: SmsTemplate, customer_ids,
+                          at: datetime | None = None) -> dict:
+    """Queue the follow-ups the owner ticked on the review page.
+
+    Only what is still due is honoured, checked again here rather than trusted
+    from the form: between the page being drawn and the button being pressed the
+    automatic sweep may have messaged somebody, and sending again would be two
+    texts for one purchase. Whoever can no longer be sent is refused with a
+    reason instead of quietly counted.
+
+    Each message records the purchase it belongs to, exactly as the sweep's do,
+    so a hand-sent follow-up also silences the sweep for that same buy — the two
+    paths share one guard rather than each having their own idea of «already
+    asked».
+    """
+    at = at or datetime.now(timezone.utc)
+    plan = follow_up_candidates(db, template=template, at=at)
+    allowed = {customer.id: customer for customer in plan["due"]}
+    sent = 0
+    rejected = 0
+    empty = 0
+    for customer_id in customer_ids:
+        customer = allowed.get(int(customer_id))
+        if customer is None:
+            # Already messaged about this purchase, no longer consented, archived
+            # or tagged «بلاک» since the page was drawn.
+            rejected += 1
+            continue
+        row = await _queue_one(db, template, customer, trigger="follow_up",
+                               ref=_follow_up_ref(customer))
+        if row is None:
+            empty += 1
+            continue
+        sent += 1
+    db.commit()
+    return {"sent": sent, "rejected": rejected, "empty": empty, "days": plan["days"]}
 
 
 def trigger_summary(db: Session) -> list[dict]:

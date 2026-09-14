@@ -220,6 +220,16 @@ TRIGGERS = (
         "needs_days": True,
         "text": ("هر روز بررسی می‌شود و برای مشتریانی که {days} روز است خرید نکرده‌اند "
                  "فرستاده می‌شود — برای هر دورهٔ خرید فقط یک‌بار."),
+        # The two moments this trigger has. The sweep runs unattended; the review
+        # page only lets the owner get there first, so the page is offered as an
+        # «همچنین» and never as a gate — a page that implies nothing goes out
+        # until you tick it would be the same kind of lie as a switch that does
+        # nothing.
+        "send_url": "/admin/follow-ups",
+        "send_action": "صفحه پیگیری",
+        "also": ("می‌خواهید پیش از نوبت خودتان تصمیم بگیرید؟ در صفحه «پیگیری» می‌بینید "
+                 "الان چه کسی موعدش رسیده و می‌توانید همان‌جا بفرستید — ولی ارسال "
+                 "خودکار متوقف نمی‌شود."),
         "hint": ("به‌خاطر تبلیغاتی بودن، فقط برای مشتریانی می‌رود که رضایت پیامک "
                  "تبلیغاتی داده‌اند؛ بایگانی‌شده‌ها و برچسب «بلاک» کنار گذاشته می‌شوند."),
     },
@@ -273,6 +283,10 @@ def trigger_info(template) -> dict | None:
         **spec,
         "days": trigger_days(template),
         "text": spec["text"].format(days=trigger_days(template)),
+        # Where the owner can get there first, for the triggers that have a page.
+        "url": spec.get("send_url"),
+        "action": spec.get("send_action", ""),
+        "also": spec.get("also", ""),
     }
 
 
@@ -289,10 +303,14 @@ def send_info(template) -> dict:
         # telling the owner to go send it from «ارسال پیامک» would be a lie.
         trigger = trigger_info(template)
         if trigger is not None:
+            # An automatic trigger can still offer a page of its own: the
+            # follow-up sweep runs by itself, and «صفحه پیگیری» is where the
+            # owner can see who is waiting and act before the next pass.
             return {"mode": "auto", "label": MODE_LABELS["auto"], "text": trigger["text"],
-                    "url": None, "action": "", "trigger": trigger["key"]}
+                    "url": trigger.get("url"), "action": trigger.get("action", ""),
+                    "also": trigger.get("also", ""), "trigger": trigger["key"]}
         return {"mode": "manual", "label": MODE_LABELS["manual"], "text": CUSTOM_TRIGGER,
-                "url": CUSTOM_SEND_URL, "action": CUSTOM_SEND_ACTION, "trigger": ""}
+                "url": CUSTOM_SEND_URL, "action": CUSTOM_SEND_ACTION, "also": "", "trigger": ""}
     mode = spec.get("mode", "manual")
     return {
         "mode": mode,
@@ -300,6 +318,7 @@ def send_info(template) -> dict:
         "text": spec.get("trigger", ""),
         "url": spec.get("send_url"),
         "action": spec.get("send_action", ""),
+        "also": "",
         "trigger": spec["key"],
     }
 

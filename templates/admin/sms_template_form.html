@@ -130,6 +130,8 @@
                                     data-text="{{ trigger.text }}"
                                     data-label="{{ template_mode_labels[trigger.mode] }}"
                                     data-hint="{{ trigger.hint }}"
+                                    data-url="{{ trigger.send_url or '' }}"
+                                    data-action="{{ trigger.send_action or '' }}"
                                     data-needs-days="{{ '1' if trigger.needs_days else '0' }}"
                                     {% if active_trigger == trigger.key %}selected{% endif %}>
                                 {{ trigger.label }}
@@ -341,6 +343,11 @@
         var badge = document.getElementById('sms-fire-badge');
         var fireText = document.getElementById('sms-fire-text');
         var fireLink = document.getElementById('sms-fire-link');
+        // What the server rendered for the hand-sent case, kept so switching
+        // back to «فقط دستی» restores it verbatim instead of pointing at an
+        // empty href. The server owns that answer (``send_info``), not this file.
+        var fireLinkHref = fireLink ? fireLink.getAttribute('href') : '';
+        var fireLinkText = fireLink ? fireLink.textContent : '';
         function syncTrigger() {
             var option = triggerSelect.options[triggerSelect.selectedIndex];
             var auto = option.getAttribute('data-mode') === 'auto';
@@ -360,8 +367,25 @@
                     ? (option.getAttribute('data-text') || '').replace('{days}', String(days))
                     : '{{ CUSTOM_TRIGGER }}';
             }
-            // The hand-send link is only true while the template is hand-sent.
-            if (fireLink) fireLink.hidden = auto;
+            // A link whenever there is somewhere to go: the trigger's own page
+            // for a follow-up — which keeps sending by itself and is a place to
+            // get there first, not a gate — or the hand-send page while the
+            // template is still hand-sent.
+            if (fireLink) {
+                var url = option.getAttribute('data-url') || '';
+                var action = option.getAttribute('data-action') || '';
+                if (auto && url) {
+                    fireLink.href = url;
+                    fireLink.textContent = action + ' ←';
+                    fireLink.hidden = false;
+                } else if (!auto) {
+                    fireLink.href = fireLinkHref;
+                    fireLink.textContent = fireLinkText;
+                    fireLink.hidden = false;
+                } else {
+                    fireLink.hidden = true;
+                }
+            }
         }
         triggerSelect.addEventListener('change', syncTrigger);
         if (daysInput) daysInput.addEventListener('input', syncTrigger);

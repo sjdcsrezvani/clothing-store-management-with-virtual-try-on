@@ -1255,6 +1255,85 @@ async def admin_birthdays_send(request: Request, customer_ids: list[int] = Form(
     return RedirectResponse(url=f"/admin/birthdays?msg={message}", status_code=303)
 
 
+@router.get("/follow-ups", response_class=HTMLResponse)
+async def admin_follow_ups(request: Request, db: Session = Depends(get_db)):
+    """Review the customers due a follow-up, and send any of them now.
+
+    The sibling of تولد and ارتقای سطح, with one difference the page states out
+    loud instead of hiding: those two never send on their own, while a follow-up
+    template keeps its own sweep. So this list is a snapshot of who is still
+    waiting, not a queue that nothing leaves without — ticking sends now rather
+    than at the next pass, and whoever the sweep reached first is simply no
+    longer on the list.
+    """
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+
+    from services.sms_triggers import auto_send_limit, follow_up_plans
+
+    plans = follow_up_plans(db)
+    total_due = sum(len(plan["rows"]) for plan in plans)
+    return templates.TemplateResponse(request, "admin/follow-ups.html", {
+        "plans": plans,
+        "total_due": total_due,
+        # Counts read as sentence material here, so they arrive as Persian digits
+        # rather than being formatted inside the page.
+        "total_due_label": to_persian_digits(str(total_due)),
+        "plans_count_label": to_persian_digits(str(len(plans))),
+        "auto_limit_label": to_persian_digits(str(auto_send_limit(db))),
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
+        "fmt": fmt,
+        "jalali_str": jalali_str,
+    })
+
+
+@router.post("/follow-ups/send", response_class=HTMLResponse)
+async def admin_follow_ups_send(request: Request, template_id: int = Form(0),
+                                customer_ids: list[int] = Form([]),
+                                db: Session = Depends(get_db)):
+    """Queue the follow-ups the owner ticked on the review page.
+
+    Nothing is taken on trust from the form. The template has to be one that is
+    still ready to fire, and the customers are looked up again as they stand
+    now — so a form left open while the sweep went past cannot message somebody
+    twice. Both paths record the same per-purchase reference, and the second to
+    arrive loses politely with a count the page reports.
+    """
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+
+    from services.sms_triggers import send_follow_ups, triggered_templates
+
+    ready = {row.id: row for row in triggered_templates(db, "follow_up")}
+    template = ready.get(int(template_id or 0))
+    if template is None:
+        return RedirectResponse(
+            url="/admin/follow-ups?err=این قالب دیگر برای پیگیری تنظیم یا فعال نیست.",
+            status_code=303)
+
+    wanted = [int(value) for value in customer_ids if str(value).strip().isdigit()]
+    if not wanted:
+        return RedirectResponse(url="/admin/follow-ups?err=هیچ مشتری انتخاب نشده است.",
+                                status_code=303)
+
+    result = await send_follow_ups(db, template=template, customer_ids=wanted)
+    log_action(db, "follow_up_sms",
+               f"{result['sent']} پیامک پیگیری فرستاده شد "
+               f"({result['rejected']} مورد دیگر موعدش نبود)",
+               request=request, target_type="sms_template", target_id=template.id)
+
+    message = f"{result['sent']} پیامک پیگیری در صف قرار گرفت."
+    if result["rejected"]:
+        message += (f" {result['rejected']} مورد در این فاصله خودکار فرستاده شده یا دیگر "
+                    f"واجد شرایط نیست.")
+    if result["empty"]:
+        message += f" {result['empty']} مورد متن خالی داشت و در صف نگذاشت."
+    return RedirectResponse(url=f"/admin/follow-ups?msg={message}", status_code=303)
+
+
 @router.post("/check-downgrades", response_class=HTMLResponse)
 async def admin_check_downgrades(request: Request, db: Session = Depends(get_db)):
     """Manually trigger tier downgrade check."""

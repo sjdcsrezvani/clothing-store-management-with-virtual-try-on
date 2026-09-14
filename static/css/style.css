@@ -340,6 +340,9 @@ button:disabled { cursor: wait; opacity: 0.62; transform: none !important; }
 .alert-success { background: var(--success-bg); color: var(--mint-dark); }
 .alert-error   { background: var(--danger-bg); color: var(--candy-dark); }
 .alert-warning { background: var(--warning-bg); color: var(--sunshine); }
+/* Neither a success nor a failure: «اين پيامک خودکار هم مى‌رود» explains the
+   machine, so it takes the palette's secondary blue. */
+.alert-info    { background: color-mix(in srgb, var(--sky) 14%, var(--card)); color: var(--sky-dark); }
 
 /* ===================== Tier badges ===================== */
 

@@ -195,6 +195,14 @@ theme, so it matches light, dark and high-contrast alike.
   asked about once, a template whose text uses a slot nothing fills is refused,
   and the sweep stops at «سقف ارسال خودکار در هر بررسی» and picks up the rest on
   the next pass.
+- **📮 پیگیری مشتریان** (`/admin/follow-ups`) — everyone the follow-up templates
+  are due to message: the text each one would actually receive, how long they
+  have been quiet, and how many people were left out and why. Tick who to send
+  and confirm, or leave it to the sweep. It sits **beside** the sweep rather than
+  in front of it and the page says so out loud — a follow-up still leaves on its
+  own, so this is a way to get there first, not a gate. Both paths record the
+  same per-purchase reference, so whichever arrives first, nobody is asked about
+  one purchase twice.
 - **🎂 پیامک تولد** (`/admin/birthdays`) — the customers whose birthday falls in
   the next N days, with whose birthday it is, how soon, and who already received
   this year's wish. You tick who to wish and confirm; nothing is queued before

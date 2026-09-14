@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}📮 پیگیری مشتریان — {{ store.name }}{% endblock %}
+{% block content %}
+
+<div class="page-heading product-page-heading">
+    <div>
+        <div class="eyebrow">بازاریابی / پیامک / پیگیری</div>
+        <h2>پیگیری مشتریان</h2>
+        <p>
+            مشتریانی که مدتی است خرید نکرده‌اند. هر کسی را خواستید تیک بزنید و همان‌جا بفرستید،
+            یا بگذارید نوبت خودش برسد. متن هر پیامک همان چیزی است که برای آن مشتری فرستاده می‌شود.
+        </p>
+    </div>
+    <div class="admin-nav">
+        <a href="/admin/sms" class="btn btn-ghost">قالب‌های پیامک</a>
+        <a href="/admin/birthdays" class="btn btn-ghost">پیامک تولد</a>
+        <a href="/admin/tier-up" class="btn btn-ghost">ارتقای سطح</a>
+    </div>
+</div>
+
+{% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
+{% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}
+
+{# The honest difference from تولد و ارتقای سطح: this one also leaves on its own. #}
+{% if plans %}
+<div class="alert alert-info" role="status">
+    این پیامک‌ها <strong>خودکار هم فرستاده می‌شوند</strong>: هر چند دقیقه یک‌بار بررسی می‌شود و
+    در هر نوبت حداکثر {{ auto_limit_label }} پیامک می‌رود. پس این فهرست
+    عکسِ همین لحظه است — اگر کسی را می‌خواهید زودتر بفرستید، تیکش را بزنید و تأیید کنید؛
+    وگرنه خودش در نوبت بعد می‌رود. هر مشتری برای هر خرید فقط یک‌بار پیام می‌گیرد،
+    پس فرستادن دستی باعث پیام تکراری نمی‌شود.
+</div>
+{% endif %}
+
+{% if plans %}
+<section class="card follow-up-card">
+    <div class="section-heading-row">
+        <div>
+            <h3>موعدگذشته‌ها</h3>
+            <p class="muted">
+                {{ total_due_label }} مشتری در {{ plans_count_label }} قالب پیگیری — همه در انتظار،
+                هیچ‌کدام هنوز فرستاده نشده است.
+            </p>
+        </div>
+    </div>
+
+    {% for plan in plans %}
+    <div class="follow-up-group">
+        <h4>
+            {{ plan.template.name }}
+            <span class="sms-fire-badge is-auto">خودکار</span>
+        </h4>
+        <p class="muted">
+            {{ plan.days_label }} پس از آخرین خرید
+            {% if plan.skipped_total %}
+            · {{ plan.skipped_label }} نفر کنار گذاشته شدند
+            {% endif %}
+        </p>
+
+        {% if plan.rows %}
+        <form method="post" action="/admin/follow-ups/send">
+            <input type="hidden" name="template_id" value="{{ plan.template.id }}">
+            <div class="table-scroll">
+                <table class="sms-table follow-up-table">
+                    <thead>
+                        <tr>
+                            <th scope="col">ارسال</th>
+                            <th scope="col">مشتری</th>
+                            <th scope="col">آخرین خرید</th>
+                            <th scope="col">فاصله</th>
+                            <th scope="col">پیامک</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in plan.rows %}
+                        <tr>
+                            <td>
+                                <input type="checkbox" name="customer_ids" value="{{ row.customer.id }}" checked
+                                       aria-label="ارسال پیگیری به {{ row.customer.full_name }}">
+                            </td>
+                            <td class="sms-name">
+                                <a href="/admin/customers/{{ row.customer.id }}"><strong>{{ row.customer.full_name }}</strong></a>
+                                <small class="sms-meta tnum" dir="ltr">{{ row.phone }}</small>
+                                {% if row.tier_label %}
+                                <small class="sms-meta">سطح {{ row.tier_label }}</small>
+                                {% endif %}
+                            </td>
+                            <td class="tnum">
+                                {% if row.last_purchase %}{{ jalali_str(row.last_purchase) }}{% else %}—{% endif %}
+                            </td>
+                            <td class="tnum">{{ row.days_label }}</td>
+                            <td class="sms-body-cell"><span class="sms-body" dir="auto">{{ row.body }}</span></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary btn-large">
+                    📮 ارسال پیامک‌های انتخاب‌شده
+                </button>
+            </div>
+        </form>
+        {% else %}
+        <div class="empty-state">
+            <h3>الان کسی موعدش نرسیده است</h3>
+            <p>
+                وقتی از آخرین خرید مشتری‌ای {{ plan.days_label }} بگذرد،
+                همین‌جا فهرست می‌شود — و اگر تا آن موقع خودتان تصمیمی نگیرید،
+                خودکار هم می‌رود.
+            </p>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</section>
+{% else %}
+<div class="empty-state">
+    <h3>هنوز قالبی برای پیگیری تنظیم نشده است</h3>
+    <p>
+        در <a href="/admin/sms">صفحه پیامک</a> یک قالب بسازید و در بخش «چه زمانی خودش فرستاده شود؟»
+        گزینه «پیگیری پس از چند روز» را انتخاب کنید. از آن به بعد مشتریانی که مدتی است خرید
+        نکرده‌اند این‌جا نشان داده می‌شوند.
+    </p>
+    <a href="/admin/sms" class="btn btn-primary">تنظیم قالب پیگیری</a>
+</div>
+{% endif %}
+{% endblock %}
