@@ -343,7 +343,12 @@ def test_the_editor_offers_the_triggers_and_saves_the_choice(client, authed, db_
 
 def test_an_automatic_template_may_not_carry_a_hole(client, authed, db_session):
     """Nobody reads an automatic message before it leaves, so a slot nothing
-    fills is refused at the door instead of arriving as « عزیز، »."""
+    fills is refused at the door instead of arriving as « عزیز، ».
+
+    Every custom template is refused for a hole now — see the editor tests in
+    ``test_sms`` — so what this pins is the *extra* reason an automatic one
+    gets: it is the only kind that leaves with no one looking at it.
+    """
     template = create_custom(db_session, name="یادت نرود", body="%var1% عزیز، %var2%")
     db_session.commit()
     token = csrf_token(client, f"/admin/sms/templates/{template.id}/edit")
@@ -356,6 +361,7 @@ def test_an_automatic_template_may_not_carry_a_hole(client, authed, db_session):
 
     assert refused.status_code == 200                    # the form came back
     assert "به هیچ مقداری وصل نیست" in refused.text
+    assert "کسی هم پیش از ارسال آن را نمی‌بیند" in refused.text
     stored = db_session.query(SmsTemplate).filter(SmsTemplate.id == template.id).one()
     assert stored.trigger_key == ""                      # nothing was switched on
 
@@ -371,24 +377,6 @@ def test_an_automatic_template_may_not_carry_a_hole(client, authed, db_session):
     assert db_session.query(SmsTemplate).filter(
         SmsTemplate.id == template.id,
     ).one().trigger_key == "follow_up"
-
-
-def test_a_hand_sent_template_may_keep_that_hole(client, authed, db_session):
-    """The refusal is about *automatic* only: hand-sent keeps the warning that
-    already exists, because there the owner sees the preview."""
-    template = create_custom(db_session, name="تبریک عید", body="%var1% عزیز، %var2%")
-    db_session.commit()
-    token = csrf_token(client, f"/admin/sms/templates/{template.id}/edit")
-
-    saved = authed.post(f"/admin/sms/templates/{template.id}", data={
-        "csrf_token": token, "name": "تبریک عید", "body": "%var1% عزیز، %var2%",
-        "source_var1": "first_name", "trigger_key": "",
-    }, follow_redirects=False)
-
-    assert saved.status_code == 303
-    assert db_session.query(SmsTemplate).filter(
-        SmsTemplate.id == template.id,
-    ).one().trigger_key == ""
 
 
 def test_a_builtin_cannot_be_given_a_trigger(client, authed, db_session):

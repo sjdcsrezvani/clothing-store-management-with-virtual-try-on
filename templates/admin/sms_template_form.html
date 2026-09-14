@@ -66,8 +66,9 @@
                     <p class="muted">
                         جای متغیر در متن آزاد است: هر کجای پیامک <span dir="ltr">%var1%</span> بنویسید، همان‌جا
                         پر می‌شود — اول، وسط یا آخر. فقط اسم متغیر مهم است، نه ترتیبش.
-                        برای هر متغیر بگویید از کدام مقدار مشتری پر شود؛ متغیری که به هیچ مقداری
-                        وصل نباشد، در پیامک خالی می‌ماند.
+                        برای هر متغیر بگویید از کدام مقدار مشتری پر شود. هر متغیری که در متن
+                        آمده باید یک مقدار داشته باشد؛ متغیر بی‌مقدار، جای خالی روی گوشی مشتری
+                        می‌شود، پس تا تعیین‌تکلیف‌نشدنش قالب ذخیره نمی‌شود.
                     </p>
                     {% for variable in variables %}
                     <div class="sms-slot">
@@ -78,7 +79,7 @@
                             <select id="source_{{ variable.token }}" name="source_{{ variable.token }}"
                                     class="sms-slot-source" data-token="{{ variable.token }}">
                                 <option value=""{% if not variable.field %} selected{% endif %}>
-                                    — بدون مقدار (خالی فرستاده می‌شود) —
+                                    — بدون مقدار (تنها اگر در متن نباشد) —
                                 </option>
                                 {% for source in sources %}
                                 <option value="{{ source.field }}"
@@ -205,8 +206,8 @@
                 <span id="sms-unfilled-tokens">
                     {%- for item in unfilled %}<span dir="ltr">%{{ item.token }}%</span>{% if not loop.last %}، {% endif %}{% endfor -%}
                 </span>
-                به هیچ مقداری وصل نیست و در پیامک خالی می‌ماند — یک مقدار برایش انتخاب کنید یا
-                خودِ متن را جای متغیر بنویسید.
+                به هیچ مقداری وصل نیست و جای آن در پیامک خالی می‌ماند — تا یک مقدار برایش
+                انتخاب نکنید یا خودِ متن را جای متغیر ننویسید، این قالب ذخیره نمی‌شود.
             </p>
         </section>
 
@@ -258,8 +259,16 @@
     var placeholders = [{% for variable in variables %}'%{{ variable.token }}%'{% if not loop.last %}, {% endif %}{% endfor %}];
     var samples = { {% for variable in variables %}'%{{ variable.token }}%': {{ variable.sample|tojson }}{% if not loop.last %}, {% endif %}{% endfor %} };
     // Tokens no source fills: they leave the phone empty, so the preview shows
-    // them empty too instead of promising a sample that never gets sent.
-    var blanked = [{% for item in unfilled %}'%{{ item.token }}%'{% if not loop.last %}, {% endif %}{% endfor %}];
+    // them empty too instead of promising a sample that never gets sent. The
+    // list is read from the form itself, so it follows the dropdowns and the
+    // text as they change rather than describing only the text last saved.
+    function unboundTokens() {
+        var tokens = [];
+        document.querySelectorAll('.sms-slot-source').forEach(function (select) {
+            if (!select.value) tokens.push('%' + select.getAttribute('data-token') + '%');
+        });
+        return tokens;
+    }
     var unfilledNote = document.getElementById('sms-unfilled');
     var unfilledTokens = document.getElementById('sms-unfilled-tokens');
 
@@ -271,13 +280,19 @@
 
     function refreshUnfilled() {
         if (!unfilledNote) return;
-        if (!blanked.length) {
+        // Only the unbound tokens this text actually uses: a slot left empty on
+        // purpose is fine, so warning about it would be noise. This is the same
+        // rule the server refuses a save with, read off the live form.
+        var shown = unboundTokens().filter(function (token) {
+            return body.value.indexOf(token) !== -1;
+        });
+        if (!shown.length) {
             unfilledNote.hidden = true;
             return;
         }
         unfilledNote.hidden = false;
         if (unfilledTokens) {
-            unfilledTokens.innerHTML = blanked.map(function (token) {
+            unfilledTokens.innerHTML = shown.map(function (token) {
                 return '<span dir="ltr">' + token + '</span>';
             }).join('، ');
         }
@@ -286,8 +301,9 @@
     function render() {
         var text = body.value;
         var preview = text;
+        var unbound = unboundTokens();
         placeholders.forEach(function (token) {
-            var value = blanked.indexOf(token) !== -1 ? '' : (samples[token] || '');
+            var value = unbound.indexOf(token) !== -1 ? '' : (samples[token] || '');
             preview = preview.split(token).join(value);
         });
         var metrics = segments(text);
@@ -303,6 +319,9 @@
                 ? (text.length + ' نویسه · ' + metrics.count + ' پیامک · ' + (metrics.unicode ? 'یونیکد (فارسی)' : 'لاتین'))
                 : 'برای دیدن پیش‌نمایش، متن را بنویسید.';
         }
+        // Typing a token into the text is what makes it a hole, so the warning
+        // has to follow the text as well as the dropdowns.
+        refreshUnfilled();
     }
 
     // Choosing a trigger is what turns «فقط دستی» into «خودکار». The card on the
@@ -357,11 +376,7 @@
                 if (labelInput) labelInput.value = option.getAttribute('data-label') || '';
                 if (sampleInput) sampleInput.value = samples[token];
                 if (chipLabel) chipLabel.textContent = option.getAttribute('data-label') || '';
-                blanked = blanked.filter(function (item) { return item !== token; });
-            } else if (blanked.indexOf(token) === -1) {
-                blanked.push(token);
             }
-            refreshUnfilled();
             render();
         });
     });

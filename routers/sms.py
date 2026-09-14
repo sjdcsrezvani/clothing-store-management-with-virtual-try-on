@@ -278,15 +278,29 @@ def _lan_base_url(request: Request) -> str:
 
 # ── template editor ───────────────────────────────────────────────────────────
 
-def _form_context(request, db, *, template, edit_mode, values, error="", message=""):
+def _form_context(request, db, *, template, edit_mode, values, error="", message="",
+                  draft_variables=None):
+    """The editor, either as it stands or as a refused save left it.
+
+    ``draft_variables`` are the bindings the form just posted. On a refusal the
+    page has to describe the text that was *rejected* — its slots, its holes and
+    its preview — because describing the stored text instead points the warning
+    at slots the owner has already changed.
+    """
+    if draft_variables is not None:
+        variables = draft_variables
+        unfilled = unfilled_in_body(values.get("body") or "", variables)
+    else:
+        variables = (template_variables(template) if template is not None
+                     else list(CUSTOM_VARIABLES))
+        unfilled = unfilled_tokens(template)
     return templates.TemplateResponse(request, "admin/sms_template_form.html", {
         "template": template,
         "edit_mode": edit_mode,
         "values": values,
-        "variables": (template_variables(template) if template is not None
-                      else list(CUSTOM_VARIABLES)),
+        "variables": variables,
         "sources": CUSTOMER_SOURCES,
-        "unfilled": unfilled_tokens(template),
+        "unfilled": unfilled,
         "triggers": TRIGGERS,
         "trigger_days_default": DEFAULT_FOLLOW_UP_DAYS,
         "template_mode_labels": TEMPLATE_MODE_LABELS,
@@ -305,24 +319,29 @@ def _values_from_form(name, body, is_active) -> dict:
     return {"name": name or "", "body": body or "", "is_active": bool(is_active)}
 
 
-def _auto_send_hole(body, variables, trigger_key) -> str:
-    """Why this template cannot be automatic yet, or "" when it can.
+def _unbound_slot_error(body, variables, trigger_key) -> str:
+    """Why this text cannot be saved yet, or "" when it can.
 
-    An automatic message has nobody reading it before it leaves, so a slot the
-    text uses but nothing fills would put a hole on the customer's phone with no
-    one to notice. A hand-sent template may keep that hole (the owner sees it in
-    the preview); an automatic one is refused here, at the door, rather than
-    silently refusing to fire later — a switch that lies is worse than a
-    sentence that complains.
+    A custom template has no sender to hand its slots a value, so a token the
+    text uses but nothing fills is a hole on the customer's phone: « عزیز، عید
+    مبارک». Every custom template is refused for it — hand-sent ones included —
+    because the owner only ever sees a preview and the customer is who ends up
+    reading the gap. Saving it anyway is what let a template look finished while
+    every message it sent was missing a word.
+
+    An automatic one is refused twice over, so its explanation says the other
+    half out loud: nobody reads it at all before it leaves.
     """
-    if not trigger_key:
-        return ""
     holes = unfilled_in_body(body, variables)
     if not holes:
         return ""
     names = "، ".join(f"%{item['token']}%" for item in holes)
-    return (f"برای ارسال خودکار، هر متغیر متن باید یک مقدار داشته باشد: {names} "
-            f"به هیچ مقداری وصل نیست. یک مقدار برایش انتخاب کنید یا خودِ متن را جای "
+    reason = (f"این متن از {names} استفاده می‌کند، اما به هیچ مقداری وصل نیست و "
+              f"جای آن در پیامک خالی می‌ماند.")
+    if trigger_key:
+        reason += (" چون این قالب خودبه‌خود فرستاده می‌شود، کسی هم پیش از ارسال "
+                   "آن را نمی‌بیند.")
+    return (f"{reason} برای هر متغیرِ متن یک مقدار انتخاب کنید، یا خودِ متن را جای "
             f"متغیر بنویسید.")
 
 
@@ -380,10 +399,11 @@ async def admin_sms_template_create(
     trigger_key, trigger_value = trigger_from_form(
         str(form.get("trigger_key", "") or ""), form.get("trigger_days"))
     variables = _variables_from_form(form)
-    hole = _auto_send_hole(body, variables, trigger_key)
-    if hole:
+    problem = _unbound_slot_error(body, variables, trigger_key)
+    if problem:
         return _form_context(request, db, template=None, edit_mode=False,
-                             values=_values_from_form(name, body, True), error=hole)
+                             values=_values_from_form(name, body, True), error=problem,
+                             draft_variables=variables)
     template = create_custom(db, name=name, body=body, variables=variables,
                              trigger_key=trigger_key, trigger_days=trigger_value)
     db.commit()
@@ -435,23 +455,27 @@ async def admin_sms_template_update(
                              values=_values_from_form(name, body, is_active == "on"),
                              error=error)
 
-    template.name = name.strip()
-    template.body = body
     if template.is_builtin:
+        template.name = name.strip()
+        template.body = body
         template.is_active = is_active == "on"
     else:
-        template.is_active = True
         form = await request.form()
         submitted = _variables_from_form(form, template_variables(template))
         # Only a custom template can fire on its own; the built-ins have their
         # own senders, so their trigger stays empty however the form is posted.
         trigger_key, trigger_value = trigger_from_form(
             str(form.get("trigger_key", "") or ""), form.get("trigger_days"))
-        hole = _auto_send_hole(body, submitted, trigger_key)
-        if hole:
+        # Checked before anything is written, so a refused save leaves the stored
+        # template exactly as it was rather than half-edited in the session.
+        problem = _unbound_slot_error(body, submitted, trigger_key)
+        if problem:
             return _form_context(request, db, template=template, edit_mode=True,
                                  values=_values_from_form(name, body, is_active == "on"),
-                                 error=hole)
+                                 error=problem, draft_variables=submitted)
+        template.name = name.strip()
+        template.body = body
+        template.is_active = True
         template.variables = json.dumps(submitted, ensure_ascii=False)
         template.trigger_key, template.trigger_days = trigger_key, trigger_value
     # The legacy settings row is the contract every sender already reads, so it

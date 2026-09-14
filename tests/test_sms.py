@@ -710,6 +710,93 @@ def test_a_slot_left_without_a_source_is_blank_and_the_editor_says_so(client, au
     assert "نام و نام خانوادگی" in editor          # the source catalog is offered
 
 
+def test_an_unbound_slot_used_in_the_text_is_refused_with_a_reason(client, authed, db_session):
+    """A hole used to be a warning the owner could save straight past. It is a
+    refusal now, and the form says which token and what to do about it."""
+    ensure_seeded(db_session)
+    custom = create_custom(db_session, name="تبریک عید", body="%var1% عزیز، %var2%")
+    db_session.commit()
+    token = csrf_token(client, f"/admin/sms/templates/{custom.id}/edit")
+
+    refused = authed.post(f"/admin/sms/templates/{custom.id}", data={
+        "csrf_token": token, "name": "عید مبارک", "body": "%var1% جان، %var3%",
+        "source_var1": "first_name", "trigger_key": "",
+    })
+    db_session.expire_all()
+
+    assert refused.status_code == 200                     # the form came back
+    assert "به هیچ مقداری وصل نیست" in refused.text
+    assert "%var3%" in refused.text                       # it names the token
+    assert "ذخیره نمی‌شود" in refused.text                 # and what that means
+    # Nothing was written: not the new name, not the new text.
+    stored = db_session.query(SmsTemplate).filter(SmsTemplate.id == custom.id).one()
+    assert (stored.name, stored.body) == ("تبریک عید", "%var1% عزیز، %var2%")
+
+    # Binding the slot is what lets the text through.
+    saved = authed.post(f"/admin/sms/templates/{custom.id}", data={
+        "csrf_token": token, "name": "عید مبارک", "body": "%var1% جان، %var3%",
+        "source_var1": "first_name", "source_var3": "total_debt", "trigger_key": "",
+    }, follow_redirects=False)
+
+    assert saved.status_code == 303
+    db_session.expire_all()
+    assert db_session.query(SmsTemplate).filter(
+        SmsTemplate.id == custom.id,
+    ).one().body == "%var1% جان، %var3%"
+
+
+def test_the_refused_form_warns_about_the_text_that_was_rejected(client, authed, db_session):
+    """The warning beside the form lists the token of the text just posted, not
+    of the stored one — otherwise it points the owner at the wrong slot."""
+    ensure_seeded(db_session)
+    custom = create_custom(db_session, name="تبریک عید", body="%var1% عزیز")
+    db_session.commit()
+    token = csrf_token(client, f"/admin/sms/templates/{custom.id}/edit")
+
+    refused = authed.post(f"/admin/sms/templates/{custom.id}", data={
+        "csrf_token": token, "name": "تبریک عید", "body": "%var1% عزیز، %var2%",
+        "source_var1": "first_name",
+    })
+
+    assert refused.status_code == 200
+    warning = refused.text.split('id="sms-unfilled"', 1)[1].split("</p>", 1)[0]
+    assert "hidden" not in warning.split(">", 1)[0]       # the warning is up
+    assert "%var2%" in warning                             # naming the rejected token
+
+
+def test_a_new_template_with_an_unbound_slot_is_refused_too(client, authed, db_session):
+    """The create form is guarded by the same rule, so a hole cannot be born."""
+    token = csrf_token(client, "/admin/sms/templates/new")
+
+    refused = authed.post("/admin/sms/templates/new", data={
+        "csrf_token": token, "name": "تبریک عید", "body": "عید مبارک! %var2%",
+    })
+
+    assert refused.status_code == 200
+    assert "به هیچ مقداری وصل نیست" in refused.text
+    assert db_session.query(SmsTemplate).filter(SmsTemplate.category == "custom").count() == 0
+
+
+def test_a_slot_the_text_does_not_use_may_stay_empty(client, authed, db_session):
+    """The rule is about tokens the text uses. An unused slot may sit unbound, or
+    it would have become a demand to fill all three every time."""
+    ensure_seeded(db_session)
+    custom = create_custom(db_session, name="تبریک عید", body="%var1% عزیز، %var2%")
+    db_session.commit()
+    token = csrf_token(client, f"/admin/sms/templates/{custom.id}/edit")
+
+    saved = authed.post(f"/admin/sms/templates/{custom.id}", data={
+        "csrf_token": token, "name": "تبریک عید", "body": "%var1% عزیز",
+        "source_var1": "first_name",
+    }, follow_redirects=False)
+
+    assert saved.status_code == 303
+    db_session.expire_all()
+    assert db_session.query(SmsTemplate).filter(
+        SmsTemplate.id == custom.id,
+    ).one().body == "%var1% عزیز"
+
+
 def test_a_builtin_slot_nobody_has_yet_is_still_previewed_with_its_sample(db_session):
     """Built-ins are filled by their own sender (the campaign row, the amount),
     so their unfilled slots must keep previewing a sample."""
