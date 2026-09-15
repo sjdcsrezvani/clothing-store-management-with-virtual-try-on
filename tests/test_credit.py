@@ -159,7 +159,12 @@ def test_collections_leaves_the_sidebar_now_that_it_is_one_page():
     # …and the old name is gone from the dashboard too, not just the sidebar.
     dashboard = (ROOT / "templates" / "admin" / "dashboard.html").read_text()
     assert "وصول مطالبات" not in dashboard
-    assert '/admin/credit' in dashboard
+    # The dashboard's destinations live in its service now — the page prints
+    # what it is handed — so "does the dashboard reach نسیه?" has to be asked
+    # of the service rather than of the markup.
+    dashboard_service = (ROOT / "services" / "dashboard.py").read_text()
+    assert "/admin/credit" in dashboard_service
+    assert "وصول مطالبات" not in dashboard_service
 
 
 def test_credit_styles_come_from_theme_tokens():

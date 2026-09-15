@@ -225,6 +225,22 @@ def follow_up_candidates(db: Session, *, template: SmsTemplate,
     return {"due": due, "skipped": skipped, "days": days}
 
 
+def follow_up_due_count(db: Session, *, at: datetime | None = None) -> int:
+    """How many people the follow-up templates are waiting to message.
+
+    The count-only twin of :func:`follow_up_plans`, which renders every message
+    it lists — the right thing for the review page, far more than a dashboard
+    needs. It is deliberately not a cheaper *approximation*: it runs the same
+    :func:`follow_up_candidates` audience test as the page, so the number here
+    can never disagree with the number of rows there.
+    """
+    at = at or datetime.now(timezone.utc)
+    return sum(
+        len(follow_up_candidates(db, template=template, at=at)["due"])
+        for template in triggered_templates(db, "follow_up")
+    )
+
+
 async def fire_follow_up_sms(db: Session, *, at: datetime | None = None) -> dict:
     """One pass of the follow-up trigger, for every template that opted in.
 

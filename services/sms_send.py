@@ -456,6 +456,22 @@ def _today_start() -> datetime:
     return datetime(today.year, today.month, today.day, tzinfo=timezone.utc)
 
 
+def sms_queue_snapshot(db: Session) -> dict:
+    """How much SMS work is waiting and how much the gateway refused.
+
+    Two counts and nothing else: no template seeding, no rendering, because the
+    dashboard asks for this every time somebody opens it. ``message_overview``
+    reads its own two numbers from here, so the SMS page and the dashboard
+    cannot end up quoting different queues.
+    """
+    return {
+        "queued": int(db.query(func.count(SmsMessage.id))
+                      .filter(SmsMessage.status == "queued").scalar() or 0),
+        "failed": int(db.query(func.count(SmsMessage.id))
+                      .filter(SmsMessage.status == "failed").scalar() or 0),
+    }
+
+
 def message_overview(db: Session) -> dict:
     """The manager page's KPI row."""
     from services.sms_templates import ensure_seeded
@@ -463,8 +479,8 @@ def message_overview(db: Session) -> dict:
     ensure_seeded(db)
     total = db.query(func.count(SmsMessage.id)).scalar() or 0
     sent = db.query(func.count(SmsMessage.id)).filter(SmsMessage.status == "sent").scalar() or 0
-    queued = db.query(func.count(SmsMessage.id)).filter(SmsMessage.status == "queued").scalar() or 0
-    failed = db.query(func.count(SmsMessage.id)).filter(SmsMessage.status == "failed").scalar() or 0
+    queue = sms_queue_snapshot(db)
+    queued, failed = queue["queued"], queue["failed"]
     today = db.query(func.count(SmsMessage.id)).filter(
         SmsMessage.created_at >= _today_start(),
     ).scalar() or 0

@@ -5,162 +5,98 @@
 <div class="page-heading">
     <div>
         <span class="eyebrow">نمای کلی فروشگاه</span>
-        <h2>📊 داشبورد مدیریت</h2>
-        <p>سلام! وضعیت فروش، مشتریان و عملیات امروز را یک‌جا ببینید.</p>
+        <h2>📊 داشبورد مدیریت <span class="dashboard-role">{{ role_label }}</span></h2>
     </div>
     <a href="/sales/new" class="btn btn-success">🛒 ثبت فروش</a>
 </div>
 
-{% if action_message %}<div class="alert alert-success" role="status">✅ {{ action_message }}</div>{% endif %}
+{# Every section and card here was chosen before the page was drawn: a card this
+   viewer may not see was never built and never counted. Nothing below branches
+   on the role, so a template edit cannot reveal a number to the wrong person.
+   Nothing below changes data either — this page reports and links. #}
+{% for section in sections %}
 
-<section class="action-center card" aria-labelledby="action-center-title">
-    <div class="section-heading"><div><span class="eyebrow">نیازمند توجه</span><h3 id="action-center-title">اقدام‌های امروز</h3></div><span class="status-dot" aria-hidden="true"></span></div>
+{% if section.kind == 'attention' %}
+<section class="card" aria-labelledby="dash-{{ section.key }}">
+    <div class="section-heading">
+        <div>
+            <span class="eyebrow">{{ section.eyebrow }}</span>
+            <h3 id="dash-{{ section.key }}">{{ section.title }}</h3>
+        </div>
+    </div>
     <div class="action-grid">
-        <a class="action-item action-warning" href="/admin/products"><strong>موجودی کم</strong><span>بررسی و سفارش مجدد کالاها</span></a>
-        <a class="action-item action-danger" href="/admin/pos-reconciliation"><strong>تراکنش‌های نامشخص</strong><span>بررسی پرداخت‌های کارت‌خوان</span></a>
-        <a class="action-item action-info" href="/admin/credit?status=overdue"><strong>حساب نسیه</strong><span>پیگیری بدهی‌ها و سررسیدهای گذشته</span></a>
-        <a class="action-item action-success" href="/admin/backups"><strong>پشتیبان‌گیری</strong><span>بررسی آخرین نسخه پشتیبان</span></a>
+        {% for card in section.cards %}
+        {# `is-clear` means «nothing here needs you» and only this row may carry
+           it. A money card showing a zero must never look this calm. #}
+        <a class="action-item{% if card.tone %} action-{{ card.tone }}{% endif %}{% if card.clear %} is-clear{% endif %}" href="{{ card.href }}">
+            <span class="action-count tnum">{{ card.value }}</span>
+            <strong>{{ card.label }}</strong>
+            <span class="action-sub">{{ card.sub }}</span>
+        </a>
+        {% endfor %}
     </div>
 </section>
 
-{# ─── Key settings ─── #}
-<h3 style="display: flex; align-items: center; gap: 0.4rem; margin: 1.5rem 0 0.8rem; font-size: 0.9rem; color: var(--ink-soft);">
-    ⚙️ تنظیمات کلیدی
-</h3>
-<div class="stats-grid">
-    <div class="stat-card accent-persimmon">
-        <div class="stat-label">🤝 تخفیف معرف</div>
-        <div class="stat-value tnum">{{ fmt(referrer_discount) }} ت</div>
-        <div class="stat-sub">به ازای هر معرفی</div>
+{% elif section.kind == 'top' %}
+<section class="card" aria-labelledby="dash-{{ section.key }}">
+    <div class="section-heading">
+        <div>
+            <h3 id="dash-{{ section.key }}">{{ section.title }}</h3>
+        </div>
     </div>
-    <div class="stat-card accent-pine">
-        <div class="stat-label">🎁 تخفیف معرفی‌شده</div>
-        <div class="stat-value tnum">{{ fmt(referred_discount) }} ت</div>
-        <div class="stat-sub">برای اولین خرید</div>
-    </div>
-    <div class="stat-card accent-saffron">
-        <div class="stat-label">🛒 حداقل خرید</div>
-        <div class="stat-value tnum">{{ fmt(min_purchase) }} ت</div>
-        <div class="stat-sub">برای استفاده از تخفیف</div>
-    </div>
-    <div class="stat-card accent-ink">
-        <div class="stat-label">📋 سقف معرفی ماهانه</div>
-        <div class="stat-value tnum">{{ monthly_limit }} <span style="font-size:0.6em;">نفر</span></div>
-    </div>
-</div>
-
-{# ─── Stats ─── #}
-<h3 style="display: flex; align-items: center; gap: 0.4rem; margin: 1.5rem 0 0.8rem; font-size: 0.9rem; color: var(--ink-soft);">
-    📈 آمار فروشگاه
-</h3>
-<div class="stats-grid">
-    <div class="stat-card">
-        <div class="stat-label">👥 کل مشتریان</div>
-        <div class="stat-value tnum">{{ total_customers }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-label">🤝 کل معرفی‌ها</div>
-        <div class="stat-value tnum">{{ total_referrals }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-label">🏷️ دارای تخفیف فعال</div>
-        <div class="stat-value tnum">{{ customers_with_discount }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-label">📱 وضعیت دستگاه پیامک</div>
-        <div class="stat-value tnum">{{ sms_balance or '—' }}</div>
-    </div>
-</div>
-
-{# ─── Tiers ─── #}
-<h3 style="display: flex; align-items: center; gap: 0.4rem; margin: 1.5rem 0 0.8rem; font-size: 0.9rem; color: var(--ink-soft);">
-    🏆 سطوح مشتریان
-</h3>
-<div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
-    <div class="stat-card" style="text-align: center;">
-        <span class="tier-badge tier-silver">🥈 نقره‌ای</span>
-        <div class="stat-value tnum" style="margin-top: 0.5rem;">{{ silver_count }}</div>
-    </div>
-    <div class="stat-card" style="text-align: center;">
-        <span class="tier-badge tier-gold">⭐ طلایی</span>
-        <div class="stat-value tnum" style="margin-top: 0.5rem;">{{ gold_count }}</div>
-    </div>
-    <div class="stat-card" style="text-align: center;">
-        <span class="tier-badge tier-diamond">💎 الماس</span>
-        <div class="stat-value tnum" style="margin-top: 0.5rem;">{{ diamond_count }}</div>
-    </div>
-</div>
-
-{# ─── Top referrers ─── #}
-<div class="card">
-    <h3>🏆 برترین معرف‌ها</h3>
-    {% if top_referrers %}
-    <table>
-        <thead><tr><th>👤 نام</th><th>📱 تلفن</th><th>📊 کل</th><th>📅 این ماه</th><th>🏷️ سطح</th><th>💰 تخفیف</th></tr></thead>
-        <tbody>
-        {% for customer, count in top_referrers %}
-            <tr>
-                <td>{{ customer.full_name }}</td>
-                <td class="tnum">{{ customer.phone }}</td>
-                <td class="tnum">{{ count }}</td>
-                <td class="tnum">{{ customer.monthly_referral_count }}</td>
-                <td><span class="tier-badge tier-{{ customer.tier }}">
-                    {% if customer.tier == 'diamond' %}💎 الماس{% elif customer.tier == 'gold' %}⭐ طلایی{% else %}🥈 نقره‌ای{% endif %}
-                </span></td>
-                <td class="tnum">{{ fmt(customer.referrer_discount) }}</td>
-            </tr>
+    {% if section.rows %}
+    <ol class="ranked-list">
+        {% for row in section.rows %}
+        <li class="ranked-row">
+            <span class="ranked-rank tnum">{{ row.rank }}</span>
+            <span class="ranked-name">
+                <strong>{{ row.name }}</strong>
+                <small>{{ row.category }}</small>
+            </span>
+            <span class="ranked-figures">
+                <span class="ranked-units tnum">{{ row.qty }} عدد</span>
+                <span class="ranked-money tnum">{{ row.revenue }} ت</span>
+                {% if section.show_profit %}
+                <span class="ranked-profit tnum">سود {{ row.profit }} ت</span>
+                {% endif %}
+            </span>
+        </li>
         {% endfor %}
-        </tbody>
-    </table>
-    {% else %}<p style="color: var(--ink-soft);">🤝 هنوز معرفی‌ای ثبت نشده.</p>{% endif %}
-</div>
+    </ol>
+    {% else %}
+    <p class="empty-state">هنوز فروشی در این ماه ثبت نشده است.</p>
+    {% endif %}
+</section>
 
-{# ─── Top spenders ─── #}
-<div class="card">
-    <h3>👑 برترین مشتریان (بر اساس خرید)</h3>
-    {% if top_spenders %}
-    <table>
-        <thead><tr><th>👤 نام</th><th>📱 تلفن</th><th>🏷️ سطح</th><th>🌟 امتیاز</th><th>🛒 تعداد خرید</th><th>💰 مجموع خرید</th></tr></thead>
-        <tbody>
-        {% for customer in top_spenders %}
-            <tr>
-                <td>{{ customer.full_name }}</td>
-                <td class="tnum">{{ customer.phone }}</td>
-                <td><span class="tier-badge tier-{{ customer.tier }}">
-                    {% if customer.tier == 'diamond' %}💎 الماس{% elif customer.tier == 'gold' %}⭐ طلایی{% else %}🥈 نقره‌ای{% endif %}
-                </span></td>
-                <td class="tnum">{{ customer.total_points }}</td>
-                <td class="tnum">{{ customer.total_purchases }}</td>
-                <td class="tnum"><strong>{{ fmt(customer.total_spent) }}</strong></td>
-            </tr>
+{% else %}
+<section aria-labelledby="dash-{{ section.key }}">
+    <div class="section-heading">
+        <div>
+            {% if section.eyebrow %}<span class="eyebrow">{{ section.eyebrow }}</span>{% endif %}
+            <h3 id="dash-{{ section.key }}">{{ section.title }}</h3>
+        </div>
+    </div>
+    <div class="stats-grid">
+        {% for card in section.cards %}
+        {% if card.href %}
+        <a class="stat-card{% if card.tone %} accent-{{ card.tone }}{% endif %}" href="{{ card.href }}">
+        {% else %}
+        <div class="stat-card{% if card.tone %} accent-{{ card.tone }}{% endif %}">
+        {% endif %}
+            <div class="stat-label">{{ card.label }}</div>
+            <div class="stat-value tnum">
+                {{ card.value }}
+                {% if card.delta %}
+                <span class="stat-delta{% if card.delta.good is not none %} is-{{ 'good' if card.delta.good else 'bad' }}{% endif %}">{{ card.delta.text }}</span>
+                {% endif %}
+            </div>
+            <div class="stat-sub">{{ card.sub }}</div>
+        {% if card.href %}</a>{% else %}</div>{% endif %}
         {% endfor %}
-        </tbody>
-    </table>
-    {% else %}<p style="color: var(--ink-soft);">🛒 هنوز خریدی ثبت نشده.</p>{% endif %}
-</div>
+    </div>
+</section>
+{% endif %}
 
-{# ─── Quick actions ─── #}
-<div class="card quick-actions-card">
-    <div>
-        <span class="eyebrow">ابزارهای سریع</span>
-        <h3>🔧 اقدامات دوره‌ای</h3>
-    </div>
-    <div class="quick-actions">
-        <a href="/admin/birthdays" class="btn btn-ghost">🎂 پیامک تولد</a>
-        <a href="/admin/follow-ups" class="btn btn-ghost">📮 پیگیری مشتریان</a>
-        <form method="post" action="/admin/check-downgrades"><button type="submit" class="btn btn-ghost">📉 بررسی سطح</button></form>
-        <form method="post" action="/admin/backup"><button type="submit" class="btn btn-ghost">💾 پشتیبان‌گیری</button></form>
-    </div>
-</div>
+{% endfor %}
 
-{# ─── Danger zone ─── #}
-<details class="danger-zone danger-details">
-    <summary>⚠️ منطقه خطر — عملیات غیرقابل بازگشت</summary>
-    <div>
-        <p>این عمل تمام اطلاعات مشتریان، معرفی‌ها و تنظیمات را حذف می‌کند.</p>
-        <form method="post" action="/admin/reset-database" onsubmit="return confirm('⚠️ آیا مطمئن هستید؟ تمام اطلاعات حذف خواهد شد!')">
-            <button type="submit" class="btn btn-danger">🗑️ ریست دیتابیس</button>
-        </form>
-    </div>
-</details>
 {% endblock %}

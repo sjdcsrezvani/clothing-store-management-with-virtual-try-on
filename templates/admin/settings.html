@@ -312,6 +312,19 @@
     </form>
 </div>
 
+{# The danger zone lives here because this page is owner-only, like the route it
+   posts to. On the dashboard it was a trap: its reset button answered a manager
+   with raw JSON instead of a page. #}
+<details class="danger-zone danger-details">
+    <summary>⚠️ منطقه خطر — عملیات غیرقابل بازگشت</summary>
+    <div>
+        <p>این عمل تمام اطلاعات مشتریان، معرفی‌ها و تنظیمات را حذف می‌کند.</p>
+        <form method="post" action="/admin/reset-database" onsubmit="return confirm('⚠️ آیا مطمئن هستید؟ تمام اطلاعات حذف خواهد شد!')">
+            <button type="submit" class="btn btn-danger">🗑️ ریست دیتابیس</button>
+        </form>
+    </div>
+</details>
+
 <nav class="admin-nav">
     <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a></nav>
 

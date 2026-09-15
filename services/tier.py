@@ -245,12 +245,13 @@ def apply_tier_downgrades(db: Session, customer_ids) -> dict:
 
 # ── Tier-up SMS tracking ──
 # A customer appears in the tier-up list while their current tier ranks higher
-# than the tier the last tier-up SMS was sent for. Downgrades clear the marker,
-# so a customer who is downgraded and then climbs back up is queued again.
+# than the tier the last tier-up SMS was sent for. A downgrade clears the
+# marker, so a customer who falls and then climbs back is queued again.
+_TIER_UP_MARKER_PREFIX = "tier_up_sms_"
 
 
 def tier_up_marker_key(customer_id: int) -> str:
-    return f"tier_up_sms_{customer_id}"
+    return f"{_TIER_UP_MARKER_PREFIX}{customer_id}"
 
 
 def tier_up_sent_rank(db: Session, customer: Customer) -> int:
@@ -258,11 +259,37 @@ def tier_up_sent_rank(db: Session, customer: Customer) -> int:
     return TIER_RANK.get(marker.value if marker else None, 0)
 
 
+def tier_up_sent_ranks(db: Session) -> dict[int, int]:
+    """Every customer's already-wished tier, in one query.
+
+    ``tier_up_sent_rank`` asks the database once per customer. That is fine for
+    the one customer it was written for, but the whole list is now also a number
+    on the dashboard, so asking per customer would make opening a page cost one
+    query per customer in the shop. The prefix match is deliberately loose — it
+    is a cheap prefilter — and the key is parsed back to a customer id below, so
+    a row that merely looks like a marker is discarded rather than believed.
+    """
+    rows = (
+        db.query(Settings.key, Settings.value)
+        .filter(Settings.key.like(f"{_TIER_UP_MARKER_PREFIX}%"))
+        .all()
+    )
+    ranks: dict[int, int] = {}
+    for key, value in rows:
+        try:
+            customer_id = int(str(key)[len(_TIER_UP_MARKER_PREFIX):])
+        except (TypeError, ValueError):
+            continue
+        ranks[customer_id] = TIER_RANK.get(value, 0)
+    return ranks
+
+
 def tier_up_candidates(db: Session) -> list:
     """Gold/Diamond customers who haven't had a tier-up SMS for their current tier."""
+    ranks = tier_up_sent_ranks(db)
     return [
         c for c in db.query(Customer).all()
-        if TIER_RANK.get(c.tier, 0) > tier_up_sent_rank(db, c)
+        if TIER_RANK.get(c.tier, 0) > ranks.get(c.id, 0)
     ]
 
 

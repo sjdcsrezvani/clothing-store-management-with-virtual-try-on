@@ -90,6 +90,28 @@ def list_backups() -> list[dict]:
     return items
 
 
+def latest_backup() -> datetime | None:
+    """The newest backup's timestamp, without opening any file.
+
+    ``list_backups`` verifies every backup it lists, which is the right thing for
+    the backups page and far too much work for a number on a dashboard. This
+    only stats the newest file, so it is cheap enough to ask on every page load.
+    Returns ``None`` when the shop has never been backed up — a different fact
+    from “the last one is old”, and the dashboard says so.
+    """
+    newest: datetime | None = None
+    for path in BACKUP_DIR.glob("referral_*.db"):
+        if not _BACKUP_RE.match(path.name):
+            continue
+        try:
+            mtime = datetime.fromtimestamp(path.stat().st_mtime)
+        except OSError:
+            continue
+        if newest is None or mtime > newest:
+            newest = mtime
+    return newest
+
+
 def backup_download_path(name: str) -> Path | None:
     """Resolve a backup filename to a real path, guarding against traversal."""
     if not name or not _BACKUP_RE.match(name):

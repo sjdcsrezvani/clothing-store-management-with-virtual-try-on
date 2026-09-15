@@ -3,7 +3,6 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from database import get_db
 from datetime import datetime, timezone
@@ -14,7 +13,6 @@ from models import (
 from config import ADMIN_PASSWORD, API_TOKEN
 from deployment import OWNER_MODE
 from services.sms import (
-    device_status_label,
     send_tier_up_gold_sms,
     send_tier_up_diamond_sms,
 )
@@ -63,6 +61,8 @@ from services.customers import (
 )
 from models import to_english_digits
 from services.backup import create_backup, list_backups, backup_download_path
+from services.dashboard import dashboard_overview
+from services.pos_reconciliation import unresolved_transactions
 from services.operations import verify_sqlite_backup
 from services.security import (
     check_admin_password,
@@ -240,76 +240,23 @@ async def admin_setup(
 
 @router.get("/", response_class=HTMLResponse)
 async def admin_dashboard(request: Request, db: Session = Depends(get_db)):
+    """The shop at a glance, built for the role that is looking at it.
+
+    The route decides nothing about who sees what: it hands the viewer's role to
+    :func:`services.dashboard.dashboard_overview`, which returns only the cards
+    that role may see and never computes the others. That is what keeps the
+    template free of role logic — it prints what it is given.
+    """
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
-    total_customers = db.query(Customer).count()
-    total_referrals = db.query(Referral).count()
-    customers_with_discount = db.query(Customer).filter(Customer.referrer_discount > 0).count()
-    sms_balance = device_status_label(db)
-    
-    # Count by tier
-    silver_count = db.query(Customer).filter(Customer.tier == "silver").count()
-    gold_count = db.query(Customer).filter(Customer.tier == "gold").count()
-    diamond_count = db.query(Customer).filter(Customer.tier == "diamond").count()
-
-    top_referrers = (
-        db.query(Customer, func.count(Referral.id).label("ref_count"))
-        .join(Referral, Referral.referrer_id == Customer.id)
-        .group_by(Customer.id)
-        .order_by(func.count(Referral.id).desc())
-        .limit(10)
-        .all()
-    )
-    
-    # Top customers by spending
-    top_spenders = (
-        db.query(Customer)
-        .filter(Customer.total_spent > 0)
-        .order_by(Customer.total_spent.desc())
-        .limit(10)
-        .all()
-    )
-    
-    # Check for action messages
-    birthday_msg = request.query_params.get("birthday_msg")
-    downgrade_msg = request.query_params.get("downgrade_msg")
-    action_message = None
-    if birthday_msg is not None:
-        sent = int(birthday_msg or 0)
-        skipped = int(request.query_params.get("birthday_skip", 0) or 0)
-        eligible = int(request.query_params.get("birthday_eligible", 0) or 0)
-        if eligible == 0:
-            action_message = "🎂 هیچ مشتری با تولد ۷ روز آینده وجود ندارد."
-        elif sent == 0 and skipped == 0:
-            action_message = "🎂 متن پیامک تولد در تنظیمات نوشته نشده است."
-        elif sent == 0:
-            action_message = f"🎂 پیامکی ارسال نشد — {skipped} مشتری قبلاً ارسال شده بودند."
-        elif skipped:
-            action_message = f"🎂 {sent} پیامک تولد ارسال شد • {skipped} مشتری قبلاً ارسال شده بود (رد شد)."
-        else:
-            action_message = f"🎂 {sent} پیامک تولد ارسال شد."
-    if downgrade_msg is not None:
-        action_message = f"بررسی کاهش سطح انجام شد. {downgrade_msg} مشتری کاهش سطح یافتند."
-
+    view = dashboard_overview(db, role=guard.role)
     return templates.TemplateResponse(request, "admin/dashboard.html", {
-        "total_customers": total_customers,
-        "total_referrals": total_referrals,
-        "customers_with_discount": customers_with_discount,
-        "sms_balance": sms_balance,
-        "top_referrers": top_referrers,
-        "top_spenders": top_spenders,
-        "silver_count": silver_count,
-        "gold_count": gold_count,
-        "diamond_count": diamond_count,
-        "referrer_discount": get_discount_setting(db, "default_referrer_discount", 50000),
-        "referred_discount": get_discount_setting(db, "default_referred_discount", 30000),
-        "min_purchase": get_discount_setting(db, "min_purchase_for_discount", 500000),
-        "monthly_limit": get_discount_setting(db, "monthly_referral_limit", 10),
-        "action_message": action_message,
-        "fmt": fmt,
-        "jalali_str": jalali_str,
+        **view,
+        # Nothing redirects here with a result any more: the only action the
+        # dashboard used to carry was the downgrade sweep, and it now reports
+        # back on its own page.
     })
 
 
@@ -936,13 +883,11 @@ async def admin_pos_reconciliation(request: Request, db: Session = Depends(get_d
     if not hasattr(guard, "role"):
         return guard
 
+    # The list is windowed because a person has to read it; the count is not,
+    # because it has to be the same number the dashboard shows. Both now come
+    # from one definition of «still unresolved» instead of two.
     transactions = db.query(POSTransaction).order_by(POSTransaction.created_at.desc()).limit(200).all()
-    unresolved_count = sum(
-        1 for transaction in transactions
-        if transaction.status in {"created", "sent", "uncertain", "approved"}
-        and transaction.sale_id is None
-        and not transaction.reconciled
-    )
+    unresolved_count = unresolved_transactions(db)
     return templates.TemplateResponse(request, "admin/pos_reconciliation.html", {
         "transactions": transactions,
         "unresolved_count": unresolved_count,

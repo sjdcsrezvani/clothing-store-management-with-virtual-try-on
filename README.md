@@ -25,6 +25,37 @@ Create additional accounts from **Admin → Staff**. Disabled accounts cannot lo
 in. Sensitive actions are recorded with the staff member, target, IP address,
 request ID when supplied, and before/after summaries where applicable.
 
+## The dashboard (داشبورد)
+
+`/admin` is built for the role that opens it. The gating happens in Python —
+`services.dashboard.dashboard_overview(db, role=…)` returns only the cards that
+role may see, already formatted — so a card a manager may not see is never
+rendered **and never computed**, and no template edit can reveal a figure to the
+wrong person.
+
+- **Manager and owner** — a «نیازمند توجه» row that carries real counts instead
+  of decorative links (low and out-of-stock variants, card-terminal attempts
+  with no confirmed outcome, credit past its سررسید, checks due, and the SMS
+  phone only when it is *not* connected), today's and this month's takings, the
+  cash register, outstanding نسیه, the club's numbers, and the month's
+  best-selling products.
+- **Owner only** — gross profit today, net profit and expenses for the month,
+  stock value at cost, the backup state, the periodic work whose review pages
+  are owner-only (پیامک تولد, پیگیری مشتریان, ارتقای سطح), and the manual
+  tier-downgrade review, which never runs on its own. Only owners receive the profit column of «برترینها».
+
+Each headline comes from the same helper as the page it links to, so a count and
+its list cannot disagree — including the reconciliation count, which is the
+shop's real outstanding total rather than the newest 200 rows the table below it
+can list. Four helpers are deliberately out of the dashboard's reach
+(`reconciliation_checks`, `list_backups`, `follow_up_plans`,
+`get_revenue_summary`): they verify files, walk every sale or render every
+message, which is right for their own pages and wrong for a page opened all day.
+
+The danger zone (database reset) lives on `/admin/settings`, owner-only like the
+route it posts to; on the dashboard it was a trap that answered a manager with
+raw JSON.
+
 ## Accounting features (admin panel)
 
 - **📒 حساب نسیه** (`/admin/credit`) — sell on credit at checkout and collect
@@ -432,10 +463,12 @@ birthday targets and archive-instead-of-delete rule, the SMS log's record of wha
 each message was built from and the verdict a replay gives it, the follow-up
 review page's rule that it sends only what was ticked and loses politely to a
 sweep that went first, the SMS manager's usage filter and date order, and the
-downgrade rule's promise that nothing is demoted without a tick and a
-confirmation, that a customer who bought while the form was open is turned away,
-and that no nightly job runs it. They use a throwaway SQLite database — never
-your real data.
+dashboard's role matrix — that every destination it draws for a role opens for
+that role, that the figures it shows match the pages behind them, and that the
+leaderboard is one query however many customers the shop has — and the downgrade
+rule's promise that nothing is demoted without a tick and a confirmation, that a
+customer who bought while the form was open is turned away, and that no nightly
+job runs it. They use a throwaway SQLite database — never your real data.
 
 Continuous integration runs this suite plus `compileall`, refuses a tracked
 `.env`, `.db` or `.log` file, and refuses any commit **message** that credits a

@@ -832,23 +832,65 @@ html[data-theme="kids-boutique"] .context-mark, html[data-theme="kids-boutique"]
 /* One width for the short labels, so a row of nav buttons reads as a set
    instead of four pills of four different sizes. Longer labels still grow. */
 .admin-nav > .btn { min-width: 7.5rem; }
-.quick-actions-card { display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: linear-gradient(135deg, var(--surface-soft), var(--card)); }
 
 .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 .action-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; }
 .action-item { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.9rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); color: var(--ink); background: var(--surface-soft); }
 .action-item:hover { text-decoration: none; transform: translateY(-2px); box-shadow: var(--shadow); }
-.action-item span { color: var(--ink-soft); font-size: 0.78rem; }
+/* The number leads, because the whole point of this row is "how much is
+   waiting". A card at zero keeps the same shape instead of disappearing: an
+   empty «نیازمند توجه» is good news, and good news is worth being able to read.
+   `is-clear` therefore means «nothing here needs you», and the accent stripe is
+   stood down with the text — a calm card that still shouts in orange is only
+   half clear. Nothing outside this row may use the class: a day with no sales is
+   a zero, and a zero is not good news. */
+.action-count { font-size: 1.45rem; font-weight: 800; line-height: 1.1; color: var(--ink); }
+.action-item .action-sub { color: var(--ink-soft); font-size: 0.78rem; }
+.action-item.is-clear .action-count { color: var(--mint-dark); }
+.action-item.is-clear strong { color: var(--ink-soft); font-weight: 600; }
+.action-item.is-clear { border-inline-start-color: var(--rule); }
 .action-warning { border-inline-start: 4px solid var(--sunshine); }
-.action-danger { border-inline-start: 4px solid #ff4757; }
+.action-danger { border-inline-start: 4px solid var(--candy-dark); }
 .action-info { border-inline-start: 4px solid var(--sky); }
 .action-success { border-inline-start: 4px solid var(--mint); }
-.quick-actions-card h3 { margin: 0.2rem 0 0; }
-.quick-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+/* Dashboard: a stat card that goes somewhere is a card with a destination, not
+   a sentence with a link in it, so it keeps the body colour and drops the
+   underline on hover. */
+a.stat-card { display: block; color: var(--ink); }
+a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
+
+/* The role this view was built for, next to the title: two people sharing a
+   screen need to know whose numbers they are looking at. */
+.dashboard-role { font-size: 0.7rem; font-weight: 700; vertical-align: middle; padding: 0.15rem 0.5rem; border-radius: 999px; background: color-mix(in srgb, var(--sky) 16%, var(--card)); color: var(--sky-dark); }
+
+/* How a figure moved, sitting beside it rather than under it, because it is a
+   property of the number and not a second fact. The verdict is supplied per card
+   — spending less is good news too — so colour never comes from the direction of
+   the arrow. */
+.stat-delta { display: inline-block; margin-inline-start: 0.4rem; font-size: 0.68rem; font-weight: 700; vertical-align: middle; padding: 0.1rem 0.4rem; border-radius: 999px; background: var(--surface-soft); color: var(--ink-soft); }
+.stat-delta.is-good { background: color-mix(in srgb, var(--mint) 16%, var(--card)); color: var(--mint-dark); }
+.stat-delta.is-bad { background: color-mix(in srgb, var(--candy) 16%, var(--card)); color: var(--candy-dark); }
+
+/* «برترین‌ها» as a ranked list: a five-column table is the heaviest thing on the
+   page for its least glanceable information. No bars — a bar needs a width per
+   row, and a width per row needs an inline style this page does without. */
+.ranked-list { list-style: none; margin: 0; padding: 0; }
+.ranked-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0; border-bottom: 1px solid var(--rule); }
+.ranked-row:last-child { border-bottom: none; }
+.ranked-rank { flex: 0 0 auto; width: 1.6rem; height: 1.6rem; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--surface-soft); color: var(--ink-soft); font-weight: 800; font-size: 0.78rem; }
+.ranked-name { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.ranked-name strong { font-weight: 700; }
+.ranked-name small { color: var(--ink-soft); font-size: 0.75rem; }
+.ranked-figures { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; text-align: end; }
+.ranked-units { color: var(--ink-soft); font-size: 0.75rem; }
+.ranked-money { font-weight: 800; }
+.ranked-profit { color: var(--mint-dark); font-size: 0.78rem; }
+
 /* Settings: the standing of the downgrade rule, under the one field that sets it. */
 .settings-downgrade-note { margin: 0 0 1.5rem; font-size: 0.85rem; line-height: 1.9; }
 
-.danger-details { border: 1px dashed #ffb5b5 !important; padding: 0.9rem 1.1rem; color: #c0392b; background: #fffafa; }
+.danger-details { border: 1px dashed var(--candy) !important; padding: 0.9rem 1.1rem; color: var(--candy-dark); background: var(--danger-bg); }
 .danger-details::before { display: none; }
 .danger-details summary { cursor: pointer; font-weight: 700; }
 .danger-details > div { padding-top: 0.8rem; }
@@ -931,8 +973,6 @@ html[data-theme="kids-boutique"] .context-mark, html[data-theme="kids-boutique"]
 
 @media (max-width: 900px) {
   .menu-toggle { display: inline-flex; }
-  .quick-actions-card { align-items: stretch; flex-direction: column; }
-  .quick-actions { display: grid; grid-template-columns: 1fr 1fr; }
   .action-grid { grid-template-columns: 1fr 1fr; }
   .page-heading { align-items: stretch; flex-direction: column; }
   .page-heading .btn { align-self: flex-start; }

@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import func, select, text
 
-from models import ProductVariant, Purchase, PurchaseItem, StockMovement
+from models import Product, ProductVariant, Purchase, PurchaseItem, StockMovement
 
 
 MOVEMENT_TYPES = {
@@ -48,6 +48,34 @@ _MOVEMENT_EVENT_TYPES = {
     "adjustment": "StockAdjusted",
     "cost_adjustment": "StockCostAdjusted",
 }
+
+
+# A variant at or below this many sellable units is worth reordering. It lives
+# here, not inside a page's view function, because two pages ask the question.
+LOW_STOCK_THRESHOLD = 2
+
+
+def stock_alerts(db) -> dict:
+    """How much of the catalogue needs reordering, and how much has run out.
+
+    ``low_count`` counts everything at or below the threshold *including* the
+    ones already at zero, so the two numbers are not meant to be added together:
+    ``out_count`` is the more urgent part of ``low_count``, which is why the
+    dashboard shows it as the detail rather than as a second total.
+
+    The products page prints these same two numbers, so it calls this too — a
+    dashboard count that disagrees with the page it links to is worse than no
+    count at all.
+    """
+    sellable = (ProductVariant.stock_quantity - func.coalesce(ProductVariant.reserved_quantity, 0))
+    scope = (db.query(ProductVariant)
+             .join(Product)
+             .filter(Product.is_active == True, ProductVariant.is_active == True))  # noqa: E712
+    return {
+        "low_count": scope.filter(sellable <= LOW_STOCK_THRESHOLD).count(),
+        "out_count": scope.filter(sellable <= 0).count(),
+        "threshold": LOW_STOCK_THRESHOLD,
+    }
 
 
 def movement_type_label(movement_type: str) -> str:

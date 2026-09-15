@@ -18,9 +18,16 @@
     <div class="stat-card accent-persimmon">
         <div class="stat-label">⚠️ نیازمند بررسی</div>
         <div class="stat-value tnum">{{ unresolved_count }}</div>
-        <div class="stat-sub">از ۲۰۰ رکورد اخیر</div>
+        <div class="stat-sub">در همه سوابق کارتخوان</div>
     </div>
 </div>
+
+{# The count is the shop's real outstanding total, which the table below cannot
+   always list: it is windowed to the newest 200 so a person can read it. Say so
+   rather than letting the two numbers silently disagree. #}
+{% if unresolved_count > transactions|length %}
+<div class="alert alert-warning">⚠️ از {{ unresolved_count }} مورد نیازمند بررسی، تنها {{ transactions|length }} رکورد اخیر در جدول زیر آمده است.</div>
+{% endif %}
 
 <div class="card">
     {% if transactions %}

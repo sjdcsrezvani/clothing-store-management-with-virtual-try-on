@@ -6,7 +6,6 @@ from pathlib import Path
 from urllib.parse import urlencode, quote_plus
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, File, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 from database import get_db
 from models import (
@@ -25,7 +24,12 @@ from services.security import require_html_role
 from services._common import fmt, check_admin, jalali_str
 from services.barcode import generate_barcode_image, generate_barcode_number
 from services.templating import templates
-from services.inventory import record_opening_stock, record_stock_adjustment, record_cost_adjustment
+from services.inventory import (
+    record_opening_stock,
+    record_stock_adjustment,
+    record_cost_adjustment,
+    stock_alerts,
+)
 from services.store import get_store
 from services.events import append_event
 from services.tags import (
@@ -164,18 +168,9 @@ async def admin_products(
 
     categories = db.query(Product.category).distinct().all()
     categories = [c[0] for c in categories if c[0]]
-    low_stock_count = (
-        db.query(ProductVariant)
-        .join(Product)
-        .filter(Product.is_active == True, ProductVariant.is_active == True, (ProductVariant.stock_quantity - func.coalesce(ProductVariant.reserved_quantity, 0)) <= 2)
-        .count()
-    )
-    out_stock_count = (
-        db.query(ProductVariant)
-        .join(Product)
-        .filter(Product.is_active == True, ProductVariant.is_active == True, (ProductVariant.stock_quantity - func.coalesce(ProductVariant.reserved_quantity, 0)) <= 0)
-        .count()
-    )
+    # Shared with the dashboard's «موجودی کم» alert, so the two can never quote
+    # different numbers for the same shelf.
+    alerts = stock_alerts(db)
 
     return templates.TemplateResponse(request, "admin/products.html", {
         "products": products,
@@ -185,8 +180,8 @@ async def admin_products(
         "page": page,
         "total_pages": total_pages,
         "total_products": total,
-        "low_stock_count": low_stock_count,
-        "out_stock_count": out_stock_count,
+        "low_stock_count": alerts["low_count"],
+        "out_stock_count": alerts["out_count"],
         "fmt": fmt,
         "jalali_str": jalali_str,
     })
