@@ -2,13 +2,13 @@
 
 FastAPI + SQLite point-of-sale for a local kids' & teens' clothing shop:
 products & variants with barcode tags, checkout with referral / tier / birthday
-discounts, customer loyalty (points, gold/diamond tiers), an SMS suite
-(template manager, manual sends, welcome / birthday / tier-up / campaign
-messages, and a send log whose entries can be replayed), virtual try-on previews on
-the child's picture), invoices (HTML + Persian PDF), a deep analytics suite,
-and accounting-lite: credit sales (نسیه) with a debt ledger, supplier purchases
-that update stock & cost, expenses, a cash register, a net profit & loss
-report, and CSV exports.
+discounts, customer loyalty (points, gold/diamond tiers, and a dashboard built
+for the role that opens it), an SMS suite (template manager, manual sends,
+welcome / birthday / tier-up / campaign messages, and a send log whose entries
+can be replayed), virtual try-on previews on the child's picture, invoices
+(HTML + Persian PDF), a deep analytics suite, and accounting-lite: credit sales
+(نسیه) with a debt ledger, supplier purchases that update stock & cost,
+expenses, a cash register, a net profit & loss report, and CSV exports.
 
 ## Security and staff roles
 
