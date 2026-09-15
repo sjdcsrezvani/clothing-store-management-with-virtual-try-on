@@ -471,7 +471,7 @@ function syncFieldChips(){
     const state = btn.querySelector('.chip-state');
     if (state) state.textContent = visible ? 'فعال' : 'افزودن';
     const dot = btn.querySelector('.chip-dot');
-    if (dot && f) dot.style.background = f.color || '#888';
+    if (dot && f) dot.style.background = f.color || 'var(--ink-soft)';
   });
 }
 
@@ -488,7 +488,7 @@ function fieldBox(name, field){
   box.style.fontSize = Math.max(7, field.font_size) + 'pt';
   box.style.fontWeight = field.bold ? '700' : '400';
   box.style.textAlign = field.align;
-  box.style.color = '#2b3546';
+  box.style.color = 'var(--ink)';
   box.appendChild(fieldColorDot(field.color));
   const label = document.createElement('span');
   label.className = 'tag-editor-field-label';

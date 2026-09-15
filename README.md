@@ -556,7 +556,10 @@ till grants offers a link back into the admin panel, and a refusal lands on a
 Persian page that names the role asking rather than a JSON payload. The palette
 is covered the same way: every theme defines every colour the stylesheet reads,
 so a token a theme forgot fails the suite instead of quietly rendering in the
-inherited colour, and the same rule holds for the markup a page writes itself.
+inherited colour, the same rule holds for the markup a page writes itself, and no
+page of the shell may write a colour of its own — a hex literal fails the suite,
+so the charts, the photo panels and the lightbox follow dark and high-contrast
+instead of staying the palette the app shipped with.
 They use a throwaway SQLite database — never your real data.
 
 Continuous integration runs this suite plus `compileall`, refuses a tracked

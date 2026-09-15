@@ -7,7 +7,7 @@
 <div class="card">
     <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:0.8rem;">
         {% for img in saved_images %}
-        <div style="border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.08); background:#fff;">
+        <div style="border-radius:8px; overflow:hidden; box-shadow:var(--shadow); background:var(--card);">
             <div style="position:relative; cursor:pointer;" onclick="openLightbox('{{ img.image_path }}')">
                 <img src="{{ img.image_path }}" alt="saved"
                      style="width:100%; height:160px; object-fit:cover; display:block;">
@@ -23,9 +23,9 @@
                 <div style="text-align:center; max-width:70px;" title="{{ v.name }}{% if v.color %} — {{ v.color }}{% endif %}">
                     {% if v.image_path %}
                         <img src="{{ v.image_path }}" alt="{{ v.name }}"
-                             style="width:44px; height:44px; object-fit:cover; border-radius:6px; border:1px solid #eee;">
+                             style="width:44px; height:44px; object-fit:cover; border-radius:6px; border:1px solid var(--rule);">
                     {% else %}
-                        <div style="width:44px; height:44px; display:flex; align-items:center; justify-content:center; border-radius:6px; background:#FFFAF5; border:1px solid #eee;">📦</div>
+                        <div style="width:44px; height:44px; display:flex; align-items:center; justify-content:center; border-radius:6px; background:var(--surface-soft); border:1px solid var(--rule);">📦</div>
                     {% endif %}
                     <div style="font-size:0.6rem; margin-top:2px; line-height:1.1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
                         {{ v.color or v.barcode }}
@@ -53,15 +53,15 @@
 {% endif %}
 
 {# ─── Lightbox ─── #}
-<div id="lightbox" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.92);z-index:9999;align-items:center;justify-content:center;"
+<div id="lightbox" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:var(--scrim);z-index:9999;align-items:center;justify-content:center;"
      onclick="closeLightbox(event)">
     <div id="lightbox-stage" style="position:relative;display:inline-block;line-height:0;">
         <img id="lightbox-img" src="" alt="full"
              style="max-width:95vw;max-height:95vh;object-fit:contain;border-radius:8px;display:block;">
         <img src="/static/logo.png" alt="logo"
-             style="position:absolute;top:0;left:0;width:200px;height:200px;pointer-events:none;filter:drop-shadow(0 2px 6px rgba(0,0,0,0.4));">
+             style="position:absolute;top:0;left:0;width:200px;height:200px;pointer-events:none;filter:drop-shadow(0 2px 6px color-mix(in srgb, var(--scrim) 40%, transparent));">
     </div>
-    <div style="position:absolute;top:1rem;right:1rem;color:#fff;font-size:2rem;cursor:pointer;" onclick="closeLightbox()">✕</div>
+    <div style="position:absolute;top:1rem;right:1rem;color:var(--scrim-text);font-size:2rem;cursor:pointer;" onclick="closeLightbox()">✕</div>
 </div>
 <script>
 function openLightbox(src) {

@@ -11,7 +11,9 @@
     <meta name="csrf-token" content="{{ csrf_token }}">
     <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css?v={{ static_version }}">
-    <meta name="theme-color" content="#fff5f0">
+    {# The browser's own chrome takes the theme's background, so an installed
+       shortcut does not stay one colour across all ten palettes. #}
+    <meta name="theme-color" content="{{ theme.tokens['--bg'] }}">
     <script src="/static/js/charts.js"></script>
 </head>
 <body data-app-shell="store-management">

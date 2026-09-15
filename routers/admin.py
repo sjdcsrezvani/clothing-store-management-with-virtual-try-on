@@ -94,7 +94,7 @@ from services.tier import (
 )
 from services.events import event_history, event_payload, append_event
 from services.payroll import create_salary_payment, current_period_key
-from services.themes import THEMES, DEFAULT_THEME_ID, THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY, all_theme_previews, validate_hex, contrast_ratio, get_theme
+from services.themes import THEMES, DEFAULT_THEME_ID, THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY, DEFAULT_CUSTOM_PRIMARY, DEFAULT_CUSTOM_SECONDARY, all_theme_previews, validate_hex, contrast_ratio, get_theme
 
 router = APIRouter(prefix="/admin")
 
@@ -730,6 +730,8 @@ async def admin_settings_appearance(request: Request, db: Session = Depends(get_
         "settings": settings,
         "store": get_store(db),
         "themes": all_theme_previews(db),
+        "default_custom_primary": DEFAULT_CUSTOM_PRIMARY,
+        "default_custom_secondary": DEFAULT_CUSTOM_SECONDARY,
         "active_theme_id": get_theme_id(db),
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
@@ -744,8 +746,8 @@ async def admin_update_appearance(request: Request, db: Session = Depends(get_db
 
     form = await request.form()
     theme_id = str(form.get(THEME_SETTING_KEY, DEFAULT_THEME_ID)).strip()
-    primary = str(form.get(CUSTOM_PRIMARY_KEY, "#C94B68")).strip().upper()
-    secondary = str(form.get(CUSTOM_SECONDARY_KEY, "#197A8C")).strip().upper()
+    primary = str(form.get(CUSTOM_PRIMARY_KEY, DEFAULT_CUSTOM_PRIMARY)).strip().upper()
+    secondary = str(form.get(CUSTOM_SECONDARY_KEY, DEFAULT_CUSTOM_SECONDARY)).strip().upper()
     if theme_id not in THEMES:
         return RedirectResponse(url="/admin/settings/appearance?err=تم انتخاب نامعتبر است.", status_code=303)
     if theme_id == "custom-brand":

@@ -26,7 +26,7 @@
                      style="max-width: 200px; max-height: 200px; border-radius: 12px; object-fit: cover; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
             </div>
             {% else %}
-            <div style="text-align: center; padding: 1.5rem; background: #FFFAF5; border-radius: 8px; margin-bottom: 0.8rem;">
+            <div style="text-align: center; padding: 1.5rem; background: var(--surface-soft); border-radius: 8px; margin-bottom: 0.8rem;">
                 <div style="font-size: 3rem;">📷</div>
                 <p style="color: var(--ink-soft);">هنوز عکسی آپلود نشده</p>
                 <small>از طریق گوشی یا فرم زیر آپلود کنید</small>
@@ -59,7 +59,7 @@
 
             <form method="post" action="/admin/try-on/add-product" style="display: flex; gap: 0.5rem; margin-bottom: 0.8rem;">
                 <input type="text" name="barcode_input" placeholder="🔲 بارکد را اسکن یا وارد کنید..."
-                       style="flex:1; padding:0.6rem 0.8rem; border:2px solid #E8DDD5; border-radius:8px; font-family:inherit; font-size:1rem; direction:ltr;"
+                       style="flex:1; padding:0.6rem 0.8rem; border:2px solid var(--rule); border-radius:8px; font-family:inherit; font-size:1rem; direction:ltr;"
                        autofocus>
                 <button type="submit" class="btn btn-primary btn-sm">➕ افزودن</button>
             </form>
@@ -69,7 +69,7 @@
                 <strong style="font-size: 0.9rem;">📋 محصولات انتخاب‌شده ({{ scanned|length }}):</strong>
                 <div style="margin-top: 0.4rem; display: flex; flex-direction: column; gap: 0.3rem;">
                     {% for s in scanned %}
-                    <div style="display:flex; align-items:center; gap:0.5rem; padding:0.4rem 0.6rem; background:#FFFAF5; border-radius:6px;">
+                    <div style="display:flex; align-items:center; gap:0.5rem; padding:0.4rem 0.6rem; background:var(--surface-soft); border-radius:6px;">
                         {% if s.image_path %}
                             <img src="{{ s.image_path }}" alt="{{ s.name }}" style="width:40px; height:40px; object-fit:cover; border-radius:6px;">
                         {% else %}
@@ -95,12 +95,12 @@
     <div class="checkout-right">
 
         {# ── Generate ── #}
-        <div class="card" style="background: #FFFAF5;">
+        <div class="card" style="background: var(--surface-soft);">
             <h3>تولید تصویر هوش مصنوعی</h3>
             <form id="gen-form" method="post" action="/admin/try-on/generate">
                 <div class="form-group">
                     <label for="mode">👗 نوع پرو</label>
-                    <select id="mode" name="mode" style="font-family:inherit; padding:0.6rem 0.8rem; border:2px solid #E8DDD5; border-radius:8px; width:100%;">
+                    <select id="mode" name="mode" style="font-family:inherit; padding:0.6rem 0.8rem; border:2px solid var(--rule); border-radius:8px; width:100%;">
                         <option value="product_only" selected>👕 فقط محصول (بقیه لباس‌ها دست‌نخورده بماند)</option>
                         <option value="head_to_toe">👗 استایل کامل سر تا پا (هماهنگ با محصول)</option>
                     </select>
@@ -109,7 +109,7 @@
 
                 <div class="form-group" id="category-group" style="margin-top: 0.8rem;">
                     <label for="category">🧵 نوع محصول (برای تنظیم قانون لباس)</label>
-                    <select id="category" name="category" style="font-family:inherit; padding:0.6rem 0.8rem; border:2px solid #E8DDD5; border-radius:8px; width:100%;">
+                    <select id="category" name="category" style="font-family:inherit; padding:0.6rem 0.8rem; border:2px solid var(--rule); border-radius:8px; width:100%;">
                         <option value="upper" selected>👕 بالاتنه (تیشرت، سویشرت، هودی، پولیور)</option>
                         <option value="lower">👖 پایین‌تنه (جین، شلوار، شلوارک، دامن)</option>
                         <option value="set">👚👖 ست دو تکه (تیشرت+شلوارک، سویشرت+شلوار)</option>
@@ -121,7 +121,7 @@
 
                 <div class="form-group" style="margin-top: 0.8rem;">
                     <label for="pose">🧍 ژست کودک</label>
-                    <select id="pose" name="pose" style="font-family:inherit; padding:0.6rem 0.8rem; border:2px solid #E8DDD5; border-radius:8px; width:100%;">
+                    <select id="pose" name="pose" style="font-family:inherit; padding:0.6rem 0.8rem; border:2px solid var(--rule); border-radius:8px; width:100%;">
                         {% for mode in pose_modes %}
                         <option value="{{ mode.key }}">{{ mode.label_fa }}</option>
                         {% endfor %}
@@ -130,7 +130,7 @@
 
                 <div class="form-group" style="margin-top: 0.8rem;">
                     <label for="face">🧑‍🎨 حالت چهره</label>
-                    <select id="face" name="face" style="font-family:inherit; padding:0.6rem 0.8rem; border:2px solid #E8DDD5; border-radius:8px; width:100%;">
+                    <select id="face" name="face" style="font-family:inherit; padding:0.6rem 0.8rem; border:2px solid var(--rule); border-radius:8px; width:100%;">
                         {% for mode in face_modes %}
                         <option value="{{ mode.key }}">{{ mode.label_fa }}</option>
                         {% endfor %}
@@ -140,7 +140,7 @@
 
                 <div class="form-group" style="margin-top: 0.8rem;">
                     <label for="background">🖼️ پس‌زمینه</label>
-                    <select id="background" name="background" style="font-family:inherit; padding:0.6rem 0.8rem; border:2px solid #E8DDD5; border-radius:8px; width:100%;">
+                    <select id="background" name="background" style="font-family:inherit; padding:0.6rem 0.8rem; border:2px solid var(--rule); border-radius:8px; width:100%;">
                         <option value="random" selected>🎲 پس‌زمینه تصادفی (پیشنهاد می‌شود)</option>
                         <option value="">🚫 پس‌زمینه را تغییر نده</option>
                         {% for group in backgrounds %}
@@ -169,7 +169,7 @@
         <div class="card" style="text-align: center; border-color: var(--candy);">
             <h3>تصویر نهایی (با لوگو)</h3>
             {% if last_gen_engine %}
-            <div style="font-size:0.85rem; color:var(--ink-soft); margin-bottom:0.5rem; padding:0.3rem 0.6rem; background:#FFFAF5; border-radius:6px; display:inline-block;">
+            <div style="font-size:0.85rem; color:var(--ink-soft); margin-bottom:0.5rem; padding:0.3rem 0.6rem; background:var(--surface-soft); border-radius:6px; display:inline-block;">
                 🤖 مدل: {{ last_gen_engine }}
             </div>
             {% endif %}
@@ -209,34 +209,34 @@
 @keyframes gen-shine { to { background-position: -200% 0; } }
 .gen-spinner {
     width: 74px; height: 74px; border-radius: 50%;
-    border: 5px solid rgba(255,255,255,0.15);
-    border-top-color: #ff9ad5; border-right-color: #b79cff; border-bottom-color: #7ad0ff;
+    border: 5px solid color-mix(in srgb, var(--sidebar-text) 15%, transparent);
+    border-top-color: var(--candy); border-right-color: var(--lavender); border-bottom-color: var(--sky);
     animation: gen-spin 1s linear infinite;
-    box-shadow: 0 0 30px rgba(183,156,255,0.35);
+    box-shadow: 0 0 30px color-mix(in srgb, var(--lavender) 35%, transparent);
 }
 .gen-float { display:inline-block; animation: gen-float 2.2s ease-in-out infinite; }
 </style>
-<div id="gen-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(12,10,34,0.92);backdrop-filter:blur(6px);z-index:10001;flex-direction:column;align-items:center;justify-content:center;gap:1.2rem;">
+<div id="gen-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:color-mix(in srgb, var(--sidebar-bg) 92%, transparent);backdrop-filter:blur(6px);z-index:10001;flex-direction:column;align-items:center;justify-content:center;gap:1.2rem;">
     <a href="/sales/new" onclick="return openNewSaleWindow();" rel="noopener" class="btn btn-success">➕ باز کردن فروش جدید در پنجره دیگر</a>
     <div class="gen-spinner"></div>
-    <div id="gen-step" style="color:#fff;font-size:1.25rem;font-weight:600;text-align:center;padding:0 1rem;"></div>
-    <div style="width:min(420px,80vw);height:10px;border-radius:6px;background:rgba(255,255,255,0.15);overflow:hidden;">
-        <div id="gen-bar" style="width:10%;height:100%;border-radius:6px;background:linear-gradient(90deg,#ff9ad5,#b79cff,#7ad0ff);background-size:200% 100%;animation:gen-shine 1.6s linear infinite;transition:width .8s ease;"></div>
+    <div id="gen-step" style="color:var(--sidebar-text);font-size:1.25rem;font-weight:600;text-align:center;padding:0 1rem;"></div>
+    <div style="width:min(420px,80vw);height:10px;border-radius:6px;background:color-mix(in srgb, var(--sidebar-text) 15%, transparent);overflow:hidden;">
+        <div id="gen-bar" style="width:10%;height:100%;border-radius:6px;background:linear-gradient(90deg,var(--candy),var(--lavender),var(--sky));background-size:200% 100%;animation:gen-shine 1.6s linear infinite;transition:width .8s ease;"></div>
     </div>
-    <div style="color:rgba(255,255,255,0.6);font-size:0.85rem;"><span class="gen-float">✨</span> معمولاً ۱ تا ۲ دقیقه — در صف شلوغ ممکن است تا ۴ دقیقه طول بکشد (صفحه را نبندید)</div>
+    <div style="color:color-mix(in srgb, var(--sidebar-text) 60%, transparent);font-size:0.85rem;"><span class="gen-float">✨</span> معمولاً ۱ تا ۲ دقیقه — در صف شلوغ ممکن است تا ۴ دقیقه طول بکشد (صفحه را نبندید)</div>
 </div>
 
 {# ─── Lightbox ─── #}
-<div id="lightbox" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.92);z-index:9999;align-items:center;justify-content:center;"
+<div id="lightbox" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:var(--scrim);z-index:9999;align-items:center;justify-content:center;"
      onclick="closeLightbox(event)">
     <div id="lightbox-stage" style="position:relative;display:inline-block;line-height:0;">
         <img id="lightbox-img" src="" alt="full"
              style="max-width:95vw;max-height:95vh;object-fit:contain;border-radius:8px;display:block;">
         <img src="/static/logo.png" alt="logo"
              id="lightbox-logo"
-             style="position:absolute;top:0;left:0;width:200px;height:200px;pointer-events:none;filter:drop-shadow(0 2px 6px rgba(0,0,0,0.4));">
+             style="position:absolute;top:0;left:0;width:200px;height:200px;pointer-events:none;filter:drop-shadow(0 2px 6px color-mix(in srgb, var(--scrim) 40%, transparent));">
     </div>
-    <div style="position:absolute;top:1rem;right:1rem;color:#fff;font-size:2rem;cursor:pointer;" onclick="closeLightbox()">✕</div>
+    <div style="position:absolute;top:1rem;right:1rem;color:var(--scrim-text);font-size:2rem;cursor:pointer;" onclick="closeLightbox()">✕</div>
 </div>
 <script>
 function openLightbox(src) {

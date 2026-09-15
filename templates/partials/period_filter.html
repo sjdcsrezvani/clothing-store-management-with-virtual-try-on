@@ -1,9 +1,9 @@
 {# One period filter, for the pages that ask the same question of a range.
 
    «سود و زیان» and «صندوق» were drawing this block twice — the same four
-   options, the same Jalali pair, and inline `border: 2px solid #E8DDD5` copied
-   into each file, which also meant the filter ignored dark mode while every
-   field around it followed the theme. Called with variables rather than
+   options, the same Jalali pair, and a hard-coded inline border copied into each
+   file, which also meant the filter ignored dark mode while every field around
+   it followed the theme. Called with variables rather than
    arguments, so a page hands over only what it has:
 
        {% set filter_action = '/admin/cashbox' %}

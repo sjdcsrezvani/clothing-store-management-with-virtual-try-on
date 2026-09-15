@@ -39,8 +39,8 @@
             <div class="custom-brand-fields" id="custom-brand-fields"{% if active_theme_id != 'custom-brand' %} hidden{% endif %}>
                 <h4>برند اختصاصی</h4>
                 <div class="form-row">
-                    <div class="form-group"><label for="theme_custom_primary">رنگ اصلی</label><input type="color" id="theme_custom_primary" name="theme_custom_primary" value="{{ settings.get('theme_custom_primary', '#C94B68') }}"><small>برای دکمه‌های اصلی و تأکیدها</small></div>
-                    <div class="form-group"><label for="theme_custom_secondary">رنگ دوم</label><input type="color" id="theme_custom_secondary" name="theme_custom_secondary" value="{{ settings.get('theme_custom_secondary', '#197A8C') }}"><small>برای ناوبری و عناصر کمکی</small></div>
+                    <div class="form-group"><label for="theme_custom_primary">رنگ اصلی</label><input type="color" id="theme_custom_primary" name="theme_custom_primary" value="{{ settings.get('theme_custom_primary') or default_custom_primary }}"><small>برای دکمه‌های اصلی و تأکیدها</small></div>
+                    <div class="form-group"><label for="theme_custom_secondary">رنگ دوم</label><input type="color" id="theme_custom_secondary" name="theme_custom_secondary" value="{{ settings.get('theme_custom_secondary') or default_custom_secondary }}"><small>برای ناوبری و عناصر کمکی</small></div>
                 </div>
             </div>
             <button type="submit" class="btn btn-primary appearance-apply"><span class="icon-check" aria-hidden="true"></span> اعمال ظاهر انتخاب‌شده</button>

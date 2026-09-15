@@ -56,7 +56,7 @@
         {% if sale.discount_amount > 0 %}
         <div class="summary-row discount"><span>🏷️ تخفیف</span><span class="tnum">−{{ fmt(sale.discount_amount) }} تومان</span></div>
         {% if discounts and discounts.details %}
-        <div style="padding: 0.3rem 0.5rem; font-size: 0.8rem; background: #FFFAF5; border-radius: 6px; margin: 0.3rem 0;">
+        <div style="padding: 0.3rem 0.5rem; font-size: 0.8rem; background: var(--surface-soft); border-radius: 6px; margin: 0.3rem 0;">
             {% for detail in discounts.details %}<div>· {{ detail }}</div>{% endfor %}
         </div>
         {% endif %}
@@ -97,7 +97,7 @@
               onsubmit="return confirm('⚠️ آیا مطمئن هستید؟ این فاکتور ابطال می‌شود و موجودی بازمی‌گردد.')"
               style="display: flex; gap: 0.4rem; align-items: center;">
             <input type="text" name="refund_reason" placeholder="📝 دلیل ابطال"
-                   style="padding: 0.5rem 0.7rem; border: 2px solid #E8DDD5; border-radius: 8px; max-width: 180px; font-family: inherit;">
+                   style="padding: 0.5rem 0.7rem; border: 2px solid var(--rule); border-radius: 8px; max-width: 180px; font-family: inherit;">
             <button type="submit" class="btn btn-danger">⛔ ابطال فاکتور</button>
         </form>
     {% endif %}

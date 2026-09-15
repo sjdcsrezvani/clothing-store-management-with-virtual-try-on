@@ -204,7 +204,7 @@
     </div>
 </div>
 <!-- Global tooltip element (fixed positioning, never clipped) -->
-<div id="globalTip" style="display:none; position:fixed; background:#1a1a2e; color:#f0f0f0; padding:0.6rem 0.8rem; border-radius:8px; font-size:0.8rem; line-height:1.6; width:max-content; max-width:340px; white-space:normal; pointer-events:none; z-index:9999; box-shadow:0 4px 20px rgba(0,0,0,0.3); text-align:right; direction:rtl; font-family:Vazirmatn,sans-serif;"></div>
+<div id="globalTip" style="display:none; position:fixed; background:var(--sidebar-bg); color:var(--sidebar-text); padding:0.6rem 0.8rem; border-radius:8px; font-size:0.8rem; line-height:1.6; width:max-content; max-width:340px; white-space:normal; pointer-events:none; z-index:9999; box-shadow:0 4px 20px rgba(0,0,0,0.3); text-align:right; direction:rtl; font-family:Vazirmatn,sans-serif;"></div>
 
 <script>
 if (typeof Chart === 'undefined') {
@@ -223,14 +223,17 @@ const priceDist = {{ price_dist|tojson }};
 const marginByCat = {{ margin_by_cat|tojson }};
 const customerHealth = {{ customer_health|tojson }};
 
-const palette = ['#FF6B8A', '#45B7D1', '#FFC857', '#51CF66', '#A66CFF', '#FF8A65', '#FFB347', '#6C5CE7'];
+// The chart colours are the active theme's own accents, read from the page, so a
+// chart follows dark and high-contrast instead of staying one palette forever.
+const tone = window.themeTones();
+const palette = tone.palette;
 const baseOpts = (extra={}) => Object.assign({ responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { family: 'Vazirmatn' } } } }, scales: { y: { beginAtZero: true } } }, extra);
 
 new Chart(document.getElementById('dailyChart'), {
     type: 'bar',
     data: { labels: dailyData.map(d => d.date), datasets: [
-        { label: 'فروش', data: dailyData.map(d => d.revenue), backgroundColor: '#FF6B8A' },
-        { label: 'سود', data: dailyData.map(d => d.profit), backgroundColor: '#51CF66' }
+        { label: 'فروش', data: dailyData.map(d => d.revenue), backgroundColor: tone.candy },
+        { label: 'سود', data: dailyData.map(d => d.profit), backgroundColor: tone.mint }
     ]},
     options: baseOpts()
 });
@@ -243,13 +246,13 @@ new Chart(document.getElementById('categoryChart'), {
 
 new Chart(document.getElementById('profitChart'), {
     type: 'bar',
-    data: { labels: topProductsProfit.map(p => p.name.substring(0, 15)), datasets: [{ label: 'سود', data: topProductsProfit.map(p => p.profit), backgroundColor: '#51CF66' }]},
+    data: { labels: topProductsProfit.map(p => p.name.substring(0, 15)), datasets: [{ label: 'سود', data: topProductsProfit.map(p => p.profit), backgroundColor: tone.mint }]},
     options: baseOpts({ indexAxis: 'y', plugins: { legend: { display: false } } })
 });
 
 new Chart(document.getElementById('tierChart'), {
     type: 'bar',
-    data: { labels: tierData.map(t => t.tier), datasets: [{ label: 'فروش', data: tierData.map(t => t.revenue), backgroundColor: ['#A66CFF', '#FFC857', '#45B7D1'] }]},
+    data: { labels: tierData.map(t => t.tier), datasets: [{ label: 'فروش', data: tierData.map(t => t.revenue), backgroundColor: [tone.lavender, tone.sunshine, tone.sky] }]},
     options: baseOpts({ plugins: { legend: { display: false } } })
 });
 
@@ -257,61 +260,61 @@ new Chart(document.getElementById('pricingChart'), {
     type: 'bar',
     data: { labels: ['هزینه', 'قیمت فروش', 'سود'], datasets: [{
         label: 'به‌ازای هر واحد', data: [priceStats.avg_cost, priceStats.avg_price, priceStats.avg_profit],
-        backgroundColor: ['#FFC857', '#45B7D1', '#51CF66']
+        backgroundColor: [tone.sunshine, tone.sky, tone.mint]
     }]},
     options: baseOpts({ plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { callback: v => v.toLocaleString('fa-IR') } } } })
 });
 
 new Chart(document.getElementById('colorChart'), {
     type: 'bar',
-    data: { labels: colorStats.map(c => c.label).slice(0, 12), datasets: [{ label: 'تعداد', data: colorStats.map(c => c.quantity).slice(0, 12), backgroundColor: '#A66CFF' }]},
+    data: { labels: colorStats.map(c => c.label).slice(0, 12), datasets: [{ label: 'تعداد', data: colorStats.map(c => c.quantity).slice(0, 12), backgroundColor: tone.lavender }]},
     options: baseOpts({ indexAxis: 'y', plugins: { legend: { display: false } } })
 });
 
 new Chart(document.getElementById('sizeChart'), {
     type: 'bar',
-    data: { labels: sizeStats.map(s => s.label).slice(0, 12), datasets: [{ label: 'تعداد', data: sizeStats.map(s => s.quantity).slice(0, 12), backgroundColor: '#FF8A65' }]},
+    data: { labels: sizeStats.map(s => s.label).slice(0, 12), datasets: [{ label: 'تعداد', data: sizeStats.map(s => s.quantity).slice(0, 12), backgroundColor: tone.persimmon }]},
     options: baseOpts({ plugins: { legend: { display: false } } })
 });
 
 new Chart(document.getElementById('trendChart'), {
     type: 'line',
     data: { labels: revenueTrend.map(m => m.month), datasets: [
-        { label: 'درآمد', data: revenueTrend.map(m => m.revenue), borderColor: '#FF6B8A', backgroundColor: 'rgba(255,107,138,0.1)', fill: true, tension: 0.3 },
-        { label: 'سود', data: revenueTrend.map(m => m.profit), borderColor: '#51CF66', backgroundColor: 'rgba(81,207,102,0.1)', fill: true, tension: 0.3 }
+        { label: 'درآمد', data: revenueTrend.map(m => m.revenue), borderColor: tone.candy, backgroundColor: window.tintColour(tone.candy, 0.1), fill: true, tension: 0.3 },
+        { label: 'سود', data: revenueTrend.map(m => m.profit), borderColor: tone.mint, backgroundColor: window.tintColour(tone.mint, 0.1), fill: true, tension: 0.3 }
     ]},
     options: baseOpts()
 });
 
 new Chart(document.getElementById('weekdayChart'), {
     type: 'bar',
-    data: { labels: salesPattern.weekdays.map(d => d.day), datasets: [{ label: 'فروش', data: salesPattern.weekdays.map(d => d.revenue), backgroundColor: '#45B7D1' }]},
+    data: { labels: salesPattern.weekdays.map(d => d.day), datasets: [{ label: 'فروش', data: salesPattern.weekdays.map(d => d.revenue), backgroundColor: tone.sky }]},
     options: baseOpts({ plugins: { legend: { display: false } } })
 });
 
 new Chart(document.getElementById('hourChart'), {
     type: 'bar',
-    data: { labels: salesPattern.hours.map(h => h.hour + ':00'), datasets: [{ label: 'فروش', data: salesPattern.hours.map(h => h.revenue), backgroundColor: '#FFB347' }]},
+    data: { labels: salesPattern.hours.map(h => h.hour + ':00'), datasets: [{ label: 'فروش', data: salesPattern.hours.map(h => h.revenue), backgroundColor: tone.sunshine }]},
     options: baseOpts({ plugins: { legend: { display: false } } })
 });
 
 new Chart(document.getElementById('priceDistChart'), {
     type: 'bar',
     data: { labels: priceDist.map(p => (p.price/10000).toLocaleString('fa-IR') + 'ت'), datasets: [
-        { label: 'تعداد', data: priceDist.map(p => p.quantity), backgroundColor: '#6C5CE7' },
+        { label: 'تعداد', data: priceDist.map(p => p.quantity), backgroundColor: tone.lavender },
     ]},
     options: baseOpts({ plugins: { legend: { display: false } } })
 });
 
 new Chart(document.getElementById('marginCatChart'), {
     type: 'bar',
-    data: { labels: marginByCat.map(c => c.category), datasets: [{ label: 'حاشیه سود %', data: marginByCat.map(c => c.margin), backgroundColor: marginByCat.map(c => c.margin >= 0 ? '#51CF66' : '#FF6B8A') }]},
+    data: { labels: marginByCat.map(c => c.category), datasets: [{ label: 'حاشیه سود %', data: marginByCat.map(c => c.margin), backgroundColor: marginByCat.map(c => c.margin >= 0 ? tone.mint : tone.candy) }]},
     options: baseOpts({ indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } })
 });
 
 new Chart(document.getElementById('customerSegChart'), {
     type: 'doughnut',
-    data: { labels: customerHealth.segments.map(s => s.label), datasets: [{ data: customerHealth.segments.map(s => s.count), backgroundColor: ['#A66CFF', '#FFC857', '#45B7D1', '#FF6B8A'] }]},
+    data: { labels: customerHealth.segments.map(s => s.label), datasets: [{ data: customerHealth.segments.map(s => s.count), backgroundColor: [tone.lavender, tone.sunshine, tone.sky, tone.candy] }]},
     options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { family: 'Vazirmatn', size: 11 } } } } }
 });
 }
@@ -352,8 +355,8 @@ new Chart(document.getElementById('customerSegChart'), {
     font-family: sans-serif;
 }
 .tip-icon:hover {
-    background: #FF6B8A;
-    color: #fff;
+    background: var(--candy);
+    color: var(--button-text);
 }
 </style>
 

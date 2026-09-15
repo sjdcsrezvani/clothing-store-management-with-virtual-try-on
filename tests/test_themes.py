@@ -127,6 +127,85 @@ def test_no_template_reads_a_property_nothing_defines():
     assert not unknown - known, sorted(unknown - known)
 
 
+HEX_COLOUR = re.compile(r"#[0-9a-fA-F]{3,8}\b")
+
+# A template that is its own surface rather than a page of the shell. The phone
+# capture page is handed to a customer's browser with no stylesheet and no theme
+# — it is the one page whose palette cannot come from the shop's.
+OWN_PALETTE = ("templates/mobile/index.html",)
+
+# Hex literals in a themed page that are not a colour *of that page*, each with
+# the reason it is allowed. The test below fails if one of these stops matching,
+# so an exemption cannot quietly outlive what it was written for.
+NOT_A_COLOUR: dict[str, tuple[tuple[str, str], ...]] = {
+    "templates/admin/barcode_print.html": ((
+        "background: #fff",
+        "the A4 sheet handed to the printer is paper, not a surface: white in every theme",
+    ),),
+    "templates/admin/product_form.html": ((
+        'placeholder="#4AA3DF"',
+        "the example text a shop types into a colour-code field, not a colour of the page",
+    ),),
+    "templates/admin/variant_form.html": ((
+        'placeholder="#4AA3DF"',
+        "the same example on the single-variant form",
+    ),),
+    "static/js/app.js": ((
+        "#abc",
+        "a comment explaining how a short colour code expands",
+    ),),
+}
+
+
+def _colour_sources() -> list[tuple[str, str]]:
+    """Every file that paints something: the templates and the scripts beside
+    them, as (path relative to the project, text)."""
+    paths = list((ROOT / "templates").rglob("*.html")) + list((ROOT / "static" / "js").glob("*.js"))
+    return [(str(path.relative_to(ROOT)), path.read_text()) for path in sorted(paths)]
+
+
+def test_no_page_of_the_shell_carries_its_own_colours():
+    """A themed page reads its colours from the active theme, so a shop that runs
+    the dark or high-contrast palette does not meet a pink chart, a beige panel or
+    a white card in a corner of it. Every hex literal is a colour that cannot
+    follow the theme, so a page has to say why it needs one.
+    """
+    offenders: list[str] = []
+    for relative, source in _colour_sources():
+        if relative in OWN_PALETTE:
+            continue
+        excused = tuple(needle for needle, _ in NOT_A_COLOUR.get(relative, ()))
+        for number, line in enumerate(source.splitlines(), 1):
+            if any(needle in line for needle in excused):
+                continue
+            for match in HEX_COLOUR.findall(line):
+                offenders.append(f"{relative}:{number}: {match} — {line.strip()[:90]}")
+    assert not offenders, "\n".join(offenders)
+
+
+def test_the_colour_exemptions_still_excuse_something():
+    """An allowlist that has outlived its reason is how a rule quietly dies."""
+    for relative, entries in NOT_A_COLOUR.items():
+        source = (ROOT / relative).read_text()
+        for needle, reason in entries:
+            assert reason, (relative, needle)
+            assert needle in source, f"{relative} no longer contains {needle!r}"
+    for relative in OWN_PALETTE:
+        assert (ROOT / relative).exists(), relative
+
+
+def test_the_chart_renderer_draws_with_the_active_theme():
+    """The offline canvas renderer is a fallback for a page whose chart library
+    did not load, and it used to paint a palette of its own — so the shop on the
+    dark theme got bars in the daylight colours. It reads the tokens instead.
+    """
+    script = (ROOT / "static" / "js" / "charts.js").read_text()
+    assert "themeTones" in script and "window.themeTones" in script
+    for token in ("--candy", "--sky", "--sunshine", "--mint", "--lavender", "--persimmon", "--rule", "--ink-soft"):
+        assert token in script, token
+    assert "palette = ['#" not in script
+
+
 def _mix_toward(colour: str, background: str, share: float) -> str:
     """`color-mix(in srgb, colour share, background)` in sRGB, the way Chrome
     resolves the badge tints these tests are about."""

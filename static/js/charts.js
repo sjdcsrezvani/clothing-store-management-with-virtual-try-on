@@ -1,7 +1,46 @@
 (function () {
     'use strict';
 
-    var palette = ['#FF6B8A', '#45B7D1', '#FFC857', '#51CF66', '#A66CFF', '#FF8A65', '#FFB347', '#6C5CE7'];
+    // Every colour this renderer paints is read from the page rather than written
+    // here, so a chart follows the active theme — light, dark and high-contrast
+    // alike — instead of staying the palette the app happened to ship with.
+    function readToken(name) {
+        var value = getComputedStyle(document.documentElement).getPropertyValue(name);
+        return value ? value.trim() : '';
+    }
+
+    function themeTones() {
+        var tones = {
+            candy: readToken('--candy'),
+            sky: readToken('--sky'),
+            sunshine: readToken('--sunshine'),
+            mint: readToken('--mint'),
+            lavender: readToken('--lavender'),
+            persimmon: readToken('--persimmon'),
+            rule: readToken('--rule'),
+            inkSoft: readToken('--ink-soft'),
+        };
+        tones.palette = [tones.candy, tones.sky, tones.sunshine, tones.mint, tones.lavender, tones.persimmon];
+        return tones;
+    }
+
+    window.themeTones = themeTones;
+
+    // A translucent fill for the area under a line: the canvas needs a real colour
+    // string, and a token can be hex or the rgb() a computed style hands back.
+    function tintColour(colour, alpha) {
+        var hex = String(colour || '').replace(/^#/, '');
+        if (hex.length === 3 || hex.length === 6) {
+            if (hex.length === 3) {
+                hex = hex.split('').map(function (character) { return character + character; }).join('');
+            }
+            var channels = [0, 2, 4].map(function (index) { return parseInt(hex.slice(index, index + 2), 16); });
+            return 'rgba(' + channels.join(', ') + ', ' + alpha + ')';
+        }
+        return 'rgba(' + String(colour || '').replace(/^rgba?\(|\)$/g, '') + ', ' + alpha + ')';
+    }
+
+    window.tintColour = tintColour;
 
     function canvasFor(target) {
         return target && target.canvas ? target.canvas : target;
@@ -52,7 +91,8 @@
         var plotWidth = chart.width - left - right;
         var plotHeight = chart.height - top - bottom;
         var zero = top + (range.max / (range.max - range.min)) * plotHeight;
-        context.strokeStyle = '#d9d9d9';
+        var tones = themeTones();
+        context.strokeStyle = tones.rule;
         context.lineWidth = 1;
         context.beginPath();
         context.moveTo(left, top);
@@ -60,7 +100,7 @@
         context.lineTo(chart.width - right, chart.height - bottom);
         context.stroke();
         if (zero >= top && zero <= chart.height - bottom) {
-            context.strokeStyle = '#bcbcbc';
+            context.strokeStyle = tones.inkSoft;
             context.beginPath();
             context.moveTo(left, zero);
             context.lineTo(chart.width - right, zero);
@@ -74,7 +114,7 @@
     }
 
     function label(context, text, x, y, align) {
-        context.fillStyle = '#666';
+        context.fillStyle = themeTones().inkSoft;
         context.textAlign = align || 'center';
         context.fillText(String(text == null ? '' : text), x, y);
     }
@@ -87,13 +127,14 @@
         if (!labels.length) return;
         var x = chart.width - 12;
         var y = chart.height - 12;
+        var tones = themeTones();
         context.font = '11px sans-serif';
         labels.slice().reverse().forEach(function (text, index) {
-            var color = datasets[datasets.length - 1 - index].backgroundColor || datasets[datasets.length - 1 - index].borderColor || palette[index % palette.length];
+            var color = datasets[datasets.length - 1 - index].backgroundColor || datasets[datasets.length - 1 - index].borderColor || tones.palette[index % tones.palette.length];
             if (Array.isArray(color)) color = color[0];
             context.fillStyle = color;
             context.fillRect(x - 10, y - 9, 8, 8);
-            context.fillStyle = '#666';
+            context.fillStyle = tones.inkSoft;
             context.textAlign = 'right';
             context.fillText(text, x - 16, y);
             x -= Math.min(100, context.measureText(text).width + 30);
@@ -109,7 +150,7 @@
         var horizontal = config.options && config.options.indexAxis === 'y';
         var groupCount = Math.max(labels.length, 1);
         var datasetCount = Math.max(datasets.length, 1);
-        var colors = palette;
+        var colors = themeTones().palette;
 
         if (horizontal) {
             var rowHeight = plot.plotHeight / groupCount;
@@ -154,8 +195,9 @@
         var range = rangeFor(valuesFor(config));
         var plot = drawAxes(context, chart, range);
         var step = plot.plotWidth / Math.max(labels.length - 1, 1);
+        var tones = themeTones();
         datasets.forEach(function (dataset, datasetIndex) {
-            var color = dataset.borderColor || palette[datasetIndex % palette.length];
+            var color = dataset.borderColor || tones.palette[datasetIndex % tones.palette.length];
             context.strokeStyle = color;
             context.fillStyle = color;
             context.lineWidth = 2;
@@ -189,8 +231,9 @@
         var centerX = chart.width / 2;
         var centerY = chart.height / 2 - 8;
         var start = -Math.PI / 2;
+        var tones = themeTones();
         if (!total) {
-            context.fillStyle = '#eeeeee';
+            context.fillStyle = tones.rule;
             context.beginPath();
             context.arc(centerX, centerY, radius, 0, Math.PI * 2);
             context.fill();
@@ -198,7 +241,7 @@
             values.forEach(function (value, index) {
                 var end = start + value / total * Math.PI * 2;
                 var color = Array.isArray(dataset.backgroundColor) ? dataset.backgroundColor[index % dataset.backgroundColor.length] : dataset.backgroundColor;
-                context.fillStyle = color || palette[index % palette.length];
+                context.fillStyle = color || tones.palette[index % tones.palette.length];
                 context.beginPath();
                 context.moveTo(centerX, centerY);
                 context.arc(centerX, centerY, radius, start, end);
@@ -214,7 +257,7 @@
         }
         labels.slice(0, 8).forEach(function (text, index) {
             var y = chart.height - 12 - index * 16;
-            context.fillStyle = palette[index % palette.length];
+            context.fillStyle = tones.palette[index % tones.palette.length];
             context.fillRect(12, y - 9, 8, 8);
             label(context, text, 26, y, 'left');
         });
@@ -223,7 +266,7 @@
     function drawMessage(canvas) {
         var chart = setupCanvas(canvas);
         if (!chart) return;
-        chart.context.fillStyle = '#777';
+        chart.context.fillStyle = themeTones().inkSoft;
         chart.context.textAlign = 'center';
         chart.context.fillText('نمودار در حالت آفلاین در دسترس نیست', chart.width / 2, chart.height / 2);
     }

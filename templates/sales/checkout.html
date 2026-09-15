@@ -234,7 +234,7 @@
     <div class="checkout-right">
         {# ── Basket ── #}
         <div class="basket-section card">
-            <h3><span> سبد خرید</span> <span id="basket-count" style="background: var(--candy); color: #fff; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.8rem;"> {{ basket|length }} قلم </span></h3>
+            <h3><span> سبد خرید</span> <span id="basket-count" style="background: var(--candy); color: var(--button-text); padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.8rem;"> {{ basket|length }} قلم </span></h3>
 
             {% if basket %}
             <div class="basket-list">
@@ -393,18 +393,18 @@ function renderTerminalIndicator(data) {
     var text = document.getElementById('terminal-indicator-text');
     if (!data.enabled) {
         dot.textContent = '⚪';
-        dot.style.color = '#9aa0a6';
+        dot.style.color = 'var(--ink-soft)';
         text.textContent = '📟 کارت‌خوان غیرفعال است — از تنظیمات پیکربندی کنید';
         return;
     }
     var addr = data.host + ':' + data.port;
     if (data.online) {
         dot.textContent = '🟢';
-        dot.style.color = '#1a7f37';
+        dot.style.color = 'var(--mint-dark)';
         text.textContent = '📟 کارت‌خوان: ' + addr + ' — متصل' + (data.latency_ms != null ? ' (' + data.latency_ms + 'ms)' : '');
     } else {
         dot.textContent = '🔴';
-        dot.style.color = '#c62828';
+        dot.style.color = 'var(--candy-dark)';
         text.textContent = '📟 کارت‌خوان: ' + addr + ' — قطع است';
     }
 }
@@ -475,8 +475,8 @@ setInterval(refreshTerminalStatus, 20000);
 {# ── Owner-only profit meter — kept tiny/low-contrast in the corner so a passerby won't read it ── #}
 {% if net_profit is defined %}
 <div id="profit-meter" dir="ltr" style="position:fixed; bottom:4px; left:6px; font-size:0.62rem;
-     line-height:1; opacity:0.42; color:#888; letter-spacing:.5px; z-index:50;
-     background:#fff; padding:1px 3px; border-radius:2px;">
+     line-height:1; opacity:0.42; color:var(--ink-soft); letter-spacing:.5px; z-index:50;
+     background:var(--card); padding:1px 3px; border-radius:2px;">
     <span class="tnum">{% if net_profit > 0 %}+{% elif net_profit < 0 %}−{% endif %}{{ fmt(net_profit) }}</span>
 </div>
 {% endif %}

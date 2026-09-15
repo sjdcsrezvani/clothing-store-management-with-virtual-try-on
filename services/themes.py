@@ -10,6 +10,11 @@ DEFAULT_THEME_ID = "operations-light"
 THEME_SETTING_KEY = "ui_theme"
 CUSTOM_PRIMARY_KEY = "theme_custom_primary"
 CUSTOM_SECONDARY_KEY = "theme_custom_secondary"
+# What the Custom Brand colour pickers start on, and what a form that carries no
+# colour falls back to. One source for both, so the page and the service cannot
+# disagree about the brand a shop gets before it chooses one.
+DEFAULT_CUSTOM_PRIMARY = "#C94B68"
+DEFAULT_CUSTOM_SECONDARY = "#197A8C"
 
 # `--persimmon` is the panel's attention hue: what a figure turns when it is not
 # an error but must be looked at — money owed, a payment past its date, a message
@@ -56,6 +61,12 @@ _BASE = {
     "--success-bg": "#E8F5ED",
     "--warning-bg": "#FFF5D9",
     "--danger-bg": "#FDEBEC",
+    # The dim behind a photo lightbox or a blocking overlay, and what stays
+    # legible on it. A picture is viewed against something, and the theme's card
+    # is the wrong shape for that — a light surface in the light palettes has to
+    # dim, not brighten, or the photo is washed out.
+    "--scrim": "rgba(12, 10, 34, 0.92)",
+    "--scrim-text": "#FFFFFF",
     "--density-scale": "1",
 }
 
@@ -178,7 +189,8 @@ def theme_preview(theme_id: str, custom: dict[str, str] | None = None) -> dict[s
     theme = THEMES.get(theme_id) or THEMES[DEFAULT_THEME_ID]
     tokens = dict(theme["tokens"])
     if theme_id == "custom-brand" and custom:
-        tokens.update(custom_tokens(custom.get("primary", "#C94B68"), custom.get("secondary", "#197A8C")))
+        tokens.update(custom_tokens(custom.get("primary", DEFAULT_CUSTOM_PRIMARY),
+                                    custom.get("secondary", DEFAULT_CUSTOM_SECONDARY)))
     return {
         "id": theme_id if theme_id in THEMES else DEFAULT_THEME_ID,
         "name": theme["name"],
@@ -205,8 +217,8 @@ def get_theme(db=None) -> dict[str, Any]:
         setting = db.query(Settings).filter(Settings.key == THEME_SETTING_KEY).first()
         theme_id = setting.value if setting and setting.value in THEMES else DEFAULT_THEME_ID
         custom = {
-            "primary": (db.query(Settings).filter(Settings.key == CUSTOM_PRIMARY_KEY).first() or Settings(value="#C94B68")).value or "#C94B68",
-            "secondary": (db.query(Settings).filter(Settings.key == CUSTOM_SECONDARY_KEY).first() or Settings(value="#197A8C")).value or "#197A8C",
+            "primary": (db.query(Settings).filter(Settings.key == CUSTOM_PRIMARY_KEY).first() or Settings(value=DEFAULT_CUSTOM_PRIMARY)).value or DEFAULT_CUSTOM_PRIMARY,
+            "secondary": (db.query(Settings).filter(Settings.key == CUSTOM_SECONDARY_KEY).first() or Settings(value=DEFAULT_CUSTOM_SECONDARY)).value or DEFAULT_CUSTOM_SECONDARY,
         }
         try:
             theme = theme_preview(theme_id, custom)
@@ -223,8 +235,8 @@ def get_theme(db=None) -> dict[str, Any]:
 def all_theme_previews(db=None) -> list[dict[str, Any]]:
     active = get_theme(db)
     custom = {
-        "primary": active["tokens"].get("--candy", "#C94B68") if active["id"] == "custom-brand" else "#C94B68",
-        "secondary": active["tokens"].get("--sky", "#197A8C") if active["id"] == "custom-brand" else "#197A8C",
+        "primary": active["tokens"].get("--candy", DEFAULT_CUSTOM_PRIMARY) if active["id"] == "custom-brand" else DEFAULT_CUSTOM_PRIMARY,
+        "secondary": active["tokens"].get("--sky", DEFAULT_CUSTOM_SECONDARY) if active["id"] == "custom-brand" else DEFAULT_CUSTOM_SECONDARY,
     }
     previews = []
     for theme_id in THEMES:
