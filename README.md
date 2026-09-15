@@ -2,8 +2,9 @@
 
 FastAPI + SQLite point-of-sale for a local kids' & teens' clothing shop:
 products & variants with barcode tags, checkout with referral / tier / birthday
-discounts, customer loyalty (points, gold/diamond tiers, and a dashboard built
-for the role that opens it), an SMS suite (template manager, manual sends,
+discounts, customer loyalty (points, gold/diamond tiers, and a dashboard and
+sidebar built for the role that opens it, with a refusal that reads like a page
+rather than a payload), an SMS suite (template manager, manual sends,
 welcome / birthday / tier-up / campaign messages, and a send log whose entries
 can be replayed), virtual try-on previews on the child's picture, invoices
 (HTML + Persian PDF), a deep analytics suite, and accounting-lite: credit sales
@@ -486,7 +487,11 @@ that role, that the figures it shows match the pages behind them, and that the
 leaderboard is one query however many customers the shop has — and the downgrade
 rule's promise that nothing is demoted without a tick and a confirmation, that a
 customer who bought while the form was open is turned away, and that no nightly
-job runs it. They use a throwaway SQLite database — never your real data.
+job runs it. The shell is covered the same way: every door the sidebar draws
+opens for the role it was drawn for, no page the till grants offers a link back
+into the admin panel, and a refusal lands on a Persian page that names the role
+asking rather than a JSON payload. They use a throwaway SQLite database — never
+your real data.
 
 Continuous integration runs this suite plus `compileall`, refuses a tracked
 `.env`, `.db` or `.log` file, and refuses any commit **message** that credits a

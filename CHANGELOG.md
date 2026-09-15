@@ -1,3 +1,14 @@
+## 2.5.1 — 2026-09-15
+
+### پوسته: only the doors a role may open, and a refusal that reads like a page
+
+- **The sidebar is chosen in Python, and every entry names the role it is for.** It was twenty-five hand-written links with three inline owner checks and nothing at all on the rest, so a cashier was shown تحلیل فروش، تنظیمات، پشتیبان‌ها and گزارش عملیات — and clicking any of them answered with FastAPI's raw `{"detail": …}` in the browser, because the app had no exception handler. The destinations now live in `services/navigation.py` with a `min_role` on each, and the shell draws only what the viewer may open: a cashier is left with «فروش جدید» and «تاریخچه فروش», a manager loses the owner-only tools, and a section whose every item is hidden goes with them rather than leaving a heading over nothing. The check is the same `role_allows` the dashboard's cards use, so the menu cannot offer a door the route will refuse.
+- **A refusal is a page, not a payload.** A 403 or a wrong address under `/admin` or `/sales` now renders a Persian card — what happened, **which role is asking** («شما با نقش مدیر وارد شده‌اید.») and a way back to a page that role can use. The handler is registered on Starlette's `HTTPException` rather than FastAPI's, so one definition covers an owner-only route (403) and a URL that matches nothing (404) alike; the framework's own English «Not Found» and the app's generic refusal are recognised and not printed beneath prose that already says both. `/api/*` keeps its JSON contract, so the phone app and any script are unaffected.
+- **The invoice and the sales list carried the same defect where the sidebar cannot reach.** Each had a «داشبورد» button in its own footer nav pointing at `/admin`, on a page a cashier can open — the role was offered a link that only refused them. Both are gated like the topbar's button now, and a test opens **every page the till grants** and fails if any of them offers an admin door, which is the one assertion a walk of the sidebar alone could not make.
+- **A login lands on a page that role can open.** Everybody used to be sent to `/admin`, so a cashier's first page was a refusal; the cashier now arrives at the till. `role_allows` is the single comparison behind the route guards, the sidebar and the dashboard's cards, so the three cannot drift apart on who may see what.
+
+**No schema change.** Nothing here adds or alters a column, so an existing installation upgrades by replacing the files — the migration runner has nothing pending for it.
+
 ## 2.5.0 — 2026-09-15
 
 ### باشگاه مشتریان: کاهش سطح becomes a decision, never a sweep
