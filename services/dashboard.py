@@ -36,8 +36,11 @@ from functools import cached_property
 import jdatetime
 from sqlalchemy.orm import Session
 
+from models import CashSession
 from services._common import fmt, jalali_str
-from services.accounting import debt_totals, get_cashbox, get_opening_balance
+from services.accounting import (
+    as_utc, debt_totals, get_cashbox, get_opening_balance, open_cash_session,
+)
 from services.analytics import get_date_range, get_top_products
 from services.backup import latest_backup
 from services.checks import check_alert_summary
@@ -144,6 +147,19 @@ class _Numbers:
             self.db, *self._today_span,
             opening_balance=get_opening_balance(self.db),
         )
+
+    @cached_property
+    def open_shift(self):
+        """The drawer, if somebody is standing at it right now."""
+        return open_cash_session(self.db)
+
+    @cached_property
+    def last_closed_shift(self):
+        """The most recent shift that was counted — where a difference would show."""
+        return (self.db.query(CashSession)
+                .filter(CashSession.status == "closed", CashSession.variance.isnot(None))
+                .order_by(CashSession.closed_at.desc(), CashSession.id.desc())
+                .first())
 
     @cached_property
     def debts(self) -> dict:
@@ -324,10 +340,54 @@ def _build_today_sales(numbers: _Numbers, role: str) -> dict:
 
 
 def _build_cashbox(numbers: _Numbers, role: str) -> dict:
+    """The till as it stands, not as a period would compute it.
+
+    The card used to show «the settings float plus today's movements», which
+    looks like what is in the drawer and is not: when no shift has been opened
+    nothing has been counted, so no float is known and the arithmetic describes
+    a drawer that was never there. With a shift open the figure is the shift's
+    own; with none, the card says the drawer is shut and reports the day's cash
+    movement instead — a fact, rather than a guess wearing a balance's clothes.
+    """
+    session = numbers.open_shift
+    if session:
+        register = get_cashbox(numbers.db, session.opened_at, datetime.now(timezone.utc),
+                               session.opening_balance, session.id)
+        return {"value": _money(register["closing"]),
+                "sub": f"صندوق باز از {jalali_str(session.opened_at)}"}
     cash = numbers.cash
-    movement = (f"{_money(cash['cash_in'])} ورود · {_money(cash['cash_out'])} خروج"
+    movement = (f"امروز {_money(cash['cash_in'])} ورود · {_money(cash['cash_out'])} خروج"
                 if cash["cash_in"] or cash["cash_out"] else "امروز ورود و خروجی نداشته")
-    return {"value": _money(cash["closing"]), "sub": movement}
+    return {"value": "باز نشده", "sub": movement}
+
+
+def _build_cash_variance(numbers: _Numbers, role: str) -> dict | None:
+    """A count that did not match, while it is still worth knowing about.
+
+    Hidden entirely when the last shift balanced, so the attention section never
+    asks for a decision that does not exist.
+    """
+    session = numbers.last_closed_shift
+    if session is None or not session.variance:
+        return None
+    short = session.variance < 0
+    return {"value": _money(abs(session.variance)),
+            # A drawer short is money missing; a drawer over is a mistake to
+            # explain. Both need attention, not the same amount of alarm.
+            "tone": "danger" if short else "warning",
+            "sub": (f"{'کسری' if short else 'اضافه'} در شیفت #{session.id} "
+                    f"({jalali_str(session.closed_at, with_time=False)})")}
+
+
+def _build_cash_stale(numbers: _Numbers, role: str) -> dict | None:
+    """A drawer left open from an earlier day — the shift nobody closed."""
+    session = numbers.open_shift
+    # `as_utc` because SQLite hands the row back without a timezone while the
+    # day boundary is aware; comparing the two raises rather than answering.
+    if session is None or as_utc(session.opened_at) >= numbers._today_span[0]:
+        return None
+    return {"value": "باز مانده",
+            "sub": f"از {jalali_str(session.opened_at, with_time=False)}"}
 
 
 def _build_today_profit(numbers: _Numbers, role: str) -> dict:
@@ -415,6 +475,10 @@ CARDS: tuple[dict, ...] = (
           tone="info", href="/admin/credit?status=overdue"),
     _card("checks", "attention", "چک سررسیدشده", _build_checks,
           tone="info", href="/admin/checks"),
+    _card("cash_variance", "attention", "اختلاف صندوق", _build_cash_variance,
+          tone="danger", href="/admin/cashbox"),
+    _card("cash_stale", "attention", "صندوق باز مانده", _build_cash_stale,
+          tone="warning", href="/admin/cashbox"),
     _card("backup", "attention", "پشتیبان‌گیری", _build_backup,
           min_role="owner", tone="success", href="/admin/backups"),
     _card("sms", "attention", "پیامک", _build_sms,

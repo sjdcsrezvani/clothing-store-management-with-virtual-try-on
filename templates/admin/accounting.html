@@ -10,21 +10,9 @@
 {% include 'partials/page_header.html' %}
 
 {# ─── Period filter ─── #}
-<div class="card" style="margin-bottom: 1rem;">
-    <form method="get" action="/admin/accounting" class="filter-bar" style="margin: 0;">
-        <select name="period" style="padding: 0.5rem 0.7rem; border: 2px solid #E8DDD5; border-radius: 8px; font-family: inherit;">
-            <option value="today" {% if period == 'today' %}selected{% endif %}>📅 امروز</option>
-            <option value="week" {% if period == 'week' %}selected{% endif %}>🗓️ این هفته</option>
-            <option value="month" {% if period == 'month' %}selected{% endif %}>📆 این ماه</option>
-            <option value="year" {% if period == 'year' %}selected{% endif %}>📅 امسال</option>
-            <option value="all" {% if period == 'all' %}selected{% endif %}>🌐 همه</option>
-            <option value="custom" {% if period == 'custom' %}selected{% endif %}>✏️ دلخواه</option>
-        </select>
-        <input type="text" id="accounting-start" name="start_date" class="persian-date-input" data-pdp-pair="#accounting-end" placeholder="از: ۱۴۰۵/۰۱/۰۱" value="{{ start_date }}">
-        <input type="text" id="accounting-end" name="end_date" class="persian-date-input" placeholder="تا: ۱۴۰۵/۰۶/۳۱" value="{{ end_date }}">
-        <button type="submit" class="btn btn-primary">🔍 نمایش</button>
-    </form>
-</div>
+{% set filter_action = '/admin/accounting' %}
+{% set filter_id = 'accounting' %}
+{% include 'partials/period_filter.html' %}
 
 {# ─── Net P&L ─── #}
 <div class="stats-grid">

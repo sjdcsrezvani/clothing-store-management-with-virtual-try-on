@@ -2535,3 +2535,62 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
   .sms-table, .sms-history-table { min-width: 0; width: 100%; font-size: 0.78rem; }
   .sms-history-card .table-scroll, .sms-group-card .table-scroll { overflow: visible; }
 }
+
+/* ===================== صندوق: the cash drawer ===================== */
+
+/* The accent two cards have referenced since they were written and never had:
+   `.stat-card.accent-candy::before` was undefined, so the closing balance on
+   صندوق and the net result on سود و زیان rendered without the accent bar every
+   sibling card carries. */
+.stat-card.accent-candy::before { background: var(--candy); }
+
+/* The shift's states, and the three ways a count can land. Text, not colour
+   alone — the words are in the badge. */
+.status-badge.is-open      { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--mint-dark); }
+.status-badge.is-closed    { background: color-mix(in srgb, var(--ink-soft) 20%, var(--card)); color: var(--ink-soft); }
+.status-badge.is-abandoned { background: color-mix(in srgb, var(--sunshine) 30%, var(--card)); color: var(--ink); }
+.status-badge.is-balanced  { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--mint-dark); }
+/* A drawer short is the alarming one, so it takes the danger pair the rest of
+   the panel uses for one (`.badge-danger`, `.alert-error`) rather than
+   `--persimmon`, which no theme ever defines — twelve declarations elsewhere
+   already reference it and render in the inherited colour as a result. */
+.status-badge.is-short     { background: color-mix(in srgb, var(--candy) 18%, var(--card)); color: var(--candy-dark); }
+.status-badge.is-over      { background: color-mix(in srgb, var(--sunshine) 30%, var(--card)); color: var(--ink); }
+
+/* A filter is a row of small controls, not a stack of full-width fields: the
+   global field rule makes every select 100% wide (right inside a form, wrong in
+   a filter bar), so the filter needs saying out loud. Scoped to `.is-inline`
+   rather than applied to `.filter-bar` itself, because four other pages use that
+   class as a plain block today and are not part of this change. */
+.filter-bar.is-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: flex-end;
+  margin-bottom: 0;
+}
+.filter-field { display: flex; flex-direction: column; gap: 0.3rem; flex: 0 1 auto; }
+.filter-field > span { font-size: 0.8rem; color: var(--ink-soft); font-weight: 600; }
+.filter-field > select,
+.filter-field > input { width: auto; min-width: 12rem; }
+.filter-note { flex: 1 1 100%; margin: 0; font-size: 0.82rem; }
+.filter-card { padding: 1rem 1.1rem; }
+
+@media (max-width: 700px) {
+  .filter-field { flex: 1 1 100%; }
+  .filter-field > select,
+  .filter-field > input { min-width: 0; width: 100%; }
+}
+
+.cash-drawer-card .stats-grid { margin-bottom: 0.2rem; }
+.cash-subsection { margin-top: 1.4rem; padding-top: 1rem; border-top: 1px solid var(--rule); }
+.cash-subsection h4 { margin: 0 0 0.35rem; }
+.cash-movements { width: 100%; }
+.cash-note-line { display: block; color: var(--ink-soft); font-size: 0.78rem; }
+.cash-note { margin-top: 1rem; font-size: 0.85rem; line-height: 1.9; }
+.cash-default summary { cursor: pointer; font-weight: 700; }
+.cash-default > p { margin: 0.6rem 0 0.8rem; font-size: 0.85rem; }
+
+/* One card alone in the grid would take half a row and leave a gap: the
+   cashier's shift shows the float and nothing else. */
+.stats-grid.is-single { grid-template-columns: 1fr; }

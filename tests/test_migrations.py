@@ -1,4 +1,5 @@
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError
 
 from migrations import MIGRATION_VERSION, backup_database, downgrade, migration_status, upgrade
 
@@ -183,7 +184,7 @@ def test_upgrade_records_values_without_rewriting_what_came_before(tmp_path):
             VALUES ('09120000000', 'سارا عزیز، سلام!', 'sent', 'marketing', 'welcome', '2026-01-01 00:00:00')
         """))
 
-    assert upgrade(engine) == 18
+    assert upgrade(engine) == MIGRATION_VERSION
 
     with engine.begin() as conn:
         conn.execute(text("""
@@ -196,6 +197,65 @@ def test_upgrade_records_values_without_rewriting_what_came_before(tmp_path):
         assert rows[0][1] == ""                      # the old row claims nothing
         assert rows[0][0] == "سارا عزیز، سلام!"       # and kept its text
         assert "سارا" in rows[1][1]                  # the new one explains itself
+
+
+def test_revision_19_leaves_one_drawer_open(tmp_path):
+    """A shop that already had two shifts open at once.
+
+    Two managers clicking «باز کردن صندوق» in the same second used to leave two
+    rows with status='open', and the register then read whichever it found
+    first — so one shift's closing count silently belonged to the other. The
+    upgrade closes the older one without inventing a count for it, and the
+    index makes the situation impossible from then on.
+    """
+    engine = create_engine(f"sqlite:///{tmp_path / 'twodrawers.db'}")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE schema_version (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)"))
+        conn.execute(text("INSERT INTO schema_version (id, version) VALUES (1, 18)"))
+        conn.execute(text("""
+            CREATE TABLE cash_sessions (
+                id INTEGER NOT NULL,
+                cashier_user_id INTEGER NOT NULL,
+                opened_at DATETIME NOT NULL,
+                opening_balance INTEGER NOT NULL,
+                closed_at DATETIME,
+                expected_closing_balance INTEGER,
+                counted_closing_balance INTEGER,
+                manager_user_id INTEGER,
+                variance INTEGER,
+                status VARCHAR(20) NOT NULL,
+                PRIMARY KEY (id)
+            )
+        """))
+        conn.execute(text("""
+            INSERT INTO cash_sessions (id, cashier_user_id, opened_at, opening_balance, status)
+            VALUES (1, 1, '2026-01-01 09:00:00', 500000, 'open'),
+                   (2, 2, '2026-01-01 09:00:01', 500000, 'open'),
+                   (3, 3, '2025-12-30 09:00:00', 500000, 'closed')
+        """))
+
+    assert upgrade(engine) == MIGRATION_VERSION
+
+    with engine.begin() as conn:
+        rows = conn.execute(text(
+            "SELECT id, status, closed_at, counted_closing_balance FROM cash_sessions ORDER BY id"
+        )).all()
+        assert rows[0][1] == "abandoned"           # the older duplicate, closed
+        assert rows[0][2] is not None               # …with a time it happened
+        assert rows[0][3] is None                   # and no count nobody performed
+        assert rows[1][1] == "open"                 # the newest keeps the drawer
+        assert rows[2][1] == "closed"               # untouched
+
+        # …and a second open row can no longer be written at all.
+        try:
+            conn.execute(text("""
+                INSERT INTO cash_sessions (cashier_user_id, opened_at, opening_balance, status)
+                VALUES (4, '2026-01-01 10:00:00', 500000, 'open')
+            """))
+        except IntegrityError:
+            pass
+        else:
+            raise AssertionError("the database accepted a second open drawer")
 
 
 def test_backup_database_creates_copy(tmp_path):

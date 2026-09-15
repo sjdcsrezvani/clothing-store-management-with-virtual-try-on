@@ -7,14 +7,15 @@ from urllib.parse import quote_plus
 from fastapi import APIRouter, Depends, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import String, case, cast, func, literal, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from database import get_db
 from models import (
     BusinessEvent, Customer, Expense, Payment, ProductVariant, Product, Purchase,
     PurchaseItem, Sale, SaleItem, Settings, StaffUser, Supplier, StockMovement,
-    CashSession, SupplierPayment, FinancialEntry, CheckRecord, CheckReminder,
-    PaymentReversal, to_english_digits,
+    CashSession, CashSessionEntry, SupplierPayment, FinancialEntry, CheckRecord,
+    CheckReminder, PaymentReversal, to_english_digits,
 )
 from services._common import (
     fmt, check_admin, get_setting_int, jalali_str, parse_form_date, parse_form_date_end,
@@ -38,10 +39,12 @@ from services.accounting import (
     purchase_item_totals, purchase_landed_unit_cost, purchase_overview,
     purchase_paid_amount, purchase_paid_from_rollup, purchase_payment_rollup,
     purchase_settlement, refresh_purchase_amount_paid,
+    add_cash_withdrawal, cash_shift_summary, last_counted_balance,
+    open_cash_session, reverse_cash_withdrawal,
 )
 from services.sms import queue_credit_reminder_sms
 from services.analytics import get_date_range
-from services.security import log_action, require_html_role
+from services.security import log_action, require_html_role, role_allows
 from services.templating import templates
 from services.inventory import (
     LEGACY_MOVEMENT_TYPES,
@@ -965,7 +968,7 @@ async def admin_supplier_payment(supplier_id: int, request: Request, amount: str
     balance = next((row["owed"] for row in supplier_owed if row["supplier"].id == supplier.id), 0)
     if not supplier or amount_int <= 0 or amount_int > balance:
         return RedirectResponse(url="/admin/suppliers?err=پرداخت تأمین‌کننده از بدهی بیشتر است یا نامعتبر است.", status_code=303)
-    open_session = db.query(CashSession).filter(CashSession.status == "open").order_by(CashSession.opened_at.desc()).first()
+    open_session = open_cash_session(db)
     supplier_payment = SupplierPayment(
         supplier_id=supplier.id,
         purchase_id=purchase.id if purchase else None,
@@ -2089,7 +2092,7 @@ async def admin_expense_add(
         return RedirectResponse(url="/admin/expenses?err=مبلغ معتبر نیست.", status_code=303)
     if expense_type not in EXPENSE_TYPE_LABELS:
         return RedirectResponse(url="/admin/expenses?err=نوع هزینه نامعتبر است.", status_code=303)
-    open_session = db.query(CashSession).filter(CashSession.status == "open").order_by(CashSession.opened_at.desc()).first()
+    open_session = open_cash_session(db)
     expense = Expense(
         amount=amount_int,
         category=category.strip() or None,
@@ -2141,7 +2144,55 @@ async def admin_expense_delete(expense_id: int, request: Request, db: Session = 
     return RedirectResponse(url="/admin/expenses", status_code=303)
 
 
-# ── Cash box ─────────────────────────────────────────────────────────────────
+# ── Cash box (the drawer) ────────────────────────────────────────────────────
+#
+# The page is the drawer, and the drawer is a shift: opened with a count, closed
+# with a count. Everything that adds up to «what should be in here» is kept from
+# whoever is about to count it — see ``_blind`` below — because a count typed off
+# a figure the register already printed can never disagree with it.
+
+SESSIONS_SHOWN = 20
+
+
+def _staff_names(db, ids) -> dict:
+    """Names for the people on a shift, so the till never says «کاربر #۳»."""
+    wanted = {int(i) for i in ids if i}
+    if not wanted:
+        return {}
+    return {user.id: (user.full_name or user.username)
+            for user in db.query(StaffUser).filter(StaffUser.id.in_(wanted)).all()}
+
+
+def _cash_session_row(session, names: dict) -> dict:
+    """One shift as the history table reads it, difference already worded."""
+    variance = session.variance
+    if session.status == "open":
+        status_label, variance_label, variance_tone = "باز", "—", None
+    elif session.status == "abandoned":
+        status_label, variance_label, variance_tone = "بسته‌شده بدون شمارش", "—", None
+    else:
+        status_label = "بسته"
+        if variance is None:
+            variance_label, variance_tone = "ثبت نشده", None
+        elif variance == 0:
+            variance_label, variance_tone = "مطابق", "balanced"
+        elif variance < 0:
+            variance_label, variance_tone = f"{fmt(abs(variance))} ت کسری", "short"
+        else:
+            variance_label, variance_tone = f"{fmt(variance)} ت اضافه", "over"
+    return {
+        "session": session,
+        "status_label": status_label,
+        "variance_label": variance_label,
+        "variance_tone": variance_tone,
+        "opener": names.get(session.cashier_user_id) or "کاربر حذف‌شده",
+        "closer": names.get(session.manager_user_id) if session.manager_user_id else None,
+    }
+
+
+def _withdrawals_of(summary: dict) -> list:
+    return [row for row in summary["movements"] if row["kind"] == "withdrawal"]
+
 
 @router.get("/cashbox", response_class=HTMLResponse)
 async def admin_cashbox(
@@ -2149,23 +2200,79 @@ async def admin_cashbox(
     period: str = "today",
     start_date: str = "",
     end_date: str = "",
+    history: str = "",
     db: Session = Depends(get_db),
 ):
-    guard = require_html_role(request, db, "manager")
+    guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
-    start, end = get_date_range(period, start_date or None, end_date or None)
-    opening = get_opening_balance(db)
-    active_session = db.query(CashSession).filter(CashSession.status == "open").order_by(CashSession.opened_at.desc()).first()
-    register = get_cashbox(db, start, end, active_session.opening_balance if active_session else opening, active_session.id if active_session else None)
+
+    verifier = role_allows(guard.role, "manager")
+    session = open_cash_session(db)
+    suggestion = last_counted_balance(db)
+
+    shift = None
+    if session:
+        summary = cash_shift_summary(db, session)
+        shift = {
+            "session": session,
+            "opener": _staff_names(db, [session.cashier_user_id]).get(session.cashier_user_id) or "کاربر حذف‌شده",
+            "withdrawals": _withdrawals_of(summary),
+            "can_close": verifier or session.cashier_user_id == guard.id,
+            # SQLite returns the row without a timezone, so the comparison needs
+            # the boundary attached to it rather than the other way round.
+            "stale": as_utc(session.opened_at) < get_date_range("today")[0],
+        }
+        # The blind count: the figures that add up to what should be in the
+        # drawer reach a manager's page and nobody else's until the shift is
+        # closed. The opener still sees the float they put in and the
+        # withdrawals they recorded — those are inputs, not the answer.
+        if verifier:
+            shift["register"] = summary["register"]
+            shift["expected"] = summary["register"]["closing"]
+
+    open_shifts = db.query(CashSession).order_by(CashSession.opened_at.desc())
+    if not verifier:
+        # A cashier reads their own shifts, not the rest of the shop's day.
+        open_shifts = open_shifts.filter(CashSession.cashier_user_id == guard.id)
+    total_shifts = open_shifts.count()
+    listed = open_shifts.all() if history == "all" else open_shifts.limit(SESSIONS_SHOWN).all()
+    names = _staff_names(db, [s.cashier_user_id for s in listed] + [s.manager_user_id for s in listed])
+    sessions = [_cash_session_row(s, names) for s in listed]
+
+    report = None
+    settings_opening = None
+    if verifier:
+        start, end = get_date_range(period, start_date or None, end_date or None)
+        settings_opening = get_opening_balance(db)
+        register = get_cashbox(db, start, end, settings_opening)
+        # For «همه» there is no float to have started from, so a closing balance
+        # would be arithmetic about nothing; the net movement of the range is a
+        # figure that means something instead.
+        report = {
+            "register": register,
+            "timeless": period == "all",
+            "net": register["cash_in"] - register["cash_out"],
+        }
+
     return templates.TemplateResponse(request, "admin/cashbox.html", {
         "period": period,
         "start_date": start_date,
         "end_date": end_date,
-        "register": register,
-        "active_session": active_session,
+        "history": history,
+        "verify": verifier,
+        "shift": shift,
+        "sessions": sessions,
+        # Reading «۲۰ از ۲۵» above a list that is showing all of them would make
+        # the page lie to the reader about what is in front of them.
+        "sessions_shown": total_shifts if history == "all" else min(total_shifts, SESSIONS_SHOWN),
+        "sessions_total": total_shifts,
+        "report": report,
+        "settings_opening": settings_opening,
+        "opening_suggestion": suggestion,
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
+        "msg_tone": "warning" if request.query_params.get("tone") == "warning" else "success",
         "fmt": fmt,
         "jalali_str": jalali_str,
     })
@@ -2173,15 +2280,28 @@ async def admin_cashbox(
 
 @router.post("/cashbox/open", response_class=HTMLResponse)
 async def admin_cashbox_open(request: Request, opening: str = Form("0"), db: Session = Depends(get_db)):
-    guard = require_html_role(request, db, "manager")
+    """Open the drawer for the person standing at it.
+
+    Anyone signed in may do this — the cashier is who actually counts the float
+    — but only one drawer exists at a time, so a shift already running refuses a
+    second one by name instead of silently splitting the day in two.
+    """
+    guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
+    alive = open_cash_session(db)
+    if alive:
+        who = _staff_names(db, [alive.cashier_user_id]).get(alive.cashier_user_id) or "کاربر حذف‌شده"
+        return RedirectResponse(
+            url=f"/admin/cashbox?err={quote_plus(f'صندوق از طرف {who} باز است؛ تا آن بسته نشود صندوق تازه‌ای باز نمی‌شود.')}",
+            status_code=303,
+        )
     try:
-        opening_int = int(opening)
+        opening_int = int(to_english_digits(opening))
     except (TypeError, ValueError):
         opening_int = -1
-    if opening_int < 0 or db.query(CashSession).filter(CashSession.status == "open").first():
-        return RedirectResponse(url="/admin/cashbox?err=موجودی اولیه نامعتبر است یا صندوق دیگری باز است.", status_code=303)
+    if opening_int < 0:
+        return RedirectResponse(url=f"/admin/cashbox?err={quote_plus('موجودی ابتدای صندوق باید عددی صفر یا بیشتر باشد.')}", status_code=303)
     session = CashSession(cashier_user_id=guard.id, opening_balance=opening_int)
     db.add(session)
     db.flush()
@@ -2196,26 +2316,50 @@ async def admin_cashbox_open(request: Request, opening: str = Form("0"), db: Ses
         payload={"opening_balance": session.opening_balance},
         occurred_at=session.opened_at,
     )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Two people opening at the same moment: the index keeps one, and the
+        # loser is told plainly rather than shown an error page.
+        db.rollback()
+        return RedirectResponse(url=f"/admin/cashbox?err={quote_plus('همان لحظه یک صندوق دیگر باز شد؛ صفحه را دوباره ببینید.')}", status_code=303)
     log_action(db, "cash_session_open", "باز کردن صندوق", request=request, target_type="cash_session", target_id=session.id, after={"opening_balance": opening_int})
-    return RedirectResponse(url="/admin/cashbox?msg=صندوق باز شد.", status_code=303)
+    return RedirectResponse(url=f"/admin/cashbox?msg={quote_plus('صندوق باز شد. حالا فروش نقدی این شیفت شمرده می‌شود.')}", status_code=303)
 
 
 @router.post("/cashbox/close", response_class=HTMLResponse)
 async def admin_cashbox_close(request: Request, counted: str = Form("0"), db: Session = Depends(get_db)):
-    guard = require_html_role(request, db, "manager")
+    """Count the drawer and record the difference.
+
+    The opener may close their own shift; a manager or the owner may close any
+    shift, which is what «verifying» means here. What the register expected is
+    worked out *after* the count arrives and only then said out loud, so the
+    count is a real observation of the drawer rather than a copy of a figure.
+    """
+    guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
-    session = db.query(CashSession).filter(CashSession.status == "open").order_by(CashSession.opened_at.desc()).first()
+    session = open_cash_session(db)
+    if not session:
+        return RedirectResponse(url=f"/admin/cashbox?err={quote_plus('صندوقی باز نیست.')}", status_code=303)
+    if not (role_allows(guard.role, "manager") or session.cashier_user_id == guard.id):
+        raise HTTPException(
+            status_code=403,
+            detail="این صندوق را کسی دیگر باز کرده است؛ فقط بازکنندهٔ آن یا مدیر می‌تواند ببندد.",
+        )
     try:
-        counted_int = int(counted)
+        counted_int = int(to_english_digits(counted))
     except (TypeError, ValueError):
         counted_int = -1
-    if not session or counted_int < 0:
-        return RedirectResponse(url="/admin/cashbox?err=صندوق باز یا مبلغ شمارش‌شده معتبر نیست.", status_code=303)
+    if counted_int < 0:
+        return RedirectResponse(url=f"/admin/cashbox?err={quote_plus('مبلغ شمارش‌شده باید عددی صفر یا بیشتر باشد.')}", status_code=303)
     start = session.opened_at
     end = datetime.now(timezone.utc)
     expected = get_cashbox(db, start, end, session.opening_balance, session.id)["closing"]
+    # Written down, not merely spoken in the event payload: the shift history and
+    # the statement read this column, and until now nothing ever filled it — the
+    # register recorded the expected figure and then showed it nowhere.
+    session.expected_closing_balance = expected
     session.counted_closing_balance = counted_int
     session.variance = counted_int - expected
     session.closed_at = end
@@ -2238,22 +2382,155 @@ async def admin_cashbox_close(request: Request, counted: str = Form("0"), db: Se
     )
     db.commit()
     log_action(db, "cash_session_close", "بستن صندوق", request=request, target_type="cash_session", target_id=session.id, after={"expected": expected, "counted": counted_int, "variance": session.variance})
-    return RedirectResponse(url="/admin/cashbox?msg=صندوق بسته شد.", status_code=303)
+    # Only now is the expected figure spoken: the count is already in.
+    if session.variance == 0:
+        note = f"صندوق بسته شد. شمارش {fmt(counted_int)} ت با عدد مورد انتظار می‌خواند."
+        tone = ""
+    elif session.variance < 0:
+        note = (f"صندوق بسته شد. شمارش {fmt(counted_int)} ت، {fmt(abs(session.variance))} ت کمتر از عدد مورد انتظار "
+                f"({fmt(expected)} ت) است؛ اختلاف ثبت شد.")
+        tone = "&tone=warning"
+    else:
+        note = (f"صندوق بسته شد. شمارش {fmt(counted_int)} ت، {fmt(session.variance)} ت بیشتر از عدد مورد انتظار "
+                f"({fmt(expected)} ت) است؛ اختلاف ثبت شد.")
+        tone = "&tone=warning"
+    return RedirectResponse(url=f"/admin/cashbox?msg={quote_plus(note)}{tone}", status_code=303)
+
+
+@router.post("/cashbox/withdraw", response_class=HTMLResponse)
+async def admin_cashbox_withdraw(
+    request: Request,
+    amount: str = Form("0"),
+    reason: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Take cash out of the drawer before the count.
+
+    A bank deposit or a small cash purchase: the money is still the shop's, so
+    it is not an expense — but it is no longer in the drawer, so what should be
+    counted has to know about it. The reason is required rather than optional:
+    a month later, «برداشت ۵۰۰٬۰۰۰» with no reason is a hole in the records.
+    """
+    guard = require_html_role(request, db, "cashier")
+    if not hasattr(guard, "role"):
+        return guard
+    session = open_cash_session(db)
+    if not session:
+        return RedirectResponse(url=f"/admin/cashbox?err={quote_plus('صندوقی باز نیست؛ برداشت فقط از صندوق باز ثبت می‌شود.')}", status_code=303)
+    if not (role_allows(guard.role, "manager") or session.cashier_user_id == guard.id):
+        raise HTTPException(
+            status_code=403,
+            detail="برداشت از این صندوق فقط به دست بازکنندهٔ آن یا مدیر ممکن است.",
+        )
+    try:
+        amount_int = int(to_english_digits(amount))
+    except (TypeError, ValueError):
+        amount_int = 0
+    if amount_int <= 0:
+        return RedirectResponse(url=f"/admin/cashbox?err={quote_plus('مبلغ برداشت باید بیشتر از صفر باشد.')}", status_code=303)
+    reason_text = reason.strip()
+    if not reason_text:
+        return RedirectResponse(url=f"/admin/cashbox?err={quote_plus('دلیل برداشت را بنویسید تا بعداً معلوم باشد پول کجا رفته است.')}", status_code=303)
+    if amount_int > cash_shift_summary(db, session)["register"]["closing"]:
+        # Deliberately without the figure: this is the one number the person
+        # about to count should not be reading off the screen.
+        return RedirectResponse(url=f"/admin/cashbox?err={quote_plus('این مبلغ از موجودی صندوق بیشتر است.')}", status_code=303)
+    entry = add_cash_withdrawal(db, session, amount_int, reason_text, guard.id,
+                                request_id=request.headers.get("X-Request-ID"))
+    db.commit()
+    log_action(db, "cash_session_withdrawal", f"برداشت از صندوق {fmt(amount_int)}", request=request, target_type="cash_session_entry", target_id=entry.id, after={"amount": amount_int, "reason": reason_text})
+    return RedirectResponse(url=f"/admin/cashbox?msg={quote_plus('برداشت ثبت شد و از عددی که باید در کشو باشد کم شد.')}", status_code=303)
+
+
+@router.post("/cashbox/withdrawals/{entry_id}/reverse", response_class=HTMLResponse)
+async def admin_cashbox_withdrawal_reverse(request: Request, entry_id: int, db: Session = Depends(get_db)):
+    """Undo a withdrawal entered by mistake — while its shift is still open."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    entry = db.query(CashSessionEntry).filter(CashSessionEntry.id == entry_id).first()
+    if not entry:
+        return RedirectResponse(url=f"/admin/cashbox?err={quote_plus('این برداشت پیدا نشد.')}", status_code=303)
+    session = db.query(CashSession).filter(CashSession.id == entry.cash_session_id).first()
+    if entry.reversed_at is not None:
+        return RedirectResponse(url=f"/admin/cashbox/sessions/{entry.cash_session_id}?err={quote_plus('این برداشت قبلاً برگشت خورده است.')}", status_code=303)
+    if not session or session.status != "open":
+        return RedirectResponse(
+            url=f"/admin/cashbox/sessions/{entry.cash_session_id}?err={quote_plus('این شیفت بسته شده است؛ برداشت‌های یک شیفت بسته‌شده برگشت نمی‌خورند چون شمارش و اختلافش ثبت شده است.')}",
+            status_code=303,
+        )
+    reverse_cash_withdrawal(db, entry, guard.id, request_id=request.headers.get("X-Request-ID"))
+    db.commit()
+    log_action(db, "cash_session_withdrawal_reverse", f"برگشت برداشت {fmt(entry.amount)}", request=request, target_type="cash_session_entry", target_id=entry.id, after={"amount": entry.amount})
+    return RedirectResponse(url=f"/admin/cashbox/sessions/{entry.cash_session_id}?msg={quote_plus('برداشت برگشت خورد و به عدد مورد انتظار برگشت.')}", status_code=303)
+
+
+@router.get("/cashbox/sessions/{session_id}", response_class=HTMLResponse)
+async def admin_cash_session(request: Request, session_id: int, db: Session = Depends(get_db)):
+    """One shift, with every movement behind its expected figure.
+
+    While the shift is open only a manager sees this page. Its whole content is
+    the arithmetic the counter is deliberately not shown before counting, so a
+    cashier could reach the number through it; once the shift is closed there is
+    nothing left to bias, and the opener may read their own.
+    """
+    guard = require_html_role(request, db, "cashier")
+    if not hasattr(guard, "role"):
+        return guard
+    session = db.query(CashSession).filter(CashSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404)
+    verifier = role_allows(guard.role, "manager")
+    if not verifier and session.cashier_user_id != guard.id:
+        raise HTTPException(
+            status_code=403,
+            detail="این شیفت با حساب شما باز نشده است؛ فقط شیفت‌های خودتان را می‌بینید.",
+        )
+    if not verifier and session.status == "open":
+        raise HTTPException(
+            status_code=403,
+            detail="تا این شیفت بسته نشود، عدد مورد انتظار را نشان نمی‌دهیم تا شمارش واقعی بماند؛ بعد از بستن می‌توانید همین صفحه را ببینید.",
+        )
+
+    summary = cash_shift_summary(db, session)
+    names = _staff_names(db, [session.cashier_user_id, session.manager_user_id])
+    register = summary["register"]
+    return templates.TemplateResponse(request, "admin/cashbox_session.html", {
+        "row": _cash_session_row(session, names),
+        "session": session,
+        "movements": summary["movements"],
+        "expected": (session.expected_closing_balance
+                     if session.expected_closing_balance is not None else register["closing"]),
+        "register": register,
+        "verify": verifier,
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
+        "fmt": fmt,
+        "jalali_str": jalali_str,
+    })
 
 
 @router.post("/cashbox/opening", response_class=HTMLResponse)
 async def admin_cashbox_opening(request: Request, opening: str = Form("0"), db: Session = Depends(get_db)):
+    """The float suggested when no shift has ever been counted.
+
+    A setting rather than a daily control: the day-to-day starting point is the
+    last count, which the form suggests by itself. Negative amounts are refused
+    — a negative float would quietly bend every closing figure derived from it.
+    """
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
     try:
-        opening_int = int(opening)
+        opening_int = int(to_english_digits(opening))
     except (TypeError, ValueError):
-        opening_int = 0
+        opening_int = -1
+    if opening_int < 0:
+        return RedirectResponse(url=f"/admin/cashbox?err={quote_plus('موجودی پیش‌فرض نمی‌تواند منفی باشد.')}", status_code=303)
     row = db.query(Settings).filter(Settings.key == "cash_opening_balance").first()
     if row:
         row.value = str(opening_int)
     else:
         db.add(Settings(key="cash_opening_balance", value=str(opening_int)))
     db.commit()
-    return RedirectResponse(url="/admin/cashbox?msg=موجودی صندوق ذخیره شد.", status_code=303)
+    return RedirectResponse(url=f"/admin/cashbox?msg={quote_plus('موجودی پیش‌فرض شروع روز ذخیره شد.')}", status_code=303)

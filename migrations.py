@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 18
+MIGRATION_VERSION = 19
 
 
 def migration_status(engine) -> int:
@@ -238,6 +238,36 @@ def _rebuild_sms_messages(conn) -> None:
 
 
 def _apply_revision(conn, version: int) -> None:
+    if version == 19:
+        # One drawer, one shift. Two managers clicking «باز کردن صندوق» in the
+        # same instant used to leave two rows with status='open', and the
+        # register then read whichever it found first — so the closing count of
+        # one shift silently belonged to the other. The index makes that
+        # impossible; the pass before it closes whatever a database already has.
+        #
+        # The duplicate is closed without a count rather than with a guessed
+        # one: a count nobody performed is worse than no count, and the shift
+        # statement says «بستهشده بدون شمارش» so the gap is visible instead of
+        # being filled in.
+        tables = conn.execute(text(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='cash_sessions'"
+        )).scalar()
+        if not tables:
+            # A database this new has no till to protect yet; `create_all` builds
+            # the table with its index straight from the model.
+            return
+        conn.execute(text("""
+            UPDATE cash_sessions
+               SET status = 'abandoned', closed_at = CURRENT_TIMESTAMP
+             WHERE status = 'open'
+               AND id <> (SELECT MAX(id) FROM cash_sessions WHERE status = 'open')
+        """))
+        conn.execute(text("""
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_cash_sessions_one_open
+                ON cash_sessions (status) WHERE status = 'open'
+        """))
+        return
+
     if version == 18:
         # Which customer values a message was rendered from, so a history entry
         # can be replayed and audited rather than merely read. Purely additive:

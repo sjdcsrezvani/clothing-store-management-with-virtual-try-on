@@ -287,7 +287,6 @@ def test_campaign_route_stores_a_jalali_date_as_the_same_gregorian_day(client, d
 # ── field-level constraints ──────────────────────────────────────────────────
 
 @pytest.mark.parametrize("template,fragment", [
-    ("admin/accounting.html", 'data-pdp-pair="#accounting-end"'),
     ("admin/analytics.html", 'data-pdp-pair="#analytics-end"'),
     ("admin/purchases.html", 'data-pdp-pair="#filter-end"'),
     ("admin/inventory_movements.html", 'data-pdp-pair="#filter-end"'),
@@ -297,6 +296,19 @@ def test_campaign_route_stores_a_jalali_date_as_the_same_gregorian_day(client, d
 ])
 def test_range_pairs_are_declared_once(template, fragment):
     assert fragment in _template(template)
+
+
+def test_the_shared_period_filter_pairs_its_dates_on_each_page(client, authed):
+    """«سود و زیان» and «صندوق» draw one filter now, so the pair is asserted on
+    what it renders rather than in whichever file used to hand-write it — and
+    the ids differ per page, because the picker pairs a start with an end by id.
+    """
+    for path, prefix in (("/admin/accounting", "accounting"), ("/admin/cashbox", "cash")):
+        page = client.get(path)
+        assert page.status_code == 200, path
+        assert f'data-pdp-pair="#{prefix}-end"' in page.text, path
+        assert f'id="{prefix}-start"' in page.text, path
+        assert f'id="{prefix}-end"' in page.text, path
 
 
 # Every birthday field is drawn by one partial now, so the ceiling is declared once.

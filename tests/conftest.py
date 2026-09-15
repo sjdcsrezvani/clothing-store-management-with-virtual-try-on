@@ -56,11 +56,12 @@ def _clean_db(client, db_session):
     # Children before parents: supplier_payments reference purchases, so they
     # must go first or a linked payment blocks the purchase delete.
     # CampaignAssignment points at both campaigns and sales, so it must go before
-    # either of them or SQLite refuses the parent delete.
+    # either of them or SQLite refuses the parent delete — and a cash session
+    # entry points at its shift, so it goes before that too.
     for model in (BusinessEvent, TagPrintBatchLine, TagPrintBatch, CheckoutEvent, StockReservation, CheckoutSession, CheckReminder, CheckRecord, RefundLine, FinancialEntry, PaymentReversal, Refund, SalaryPayment, CampaignAssignment, SaleCampaign, SaleItem, StockMovement, POSTransaction, Payment, Sale, GeneratedImage,
                   SmsMessage, SmsTemplate, SmsDevice, BackgroundJob,
                   Referral, SupplierPayment, PurchaseItem, Purchase, ProductVariant, Product, Expense,
-                  Campaign, CashSession, CashSessionEntry, AdminLog, StaffUser, Settings, Customer):
+                  Campaign, CashSessionEntry, CashSession, AdminLog, StaffUser, Settings, Customer):
         db_session.query(model).delete()
     db_session.commit()
     db_session.expire_all()  # drop stale identity-map entries

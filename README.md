@@ -152,9 +152,23 @@ disagrees with its current balance is listed separately and is never corrected
 automatically.
 - **🏭 تأمین‌کنندگان** (`/admin/suppliers`) — supplier list with total purchased.
 - **💸 هزینه‌ها** (`/admin/expenses`) — rent, utilities, wages… with categories and separate one-time/monthly types.
-- **🧾 صندوق** (`/admin/cashbox`) — daily cash register: opening balance (set it
-in the page), cash sales + نسیه receipts in, refunds/expenses/purchases out,
-closing balance.
+- **🧾 صندوق** (`/admin/cashbox`) — the cash drawer, run as a **shift**. The
+person at the counter opens it by counting the float and closes it by counting
+what is there, and the difference is recorded — so the page answers the one
+question accounting cannot: does the money in the drawer match the money the
+till rang up. Cash taken out mid-shift (a bank deposit, a small purchase) is
+recorded as a **برداشت** with a reason and lowers what should be counted without
+touching profit and loss. The expected figure is deliberately **kept off the
+closing form** until the count is in: a count copied off a number the register
+printed can never disagree with it, so the verifier sees the figure and the
+counter counts blind, seeing it the moment they save. Every shift stays listed
+with its difference (مطابق، کسری، اضافه) and opens a **statement** showing the
+sale, receipt, refund, expense, supplier payment and withdrawal behind its
+number — each linked to the record that produced it. The opener can close their
+own shift; a manager or the owner can close and verify any, set the default
+float, and see the period register (money in and out for a range, on the same
+Jalali picker as سود و زیان). Card and نسیه money is deliberately absent: this
+register counts cash, and only one drawer can be open at a time.
 - **🧮 سود و زیان** (`/admin/accounting`) — revenue − COGS − expenses = net
 profit for any period (today/week/month/year/custom, Persian dates), plus CSV
 exports of sales, customers, purchases and expenses (Excel-friendly).
@@ -521,9 +535,17 @@ that role, that the figures it shows match the pages behind them, and that the
 leaderboard is one query however many customers the shop has — and the downgrade
 rule's promise that nothing is demoted without a tick and a confirmation, that a
 customer who bought while the form was open is turned away, and that no nightly
-job runs it. The shell is covered the same way: every door the sidebar draws
-opens for the role it was drawn for, the menu, the tab, the heading and the last
-crumb are one string on every destination a role can open, every crumb on a page
+job runs it. The cash drawer has its own suite, mostly about what must not
+happen: a second drawer cannot be opened (the database refuses it, not just the
+route), a cashier cannot close somebody else's shift, a card-paid expense never
+leaves the till, a shift counts only what moved inside it, a withdrawal needs an
+amount and a reason and cannot be reversed once its shift is closed, and the
+expected figure reaches neither the counter's page nor the shift statement while
+the shift is open — while the difference it finds is listed on the page, on its
+statement and, when it is not zero, on the dashboard. The shell is covered the
+same way: every door the sidebar draws opens for the role it was drawn for, the
+menu, the tab, the heading and the last crumb are one string on every destination
+a role can open, every crumb on a page
 opens for the role shown it, exactly one item is current on each page, no page the
 till grants offers a link back into the admin panel, and a refusal lands on a
 Persian page that names the role asking rather than a JSON payload. They use a

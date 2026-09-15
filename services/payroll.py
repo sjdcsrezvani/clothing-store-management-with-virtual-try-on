@@ -3,7 +3,8 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 
-from models import CashSession, Expense, SalaryPayment, StaffUser, to_english_digits
+from models import Expense, SalaryPayment, StaffUser, to_english_digits
+from services.accounting import open_cash_session
 from services.events import append_event
 
 _PERIOD_PATTERN = re.compile(r"^(\d{4})-(0[1-9]|1[0-2])$")
@@ -52,9 +53,7 @@ def create_salary_payment(
         raise ValueError("حقوق این کارمند برای این ماه قبلاً ثبت شده است.")
 
     net_amount = staff_user.salary_amount - deductions
-    open_session = db.query(CashSession).filter(
-        CashSession.status == "open"
-    ).order_by(CashSession.opened_at.desc()).first()
+    open_session = open_cash_session(db)
     expense = Expense(
         amount=net_amount,
         category="حقوق کارکنان",

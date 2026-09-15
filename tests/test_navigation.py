@@ -68,6 +68,7 @@ KNOWN_PATHS = (
     "/admin/settings/appearance", "/admin/staff", "/admin/staff/2/contract",
     "/admin/payroll/9/receipt", "/admin/backups", "/admin/backups/download",
     "/admin/accounting", "/admin/accounting/export", "/admin/cashbox",
+    "/admin/cashbox/sessions/7",
     "/admin/expenses", "/admin/checks", "/admin/analytics", "/admin/suppliers",
     "/admin/inventory-movements", "/admin/pos-reconciliation", "/admin/events",
     "/admin/logs", "/admin/owner-profile",
@@ -75,7 +76,7 @@ KNOWN_PATHS = (
 
 # The pages a role may open, by the least role that may open them.
 REACHABLE = {
-    "cashier": ("/sales/new", "/sales/"),
+    "cashier": ("/sales/new", "/sales/", "/admin/cashbox"),
     "manager": ("/admin", "/admin/products", "/admin/credit", "/admin/sms",
                 "/admin/settings/tags"),
     "owner": ("/admin/settings", "/admin/settings/appearance", "/admin/birthdays",
@@ -177,7 +178,9 @@ def test_a_role_is_offered_exactly_the_doors_it_may_open():
 
 def test_a_section_with_nothing_left_in_it_is_not_printed():
     """Nobody is shown a heading with no items under it, or a blank one."""
-    assert [section["label"] for section in navigation_for("cashier")] == ["فروش"]
+    # «مالی» survives for a cashier because the till is theirs: the section is
+    # drawn with one item («صندوق») rather than disappearing with the rest.
+    assert [section["label"] for section in navigation_for("cashier")] == ["فروش", "مالی"]
     for role in ROLES:
         for section in navigation_for(role):
             assert section["items"], section["label"]
@@ -462,7 +465,12 @@ def test_a_cashier_gets_no_topbar_dashboard_button(client, db_session):
 
 def test_no_page_a_cashier_can_open_offers_an_admin_door(client, db_session):
     """The invoice and the sales list each carried a داشبورد button pointing at
-    /admin — a refusal for the very role reading them."""
+    /admin — a refusal for the very role reading them.
+
+    The rule is «no door that refuses», not «no door under /admin»: the till is
+    a cashier's page now, so it is offered to them and opens for them, while
+    everything else under /admin still turns them away.
+    """
     _, variant = _make_variant(db_session, price=100_000, stock=5)
     basket = [{"variant_id": variant.id, "product_id": variant.product_id,
                "unit_price": 100_000, "quantity": 1, "total_price": 100_000}]
@@ -476,8 +484,10 @@ def test_no_page_a_cashier_can_open_offers_an_admin_door(client, db_session):
     for path in ("/sales/new", "/sales/", f"/sales/invoice/{sale.id}"):
         page = client.get(path)
         assert page.status_code == 200, path
-        assert 'href="/admin' not in page.text, path
-        assert 'data-nav="/admin' not in page.text, path
+        for href in sorted(set(re.findall(r'href="(/admin[^"]*)"', page.text))):
+            # Followed, not merely read: a door drawn on a cashier's page has to
+            # open for the cashier, which is the defect this test was born from.
+            assert client.get(href).status_code == 200, (path, href)
 
     manager, password = _staff(db_session, "nav-invoice-manager", "manager")
     _session_as(client, manager, password)

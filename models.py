@@ -1,7 +1,7 @@
 import string
 import random
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, CheckConstraint, UniqueConstraint, event as sqlalchemy_event
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, CheckConstraint, UniqueConstraint, Index, text, event as sqlalchemy_event
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -667,6 +667,19 @@ class FinancialEntry(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
 class CashSession(Base):
+    """One shift of the cash drawer: opened with a count, closed with a count.
+
+    ``cashier_user_id`` is **who opened the drawer** (whatever their role) and
+    ``manager_user_id`` is **who closed it** — the field names predate the till
+    belonging to the person at the counter, and the labels the panel prints say
+    «بازکننده» and «بستننده» rather than reading the column name back at the
+    reader. ``variance`` is ``counted − expected``, frozen when the shift closes
+    so a later correction cannot silently rewrite a recorded difference.
+
+    ``status`` is ``open``, ``closed``, or ``abandoned`` — the last written by
+    the migration that enforced one open drawer, for a duplicate it had to close
+    without a count.
+    """
     __tablename__ = "cash_sessions"
     id = Column(Integer, primary_key=True)
     cashier_user_id = Column(Integer, ForeignKey("staff_users.id"), nullable=False)
@@ -679,8 +692,24 @@ class CashSession(Base):
     variance = Column(Integer, nullable=True)
     status = Column(String(20), nullable=False, default="open")
     entries = relationship("CashSessionEntry", back_populates="cash_session", cascade="all, delete-orphan")
+    # One drawer, one shift. Two managers clicking «باز کردن صندوق» at the same
+    # moment used to leave two open sessions and the register then read whichever
+    # it found first; the database refuses the second one outright. Mirrored by
+    # migration 19 for databases that already exist.
+    __table_args__ = (
+        Index("ux_cash_sessions_one_open", "status", unique=True,
+              sqlite_where=text("status = 'open'")),
+    )
 
 class CashSessionEntry(Base):
+    """Cash taken out of the drawer mid-shift, before the count.
+
+    A bank deposit or a small cash purchase leaves the till without being a
+    business expense, so it is its own record: it lowers what should be in the
+    drawer without touching profit and loss. ``reversed_at`` undoes one that was
+    entered wrongly, and only while its shift is still open — a closed shift's
+    variance is frozen.
+    """
     __tablename__ = "cash_session_entries"
     id = Column(Integer, primary_key=True)
     cash_session_id = Column(Integer, ForeignKey("cash_sessions.id"), nullable=False, index=True)
@@ -1198,6 +1227,8 @@ BUSINESS_EVENT_TYPES = (
     "LoyaltyUpdated",
     "CashSessionOpened",
     "CashSessionClosed",
+    "CashSessionEntryRecorded",
+    "CashSessionEntryReversed",
     "CheckIssued",
     "CheckPaid",
     "CheckCancelled",

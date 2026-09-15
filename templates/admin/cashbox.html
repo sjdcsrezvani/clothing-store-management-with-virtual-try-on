@@ -1,65 +1,291 @@
 {% extends "base.html" %}
 {% block content %}
 
+{% set page_description %}
+کشوی نقدی مغازه: با شمارش باز میشود، با شمارش بسته میشود و هر اختلافی ثبت میگردد.
+فقط پول نقد اینجا حساب میشود؛ کارتخوان و نسیه جای خودشان را دارند.
+{% endset %}
+{% set page_actions %}
+{% if verify %}
+<a href="/admin/expenses" class="btn btn-ghost">هزینه‌ها</a>
+<a href="/admin/credit" class="btn btn-ghost">حساب نسیه</a>
+<a href="/admin/pos-reconciliation" class="btn btn-ghost">تطبیق کارتخوان</a>
+<a href="/admin/accounting" class="btn btn-ghost">سود و زیان</a>
+{% else %}
+<a href="/sales/new" class="btn btn-ghost">فروش جدید</a>
+{% endif %}
+{% endset %}
 {% include 'partials/page_header.html' %}
 
-{% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
-{% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
+{% if msg %}<div class="alert alert-{{ msg_tone }}" role="status">{{ msg }}</div>{% endif %}
+{% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}
 
-{# ─── Period filter ─── #}
-<div class="card" style="margin-bottom: 1rem;">
-    <form method="get" action="/admin/cashbox" class="filter-bar" style="margin: 0;">
-        <select name="period" style="padding: 0.5rem 0.7rem; border: 2px solid #E8DDD5; border-radius: 8px; font-family: inherit;">
-            <option value="today" {% if period == 'today' %}selected{% endif %}>📅 امروز</option>
-            <option value="week" {% if period == 'week' %}selected{% endif %}>🗓️ این هفته</option>
-            <option value="month" {% if period == 'month' %}selected{% endif %}>📆 این ماه</option>
-            <option value="all" {% if period == 'all' %}selected{% endif %}>🌐 همه</option>
-        </select>
-        <button type="submit" class="btn btn-primary">🔍 نمایش</button>
-    </form>
-</div>
+{# ─── The shift: the drawer as it stands right now ──────────────────────────
+   Everything that adds up to «what should be in here» reaches a manager only
+   while the shift is open. The person about to count it sees the float they put
+   in, the withdrawals they recorded and the form — not the answer, because a
+   count copied off a figure can never disagree with it. #}
+<section class="card cash-drawer-card">
+    {% if shift %}
+    <div class="section-heading-row">
+        <div>
+            <h3>شیفت جاری</h3>
+            <p class="muted">باز شده {{ jalali_str(shift.session.opened_at) }} توسط {{ shift.opener }}</p>
+        </div>
+        <span class="status-badge is-open">باز</span>
+    </div>
 
-{# ─── Opening balance ─── #}
-<div class="card" style="margin-bottom: 1rem;">
-    {% if active_session %}
-    <div class="alert alert-success">صندوق باز است؛ کاربر #{{ active_session.cashier_user_id }} • موجودی آغازین {{ fmt(active_session.opening_balance) }} ت</div>
-    <form method="post" action="/admin/cashbox/close" class="filter-bar" style="margin: 0;">
-        <label for="counted" style="font-weight: 600;">💵 موجودی شمارش‌شده:</label>
-        <input type="number" id="counted" name="counted" min="0" required style="max-width: 200px;">
-        <button type="submit" class="btn btn-primary">🔒 بستن صندوق</button>
-    </form>
-    {% else %}
-    <form method="post" action="/admin/cashbox/open" class="filter-bar" style="margin: 0;">
-        <label for="opening" style="font-weight: 600;">💰 موجودی ابتدای روز:</label>
-        <input type="number" id="opening" name="opening" min="0" value="{{ register.opening }}" required style="max-width: 200px;">
-        <button type="submit" class="btn btn-primary">🔓 باز کردن صندوق</button>
-    </form>
+    {% if shift.stale %}
+    <div class="alert alert-warning" role="status">
+        این شیفت از {{ jalali_str(shift.session.opened_at, with_time=False) }} باز مانده است؛
+        تا بسته نشود، فروش نقدی روزهای بعد هم به آن نسبت داده می‌شود.
+    </div>
     {% endif %}
-    <form method="post" action="/admin/cashbox/opening" class="filter-bar" style="margin-top: .75rem;">
-        <label for="opening" style="font-weight: 600;">💰 موجودی ابتدای روز (در صندوق):</label>
-        <input type="number" id="opening" name="opening" min="0" value="{{ register.opening }}" style="max-width: 200px;">
-        <button type="submit" class="btn btn-ghost">💾 ذخیره</button>
-    </form>
-</div>
 
-{# ─── Register ─── #}
-<div class="stats-grid">
-    <div class="stat-card accent-pine">
-        <div class="stat-label">📥 ورودی‌ها</div>
-        <div class="stat-value tnum">{{ fmt(register.cash_in) }} ت</div>
-        <div class="stat-sub">فروش نقدی: {{ fmt(register.cash_sales) }} ت</div>
-        <div class="stat-sub">دریافت نسیه: {{ fmt(register.credit_payments) }} ت</div>
+    <div class="stats-grid{% if not verify %} is-single{% endif %}">
+        <div class="stat-card accent-pine">
+            <div class="stat-label">موجودی ابتدای شیفت</div>
+            <div class="stat-value tnum">{{ fmt(shift.session.opening_balance) }} ت</div>
+            <div class="stat-sub">آنچه در شروع شیفت شمرده و ثبت شد</div>
+        </div>
+        {% if verify %}
+        <div class="stat-card accent-persimmon">
+            <div class="stat-label">حرکت این شیفت</div>
+            <div class="stat-value tnum">{{ fmt(shift.register.cash_in) }} ت ورود</div>
+            <div class="stat-sub">{{ fmt(shift.register.cash_out) }} ت خروج</div>
+            {# Amounts without signs: the card's value already says «ورود» or
+               «خروج», and a leading minus in a right-to-left line is a
+               punctuation question rather than a fact. #}
+            <div class="stat-sub">
+                فروش نقدی {{ fmt(shift.register.cash_sales) }} ·
+                دریافت نسیه {{ fmt(shift.register.credit_payments) }} ·
+                مرجوعی {{ fmt(shift.register.refunds) }} ·
+                هزینه {{ fmt(shift.register.expenses) }} ·
+                تأمین‌کننده {{ fmt(shift.register.supplier_payments) }} ·
+                برداشت {{ fmt(shift.register.withdrawals) }}
+            </div>
+        </div>
+        <div class="stat-card accent-candy">
+            <div class="stat-label">تا این لحظه باید در کشو باشد</div>
+            <div class="stat-value tnum">{{ fmt(shift.expected) }} ت</div>
+            <div class="stat-sub">ابتدای شیفت به‌علاوهٔ حرکت‌های بالا</div>
+        </div>
+        {% endif %}
     </div>
-    <div class="stat-card accent-persimmon">
-        <div class="stat-label">📤 خروجی‌ها</div>
-        <div class="stat-value tnum">{{ fmt(register.cash_out) }} ت</div>
-        <div class="stat-sub">استرداد: {{ fmt(register.refunds) }} ت</div>
-        <div class="stat-sub">هزینه‌ها: {{ fmt(register.expenses) }} ت • پرداخت تأمین‌کننده: {{ fmt(register.supplier_payments) }} ت</div>
-        <div class="stat-sub">خرید فاکتوری این دوره (پول نقد نیست): {{ fmt(register.purchases) }} ت</div>
+
+    {# برداشت: cash that left the drawer without being a cost — a bank deposit,
+       a small cash purchase. It is a withdrawal from the till, not an expense,
+       so it lowers what should be counted without touching profit and loss. #}
+    <div class="cash-subsection">
+        <h4>برداشت از صندوق</h4>
+        <p class="muted">مثلاً واریز به بانک یا خرید نقدی کوچک. این مبلغ از عددی که باید در کشو باشد کم می‌شود.</p>
+        {% if shift.withdrawals %}
+        <div class="table-scroll">
+            <table class="cash-movements">
+                <thead>
+                    <tr><th scope="col">زمان</th><th scope="col">مبلغ</th><th scope="col">دلیل</th></tr>
+                </thead>
+                <tbody>
+                    {% for row in shift.withdrawals %}
+                    <tr>
+                        <td class="tnum">{{ jalali_str(row.when) }}</td>
+                        <td class="tnum">{{ fmt(row.amount) }} ت</td>
+                        <td>{{ row.note }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+        <form method="post" action="/admin/cashbox/withdraw" class="filter-bar is-inline">
+            <label class="filter-field">
+                <span>مبلغ (تومان)</span>
+                <input type="number" name="amount" min="1" required>
+            </label>
+            <label class="filter-field">
+                <span>دلیل</span>
+                <input type="text" name="reason" required placeholder="مثلاً واریز به بانک">
+            </label>
+            <button type="submit" class="btn btn-ghost">ثبت برداشت</button>
+        </form>
     </div>
-    <div class="stat-card {% if register.closing >= 0 %}accent-candy{% else %}accent-ink{% endif %}">
-        <div class="stat-label">🧾 موجودی پایان دوره</div>
-        <div class="stat-value tnum">{{ fmt(register.closing) }} ت</div>
-        <div class="stat-sub">شروع: {{ fmt(register.opening) }} ت</div>
+
+    <div class="cash-subsection">
+        <h4>بستن صندوق</h4>
+        {% if shift.can_close %}
+        <form method="post" action="/admin/cashbox/close" class="filter-bar is-inline">
+            <label class="filter-field">
+                <span>پولی که شمرده‌اید (تومان)</span>
+                <input type="number" name="counted" min="0" required>
+            </label>
+            <button type="submit" class="btn btn-primary btn-large">ثبت شمارش و بستن صندوق</button>
+        </form>
+        <p class="field-help">
+            {% if verify %}
+            عدد مورد انتظار را در کارت بالا می‌بینید؛ پول کشو را بشمارید و اینجا بنویسید.
+            {% else %}
+            عددی که صندوق انتظار دارد تا پس از ثبت شمارش نشان داده نمی‌شود تا شمارش، شمارشِ واقعی کشو بماند؛
+            به‌محض ثبت، خودِ عدد و اختلافش را می‌بینید.
+            {% endif %}
+        </p>
+        {% else %}
+        <p class="muted">این صندوق را کسی دیگر باز کرده است؛ فقط بازکنندهٔ آن یا مدیر می‌تواند ببندد.</p>
+        {% endif %}
     </div>
-</div>{% endblock %}
+
+    {% else %}
+    <div class="empty-state">
+        <h3>صندوق امروز باز نشده است</h3>
+        <p>
+            برای شروع، پولی که همین حالا در کشو هست را بنویسید. تا صندوق باز نشود، هیچ فروش نقدی به شیفتی
+            نسبت داده نمی‌شود و شیفت تازه‌ای هم شمرده نمی‌شود.
+        </p>
+    </div>
+    <form method="post" action="/admin/cashbox/open" class="filter-bar is-inline">
+        <label class="filter-field">
+            <span>موجودی ابتدای شیفت (تومان)</span>
+            <input type="number" name="opening" min="0" required
+                   value="{{ opening_suggestion if opening_suggestion is not none else (settings_opening if settings_opening is not none else 0) }}">
+        </label>
+        <button type="submit" class="btn btn-primary btn-large">باز کردن صندوق</button>
+    </form>
+    {% if opening_suggestion is not none %}
+    <p class="field-help">
+        پیشنهاد از آخرین شمارش ({{ fmt(opening_suggestion) }} ت) آمده است — هر عددی که همین حالا در کشو هست را بنویسید.
+    </p>
+    {% endif %}
+    {% endif %}
+</section>
+
+{# ─── Shifts past: the difference a count found ──────────────────────────────
+   Until this existed, the variance the register recorded on close was written
+   into the database and shown nowhere at all. #}
+<section class="card">
+    <div class="section-heading-row">
+        <div>
+            <h3>شیفت‌ها</h3>
+            <p class="muted">
+                {% if verify %}همهٔ شیفت‌های صندوق{% else %}شیفت‌های خودتان{% endif %}
+                — {{ sessions_shown }} از {{ sessions_total }}
+            </p>
+        </div>
+    </div>
+
+    {% if sessions %}
+    <div class="table-scroll">
+        <table>
+            <thead>
+                <tr>
+                    <th scope="col">شیفت</th>
+                    <th scope="col">باز شده</th>
+                    <th scope="col">بازکننده</th>
+                    <th scope="col">بسته شده</th>
+                    <th scope="col">مورد انتظار</th>
+                    <th scope="col">شمارش‌شده</th>
+                    <th scope="col">اختلاف</th>
+                    <th scope="col">وضعیت</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in sessions %}
+                <tr>
+                    <td><a href="/admin/cashbox/sessions/{{ row.session.id }}">#{{ row.session.id }}</a></td>
+                    <td class="tnum">{{ jalali_str(row.session.opened_at) }}</td>
+                    <td>{{ row.opener }}</td>
+                    <td class="tnum">{{ jalali_str(row.session.closed_at) if row.session.closed_at else '—' }}</td>
+                    <td class="tnum">{{ fmt(row.session.expected_closing_balance) if row.session.expected_closing_balance is not none else '—' }}</td>
+                    <td class="tnum">{{ fmt(row.session.counted_closing_balance) if row.session.counted_closing_balance is not none else '—' }}</td>
+                    <td>
+                        {% if row.variance_tone %}
+                        <span class="status-badge is-{{ row.variance_tone }}">{{ row.variance_label }}</span>
+                        {% else %}{{ row.variance_label }}{% endif %}
+                    </td>
+                    <td><span class="status-badge is-{{ row.session.status }}">{{ row.status_label }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if sessions_total > sessions_shown %}
+    <div class="form-actions">
+        <a class="btn btn-ghost" href="/admin/cashbox?history=all&amp;period={{ period }}">نمایش همهٔ شیفت‌ها ({{ sessions_total }})</a>
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="empty-state">
+        <h3>هنوز شیفتی بسته نشده است</h3>
+        <p>از این پس هر بار که صندوق بسته شود، شمارش و اختلافش همین‌جا می‌ماند.</p>
+    </div>
+    {% endif %}
+</section>
+
+{% if verify %}
+{# ─── The period, which is accounting and not a drawer ─────────────────────── #}
+{% set filter_action = '/admin/cashbox' %}
+{% set filter_id = 'cash' %}
+{% include 'partials/period_filter.html' %}
+
+<section class="card">
+    <div class="section-heading-row">
+        <div>
+            <h3>حرکت نقدی این بازه</h3>
+            <p class="muted">فقط پول نقد. خرید فاکتوری، کارتخوان و نسیه در «سود و زیان»، «تطبیق کارتخوان» و «حساب نسیه» است.</p>
+        </div>
+    </div>
+    <div class="stats-grid">
+        <div class="stat-card accent-pine">
+            <div class="stat-label">ورودی‌ها</div>
+            <div class="stat-value tnum">{{ fmt(report.register.cash_in) }} ت</div>
+            <div class="stat-sub">فروش نقدی {{ fmt(report.register.cash_sales) }} ت · دریافت نسیه {{ fmt(report.register.credit_payments) }} ت</div>
+        </div>
+        <div class="stat-card accent-persimmon">
+            <div class="stat-label">خروجی‌ها</div>
+            <div class="stat-value tnum">{{ fmt(report.register.cash_out) }} ت</div>
+            <div class="stat-sub">
+                مرجوعی {{ fmt(report.register.refunds) }} ·
+                هزینه {{ fmt(report.register.expenses) }} ·
+                تأمین‌کننده {{ fmt(report.register.supplier_payments) }} ·
+                برداشت {{ fmt(report.register.withdrawals) }}
+            </div>
+        </div>
+        {% if report.timeless %}
+        <div class="stat-card accent-ink">
+            <div class="stat-label">خالص حرکت بازه</div>
+            <div class="stat-value tnum">{{ fmt(report.net) }} ت</div>
+            <div class="stat-sub">ورودی منهای خروجی — برای «همه» موجودی پایانی معنی ندارد</div>
+        </div>
+        {% else %}
+        <div class="stat-card accent-candy">
+            <div class="stat-label">موجودی پایان بازه</div>
+            <div class="stat-value tnum">{{ fmt(report.register.closing) }} ت</div>
+            <div class="stat-sub">شروع {{ fmt(report.register.opening) }} ت به‌علاوهٔ حرکت این بازه</div>
+        </div>
+        {% endif %}
+    </div>
+    {% if not report.timeless %}
+    <p class="muted cash-note">
+        «موجودی پایان بازه» حرکت نقدی همین بازه را روی موجودی ابتدای روز می‌سنجد و موجودی واقعی کشو نیست؛
+        پولی که همین حالا در کشو است را فقط بستن شیفت نشان می‌دهد.
+    </p>
+    {% endif %}
+</section>
+
+{# ─── The default float, which matters once ────────────────────────────────── #}
+<section class="card">
+    <details class="cash-default">
+        <summary>موجودی پیش‌فرض شروع روز</summary>
+        <p class="muted">
+            فقط وقتی به کار می‌آید که صندوق قبلاً هرگز بسته نشده باشد؛ در غیر این صورت پیشنهاد باز کردن صندوق
+            از آخرین شمارش می‌آید. اکنون: {{ fmt(settings_opening) }} ت
+        </p>
+        <form method="post" action="/admin/cashbox/opening" class="filter-bar is-inline">
+            <label class="filter-field">
+                <span>مبلغ پیش‌فرض (تومان)</span>
+                <input type="number" name="opening" min="0" required value="{{ settings_opening }}">
+            </label>
+            <button type="submit" class="btn btn-ghost">ذخیره</button>
+        </form>
+    </details>
+</section>
+{% endif %}
+{% endblock %}

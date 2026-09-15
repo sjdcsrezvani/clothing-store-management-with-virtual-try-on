@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import (
     Campaign, Customer, Product, ProductVariant, Sale, SaleItem, SaleCampaign,
-    Referral, Settings, POSTransaction, CheckoutSession, Refund, CashSession, generate_referral_code, to_english_digits,
+    Referral, Settings, POSTransaction, CheckoutSession, Refund, generate_referral_code, to_english_digits,
 )
 from services._common import (
     child_profile_enabled,
@@ -23,6 +23,7 @@ from services._common import (
 from services.customers import signup_birthday_fields
 from services.accounting import (
     apply_credit_surcharge, credit_due_date_for, credit_sale_allowed, credit_terms_days,
+    open_cash_session,
 )
 from services.discount import calculate_discounts, apply_discounts_after_sale
 from services.campaigns import (
@@ -930,8 +931,15 @@ async def sales_confirm(
                        f"این خرید ({fmt(final_amount)} تومان) از سقف رد می‌شود. روش پرداخت را عوض کنید یا سقف را بالا ببرید."),
             )
 
+    # The shift this sale belongs to, written down rather than inferred later:
+    # a cash sale used to leave the column empty (only a void ever filled it in),
+    # so the register had to guess the shift from a time window. The window is
+    # still how older rows are counted — this is what future ones will say for
+    # themselves.
+    drawer = open_cash_session(db) if payment_method == "cash" else None
     sale = Sale(
         customer_id=customer.id if customer else None,
+        cash_session_id=drawer.id if drawer else None,
         total_amount=total_amount,
         discount_amount=discounts["total_discount"],
         discount_details=json.dumps(discounts["details"], ensure_ascii=False),
@@ -1161,7 +1169,7 @@ async def sale_refund(sale_id: int, request: Request, refund_reason: str = Form(
     sale.refund_amount = sale.final_amount
     sale.refund_reason = refund_reason if refund_reason else "ابطال فاکتور"
     sale.refund_date = datetime.now(timezone.utc)
-    open_session = db.query(CashSession).filter(CashSession.status == "open").order_by(CashSession.opened_at.desc()).first()
+    open_session = open_cash_session(db)
     sale.cash_session_id = open_session.id if open_session and sale.payment_method == "cash" else None
 
     # Restore stock to variants

@@ -64,7 +64,10 @@ NAV_SECTIONS: tuple[dict, ...] = (
         _item("/admin/sms", "پیامک", "sms", "sms"),
     )},
     {"label": "مالی", "items": (
-        _item("/admin/cashbox", "صندوق", "cash", "cashbox"),
+        # The drawer is opened and counted by whoever stands at the counter, so
+        # the cashier holds this door; a section that would otherwise be empty
+        # for them now reads «مالی ← صندوق» rather than disappearing entirely.
+        _item("/admin/cashbox", "صندوق", "cash", "cashbox", "cashier"),
         _item("/admin/expenses", "هزینه‌ها", "expenses", "expenses"),
         _item("/admin/checks", "چک‌ها", "check", "checks"),
         _item("/admin/accounting", "سود و زیان", "accounting", "accounting"),
@@ -110,6 +113,7 @@ PARENTS: tuple[tuple[str, str, str], ...] = (
     ("/admin/payroll/", "staff", "رسید پرداخت حقوق"),
     ("/admin/backups/download", "backups", "دانلود پشتیبان"),
     ("/admin/accounting/export", "accounting", "خروجی"),
+    ("/admin/cashbox/sessions/", "cashbox", "شیفت صندوق"),
     ("/sales/invoice/", "sales-history", "فاکتور فروش"),
 )
 

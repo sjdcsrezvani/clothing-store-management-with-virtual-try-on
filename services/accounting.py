@@ -7,7 +7,7 @@ from sqlalchemy import case, func, or_
 
 from models import (
     Customer, Sale, SaleItem, Expense, Purchase, PurchaseItem, Payment, Settings,
-    Supplier, SupplierPayment, CashSession,
+    Supplier, SupplierPayment, CashSession, CashSessionEntry,
 )
 from services._common import get_setting_int
 
@@ -634,7 +634,7 @@ def apply_customer_payment(
                 break
 
     if applied > 0:
-        open_session = db.query(CashSession).filter(CashSession.status == "open").order_by(CashSession.opened_at.desc()).first()
+        open_session = open_cash_session(db)
         payment = Payment(
             customer_id=customer.id,
             sale_id=sale_id,
@@ -967,31 +967,59 @@ def purchase_overview(db, start, end, now: datetime | None = None) -> dict:
     }
 
 
-def get_cashbox(db, start, end, opening_balance: int, cash_session_id: int | None = None) -> dict:
-    """Cash register for a period, optionally scoped to one cash session.
+def _drawer_filters(db, start, end, cash_session_id: int | None = None) -> dict:
+    """The clauses that decide what the drawer did — one definition, two readers.
 
-    Only real money movements count: purchase invoices are accrual entries and
-    stay out of ``cash_out``. The money they represent leaves the till as a
-    supplier payment (once), so counting both would double count it.
+    The register totals (:func:`get_cashbox`) and the shift statement
+    (:func:`cash_shift_summary`) both draw from this, so the page and the
+    statement behind it cannot drift into two versions of one shift.
+
+    Only real money movements belong. A purchase invoice is an accrual entry and
+    stays out, because the money it represents leaves the till as a supplier
+    payment — counting both would count it twice. A card-paid expense stays out
+    for the same reason: it left the shop's account, not the drawer.
+
+    Scoping to a shift mixes two mechanisms on purpose. Sales and نسیه receipts
+    are matched by the **time window**, because rows written before a sale
+    carried ``cash_session_id`` are still genuine till movements and must keep
+    being counted; refunds, expenses, supplier payments and withdrawals carry
+    the id, which survives the hand-correction a time window would lose.
     """
-    sale_filter = [Sale.payment_confirmed == True, Sale.is_refunded == False, Sale.payment_method == "cash", Sale.created_at.between(start, end)]
-    payment_filter = [Payment.method == "cash", Payment.reversed_at.is_(None), Payment.created_at.between(start, end)]
-    refund_filter = [Sale.is_refunded == True, Sale.payment_method == "cash", Sale.refund_date.between(start, end)]
-    expense_filter = [Expense.reversed_at.is_(None), Expense.created_at.between(start, end)]
-    supplier_filter = [SupplierPayment.method == "cash", SupplierPayment.reversed_at.is_(None), SupplierPayment.created_at.between(start, end)]
+    filters = {
+        "sale": [Sale.payment_confirmed == True, Sale.is_refunded == False,  # noqa: E712
+                 Sale.payment_method == "cash", Sale.created_at.between(start, end)],
+        "payment": [Payment.method == "cash", Payment.reversed_at.is_(None),
+                    Payment.created_at.between(start, end)],
+        "refund": [Sale.is_refunded == True, Sale.payment_method == "cash",  # noqa: E712
+                   Sale.refund_date.between(start, end)],
+        "expense": [Expense.reversed_at.is_(None), Expense.payment_method == "cash",
+                    Expense.created_at.between(start, end)],
+        "supplier": [SupplierPayment.method == "cash", SupplierPayment.reversed_at.is_(None),
+                     SupplierPayment.created_at.between(start, end)],
+        "entry": [CashSessionEntry.reversed_at.is_(None),
+                  CashSessionEntry.created_at.between(start, end)],
+    }
     if cash_session_id is not None:
         session = db.query(CashSession).filter(CashSession.id == cash_session_id).first()
         if session:
-            sale_filter.append(Sale.created_at >= session.opened_at)
-            payment_filter.append(Payment.created_at >= session.opened_at)
-            refund_filter.append(Sale.cash_session_id == cash_session_id)
-            expense_filter.append(Expense.cash_session_id == cash_session_id)
-            supplier_filter.append(SupplierPayment.cash_session_id == cash_session_id)
+            filters["sale"].append(Sale.created_at >= session.opened_at)
+            filters["payment"].append(Payment.created_at >= session.opened_at)
+            filters["refund"].append(Sale.cash_session_id == cash_session_id)
+            filters["expense"].append(Expense.cash_session_id == cash_session_id)
+            filters["supplier"].append(SupplierPayment.cash_session_id == cash_session_id)
+            filters["entry"].append(CashSessionEntry.cash_session_id == cash_session_id)
+    return filters
 
-    cash_in_sales = db.query(func.coalesce(func.sum(Sale.final_amount), 0)).filter(*sale_filter).scalar() or 0
-    cash_in_payments = db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(*payment_filter).scalar() or 0
-    cash_out_refunds = db.query(func.coalesce(func.sum(Sale.refund_amount), 0)).filter(*refund_filter).scalar() or 0
-    cash_out_expenses = db.query(func.coalesce(func.sum(Expense.amount), 0)).filter(*expense_filter).scalar() or 0
+
+def get_cashbox(db, start, end, opening_balance: int, cash_session_id: int | None = None) -> dict:
+    """Cash register for a period, optionally scoped to one cash shift."""
+    filters = _drawer_filters(db, start, end, cash_session_id)
+
+    cash_in_sales = db.query(func.coalesce(func.sum(Sale.final_amount), 0)).filter(*filters["sale"]).scalar() or 0
+    cash_in_payments = db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(*filters["payment"]).scalar() or 0
+    cash_out_refunds = db.query(func.coalesce(func.sum(Sale.refund_amount), 0)).filter(*filters["refund"]).scalar() or 0
+    cash_out_expenses = db.query(func.coalesce(func.sum(Expense.amount), 0)).filter(*filters["expense"]).scalar() or 0
+    cash_out_withdrawals = db.query(func.coalesce(func.sum(CashSessionEntry.amount), 0)).filter(*filters["entry"]).scalar() or 0
     # Informational only: invoices recorded in the period, regardless of payment.
     # Drafts are excluded: they are not invoices yet.
     invoice_purchases = db.query(func.coalesce(func.sum(Purchase.total_cost), 0)).filter(
@@ -999,10 +1027,15 @@ def get_cashbox(db, start, end, opening_balance: int, cash_session_id: int | Non
         Purchase.is_reversed == False,
         Purchase.is_draft == False,
     ).scalar() or 0
-    cash_out_supplier_payments = db.query(func.coalesce(func.sum(SupplierPayment.amount), 0)).filter(*supplier_filter).scalar() or 0
+    cash_out_supplier_payments = db.query(func.coalesce(func.sum(SupplierPayment.amount), 0)).filter(*filters["supplier"]).scalar() or 0
 
+    # The closing identity, spelled out once so every reader of this dict adds
+    # up the same way:
+    #   expected = opening + فروش نقدی + دریافت نسیه
+    #                     − مرجوعی − هزینه − پرداخت تأمین‌کننده − برداشت
     cash_in = cash_in_sales + cash_in_payments
-    cash_out = cash_out_refunds + cash_out_expenses + cash_out_supplier_payments
+    cash_out = (cash_out_refunds + cash_out_expenses + cash_out_supplier_payments
+                + cash_out_withdrawals)
     closing = opening_balance + cash_in - cash_out
     return {
         "opening": opening_balance,
@@ -1011,11 +1044,166 @@ def get_cashbox(db, start, end, opening_balance: int, cash_session_id: int | Non
         "cash_in": cash_in,
         "refunds": cash_out_refunds,
         "expenses": cash_out_expenses,
+        "withdrawals": cash_out_withdrawals,
         "purchases": invoice_purchases,
         "supplier_payments": cash_out_supplier_payments,
         "cash_out": cash_out,
         "closing": closing,
     }
+
+
+def open_cash_session(db) -> CashSession | None:
+    """The shift the drawer is currently in, or ``None`` when it is shut.
+
+    One definition: six call sites used to write this query themselves, and a
+    rule about which shift is current can only be kept in one place.
+    """
+    return (db.query(CashSession)
+            .filter(CashSession.status == "open")
+            .order_by(CashSession.opened_at.desc())
+            .first())
+
+
+def last_counted_balance(db) -> int | None:
+    """What the last counted shift closed at — the next shift's opening float.
+
+    A suggestion, not an assumption: the person opening the drawer writes down
+    whatever is actually in it, and this only spares them re-typing yesterday's
+    number. ``None`` when no shift has ever been counted, so the settings
+    default is used rather than an invented figure.
+    """
+    last = (db.query(CashSession)
+            .filter(CashSession.status == "closed",
+                    CashSession.counted_closing_balance.isnot(None))
+            .order_by(CashSession.closed_at.desc(), CashSession.id.desc())
+            .first())
+    return last.counted_closing_balance if last else None
+
+
+def cash_shift_summary(db, session: CashSession) -> dict:
+    """One shift: every movement, and the arithmetic they add up to.
+
+    The same clauses the register uses (:func:`_drawer_filters`) produce the
+    rows, so a difference on the page can always be traced to the invoice,
+    expense, payment or withdrawal behind it — and the two cannot disagree.
+    """
+    start = session.opened_at
+    end = session.closed_at or datetime.now(timezone.utc)
+    filters = _drawer_filters(db, start, end, session.id)
+    movements = []
+
+    for sale in db.query(Sale).filter(*filters["sale"]).all():
+        movements.append({
+            "kind": "sale", "label": f"فروش نقدی #{sale.id}", "note": "",
+            "amount": sale.final_amount or 0, "direction": "in",
+            "href": f"/sales/invoice/{sale.id}", "when": sale.created_at,
+        })
+
+    payments = db.query(Payment).filter(*filters["payment"]).all()
+    names = {c.id: c.full_name for c in db.query(Customer)
+             .filter(Customer.id.in_([p.customer_id for p in payments if p.customer_id])).all()} \
+        if payments else {}
+    for payment in payments:
+        who = names.get(payment.customer_id) or "مشتری حذف‌شده"
+        movements.append({
+            "kind": "payment", "label": f"دریافت نسیه از {who}",
+            "note": payment.note or "", "amount": payment.amount or 0,
+            "direction": "in", "when": payment.created_at,
+            "href": f"/admin/customers/{payment.customer_id}" if payment.customer_id else None,
+        })
+
+    for sale in db.query(Sale).filter(*filters["refund"]).all():
+        movements.append({
+            "kind": "refund", "label": f"مرجوعی فاکتور #{sale.id}",
+            "note": sale.refund_reason or "", "amount": sale.refund_amount or 0,
+            "direction": "out", "href": f"/sales/invoice/{sale.id}",
+            "when": sale.refund_date or sale.created_at,
+        })
+
+    for expense in db.query(Expense).filter(*filters["expense"]).all():
+        movements.append({
+            "kind": "expense", "label": expense.category or "هزینه بدون دسته",
+            "note": expense.note or "", "amount": expense.amount or 0,
+            "direction": "out", "href": "/admin/expenses", "when": expense.created_at,
+        })
+
+    supplier_payments = db.query(SupplierPayment).filter(*filters["supplier"]).all()
+    suppliers = {s.id: s.name for s in db.query(Supplier).filter(
+        Supplier.id.in_([p.supplier_id for p in supplier_payments if p.supplier_id])).all()} \
+        if supplier_payments else {}
+    for payment in supplier_payments:
+        movements.append({
+            "kind": "supplier",
+            "label": f"پرداخت به {suppliers.get(payment.supplier_id) or 'تأمین‌کننده حذف‌شده'}",
+            "note": payment.note or "", "amount": payment.amount or 0,
+            "direction": "out", "href": "/admin/suppliers", "when": payment.created_at,
+        })
+
+    for entry in db.query(CashSessionEntry).filter(*filters["entry"]).all():
+        movements.append({
+            "kind": "withdrawal", "label": "برداشت از صندوق", "note": entry.reason,
+            "amount": entry.amount or 0, "direction": "out",
+            "href": f"/admin/cashbox/sessions/{session.id}", "when": entry.created_at,
+            # Carried so the statement can offer the reversal on the row itself.
+            "entry_id": entry.id, "reversed": entry.reversed_at is not None,
+        })
+
+    movements.sort(key=lambda row: row["when"])
+    return {
+        "session": session,
+        "register": get_cashbox(db, start, end, session.opening_balance, session.id),
+        "movements": movements,
+    }
+
+
+def add_cash_withdrawal(db, session: CashSession, amount: int, reason: str,
+                        operator_user_id: int, request_id: str | None = None) -> CashSessionEntry:
+    """Record cash leaving the drawer before the count.
+
+    Not an expense: the money is still the shop's, it is simply no longer in the
+    drawer (a bank deposit, a small cash purchase). It therefore lowers what
+    should be counted without touching profit and loss.
+    """
+    from services.events import append_event
+
+    entry = CashSessionEntry(
+        cash_session_id=session.id, entry_type="withdrawal",
+        amount=amount, reason=reason, operator_user_id=operator_user_id,
+    )
+    db.add(entry)
+    db.flush()
+    append_event(
+        db, "CashSessionEntryRecorded", "cash_session_entry", entry.id,
+        idempotency_key=f"cash-session-entry:{entry.id}:recorded",
+        actor_user_id=operator_user_id, request_id=request_id,
+        payload={"cash_session_id": session.id, "entry_type": entry.entry_type,
+                 "amount": entry.amount, "reason": entry.reason},
+        occurred_at=entry.created_at,
+    )
+    return entry
+
+
+def reverse_cash_withdrawal(db, entry: CashSessionEntry, operator_user_id: int,
+                            request_id: str | None = None) -> CashSessionEntry:
+    """Undo a withdrawal entered by mistake.
+
+    Only while its shift is open: a closed shift's expected and counted figures
+    are the frozen record of a count somebody actually performed, and adding
+    money back afterwards would rewrite a difference they signed off.
+    """
+    from services.events import append_event
+
+    entry.reversed_at = datetime.now(timezone.utc)
+    db.flush()
+    append_event(
+        db, "CashSessionEntryReversed", "cash_session_entry", entry.id,
+        idempotency_key=f"cash-session-entry:{entry.id}:reversed",
+        actor_user_id=operator_user_id, request_id=request_id,
+        payload={"cash_session_id": entry.cash_session_id, "amount": entry.amount,
+                 "reason": entry.reason},
+        occurred_at=entry.reversed_at,
+    )
+    return entry
 
 
 def get_supplier_balances(db) -> list:
