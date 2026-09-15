@@ -50,7 +50,7 @@
             <input type="hidden" name="period" value="{{ period }}">
             <input type="hidden" name="start_date" value="{{ start_date }}">
             <input type="hidden" name="end_date" value="{{ end_date }}">
-            <select name="category" onchange="this.form.submit()" style="padding:0.35rem 0.6rem; border-radius:6px; border:1px solid var(--line); background:var(--surface); color:inherit; font-family:Vazirmatn;">
+            <select name="category" onchange="this.form.submit()" style="padding:0.35rem 0.6rem; border-radius:6px; border:1px solid var(--rule); background:var(--surface-soft); color:inherit; font-family:Vazirmatn;">
                 <option value="">📦 همه محصولات</option>
                 {% for c in all_categories %}
                 <option value="{{ c }}" {% if c == category %}selected{% endif %}>{{ c }}</option>
@@ -86,7 +86,7 @@
             <div class="inv-row"><span>سرمایه انبار</span><b class="tnum">{{ fmt(inventory.total_cost) }} ت</b></div>
             <div class="inv-row"><span>ارزش فروش انبار</span><b class="tnum">{{ fmt(inventory.total_retail) }} ت</b></div>
             <div class="inv-row"><span>موجودی کل</span><b class="tnum">{{ fmt(inventory.units) }}</b></div>
-            <div style="margin-top:0.6rem; border-top:1px solid var(--line); padding-top:0.5rem;">
+            <div style="margin-top:0.6rem; border-top:1px solid var(--rule); padding-top:0.5rem;">
                 {% for c in inventory.categories[:8] %}
                 <div style="display:flex; justify-content:space-between; font-size:0.85rem; padding:0.15rem 0;">
                     <span>{{ c.category }}</span><span class="tnum">{{ fmt(c.cost) }} ت</span>
@@ -172,7 +172,7 @@
         <div class="inv-row"><span>نر خرید مجدد</span><b>{{ customer_health.repeat_rate }}٪</b></div>
         <div class="inv-row"><span>مشتریان یک‌بار</span><b>{{ customer_health.one_timer_pct }}٪</b></div>
         <div class="inv-row"><span>میانگین سفارش</span><b>{{ customer_health.avg_orders }}</b></div>
-        <div style="margin-top:0.5rem; border-top:1px solid var(--line); padding-top:0.5rem;">
+        <div style="margin-top:0.5rem; border-top:1px solid var(--rule); padding-top:0.5rem;">
             <canvas id="customerSegChart" style="max-height:180px;"></canvas>
         </div>
     </div>
@@ -329,7 +329,7 @@ new Chart(document.getElementById('customerSegChart'), {
     .charts-grid, .tables-grid { grid-template-columns: 1fr; }
 }
 .matrix { border-collapse: collapse; font-size: 0.85rem; }
-.matrix th, .matrix td { border: 1px solid var(--line); padding: 0.35rem 0.6rem; min-width: 2.8rem; white-space: nowrap; }
+.matrix th, .matrix td { border: 1px solid var(--rule); padding: 0.35rem 0.6rem; min-width: 2.8rem; white-space: nowrap; }
 .inv-row { display: flex; justify-content: space-between; padding: 0.25rem 0; }
 
 /* Question mark icon */
@@ -340,8 +340,8 @@ new Chart(document.getElementById('customerSegChart'), {
     width: 18px;
     height: 18px;
     border-radius: 50%;
-    background: var(--line, #ddd);
-    color: var(--ink-soft, #888);
+    background: var(--rule);
+    color: var(--ink-soft);
     font-size: 12px;
     font-weight: 700;
     line-height: 1;

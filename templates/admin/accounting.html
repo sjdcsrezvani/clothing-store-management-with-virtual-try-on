@@ -63,7 +63,7 @@
                 <td>{{ row.category }}</td>
                 <td class="tnum">{{ fmt(row.amount) }} تومان</td>
                 <td>
-                    <div style="background:#f0e8e0; border-radius:999px; height:10px; width:100%; max-width:200px;">
+                    <div style="background:var(--rule); border-radius:999px; height:10px; width:100%; max-width:200px;">
                         <div style="background:var(--persimmon); height:10px; border-radius:999px; width:{{ (row.amount / pl.expenses * 100) if pl.expenses else 0 }}%;"></div>
                     </div>
                 </td>

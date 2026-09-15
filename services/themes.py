@@ -11,12 +11,26 @@ THEME_SETTING_KEY = "ui_theme"
 CUSTOM_PRIMARY_KEY = "theme_custom_primary"
 CUSTOM_SECONDARY_KEY = "theme_custom_secondary"
 
+# `--persimmon` is the panel's attention hue: what a figure turns when it is not
+# an error but must be looked at — money owed, a payment past its date, a message
+# that failed, text past its SMS limit. It is deliberately neither `--candy` (the
+# brand/primary, on every button and link) nor the alarm pair, so an overdue debt
+# never reads as something clickable. It is chosen dark enough to be legible as
+# text both on a card and on the 20% tint the state badges mix from it.
+#
+# Every theme must define it. Eleven declarations in style.css reference it, and
+# an undefined custom property does not fall back to a sibling — the declaration
+# becomes invalid at computed-value time and the element silently inherits its
+# parent's colour, which is how this token went missing without anything looking
+# broken. tests/test_themes.py now fails if a theme omits any property the
+# stylesheet reads.
 _BASE = {
     "--candy": "#C94B68",
     "--candy-dark": "#A83A54",
     "--sky": "#197A8C",
     "--sky-dark": "#125B69",
     "--sunshine": "#D69A1D",
+    "--persimmon": "#AD3100",
     "--mint": "#21864B",
     "--mint-dark": "#176A3A",
     "--lavender": "#6C5CE7",
@@ -92,13 +106,13 @@ THEMES: dict[str, dict[str, Any]] = {
         "name": "Midnight Operations",
         "description": "Full dark workspace for low-light retail operations.",
         "mode": "dark",
-        "tokens": {**_BASE, "--candy": "#F07A91", "--candy-dark": "#D95B75", "--sky": "#56C2D9", "--sky-dark": "#36A8C0", "--sunshine": "#E8B94C", "--mint": "#55C878", "--mint-dark": "#39A85B", "--bg": "#111820", "--card": "#1C2731", "--ink": "#F4F7F8", "--ink-soft": "#B5C0C6", "--rule": "#34434D", "--surface-soft": "#17232B", "--sidebar-bg": "#0B1116", "--sidebar-text": "#EAF0F2", "--sidebar-active": "#263C48", "--topbar-start": "#0B1116", "--topbar-end": "#18323D", "--success-bg": "#173522", "--warning-bg": "#3B3018", "--danger-bg": "#3A2026", "--field-bg": "#1E2B35", "--table-header": "#22323D", "--card-accent": "linear-gradient(90deg, #F07A91, #56C2D9)", "--focus-ring": "0 0 0 4px rgba(86, 194, 217, 0.38)"},
+        "tokens": {**_BASE, "--candy": "#F07A91", "--candy-dark": "#D95B75", "--sky": "#56C2D9", "--sky-dark": "#36A8C0", "--sunshine": "#E8B94C", "--persimmon": "#FF9770", "--mint": "#55C878", "--mint-dark": "#39A85B", "--bg": "#111820", "--card": "#1C2731", "--ink": "#F4F7F8", "--ink-soft": "#B5C0C6", "--rule": "#34434D", "--surface-soft": "#17232B", "--sidebar-bg": "#0B1116", "--sidebar-text": "#EAF0F2", "--sidebar-active": "#263C48", "--topbar-start": "#0B1116", "--topbar-end": "#18323D", "--success-bg": "#173522", "--warning-bg": "#3B3018", "--danger-bg": "#3A2026", "--field-bg": "#1E2B35", "--table-header": "#22323D", "--card-accent": "linear-gradient(90deg, #F07A91, #56C2D9)", "--focus-ring": "0 0 0 4px rgba(86, 194, 217, 0.38)"},
     },
     "high-contrast": {
         "name": "High Contrast",
         "description": "Strong borders, explicit states, and maximum visual clarity.",
         "mode": "high-contrast",
-        "tokens": {**_BASE, "--candy": "#8B0000", "--candy-dark": "#650000", "--sky": "#003D66", "--sky-dark": "#002B49", "--sunshine": "#7A4F00", "--mint": "#005A2B", "--mint-dark": "#003D1D", "--bg": "#FFFFFF", "--card": "#FFFFFF", "--ink": "#000000", "--ink-soft": "#202020", "--rule": "#000000", "--surface-soft": "#F1F1F1", "--sidebar-bg": "#000000", "--sidebar-text": "#FFFFFF", "--sidebar-active": "#303030", "--topbar-start": "#000000", "--topbar-end": "#202020", "--success-bg": "#E6F4EA", "--warning-bg": "#FFF1CC", "--danger-bg": "#FFE6E6", "--field-bg": "#FFFFFF", "--table-header": "#F1F1F1", "--card-accent": "#000000", "--shadow": "0 0 0 1px #000000", "--shadow-hover": "0 0 0 2px #000000", "--radius": "2px", "--radius-sm": "2px"},
+        "tokens": {**_BASE, "--candy": "#8B0000", "--candy-dark": "#650000", "--sky": "#003D66", "--sky-dark": "#002B49", "--sunshine": "#7A4F00", "--persimmon": "#8F3A00", "--mint": "#005A2B", "--mint-dark": "#003D1D", "--bg": "#FFFFFF", "--card": "#FFFFFF", "--ink": "#000000", "--ink-soft": "#202020", "--rule": "#000000", "--surface-soft": "#F1F1F1", "--sidebar-bg": "#000000", "--sidebar-text": "#FFFFFF", "--sidebar-active": "#303030", "--topbar-start": "#000000", "--topbar-end": "#202020", "--success-bg": "#E6F4EA", "--warning-bg": "#FFF1CC", "--danger-bg": "#FFE6E6", "--field-bg": "#FFFFFF", "--table-header": "#F1F1F1", "--card-accent": "#000000", "--shadow": "0 0 0 1px #000000", "--shadow-hover": "0 0 0 2px #000000", "--radius": "2px", "--radius-sm": "2px"},
     },
     "custom-brand": {
         "name": "Custom Brand",

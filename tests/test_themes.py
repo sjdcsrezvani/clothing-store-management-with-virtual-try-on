@@ -1,3 +1,6 @@
+import re
+from pathlib import Path
+
 from services.themes import (
     DEFAULT_THEME_ID,
     THEMES,
@@ -5,6 +8,23 @@ from services.themes import (
     custom_tokens,
     theme_preview,
 )
+
+ROOT = Path(__file__).resolve().parents[1]
+
+# A custom property read without a fallback. `var(--tag-scale, 1)` is not one of
+# these: the fallback makes it optional, so only the bare form has to exist.
+BARE_VAR = re.compile(r"var\(\s*(--[a-z0-9-]+)\s*\)")
+DECLARED = re.compile(r"(--[a-z0-9-]+)\s*:")
+COMMENT = re.compile(r"/\*.*?\*/", re.S)
+
+
+def _stylesheet() -> str:
+    """style.css with its comments removed: the palette is documented at the top
+    of the file in exactly the shape of a declaration, and a comment is not one."""
+    return COMMENT.sub("", (ROOT / "static" / "css" / "style.css").read_text())
+
+
+STYLE_CSS = _stylesheet()
 
 
 def test_theme_catalog_has_ten_complete_presets():
@@ -42,6 +62,116 @@ def test_custom_brand_rejects_invalid_or_low_contrast_colors():
     tokens = custom_tokens("#777777", "#888888")
     assert tokens["--primary-contrast"] == "#000000"
     assert tokens["--secondary-contrast"] == "#000000"
+
+
+# Values the shell needs before any theme is applied, and that no theme varies:
+# the sidebar's width, the minimum touch target, and the text colour on a filled
+# button (which `custom_tokens` supplies for Custom Brand). They live in `:root`
+# alone, so they are the only properties a theme is allowed to leave out —
+# everything else the stylesheet reads bare has to be in all ten.
+GLOBAL_ONLY = {"--sidebar-width", "--touch-target", "--button-text"}
+
+
+def _root_properties() -> set[str]:
+    root = re.search(r":root\s*\{(.*?)\}", STYLE_CSS, re.S)
+    assert root, "style.css no longer has a :root block"
+    return set(DECLARED.findall(root.group(1)))
+
+
+def _stylesheet_local_properties() -> set[str]:
+    """Properties the stylesheet declares for itself outside `:root` — a section
+    that needs one value in two places (the theme gallery's gap)."""
+    without_root = re.sub(r":root\s*\{.*?\}", "", STYLE_CSS, count=1, flags=re.S)
+    return set(DECLARED.findall(without_root))
+
+
+def _template_sources() -> list[str]:
+    return [COMMENT.sub("", path.read_text()) for path in sorted((ROOT / "templates").rglob("*.html"))]
+
+
+def _template_properties() -> set[str]:
+    """Properties templates declare: their own `:root`, their `<style>` blocks,
+    and the ones a page sets inline on an element at render time."""
+    found: set[str] = set()
+    for source in _template_sources():
+        found |= set(DECLARED.findall(source))
+    return found
+
+
+def test_theme_catalog_defines_every_property_the_stylesheet_reads():
+    """An undefined custom property does not fall back to a sibling token — the
+    declaration is dropped and the element inherits its parent's colour, so the
+    page looks deliberate while showing the wrong thing. `--persimmon` went
+    missing that way for eleven declarations and nothing failed. Every theme has
+    to define every property the stylesheet reads bare.
+    """
+    exempt = GLOBAL_ONLY | _stylesheet_local_properties()
+    reads = {name for name in BARE_VAR.findall(STYLE_CSS) if name not in exempt}
+    # The parser has to be finding the reads at all, and persimmon has to be one
+    # of them, or this test would pass on an empty set.
+    assert "--persimmon" in reads
+    assert "--card" in reads and "--ink-soft" in reads
+    for theme_id, theme in THEMES.items():
+        missing = sorted(reads - set(theme["tokens"]))
+        assert not missing, (theme_id, missing)
+
+
+def test_no_template_reads_a_property_nothing_defines():
+    """The same rule for the markup, where a page can also carry its own palette
+    or set a property inline (the barcode preview's frame, the gallery's gap)."""
+    theme_level = set.intersection(*[set(theme["tokens"]) for theme in THEMES.values()])
+    known = theme_level | _root_properties() | _stylesheet_local_properties() | _template_properties()
+    unknown: set[str] = set()
+    for source in _template_sources():
+        unknown |= set(BARE_VAR.findall(source))
+    assert not unknown - known, sorted(unknown - known)
+
+
+def _mix_toward(colour: str, background: str, share: float) -> str:
+    """`color-mix(in srgb, colour share, background)` in sRGB, the way Chrome
+    resolves the badge tints these tests are about."""
+    channels = []
+    for index in (1, 3, 5):
+        channel = int(colour[index:index + 2], 16) * share + int(background[index:index + 2], 16) * (1 - share)
+        channels.append(round(channel))
+    return "#%02X%02X%02X" % tuple(channels)
+
+
+def test_persimmon_is_legible_in_every_theme_on_its_card_and_its_own_badge_tint():
+    """Persimmon is the attention colour — money owed, an overdue payment, a
+    failed message, text past its limit — so it is read as small text in all
+    three roles a theme can be: light surfaces, a dark workspace, and the
+    high-contrast palette. The state badges paint it on a 20% tint of itself,
+    which is the harder surface of the two, so both are measured.
+    """
+    assert len(THEMES) == 10
+    for theme_id in THEMES:
+        tokens = theme_preview(theme_id)["tokens"]
+        assert "--persimmon" in tokens, theme_id
+        card = tokens["--card"]
+        assert contrast_ratio(tokens["--persimmon"], card) >= 4.5, theme_id
+        tint = _mix_toward(tokens["--persimmon"], card, 0.20)
+        assert contrast_ratio(tokens["--persimmon"], tint) >= 4.5, (theme_id, tint)
+
+
+def test_persimmon_is_not_the_brand_colour_in_any_theme():
+    """It must not read as a button or a link: an overdue debt painted in
+    `--candy` would look clickable, which is why the slot exists."""
+    for theme_id in THEMES:
+        tokens = theme_preview(theme_id)["tokens"]
+        assert tokens["--persimmon"].upper() != tokens["--candy"].upper(), theme_id
+        assert tokens["--persimmon"].upper() != tokens["--candy-dark"].upper(), theme_id
+
+
+def test_the_dark_and_high_contrast_themes_lift_or_deepen_the_attention_hue():
+    """A light theme's persimmon on a dark card is muddy; the two themes with
+    inverted or extreme surfaces carry their own value, and both were chosen for
+    their own background rather than inherited from `_BASE`."""
+    base = THEMES[DEFAULT_THEME_ID]["tokens"]["--persimmon"]
+    assert THEMES["midnight-operations"]["tokens"]["--persimmon"] != base
+    assert THEMES["high-contrast"]["tokens"]["--persimmon"] != base
+    dark = THEMES["midnight-operations"]["tokens"]["--persimmon"]
+    assert contrast_ratio(dark, THEMES["midnight-operations"]["tokens"]["--bg"]) >= 4.5
 
 
 def test_owner_appearance_page_is_protected(client, db_session):

@@ -308,7 +308,10 @@ async def admin_accounting(
         "net": report["net_profit"],
         "net_margin": round(report["net_profit"] / report["net_sales"] * 100, 1) if report["net_sales"] else 0,
         "invoice_count": report["sale_count"],
-        "expense_cats": [],
+        # The breakdown the page draws its share bars from: `[]` here made the
+        # table state «هزینهای در این بازه ثبت نشده است» under a total that
+        # said otherwise, whatever the period held.
+        "expense_cats": report["expense_categories"],
     }
     debts = debt_totals(db)
     cashbox = get_cashbox(db, start, end, get_opening_balance(db))

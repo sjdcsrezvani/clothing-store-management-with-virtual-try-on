@@ -11,6 +11,8 @@
      --mint:       #51CF66   success
      --mint-dark:  #42B855   hover
      --lavender:   #A66CFF   diamond / special
+     --persimmon:  #AD3100   attention (debt, overdue, failed, over limit) —
+                             not an alarm, and never a button
      --bg:         #FFF5F0   warm peachy bg
      --card:       #FFFFFF
      --ink:        #2D2D2D
@@ -24,6 +26,7 @@
   --sky: #45B7D1;
   --sky-dark: #389BB0;
   --sunshine: #FFC857;
+  --persimmon: #AD3100;
   --mint: #51CF66;
   --mint-dark: #42B855;
   --lavender: #A66CFF;
@@ -438,7 +441,11 @@ tbody tr:last-child td { border-bottom: none; }
 }
 .stat-card:hover { box-shadow: var(--shadow-hover); }
 
-/* Colored left accent for stat cards */
+/* Colored left accent for stat cards. The variant names are palette slots, not
+   meanings: `accent-persimmon` is the first card on a page and takes the brand
+   colour, while the `--persimmon` token below is the attention hue for debt,
+   overdue and failed states. Renaming one to match the other would repaint
+   eighteen cards, so the two are kept apart on purpose. */
 .stat-card::before {
   content: "";
   position: absolute;
@@ -2551,9 +2558,9 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
 .status-badge.is-abandoned { background: color-mix(in srgb, var(--sunshine) 30%, var(--card)); color: var(--ink); }
 .status-badge.is-balanced  { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--mint-dark); }
 /* A drawer short is the alarming one, so it takes the danger pair the rest of
-   the panel uses for one (`.badge-danger`, `.alert-error`) rather than
-   `--persimmon`, which no theme ever defines — twelve declarations elsewhere
-   already reference it and render in the inherited colour as a result. */
+   the panel uses for one (`.badge-danger`, `.alert-error`). `--persimmon` is the
+   quieter register — money owed, a payment past its date, a message that failed
+   — and every theme defines it (see services/themes.py). */
 .status-badge.is-short     { background: color-mix(in srgb, var(--candy) 18%, var(--card)); color: var(--candy-dark); }
 .status-badge.is-over      { background: color-mix(in srgb, var(--sunshine) 30%, var(--card)); color: var(--ink); }
 

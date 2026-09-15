@@ -32,6 +32,17 @@ def canonical_report(db, start: datetime, end: datetime) -> dict:
     monthly_expenses = db.query(func.coalesce(func.sum(Expense.amount), 0)).filter(
         Expense.reversed_at.is_(None), Expense.expense_type == "monthly", Expense.created_at.between(start, end)
     ).scalar() or 0
+    # Where the operating expenses went, by the shop's own categories, under the
+    # same filters the total above uses — so the breakdown on سود و زیان always
+    # adds up to the figure printed beside it. An uncategorised expense is
+    # reported under its own name rather than dropped from the table.
+    expense_categories = sorted(
+        [{"category": category or "بدون دسته", "amount": amount}
+         for category, amount in db.query(Expense.category, func.sum(Expense.amount))
+         .filter(Expense.reversed_at.is_(None), Expense.created_at.between(start, end))
+         .group_by(Expense.category).all() if amount],
+        key=lambda row: row["amount"], reverse=True,
+    )
 
     cash_collected = sum(sale.final_amount or 0 for sale in active_sales if sale.payment_method in {"cash", "card"})
     credit_issued = sum(sale.final_amount or 0 for sale in active_sales if sale.payment_method == "credit")
@@ -48,6 +59,7 @@ def canonical_report(db, start: datetime, end: datetime) -> dict:
         "net_sales": net_sales, "cogs": cogs, "gross_profit": gross_profit,
         "operating_expenses": expenses, "net_profit": gross_profit - expenses,
         "one_time_expenses": one_time_expenses, "monthly_expenses": monthly_expenses,
+        "expense_categories": expense_categories,
         "cash_collected": cash_collected, "credit_issued": credit_issued,
         "credit_collected": credit_collected, "outstanding_debt": debt,
         "inventory_value": inventory_value, "sale_count": len(active_sales),

@@ -391,6 +391,37 @@ def test_expense_types_are_saved_and_reported(client, db_session, authed):
     assert "هزینه‌های یک‌باره" in page.text
     assert "اجاره ماهانه" in page.text
 
+    # …and the breakdown on سود و زیان adds up to the total printed beside it.
+    # The route handed the page an empty list for a while, so the table claimed
+    # «هزینه‌ای در این بازه ثبت نشده است» under a real expense figure.
+    assert report["expense_categories"] == [
+        {"category": "اجاره", "amount": 1_500_000},
+        {"category": "تعمیرات", "amount": 250_000},
+    ]
+    pl_page = client.get("/admin/accounting?period=year")
+    assert pl_page.status_code == 200
+    assert "هزینه‌ای در این بازه ثبت نشده است" not in pl_page.text
+    assert "اجاره" in pl_page.text
+    assert "تعمیرات" in pl_page.text
+    assert "2 دسته هزینه" in pl_page.text
+
+
+def test_an_uncategorised_expense_still_lands_in_the_breakdown(client, db_session, authed):
+    """A category is optional on the expense form, and an expense with none must
+    still be countable on the page rather than silently left out of the table
+    while its money is in the total."""
+    _post(client, "/admin/expenses/add", {"amount": "90000", "category": "",
+                                            "expense_type": "one_time", "note": ""}, authed)
+    from datetime import datetime, timezone, timedelta
+    from services.reporting import canonical_report
+    start = datetime.now(timezone.utc) - timedelta(days=1)
+    end = datetime.now(timezone.utc) + timedelta(days=1)
+    report = canonical_report(db_session, start, end)
+    assert report["operating_expenses"] == 90_000
+    assert report["expense_categories"] == [{"category": "بدون دسته", "amount": 90_000}]
+    page = client.get("/admin/accounting?period=year")
+    assert "بدون دسته" in page.text
+
 
 def test_invalid_expense_type_is_rejected(client, db_session, authed):
     response = _post(client, "/admin/expenses/add", {

@@ -170,8 +170,11 @@ float, and see the period register (money in and out for a range, on the same
 Jalali picker as سود و زیان). Card and نسیه money is deliberately absent: this
 register counts cash, and only one drawer can be open at a time.
 - **🧮 سود و زیان** (`/admin/accounting`) — revenue − COGS − expenses = net
-profit for any period (today/week/month/year/custom, Persian dates), plus CSV
-exports of sales, customers, purchases and expenses (Excel-friendly).
+profit for any period (today/week/month/year/custom, Persian dates), the expenses
+then broken down by the shop's own categories with each one's share of the total
+(an expense saved without a category is counted under «بدون دسته» rather than
+left out), plus CSV exports of sales, customers, purchases and expenses
+(Excel-friendly).
 
 Every date field in the panel shares one Jalali picker: dates are shown and
 saved as `YYYY/MM/DD` in Persian digits, a birth date can never be later than
