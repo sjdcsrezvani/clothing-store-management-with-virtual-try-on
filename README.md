@@ -10,7 +10,9 @@ welcome / birthday / tier-up / campaign messages, and a send log whose entries
 can be replayed), virtual try-on previews on the child's picture, invoices
 (HTML + Persian PDF), a deep analytics suite, and accounting-lite: credit sales
 (نسیه) with a debt ledger, supplier purchases that update stock & cost,
-expenses, a cash register, a net profit & loss report, and CSV exports.
+expenses, a cash drawer counted open and counted closed with every difference
+recorded, a net profit & loss report that breaks the expenses down by category,
+and CSV exports.
 
 ## Security and staff roles
 
@@ -551,8 +553,11 @@ menu, the tab, the heading and the last crumb are one string on every destinatio
 a role can open, every crumb on a page
 opens for the role shown it, exactly one item is current on each page, no page the
 till grants offers a link back into the admin panel, and a refusal lands on a
-Persian page that names the role asking rather than a JSON payload. They use a
-throwaway SQLite database — never your real data.
+Persian page that names the role asking rather than a JSON payload. The palette
+is covered the same way: every theme defines every colour the stylesheet reads,
+so a token a theme forgot fails the suite instead of quietly rendering in the
+inherited colour, and the same rule holds for the markup a page writes itself.
+They use a throwaway SQLite database — never your real data.
 
 Continuous integration runs this suite plus `compileall`, refuses a tracked
 `.env`, `.db` or `.log` file, and refuses any commit **message** that credits a
