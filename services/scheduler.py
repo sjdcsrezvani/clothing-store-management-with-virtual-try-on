@@ -6,37 +6,14 @@ from services.backup import create_backup
 from services.checkout import expire_stale
 from services.jobs import reclaim_stale, claim_next, process_one, complete, fail
 from services.checks import trigger_due_reminders
-from services.tier import (
-    get_tier_config,
-    get_customers_for_downgrade_check,
-    check_tier_downgrade,
-)
 
 logger = logging.getLogger(__name__)
 
-
-async def check_tier_downgrades():
-    """Check for customers who should be downgraded due to inactivity."""
-    db = SessionLocal()
-    try:
-        config = get_tier_config(db)
-
-        if config["downgrade_months"] <= 0 or config["downgrade_amount"] <= 0:
-            return
-
-        customers = get_customers_for_downgrade_check(db)
-
-        for customer in customers:
-            was_downgraded = check_tier_downgrade(customer, config, db)
-            if was_downgraded:
-                logger.info("Customer tier downgraded")
-
-        db.commit()
-
-    except Exception as e:
-        logger.error(f"Tier downgrade check error: {e}")
-    finally:
-        db.close()
+# There is deliberately no tier-downgrade pass here. Taking a level away from a
+# customer is the one thing on this clock that cannot be undone and that the
+# owner would want to see coming, so it lives on «کاهش سطح» (/admin/tier-downgrades),
+# where the names are listed and somebody has to confirm them. Everything below
+# adds something back or maintains the shop's own copies of its data.
 
 
 async def scheduler_task():
@@ -44,11 +21,6 @@ async def scheduler_task():
     while True:
         try:
             now = datetime.now(timezone.utc)
-
-            # Run tier downgrade check daily at 1 AM UTC
-            if now.hour == 1 and now.minute < 5:
-                logger.info("Running tier downgrade check")
-                await check_tier_downgrades()
 
             # Daily SQLite backup at 2 AM UTC (keeps the last 30)
             if now.hour == 2 and now.minute < 5:
@@ -88,15 +60,10 @@ async def scheduler_task():
                 db.close()
 
             # The scheduler batch no longer gates SMS: the phone polls the log
-            # directly every 15s. Five minutes here is for backups, downgrades,
-            # try-on jobs and stale-check upkeep only.
+            # directly every 15s. Five minutes here is for backups, try-on jobs,
+            # reminders and stale-check upkeep only.
             await asyncio.sleep(300)
 
         except Exception as e:
             logger.error(f"Scheduler error: {e}")
             await asyncio.sleep(60)
-
-
-async def run_downgrade_check_now():
-    """Manually trigger downgrade check."""
-    await check_tier_downgrades()

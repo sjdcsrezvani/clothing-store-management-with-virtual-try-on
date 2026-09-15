@@ -10,6 +10,12 @@
         پس از ارسال، مشتری تا رسیدن به سطح بعدی (یا ارتقای مجدد پس از کاهش سطح) از فهرست حذف می‌شود.
     </p>
 
+    <div class="admin-nav">
+        <a href="/admin/tier-downgrades" class="btn btn-ghost">📉 کاهش سطح</a>
+        <a href="/admin/birthdays" class="btn btn-ghost">🎂 پیامک تولد</a>
+        <a href="/admin/follow-ups" class="btn btn-ghost">📮 پیگیری مشتریان</a>
+    </div>
+
     {% if sent_msg and sent_msg != '0' %}
     <div class="alert alert-success">✅ {{ sent_msg }} پیامک ارتقا ارسال شد.</div>
     {% endif %}

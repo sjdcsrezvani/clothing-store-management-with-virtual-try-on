@@ -27,6 +27,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from models import Settings, SmsMessage, SmsTemplate, to_english_digits
+from services.tier import TIER_LABELS
 
 logger = logging.getLogger(__name__)
 
@@ -327,7 +328,6 @@ def send_info(template) -> dict:
 # are the ones a message can honestly promise: money and level arrive formatted
 # (a customer never reads «gold» or «1250000»), and everything else is a column.
 
-TIER_LABELS = {"silver": "نقره‌ای", "gold": "طلایی", "diamond": "الماس"}
 
 CUSTOMER_SOURCES = (
     {"field": "first_name", "label": "نام مشتری", "sample": "سارا"},

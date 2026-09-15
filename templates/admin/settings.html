@@ -154,20 +154,26 @@
         </div>
 
         <h4>📉 کاهش سطح (Downgrade)</h4>
+        {# One number decides this rule, so there is one field for it. The old
+           «حداقل مبلغ خرید» field is gone: the rule no longer reads it, and a
+           field that changes nothing is worse than no field at all. #}
         <div class="form-row">
             <div class="form-group">
                 <label for="tier_downgrade_months">📅 ماه‌های عدم خرید</label>
                 <input type="number" id="tier_downgrade_months" name="tier_downgrade_months"
                        value="{{ tier_config.downgrade_months }}" min="0">
-                <small>اگر مشتری در این مدت خرید نکند، یک سطح کاهش می‌یابد</small>
-            </div>
-            <div class="form-group">
-                <label for="tier_downgrade_amount">💰 حداقل مبلغ خرید (تومان)</label>
-                <input type="number" id="tier_downgrade_amount" name="tier_downgrade_amount"
-                       value="{{ tier_config.downgrade_amount }}" min="0">
-                <small>حداقل مبلغ خرید در دوره برای حفظ سطح</small>
+                <small>اگر مشتری بیشتر از این مدت خرید نکند، یک سطح پایین می‌آید. ۰ = این بررسی را نمی‌خواهم.</small>
             </div>
         </div>
+        <p class="muted settings-downgrade-note">
+            {% if downgrade_rule.enabled %}
+            قاعده فعال است: هرکسی که بیش از {{ downgrade_rule.months_label }} ماه خرید نکرده باشد در فهرست می‌آید.
+            {% else %}
+            قاعده غیرفعال است و فهرست «کاهش سطح» خالی می‌ماند.
+            {% endif %}
+            <strong>هیچ‌کس خودکار کاهش سطح نمی‌یابد</strong> — باید خودتان فهرست را ببینید و تأیید کنید.
+            <a href="/admin/tier-downgrades">مشاهده فهرست و بررسی دستی</a>
+        </p>
 
         <h4>🎂 مشتری و تولد</h4>
         {% set target = settings.get('birthday_target', 'child') %}

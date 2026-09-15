@@ -845,6 +845,9 @@ html[data-theme="kids-boutique"] .context-mark, html[data-theme="kids-boutique"]
 .action-success { border-inline-start: 4px solid var(--mint); }
 .quick-actions-card h3 { margin: 0.2rem 0 0; }
 .quick-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+/* Settings: the standing of the downgrade rule, under the one field that sets it. */
+.settings-downgrade-note { margin: 0 0 1.5rem; font-size: 0.85rem; line-height: 1.9; }
+
 .danger-details { border: 1px dashed #ffb5b5 !important; padding: 0.9rem 1.1rem; color: #c0392b; background: #fffafa; }
 .danger-details::before { display: none; }
 .danger-details summary { cursor: pointer; font-weight: 700; }

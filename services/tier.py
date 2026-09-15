@@ -3,6 +3,7 @@ from models import Customer, Settings
 from datetime import datetime, timezone, timedelta
 import jdatetime
 from services._common import (
+    _to_persian_digits as to_persian_digits,
     customer_birthday_subjects,
     current_year_month,
     days_until_jalali_birthday,
@@ -11,6 +12,15 @@ from services._common import (
     jtoday,
     marketing_opt_in,
 )
+
+# The shop's word for each level, and its floor-to-ceiling order. This module
+# owns the vocabulary — the SMS and campaign modules import it from here rather
+# than each keeping a copy that can drift.
+TIER_LABELS = {"silver": "نقره‌ای", "gold": "طلایی", "diamond": "الماس"}
+TIER_RANK = {"silver": 0, "gold": 1, "diamond": 2}
+
+# What one downgrade does: a level down, never below silver.
+DOWNGRADE_STEP = {"diamond": "gold", "gold": "silver"}
 
 
 def get_setting(db: Session, key: str, default) -> str:
@@ -32,7 +42,10 @@ def get_tier_config(db: Session) -> dict:
         "diamond_threshold": get_setting_int(db, "tier_diamond_threshold", 5000),
         "diamond_discount_percent": get_setting_int(db, "tier_diamond_discount_percent", 10),
         "diamond_birthday_discount": get_setting_int(db, "tier_diamond_birthday_discount", 50000),
-        "downgrade_amount": get_setting_int(db, "tier_downgrade_amount", 0),
+        # The downgrade rule reads only this. The old «حداقل مبلغ خرید» setting
+        # is no longer read by anything: it compared a *lifetime* figure while
+        # claiming to measure the period, which is a different rule from the one
+        # the shop was told it was choosing.
         "downgrade_months": get_setting_int(db, "tier_downgrade_months", 6),
         "birthday_sms_days_before": get_setting_int(db, "birthday_sms_days_before", 7),
     }
@@ -103,43 +116,137 @@ def check_birthday_eligible(customer: Customer, config: dict,
     return birthday_occasion_due(customer, config, subjects) is not None
 
 
-def check_tier_downgrade(customer: Customer, config: dict, db: Session) -> bool:
-    """Check if customer should be downgraded. Returns True if downgraded."""
-    if customer.tier == "silver":
-        return False
+# ── کاهش سطح (tier downgrade) ────────────────────────────────────────────────
+# A customer keeps their tier while they keep buying. The rule is one sentence
+# wide — «no purchase for N months» — because that is the only shape an owner
+# can hold in their head, and because the page that applies it has to be able to
+# tell every person on the list exactly why they are there.
+#
+# Nothing applies this rule on its own. There is no nightly sweep: a customer is
+# demoted only when the owner opens «کاهش سطح», reads the names and confirms.
+# That is what makes it acceptable for the rule to be this blunt.
 
-    if config["downgrade_months"] <= 0 or config["downgrade_amount"] <= 0:
-        return False
 
-    # Downgrade is "no purchases for N months" — keep this on Gregorian
-    # because last_purchase_date is stored as Gregorian timestamp; the
-    # user-facing display goes through jalali_str() at the template.
-    cutoff_date = datetime.now(timezone.utc) - timedelta(days=config["downgrade_months"] * 30)
+def tier_downgrade_rule(db: Session) -> dict:
+    """The window, and whether the rule is in use at all.
 
-    # Check if customer has made enough purchases in the time period
-    if customer.last_purchase_date and customer.last_purchase_date >= cutoff_date:
-        if customer.total_spent >= config["downgrade_amount"]:
-            return False
+    The window *is* the switch: ``۰`` months means «do not offer me anybody».
+    One place answers this, so the review page, the settings field and the
+    dashboard card cannot disagree about whether the shop uses it.
+    """
+    months = get_tier_config(db)["downgrade_months"]
+    return {"months": months, "enabled": months > 0,
+            "months_label": to_persian_digits(str(months))}
 
-    # Downgrade one tier
-    if customer.tier == "diamond":
-        customer.tier = "gold"
-    elif customer.tier == "gold":
-        customer.tier = "silver"
 
-    # Clear tier-up SMS marker so climbing back into this tier re-queues them.
-    marker = db.query(Settings).filter(Settings.key == tier_up_marker_key(customer.id)).first()
-    if marker:
-        db.delete(marker)
+def _purchase_age(customer: Customer, now: datetime) -> int | None:
+    """Days since the last purchase, or ``None`` if there never was one."""
+    stamp = customer.last_purchase_date
+    if stamp is None:
+        return None
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    return max(0, (now - stamp).days)
 
-    return True
+
+def downgrade_candidates(db: Session, *, now: datetime | None = None) -> dict:
+    """Everyone the rule would demote, each with the reason, in one query.
+
+    Returns ``{"rows": [...], "skipped_archived": N, "months": N,
+    "enabled": bool}``, where a row carries the customer, the level they are on,
+    the level they would fall to, when they last bought, how long ago that was,
+    what they have spent in total, and a sentence explaining why they qualify.
+
+    The reason travels *with* the row rather than being reconstructed by the
+    page, so the words the owner reads and the test that decided to include them
+    cannot come apart. Archived customers are counted and left out: demoting
+    somebody the shop has already filed away is noise, and hiding them would
+    make the counts look wrong.
+    """
+    now = now or datetime.now(timezone.utc)
+    rule = tier_downgrade_rule(db)
+    if not rule["enabled"]:
+        return {"rows": [], "skipped_archived": 0, **rule}
+
+    window_days = rule["months"] * 30
+    customers = (
+        db.query(Customer)
+        .filter(Customer.tier.in_(list(DOWNGRADE_STEP)))
+        .order_by(Customer.id.asc())
+        .all()
+    )
+
+    rows = []
+    skipped_archived = 0
+    for customer in customers:
+        days = _purchase_age(customer, now)
+        # A recent purchase protects the tier on its own — full stop. The old
+        # rule made that protection conditional on lifetime spend, which is how
+        # a customer who bought yesterday could still be demoted.
+        if days is not None and days <= window_days:
+            continue
+        if is_archived_customer(customer):
+            skipped_archived += 1
+            continue
+        rows.append({
+            "customer": customer,
+            "from_tier": customer.tier,
+            "from_label": TIER_LABELS.get(customer.tier, customer.tier),
+            "to_tier": DOWNGRADE_STEP[customer.tier],
+            "to_label": TIER_LABELS.get(DOWNGRADE_STEP[customer.tier], ""),
+            "last_purchase": customer.last_purchase_date,
+            "days_since": days,
+            "days_label": "—" if days is None else to_persian_digits(f"{days} روز"),
+            "spent": customer.total_spent or 0,
+            "never_bought": days is None,
+            "reason": ("هیچ خریدی برایش ثبت نشده" if days is None
+                       else f"بیش از {rule['months_label']} ماه است خرید نکرده"),
+        })
+
+    # Whoever has been quiet longest comes first, and somebody who never bought
+    # is at the top of that list rather than hidden at the bottom of it.
+    rows.sort(key=lambda row: (row["days_since"] is not None, -(row["days_since"] or 0)))
+    return {"rows": rows, "skipped_archived": skipped_archived, **rule}
+
+
+def apply_tier_downgrades(db: Session, customer_ids) -> dict:
+    """Demote exactly the customers ticked, re-checked against the rule now.
+
+    Nothing is trusted from the form except the ids. A page can sit open while
+    the shop keeps trading, so somebody on the list may have bought in between —
+    and that purchase is precisely what the rule says protects their tier. An id
+    that no longer qualifies is refused with a reason rather than demoted anyway.
+    """
+    wanted = {int(value) for value in customer_ids}
+    candidates = {row["customer"].id: row
+                  for row in downgrade_candidates(db)["rows"]}
+
+    demoted = []
+    refused = 0
+    for customer_id in sorted(wanted):
+        row = candidates.get(customer_id)
+        if row is None:
+            refused += 1
+            continue
+        customer = row["customer"]
+        customer.tier = row["to_tier"]
+        # Clear the tier-up marker so climbing back into this tier queues them
+        # for a fresh welcome, exactly as the old sweep did.
+        marker = db.query(Settings).filter(
+            Settings.key == tier_up_marker_key(customer.id)).first()
+        if marker:
+            db.delete(marker)
+        demoted.append({"customer": customer, "to_tier": row["to_tier"],
+                        "to_label": row["to_label"]})
+
+    db.commit()
+    return {"demoted": demoted, "demoted_count": len(demoted), "refused": refused}
 
 
 # ── Tier-up SMS tracking ──
 # A customer appears in the tier-up list while their current tier ranks higher
 # than the tier the last tier-up SMS was sent for. Downgrades clear the marker,
 # so a customer who is downgraded and then climbs back up is queued again.
-TIER_RANK = {"silver": 0, "gold": 1, "diamond": 2}
 
 
 def tier_up_marker_key(customer_id: int) -> str:
@@ -213,20 +320,3 @@ def get_customers_for_birthday_check(db: Session, days_before: int = 3) -> dict:
 
     eligible.sort(key=lambda row: row[1])
     return {"eligible": eligible, "blocked": blocked}
-
-
-def get_customers_for_downgrade_check(db: Session) -> list:
-    """Get Gold/Diamond customers who might need downgrading."""
-    config = get_tier_config(db)
-
-    if config["downgrade_months"] <= 0 or config["downgrade_amount"] <= 0:
-        return []
-
-    cutoff_date = datetime.now(timezone.utc) - timedelta(days=config["downgrade_months"] * 30)
-
-    customers = db.query(Customer).filter(
-        Customer.tier.in_(["gold", "diamond"]),
-        Customer.last_purchase_date < cutoff_date
-    ).all()
-
-    return customers

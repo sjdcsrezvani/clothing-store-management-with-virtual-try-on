@@ -27,6 +27,7 @@ from models import Customer, SmsMessage, SmsTemplate, to_english_digits
 from services._common import get_setting_int, is_archived_customer, jalali_str, marketing_opt_in
 from services.customers import TAG_LABELS, TAG_PALETTE, parse_tags
 from services.sms import queue_sms
+from services.tier import TIER_LABELS
 from services.sms_templates import (
     CATEGORY_LABELS,
     SOURCE_LABELS,
@@ -42,8 +43,6 @@ from services.sms_templates import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_LIMIT = 100
-
-TIER_LABELS = {"silver": "نقره‌ای", "gold": "طلایی", "diamond": "الماس"}
 
 MODE_LABELS = {
     "all": "همه مشتریان رضایت‌دار",

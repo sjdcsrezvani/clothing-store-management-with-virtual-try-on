@@ -81,8 +81,11 @@ from services.security import (
 from services.store import invalidate_store_cache, get_store
 from services.templating import templates
 from services.tier import (
+    apply_tier_downgrades,
+    downgrade_candidates,
     get_tier_config,
     get_customers_for_birthday_check,
+    tier_downgrade_rule,
     tier_up_candidates,
     tier_up_marker_key,
     tier_up_sent_rank,
@@ -752,6 +755,9 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse(request, "admin/settings.html", {
         "settings": settings,
         "tier_config": tier_config,
+        # The one answer to «is the downgrade rule in use», shared with the
+        # review page and the dashboard card rather than re-derived here.
+        "downgrade_rule": tier_downgrade_rule(db),
         "store": get_store(db),
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
@@ -1334,27 +1340,64 @@ async def admin_follow_ups_send(request: Request, template_id: int = Form(0),
     return RedirectResponse(url=f"/admin/follow-ups?msg={message}", status_code=303)
 
 
-@router.post("/check-downgrades", response_class=HTMLResponse)
-async def admin_check_downgrades(request: Request, db: Session = Depends(get_db)):
-    """Manually trigger tier downgrade check."""
+@router.get("/tier-downgrades", response_class=HTMLResponse)
+async def admin_tier_downgrades(request: Request, db: Session = Depends(get_db)):
+    """Who the downgrade rule would take a level from, before anything happens.
+
+    Replaces the dashboard's one-click sweep. That button ran the same check the
+    night clock already ran, told nobody who it had touched, and reported «۰»
+    when the rule was simply switched off — so this page exists to make the
+    decision visible, and to be the only way it is ever made.
+    """
     guard = require_html_role(request, db, "owner")
     if not hasattr(guard, "role"):
         return guard
-    
-    from services.tier import get_tier_config, check_tier_downgrade, get_customers_for_downgrade_check
-    
-    config = get_tier_config(db)
-    customers = get_customers_for_downgrade_check(db)
-    downgraded = 0
-    
-    for customer in customers:
-        was_downgraded = check_tier_downgrade(customer, config, db)
-        if was_downgraded:
-            downgraded += 1
-    
-    db.commit()
-    
-    return RedirectResponse(url="/admin?downgrade_msg=" + str(downgraded), status_code=303)
+
+    plan = downgrade_candidates(db)
+    return templates.TemplateResponse(request, "admin/tier_downgrades.html", {
+        "rows": plan["rows"],
+        "rule": {"months": plan["months"], "enabled": plan["enabled"],
+                 "months_label": plan["months_label"]},
+        "skipped_archived": plan["skipped_archived"],
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
+        "fmt": fmt,
+        "jalali_str": jalali_str,
+    })
+
+
+@router.post("/tier-downgrades/apply", response_class=HTMLResponse)
+async def admin_tier_downgrades_apply(
+    request: Request, customer_ids: list[int] = Form([]), db: Session = Depends(get_db)
+):
+    """Demote the customers the owner ticked, and nothing else.
+
+    The ids are the only thing taken from the form: who still qualifies is
+    decided again here, because the page can sit open while the shop keeps
+    trading, and a purchase in the meantime is exactly what the rule says
+    protects the tier.
+    """
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+
+    wanted = [int(value) for value in customer_ids if str(value).strip().isdigit()]
+    if not wanted:
+        return RedirectResponse(
+            url="/admin/tier-downgrades?err=هیچ مشتری‌ای انتخاب نشده است.", status_code=303)
+
+    result = apply_tier_downgrades(db, wanted)
+    names = "، ".join(row["customer"].full_name for row in result["demoted"][:20])
+    log_action(db, "tier_downgrade",
+               f"{result['demoted_count']} مشتری کاهش سطح یافتند"
+               + (f": {names}" if names else ""),
+               request=request, target_type="customer")
+
+    message = f"سطح {result['demoted_count']} مشتری یک پله پایین آمد."
+    if result["refused"]:
+        message += (f" {result['refused']} مورد در این فاصله خرید کرده یا دیگر واجد شرایط"
+                    f" نیست — سطحشان دست‌نخورده ماند.")
+    return RedirectResponse(url=f"/admin/tier-downgrades?msg={message}", status_code=303)
 
 
 TIER_UP_SMS_LIMIT = 10

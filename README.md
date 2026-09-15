@@ -125,6 +125,16 @@ theme, so it matches light, dark and high-contrast alike.
   Archived customers leave the list, the counts and the marketing sends, and
   re-appear only under `?status=archived`. Marketing (birthday and campaign SMS)
   skips archived customers and anyone who opted out.
+- **📉 کاهش سطح مشتریان** (`/admin/tier-downgrades`) — the only way a customer is
+  ever demoted, and it is deliberate. The rule is «no purchase in N months»
+  (N is a single setting, now read only by this page); the page lists everyone it
+  matches — longest quiet first, with the reason on each row — and nothing moves
+  until you tick who and confirm. A nightly sweep used to demote on its own while
+  nobody watched; it is gone, so the rule no longer fires behind the owner's back
+  (and the old lifetime-spend gate, which could demote a customer who had bought
+  *yesterday*, went with it). The list is re-checked at the moment of the click,
+  so a customer who bought while the form was open is not touched, and every
+  demotion is written to **گزارش عملیات**.
 
 ## Campaigns (کمپین پیامکی)
 
@@ -421,8 +431,11 @@ date picker's calendar maths and constraints, the customer club's filters,
 birthday targets and archive-instead-of-delete rule, the SMS log's record of what
 each message was built from and the verdict a replay gives it, the follow-up
 review page's rule that it sends only what was ticked and loses politely to a
-sweep that went first, and the SMS manager's usage filter and date order. They
-use a throwaway SQLite database — never your real data.
+sweep that went first, the SMS manager's usage filter and date order, and the
+downgrade rule's promise that nothing is demoted without a tick and a
+confirmation, that a customer who bought while the form was open is turned away,
+and that no nightly job runs it. They use a throwaway SQLite database — never
+your real data.
 
 Continuous integration runs this suite plus `compileall`, refuses a tracked
 `.env`, `.db` or `.log` file, and refuses any commit **message** that credits a

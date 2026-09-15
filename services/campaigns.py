@@ -33,6 +33,7 @@ from services._common import (
     jalali_str,
     marketing_opt_in,
 )
+from services.tier import TIER_LABELS
 
 # ── states ────────────────────────────────────────────────────────────────────
 
@@ -47,8 +48,6 @@ STATUS_LABELS = {
     STATUS_EXPIRED: "منقضی",
     STATUS_INACTIVE: "غیرفعال",
 }
-
-TIER_LABELS = {"silver": "نقره‌ای", "gold": "طلایی", "diamond": "الماس"}
 
 # How a customer came to hold a campaign.
 SOURCE_LABELS = {"sms": "پیامک", "manual": "دستی", "checkout": "صندوق"}
