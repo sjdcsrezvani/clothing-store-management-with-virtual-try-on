@@ -4,8 +4,9 @@ FastAPI + SQLite point-of-sale for a local kids' & teens' clothing shop:
 products & variants with barcode tags, checkout with referral / tier / birthday
 discounts, customer loyalty (points, gold/diamond tiers, and a shell built for the
 role that opens it — a role-aware sidebar and topbar, one name per page with a
-trail back to where it lives, and a refusal that reads like a page rather than a
-payload), an SMS suite (template manager, manual sends,
+trail back to where it lives, a refusal that reads like a page rather than a
+payload, and ten palettes every page takes its colours from, down to the charts,
+the photo panels and the lightbox), an SMS suite (template manager, manual sends,
 welcome / birthday / tier-up / campaign messages, and a send log whose entries
 can be replayed), virtual try-on previews on the child's picture, invoices
 (HTML + Persian PDF), a deep analytics suite, and accounting-lite: credit sales
