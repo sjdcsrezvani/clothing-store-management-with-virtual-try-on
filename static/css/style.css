@@ -928,6 +928,37 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 }
 .login-card h2 { margin-bottom: 1.2rem; }
 
+/* Error page (403 / 404). A refusal and a wrong address are pages now, so they
+   get a card like the login's instead of a raw JSON payload with no way back.
+   The code is data, not decoration, so it keeps the number face. */
+.error-page {
+  max-width: 560px;
+  margin: 3rem auto;
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 2rem;
+  text-align: center;
+  box-shadow: var(--shadow-hover);
+  border-inline-start: 4px solid var(--candy);
+}
+.error-page .error-code {
+  font-size: 3rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--candy-dark);
+}
+.error-page h2 { margin: 0.6rem 0 0.8rem; }
+.error-page .error-message { color: var(--ink); line-height: 1.9; }
+.error-page .error-role { color: var(--ink-soft); font-size: 0.9rem; }
+.error-page .error-detail { font-size: 0.85rem; }
+.error-page .error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-top: 1.4rem;
+}
+
 /* Danger zone */
 .danger-zone {
   border: 2px dashed #FF4757 !important;

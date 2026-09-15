@@ -96,6 +96,10 @@
         </form>
     {% endif %}
     <a href="/sales/new" class="btn btn-success">🛒 فروش جدید</a>
+    {# Only for whoever may open one: a cashier reading their own invoice used to
+       be offered a dashboard button that answered with a refusal. #}
+    {% if nav_home == '/admin' %}
     <a href="/admin" class="btn btn-ghost">📊 داشبورد</a>
+    {% endif %}
 </div>
 {% endblock %}

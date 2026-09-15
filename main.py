@@ -1,7 +1,9 @@
 import asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from sqlalchemy import inspect, text
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -10,9 +12,10 @@ from database import engine, Base, SessionLocal
 from routers import customers, api, admin, products, sales, analytics, campaigns, accounting, sms
 from routers.clothes_images import admin_router as clothes_admin_router, api_router as clothes_api_router
 from routers.sms_device import gateway_app as _sms_gateway_app  # noqa: F401  (supervised on :8101 by desktop_entry)
-from services.security import CSRFMiddleware
+from services.security import CSRFMiddleware, PERMISSION_DENIED_DETAIL
 from services.store import get_store
 from services.scheduler import scheduler_task
+from services.templating import templates
 from migrations import upgrade
 
 
@@ -383,6 +386,45 @@ app.add_middleware(
     same_site="strict",
     https_only=False,
 )
+
+# ── a refusal on the shop's own pages is a page ───────────────────────────────
+# There was no exception handler in the app at all, so an owner-only page opened
+# by a manager — or a bookmark to a page that has moved — answered with FastAPI's
+# raw {"detail": …} in the browser, which tells the reader nothing about what
+# happened or what to do next. The API keeps its JSON contract, because the phone
+# and any script depend on it; only the pages under /admin and /sales are turned
+# into pages.
+
+_PAGE_ERRORS = {
+    403: ("این بخش برای شما باز نیست",
+          "این صفحه برای سطحی بالاتر از حساب شما باز می‌شود. اگر فکر می‌کنید باید به آن دسترسی "
+          "داشته باشید، از مالک فروشگاه بخواهید سطح حساب شما را تغییر دهد."),
+    404: ("این صفحه پیدا نشد",
+          "ممکن است نشانی را اشتباه وارد کرده باشید یا این صفحه جابه‌جا شده باشد. "
+          "از منوی کنار می‌توانید به بخش‌های دیگر بروید."),
+}
+
+
+# Registered on Starlette's class rather than FastAPI's: a URL that matches no
+# route is raised by the router as the former, and an owner-only route raises the
+# latter (which subclasses it), so one handler covers both.
+@app.exception_handler(StarletteHTTPException)
+async def app_error_page(request: Request, exc: StarletteHTTPException):
+    if exc.status_code in _PAGE_ERRORS and request.url.path.startswith(("/admin", "/sales")):
+        title, message = _PAGE_ERRORS[exc.status_code]
+        # The framework's «Not Found» and the app's generic refusal are not
+        # sentences to show a shopkeeper: the page already says both, in Persian
+        # and in full. Anything else the route chose to say is still printed.
+        quiet = {"", "not found", PERMISSION_DENIED_DETAIL.strip().lower()}
+        detail = "" if str(exc.detail).strip().lower() in quiet else exc.detail
+        return templates.TemplateResponse(
+            request, "admin/error.html",
+            {"status_code": exc.status_code, "error_title": title,
+             "error_message": message, "detail": detail},
+            status_code=exc.status_code,
+        )
+    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 

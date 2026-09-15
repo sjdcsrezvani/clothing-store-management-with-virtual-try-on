@@ -83,7 +83,11 @@
 </div>
 
 <nav class="admin-nav">
+    {# فروش جدید already takes a cashier where they are going; a داشبورد button
+       here would only refuse them. #}
+    {% if nav_home == '/admin' %}
     <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
+    {% endif %}
     <a href="/sales/new" class="btn btn-primary">🛒 فروش جدید</a>
 </nav>
 {% endblock %}

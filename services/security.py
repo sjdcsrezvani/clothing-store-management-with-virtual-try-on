@@ -80,6 +80,27 @@ def check_admin_password(db, password: str) -> bool:
 
 ROLE_ORDER = {"cashier": 1, "manager": 2, "owner": 3}
 
+# What each level is called in Persian, for the pages that name the viewer: the
+# dashboard's own title and the 403 page both say whose view they are showing.
+ROLE_LABELS = {"cashier": "کارمند", "manager": "مدیر", "owner": "مالک"}
+
+
+# The sentence every refused action carries. It lives here so the 403 page can
+# recognise it and stay quiet: the page says the same thing in its own words, so
+# printing the raw detail under them would only repeat it.
+PERMISSION_DENIED_DETAIL = "شما اجازه انجام این عملیات را ندارید."
+
+
+def role_allows(role: str | None, minimum_role: str) -> bool:
+    """Whether a role may open something that asks for ``minimum_role``.
+
+    One comparison, in one place: the route guards, the sidebar and the
+    dashboard's cards all have to answer this question the same way, or a link
+    is drawn for somebody who will be refused at the door. An unknown role or an
+    unknown requirement is never allowed.
+    """
+    return ROLE_ORDER.get(role or "", 0) >= ROLE_ORDER.get(minimum_role, 99)
+
 
 def _session_staff_user(db, request: Request):
     """Return the active staff account for this session, with legacy owner fallback."""
@@ -100,8 +121,8 @@ def current_staff_user(db, request: Request):
 def require_role(request: Request, db, minimum_role: str = "cashier"):
     """Require an active staff account whose role meets the requested level."""
     user = _session_staff_user(db, request)
-    if not user or ROLE_ORDER.get(user.role, 0) < ROLE_ORDER.get(minimum_role, 99):
-        raise HTTPException(status_code=403, detail="شما اجازه انجام این عملیات را ندارید.")
+    if not user or not role_allows(user.role, minimum_role):
+        raise HTTPException(status_code=403, detail=PERMISSION_DENIED_DETAIL)
     return user
 
 

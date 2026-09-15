@@ -56,6 +56,24 @@ The danger zone (database reset) lives on `/admin/settings`, owner-only like the
 route it posts to; on the dashboard it was a trap that answered a manager with
 raw JSON.
 
+## The shell around the pages
+
+The sidebar is data, not markup. `services.navigation.NAV_SECTIONS` is one list
+of destinations, each naming the `min_role` of the page behind it, and the shell
+draws only what the viewer may open — a cashier sees «فروش جدید» and «تاریخچه
+فروش» and nothing else, a manager loses the owner-only tools, and a section whose
+every item is hidden disappears with them rather than leaving a bare heading.
+The check is the same `role_allows` the dashboard's cards use, so the sidebar
+cannot offer a door the route will refuse. The bottom navs on the pages a cashier
+can open (the invoice, the sales list) follow the same rule: their داشبورد button
+is drawn only when the viewer may open one.
+
+A refusal is a page. A 403 or a missing address under `/admin` or `/sales` now
+renders `templates/admin/error.html` in Persian — what happened, which role the
+viewer holds, and a way back to a page that role can use — instead of FastAPI's
+raw `{"detail": …}`. The `/api/*` routes keep their JSON contract, so the phone
+app and any script are unaffected.
+
 ## Accounting features (admin panel)
 
 - **📒 حساب نسیه** (`/admin/credit`) — sell on credit at checkout and collect

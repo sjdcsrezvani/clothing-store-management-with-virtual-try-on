@@ -45,24 +45,17 @@ from services.customers import customer_overview
 from services.inventory import stock_alerts
 from services.pos_reconciliation import unresolved_transactions
 from services.reporting import canonical_report
-from services.security import ROLE_ORDER
+from services.security import ROLE_LABELS, role_allows
 from services.sms import device_status_label
 from services.sms_send import sms_queue_snapshot
 from services.sms_triggers import follow_up_due_count
 from services.tier import downgrade_candidates, tier_up_candidates
-
-ROLE_LABELS = {"cashier": "کارمند", "manager": "مدیر", "owner": "مالک"}
 
 TOP_PRODUCT_LIMIT = 5
 
 # How the two shop spans are named when a figure is compared against them.
 YESTERDAY_LABEL = "همین بازه دیروز"
 LAST_MONTH_LABEL = "همین بازه ماه گذشته"
-
-
-def _allows(role: str, minimum: str) -> bool:
-    """Whether ``role`` may be shown something built for ``minimum``."""
-    return ROLE_ORDER.get(role, 0) >= ROLE_ORDER.get(minimum, 99)
 
 
 def _money(amount) -> str:
@@ -489,7 +482,7 @@ def _top_rows(numbers: _Numbers, role: str) -> list[dict]:
     Chosen here rather than in the template: a row simply has no profit key when
     the viewer may not see it, so no template edit can put it back.
     """
-    owner = _allows(role, "owner")
+    owner = role_allows(role, "owner")
     rows = []
     for position, product in enumerate(numbers.top_products, start=1):
         rows.append({
@@ -516,13 +509,13 @@ def dashboard_overview(db: Session, *, role: str = "manager") -> dict:
         section = {"key": key, "title": title, "eyebrow": eyebrow, "kind": kind,
                    "cards": [], "rows": [], "show_profit": False}
         if kind == "top":
-            if not _allows(role, "manager"):
+            if not role_allows(role, "manager"):
                 continue
             section["rows"] = _top_rows(numbers, role)
-            section["show_profit"] = _allows(role, "owner")
+            section["show_profit"] = role_allows(role, "owner")
         else:
             for spec in CARDS:
-                if spec["section"] != key or not _allows(role, spec["min_role"]):
+                if spec["section"] != key or not role_allows(role, spec["min_role"]):
                     continue
                 card = spec["build"](numbers, role)
                 if card is None:

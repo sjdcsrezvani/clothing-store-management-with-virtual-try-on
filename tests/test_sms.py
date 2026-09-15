@@ -70,7 +70,6 @@ STYLE_CSS = (ROOT / "static" / "css" / "style.css").read_text()
 SMS_HTML = (ROOT / "templates" / "admin" / "sms.html").read_text()
 HISTORY_HTML = (ROOT / "templates" / "admin" / "sms_history.html").read_text()
 SETTINGS_HTML = (ROOT / "templates" / "admin" / "settings.html").read_text()
-BASE_HTML = (ROOT / "templates" / "base.html").read_text()
 
 _counter = itertools.count(1)
 
@@ -1188,8 +1187,15 @@ def test_settings_hands_sms_over_to_the_new_page():
     assert "sms_pattern_welcome" not in SETTINGS_HTML
     assert "campaign_sms_limit" not in SETTINGS_HTML
     assert 'href="/admin/sms"' in SETTINGS_HTML
-    # The sidebar exposes the page next to the campaigns it sends for.
-    assert 'href="/admin/sms" data-nav="sms"' in BASE_HTML
+    # The sidebar exposes the page next to the campaigns it sends for. The list
+    # itself now lives in Python — services/navigation.py — because every item
+    # has to name the role that may open it; the shell draws what it is handed.
+    from services.navigation import NAV_SECTIONS
+    sms_items = [item for section in NAV_SECTIONS for item in section["items"]
+                 if item["href"] == "/admin/sms"]
+    assert sms_items, "the SMS page left the sidebar"
+    assert sms_items[0]["key"] == "sms"
+    assert sms_items[0]["min_role"] == "manager"
 
 
 def test_campaign_send_is_refused_when_the_template_is_switched_off(client, authed, db_session):

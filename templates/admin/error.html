@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ error_title }} — {{ store.name }}{% endblock %}
+{% block content %}
+
+{# A refusal or a wrong address on one of the shop's own pages is a page, not a
+   payload. This is what a manager saw as raw JSON before: opening an owner-only
+   link answered `{"detail": "شما اجازه انجام این عملیات را ندارید."}` in the
+   browser, which says nothing about what happened or what to do next. #}
+<div class="error-page">
+    <div class="error-code tnum" aria-hidden="true">{{ status_code }}</div>
+    <h2>{{ error_title }}</h2>
+    <p class="error-message">{{ error_message }}</p>
+
+    {# Which account is asking, so the reader can tell a wrong role from a wrong
+       password — and so the answer is not a mystery when they call the owner. #}
+    {% if status_code == 403 and viewer_role_label %}
+    <p class="error-role">شما با نقش <strong>{{ viewer_role_label }}</strong> وارد شده‌اید.</p>
+    {% endif %}
+
+    {% if detail %}
+    <p class="error-detail muted">{{ detail }}</p>
+    {% endif %}
+
+    <div class="error-actions">
+        <a href="{{ nav_home }}" class="btn btn-primary">بازگشت به {{ nav_home_label }}</a>
+        <button type="button" class="btn btn-ghost" onclick="if (history.length > 1) { history.back(); } else { window.location.href = '{{ nav_home }}'; }">بازگشت به صفحه قبل</button>
+    </div>
+</div>
+
+{% endblock %}

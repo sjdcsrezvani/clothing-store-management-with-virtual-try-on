@@ -14,13 +14,31 @@ from services._common import (
     jalali_str,
 )
 from services.customers import customer_context_processor
-from services.security import csrf_context_processor
+from services.navigation import home_for, home_label_for, navigation_for
+from services.security import ROLE_LABELS, csrf_context_processor
 from services.store import store_context_processor
 from services.themes import get_theme
 
 
 def theme_context_processor(request) -> dict:
     return {"theme": get_theme()}
+
+
+def navigation_context_processor(request) -> dict:
+    """The sidebar, already filtered for whoever is looking.
+
+    The shell draws what it is handed, exactly as the dashboard does, so a
+    template edit cannot add a link back for a role that may not open it. The
+    role comes from the session — the same source the sidebar has always read —
+    while the routes keep asking the account itself, which is the authority.
+    """
+    role = request.session.get("staff_role")
+    return {
+        "nav_sections": navigation_for(role),
+        "nav_home": home_for(role),
+        "nav_home_label": home_label_for(role),
+        "viewer_role_label": ROLE_LABELS.get(role or "", ""),
+    }
 
 
 def static_version_context_processor(request) -> dict:
@@ -40,6 +58,7 @@ templates = Jinja2Templates(
         customer_context_processor,
         theme_context_processor,
         static_version_context_processor,
+        navigation_context_processor,
     ],
 )
 
