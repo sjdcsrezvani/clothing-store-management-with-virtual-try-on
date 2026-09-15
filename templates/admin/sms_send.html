@@ -1,22 +1,16 @@
 {% extends "base.html" %}
-{% block title %}ارسال پیامک — {{ store.name }}{% endblock %}
 {% block content %}
 
-<div class="page-heading product-page-heading">
-    <div>
-        <div class="eyebrow">بازاریابی / پیامک / ارسال</div>
-        <h2>ارسال پیامک</h2>
-        <p>
-            یک قالب انتخاب کنید، مخاطب‌ها را مشخص کنید و پیش‌نمایش بگیرید.
-            تا وقتی «ارسال» را نزنید هیچ پیامکی در صف قرار نمی‌گیرد؛ تعداد دقیق مخاطب‌ها هم قبل از ارسال نشان داده می‌شود.
-        </p>
-    </div>
-    <div class="admin-nav">
-        <a href="/admin/sms" class="btn btn-ghost">قالب‌ها</a>
+{% set page_description %}
+یک قالب انتخاب کنید، مخاطب‌ها را مشخص کنید و پیش‌نمایش بگیرید. تا وقتی «ارسال» را نزنید هیچ پیامکی در صف قرار نمی‌گیرد؛ تعداد دقیق مخاطب‌ها هم قبل از ارسال نشان داده می‌شود.
+{% endset %}
+{% set heading_class = 'page-heading product-page-heading' %}
+{% set page_actions %}
+<a href="/admin/sms" class="btn btn-ghost">قالب‌ها</a>
         <a href="/admin/sms/history" class="btn btn-ghost">تاریخچه</a>
         <a href="/admin/campaigns" class="btn btn-ghost">کمپین‌ها</a>
-    </div>
-</div>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 {% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
 {% if error %}<div class="alert alert-error" role="alert">⚠️ {{ error }}</div>{% endif %}

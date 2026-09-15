@@ -1,22 +1,18 @@
 {% extends "base.html" %}
-{% block title %}{% if edit_mode %}ویرایش کمپین{% else %}کمپین جدید{% endif %} — {{ store.name }}{% endblock %}
 {% block content %}
 
-<div class="page-heading product-page-heading">
-    <div>
-        <div class="eyebrow">بازاریابی / کمپین‌ها / {% if edit_mode %}ویرایش{% else %}کمپین جدید{% endif %}</div>
-        <h2>{% if edit_mode %}ویرایش کمپین: {{ campaign.name }}{% else %}کمپین جدید{% endif %}</h2>
-        <p>
-            کد تخفیف در صندوق اعمال می‌شود؛ مشتریانی که کمپین به آن‌ها اختصاص یافته تخفیف را خودکار
-            می‌گیرند. بازه خالی یعنی این کمپین محدودیت تاریخ ندارد.
-        </p>
-    </div>
-    <div class="admin-nav">
-        {% if edit_mode %}<a href="/admin/campaigns/{{ campaign.id }}" class="btn btn-ghost">گزارش کمپین</a>{% endif %}
+{% set page_description %}
+کد تخفیف در صندوق اعمال می‌شود؛ مشتریانی که کمپین به آن‌ها اختصاص یافته تخفیف را خودکار می‌گیرند. بازه خالی یعنی این کمپین محدودیت تاریخ ندارد.
+{% endset %}
+{% set page_title %}
+{% if edit_mode %}ویرایش کمپین: {{ campaign.name }}{% else %}کمپین جدید{% endif %}
+{% endset %}
+{% set heading_class = 'page-heading product-page-heading' %}
+{% set page_actions %}
+{% if edit_mode %}<a href="/admin/campaigns/{{ campaign.id }}" class="btn btn-ghost">گزارش کمپین</a>{% endif %}
         <a href="/admin/campaigns" class="btn btn-ghost">همه کمپین‌ها</a>
-        <a href="/admin" class="btn btn-ghost">داشبورد</a>
-    </div>
-</div>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 {% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
 {% if error %}<div class="alert alert-error" role="alert">⚠️ {{ error }}</div>{% endif %}

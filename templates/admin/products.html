@@ -1,18 +1,15 @@
 {% extends "base.html" %}
-{% block title %}مدیریت محصولات — {{ store.name }}{% endblock %}
 {% block content %}
-<div class="page-heading product-page-heading">
-    <div>
-        <div class="eyebrow">فروشگاه / موجودی</div>
-        <h2>مدیریت محصولات</h2>
-        <p>محصولات، تنوع‌ها، قیمت و موجودی را از یک صفحه مدیریت کنید.</p>
-    </div>
-    <div class="admin-nav">
-        <a href="/admin/products/add" class="btn btn-primary">افزودن محصول</a>
+{% set page_description %}
+محصولات، تنوع‌ها، قیمت و موجودی را از یک صفحه مدیریت کنید.
+{% endset %}
+{% set heading_class = 'page-heading product-page-heading' %}
+{% set page_actions %}
+<a href="/admin/products/add" class="btn btn-primary">افزودن محصول</a>
         <a href="/admin/barcodes/print" class="btn btn-ghost">چاپ تگ</a>
         <a href="/admin/settings/tags" class="btn btn-ghost">تنظیمات تگ</a>
-    </div>
-</div>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 <div class="stats-grid products-kpi" aria-label="خلاصه محصولات">
     <div class="stat-card accent-sky">
@@ -155,11 +152,6 @@
     </nav>
     {% endif %}
 </section>
-
-<nav class="admin-nav">
-    <a href="/admin" class="btn btn-ghost">بازگشت به داشبورد</a>
-</nav>
-
 <script>
 document.getElementById('barcode-scanner').addEventListener('keydown', function (event) {
     if (event.key === 'Enter') {

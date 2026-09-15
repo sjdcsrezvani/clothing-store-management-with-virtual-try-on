@@ -1,16 +1,14 @@
 {% extends "base.html" %}
-{% block title %}👗 پرو مجازی — {{ store.name }}{% endblock %}
 {% block content %}
 
-<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
-    <span style="font-size: 2rem;">👗</span>
-    <h2 style="margin: 0;">پرو مجازی — Virtual Try-On</h2>
-    <a href="/sales/new" onclick="return openNewSaleWindow();" rel="noopener" class="btn btn-success btn-sm" style="margin-right: auto;">➕ فروش جدید</a>
+{% set page_actions %}
+<a href="/sales/new" onclick="return openNewSaleWindow();" rel="noopener" class="btn btn-success btn-sm">➕ فروش جدید</a>
     <form method="post" action="/admin/try-on/clear"
           onsubmit="return confirm('عکس کودک و محصولات فعلی پاک می‌شوند. ادامه؟');">
         <button type="submit" class="btn btn-ghost btn-sm">🆕 شروع مشتری جدید</button>
     </form>
-</div>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 {% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
 {% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
@@ -21,7 +19,7 @@
 
         {# ── Kid photo ── #}
         <div class="card">
-            <h3>📸 عکس کودک</h3>
+            <h3>عکس کودک</h3>
             {% if kid_photo_preview %}
             <div style="text-align: center; margin-bottom: 0.8rem;">
                 <img src="{{ kid_photo_preview }}" alt="kid"
@@ -54,7 +52,7 @@
 
         {# ── Barcode scanning ── #}
         <div class="card">
-            <h3>🔲 اسکن بارکد محصولات</h3>
+            <h3>اسکن بارکد محصولات</h3>
             <div style="font-size: 0.85rem; color: var(--ink-soft); margin-bottom: 0.8rem;">
                 📱 بارکدها را با گوشی اسکن کنید یا دستی وارد کنید
             </div>
@@ -98,7 +96,7 @@
 
         {# ── Generate ── #}
         <div class="card" style="background: #FFFAF5;">
-            <h3>✨ تولید تصویر هوش مصنوعی</h3>
+            <h3>تولید تصویر هوش مصنوعی</h3>
             <form id="gen-form" method="post" action="/admin/try-on/generate">
                 <div class="form-group">
                     <label for="mode">👗 نوع پرو</label>
@@ -169,7 +167,7 @@
         {# ── Generated result ── #}
         {% if last_gen_url %}
         <div class="card" style="text-align: center; border-color: var(--candy);">
-            <h3>🖼️ تصویر نهایی (با لوگو)</h3>
+            <h3>تصویر نهایی (با لوگو)</h3>
             {% if last_gen_engine %}
             <div style="font-size:0.85rem; color:var(--ink-soft); margin-bottom:0.5rem; padding:0.3rem 0.6rem; background:#FFFAF5; border-radius:6px; display:inline-block;">
                 🤖 مدل: {{ last_gen_engine }}
@@ -240,11 +238,6 @@
     </div>
     <div style="position:absolute;top:1rem;right:1rem;color:#fff;font-size:2rem;cursor:pointer;" onclick="closeLightbox()">✕</div>
 </div>
-
-<nav class="admin-nav" style="margin-top: 1.5rem;">
-    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
-</nav>
-
 <script>
 function openLightbox(src) {
     document.getElementById('lightbox-img').src = src;

@@ -1,22 +1,18 @@
 {% extends "base.html" %}
-{% block title %}مشتریان — {{ store.name }}{% endblock %}
 {% block content %}
 {% set filter_qs = '&tier=' ~ tier ~ '&status=' ~ status ~ '&tag=' ~ tag ~ '&sort=' ~ sort
     ~ '&search=' ~ (search|urlencode) %}
 
-<div class="page-heading product-page-heading">
-    <div>
-        <div class="eyebrow">فروشگاه / مشتریان</div>
-        <h2>مشتریان</h2>
-        <p>پرونده هر مشتری: خریدها، امتیاز، بدهی و تولدها. برای دیدن پرونده کامل روی نام بزنید.</p>
-    </div>
-    <div class="admin-nav">
-        <a href="/sales/new" class="btn btn-ghost">فروش جدید</a>
+{% set page_description %}
+پرونده هر مشتری: خریدها، امتیاز، بدهی و تولدها. برای دیدن پرونده کامل روی نام بزنید.
+{% endset %}
+{% set heading_class = 'page-heading product-page-heading' %}
+{% set page_actions %}
+<a href="/sales/new" class="btn btn-ghost">فروش جدید</a>
         <a href="/admin/credit" class="btn btn-ghost">حساب نسیه</a>
         <a href="/admin/campaigns" class="btn btn-ghost">کمپین پیامکی</a>
-        <a href="/admin" class="btn btn-ghost">داشبورد</a>
-    </div>
-</div>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 {% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
 {% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}

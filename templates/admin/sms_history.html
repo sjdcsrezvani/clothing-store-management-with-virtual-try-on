@@ -1,22 +1,16 @@
 {% extends "base.html" %}
-{% block title %}تاریخچه پیامک — {{ store.name }}{% endblock %}
 {% block content %}
 {% set filter_qs = '&status=' ~ status ~ '&source=' ~ source ~ '&order=' ~ order ~ '&search=' ~ (search|urlencode) %}
 
-<div class="page-heading product-page-heading">
-    <div>
-        <div class="eyebrow">بازاریابی / پیامک / تاریخچه</div>
-        <h2>تاریخچه پیامک‌ها</h2>
-        <p>
-            هر پیامکی که این فروشگاه فرستاده — خودکار یا دستی — همین‌جا با متن دقیق لحظه‌ی ارسال ثبت شده است.
-            وضعیت «در صف» یعنی درگاه هنوز آن را نبرده.
-        </p>
-    </div>
-    <div class="admin-nav">
-        <a href="/admin/sms" class="btn btn-ghost">قالب‌ها</a>
+{% set page_description %}
+هر پیامکی که این فروشگاه فرستاده — خودکار یا دستی — همین‌جا با متن دقیق لحظه‌ی ارسال ثبت شده است. وضعیت «در صف» یعنی درگاه هنوز آن را نبرده.
+{% endset %}
+{% set heading_class = 'page-heading product-page-heading' %}
+{% set page_actions %}
+<a href="/admin/sms" class="btn btn-ghost">قالب‌ها</a>
         <a href="/admin/sms/send" class="btn btn-primary">ارسال پیامک</a>
-    </div>
-</div>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 {% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
 {% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}

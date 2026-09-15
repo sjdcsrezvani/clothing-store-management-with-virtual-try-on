@@ -31,12 +31,15 @@ def test_print_layout_is_light_and_readable_for_all_themes():
     assert ".invoice, .invoice .invoice-header" in css
 
 
-def test_theme_shell_has_distinct_tokens_and_unclipped_topbar_actions():
+def test_theme_shell_has_distinct_tokens_and_unclipped_topbar_actions(client, authed):
     base = (ROOT / "templates/base.html").read_text()
     css = (ROOT / "static/css/style.css").read_text()
     assert 'class="topbar-actions"' in base
-    assert 'class="quick-sale"' in base
-    assert 'class="topbar-admin"' in base
+    # The two global actions are drawn from the registry, so their classes are
+    # asserted where they render, not in the template's source.
+    page = client.get("/admin").text
+    assert 'class="quick-sale"' in page
+    assert 'class="topbar-admin"' in page
     assert 'id="icon-cart"' in base
     assert 'id="icon-settings"' in base
     assert 'class="sidebar-brand-icon"' not in base

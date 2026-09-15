@@ -1,10 +1,9 @@
 {% extends "base.html" %}
-{% block title %}اطلاعات مالک و قرارداد{% endblock %}
 {% block content %}
-<div class="page-heading">
-  <div><span class="eyebrow">اطلاعات حقوقی</span><h2>اطلاعات مالک و امضاکننده</h2><p>این اطلاعات در قراردادهای استخدامی و رسیدهای حقوقی استفاده می‌شود.</p></div>
-  <a class="btn btn-ghost" href="/admin/staff">بازگشت به کارکنان</a>
-</div>
+{% set page_description %}
+این اطلاعات در قراردادهای استخدامی و رسیدهای حقوقی استفاده می‌شود.
+{% endset %}
+{% include 'partials/page_header.html' %}
 {% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
 {% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
 <div class="card">

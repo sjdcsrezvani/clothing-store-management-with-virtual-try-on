@@ -41,6 +41,7 @@ from services.campaigns import (
     resolve_campaign_code,
     restore_campaign_after_refund,
 )
+from tests import ui
 from tests.conftest import csrf_token
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -484,8 +485,9 @@ def test_the_campaign_pages_use_the_catalogue_design_language():
     form = template_text("admin/campaign_form.html")
 
     for page in (listing, detail):
-        assert "page-heading product-page-heading" in page
-        assert 'class="admin-nav"' in page
+        assert ui.composes_header(page)
+        assert f"{{% set heading_class = '{ui.PAGE_HEADING}' %}}" in page
+        assert "page_actions" in page
         assert '<th scope="col"' in page
         assert "table-scroll" in page
     assert "stats-grid campaign-kpi" in listing

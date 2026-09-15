@@ -1,11 +1,7 @@
 {% extends "base.html" %}
-{% block title %}🧾 صندوق — {{ store.name }}{% endblock %}
 {% block content %}
 
-<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1rem; flex-wrap: wrap;">
-    <span style="font-size: 2rem;">🧾</span>
-    <h2 style="margin: 0;">صندوق</h2>
-</div>
+{% include 'partials/page_header.html' %}
 
 {% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
 {% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
@@ -66,10 +62,4 @@
         <div class="stat-value tnum">{{ fmt(register.closing) }} ت</div>
         <div class="stat-sub">شروع: {{ fmt(register.opening) }} ت</div>
     </div>
-</div>
-
-<nav class="admin-nav">
-    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
-    <a href="/admin/accounting" class="btn btn-ghost">🧮 سود و زیان</a>
-</nav>
-{% endblock %}
+</div>{% endblock %}

@@ -26,6 +26,7 @@ from services.tier import (
     get_customers_for_birthday_check,
     get_tier_config,
 )
+from tests import ui
 from tests.conftest import csrf_token
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -102,11 +103,12 @@ STYLE_CSS = (ROOT / "static" / "css" / "style.css").read_text()
 
 
 def test_list_uses_the_catalog_design_language():
-    assert 'class="page-heading product-page-heading"' in CUSTOMERS_HTML
-    assert 'class="eyebrow"' in CUSTOMERS_HTML
+    # One shared heading now, so a page states which layout it asks for.
+    assert ui.composes_header(CUSTOMERS_HTML)
+    assert f"{{% set heading_class = '{ui.PAGE_HEADING}' %}}" in CUSTOMERS_HTML
     # The nav lives in the heading, not at the foot of the page.
-    assert CUSTOMERS_HTML.index("admin-nav") < CUSTOMERS_HTML.index("</div>\n\n{% if msg")
-    assert 'class="admin-nav"' in CUSTOMERS_HTML
+    assert "page_actions" in CUSTOMERS_HTML
+    assert '<nav class="admin-nav"' not in CUSTOMERS_HTML
     assert "👥" not in CUSTOMERS_HTML  # the old emoji heading
     # No inline styling survives on the page.
     assert 'style="' not in CUSTOMERS_HTML
@@ -124,7 +126,8 @@ def test_list_table_is_scrollable_accessible_and_has_real_empty_states():
 
 
 def test_profile_page_design_language_and_sections():
-    assert 'class="page-heading product-page-heading"' in PROFILE_HTML
+    assert ui.composes_header(PROFILE_HTML)
+    assert f"{{% set heading_class = '{ui.PAGE_HEADING}' %}}" in PROFILE_HTML
     assert 'class="table-scroll"' in PROFILE_HTML
     assert PROFILE_HTML.count('scope="col"') >= 5
     assert 'class="empty-state"' in PROFILE_HTML

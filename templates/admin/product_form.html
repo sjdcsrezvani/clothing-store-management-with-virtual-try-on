@@ -1,17 +1,16 @@
 {% extends "base.html" %}
-{% block title %}{% if edit_mode %}ویرایش محصول{% else %}افزودن محصول{% endif %} — {{ store.name }}{% endblock %}
 {% block content %}
-<div class="page-heading product-form-heading">
-    <div>
-        <div class="eyebrow">فروشگاه / کاتالوگ</div>
-        <h2>{% if edit_mode %}ویرایش محصول{% else %}افزودن محصول جدید{% endif %}</h2>
-        <p>{% if edit_mode %}مشخصات محصول و تنوع‌های قابل فروش را یکجا مدیریت کنید.{% else %}اطلاعات پایه را وارد کنید و حداقل یک تنوع قابل فروش بسازید.{% endif %}</p>
-    </div>
-    <div class="admin-nav">
-        <a href="/admin/products" class="btn btn-ghost">بازگشت به محصولات</a>
-        {% if edit_mode %}<a href="/admin/barcodes/print" class="btn btn-ghost">چاپ تگ</a>{% endif %}
-    </div>
-</div>
+{% set page_description %}
+{% if edit_mode %}مشخصات محصول و تنوع‌های قابل فروش را یکجا مدیریت کنید.{% else %}اطلاعات پایه را وارد کنید و حداقل یک تنوع قابل فروش بسازید.{% endif %}
+{% endset %}
+{% set page_title %}
+{% if edit_mode %}ویرایش محصول{% else %}افزودن محصول جدید{% endif %}
+{% endset %}
+{% set heading_class = 'page-heading product-form-heading' %}
+{% set page_actions %}
+{% if edit_mode %}<a href="/admin/barcodes/print" class="btn btn-ghost">چاپ تگ</a>{% endif %}
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 {% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
 

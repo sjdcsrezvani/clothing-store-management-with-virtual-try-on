@@ -1,14 +1,9 @@
 {% extends "base.html" %}
-{% block title %}گزارش رویدادهای کسب‌وکار{% endblock %}
 {% block content %}
-<div class="page-heading">
-    <div>
-        <span class="eyebrow">دفتر رویدادهای تراکنشی</span>
-        <h2>رویدادهای کسب‌وکار</h2>
-        <p>تاریخچه ثبت‌شده فروش، پرداخت، موجودی و عملیات مالی.</p>
-    </div>
-    <a href="/admin" class="btn btn-ghost">بازگشت به داشبورد</a>
-</div>
+{% set page_description %}
+تاریخچه ثبت‌شده فروش، پرداخت، موجودی و عملیات مالی.
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 <form method="get" action="/admin/events" class="card form-row">
     <label>نوع موجودیت

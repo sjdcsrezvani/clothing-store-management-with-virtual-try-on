@@ -21,6 +21,7 @@ from services.accounting import (
     list_debts,
     sale_remaining,
 )
+from tests import ui
 from tests.conftest import csrf_token
 from tests.test_sales_money import _confirm_sale, _make_customer
 
@@ -101,11 +102,13 @@ def _debtor(client, db, *, amount=200_000, phone=None, name="بدهکار"):
 # ── presentation contract ────────────────────────────────────────────────────
 
 def test_page_uses_the_catalog_design_language():
-    assert 'class="page-heading product-page-heading"' in CREDIT_HTML
-    assert 'class="eyebrow"' in CREDIT_HTML
-    assert 'class="admin-nav"' in CREDIT_HTML
+    # The heading is the shared one now, so what a page states is which layout it
+    # asks for and that it composes the partial at all.
+    assert ui.composes_header(CREDIT_HTML)
+    assert f"{{% set heading_class = '{ui.PAGE_HEADING}' %}}" in CREDIT_HTML
     # The nav lives in the heading, not at the foot of the page.
-    assert CREDIT_HTML.index("admin-nav") < CREDIT_HTML.index("</div>\n\n{% if msg")
+    assert "page_actions" in CREDIT_HTML
+    assert '<nav class="admin-nav"' not in CREDIT_HTML
     assert "📒 حساب نسیه مشتریان" not in CREDIT_HTML  # the old emoji heading
     assert 'style="' not in CREDIT_HTML
 
@@ -126,7 +129,8 @@ def test_page_table_buckets_and_real_empty_states():
 
 
 def test_customer_page_is_the_admin_layout_not_the_checkout_one():
-    assert 'class="page-heading product-page-heading"' in CUSTOMER_HTML
+    assert ui.composes_header(CUSTOMER_HTML)
+    assert f"{{% set heading_class = '{ui.PAGE_HEADING}' %}}" in CUSTOMER_HTML
     assert 'class="profile-layout"' in CUSTOMER_HTML
     assert "checkout-layout" not in CUSTOMER_HTML  # the counter's layout, not here
     assert 'class="table-scroll"' in CUSTOMER_HTML

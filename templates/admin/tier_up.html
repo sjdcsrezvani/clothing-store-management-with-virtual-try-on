@@ -1,20 +1,20 @@
 {% extends "base.html" %}
-{% block title %}📈 ارتقای سطح — {{ store.name }}{% endblock %}
 {% block content %}
 
-<div class="card">
-    <h3>📈 ارتقای سطح مشتریان</h3>
-    <p style="color: var(--ink-soft); font-size: 0.9rem; margin-bottom: 1rem;">
-        مشتریانی که سطح‌شان بالا رفته (نقره‌ای ← طلایی، طلایی ← الماس) و هنوز پیامک ارتقا نگرفته‌اند.
-        برای جلوگیری از ارسال انبوه، در هر بار ارسال حداکثر <strong>{{ limit }}</strong> پیامک فرستاده می‌شود.
-        پس از ارسال، مشتری تا رسیدن به سطح بعدی (یا ارتقای مجدد پس از کاهش سطح) از فهرست حذف می‌شود.
-    </p>
+{% set page_description %}
+مشتریانی که سطح‌شان بالا رفته (نقره‌ای ← طلایی، طلایی ← الماس) و هنوز پیامک ارتقا نگرفته‌اند.
+برای جلوگیری از ارسال انبوه، در هر بار ارسال حداکثر <strong>{{ limit }}</strong> پیامک فرستاده می‌شود.
+پس از ارسال، مشتری تا رسیدن به سطح بعدی (یا ارتقای مجدد پس از کاهش سطح) از فهرست حذف می‌شود.
+{% endset %}
+{% set page_actions %}
+<a href="/admin/tier-downgrades" class="btn btn-ghost">کاهش سطح</a>
+<a href="/admin/birthdays" class="btn btn-ghost">پیامک تولد</a>
+<a href="/admin/follow-ups" class="btn btn-ghost">پیگیری مشتریان</a>
+<a href="/admin/settings" class="btn btn-ghost">تنظیمات پیامک</a>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
-    <div class="admin-nav">
-        <a href="/admin/tier-downgrades" class="btn btn-ghost">📉 کاهش سطح</a>
-        <a href="/admin/birthdays" class="btn btn-ghost">🎂 پیامک تولد</a>
-        <a href="/admin/follow-ups" class="btn btn-ghost">📮 پیگیری مشتریان</a>
-    </div>
+<div class="card">
 
     {% if sent_msg and sent_msg != '0' %}
     <div class="alert alert-success">✅ {{ sent_msg }} پیامک ارتقا ارسال شد.</div>
@@ -64,12 +64,6 @@
     <p style="font-size: 1.05rem;">🎉 هیچ مشتری برای ارسال پیامک ارتقا وجود ندارد.</p>
     {% endif %}
 </div>
-
-<nav class="admin-nav">
-    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
-    <a href="/admin/settings" class="btn btn-ghost">⚙️ تنظیمات پیامک</a>
-    <a href="/admin/follow-ups" class="btn btn-ghost">پیگیری مشتریان</a>
-</nav>
 
 <script>
 var limit = {{ limit }};

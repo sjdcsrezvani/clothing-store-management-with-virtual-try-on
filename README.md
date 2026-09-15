@@ -65,9 +65,42 @@ draws only what the viewer may open — a cashier sees «فروش جدید» and
 فروش» and nothing else, a manager loses the owner-only tools, and a section whose
 every item is hidden disappears with them rather than leaving a bare heading.
 The check is the same `role_allows` the dashboard's cards use, so the sidebar
-cannot offer a door the route will refuse. The bottom navs on the pages a cashier
-can open (the invoice, the sales list) follow the same rule: their داشبورد button
-is drawn only when the viewer may open one.
+cannot offer a door the route will refuse. The pages a cashier can open (the
+invoice, the sales list, a staff contract) carry no داشبورد button either,
+because it would be a refusal drawn for the role reading them.
+
+Five categories, read the way a shopkeeper reads a day: فروش, کالا و انبار,
+مشتریان و باشگاه, مالی, مدیریت. They are flat on purpose — the old «ابزارها»
+drawer held nine unrelated things and grew every time a page was added, and it
+put تأمین‌کنندگان away from the خرید that uses them. The till (فروش جدید) and the
+dashboard (داشبورد) belong to no category, so they live in the topbar, which is
+also where their roles are declared.
+
+**One name per destination.** The menu, the browser tab, the `<h1>` and the last
+breadcrumb crumb are the same string read from the same registry, so «تحلیل فروش»
+can no longer be «تحلیل مالی» on its own page. Which item is current is decided in
+Python (`active_key_for`), not by matching prefixes in the browser — that is what
+used to light up two items at once on `/admin/settings/appearance`, and nothing at
+all on the pages filed under a section.
+
+Every page draws `templates/partials/page_header.html`, which prints the trail,
+the heading and the page's own actions. A page showing a record — a customer, an
+invoice, a draft purchase, a contract — overrides `page_title` above the include
+and the crumb follows it. `PARENTS` gives every address the sidebar cannot reach
+an owner; a crumb is a link, so `PARENTS` only ever points at a page the child's
+own roles can open. `/admin/settings/tags` is a manager route and therefore
+parents to محصولات و موجودی, not to the owner-only تنظیمات page, which would have
+put a refusing link in a manager's breadcrumb.
+
+The route guard is the authority on the viewer's role: `require_role` writes the
+role back to the session when the database disagrees, so a promoted or demoted
+account stops seeing one page drawn for two different viewers without being
+signed out of it.
+
+Icons and words come from the same place. `icon` in the registry names a symbol in
+`base.html`'s sprite, so the menu, the heading and the topbar draw from one set;
+no emoji appears in a title or a heading, and no page keeps an English eyebrow
+over a Persian one.
 
 A refusal is a page. A 403 or a missing address under `/admin` or `/sales` now
 renders `templates/admin/error.html` in Persian — what happened, which role the

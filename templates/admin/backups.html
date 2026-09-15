@@ -1,14 +1,12 @@
 {% extends "base.html" %}
-{% block title %}💾 پشتیبان‌ها — {{ store.name }}{% endblock %}
 {% block content %}
 
-<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
-    <span style="font-size: 2rem;">💾</span>
-    <h2 style="margin: 0;">پشتیبان‌گیری</h2>
-    <form method="post" action="/admin/backup" style="margin-right: auto;">
+{% set page_actions %}
+<form method="post" action="/admin/backup">
         <button type="submit" class="btn btn-primary">💾 پشتیبان‌گیری الآن</button>
     </form>
-</div>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 {% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
 {% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
@@ -45,9 +43,4 @@
     {% else %}
     <p style="text-align: center; color: var(--ink-soft); padding: 2rem;">هنوز پشتیبان‌گیری انجام نشده است.</p>
     {% endif %}
-</div>
-
-<nav class="admin-nav">
-    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
-</nav>
-{% endblock %}
+</div>{% endblock %}

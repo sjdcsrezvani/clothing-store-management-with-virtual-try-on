@@ -1,7 +1,12 @@
 {% extends "base.html" %}
-{% block title %}مدیریت کارکنان{% endblock %}
 {% block content %}
-<div class="page-header"><div><span class="eyebrow">مدیریت منابع انسانی</span><h2>کارکنان و حقوق</h2><p>اطلاعات پرسنلی، سطح دسترسی، قرارداد و پرداخت حقوق را یکجا مدیریت کنید.</p></div><a class="btn btn-ghost" href="/admin/owner-profile">اطلاعات مالک و قرارداد</a></div>
+{% set page_description %}
+اطلاعات پرسنلی، سطح دسترسی، قرارداد و پرداخت حقوق را یکجا مدیریت کنید.
+{% endset %}
+{% set page_actions %}
+<a class="btn btn-ghost" href="/admin/owner-profile">اطلاعات مالک و قرارداد</a>
+{% endset %}
+{% include 'partials/page_header.html' %}
 {% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
 {% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
 <div class="card">

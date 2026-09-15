@@ -82,7 +82,7 @@ ROLE_ORDER = {"cashier": 1, "manager": 2, "owner": 3}
 
 # What each level is called in Persian, for the pages that name the viewer: the
 # dashboard's own title and the 403 page both say whose view they are showing.
-ROLE_LABELS = {"cashier": "کارمند", "manager": "مدیر", "owner": "مالک"}
+ROLE_LABELS = {"cashier": "صندوقدار", "manager": "مدیر", "owner": "مالک"}
 
 
 # The sentence every refused action carries. It lives here so the 403 page can
@@ -123,6 +123,12 @@ def require_role(request: Request, db, minimum_role: str = "cashier"):
     user = _session_staff_user(db, request)
     if not user or not role_allows(user.role, minimum_role):
         raise HTTPException(status_code=403, detail=PERMISSION_DENIED_DETAIL)
+    # The account, not the login, is the authority — so the role it just
+    # confirmed is written back for the shell to read. Without this, promoting a
+    # manager left the sidebar drawn for their old role while the dashboard drew
+    # its cards for the new one: one page showing two different viewers.
+    if request.session.get("staff_role") != user.role:
+        request.session["staff_role"] = user.role
     return user
 
 

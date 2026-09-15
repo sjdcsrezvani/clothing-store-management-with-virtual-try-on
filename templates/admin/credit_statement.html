@@ -1,21 +1,19 @@
 {% extends "base.html" %}
-{% block title %}صورت‌حساب {{ customer.full_name }} — {{ store.name }}{% endblock %}
 {% block content %}
 
-<div class="page-heading product-page-heading screen-only">
-    <div>
-        <div class="eyebrow">مالی / حساب نسیه / صورت‌حساب</div>
-        <h2>صورت‌حساب {{ customer.full_name }}</h2>
-        <p>
-            همه فاکتورهای نسیه و دریافت‌ها با مانده تجمعی — برای دادن به مشتری یا ضمیمه کردن به سفارش.
-        </p>
-    </div>
-    <div class="admin-nav">
-        <button type="button" class="btn btn-primary" onclick="window.print()">🖨️ چاپ</button>
+{% set page_description %}
+همه فاکتورهای نسیه و دریافت‌ها با مانده تجمعی — برای دادن به مشتری یا ضمیمه کردن به سفارش.
+{% endset %}
+{% set page_title %}
+صورت‌حساب {{ customer.full_name }}
+{% endset %}
+{% set heading_class = 'page-heading product-page-heading screen-only' %}
+{% set page_actions %}
+<button type="button" class="btn btn-primary" onclick="window.print()">🖨️ چاپ</button>
         <a href="/admin/credit/{{ customer.id }}" class="btn btn-ghost">حساب نسیه مشتری</a>
         <a href="/admin/credit" class="btn btn-ghost">فهرست بدهکاران</a>
-    </div>
-</div>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 <form method="get" action="/admin/credit/{{ customer.id }}/statement" class="search-form screen-only statement-range">
     <div class="form-group">

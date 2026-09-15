@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% block title %}قرارداد استخدام{% endblock %}
 {% block content %}
+{# A document the shop prints and files, but a page in the staff record too: the
+   trail says whose contract this is. Hidden in print, like the rest of the shell. #}
+{% set page_title %}قرارداد استخدام{% endset %}
+<div class="screen-only document-trail">
+    {% include 'partials/breadcrumb.html' %}
+</div>
 <div class="document-actions"><button class="btn btn-primary" onclick="window.print()">چاپ قرارداد</button><a class="btn btn-ghost" href="/admin/staff">بازگشت</a></div>
 <div class="print-document">
   <div class="print-document-header"><h1>{{ owner_settings.get('owner_business_name', store.name) }}</h1><h2>قرارداد همکاری و استخدام</h2><div class="print-document-meta"><span>تاریخ تنظیم: {{ jalali_str(staff_user.hire_date or staff_user.created_at, with_time=False) }}</span><span>کد قرارداد: {{ staff_user.employee_code or staff_user.id }}</span></div></div>

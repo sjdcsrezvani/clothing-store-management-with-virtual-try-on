@@ -1,11 +1,7 @@
 {% extends "base.html" %}
-{% block title %}⚙️ تنظیمات سیستم — {{ store.name }}{% endblock %}
 {% block content %}
 
-<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem;">
-    <span style="font-size: 2rem;">⚙️</span>
-    <h2 style="margin: 0;">تنظیمات سیستم</h2>
-</div>
+{% include 'partials/page_header.html' %}
 
 {% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
 {% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
@@ -14,7 +10,7 @@
     <form method="post" action="/admin/settings">
         <div class="settings-appearance-link">
             <div>
-                <span class="eyebrow">Appearance</span>
+                <span class="eyebrow">ظاهر و تم</span>
                 <h3>ظاهر فروشگاه</h3>
                 <p>تم، رنگ‌بندی و حالت نمایش پنل را در صفحه اختصاصی ظاهر فروشگاه مدیریت کنید.</p>
             </div>
@@ -23,7 +19,7 @@
 
         <div class="settings-appearance-link settings-tag-link">
             <div>
-                <span class="eyebrow">Products / Printing</span>
+                <span class="eyebrow">محصولات و چاپ</span>
                 <h3>طرح تگ و بارکد</h3>
                 <p>اندازه، فیلدها، تصویر بارکد و چیدمان چاپ روی A4 را در صفحه اختصاصی تنظیم کنید.</p>
             </div>
@@ -31,7 +27,7 @@
         </div>
 
         <hr class="settings-divider">
-        <h3>🔢 کد بارکد خودکار</h3>
+        <h3>کد بارکد خودکار</h3>
         <div class="form-row">
             <div class="form-group">
                 <label for="barcode_code_length">تعداد رقم کد بارکد جدید</label>
@@ -70,7 +66,7 @@
             </div>
         </div>
 
-        <h3>🏷️ تنظیمات تخفیف</h3>
+        <h3>تنظیمات تخفیف</h3>
         <div class="form-row">
             <div class="form-group">
                 <label for="default_referrer_discount">🤝 مبلغ تخفیف معرف (تومان)</label>
@@ -100,7 +96,7 @@
             </div>
         </div>
 
-        <h3 style="margin-top: 2rem;">🏆 تنظیمات سطوح مشتریان</h3>
+        <h3 style="margin-top: 2rem;">تنظیمات سطوح مشتریان</h3>
         <div class="form-row">
             <div class="form-group">
                 <label for="tier_points_per_amount">🌟 امتیاز به ازای هر خرید</label>
@@ -115,7 +111,7 @@
             </div>
         </div>
 
-        <h4>⭐ سطح طلایی</h4>
+        <h4>سطح طلایی</h4>
         <div class="form-row">
             <div class="form-group">
                 <label for="tier_gold_threshold">📊 آستانه امتیاز</label>
@@ -134,7 +130,7 @@
             </div>
         </div>
 
-        <h4>💎 سطح الماس</h4>
+        <h4>سطح الماس</h4>
         <div class="form-row">
             <div class="form-group">
                 <label for="tier_diamond_threshold">📊 آستانه امتیاز</label>
@@ -153,7 +149,7 @@
             </div>
         </div>
 
-        <h4>📉 کاهش سطح (Downgrade)</h4>
+        <h4>کاهش سطح (Downgrade)</h4>
         {# One number decides this rule, so there is one field for it. The old
            «حداقل مبلغ خرید» field is gone: the rule no longer reads it, and a
            field that changes nothing is worse than no field at all. #}
@@ -175,7 +171,7 @@
             <a href="/admin/tier-downgrades">مشاهده فهرست و بررسی دستی</a>
         </p>
 
-        <h4>🎂 مشتری و تولد</h4>
+        <h4>مشتری و تولد</h4>
         {% set target = settings.get('birthday_target', 'child') %}
         {% set child_on = settings.get('child_profile_enabled', '1') not in ['0', 'false', 'False', 'no', 'off'] %}
         <div class="form-group">
@@ -211,7 +207,7 @@
             <small>چند روز قبل از تولد، تخفیف فعال و پیامک ارسال شود (برای فروشگاه کودک: تولد فرزند)</small>
         </div>
 
-        <h3 style="margin-top: 2rem;">📱 پیامک</h3>
+        <h3 style="margin-top: 2rem;">پیامک</h3>
         <div class="form-group">
             <p class="muted" style="margin: 0 0 .5rem;">
                 متن همه پیامک‌ها (خوش‌آمدگویی، تولد، ارتقای سطح، کمپین و یادآوری بدهی)،
@@ -220,7 +216,7 @@
             </p>
             <a href="/admin/sms" class="btn btn-ghost">رفتن به صفحه پیامک</a>
         </div>
-        <h3 style="margin-top: 2rem;">✨ سقف تولید تصویر هوش مصنوعی</h3>
+        <h3 style="margin-top: 2rem;">سقف تولید تصویر هوش مصنوعی</h3>
         <div class="form-row">
             <div class="form-group">
                 <label for="tryon_daily_limit">🎨 سقف تولید روزانه</label>
@@ -229,7 +225,7 @@
                 <small>حداکثر تصویر تولیدشده با هوش مصنوعی در روز (هر تصویر هزینه دارد)</small>
             </div>
         </div>
-        <h3 style="margin-top: 2rem;">🛡️ سقف اعتبار و سررسید نسیه</h3>
+        <h3 style="margin-top: 2rem;">سقف اعتبار و سررسید نسیه</h3>
         <div class="form-row">
             <div class="form-group">
                 <label for="credit_terms_days">📅 مهلت پرداخت نسیه (روز)</label>
@@ -268,7 +264,7 @@
             </div>
         </div>
 
-        <h3 style="margin-top: 2rem;">📟 کارت‌خوان</h3>
+        <h3 style="margin-top: 2rem;">کارت‌خوان</h3>
         <div class="form-row">
             <div class="form-group">
                 <label for="pos_terminal_host">🖥️ آدرس کارت‌خوان (IP)</label>
@@ -292,7 +288,7 @@
 
 
 <div class="card">
-    <h3>🔑 تغییر رمز عبور مدیریت</h3>
+    <h3>تغییر رمز عبور مدیریت</h3>
     <form method="post" action="/admin/change-password">
         <div class="form-row">
             <div class="form-group">
@@ -324,8 +320,4 @@
         </form>
     </div>
 </details>
-
-<nav class="admin-nav">
-    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a></nav>
-
 {% endblock %}

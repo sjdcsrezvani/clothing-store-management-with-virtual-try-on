@@ -1,17 +1,13 @@
 {% extends "base.html" %}
-{% block title %}چاپ تگ محصولات — {{ store.name }}{% endblock %}
 {% block content %}
-<div class="page-heading">
-    <div>
-        <div class="eyebrow">محصولات و چاپ</div>
-        <h2>چاپ تگ محصولات</h2>
-        <p>تعداد تگ را برای هر تنوع مشخص کنید؛ بعد از چاپ، وضعیت چاپ را ثبت کنید.</p>
-    </div>
-    <div class="admin-nav">
-        <a href="/admin/settings/tags" class="btn btn-ghost">تنظیمات تگ</a>
+{% set page_description %}
+تعداد تگ را برای هر تنوع مشخص کنید؛ بعد از چاپ، وضعیت چاپ را ثبت کنید.
+{% endset %}
+{% set page_actions %}
+<a href="/admin/settings/tags" class="btn btn-ghost">تنظیمات تگ</a>
         <a href="/admin/products" class="btn btn-ghost">محصولات</a>
-    </div>
-</div>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 {% if request.query_params.get('msg') %}<div class="alert alert-success" role="status">{{ request.query_params.get('msg') }}</div>{% endif %}
 {% if request.query_params.get('err') %}<div class="alert alert-error" role="alert">{{ request.query_params.get('err') }}</div>{% endif %}
@@ -113,12 +109,6 @@
         </div>
     </form>
 </div>
-
-<nav class="admin-nav">
-    <a href="/admin/products" class="btn btn-ghost">بازگشت به محصولات</a>
-    <a href="/admin" class="btn btn-ghost">داشبورد</a>
-</nav>
-
 <script>
 function selectedCheckboxes(selector) {
     return Array.from(document.querySelectorAll(selector || '.barcode-checkbox:checked'));

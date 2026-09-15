@@ -1,15 +1,13 @@
 {% extends "base.html" %}
-{% block title %}🧾 چک‌ها — {{ store.name }}{% endblock %}
 {% block content %}
 
-<div class="page-heading">
-    <div>
-        <span class="eyebrow">Financial commitments</span>
-        <h2>🧾 چک‌ها</h2>
-        <p>چک‌های صادرشده برای تأمین‌کنندگان و سایر دریافت‌کنندگان را ثبت و پیگیری کنید.</p>
-    </div>
-    <a href="/admin/suppliers" class="btn btn-ghost">🏭 تأمین‌کنندگان</a>
-</div>
+{% set page_description %}
+چک‌های صادرشده برای تأمین‌کنندگان و سایر دریافت‌کنندگان را ثبت و پیگیری کنید.
+{% endset %}
+{% set page_actions %}
+<a href="/admin/suppliers" class="btn btn-ghost">🏭 تأمین‌کنندگان</a>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 {% if msg %}<div class="alert alert-success" role="status">✅ {{ msg }}</div>{% endif %}
 {% if err %}<div class="alert alert-error" role="alert">⚠️ {{ err }}</div>{% endif %}
@@ -33,7 +31,7 @@
 </div>
 
 <div class="card">
-    <h3>➕ ثبت چک جدید</h3>
+    <h3>ثبت چک جدید</h3>
     <p class="appearance-intro">مبلغ را به <strong>ریال</strong> وارد کنید. تاریخ‌ها را به‌صورت شمسی مثل ۱۴۰۵/۰۷/۱۵ بنویسید.</p>
     <form method="post" action="/admin/checks/add">
         <div class="form-row">
@@ -57,7 +55,7 @@
 </div>
 
 <div class="card">
-    <div class="section-heading"><div><span class="eyebrow">Reminder settings</span><h3>⚙️ تنظیمات هشدارها</h3></div><span class="badge">{{ 'فعال' if reminders_enabled else 'خاموش' }}</span></div>
+    <div class="section-heading"><div><span class="eyebrow">تنظیمات یادآوری</span><h3>تنظیمات هشدارها</h3></div><span class="badge">{{ 'فعال' if reminders_enabled else 'خاموش' }}</span></div>
     <p class="appearance-intro">این تنظیمات فقط روی چک‌های جدید اعمال می‌شود؛ هشدار هر چک را می‌توانید جداگانه تغییر دهید.</p>
     <form method="post" action="/admin/checks/settings" class="filter-bar">
         <label for="default_reminder_days">روزهای پیش‌فرض قبل از سررسید</label>
@@ -68,7 +66,7 @@
 </div>
 
 <div class="card" id="checks-list">
-    <div class="section-heading"><div><span class="eyebrow">Issued checks</span><h3>📋 فهرست چک‌ها</h3></div><span class="appearance-active">{{ checks|length }} مورد</span></div>
+    <div class="section-heading"><div><span class="eyebrow">چک‌های صادره</span><h3>فهرست چک‌ها</h3></div><span class="appearance-active">{{ checks|length }} مورد</span></div>
     {% if checks %}
     <div class="table-wrap"><table>
         <thead><tr><th>وضعیت</th><th>دریافت‌کننده</th><th>شماره</th><th>مبلغ (ریال)</th><th>سررسید</th><th>هشدارها</th><th>عملیات</th></tr></thead>
@@ -99,12 +97,9 @@
 
 {% if summary.triggered %}
 <div class="card check-alerts" role="alert">
-    <h3>🚨 هشدارهای فعال</h3>
+    <h3>هشدارهای فعال</h3>
     {% for reminder in summary.triggered %}
     <div class="check-alert-row"><span><strong>{{ reminder.check.provider_name }}</strong> — {{ fmt(reminder.check.amount_rials) }} ریال — {{ reminder.days_before }} روز تا سررسید</span><form method="post" action="/admin/checks/reminders/{{ reminder.id }}/dismiss"><button class="btn btn-sm btn-ghost" type="submit">بستن هشدار</button></form></div>
     {% endfor %}
 </div>
-{% endif %}
-
-<nav class="admin-nav"><a href="/admin" class="btn btn-ghost">🔙 داشبورد</a><a href="/admin/suppliers" class="btn btn-ghost">🏭 تأمین‌کنندگان</a></nav>
-{% endblock %}
+{% endif %}{% endblock %}

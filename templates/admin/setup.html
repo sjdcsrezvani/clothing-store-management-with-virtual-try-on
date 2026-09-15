@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}✨ راه‌اندازی اولیه — فروشگاه{% endblock %}
+{% block title %}راه‌اندازی اولیه — فروشگاه{% endblock %}
 {% block content %}
 
 <div class="setup-wizard" style="max-width: 560px; margin: 1.5rem auto;">
@@ -16,7 +16,7 @@
     <div class="card">
         <form method="post" action="/admin/setup">
             {# ── Store branding ── #}
-            <h3>🏪 مشخصات فروشگاه</h3>
+            <h3>مشخصات فروشگاه</h3>
             <div class="form-group">
                 <label for="store_name">🏪 نام فروشگاه <span style="color: var(--persimmon);">*</span></label>
                 <input type="text" id="store_name" name="store_name" required autofocus
@@ -40,7 +40,7 @@
             </div>
 
             {# ── Admin password ── #}
-            <h3 style="margin-top: 1.5rem;">🔑 رمز مدیریت</h3>
+            <h3 style="margin-top: 1.5rem;">رمز مدیریت</h3>
             <div class="form-row">
                 <div class="form-group">
                     <label for="admin_password">🔑 رمز عبور <span style="color: var(--persimmon);">*</span></label>

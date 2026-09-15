@@ -1,15 +1,10 @@
 {% extends "base.html" %}
-{% block title %}💸 هزینه‌ها — {{ store.name }}{% endblock %}
 {% block content %}
 
-<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
-    <span style="font-size: 2rem;">💸</span>
-    <h2 style="margin: 0;">هزینه‌های فروشگاه</h2>
-    <div class="stat-card" style="padding: 0.5rem 1rem; margin-right: auto;">
-        <span style="color: var(--ink-soft);">مجموع هزینه‌ها:</span>
-        <strong class="tnum" style="color: var(--persimmon);">{{ fmt(total) }} تومان</strong>
-    </div>
-</div>
+{% set page_description %}
+<span>مجموع هزینه‌ها:</span> <strong class="tnum">{{ fmt(total) }} تومان</strong>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 {% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
 {% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
@@ -28,7 +23,7 @@
 </div>
 
 <div class="card">
-    <h3>➕ ثبت هزینه</h3>
+    <h3>ثبت هزینه</h3>
     <form method="post" action="/admin/expenses/add" class="filter-bar" style="margin: 0;">
         <input type="number" name="amount" min="1" placeholder="💰 مبلغ (تومان) *" required style="flex:1;">
         <select name="expense_type" aria-label="نوع هزینه" style="flex:1;">
@@ -78,10 +73,4 @@
         </tbody>
     </table>
     {% else %}<p style="color: var(--ink-soft); text-align: center; padding: 1.5rem;">هزینه‌ای ثبت نشده است.</p>{% endif %}
-</div>
-
-<nav class="admin-nav">
-    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
-    <a href="/admin/accounting" class="btn btn-ghost">🧮 سود و زیان</a>
-</nav>
-{% endblock %}
+</div>{% endblock %}

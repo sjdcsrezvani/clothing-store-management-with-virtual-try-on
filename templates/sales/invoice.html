@@ -1,6 +1,12 @@
 {% extends "base.html" %}
-{% block title %}🧾 فاکتور فروش — {{ store.name }}{% endblock %}
 {% block content %}
+
+{# A document the customer is handed, but a page in the shop's own history too:
+   the trail says which sale this came from. Hidden in print, like the rest of
+   the shell. #}
+<div class="screen-only invoice-trail">
+    {% include 'partials/breadcrumb.html' %}
+</div>
 
 <div class="alert alert-success" style="font-size: 1.05rem; text-align: center; justify-content: center;">
     🎉 فروش با موفقیت ثبت شد!
@@ -9,7 +15,7 @@
 
 <div class="invoice">
     <div class="invoice-header">
-        <h2>🧸 {{ store.name }}</h2>
+        <h2>{{ store.name }}</h2>
         <div class="invoice-meta">
             <span>📄 شماره: {{ sale.id }}</span>
             <span>🕐 {{ jalali_str(sale.created_at) }}</span>

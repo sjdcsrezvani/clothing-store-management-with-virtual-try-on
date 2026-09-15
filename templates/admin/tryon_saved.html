@@ -1,11 +1,7 @@
 {% extends "base.html" %}
-{% block title %}📂 تصاویر ذخیره‌شده — پرو مجازی{% endblock %}
 {% block content %}
 
-<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem;">
-    <span style="font-size: 2rem;">📂</span>
-    <h2 style="margin: 0;">تصاویر ذخیره‌شده</h2>
-</div>
+{% include 'partials/page_header.html' %}
 
 {% if saved_images %}
 <div class="card">
@@ -67,12 +63,6 @@
     </div>
     <div style="position:absolute;top:1rem;right:1rem;color:#fff;font-size:2rem;cursor:pointer;" onclick="closeLightbox()">✕</div>
 </div>
-
-<nav class="admin-nav" style="margin-top: 1.5rem;">
-    <a href="/admin/try-on" class="btn btn-ghost">🔙 بازگشت به پرو مجازی</a>
-    <a href="/admin" class="btn btn-ghost">⚙️ داشبورد</a>
-</nav>
-
 <script>
 function openLightbox(src) {
     document.getElementById('lightbox-img').src = src;

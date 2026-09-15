@@ -1,11 +1,7 @@
 {% extends "base.html" %}
-{% block title %}🧾 تاریخچه فروش — {{ store.name }}{% endblock %}
 {% block content %}
 
-<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem;">
-    <span style="font-size: 2rem;">🧾</span>
-    <h2 style="margin: 0;">تاریخچه فروش</h2>
-</div>
+{% include 'partials/page_header.html' %}
 
 <div class="filter-bar">
     <form method="get" action="/sales" class="search-form">
@@ -80,14 +76,4 @@
         {% endif %}
     </div>
     {% endif %}
-</div>
-
-<nav class="admin-nav">
-    {# فروش جدید already takes a cashier where they are going; a داشبورد button
-       here would only refuse them. #}
-    {% if nav_home == '/admin' %}
-    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
-    {% endif %}
-    <a href="/sales/new" class="btn btn-primary">🛒 فروش جدید</a>
-</nav>
-{% endblock %}
+</div>{% endblock %}

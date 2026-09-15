@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{% if step == 'scan' %}🛒 فروش — {{ customer.phone if customer else 'ناشناس' }}{% else %}🛒 فروش جدید — {{ store.name }}{% endif %}{% endblock %}
+{% block title %}{% if step == 'scan' %} فروش — {{ customer.phone if customer else 'ناشناس' }}{% else %} فروش جدید — {{ store.name }}{% endif %}{% endblock %}
 {% block content %}
 
 {% if message %}<div class="alert alert-success">✅ {{ message }}</div>{% endif %}
@@ -31,7 +31,7 @@
 {% elif step == "create_customer" %}
 {# ─── STEP 2: New customer form ─── #}
 <div class="card" style="max-width: 560px; margin: 1.5rem auto;">
-    <h3>👤 مشتری جدید — {{ phone }}</h3>
+    <h3>مشتری جدید — {{ phone }}</h3>
     <p style="color: var(--ink-soft); margin-bottom: 1.2rem; font-size: 0.9rem;">
         ✅ شماره {{ phone }} ثبت نشده — لطفاً اطلاعات زیر را وارد کنید.
     </p>
@@ -61,7 +61,7 @@
         {# ── Customer info card ── #}
         {% if customer %}
         <div class="customer-info-card card">
-            <h3>👤 {{ customer.full_name }}</h3>
+            <h3>{{ customer.full_name }}</h3>
             <div class="info-grid">
                 <div class="info-item">
                     <span class="label">📱 تلفن</span>
@@ -93,7 +93,7 @@
         </div>
         {% else %}
         <div class="customer-info-card card">
-            <h3>👤 مشتری ناشناس</h3>
+            <h3>مشتری ناشناس</h3>
             <div class="info-grid">
                 <div class="info-item">
                     <span class="label">📱 تلفن</span>
@@ -113,7 +113,7 @@
 
         {# ── Barcode scanner ── #}
         <div class="scan-section card">
-            <h3>📦 اسکن بارکد</h3>
+            <h3>اسکن بارکد</h3>
             <form method="post" action="/sales/add-to-basket" id="scan-form">
                 <input type="hidden" name="customer_id" value="{{ customer_id }}">
                 <input type="hidden" name="basket_json" value="{{ basket_json }}">
@@ -134,7 +134,7 @@
         {# ── Referral section (known customers only) ── #}
         {% if customer %}
         <div class="card referral-section">
-            <h4>🤝 معرف (اختیاری)</h4>
+            <h4>معرف (اختیاری)</h4>
             <div class="form-row">
                 <div class="form-group" style="margin-bottom: 0;">
                     <label for="ref-code-input">🔑 کد معرفی</label>
@@ -154,7 +154,7 @@
 
         {% if customer and customer.active_referral_count > 0 %}
         <div class="card">
-            <h4>🎟 تخفیف معرفی فعال ({{ customer.active_referral_count }} عدد)</h4>
+            <h4>تخفیف معرفی فعال ({{ customer.active_referral_count }} عدد)</h4>
             <p>جمعاً {{ fmt(customer.referrer_discount) }} تومان — با این خرید استفاده شود؟</p>
             <label style="display:flex; gap:0.5rem; align-items:center;">
                 <input type="checkbox" id="use-ref-checkbox" {% if use_referrer_discount == '1' %}checked{% endif %}
@@ -168,7 +168,7 @@
         {# ── Campaign: what this customer holds, and the code field for anyone
              else. The held campaign is applied by the server without typing. ── #}
         <div class="card campaign-section">
-            <h4>📢 کمپین</h4>
+            <h4>کمپین</h4>
             {% if campaign %}
             <p class="campaign-line">
                 کمپین <strong>{{ campaign.name }}</strong> ({{ campaign.discount_percent }}٪)
@@ -202,7 +202,7 @@
         {% endif %}
 
         <div class="card">
-            <h4>🏷️ تخفیف ویژه</h4>
+            <h4>تخفیف ویژه</h4>
             <div class="form-row">
                 <div class="form-group">
                     <label>مبلغ (تومان)</label>
@@ -234,12 +234,7 @@
     <div class="checkout-right">
         {# ── Basket ── #}
         <div class="basket-section card">
-            <h3>
-                <span>🛒 سبد خرید</span>
-                <span id="basket-count" style="background: var(--candy); color: #fff; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.8rem;">
-                    {{ basket|length }} قلم
-                </span>
-            </h3>
+            <h3><span> سبد خرید</span> <span id="basket-count" style="background: var(--candy); color: #fff; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.8rem;"> {{ basket|length }} قلم </span></h3>
 
             {% if basket %}
             <div class="basket-list">

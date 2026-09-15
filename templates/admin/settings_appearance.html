@@ -1,15 +1,13 @@
 {% extends "base.html" %}
-{% block title %}🎨 ظاهر فروشگاه — {{ store.name }}{% endblock %}
 {% block content %}
 
-<div class="page-heading">
-    <div>
-        <span class="eyebrow">Appearance</span>
-        <h2>ظاهر فروشگاه</h2>
-        <p class="appearance-intro">تم و رنگ‌بندی پنل را برای همه کاربران فروشگاه انتخاب کنید.</p>
-    </div>
-    <a href="/admin/settings" class="btn btn-ghost">⚙️ تنظیمات سیستم</a>
-</div>
+{% set page_description %}
+تم و رنگ‌بندی پنل را برای همه کاربران فروشگاه انتخاب کنید.
+{% endset %}
+{% set page_actions %}
+<a href="/admin/settings" class="btn btn-ghost">⚙️ تنظیمات سیستم</a>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 {% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
 {% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
@@ -19,7 +17,7 @@
         <section class="appearance-section" aria-labelledby="appearance-title">
             <div class="section-heading">
                 <div>
-                    <span class="eyebrow">Store theme</span>
+                    <span class="eyebrow">تم فروشگاه</span>
                     <h3 id="appearance-title">انتخاب ظاهر فروشگاه</h3>
                 </div>
                 <span class="appearance-active" id="appearance-active">{{ active_theme_id }}</span>

@@ -1,25 +1,21 @@
 {% extends "base.html" %}
-{% block title %}خرید از عمده‌فروش — {{ store.name }}{% endblock %}
 {% block content %}
+{# One page, two jobs: the purchase list and the draft editor, which the shop
+   reaches at the same address. The heading follows the job, and so does the
+   crumb, because the trail reads this same `page_title`. #}
 {% set editing = edit_purchase is not none %}
-<div class="page-heading product-form-heading">
-    <div>
-        <div class="eyebrow">فروشگاه / خرید و تأمین</div>
-        {% if editing %}
-        <h2>ویرایش پیش‌نویس فاکتور #{{ edit_purchase.id }}</h2>
-        <p>محصولات این فاکتور را کامل کنید و سپس آن را نهایی کنید تا هزینه‌ها ثبت شوند.</p>
-        {% else %}
-        <h2>خرید از عمده‌فروش</h2>
-        <p>تأمین‌کننده را انتخاب کنید و محصولات همان تأمین‌کننده را به فاکتور اضافه کنید. فاکتور ابتدا پیش‌نویس است و با نهایی‌سازی، بهای تمام‌شده و بدهی تأمین‌کننده ثبت می‌شود.</p>
-        {% endif %}
-    </div>
-    <div class="admin-nav">
-        {% if editing %}<a href="/admin/purchases/{{ edit_purchase.id }}" class="btn btn-ghost">بازگشت به فاکتور</a>{% endif %}
+{% if editing %}
+{% set page_title %}ویرایش پیش‌نویس فاکتور #{{ edit_purchase.id }}{% endset %}
+{% set page_description %}محصولات این فاکتور را کامل کنید و سپس آن را نهایی کنید تا هزینه‌ها ثبت شوند.{% endset %}
+{% else %}
+{% set page_description %}تأمین‌کننده را انتخاب کنید و محصولات همان تأمین‌کننده را به فاکتور اضافه کنید. فاکتور ابتدا پیش‌نویس است و با نهایی‌سازی، بهای تمام‌شده و بدهی تأمین‌کننده ثبت می‌شود.{% endset %}
+{% endif %}
+{% set heading_class = 'page-heading product-form-heading' %}
+{% set page_actions %}
         <a href="/admin/suppliers" class="btn btn-ghost">تأمین‌کنندگان</a>
         <a href="/admin/inventory-movements" class="btn btn-ghost">تاریخچه انبار</a>
-        <a href="/admin" class="btn btn-ghost">داشبورد</a>
-    </div>
-</div>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 {% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
 {% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}

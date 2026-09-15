@@ -1,23 +1,19 @@
 {% extends "base.html" %}
-{% block title %}نسیه {{ customer.full_name }} — {{ store.name }}{% endblock %}
 {% block content %}
 
-<div class="page-heading product-page-heading">
-    <div>
-        <div class="eyebrow">مالی / حساب نسیه / پرونده</div>
-        <h2>نسیه {{ customer.full_name }}</h2>
-        <p>
-            <span class="customer-phone tnum">{{ customer.phone }}</span>
-            — دریافت‌ها قدیمی‌ترین فاکتور را اول تسویه می‌کنند، یا می‌توانید مستقیم یک فاکتور را ببندید.
-        </p>
-    </div>
-    <div class="admin-nav">
-        <a href="/admin/credit" class="btn btn-ghost">حساب نسیه</a>
+{% set page_description %}
+<span class="customer-phone tnum">{{ customer.phone }}</span> — دریافت‌ها قدیمی‌ترین فاکتور را اول تسویه می‌کنند، یا می‌توانید مستقیم یک فاکتور را ببندید.
+{% endset %}
+{% set page_title %}
+نسیه {{ customer.full_name }}
+{% endset %}
+{% set heading_class = 'page-heading product-page-heading' %}
+{% set page_actions %}
+<a href="/admin/credit" class="btn btn-ghost">حساب نسیه</a>
         <a href="/admin/credit/{{ customer.id }}/statement" class="btn btn-ghost">صورت‌حساب</a>
         <a href="/admin/customers/{{ customer.id }}" class="btn btn-ghost">پرونده مشتری</a>
-        <a href="/admin" class="btn btn-ghost">داشبورد</a>
-    </div>
-</div>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 {% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
 {% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}
@@ -74,7 +70,7 @@
         <section class="card profile-card">
             <div class="section-heading-row">
                 <div>
-                    <h3>💵 ثبت دریافت</h3>
+                    <h3>ثبت دریافت</h3>
                     <p class="muted">مبلغ از قدیمی‌ترین فاکتور شروع می‌شود و تا تسویه ادامه پیدا می‌کند.</p>
                 </div>
                 <span class="section-step">۱</span>
@@ -116,7 +112,7 @@
         <section class="card profile-card">
             <div class="section-heading-row">
                 <div>
-                    <h3>🧾 فاکتورهای نسیه باز</h3>
+                    <h3>فاکتورهای نسیه باز</h3>
                     <p class="muted">
                         هر فاکتور سررسید خودش را دارد؛ اگر مبلغی بیشتر از یک فاکتور بدهید رد می‌شود،
                         چون فقط همین فاکتور را می‌بندد.
@@ -195,7 +191,7 @@
         <section class="card profile-card">
             <div class="section-heading-row">
                 <div>
-                    <h3>📜 تاریخچه دریافت‌ها</h3>
+                    <h3>تاریخچه دریافت‌ها</h3>
                     <p class="muted">برگشت یک دریافت، تخصیص همه دریافت‌های باقی‌مانده را از نو می‌سازد.</p>
                 </div>
                 <span class="section-step">۳</span>
@@ -307,7 +303,7 @@
         </section>
 
         <section class="card profile-card">
-            <h3>🛡️ سقف اعتبار</h3>
+            <h3>سقف اعتبار</h3>
             <p class="muted">
                 {% if credit_limit > 0 %}
                 سقف فعلی {{ fmt(credit_limit) }} تومان{% if custom_limit %} (اختصاصی همین مشتری){% else %} (پیش‌فرض فروشگاه){% endif %}.

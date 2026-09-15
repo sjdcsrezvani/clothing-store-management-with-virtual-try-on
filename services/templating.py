@@ -14,7 +14,17 @@ from services._common import (
     jalali_str,
 )
 from services.customers import customer_context_processor
-from services.navigation import home_for, home_label_for, navigation_for
+from services.navigation import (
+    active_key_for,
+    home_for,
+    home_label_for,
+    navigation_for,
+    page_icon_for,
+    page_title_for,
+    topbar_for,
+    topbar_key_for,
+    trail_for,
+)
 from services.security import ROLE_LABELS, csrf_context_processor
 from services.store import store_context_processor
 from services.themes import get_theme
@@ -25,18 +35,31 @@ def theme_context_processor(request) -> dict:
 
 
 def navigation_context_processor(request) -> dict:
-    """The sidebar, already filtered for whoever is looking.
+    """The shell, already filtered and decided for whoever is looking.
 
-    The shell draws what it is handed, exactly as the dashboard does, so a
-    template edit cannot add a link back for a role that may not open it. The
-    role comes from the session — the same source the sidebar has always read —
-    while the routes keep asking the account itself, which is the authority.
+    The sidebar, the topbar's actions, which item is current, and what this page
+    is called all come from :mod:`services.navigation`, so the menu, the browser
+    title, the ``<h1>`` and the breadcrumb cannot disagree. The shell draws what
+    it is handed, exactly as the dashboard does, so a template edit cannot add a
+    link back for a role that may not open it.
+
+    The role is read from the session, which :func:`services.security.require_role`
+    keeps in step with the account it just admitted — the routes ask the account
+    itself, and the guard writes the answer back for the pages that follow.
     """
     role = request.session.get("staff_role")
+    path = request.url.path
     return {
         "nav_sections": navigation_for(role),
+        "topbar_actions": topbar_for(role),
         "nav_home": home_for(role),
         "nav_home_label": home_label_for(role),
+        # The single name this page is known by, unless the page overrides it for
+        # a record it is showing (a customer's name, an invoice number).
+        "page_title": page_title_for(path),
+        "page_icon": page_icon_for(path),
+        "active_nav_key": active_key_for(path),
+        "active_topbar_key": topbar_key_for(path),
         "viewer_role_label": ROLE_LABELS.get(role or "", ""),
     }
 
@@ -75,4 +98,8 @@ templates.env.globals.update(
     birthday_display=birthday_display,
     jalali_age=jalali_age,
     days_until_birthday=days_until_jalali_birthday,
+    # The breadcrumb partial builds its own trail from the path and the title it
+    # was handed, so a page that renames itself (a customer record) gets a trail
+    # ending in that same name rather than a second, stale one.
+    trail_for=trail_for,
 )

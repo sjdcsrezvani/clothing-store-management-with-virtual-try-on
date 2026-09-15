@@ -1,0 +1,17 @@
+{# The trail back to where this page lives.
+
+   Built here rather than passed in, so the last crumb is the very `page_title`
+   the heading prints — a page that renames itself (a customer record, an
+   invoice) gets a trail ending in that same name instead of a second, stale one.
+
+   A page with no parent draws nothing: the dashboard and the till are roots of
+   their own, and a breadcrumb of one crumb tells the reader nothing. #}
+{% set crumbs = trail_for(request.url.path, page_title) %}
+{% if crumbs and crumbs | length > 1 %}
+<nav class="breadcrumb" aria-label="مسیر صفحه">
+    {% for crumb in crumbs %}
+    {% if crumb.href %}<a href="{{ crumb.href }}">{{ crumb.label }}</a>{% else %}<span{% if loop.last %} class="current" aria-current="page"{% endif %}>{{ crumb.label }}</span>{% endif %}
+    {% if not loop.last %}<span class="breadcrumb-sep" aria-hidden="true">/</span>{% endif %}
+    {% endfor %}
+</nav>
+{% endif %}

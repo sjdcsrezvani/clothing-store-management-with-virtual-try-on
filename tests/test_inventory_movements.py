@@ -36,7 +36,12 @@ def test_ledger_page_uses_the_catalog_design_language(client, db_session, authed
     page = client.get(LEDGER_URL)
 
     assert page.status_code == 200
-    assert '<div class="eyebrow">فروشگاه / موجودی</div>' in page.text
+    # The hand-written pseudo-path became a real breadcrumb: section, then the
+    # owning destination as a link, then this page.
+    assert '<nav class="breadcrumb"' in page.text
+    assert "کالا و انبار" in page.text
+    assert 'href="/admin/products"' in page.text
+    assert '<h1>' in page.text
     assert '<div class="page-heading product-page-heading">' in page.text
     # The nav belongs in the heading, not as a trailing nav at the bottom.
     heading = page.text.index('<div class="page-heading product-page-heading">')

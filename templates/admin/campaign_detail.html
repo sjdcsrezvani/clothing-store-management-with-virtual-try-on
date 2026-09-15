@@ -1,26 +1,19 @@
 {% extends "base.html" %}
-{% block title %}{{ campaign.name }} — کمپین — {{ store.name }}{% endblock %}
 {% block content %}
 
-<div class="page-heading product-page-heading">
-    <div>
-        <div class="eyebrow">بازاریابی / کمپین‌ها / {{ campaign.name }}</div>
-        <h2>{{ campaign.name }}</h2>
-        <p>
-            کد <strong class="tnum" dir="ltr">{{ campaign.code }}</strong> ·
-            <strong>{{ campaign.discount_percent }}٪</strong> تخفیف
-            {%- if campaign.min_purchase %} · حداقل خرید <strong class="tnum">{{ fmt(campaign.min_purchase) }}</strong> تومان{% endif %}
-            · {{ stats.window_label }}
-            {%- if campaign.is_reusable %} · <span class="badge badge-available">چندباره</span>{% endif %}
-        </p>
-    </div>
-    <div class="admin-nav">
-        <a href="#send" class="btn btn-primary">ارسال پیامک</a>
+{% set page_description %}
+کد <strong class="tnum" dir="ltr">{{ campaign.code }}</strong> · <strong>{{ campaign.discount_percent }}٪</strong> تخفیف {%- if campaign.min_purchase %} · حداقل خرید <strong class="tnum">{{ fmt(campaign.min_purchase) }}</strong> تومان{% endif %} · {{ stats.window_label }} {%- if campaign.is_reusable %} · <span class="badge badge-available">چندباره</span>{% endif %}
+{% endset %}
+{% set page_title %}
+{{ campaign.name }}
+{% endset %}
+{% set heading_class = 'page-heading product-page-heading' %}
+{% set page_actions %}
+<a href="#send" class="btn btn-primary">ارسال پیامک</a>
         <a href="/admin/campaigns/{{ campaign.id }}/edit" class="btn btn-ghost">ویرایش</a>
         <a href="/admin/campaigns" class="btn btn-ghost">همه کمپین‌ها</a>
-        <a href="/admin" class="btn btn-ghost">داشبورد</a>
-    </div>
-</div>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 {% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
 {% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}

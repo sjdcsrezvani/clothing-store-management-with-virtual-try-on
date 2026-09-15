@@ -1,23 +1,19 @@
 {% extends "base.html" %}
-{% block title %}{{ customer.full_name }} — مشتریان {{ store.name }}{% endblock %}
 {% block content %}
 
-<div class="page-heading product-page-heading">
-    <div>
-        <div class="eyebrow">فروشگاه / مشتریان / پرونده</div>
-        <h2>{{ customer.full_name }}</h2>
-        <p>
-            <span class="customer-phone tnum">{{ customer.phone }}</span>
-            {% if customer.is_archived %}<span class="status-badge is-archived">بایگانی‌شده</span>{% endif %}
-        </p>
-    </div>
-    <div class="admin-nav">
-        <a href="/admin/customers" class="btn btn-ghost">فهرست مشتریان</a>
+{% set page_description %}
+<span class="customer-phone tnum">{{ customer.phone }}</span> {% if customer.is_archived %}<span class="status-badge is-archived">بایگانی‌شده</span>{% endif %}
+{% endset %}
+{% set page_title %}
+{{ customer.full_name }}
+{% endset %}
+{% set heading_class = 'page-heading product-page-heading' %}
+{% set page_actions %}
+<a href="/admin/customers" class="btn btn-ghost">فهرست مشتریان</a>
         <a href="/admin/credit/{{ customer.id }}" class="btn btn-ghost">حساب نسیه</a>
         <a href="/customers/lookup?phone={{ customer.phone }}" class="btn btn-ghost">پنل مشتری</a>
-        <a href="/admin" class="btn btn-ghost">داشبورد</a>
-    </div>
-</div>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 {% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
 {% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}

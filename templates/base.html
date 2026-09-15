@@ -3,7 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}{{ store.name }}{% endblock %}</title>
+    {# One name per page: services/navigation.py decides it, so the browser tab,
+       the heading and the last breadcrumb crumb cannot disagree. Pages that show
+       a record (a customer, an invoice) override `page_title` before they draw
+       their header. #}
+    <title>{% block title %}{% if page_title %}{{ page_title }} — {% endif %}{{ store.name }}{% endblock %}</title>
     <meta name="csrf-token" content="{{ csrf_token }}">
     <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css?v={{ static_version }}">
@@ -43,20 +47,22 @@
     <div class="app-shell">
         <header class="app-topbar">
             <div class="topbar-inner">
-                <button type="button" class="menu-toggle" id="menu-toggle" aria-label="باز کردن منو" aria-expanded="false">☰</button>
-                <a class="brand" href="/sales/new">
+                <button type="button" class="menu-toggle" id="menu-toggle" aria-label="باز کردن منو" aria-expanded="false" aria-controls="app-sidebar">☰</button>
+                {# The brand goes to wherever this role belongs, not always to the
+                   till — a manager's own home is the dashboard. #}
+                <a class="brand" href="{{ nav_home }}">
                     <span class="brand-mark" aria-hidden="true"></span>
                     <span class="brand-copy"><strong>{{ store.name }}</strong><small>{{ store.tagline or 'سیستم فروشگاه' }}</small></span>
                 </a>
+                {# The two actions that belong to no section: the till a cashier
+                   lives in and the dashboard a manager lands on. They are drawn
+                   from the same registry as the sidebar, so a role is never
+                   offered one it cannot open. #}
                 <div class="topbar-actions">
-                    <a href="/sales/new" class="quick-sale"><span class="icon-sale" aria-hidden="true"><svg class="ui-icon" focusable="false"><use href="#icon-cart"></use></svg></span><span>فروش جدید</span></a>
-                    {# The dashboard, for whoever may open one. It used to be
-                       labelled «تنظیمات» while pointing at /admin, so it sent
-                       a cashier to a refusal and told everyone else it was the
-                       settings page. #}
-                    {% if nav_home == '/admin' %}
-                    <a href="/admin" class="topbar-admin"><span class="topbar-settings-icon" aria-hidden="true"><svg class="ui-icon" focusable="false"><use href="#icon-dashboard"></use></svg></span><span>داشبورد</span></a>
-                    {% endif %}
+                    {% for action in topbar_actions %}
+                    <a href="{{ action.href }}" class="{{ 'quick-sale' if action.key == 'sales' else 'topbar-admin' }}"
+                       {% if action.key == active_topbar_key %}aria-current="page"{% endif %}><span class="icon-{{ action.tone }}" aria-hidden="true"><svg class="ui-icon" focusable="false"><use href="#icon-{{ action.icon }}"></use></svg></span><span>{{ action.label }}</span></a>
+                    {% endfor %}
                 </div>
             </div>
         </header>
@@ -67,17 +73,22 @@
             </div>
             {# The list is chosen in Python and drawn as handed: a link a role may
                not open is not rendered, because clicking it would only produce a
-               refusal. Adding one back means saying which role it is for. #}
+               refusal, and which item is current is decided there too, so exactly
+               one entry is ever marked. Adding a link back means saying which
+               role it is for. #}
             <nav class="sidebar-nav">
                 {% for section in nav_sections %}
-                <div class="sidebar-section-label">{{ section.label }}</div>
-                {% for item in section['items'] %}
-                <a href="{{ item.href }}" data-nav="{{ item.key }}"><span class="nav-icon icon-{{ item.tone }}" aria-hidden="true"><svg class="ui-icon" focusable="false"><use href="#icon-{{ item.icon }}"></use></svg></span> {{ item.label }}</a>
-                {% endfor %}
+                <div class="sidebar-section">
+                    <div class="sidebar-section-label" id="nav-section-{{ loop.index }}">{{ section.label }}</div>
+                    <ul aria-labelledby="nav-section-{{ loop.index }}">
+                        {% for item in section['items'] %}
+                        <li><a href="{{ item.href }}" data-nav="{{ item.key }}"{% if item.key == active_nav_key %} class="active" aria-current="page"{% endif %}><span class="nav-icon icon-{{ item.tone }}" aria-hidden="true"><svg class="ui-icon" focusable="false"><use href="#icon-{{ item.icon }}"></use></svg></span> {{ item.label }}</a></li>
+                        {% endfor %}
+                    </ul>
+                </div>
                 {% endfor %}
             </nav>
             <div class="sidebar-footer">
-                <a href="/sales/new" class="sidebar-new-sale"><span class="icon-plus" aria-hidden="true"><svg class="ui-icon" focusable="false"><use href="#icon-plus"></use></svg></span> شروع فروش جدید</a>
                 <form method="post" action="/admin/logout">
                     <button type="submit" class="sidebar-logout"><span class="icon-logout" aria-hidden="true"><svg class="ui-icon" focusable="false"><use href="#icon-logout"></use></svg></span> خروج از حساب</button>
                 </form>
@@ -87,10 +98,6 @@
 
         <main class="app-main">
             <div class="page-container">
-                <div class="mobile-context-bar" aria-label="دسترسی سریع">
-                    <span><span class="context-mark" aria-hidden="true"></span> {{ store.name }}</span>
-                    <a href="/sales/new"><span class="icon-plus" aria-hidden="true"><svg class="ui-icon" focusable="false"><use href="#icon-plus"></use></svg></span> فروش جدید</a>
-                </div>
                 {% block content %}{% endblock %}
             </div>
             <footer class="app-footer">
@@ -119,12 +126,16 @@
     // The Persian date picker (datepicker.js) wires up every .persian-date-input
     // itself, including fields added to the page later.
 
-    // Responsive app sidebar.
+    // Responsive app sidebar. Which item is current is NOT decided here — the
+    // server marks it, because matching prefixes in the browser highlighted two
+    // items on /sales/new and on /admin/settings/appearance and none at all on
+    // the pages filed under a section.
     (function () {
         var body = document.body;
         var toggle = document.getElementById('menu-toggle');
         var overlay = document.getElementById('sidebar-overlay');
         var sidebar = document.querySelector('.app-sidebar');
+        var nav = document.querySelector('.sidebar-nav');
         function setOpen(open) {
             body.classList.toggle('sidebar-open', open);
             if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
@@ -136,37 +147,25 @@
         document.querySelectorAll('.sidebar-nav a').forEach(function (link) {
             link.addEventListener('click', function () { setOpen(false); });
         });
-        // Highlight the current section.
-        var path = window.location.pathname;
-        var activeLink = null;
-        document.querySelectorAll('.sidebar-nav a[data-nav]').forEach(function (link) {
-            var href = link.getAttribute('href');
-            if ((href === '/admin' && path === '/admin/') || (href !== '/admin' && path.indexOf(href) === 0)) {
-                link.classList.add('active');
-                activeLink = link;
-            }
-        });
-        // Keep the sidebar where the user left it across page loads: restore
-        // the exact scroll position, then nudge the active item into view
-        // (covers deep links like /admin/try-on opened directly).
-        if (sidebar) {
+        // Keep the sidebar where the user left it across page loads: restore the
+        // list's scroll position, then nudge the current item into view (covers
+        // deep links like /admin/try-on opened directly).
+        if (sidebar && nav) {
             var saved = sessionStorage.getItem('sidebarScroll');
-            if (saved) sidebar.scrollTop = parseInt(saved, 10) || 0;
+            if (saved) nav.scrollTop = parseInt(saved, 10) || 0;
+            var activeLink = document.querySelector('.sidebar-nav a.active');
             if (activeLink) {
-                // Nudge the active item into view (manual math on the sidebar
-                // container so the page itself never scrolls); no-op when the
-                // item is already visible.
                 var top = activeLink.offsetTop;
                 var bottom = top + activeLink.offsetHeight;
-                if (top < sidebar.scrollTop) sidebar.scrollTop = top;
-                else if (bottom > sidebar.scrollTop + sidebar.clientHeight) sidebar.scrollTop = bottom - sidebar.clientHeight;
+                if (top < nav.scrollTop) nav.scrollTop = top;
+                else if (bottom > nav.scrollTop + nav.clientHeight) nav.scrollTop = bottom - nav.clientHeight;
             }
             var scrollRaf = null;
-            sidebar.addEventListener('scroll', function () {
+            nav.addEventListener('scroll', function () {
                 if (scrollRaf) return;
                 scrollRaf = requestAnimationFrame(function () {
                     scrollRaf = null;
-                    try { sessionStorage.setItem('sidebarScroll', String(sidebar.scrollTop)); } catch (e) { /* private mode */ }
+                    try { sessionStorage.setItem('sidebarScroll', String(nav.scrollTop)); } catch (e) { /* private mode */ }
                 });
             });
         }

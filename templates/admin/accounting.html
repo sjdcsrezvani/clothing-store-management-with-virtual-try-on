@@ -1,17 +1,13 @@
 {% extends "base.html" %}
-{% block title %}🧮 سود و زیان — {{ store.name }}{% endblock %}
 {% block content %}
 
-<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1rem; flex-wrap: wrap;">
-    <span style="font-size: 2rem;">🧮</span>
-    <h2 style="margin: 0;">سود و زیان</h2>
-    <div style="margin-right: auto; display: flex; gap: 0.5rem; flex-wrap: wrap;">
-        <a href="/admin/accounting/export?kind=sales" class="btn btn-sm btn-ghost">📄 خروجی فروش</a>
+{% set page_actions %}
+<a href="/admin/accounting/export?kind=sales" class="btn btn-sm btn-ghost">📄 خروجی فروش</a>
         <a href="/admin/accounting/export?kind=customers" class="btn btn-sm btn-ghost">📄 خروجی مشتریان</a>
         <a href="/admin/accounting/export?kind=purchases" class="btn btn-sm btn-ghost">📄 خروجی خریدها</a>
         <a href="/admin/accounting/export?kind=expenses" class="btn btn-sm btn-ghost">📄 خروجی هزینه‌ها</a>
-    </div>
-</div>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 {# ─── Period filter ─── #}
 <div class="card" style="margin-bottom: 1rem;">
@@ -69,7 +65,7 @@
     </div>
 
     <div class="card">
-        <h3>💸 هزینه‌ها بر اساس دسته</h3>
+        <h3>هزینه‌ها بر اساس دسته</h3>
     {% if pl.expense_cats %}
     <table>
         <thead><tr><th>دسته</th><th>مبلغ</th><th>سهم</th></tr></thead>
@@ -107,9 +103,4 @@
         <div class="stat-value tnum">{{ fmt(cashbox.closing) }} ت</div>
         <div class="stat-sub"><a href="/admin/cashbox">جزئیات صندوق ←</a></div>
     </div>
-</div>
-
-<nav class="admin-nav">
-    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
-</nav>
-{% endblock %}
+</div>{% endblock %}

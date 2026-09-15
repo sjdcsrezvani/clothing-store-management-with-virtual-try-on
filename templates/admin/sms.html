@@ -1,24 +1,16 @@
 {% extends "base.html" %}
-{% block title %}پیامک — {{ store.name }}{% endblock %}
 {% block content %}
 
-<div class="page-heading product-page-heading">
-    <div>
-        <div class="eyebrow">بازاریابی / پیامک</div>
-        <h2>پیامک‌های فروشگاه</h2>
-        <p>
-            هر پیامکی که این فروشگاه می‌فرستد یک قالب دارد. متن هر قالب را همین‌جا می‌نویسید،
-            متغیرها را می‌بینید و پیش‌نمایش می‌گیرید — و هر پیامکی که فرستاده شود در
-            <strong>تاریخچه</strong> ثبت می‌شود. زیر نام هر قالب نوشته شده که
-            <strong>خودکار</strong> فرستاده می‌شود یا <strong>دستی</strong>، و اگر دستی است از کدام صفحه.
-        </p>
-    </div>
-    <div class="admin-nav">
-        <a href="/admin/sms/send" class="btn btn-primary">ارسال پیامک</a>
+{% set page_description %}
+هر پیامکی که این فروشگاه می‌فرستد یک قالب دارد. متن هر قالب را همین‌جا می‌نویسید، متغیرها را می‌بینید و پیش‌نمایش می‌گیرید — و هر پیامکی که فرستاده شود در <strong>تاریخچه</strong> ثبت می‌شود. زیر نام هر قالب نوشته شده که <strong>خودکار</strong> فرستاده می‌شود یا <strong>دستی</strong>، و اگر دستی است از کدام صفحه.
+{% endset %}
+{% set heading_class = 'page-heading product-page-heading' %}
+{% set page_actions %}
+<a href="/admin/sms/send" class="btn btn-primary">ارسال پیامک</a>
         <a href="/admin/sms/history" class="btn btn-ghost">تاریخچه ارسال</a>
         <a href="/admin/sms/templates/new" class="btn btn-ghost">قالب جدید</a>
-    </div>
-</div>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 {% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
 {% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}

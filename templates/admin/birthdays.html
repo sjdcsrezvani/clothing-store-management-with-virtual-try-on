@@ -1,22 +1,16 @@
 {% extends "base.html" %}
-{% block title %}🎂 پیامک تولد — {{ store.name }}{% endblock %}
 {% block content %}
 
-<div class="page-heading product-page-heading">
-    <div>
-        <div class="eyebrow">بازاریابی / پیامک / تولد</div>
-        <h2>پیامک تولد</h2>
-        <p>
-            تولدهای {{ days_before }} روز آینده. هر کسی را خواستید تیک بزنید و ارسال کنید —
-            تا وقتی تأیید نکنید هیچ پیامی در صف قرار نمی‌گیرد. مشتریِ پیام‌گرفته تا سال بعد دوباره در این فهرست نمی‌آید.
-        </p>
-    </div>
-    <div class="admin-nav">
-        <a href="/admin/sms" class="btn btn-ghost">قالب پیامک تولد</a>
+{% set page_description %}
+تولدهای {{ days_before }} روز آینده. هر کسی را خواستید تیک بزنید و ارسال کنید — تا وقتی تأیید نکنید هیچ پیامی در صف قرار نمی‌گیرد. مشتریِ پیام‌گرفته تا سال بعد دوباره در این فهرست نمی‌آید.
+{% endset %}
+{% set heading_class = 'page-heading product-page-heading' %}
+{% set page_actions %}
+<a href="/admin/sms" class="btn btn-ghost">قالب پیامک تولد</a>
         <a href="/admin/tier-up" class="btn btn-ghost">پیامک ارتقای سطح</a>
         <a href="/admin/follow-ups" class="btn btn-ghost">پیگیری مشتریان</a>
-    </div>
-</div>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 {% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
 {% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}

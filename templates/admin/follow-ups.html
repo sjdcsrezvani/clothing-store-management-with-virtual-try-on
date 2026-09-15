@@ -1,22 +1,16 @@
 {% extends "base.html" %}
-{% block title %}📮 پیگیری مشتریان — {{ store.name }}{% endblock %}
 {% block content %}
 
-<div class="page-heading product-page-heading">
-    <div>
-        <div class="eyebrow">بازاریابی / پیامک / پیگیری</div>
-        <h2>پیگیری مشتریان</h2>
-        <p>
-            مشتریانی که مدتی است خرید نکرده‌اند. هر کسی را خواستید تیک بزنید و همان‌جا بفرستید،
-            یا بگذارید نوبت خودش برسد. متن هر پیامک همان چیزی است که برای آن مشتری فرستاده می‌شود.
-        </p>
-    </div>
-    <div class="admin-nav">
-        <a href="/admin/sms" class="btn btn-ghost">قالب‌های پیامک</a>
+{% set page_description %}
+مشتریانی که مدتی است خرید نکرده‌اند. هر کسی را خواستید تیک بزنید و همان‌جا بفرستید، یا بگذارید نوبت خودش برسد. متن هر پیامک همان چیزی است که برای آن مشتری فرستاده می‌شود.
+{% endset %}
+{% set heading_class = 'page-heading product-page-heading' %}
+{% set page_actions %}
+<a href="/admin/sms" class="btn btn-ghost">قالب‌های پیامک</a>
         <a href="/admin/birthdays" class="btn btn-ghost">پیامک تولد</a>
         <a href="/admin/tier-up" class="btn btn-ghost">ارتقای سطح</a>
-    </div>
-</div>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 {% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
 {% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}

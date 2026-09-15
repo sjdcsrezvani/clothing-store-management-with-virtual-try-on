@@ -23,7 +23,10 @@ def test_login_correct_password_grants_access(client):
     assert resp.headers["location"].endswith("/admin")
     resp = client.get("/admin")
     assert resp.status_code == 200
-    assert "داشبورد مدیریت" in resp.text
+    # The dashboard's own name, from the same registry the topbar draws its
+    # action from — it is called «داشبورد» everywhere now, not «داشبورد مدیریت»
+    # in the tab and something else in the menu.
+    assert "<h1>" in resp.text and "داشبورد" in resp.text
 
 
 def test_logout_clears_session(client, authed):

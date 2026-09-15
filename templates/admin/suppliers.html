@@ -1,17 +1,18 @@
 {% extends "base.html" %}
-{% block title %}🏭 تأمین‌کنندگان — {{ store.name }}{% endblock %}
 {% block content %}
 
-<div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem;">
-    <span style="font-size: 2rem;">🏭</span>
-    <h2 style="margin: 0;">تأمین‌کنندگان</h2>
-</div>
+{# The footer nav this page used to carry held one real action; the rest of it
+   was a way back the breadcrumb now provides. #}
+{% set page_actions %}
+<a href="/admin/purchases" class="btn btn-primary">ثبت خرید جدید</a>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 {% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
 {% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
 
 <div class="card">
-    <h3>➕ افزودن تأمین‌کننده</h3>
+    <h3>افزودن تأمین‌کننده</h3>
     <form method="post" action="/admin/suppliers/add" class="filter-bar" style="margin: 0;">
         <input type="text" name="name" placeholder="نام تأمین‌کننده / عمده‌فروش *" required style="flex:2;">
         <input type="tel" name="phone" placeholder="📱 تلفن" style="flex:1;">
@@ -63,10 +64,4 @@
     {% else %}
     <p style="text-align: center; color: var(--ink-soft); padding: 2rem;">هنوز تأمین‌کننده‌ای ثبت نشده است.</p>
     {% endif %}
-</div>
-
-<nav class="admin-nav">
-    <a href="/admin" class="btn btn-ghost">🔙 بازگشت به داشبورد</a>
-    <a href="/admin/purchases" class="btn btn-primary">📦 ثبت خرید جدید</a>
-</nav>
-{% endblock %}
+</div>{% endblock %}

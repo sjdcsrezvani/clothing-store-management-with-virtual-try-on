@@ -1,23 +1,17 @@
 {% extends "base.html" %}
-{% block title %}{% if purchase.is_draft %}پیش‌نویس فاکتور{% else %}خرید{% endif %} #{{ purchase.id }} — {{ store.name }}{% endblock %}
 {% block content %}
-<div class="page-heading product-form-heading">
-    <div>
-        <div class="eyebrow"><a href="/admin/purchases">خرید و تأمین</a> / {% if purchase.is_draft %}پیش‌نویس فاکتور{% else %}خرید{% endif %} #{{ purchase.id }}</div>
-        <h2>{% if purchase.is_draft %}پیش‌نویس فاکتور #{{ purchase.id }}{% else %}خرید #{{ purchase.id }}{% endif %}</h2>
-        <p>
-            {{ purchase.supplier.name if purchase.supplier else 'بدون تأمین‌کننده' }}
-            · تاریخ فاکتور {{ jalali_str(purchase.purchase_date or purchase.created_at, with_time=False) }}
-            · ثبت‌شده در {{ jalali_str(purchase.created_at) }}
-            {% if purchase.note %}· {{ purchase.note }}{% endif %}
-        </p>
-    </div>
-    <div class="admin-nav">
-        {% if purchase.is_draft %}<a href="/admin/purchases/{{ purchase.id }}/edit" class="btn btn-primary">ویرایش پیش‌نویس</a>{% endif %}
+{% set page_description %}
+{{ purchase.supplier.name if purchase.supplier else 'بدون تأمین‌کننده' }} · تاریخ فاکتور {{ jalali_str(purchase.purchase_date or purchase.created_at, with_time=False) }} · ثبت‌شده در {{ jalali_str(purchase.created_at) }} {% if purchase.note %}· {{ purchase.note }}{% endif %}
+{% endset %}
+{% set page_title %}
+{% if purchase.is_draft %}پیش‌نویس فاکتور #{{ purchase.id }}{% else %}خرید #{{ purchase.id }}{% endif %}
+{% endset %}
+{% set heading_class = 'page-heading product-form-heading' %}
+{% set page_actions %}
+{% if purchase.is_draft %}<a href="/admin/purchases/{{ purchase.id }}/edit" class="btn btn-primary">ویرایش پیش‌نویس</a>{% endif %}
         <a href="/admin/purchases/{{ purchase.id }}/print" class="btn btn-ghost" target="_blank">چاپ فاکتور خرید</a>
-        <a href="/admin/purchases" class="btn btn-ghost">بازگشت به خریدها</a>
-    </div>
-</div>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 {% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
 {% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}

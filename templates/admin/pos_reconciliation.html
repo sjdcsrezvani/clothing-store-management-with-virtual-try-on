@@ -1,15 +1,10 @@
 {% extends "base.html" %}
-{% block title %}📟 تطبیق کارت‌خوان — {{ store.name }}{% endblock %}
 {% block content %}
 
-<div class="page-heading">
-    <div>
-        <span class="eyebrow">کنترل پرداخت‌های الکترونیکی</span>
-        <h2>📟 تطبیق کارت‌خوان</h2>
-        <p>تراکنش‌هایی را بررسی کنید که نتیجه کارت‌خوان و فاکتور محلی آن‌ها باید با هم تطبیق داده شوند.</p>
-    </div>
-    <a href="/admin" class="btn btn-ghost">🔙 داشبورد</a>
-</div>
+{% set page_description %}
+تراکنش‌هایی را بررسی کنید که نتیجه کارت‌خوان و فاکتور محلی آن‌ها باید با هم تطبیق داده شوند.
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 {% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
 {% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
@@ -108,10 +103,4 @@
         <p>هنوز تراکنش کارت‌خوانی ثبت نشده است.</p>
     </div>
     {% endif %}
-</div>
-
-<nav class="admin-nav">
-    <a href="/admin/logs" class="btn btn-ghost">📜 گزارش عملیات</a>
-    <a href="/sales/new" class="btn btn-primary">🛒 فروش جدید</a>
-</nav>
-{% endblock %}
+</div>{% endblock %}

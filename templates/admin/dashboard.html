@@ -1,14 +1,11 @@
 {% extends "base.html" %}
-{% block title %}📊 داشبورد مدیریت — {{ store.name }}{% endblock %}
 {% block content %}
 
-<div class="page-heading">
-    <div>
-        <span class="eyebrow">نمای کلی فروشگاه</span>
-        <h2>📊 داشبورد مدیریت <span class="dashboard-role">{{ role_label }}</span></h2>
-    </div>
-    <a href="/sales/new" class="btn btn-success">🛒 ثبت فروش</a>
-</div>
+{% set page_badge = role_label %}
+{% set page_actions %}
+<a href="/sales/new" class="btn btn-success">🛒 ثبت فروش</a>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 {# Every section and card here was chosen before the page was drawn: a card this
    viewer may not see was never built and never counted. Nothing below branches

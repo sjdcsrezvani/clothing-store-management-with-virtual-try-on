@@ -1,24 +1,16 @@
 {% extends "base.html" %}
-{% block title %}کمپین‌ها — {{ store.name }}{% endblock %}
 {% block content %}
 {% set filter_qs = '&status=' ~ status ~ '&order=' ~ order ~ '&search=' ~ (search|urlencode) %}
 
-<div class="page-heading product-page-heading">
-    <div>
-        <div class="eyebrow">بازاریابی / کمپین‌ها</div>
-        <h2>کمپین‌های پیامکی</h2>
-        <p>
-            هر کمپین یک کد تخفیف، یک بازه و یک گروه مشتری دارد. مشتری‌ای که کمپین به او اختصاص یافته
-            تخفیف را در صندوق <strong>خودکار</strong> می‌گیرد؛ کد هم برای بقیه کار می‌کند.
-            روی هر کمپین بزنید تا ببینید پیامک به چه کسی رفت و چه کسی از آن خرید کرد.
-        </p>
-    </div>
-    <div class="admin-nav">
-        <a href="/admin/campaigns/add" class="btn btn-primary">کمپین جدید</a>
+{% set page_description %}
+هر کمپین یک کد تخفیف، یک بازه و یک گروه مشتری دارد. مشتری‌ای که کمپین به او اختصاص یافته تخفیف را در صندوق <strong>خودکار</strong> می‌گیرد؛ کد هم برای بقیه کار می‌کند. روی هر کمپین بزنید تا ببینید پیامک به چه کسی رفت و چه کسی از آن خرید کرد.
+{% endset %}
+{% set heading_class = 'page-heading product-page-heading' %}
+{% set page_actions %}
+<a href="/admin/campaigns/add" class="btn btn-primary">کمپین جدید</a>
         <a href="/admin/customers" class="btn btn-ghost">مشتریان</a>
-        <a href="/admin" class="btn btn-ghost">داشبورد</a>
-    </div>
-</div>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
 {% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
 {% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}

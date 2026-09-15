@@ -1,21 +1,37 @@
-"""The shell a role is handed, and the page a refusal lands on.
+"""The shell: which doors a role is handed, what each page is called, and the trail.
 
-The sidebar used to be a fixed list of twenty-five links: a cashier was shown
-تنظیمات، پشتیبان‌ها and گزارش عملیات, and clicking any of them answered with
-FastAPI's raw ``{"detail": …}`` because the app had no exception handler at all.
-Two questions decide whether that is really fixed — is a door only drawn for
-somebody who can open it, and does a refusal read like a page? — and these tests
-ask both, by actually opening every door the sidebar draws.
+The sidebar used to be a fixed list of twenty-five links every role could see, and
+the page it landed on answered with FastAPI's raw JSON. Fixing that raised three
+questions these tests ask, mostly by opening every door rather than by reading the
+list:
+
+* is a door drawn only for somebody who can open it?
+* is every page named once — the menu, the tab, the heading and the last crumb?
+* does the page you are on light up exactly one item, and the right one?
+
+The last one is why the matching moved into Python: in the browser it highlighted
+two items on ``/sales/new`` and on ``/admin/settings/appearance`` and nothing at
+all on the pages filed under a section.
 """
 import re
 from pathlib import Path
 
 import pytest
 
-from models import Sale
-from services import dashboard
-from services.navigation import NAV_SECTIONS, home_for, navigation_for, role_allows
+from models import Campaign, Customer, Product, ProductVariant, Purchase, StaffUser
+from services.navigation import (
+    NAV_SECTIONS,
+    PARENTS,
+    TOPBAR_ACTIONS,
+    active_key_for,
+    home_for,
+    navigation_for,
+    page_title_for,
+    topbar_key_for,
+    trail_for,
+)
 from services.security import ROLE_ORDER
+from tests import ui
 from tests.conftest import csrf_token
 from tests.test_roles import _session_as, _staff
 from tests.test_sales_money import _confirm_sale, _make_variant
@@ -27,19 +43,99 @@ STYLE_CSS = (ROOT / "static" / "css" / "style.css").read_text()
 
 ROLES = ("cashier", "manager", "owner")
 ALL_ITEMS = [item for section in NAV_SECTIONS for item in section["items"]]
-
-# A section label and an item label can read the same («مشتریان»), so the sidebar
-# text is not a reliable way to count things; the markup is.
 LABELS = [item["label"] for item in ALL_ITEMS]
 
+EMOJI = re.compile("[\U0001F000-\U0001FAFF\u2190-\u21FF\u2300-\u27BF\u2B00-\u2BFF\uFE0F]")
+LATIN = re.compile(r"[A-Za-z]")
+TITLE_BLOCK = re.compile(r"\{% block title %\}(.*?)\{% endblock %\}", re.S)
+HEADING = re.compile(r"<h[1-4][^>]*>(.*?)</h[1-4]>", re.S)
 
-def _sidebar(html: str) -> str:
+# Every path the app actually serves, in the shape ``active_key_for`` must own.
+# Two entries carry no owner on purpose: the till and the dashboard are the
+# topbar's actions, and a section entry must not light up for them.
+KNOWN_PATHS = (
+    "/admin", "/admin/", "/sales/new", "/sales/", "/sales/invoice/7",
+    "/admin/products", "/admin/products/add", "/admin/products/5",
+    "/admin/variants/3/edit", "/admin/barcodes/print", "/admin/settings/tags",
+    "/admin/purchases", "/admin/purchases/3", "/admin/purchases/3/edit",
+    "/admin/purchases/3/print", "/admin/customers", "/admin/customers/5",
+    "/admin/credit", "/admin/credit/5", "/admin/credit/5/statement",
+    "/admin/campaigns", "/admin/campaigns/add", "/admin/campaigns/4",
+    "/admin/campaigns/4/edit", "/admin/sms", "/admin/sms/send",
+    "/admin/sms/history", "/admin/sms/templates/new", "/admin/sms/templates/3/edit",
+    "/admin/birthdays", "/admin/follow-ups", "/admin/tier-up", "/admin/tier-downgrades",
+    "/admin/try-on", "/admin/try-on/saved", "/admin/settings",
+    "/admin/settings/appearance", "/admin/staff", "/admin/staff/2/contract",
+    "/admin/payroll/9/receipt", "/admin/backups", "/admin/backups/download",
+    "/admin/accounting", "/admin/accounting/export", "/admin/cashbox",
+    "/admin/expenses", "/admin/checks", "/admin/analytics", "/admin/suppliers",
+    "/admin/inventory-movements", "/admin/pos-reconciliation", "/admin/events",
+    "/admin/logs", "/admin/owner-profile",
+)
+
+# The pages a role may open, by the least role that may open them.
+REACHABLE = {
+    "cashier": ("/sales/new", "/sales/"),
+    "manager": ("/admin", "/admin/products", "/admin/credit", "/admin/sms",
+                "/admin/settings/tags"),
+    "owner": ("/admin/settings", "/admin/settings/appearance", "/admin/birthdays",
+              "/admin/tier-up", "/admin/logs"),
+}
+
+
+def _template_files():
+    return sorted(list((ROOT / "templates" / "admin").rglob("*.html"))
+                  + list((ROOT / "templates" / "sales").rglob("*.html")))
+
+
+def _sidebar(html):
     start = html.index('<nav class="sidebar-nav">')
     return html[start:html.index("</nav>", start)]
 
 
-def _nav_hrefs(html: str) -> list[str]:
+def _topbar(html):
+    start = html.index('class="topbar-actions"')
+    return html[start:html.index("</header>", start)]
+
+
+def _nav_hrefs(html):
     return re.findall(r'<a href="([^"]+)" data-nav="', _sidebar(html))
+
+
+def _active_keys(html):
+    return re.findall(r'data-nav="([^"]+)" class="active" aria-current="page"', _sidebar(html))
+
+
+def _current_in_topbar(html):
+    return re.findall(r'class="(?:quick-sale|topbar-admin)"\s+aria-current="page"', _topbar(html))
+
+
+def _h1(html):
+    match = re.search(r"<h1[^>]*>(.*?)</h1>", html, re.S)
+    if not match:
+        return ""
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", match.group(1))).strip()
+
+
+def _crumb_labels(html):
+    match = re.search(r'<nav class="breadcrumb".*?</nav>', html, re.S)
+    if not match:
+        return []
+    labels = re.findall(r"<(?:a|span)[^>]*>(.*?)</(?:a|span)>", match.group(0), re.S)
+    return [re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", label)).strip() for label in labels]
+
+
+def _make_path_data(db_session):
+    """One record of each kind, so every detail page can be opened for real."""
+    product, variant = _make_variant(db_session, price=100_000, stock=5)
+    customer = Customer(phone="09120000009", first_name="سارا", referral_code="000009")
+    purchase = Purchase(total_cost=5_000, note="تست")
+    campaign = Campaign(name="کمپین تست", code="TESTNAV", discount_percent=10)
+    staff = StaffUser(username="nav-contract", password_hash="x", role="cashier")
+    db_session.add_all([customer, purchase, campaign, staff])
+    db_session.commit()
+    return {"product": product, "variant": variant, "customer": customer,
+            "purchase": purchase, "campaign": campaign, "staff": staff}
 
 
 # ── what the list says ───────────────────────────────────────────────────────
@@ -57,40 +153,107 @@ def test_every_sidebar_entry_states_a_role_that_exists():
     assert len(keys) == len(set(keys))
 
 
+def test_the_categories_are_the_five_the_shop_reads_by():
+    assert [section["label"] for section in NAV_SECTIONS] == [
+        "فروش", "کالا و انبار", "مشتریان و باشگاه", "مالی", "مدیریت",
+    ]
+    # No category is a junk drawer: the old «ابزارها» held nine unrelated things.
+    assert max(len(section["items"]) for section in NAV_SECTIONS) <= 6
+    # Suppliers sit with the job that uses them, not under the money.
+    supplies = {item["key"] for item in
+                next(s for s in NAV_SECTIONS if s["label"] == "کالا و انبار")["items"]}
+    assert {"suppliers", "purchases"} <= supplies
+
+
 def test_a_role_is_offered_exactly_the_doors_it_may_open():
     for role in ROLES:
         offered = {(section["label"], item["href"])
                    for section in navigation_for(role) for item in section["items"]}
         for section in NAV_SECTIONS:
             for item in section["items"]:
-                wanted = role_allows(role, item["min_role"])
+                wanted = ROLE_ORDER.get(role, 0) >= ROLE_ORDER.get(item["min_role"], 99)
                 assert ((section["label"], item["href"]) in offered) is wanted, (role, item)
 
 
 def test_a_section_with_nothing_left_in_it_is_not_printed():
     """Nobody is shown a heading with no items under it, or a blank one."""
-    assert [section["label"] for section in navigation_for("cashier")] == ["فروشگاه"]
+    assert [section["label"] for section in navigation_for("cashier")] == ["فروش"]
     for role in ROLES:
         for section in navigation_for(role):
             assert section["items"], section["label"]
             assert section["label"]
 
 
-def test_one_definition_of_who_may_open_what():
-    """The dashboard's cards and the sidebar must not answer this differently."""
-    assert dashboard.role_allows is role_allows
-    assert role_allows(None, "cashier") is False
-    assert role_allows("nonsense", "cashier") is False
-    assert role_allows("owner", "nonsense") is False
-    assert role_allows("cashier", "cashier") is True
-    assert role_allows("cashier", "manager") is False
+def test_the_global_actions_are_the_topbars_and_not_a_section():
+    """The till and the dashboard belong to no category, so they are in neither."""
+    topbar_hrefs = {action["href"] for action in TOPBAR_ACTIONS}
+    assert topbar_hrefs == {"/sales/new", "/admin"}
+    assert not topbar_hrefs & {item["href"] for item in ALL_ITEMS}
 
 
-# ── every door the sidebar draws actually opens ──────────────────────────────
+# ── which page is current ────────────────────────────────────────────────────
+
+def test_every_known_path_has_exactly_one_owner_and_one_name():
+    for path in KNOWN_PATHS:
+        key = active_key_for(path)
+        title = page_title_for(path)
+        assert title, path
+        if path in ("/admin", "/admin/", "/sales/new"):
+            assert key is None, path          # the topbar's own, not a section entry
+        else:
+            assert key in {item["key"] for item in ALL_ITEMS}, (path, key)
+
+
+def test_the_till_and_the_dashboard_do_not_light_up_a_section_entry():
+    """Both used to highlight «تاریخچه فروش» — the till is not the sales list."""
+    assert active_key_for("/sales/new") is None
+    assert active_key_for("/admin") is None
+    assert active_key_for("/admin/") is None
+    assert topbar_key_for("/sales/new") == "sales"
+    assert topbar_key_for("/admin/") == "dashboard"
+
+
+def test_an_owner_only_child_never_parents_to_a_page_its_roles_cannot_open():
+    """A crumb is a link, so a parent must be openable by everyone who can open it."""
+    role_of = {item["href"]: item for item in ALL_ITEMS}
+    for prefix, key, _name in PARENTS:
+        parent = next(item for item in ALL_ITEMS if item["key"] == key)
+        child_role = next((item["min_role"] for item in ALL_ITEMS
+                           if path_owns(prefix, item["href"])), None)
+        if child_role is None:
+            continue
+        # The parent must be no stricter than the child: /admin/settings/tags is a
+        # manager page and parents to the catalogue, not to the owner-only settings.
+        assert ROLE_ORDER[parent["min_role"]] <= ROLE_ORDER[child_role], (prefix, key)
+    assert role_of  # the map above is only meaningful if items exist
+
+
+def path_owns(prefix, href):
+    if prefix.endswith("/"):
+        return href.startswith(prefix)
+    return href == prefix or href.startswith(prefix + "/")
+
+
+def test_the_trail_starts_at_a_section_and_ends_at_the_page():
+    crumbs = trail_for("/admin/settings/appearance")
+    assert [crumb["href"] for crumb in crumbs] == [None, "/admin/settings", None]
+    assert crumbs[0]["label"] == "مدیریت"
+    assert crumbs[-1]["label"] == "ظاهر فروشگاه"
+    # A root of its own draws no breadcrumb at all.
+    assert trail_for("/admin") == []
+    assert trail_for("/sales/new") == []
+
+
+def test_a_dynamic_title_overrides_the_crumb_it_ends():
+    """A page that renames itself names its own crumb too."""
+    crumbs = trail_for("/admin/customers/5", "سارا")
+    assert [crumb["label"] for crumb in crumbs] == ["مشتریان و باشگاه", "مشتریان", "سارا"]
+
+
+# ── the pages a role actually gets ───────────────────────────────────────────
 
 @pytest.mark.parametrize("role", ROLES)
-def test_every_door_the_sidebar_draws_opens_for_whoever_it_drew_it_for(
-        client, db_session, role):
+def test_every_door_the_sidebar_draws_opens_for_whoever_it_drew_it_for(client, db_session, role):
     """The whole point: a link on the page must not be a refusal in disguise."""
     user, password = _staff(db_session, f"nav-open-{role}", role)
     _session_as(client, user, password)
@@ -104,14 +267,61 @@ def test_every_door_the_sidebar_draws_opens_for_whoever_it_drew_it_for(
             f"the {role} sidebar offered {href} and the page refused it")
 
 
+@pytest.mark.parametrize("role", ROLES)
+def test_exactly_one_item_is_current_on_every_page_a_role_can_open(client, db_session, role):
+    data = _make_path_data(db_session)
+    user, password = _staff(db_session, f"nav-current-{role}", role)
+    _session_as(client, user, password)
+
+    paths = list(REACHABLE[role]) + [
+        f"/admin/customers/{data['customer'].id}",
+        f"/admin/credit/{data['customer'].id}",
+        f"/admin/products/{data['product'].id}",
+        f"/admin/variants/{data['variant'].id}/edit",
+        f"/admin/purchases/{data['purchase'].id}",
+        f"/admin/campaigns/{data['campaign'].id}",
+    ]
+    for path in paths:
+        page = client.get(path, follow_redirects=False)
+        if page.status_code != 200:
+            continue
+        current = _active_keys(page.text)
+        topbar = _current_in_topbar(page.text)
+        assert len(current) + len(topbar) <= 1, (role, path, current, topbar)
+        expected = active_key_for(page.request.url.path)
+        if expected:
+            assert current == [expected], (role, path, current, expected)
+        elif page.request.url.path not in ("/admin", "/admin/"):
+            assert current == [], (role, path, current)
+
+
+@pytest.mark.parametrize("role,path,key", [
+    ("owner", "/admin/settings/appearance", "settings"),
+    ("owner", "/admin/birthdays", "sms"),
+    ("owner", "/admin/follow-ups", "sms"),
+    ("owner", "/admin/tier-up", "customers"),
+    ("owner", "/admin/tier-downgrades", "customers"),
+    ("manager", "/admin/barcodes/print", "products"),
+    ("manager", "/admin/settings/tags", "products"),
+    ("cashier", "/sales/", "sales-history"),
+])
+def test_the_pages_that_used_to_light_up_wrong_are_right_now(client, db_session, role, path, key):
+    user, password = _staff(db_session, f"nav-fix-{key}-{role}", role)
+    _session_as(client, user, password)
+    page = client.get(path)
+    assert page.status_code == 200, path
+    assert _active_keys(page.text) == [key], path
+
+
 def test_a_cashier_is_not_offered_a_manager_or_owner_door(client, db_session):
     user, password = _staff(db_session, "nav-cashier-side", "cashier")
     _session_as(client, user, password)
     sidebar = _sidebar(client.get("/sales/new").text)
 
-    assert "فروش جدید" in sidebar and "تاریخچه فروش" in sidebar
+    assert "تاریخچه فروش" in sidebar
     for label in ("تنظیمات", "تحلیل فروش", "پشتیبان‌ها", "گزارش عملیات", "مشتریان",
-                  "محصولات و موجودی", "داشبورد", "کارکنان", "تطبیق کارت‌خوان"):
+                  "محصولات و موجودی", "داشبورد", "کارکنان و حقوق", "تطبیق کارت‌خوان",
+                  "حساب نسیه", "پرو مجازی", "تأمین‌کنندگان"):
         assert label not in sidebar, label
 
 
@@ -120,12 +330,12 @@ def test_a_manager_keeps_their_doors_and_loses_the_owners(client, db_session):
     _session_as(client, user, password)
     sidebar = _sidebar(client.get("/admin").text)
 
-    for label in ("محصولات و موجودی", "مشتریان", "کمپین پیامکی", "پیامک", "داشبورد",
-                  "سود و زیان", "صندوق", "هزینه‌ها", "تأمین‌کنندگان", "چک‌ها",
-                  "پرو مجازی", "تطبیق کارت‌خوان"):
+    for label in ("تاریخچه فروش", "پرو مجازی", "محصولات و موجودی", "خرید از عمده‌فروش",
+                  "تأمین‌کنندگان", "دفتر انبار", "مشتریان", "حساب نسیه", "کمپین پیامکی",
+                  "پیامک", "صندوق", "هزینه‌ها", "چک‌ها", "سود و زیان", "تطبیق کارت‌خوان"):
         assert label in sidebar, label
-    for label in ("تحلیل فروش", "پشتیبان‌ها", "گزارش عملیات", "تنظیمات", "کارکنان",
-                  "اطلاعات مالک", "دفتر رویدادها", "ظاهر فروشگاه"):
+    for label in ("تحلیل فروش", "پشتیبان‌ها", "گزارش عملیات", "تنظیمات", "کارکنان و حقوق",
+                  "اطلاعات مالک", "دفتر رویدادها"):
         assert label not in sidebar, label
 
 
@@ -134,26 +344,94 @@ def test_an_owner_is_still_offered_every_door(client, db_session):
     user, password = _staff(db_session, "nav-owner-side", "owner")
     _session_as(client, user, password)
     html = client.get("/admin").text
-    sidebar = _sidebar(html)
 
     for label in LABELS:
-        assert label in sidebar, label
+        assert label in _sidebar(html), label
     assert len(_nav_hrefs(html)) == len(ALL_ITEMS)
 
 
+def test_the_children_the_sidebar_cannot_reach_still_name_a_parent():
+    """Everything below a destination has an owner, or nothing would light up."""
+    reachable = {item["href"].rstrip("/") for item in ALL_ITEMS}
+    for path in KNOWN_PATHS:
+        key = active_key_for(path)
+        if key is None:
+            continue
+        assert key in {item["key"] for item in ALL_ITEMS}, path
+    assert reachable
+
+
+# ── one name per page ────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("role", ["manager", "owner"])
+def test_the_menu_the_tab_the_heading_and_the_crumb_agree(client, db_session, role):
+    user, password = _staff(db_session, f"nav-name-{role}", role)
+    _session_as(client, user, password)
+
+    for item in ALL_ITEMS:
+        if ROLE_ORDER[role] < ROLE_ORDER[item["min_role"]]:
+            continue
+        page = client.get(item["href"])
+        assert page.status_code == 200, item["href"]
+        assert _h1(page.text) == item["label"], item["href"]
+        labels = _crumb_labels(page.text)
+        assert labels, item["href"]
+        assert labels[-1] == item["label"], item["href"]
+        # …and the tab, which the shell now names from the same registry.
+        assert f"<title>{item['label']} — " in page.text, item["href"]
+
+
+def test_a_breadcrumb_link_always_opens_for_the_role_shown_it(client, db_session):
+    data = _make_path_data(db_session)
+    owner, password = _staff(db_session, "nav-trail", "owner")
+    _session_as(client, owner, password)
+
+    paths = [f"/admin/products/{data['product'].id}",
+             f"/admin/customers/{data['customer'].id}",
+             f"/admin/purchases/{data['purchase'].id}",
+             f"/admin/campaigns/{data['campaign'].id}",
+             f"/admin/staff/{data['staff'].id}/contract",
+             "/admin/sms/history", "/admin/tier-up", "/admin/settings/appearance"]
+    for path in paths:
+        page = client.get(path)
+        assert page.status_code == 200, path
+        match = re.search(r'<nav class="breadcrumb".*?</nav>', page.text, re.S)
+        assert match, path
+        for href in re.findall(r'<a href="([^"]+)"', match.group(0)):
+            assert client.get(href, follow_redirects=False).status_code not in (403, 404), (
+                f"a crumb on {path} offered {href} and the page refused it")
+        # The last crumb is where you already are, so it is not a link.
+        assert "</a></nav>" not in match.group(0)
+
+
+def test_a_root_of_its_own_draws_no_breadcrumb(client, db_session):
+    owner, password = _staff(db_session, "nav-root", "owner")
+    _session_as(client, owner, password)
+    assert 'class="breadcrumb"' not in client.get("/admin").text
+
+
+# ── the shell draws what it is handed ────────────────────────────────────────
+
 def test_the_shell_draws_the_list_it_is_handed():
-    """No page above the till is written into the nav, so a template edit cannot
-    hand a role a link the role check would refuse."""
+    """No destination is written into the nav, so a template edit cannot hand a
+    role a link the role check would refuse."""
     nav_markup = _sidebar(BASE_HTML)
-    # The nav is generated in full — no destination is written into it by hand,
-    # so a template edit cannot put a link back for a role that may not open it.
     assert 'href="/admin' not in nav_markup, nav_markup
     assert 'href="/sales' not in nav_markup, nav_markup
     assert "{% for section in nav_sections %}" in nav_markup
     assert "{% for item in section['items'] %}" in nav_markup
-    # The topbar's dashboard button is the one hand-written admin link, and it
-    # carries its own check — a guard is what matters, not the absence of a path.
-    assert "{% if nav_home == '/admin' %}" in BASE_HTML
+    # Which item is current is decided in Python, not by matching prefixes here.
+    assert "item.key == active_nav_key" in nav_markup
+    assert "indexOf" not in BASE_HTML
+    assert "{% for action in topbar_actions %}" in BASE_HTML
+
+
+def test_the_sidebar_sections_are_real_groups():
+    """A heading over a list is a group; over bare links it reads as decoration."""
+    nav_markup = _sidebar(BASE_HTML)
+    assert '<ul aria-labelledby="nav-section-' in nav_markup
+    assert 'id="nav-section-{{ loop.index }}"' in nav_markup
+    assert "aria-current=\"page\"" in nav_markup
 
 
 def test_the_login_page_has_no_doors_to_offer(client):
@@ -165,6 +443,17 @@ def test_the_login_page_has_no_doors_to_offer(client):
 
 # ── the topbar ───────────────────────────────────────────────────────────────
 
+def test_the_topbar_is_where_the_till_and_the_dashboard_live(client, db_session):
+    manager, password = _staff(db_session, "nav-top-manager", "manager")
+    _session_as(client, manager, password)
+
+    tank = client.get("/sales/new").text
+    assert _current_in_topbar(tank), "the till is not marked current"
+    assert _active_keys(tank) == [], "the till lit up a section entry"
+    assert _active_keys(client.get("/admin").text) == []
+    assert _current_in_topbar(client.get("/admin").text)
+
+
 def test_a_cashier_gets_no_topbar_dashboard_button(client, db_session):
     user, password = _staff(db_session, "nav-top-cashier", "cashier")
     _session_as(client, user, password)
@@ -172,13 +461,13 @@ def test_a_cashier_gets_no_topbar_dashboard_button(client, db_session):
 
 
 def test_no_page_a_cashier_can_open_offers_an_admin_door(client, db_session):
-    """The sidebar is not the only place a link is drawn. The invoice and the sales
-    list each carried a داشبورد button pointing at /admin — a refusal for the very
-    role reading them — so this opens every page the till grants, not just the shell."""
+    """The invoice and the sales list each carried a داشبورد button pointing at
+    /admin — a refusal for the very role reading them."""
     _, variant = _make_variant(db_session, price=100_000, stock=5)
     basket = [{"variant_id": variant.id, "product_id": variant.product_id,
                "unit_price": 100_000, "quantity": 1, "total_price": 100_000}]
     assert _confirm_sale(client, basket).status_code == 200
+    from models import Sale
     sale = db_session.query(Sale).order_by(Sale.id.desc()).first()
 
     cashier, password = _staff(db_session, "nav-invoice-cashier", "cashier")
@@ -187,39 +476,12 @@ def test_no_page_a_cashier_can_open_offers_an_admin_door(client, db_session):
     for path in ("/sales/new", "/sales/", f"/sales/invoice/{sale.id}"):
         page = client.get(path)
         assert page.status_code == 200, path
-        # No hand-written door to the admin panel, on any page the till opens.
         assert 'href="/admin' not in page.text, path
         assert 'data-nav="/admin' not in page.text, path
 
-    # …while whoever may open a dashboard keeps their button, and it works.
     manager, password = _staff(db_session, "nav-invoice-manager", "manager")
     _session_as(client, manager, password)
-    for path in ("/sales/", f"/sales/invoice/{sale.id}"):
-        assert 'href="/admin"' in client.get(path).text, path
     assert client.get("/admin").status_code == 200
-
-
-def test_a_cashier_page_nav_keeps_its_own_way_forward(client, db_session):
-    """Gating one button must not empty the footer nav."""
-    _, variant = _make_variant(db_session, price=100_000, stock=5)
-    basket = [{"variant_id": variant.id, "product_id": variant.product_id,
-               "unit_price": 100_000, "quantity": 1, "total_price": 100_000}]
-    assert _confirm_sale(client, basket).status_code == 200
-
-    cashier, password = _staff(db_session, "nav-forward", "cashier")
-    _session_as(client, cashier, password)
-    for path in ("/sales/", "/sales/new"):
-        assert 'href="/sales/new"' in client.get(path).text, path
-
-
-def test_the_topbar_button_is_the_dashboard_and_says_so(client, db_session):
-    """It pointed at /admin while labelled «تنظیمات» — a wrong name for a page
-    most people can open, and a refusal for those who cannot."""
-    user, password = _staff(db_session, "nav-top-manager", "manager")
-    _session_as(client, user, password)
-    page = client.get("/admin").text
-    assert 'class="topbar-admin"' in page
-    assert "داشبورد</span>" in page
 
 
 # ── where a login lands ──────────────────────────────────────────────────────
@@ -240,6 +502,24 @@ def test_a_login_lands_on_a_page_that_role_can_open(client, db_session, role, ex
     assert client.get(expected).status_code == 200
 
 
+def test_a_role_change_reaches_the_sidebar_without_a_new_login(client, db_session):
+    """The guard is the authority, so the role it confirms is what the shell reads.
+
+    Before this, a promoted manager kept a cashier's sidebar while the dashboard
+    drew an owner's cards: one page showing two different viewers.
+    """
+    user, password = _staff(db_session, "nav-promote", "cashier")
+    _session_as(client, user, password)
+    assert "پشتیبان‌ها" not in _sidebar(client.get("/sales/new").text)
+
+    user.role = "owner"
+    db_session.commit()
+
+    page = client.get("/sales/new").text
+    assert "topbar-admin" in page
+    assert "پشتیبان‌ها" in _sidebar(page)
+
+
 # ── the refusal is a page ────────────────────────────────────────────────────
 
 def test_an_owner_only_page_answers_a_manager_with_a_page(client, db_session):
@@ -256,8 +536,8 @@ def test_an_owner_only_page_answers_a_manager_with_a_page(client, db_session):
     assert "بازگشت به داشبورد" in text            # and offers a way out
     assert '{"detail"' not in text               # not the payload it used to be
     # The sidebar on the refusal is still the manager's own, not the owner's.
-    assert 'href="/admin/settings" data-nav' not in text
-    assert 'href="/admin/products" data-nav' in text
+    assert 'data-nav="settings"' not in _sidebar(text)
+    assert 'data-nav="products"' in _sidebar(text)
 
 
 def test_a_wrong_address_under_admin_is_a_page_too(client, db_session):
@@ -273,8 +553,6 @@ def test_a_wrong_address_under_admin_is_a_page_too(client, db_session):
 
 
 def test_a_refusal_on_a_form_post_is_a_page_as_well(client, db_session):
-    """The reset button is the old example: a manager pressed it on the dashboard
-    and got raw JSON back."""
     manager, password = _staff(db_session, "nav-refused-post", "manager")
     _session_as(client, manager, password)
 
@@ -309,3 +587,72 @@ def test_the_error_page_styles_come_from_theme_tokens():
     for token in ("var(--card)", "var(--candy)", "var(--candy-dark)",
                   "var(--ink)", "var(--ink-soft)", "var(--radius)"):
         assert token in section, token
+
+
+# ── language ─────────────────────────────────────────────────────────────────
+
+def test_no_emoji_survives_in_a_title_or_a_heading():
+    """One icon language: the sprite. An emoji in a heading is a second one."""
+    offenders = []
+    for path in _template_files():
+        text = path.read_text()
+        for pattern in (TITLE_BLOCK, HEADING):
+            for match in pattern.finditer(text):
+                if EMOJI.search(match.group(1)):
+                    offenders.append((path.name, re.sub(r"\s+", " ", match.group(1)).strip()))
+    assert not offenders, offenders
+
+
+def test_the_pages_are_named_in_persian():
+    """The English eyebrows are gone, and nothing the shell names is Latin.
+
+    The page-header eyebrow is retired — «تعهدات مالی» was the English
+    «Financial commitments» written above the checks title, and the trail now
+    says «مالی / چک‌ها» in its place — so what is worth guarding is not a list of
+    phrases but that every name the shell prints is Persian. The section
+    eyebrows a page still keeps are checked too.
+    """
+    text = "".join(path.read_text() for path in _template_files())
+    for english in ("Financial commitments", "Reminder settings", "Issued checks",
+                    "Products / Printing", "Store theme", '>Appearance<'):
+        assert english not in text, english
+    for persian in ("تنظیمات یادآوری", "چک‌های صادره", "محصولات و چاپ", "تم فروشگاه"):
+        assert persian in text, persian
+    for item in ALL_ITEMS:
+        assert not LATIN.search(item["label"]), item["label"]
+    for action in TOPBAR_ACTIONS:
+        assert not LATIN.search(action["label"]), action["label"]
+    for _prefix, _key, name in PARENTS:
+        assert not LATIN.search(name), name
+
+
+def test_a_role_is_named_once_wherever_it_is_shown():
+    """«صندوقدار» is what the staff form assigns; the shell must not call it
+    something else back to the person holding it."""
+    from services.security import ROLE_LABELS
+    assert ROLE_LABELS == {"cashier": "صندوقدار", "manager": "مدیر", "owner": "مالک"}
+    staff_html = (ROOT / "templates" / "admin" / "staff.html").read_text()
+    assert ">صندوقدار<" in staff_html
+
+
+def test_every_page_uses_the_one_shared_header():
+    """The three idioms are gone: a page composes the partial or it draws nothing."""
+    for path in _template_files():
+        text = path.read_text()
+        composed = ui.HEADER_INCLUDE in text
+        old_heading = ('class="page-heading' in text or 'class="page-header"' in text
+                       or 'style="display: flex; align-items: center; gap: 0.6rem; margin-bottom' in text)
+        assert composed or not old_heading, path.name
+        # A page may not hand-write a back-to-dashboard button either.
+        assert '<nav class="admin-nav"' not in text, path.name
+        assert not re.search(r'<h2[^>]*>\s*(?:بازگشت|<)', text), path.name
+
+
+def test_the_header_partial_keeps_the_contract_pages_rely_on():
+    assert ui.PAGE_HEADING in ui.HEADER or "page-heading" in ui.HEADER
+    assert 'class="admin-nav"' in ui.HEADER
+    assert "<h1>" in ui.HEADER
+    assert ui.BREADCRUMB_INCLUDE in ui.HEADER
+    # The crumb is built from the same title the heading prints.
+    assert "trail_for(request.url.path, page_title)" in ui.BREADCRUMB
+    assert 'aria-current="page"' in ui.BREADCRUMB
