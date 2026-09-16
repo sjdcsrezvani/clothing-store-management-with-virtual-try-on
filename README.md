@@ -478,7 +478,9 @@ values editable in the admin panel). See `.env.example` for every variable.
 
 Open `/admin/mobile` on the shop phone (or save it to the home screen as a PWA).
 Enter the computer's IP (e.g. `192.168.1.20:8000`) and the `API_TOKEN`, then
-take the child's photo — it uploads to `/api/image-gen/upload-kid-photo`.
+take the child's photo — it uploads to `/api/image-gen/upload-kid-photo`. The
+page wears the shop's own palette, so the phone at the counter matches whichever
+theme the panel is set to, dark and high-contrast included.
 
 ## Backups
 
