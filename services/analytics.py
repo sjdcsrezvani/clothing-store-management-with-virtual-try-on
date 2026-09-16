@@ -8,6 +8,7 @@ from services._common import (
     gregorian_to_jalali,
     PERSIAN_DIGITS,
 )
+from services.tier import TIER_LABELS
 
 def get_date_range(period: str, start_date: str = None, end_date: str = None):
     """Get start and end dates based on period. User-supplied dates are Persian."""
@@ -249,7 +250,8 @@ def get_revenue_by_tier(db: Session, start: datetime, end: datetime) -> list:
         Sale.created_at.between(start, end)
     ).group_by(Customer.tier).all()
     
-    return [{"tier": r.tier, "revenue": r.revenue, "orders": r.orders, "customers": r.customers} for r in results]
+    return [{"tier": r.tier, "label": TIER_LABELS.get(r.tier, r.tier or "بدون سطح"),
+             "revenue": r.revenue, "orders": r.orders, "customers": r.customers} for r in results]
 
 def get_monthly_comparison(db: Session, year: int, month: int) -> dict:
     """Compare current month with previous month."""
@@ -540,7 +542,10 @@ def get_sales_pattern(db, start, end):
         hours[jd.hour] += amount or 0
     return {
         "weekdays": [{"day": weekday_names[i], "revenue": weekdays[i]} for i in range(7)],
-        "hours": [{"hour": h % 12 or 12, "revenue": hours[h]} for h in range(8, 22)]
+        # The hour is the shop's clock, not a clock face twice round: «8:00» used
+        # to stand for both the morning and the evening on the same axis, so a
+        # peak at eight was two different bars with one name between them.
+        "hours": [{"hour": h, "label": f"{h}:00", "revenue": hours[h]} for h in range(8, 22)]
     }
 
 # ----- Expert tier — deep analytics ----------------------------------------
@@ -651,7 +656,10 @@ def get_customer_health(db, start, end):
     total = len(customers_in)
     repeats = sum(1 for c in customers_in if c.orders > 1)
     avg_orders = sum(c.orders for c in customers_in) / total
-    # Revenue segments
+    # Revenue segments. The bands are named in the shop's own words because what
+    # the ring's legend shows the owner is the band, not the bucket.
+    segment_labels = {"0-500k": "تا 500 هزار", "500k-1m": "تا 1 میلیون",
+                      "1m-2m": "1 تا 2 میلیون", "2m+": "بیش از 2 میلیون"}
     segments = {"0-500k": 0, "500k-1m": 0, "1m-2m": 0, "2m+": 0}
     for c in customers_in:
         s = c.spent or 0
@@ -663,7 +671,7 @@ def get_customer_health(db, start, end):
         "repeat_rate": round(repeats / total * 100),
         "one_timer_pct": round((total - repeats) / total * 100),
         "avg_orders": round(avg_orders, 1),
-        "segments": [{"label": k, "count": v} for k, v in segments.items()],
+        "segments": [{"label": segment_labels[k], "count": v} for k, v in segments.items()],
     }
 
 def get_margin_by_category(db, start, end):

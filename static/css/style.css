@@ -1022,6 +1022,11 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 }
 .chart-card { min-height: 280px; overflow: hidden; }
 .chart-card canvas { max-width: 100% !important; max-height: 260px !important; }
+/* The sentence beside a chart: what its marks show, for a reader who cannot tell
+   the accents apart, for a phone in sunlight, and for a printed page that has
+   lost every colour it had. Its numbers are on the marks and in the tables as
+   well, so nothing here is the only place a figure can be read. */
+.chart-note { margin: -0.15rem 0 0.6rem; color: var(--ink-soft); font-size: 0.84rem; line-height: 1.65; }
 
 .tables-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 

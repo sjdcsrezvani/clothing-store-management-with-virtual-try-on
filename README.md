@@ -568,7 +568,15 @@ the suite opens every address the shell serves, as each of the three roles, with
 each of the ten palettes active, and resolves every colour the rendered page
 reads against the palette it was loaded with — so a page that loads without its
 theme, or answers differently depending on the palette, or crashes for a role,
-fails the build as well. One page sits outside the shell — the phone capture tool
+fails the build as well. Colour is never the only thing a chart says, either:
+every chart on سود و زیان carries a sentence built from the figures it draws,
+shown beside it and given as the canvas's accessible name, and the renderer
+writes the number on every mark it can fit — a ring names and counts its slices,
+its hole holds their sum, and the highest and lowest of a crowded series keep
+their labels when the rest are thinned — so an owner who cannot separate the
+accents, and a page printed in one colour, lose nothing. A canvas without a
+sentence, or a sentence that disagrees with its own chart, fails the suite.
+One page sits outside the shell — the phone capture tool
 the counter opens — and it is held from the other side: it loads no stylesheet,
 so it may read only what its palette hands it and what it declares itself, and a
 colour it cannot resolve fails the suite too.

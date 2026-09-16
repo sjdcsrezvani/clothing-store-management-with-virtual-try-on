@@ -60,9 +60,9 @@
         </form>
     </div>
     <div class="charts-grid">
-        <div class="card chart-card"><h3>میانگین قیمت/هزینه/سود <span class="tip-icon" data-tip="میانگین قیمت فروش، هزینه تمام‌شده و سود به ازای هر واحد فروخته‌شده (بر اساس قیمت‌های واقعی فاکتور، نه قیمت لیست). اگر میله سود منفی باشد یعنی زیان می‌دهید.">?</span></h3><canvas id="pricingChart"></canvas></div>
-        <div class="card chart-card"><h3>پرفروش‌ترین رنگ <span class="tip-icon" data-tip="پرفروش‌ترین رنگ‌ها بر اساس تعداد واحد فروخته‌شده. اگر رنگی بالای لیست باشد یعنی مشتریان آن رنگ را بیشتر می‌خرند — آن را بیشتر موجود کنید.">?</span></h3><canvas id="colorChart"></canvas></div>
-        <div class="card chart-card"><h3>پرفروش‌ترین سایز <span class="tip-icon" data-tip="پرفروش‌ترین سایزها بر اساس تعداد واحد فروخته‌شده. سایزهای پرفروش را بیشتر سفارش دهید و سایزهای کم‌فروش را کمتر.">?</span></h3><canvas id="sizeChart"></canvas></div>
+        <div class="card chart-card"><h3>میانگین قیمت/هزینه/سود <span class="tip-icon" data-tip="میانگین قیمت فروش، هزینه تمام‌شده و سود به ازای هر واحد فروخته‌شده (بر اساس قیمت‌های واقعی فاکتور، نه قیمت لیست). اگر میله سود منفی باشد یعنی زیان می‌دهید.">?</span></h3><p class="chart-note" data-chart="pricingChart">{{ notes.pricingChart }}</p><canvas id="pricingChart" role="img" aria-label="{{ notes.pricingChart }}"></canvas></div>
+        <div class="card chart-card"><h3>پرفروش‌ترین رنگ <span class="tip-icon" data-tip="پرفروش‌ترین رنگ‌ها بر اساس تعداد واحد فروخته‌شده. اگر رنگی بالای لیست باشد یعنی مشتریان آن رنگ را بیشتر می‌خرند — آن را بیشتر موجود کنید.">?</span></h3><p class="chart-note" data-chart="colorChart">{{ notes.colorChart }}</p><canvas id="colorChart" role="img" aria-label="{{ notes.colorChart }}"></canvas></div>
+        <div class="card chart-card"><h3>پرفروش‌ترین سایز <span class="tip-icon" data-tip="پرفروش‌ترین سایزها بر اساس تعداد واحد فروخته‌شده. سایزهای پرفروش را بیشتر سفارش دهید و سایزهای کم‌فروش را کمتر.">?</span></h3><p class="chart-note" data-chart="sizeChart">{{ notes.sizeChart }}</p><canvas id="sizeChart" role="img" aria-label="{{ notes.sizeChart }}"></canvas></div>
         <div class="card chart-card">
             <h3>ماتریس رنگ × سایز (تعداد فروش) <span class="tip-icon" data-tip="ماتریس ترکیب رنگ × سایز: هر خانه تعداد فروش آن ترکیب را نشان می‌دهد. خانه‌های تیره‌تر پرفروش‌ترند. برای تصمیم‌گیری سفارش مجدد ضروری است — مثلاً «مشکی سایز متوسط» بیشتر فروش دارد یا «سفید سایز بزرگ»؟">?</span></h3>
             {% if color_size_matrix.colors %}
@@ -99,18 +99,18 @@
 
 <!-- Revenue Trend + Daily + Category + Tier -->
 <div class="charts-grid">
-    <div class="card chart-card"><h3>روند درآمد (۱۲ ماه) <span class="tip-icon" data-tip="روند درآمد و سود در ۱۲ ماه اخیر. اگر خط بالا برود یعنی رشد دارید، اگر پایین بیاید یعنی افت فروش. الگوهای فصلی (مثلاً شروع مدارس) هم مشخص می‌شوند.">?</span></h3><canvas id="trendChart"></canvas></div>
-    <div class="card chart-card"><h3>فروش روزانه <span class="tip-icon" data-tip="فروش و سود روزانه. روزهای شلوغ و کم‌فروش مشخص می‌شوند. می‌توانید ببینید کدام روزها بیشترین فروش را دارید (مثلاً آخر هفته) تا برنامه‌ریزی کنید.">?</span></h3><canvas id="dailyChart"></canvas></div>
-    <div class="card chart-card"><h3>فروش بر اساس دسته‌بندی <span class="tip-icon" data-tip="سهم هر دسته‌بندی از کل فروش (نمودار دایره‌ای). اگر یک دسته بیش از ۵۰٪ فروش را تشکیل دهد، کسب‌وکار شما به آن وابسته است و ریسک دارد.">?</span></h3><canvas id="categoryChart"></canvas></div>
-    <div class="card chart-card"><h3>فروش بر اساس سطح <span class="tip-icon" data-tip="فروش به تفکیک سطح وفاداری مشتری (نقره‌ای/طلایی/الماس). اگر مشتریان الماس بیشترین فروش را داشته باشند، برنامه وفاداری شما مؤثر است.">?</span></h3><canvas id="tierChart"></canvas></div>
+    <div class="card chart-card"><h3>روند درآمد (۱۲ ماه) <span class="tip-icon" data-tip="روند درآمد و سود در ۱۲ ماه اخیر. اگر خط بالا برود یعنی رشد دارید، اگر پایین بیاید یعنی افت فروش. الگوهای فصلی (مثلاً شروع مدارس) هم مشخص می‌شوند.">?</span></h3><p class="chart-note" data-chart="trendChart">{{ notes.trendChart }}</p><canvas id="trendChart" role="img" aria-label="{{ notes.trendChart }}"></canvas></div>
+    <div class="card chart-card"><h3>فروش روزانه <span class="tip-icon" data-tip="فروش و سود روزانه. روزهای شلوغ و کم‌فروش مشخص می‌شوند. می‌توانید ببینید کدام روزها بیشترین فروش را دارید (مثلاً آخر هفته) تا برنامه‌ریزی کنید.">?</span></h3><p class="chart-note" data-chart="dailyChart">{{ notes.dailyChart }}</p><canvas id="dailyChart" role="img" aria-label="{{ notes.dailyChart }}"></canvas></div>
+    <div class="card chart-card"><h3>فروش بر اساس دسته‌بندی <span class="tip-icon" data-tip="سهم هر دسته‌بندی از کل فروش (نمودار دایره‌ای). اگر یک دسته بیش از ۵۰٪ فروش را تشکیل دهد، کسب‌وکار شما به آن وابسته است و ریسک دارد.">?</span></h3><p class="chart-note" data-chart="categoryChart">{{ notes.categoryChart }}</p><canvas id="categoryChart" role="img" aria-label="{{ notes.categoryChart }}"></canvas></div>
+    <div class="card chart-card"><h3>فروش بر اساس سطح <span class="tip-icon" data-tip="فروش به تفکیک سطح وفاداری مشتری (نقره‌ای/طلایی/الماس). اگر مشتریان الماس بیشترین فروش را داشته باشند، برنامه وفاداری شما مؤثر است.">?</span></h3><p class="chart-note" data-chart="tierChart">{{ notes.tierChart }}</p><canvas id="tierChart" role="img" aria-label="{{ notes.tierChart }}"></canvas></div>
 </div>
 
 <!-- Sales Patterns + Price Dist -->
 <div class="charts-grid">
-    <div class="card chart-card"><h3>فروش روزهای هفته <span class="tip-icon" data-tip="فروش به تفکیک روزهای هفته (شنبه تا جمعه). کدام روزها شلوغ‌تر و کدام کم‌فروش‌ترند؟ برای برنامه‌ریزی نیروی کار و تبلیغات در روزهای کم‌فروش مفید است.">?</span></h3><canvas id="weekdayChart"></canvas></div>
-    <div class="card chart-card"><h3>فروش ساعتی <span class="tip-icon" data-tip="فروش به تفکیک ساعت (از ۸ صبح تا ۹ شب). ساعت‌های اوج فروش مشخص می‌شوند. می‌توانید در ساعت‌های کم‌فروش تخفیف ویژه بدهید یا نیروی کار را تنظیم کنید.">?</span></h3><canvas id="hourChart"></canvas></div>
-    <div class="card chart-card"><h3>توزیع قیمت فروش <span class="tip-icon" data-tip="توزیع قیمت‌های فروش واقعی. نشان می‌دهد مشتریان بیشتر در چه رنج قیمتی خرید می‌کنند. اگر قیمت‌های پایین بیشتر باشد، شاید باید روی محصولات بالاتر تمرکز کنید.">?</span></h3><canvas id="priceDistChart"></canvas></div>
-    <div class="card chart-card"><h3>حاشیه سود به تفکیک دسته <span class="tip-icon" data-tip="حاشیه سود ناخالص به ازای هر دسته‌بندی. رنگ سبز یعنی سودآور، قرمز یعنی زیان‌ده. مهم‌ترین نمودار برای تصمیم‌گیری: کدام دسته را بیشتر تبلیغ کنید و کدام را کمتر سفارش دهید.">?</span></h3><canvas id="marginCatChart"></canvas></div>
+    <div class="card chart-card"><h3>فروش روزهای هفته <span class="tip-icon" data-tip="فروش به تفکیک روزهای هفته (شنبه تا جمعه). کدام روزها شلوغ‌تر و کدام کم‌فروش‌ترند؟ برای برنامه‌ریزی نیروی کار و تبلیغات در روزهای کم‌فروش مفید است.">?</span></h3><p class="chart-note" data-chart="weekdayChart">{{ notes.weekdayChart }}</p><canvas id="weekdayChart" role="img" aria-label="{{ notes.weekdayChart }}"></canvas></div>
+    <div class="card chart-card"><h3>فروش ساعتی <span class="tip-icon" data-tip="فروش به تفکیک ساعت (از ۸ صبح تا ۹ شب). ساعت‌های اوج فروش مشخص می‌شوند. می‌توانید در ساعت‌های کم‌فروش تخفیف ویژه بدهید یا نیروی کار را تنظیم کنید.">?</span></h3><p class="chart-note" data-chart="hourChart">{{ notes.hourChart }}</p><canvas id="hourChart" role="img" aria-label="{{ notes.hourChart }}"></canvas></div>
+    <div class="card chart-card"><h3>توزیع قیمت فروش <span class="tip-icon" data-tip="توزیع قیمت‌های فروش واقعی. نشان می‌دهد مشتریان بیشتر در چه رنج قیمتی خرید می‌کنند. اگر قیمت‌های پایین بیشتر باشد، شاید باید روی محصولات بالاتر تمرکز کنید.">?</span></h3><p class="chart-note" data-chart="priceDistChart">{{ notes.priceDistChart }}</p><canvas id="priceDistChart" role="img" aria-label="{{ notes.priceDistChart }}"></canvas></div>
+    <div class="card chart-card"><h3>حاشیه سود به تفکیک دسته <span class="tip-icon" data-tip="حاشیه سود ناخالص به ازای هر دسته‌بندی. رنگ سبز یعنی سودآور، قرمز یعنی زیان‌ده. مهم‌ترین نمودار برای تصمیم‌گیری: کدام دسته را بیشتر تبلیغ کنید و کدام را کمتر سفارش دهید.">?</span></h3><p class="chart-note" data-chart="marginCatChart">{{ notes.marginCatChart }}</p><canvas id="marginCatChart" role="img" aria-label="{{ notes.marginCatChart }}"></canvas></div>
 </div>
 
 <!-- Tables -->
@@ -173,7 +173,7 @@
         <div class="inv-row"><span>مشتریان یک‌بار</span><b>{{ customer_health.one_timer_pct }}٪</b></div>
         <div class="inv-row"><span>میانگین سفارش</span><b>{{ customer_health.avg_orders }}</b></div>
         <div style="margin-top:0.5rem; border-top:1px solid var(--rule); padding-top:0.5rem;">
-            <canvas id="customerSegChart" style="max-height:180px;"></canvas>
+            <p class="chart-note" data-chart="customerSegChart">{{ notes.customerSegChart }}</p><canvas id="customerSegChart" role="img" aria-label="{{ notes.customerSegChart }}" style="max-height:180px;"></canvas>
         </div>
     </div>
     <div class="card">
@@ -212,7 +212,6 @@ if (typeof Chart === 'undefined') {
 } else {
 const dailyData = {{ daily|tojson }};
 const categoryData = {{ categories|tojson }};
-const topProductsProfit = {{ top_products_profit|tojson }};
 const tierData = {{ tier_revenue|tojson }};
 const priceStats = {{ price_stats|tojson }};
 const colorStats = {{ color_stats|tojson }};
@@ -225,6 +224,10 @@ const customerHealth = {{ customer_health|tojson }};
 
 // The chart colours are the active theme's own accents, read from the page, so a
 // chart follows dark and high-contrast instead of staying one palette forever.
+// `valueFormat` is how each chart's own numbers read on its marks (see the
+// renderer in static/js/charts.js), and `window.chartValueText` is the same
+// formatter the page uses for a label it writes itself — one source for both,
+// so an axis tick and a bar's value can never say different things.
 const tone = window.themeTones();
 const palette = tone.palette;
 const baseOpts = (extra={}) => Object.assign({ responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { family: 'Vazirmatn' } } } }, scales: { y: { beginAtZero: true } } }, extra);
@@ -235,25 +238,19 @@ new Chart(document.getElementById('dailyChart'), {
         { label: 'فروش', data: dailyData.map(d => d.revenue), backgroundColor: tone.candy },
         { label: 'سود', data: dailyData.map(d => d.profit), backgroundColor: tone.mint }
     ]},
-    options: baseOpts()
+    options: baseOpts({ valueFormat: 'money' })
 });
 
 new Chart(document.getElementById('categoryChart'), {
     type: 'doughnut',
     data: { labels: categoryData.map(c => c.category), datasets: [{ data: categoryData.map(c => c.revenue), backgroundColor: palette }]},
-    options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { family: 'Vazirmatn' } } } } }
-});
-
-new Chart(document.getElementById('profitChart'), {
-    type: 'bar',
-    data: { labels: topProductsProfit.map(p => p.name.substring(0, 15)), datasets: [{ label: 'سود', data: topProductsProfit.map(p => p.profit), backgroundColor: tone.mint }]},
-    options: baseOpts({ indexAxis: 'y', plugins: { legend: { display: false } } })
+    options: { responsive: true, valueFormat: 'money', plugins: { legend: { position: 'bottom', labels: { font: { family: 'Vazirmatn' } } } } }
 });
 
 new Chart(document.getElementById('tierChart'), {
     type: 'bar',
-    data: { labels: tierData.map(t => t.tier), datasets: [{ label: 'فروش', data: tierData.map(t => t.revenue), backgroundColor: [tone.lavender, tone.sunshine, tone.sky] }]},
-    options: baseOpts({ plugins: { legend: { display: false } } })
+    data: { labels: tierData.map(t => t.label), datasets: [{ label: 'فروش', data: tierData.map(t => t.revenue), backgroundColor: [tone.lavender, tone.sunshine, tone.sky] }]},
+    options: baseOpts({ valueFormat: 'money', plugins: { legend: { display: false } } })
 });
 
 new Chart(document.getElementById('pricingChart'), {
@@ -262,19 +259,19 @@ new Chart(document.getElementById('pricingChart'), {
         label: 'به‌ازای هر واحد', data: [priceStats.avg_cost, priceStats.avg_price, priceStats.avg_profit],
         backgroundColor: [tone.sunshine, tone.sky, tone.mint]
     }]},
-    options: baseOpts({ plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { callback: v => v.toLocaleString('fa-IR') } } } })
+    options: baseOpts({ valueFormat: 'money', plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } })
 });
 
 new Chart(document.getElementById('colorChart'), {
     type: 'bar',
     data: { labels: colorStats.map(c => c.label).slice(0, 12), datasets: [{ label: 'تعداد', data: colorStats.map(c => c.quantity).slice(0, 12), backgroundColor: tone.lavender }]},
-    options: baseOpts({ indexAxis: 'y', plugins: { legend: { display: false } } })
+    options: baseOpts({ indexAxis: 'y', valueFormat: 'count', plugins: { legend: { display: false } } })
 });
 
 new Chart(document.getElementById('sizeChart'), {
     type: 'bar',
     data: { labels: sizeStats.map(s => s.label).slice(0, 12), datasets: [{ label: 'تعداد', data: sizeStats.map(s => s.quantity).slice(0, 12), backgroundColor: tone.persimmon }]},
-    options: baseOpts({ plugins: { legend: { display: false } } })
+    options: baseOpts({ valueFormat: 'count', plugins: { legend: { display: false } } })
 });
 
 new Chart(document.getElementById('trendChart'), {
@@ -283,39 +280,39 @@ new Chart(document.getElementById('trendChart'), {
         { label: 'درآمد', data: revenueTrend.map(m => m.revenue), borderColor: tone.candy, backgroundColor: window.tintColour(tone.candy, 0.1), fill: true, tension: 0.3 },
         { label: 'سود', data: revenueTrend.map(m => m.profit), borderColor: tone.mint, backgroundColor: window.tintColour(tone.mint, 0.1), fill: true, tension: 0.3 }
     ]},
-    options: baseOpts()
+    options: baseOpts({ valueFormat: 'money' })
 });
 
 new Chart(document.getElementById('weekdayChart'), {
     type: 'bar',
     data: { labels: salesPattern.weekdays.map(d => d.day), datasets: [{ label: 'فروش', data: salesPattern.weekdays.map(d => d.revenue), backgroundColor: tone.sky }]},
-    options: baseOpts({ plugins: { legend: { display: false } } })
+    options: baseOpts({ valueFormat: 'money', plugins: { legend: { display: false } } })
 });
 
 new Chart(document.getElementById('hourChart'), {
     type: 'bar',
-    data: { labels: salesPattern.hours.map(h => h.hour + ':00'), datasets: [{ label: 'فروش', data: salesPattern.hours.map(h => h.revenue), backgroundColor: tone.sunshine }]},
-    options: baseOpts({ plugins: { legend: { display: false } } })
+    data: { labels: salesPattern.hours.map(h => h.label), datasets: [{ label: 'فروش', data: salesPattern.hours.map(h => h.revenue), backgroundColor: tone.sunshine }]},
+    options: baseOpts({ valueFormat: 'money', plugins: { legend: { display: false } } })
 });
 
 new Chart(document.getElementById('priceDistChart'), {
     type: 'bar',
-    data: { labels: priceDist.map(p => (p.price/10000).toLocaleString('fa-IR') + 'ت'), datasets: [
+    data: { labels: priceDist.map(p => window.chartValueText(p.price, 'money') + 'ت'), datasets: [
         { label: 'تعداد', data: priceDist.map(p => p.quantity), backgroundColor: tone.lavender },
     ]},
-    options: baseOpts({ plugins: { legend: { display: false } } })
+    options: baseOpts({ valueFormat: 'count', plugins: { legend: { display: false } } })
 });
 
 new Chart(document.getElementById('marginCatChart'), {
     type: 'bar',
-    data: { labels: marginByCat.map(c => c.category), datasets: [{ label: 'حاشیه سود %', data: marginByCat.map(c => c.margin), backgroundColor: marginByCat.map(c => c.margin >= 0 ? tone.mint : tone.candy) }]},
-    options: baseOpts({ indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } })
+    data: { labels: marginByCat.map(c => c.category), datasets: [{ label: 'حاشیه سود ٪', data: marginByCat.map(c => c.margin), backgroundColor: marginByCat.map(c => c.margin >= 0 ? tone.mint : tone.candy) }]},
+    options: baseOpts({ indexAxis: 'y', valueFormat: 'percent', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } })
 });
 
 new Chart(document.getElementById('customerSegChart'), {
     type: 'doughnut',
     data: { labels: customerHealth.segments.map(s => s.label), datasets: [{ data: customerHealth.segments.map(s => s.count), backgroundColor: [tone.lavender, tone.sunshine, tone.sky, tone.candy] }]},
-    options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { family: 'Vazirmatn', size: 11 } } } } }
+    options: { responsive: true, valueFormat: 'count', plugins: { legend: { position: 'bottom', labels: { font: { family: 'Vazirmatn', size: 11 } } } } }
 });
 }
 </script>

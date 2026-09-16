@@ -6,9 +6,10 @@ from services._common import fmt, check_admin, jalali_str
 from services.security import require_html_role
 from services.templating import templates
 from services.reporting import canonical_report, reconciliation_checks
+from services.chart_notes import chart_notes
 from services.analytics import (
     get_date_range, get_revenue_summary, get_daily_revenue,
-    get_revenue_by_category, get_top_products,
+    get_revenue_by_category,
     get_revenue_by_tier, get_monthly_comparison, get_discount_impact,
     get_top_customers, get_categories, get_price_stats, get_variant_stats,
     get_color_size_matrix, get_inventory_value,
@@ -50,8 +51,6 @@ async def admin_analytics(
     }
     daily = get_daily_revenue(db, start, end)
     categories = get_revenue_by_category(db, start, end)
-    top_products_rev = get_top_products(db, start, end, 10, "revenue")
-    top_products_profit = get_top_products(db, start, end, 10, "profit")
     tier_revenue = get_revenue_by_tier(db, start, end)
     now = datetime.now(timezone.utc)
     monthly = get_monthly_comparison(db, now.year, now.month)
@@ -78,6 +77,17 @@ async def admin_analytics(
     price_dist = get_price_distribution(db, start, end)
     top_variants = get_top_selling_variants(db, start, end)
 
+    # One sentence per chart, built from these same figures: a chart that only
+    # reads by colour reads as nothing on a printout or to an owner who cannot
+    # separate the accents.
+    notes = chart_notes(
+        price_stats=price_stats, color_stats=color_stats, size_stats=size_stats,
+        daily=daily, categories=categories, tier_revenue=tier_revenue,
+        revenue_trend=revenue_trend, sales_pattern=sales_pattern,
+        price_dist=price_dist, margin_by_cat=margin_by_cat,
+        customer_health=customer_health,
+    )
+
     return templates.TemplateResponse(request, "admin/analytics.html", {
         "period": period,
         "start_date": start_date,
@@ -99,13 +109,12 @@ async def admin_analytics(
         "dead_stock": dead_stock,
         "price_dist": price_dist,
         "top_variants": top_variants,
+        "notes": notes,
         "summary": summary,
         "report": report,
         "reconciliation": reconciliation,
         "daily": daily,
         "categories": categories,
-        "top_products_rev": top_products_rev,
-        "top_products_profit": top_products_profit,
         "tier_revenue": tier_revenue,
         "monthly": monthly,
         "discounts": discounts,
