@@ -9,7 +9,8 @@ payload, and ten palettes every page takes its colours from, down to the charts,
 the photo panels and the lightbox), an SMS suite (template manager, manual sends,
 welcome / birthday / tier-up / campaign messages, and a send log whose entries
 can be replayed), virtual try-on previews on the child's picture, invoices
-(HTML + Persian PDF), a deep analytics suite, and accounting-lite: credit sales
+(HTML + Persian PDF), a deep analytics suite whose charts say what they show in
+words and on the marks rather than by colour alone, and accounting-lite: credit sales
 (نسیه) with a debt ledger, supplier purchases that update stock & cost,
 expenses, a cash drawer counted open and counted closed with every difference
 recorded, a net profit & loss report that breaks the expenses down by category,
