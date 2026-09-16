@@ -56,8 +56,20 @@ _BASE = {
     "--sidebar-bg": "#17232B",
     "--sidebar-text": "#EAF0F2",
     "--sidebar-active": "#2C414C",
+    # The text on a filled brand surface — a primary button, a count chip. The
+    # stylesheet declares a white default in `:root`, but a page that does *not*
+    # load the stylesheet has only the tokens its theme hands it inline, and the
+    # phone capture tool is one of those: without this it read `--button-text`
+    # from nowhere and painted the label in the inherited ink. So every theme
+    # supplies it, and `custom_tokens` still derives its own for Custom Brand.
+    "--button-text": "#FFFFFF",
     "--topbar-start": "#17232B",
     "--topbar-end": "#334C59",
+    # What stays legible on that bar. The shell hard-coded white for its brand and
+    # its two topbar buttons, and the phone's capture page wears the same surface,
+    # so the colour is named here rather than repeated in three places: a theme
+    # with a light bar answers it once and both surfaces follow.
+    "--topbar-text": "#FFFFFF",
     "--success-bg": "#E8F5ED",
     "--warning-bg": "#FFF5D9",
     "--danger-bg": "#FDEBEC",

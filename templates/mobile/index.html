@@ -1,77 +1,92 @@
 <!DOCTYPE html>
-<html lang="en" dir="ltr">
+{# The capture tool the counter opens on a phone: deliberately not a page of the
+   shell — no sidebar, no breadcrumb, and no second request for the stylesheet,
+   because it has to come up on a phone over the shop's own Wi-Fi — but it wears
+   the shop's palette like every other screen. The theme's tokens arrive on the
+   <html> element below, which is where the stylesheet would have put its `:root`
+   block, and every colour in this page is read from them. #}
+<html lang="en" dir="ltr" data-theme="{{ theme.id }}" data-theme-mode="{{ theme.mode }}" style="{{ theme.inline_style }}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
+{# The phone's own chrome takes the theme's background, as it does on every other
+   page: an installed shortcut must not stay one colour across ten palettes. #}
+<meta name="theme-color" content="{{ theme.tokens['--bg'] }}">
 <title>{{ store.name }} — Virtual Try-On</title>
-<style id="connection-help-style">.connection-help{padding:0 16px 10px;color:var(--ink-soft);font-size:12px;line-height:1.7}.connection-help strong{color:var(--ink)}</style>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-:root{--pink:#FF6B8A;--sky:#45B7D1;--bg:#FFF5F0;--card:#fff;--ink:#2D2D2D;--ink-soft:#999;--radius:16px}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;padding:0;margin:0}
+html[data-theme-mode="dark"]{color-scheme:dark}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh}
 
-/* ─── Header ─── */
-.header{background:linear-gradient(135deg,var(--pink),var(--sky));color:#fff;padding:16px;text-align:center;font-weight:700;font-size:18px;box-shadow:0 2px 12px rgba(255,107,138,0.25)}
+/* ─── Header: the shop's own bar, in miniature ─── */
+.header{background:linear-gradient(135deg,var(--topbar-start),var(--topbar-end));color:var(--topbar-text);padding:16px;text-align:center;font-weight:700;font-size:18px;box-shadow:var(--shadow)}
 .header small{display:block;font-weight:400;font-size:13px;opacity:0.9;margin-top:2px}
 
 /* ─── Config bar ─── */
-.config-bar{padding:12px 16px;background:var(--card);display:flex;gap:8px;align-items:center;box-shadow:0 1px 4px rgba(0,0,0,0.06)}
-.config-bar input{flex:1;padding:10px 12px;border:2px solid #E8DDD5;border-radius:10px;font-size:15px;font-family:monospace;direction:ltr}
-.config-bar input:focus{outline:none;border-color:var(--pink)}
-.config-bar .status-dot{width:12px;height:12px;border-radius:50%;background:#ddd;flex-shrink:0}
-.config-bar .status-dot.online{background:#51CF66}
-.config-bar .status-dot.offline{background:#FF4757}
+.config-bar{padding:12px 16px;background:var(--card);display:flex;gap:8px;align-items:center;flex-wrap:wrap;box-shadow:var(--shadow)}
+.config-bar input{flex:1;padding:10px 12px;border:2px solid var(--rule);border-radius:10px;font-size:15px;font-family:monospace;direction:ltr;background:var(--field-bg);color:var(--ink)}
+.config-bar input:focus{outline:none;border-color:var(--candy);box-shadow:var(--focus-ring)}
+.config-bar button{background:var(--candy);color:var(--button-text);border:none;padding:8px 14px;border-radius:8px;font-weight:700;font-size:13px;font-family:inherit;cursor:pointer}
+.status-dot{width:12px;height:12px;border-radius:50%;background:var(--ink-soft);flex-shrink:0}
+.status-dot.online{background:var(--mint)}
+.status-dot.offline{background:var(--persimmon)}
+.connection-help{padding:0 16px 10px;color:var(--ink-soft);font-size:12px;line-height:1.7}
+.connection-help strong{color:var(--ink)}
 
-/* ─── Main buttons ─── */
+/* ─── Main actions ─── */
 .main-actions{padding:16px;display:flex;flex-direction:column;gap:12px}
-.action-btn{display:flex;align-items:center;justify-content:center;gap:10px;padding:22px;border:none;border-radius:var(--radius);font-size:17px;font-weight:700;color:#fff;cursor:pointer;transition:transform 0.1s,box-shadow 0.15s;box-shadow:0 4px 14px rgba(0,0,0,0.08)}
+.action-btn{display:flex;align-items:center;justify-content:center;gap:10px;padding:22px;border:none;border-radius:var(--radius);font-size:17px;font-weight:700;font-family:inherit;cursor:pointer;transition:transform 0.1s,box-shadow 0.15s;box-shadow:var(--shadow)}
 .action-btn:active{transform:scale(0.97)}
 .action-btn .icon{font-size:28px}
-.action-btn.photo{background:linear-gradient(135deg,var(--sky),#389BB0)}
+.action-btn.photo{background:var(--candy);color:var(--button-text)}
 .action-btn:disabled{opacity:0.5;transform:none}
 
 /* ─── Log ─── */
 .log-section{padding:0 16px 20px}
 .log-section h3{font-size:14px;color:var(--ink-soft);margin-bottom:8px;display:flex;align-items:center;gap:6px}
 .log-list{background:var(--card);border-radius:var(--radius);padding:12px;max-height:200px;overflow-y:auto;font-size:13px}
-.log-entry{padding:8px 0;border-bottom:1px solid #f0e8e0;display:flex;align-items:start;gap:8px;line-height:1.4}
+.log-entry{padding:8px 0;border-bottom:1px solid var(--rule);display:flex;align-items:start;gap:8px;line-height:1.4}
 .log-entry:last-child{border-bottom:none}
 .log-entry .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap;flex-shrink:0;margin-top:1px}
-.badge-ok{background:#E8F8EC;color:#1a7a2e}
-.badge-err{background:#FFE8E8;color:#c0392b}
-.badge-info{background:#E8F0FF;color:#1a5a8a}
+/* What went right or was merely noted takes the app's ink-on-tint shape — the
+   colour is the information, so the words stay the most legible thing on the
+   row; a failure takes the attention colour, as the SMS history's failed badge
+   and the overdue pills do. */
+.badge-ok{background:color-mix(in srgb,var(--mint) 18%,var(--card));color:var(--ink)}
+.badge-info{background:color-mix(in srgb,var(--sky) 20%,var(--card));color:var(--ink)}
+.badge-err{background:color-mix(in srgb,var(--persimmon) 20%,var(--card));color:var(--persimmon)}
 
 /* ─── Photo capture overlay ─── */
-.photo-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:100;flex-direction:column;align-items:center;justify-content:center;padding:20px}
+.photo-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:var(--scrim);z-index:100;flex-direction:column;align-items:center;justify-content:center;padding:20px}
 .photo-overlay.active{display:flex}
-.photo-overlay .photo-card{background:var(--card);border-radius:var(--radius);padding:30px 24px;text-align:center;max-width:340px;width:100%}
+.photo-overlay .photo-card{background:var(--card);color:var(--ink);border-radius:var(--radius);padding:30px 24px;text-align:center;max-width:340px;width:100%}
 .photo-overlay .photo-card .big-icon{font-size:56px;margin-bottom:12px}
 .photo-overlay .photo-card h3{font-size:18px;margin-bottom:6px}
 .photo-overlay .photo-card p{font-size:14px;color:var(--ink-soft);margin-bottom:20px}
 .file-input-wrapper{position:relative;overflow:hidden;margin-bottom:12px}
 .file-input-wrapper input[type=file]{position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;cursor:pointer}
-.file-input-wrapper .fake-btn{display:block;padding:16px;border:2px dashed var(--pink);border-radius:12px;color:var(--pink);font-weight:600;font-size:15px}
+.file-input-wrapper .fake-btn{display:block;padding:16px;border:2px dashed var(--candy);border-radius:12px;color:var(--candy);font-weight:600;font-size:15px}
 .photo-preview{max-width:100%;max-height:200px;border-radius:12px;margin-bottom:12px;display:none}
 .btn-group{display:flex;gap:8px}
-.btn-group button{flex:1;padding:14px;border:none;border-radius:10px;font-weight:700;font-size:15px;cursor:pointer}
-.btn-cancel{background:#f0f0f0;color:var(--ink)}
-.btn-send{background:var(--pink);color:#fff}
+.btn-group button{flex:1;padding:14px;border:1px solid var(--rule);border-radius:10px;font-weight:700;font-size:15px;font-family:inherit;cursor:pointer}
+.btn-cancel{background:var(--surface-soft);color:var(--ink)}
+.btn-send{background:var(--candy);color:var(--button-text);border-color:var(--candy)}
 .btn-send:disabled{opacity:0.5}
 .send-status{padding:10px;border-radius:8px;margin-top:10px;font-weight:600;font-size:14px;display:none}
+.send-status.is-ok{background:color-mix(in srgb,var(--mint) 18%,var(--card));color:var(--ink)}
+.send-status.is-err{background:color-mix(in srgb,var(--persimmon) 20%,var(--card));color:var(--persimmon)}
 
 /* ─── Empty state ─── */
 .empty-state{text-align:center;padding:30px 16px;color:var(--ink-soft)}
 .empty-state .icon{font-size:48px;margin-bottom:8px}
 
-/* ─── Animations ─── */
-@keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
-
 /* ─── Toast ─── */
-.toast{position:fixed;bottom:20px;left:20px;right:20px;padding:14px 20px;border-radius:12px;color:#fff;font-weight:600;font-size:14px;text-align:center;z-index:200;animation:slideUp 0.3s;display:none}
-.toast.success{background:#51CF66}
-.toast.error{background:#FF4757}
+@keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+.toast{position:fixed;bottom:20px;left:20px;right:20px;padding:14px 20px;border-radius:12px;font-weight:600;font-size:14px;text-align:center;z-index:200;animation:slideUp 0.3s;display:none}
+.toast.success{background:var(--success-bg);color:var(--ink)}
+.toast.error{background:var(--danger-bg);color:var(--ink)}
 </style>
 </head>
 <body>
@@ -83,11 +98,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 </div>
 
 <!-- Server Config -->
-<div class="config-bar" style="flex-wrap:wrap;">
+<div class="config-bar">
     <input type="text" id="server-ip" placeholder="آدرس کامپیوتر، مثلاً 192.168.1.181:8000" inputmode="url" autocomplete="off">
     <input type="text" id="api-token" placeholder="API token" autocomplete="off" style="flex:1;min-width:120px;">
     <div class="status-dot" id="status-dot" title="Connection status"></div>
-    <button onclick="saveConfig();testConnection()" style="background:var(--pink);color:#fff;border:none;padding:8px 14px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer">Save</button>
+    <button onclick="saveConfig();testConnection()">Save</button>
 </div>
 <div class="connection-help">گوشی و کامپیوتر باید به یک Wi‑Fi وصل باشند. در حالت وب معمولی، پورت پیش‌فرض <strong>8000</strong> است؛ اگر پورت دیگری می‌بینید همان را بعد از IP وارد کنید.</div>
 
@@ -258,9 +273,7 @@ async function sendPhoto() {
         });
         const data = await r.json();
         if (r.ok) {
-            status.className = 'send-status';
-            status.style.background = '#E8F8EC';
-            status.style.color = '#1a7a2e';
+            status.className = 'send-status is-ok';
             status.textContent = '✅ Photo sent successfully!';
             addLog('ok', 'Kid photo uploaded');
             showToast('Photo uploaded ✓', 'success');
@@ -269,9 +282,7 @@ async function sendPhoto() {
             throw new Error(data.detail || 'Upload failed');
         }
     } catch(e) {
-        status.className = 'send-status';
-        status.style.background = '#FFE8E8';
-        status.style.color = '#c0392b';
+        status.className = 'send-status is-err';
         status.textContent = '❌ ' + e.message;
         addLog('err', 'Photo upload failed: ' + e.message);
         showToast('Upload failed: ' + e.message, 'error');

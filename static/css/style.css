@@ -48,6 +48,7 @@
   --sidebar-active: #2C414C;
   --topbar-start: #17232B;
   --topbar-end: #334C59;
+  --topbar-text: #FFFFFF;
   --success-bg: #E8F5ED;
   --warning-bg: #FFF5D9;
   --danger-bg: #FDEBEC;
@@ -109,7 +110,7 @@ a:hover { text-decoration: underline; }
   align-items: center;
   gap: 1rem;
 }
-.brand { color: #fff; display: flex; align-items: center; gap: 0.6rem; min-width: 210px; }
+.brand { color: var(--topbar-text); display: flex; align-items: center; gap: 0.6rem; min-width: 210px; }
 .brand:hover { text-decoration: none; }
 .brand-mark { font-size: 1.8rem; }
 .brand-copy { display: flex; flex-direction: column; line-height: 1.2; }
@@ -117,7 +118,7 @@ a:hover { text-decoration: underline; }
 .brand-copy small { opacity: 0.82; font-size: 0.7rem; margin-top: 0.2rem; }
 .topbar-actions { position: absolute; left: 1.25rem; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 0.6rem; direction: rtl; white-space: nowrap; }
 .quick-sale, .topbar-admin, .menu-toggle {
-  color: #fff; border: 1px solid rgba(255,255,255,0.35); background: rgba(255,255,255,0.16);
+  color: var(--topbar-text); border: 1px solid rgba(255,255,255,0.35); background: rgba(255,255,255,0.16);
   border-radius: 12px; min-height: 40px; padding: 0.55rem 0.8rem; display: inline-flex;
   align-items: center; justify-content: center; gap: 0.35rem; font-family: inherit; font-weight: 700; cursor: pointer;
   white-space: nowrap;

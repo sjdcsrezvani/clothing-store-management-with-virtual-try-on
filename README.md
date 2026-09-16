@@ -560,8 +560,17 @@ so a token a theme forgot fails the suite instead of quietly rendering in the
 inherited colour, the same rule holds for the markup a page writes itself, and no
 page of the shell may write a colour of its own — a hex literal fails the suite,
 so the charts, the photo panels and the lightbox follow dark and high-contrast
-instead of staying the palette the app shipped with.
-They use a throwaway SQLite database — never your real data.
+instead of staying the palette the app shipped with. That promise is then
+checked on what the shop actually receives rather than on what the sources say:
+the suite opens every address the shell serves, as each of the three roles, with
+each of the ten palettes active, and resolves every colour the rendered page
+reads against the palette it was loaded with — so a page that loads without its
+theme, or answers differently depending on the palette, or crashes for a role,
+fails the build as well. One page sits outside the shell — the phone capture tool
+the counter opens — and it is held from the other side: it loads no stylesheet,
+so it may read only what its palette hands it and what it declares itself, and a
+colour it cannot resolve fails the suite too.
+The suite uses a throwaway SQLite database — never your real data.
 
 Continuous integration runs this suite plus `compileall`, refuses a tracked
 `.env`, `.db` or `.log` file, and refuses any commit **message** that credits a
