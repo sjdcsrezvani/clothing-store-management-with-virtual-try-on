@@ -67,9 +67,14 @@ def _sell(client, variant, *, payment_method="cash", quantity=1):
     }, follow_redirects=False)
 
 
+# The shell's `<main>`, matched as a pattern: the tag carries `id` and `tabindex`
+# for the skip link, and this cut must survive the shell learning attributes.
+MAIN_OPEN = re.compile(r'<main class="app-main"[^>]*>')
+
+
 def _content(html: str) -> str:
     """The page's own markup — the shell keeps its own icons and is not the subject."""
-    start = html.index('<main class="app-main">')
+    start = MAIN_OPEN.search(html).end()
     return html[start:html.index("</main>", start)]
 
 

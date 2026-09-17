@@ -140,8 +140,10 @@ def test_new_colours_come_from_theme_tokens():
     section = STYLE_CSS[STYLE_CSS.index("/* ===================== Customer club"):]
     section = section[:section.index("High-contrast")]
     assert not re.search(r"#[0-9a-fA-F]{3,8}\b", section), section[:200]
-    for token in ("var(--card)", "var(--ink-soft)", "var(--candy-dark)", "var(--mint-dark)",
-                  "var(--sunshine)", "var(--sky-dark)", "var(--rule)", "var(--surface-soft)"):
+    # Tiers, points and the attention colours: the hues are the fills and borders,
+    # and the text is the ink derived for each of them.
+    for token in ("var(--card)", "var(--ink-soft)", "var(--link-hover)", "var(--success-ink)",
+                  "var(--sunshine)", "var(--info-ink)", "var(--rule)", "var(--surface-soft)"):
         assert token in section, token
     # Status must not rest on colour alone.
     assert 'html[data-theme-mode="high-contrast"] .status-badge' in STYLE_CSS

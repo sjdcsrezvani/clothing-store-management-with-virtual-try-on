@@ -48,7 +48,6 @@ _BASE = {
     "--field-bg": "#FFFFFF",
     "--table-header": "#F3F6F8",
     "--card-accent": "linear-gradient(90deg, var(--candy), var(--sky))",
-    "--focus-ring": "0 0 0 4px rgba(25, 122, 140, 0.24)",
     "--shadow": "0 2px 8px rgba(20, 35, 45, 0.08)",
     "--shadow-hover": "0 8px 20px rgba(20, 35, 45, 0.14)",
     "--radius": "8px",
@@ -129,7 +128,7 @@ THEMES: dict[str, dict[str, Any]] = {
         "name": "Midnight Operations",
         "description": "Full dark workspace for low-light retail operations.",
         "mode": "dark",
-        "tokens": {**_BASE, "--candy": "#F07A91", "--candy-dark": "#D95B75", "--sky": "#56C2D9", "--sky-dark": "#36A8C0", "--sunshine": "#E8B94C", "--persimmon": "#FF9770", "--mint": "#55C878", "--mint-dark": "#39A85B", "--bg": "#111820", "--card": "#1C2731", "--ink": "#F4F7F8", "--ink-soft": "#B5C0C6", "--rule": "#34434D", "--surface-soft": "#17232B", "--sidebar-bg": "#0B1116", "--sidebar-text": "#EAF0F2", "--sidebar-active": "#263C48", "--topbar-start": "#0B1116", "--topbar-end": "#18323D", "--success-bg": "#173522", "--warning-bg": "#3B3018", "--danger-bg": "#3A2026", "--field-bg": "#1E2B35", "--table-header": "#22323D", "--card-accent": "linear-gradient(90deg, #F07A91, #56C2D9)", "--focus-ring": "0 0 0 4px rgba(86, 194, 217, 0.38)"},
+        "tokens": {**_BASE, "--candy": "#F07A91", "--candy-dark": "#D95B75", "--sky": "#56C2D9", "--sky-dark": "#36A8C0", "--sunshine": "#E8B94C", "--persimmon": "#FF9770", "--mint": "#55C878", "--mint-dark": "#39A85B", "--bg": "#111820", "--card": "#1C2731", "--ink": "#F4F7F8", "--ink-soft": "#B5C0C6", "--rule": "#34434D", "--surface-soft": "#17232B", "--sidebar-bg": "#0B1116", "--sidebar-text": "#EAF0F2", "--sidebar-active": "#263C48", "--topbar-start": "#0B1116", "--topbar-end": "#18323D", "--success-bg": "#173522", "--warning-bg": "#3B3018", "--danger-bg": "#3A2026", "--field-bg": "#1E2B35", "--table-header": "#22323D", "--card-accent": "linear-gradient(90deg, #F07A91, #56C2D9)"},
     },
     "high-contrast": {
         "name": "High Contrast",
@@ -153,6 +152,14 @@ def _hex(value: str) -> tuple[int, int, int]:
     return int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)
 
 
+def _mix(first: str, second: str, amount: float) -> str:
+    """`color-mix(in srgb, first (1-amount), second amount)` in sRGB — the same
+    arithmetic the stylesheet asks the browser for, done here so a derived token
+    can be measured rather than trusted."""
+    channels = [round(x * (1 - amount) + y * amount) for x, y in zip(_hex(first), _hex(second))]
+    return "#%02X%02X%02X" % tuple(channels)
+
+
 def _luminance(value: str) -> float:
     channels = []
     for channel in _hex(value):
@@ -169,6 +176,101 @@ def contrast_ratio(first: str, second: str) -> float:
 
 def validate_hex(value: str) -> bool:
     return bool(_HEX.fullmatch((value or "").strip()))
+
+
+def _legible(seed: str, surfaces: list[str], ratio: float) -> str:
+    """The seed walked out of its own lightness until it reads on every surface."""
+    for target in ("#000000", "#FFFFFF"):
+        for step in range(1, 21):
+            candidate = _mix(seed, target, step / 20)
+            if all(contrast_ratio(candidate, surface) >= ratio for surface in surfaces):
+                return candidate
+    return seed
+
+
+def _tinted(base: str, accent: str, ratio: float,
+            others: tuple[str, ...] = (), start: float = 0.06) -> str:
+    """`base` carrying a little of `accent`, mixed in until the tint is visible
+    against the surface it sits on — and against the other surfaces that surface
+    is drawn over, because a row's hover sits on a card inside a page."""
+    for step in range(round(start * 100), 61):
+        candidate = _mix(base, accent, step / 100)
+        if all(contrast_ratio(candidate, surface) >= ratio for surface in (base, *others)):
+            return candidate
+    return _mix(base, accent, 0.6)
+
+
+def interaction_tokens(tokens: dict[str, str]) -> dict[str, str]:
+    """The colours whose only job is to be legible: focus, hover, disabled, label.
+
+    Derived from the palette every time it is assembled rather than written into
+    `_BASE` and inherited, because a theme that moves `--card`, `--sidebar-bg` or
+    `--button-text` leaves a hand-written state colour behind — and a focus ring
+    that is inherited still paints, which is the same failure `--persimmon` had
+    for eleven declarations. `tests/test_keyboard_shell.py` measures every pair
+    below in all ten palettes, so the floors stated here are the guard's floors.
+    """
+    card = tokens["--card"]
+    bg = tokens["--bg"]
+    field = tokens["--field-bg"]
+    soft = tokens["--surface-soft"]
+    label = tokens["--button-text"]
+    # Where brand-coloured *text* is read: a card, a page, a field, the soft
+    # surface, and the strongest tint of the brand that any rule paints under it
+    # (the state badges mix 18% of it into the card).
+    ring = _legible(tokens["--sky"], [card, field, bg], 3)
+
+    def ink(seed: str, tint: str, *alerts: str) -> str:
+        """A palette's hue, walked until it reads as text everywhere text is read:
+        on the four surfaces a page is made of, on the strongest tint of the hue
+        that any badge paints under it, and on the alert background that belongs to
+        it (the warning banner is pale gold, and gold text on it read 1.84:1)."""
+        surfaces = [card, bg, field, soft, _mix(card, tokens[tint], 0.18), *alerts]
+        return _legible(seed, surfaces, 4.5)
+
+    return {
+        # The ring a keyboard reader follows. One for the page's own surfaces and
+        # one for the shell's bars, which are dark in the light palettes and light
+        # in the dark ones: no single colour reads on both a white card and a
+        # near-black topbar, which is why the two exist.
+        "--ring": ring,
+        "--focus-ring": f"0 0 0 3px {ring}",
+        "--ring-brand": _legible(tokens["--sky"],
+                                 [tokens["--topbar-start"], tokens["--topbar-end"],
+                                  tokens["--sidebar-bg"], tokens["--sidebar-active"]], 3),
+        # A hovered row or choice, on a card; and a hovered item in the sidebar,
+        # which is its own surface in every palette.
+        "--hover-surface": _tinted(card, tokens["--candy"], 1.25, others=(tokens["--bg"],)),
+        "--sidebar-hover": _tinted(tokens["--sidebar-bg"], tokens["--sidebar-text"], 1.3),
+        # What a button that cannot be pressed looks like: a quiet surface and a
+        # label on it that still reads, rather than the whole control faded out.
+        "--disabled-surface": tokens["--surface-soft"],
+        "--disabled-ink": _legible(tokens["--ink-soft"],
+                                   [tokens["--surface-soft"], card], 4.5),
+        # The fill under a destructive button's label.
+        "--danger": _legible("#FF4757", [label], 4.5),
+        # The brand colour as text — a link, a KPI figure, a chip's label — and as
+        # the fill a label sits on. `--candy` is a hue the palette picked for the
+        # brand, not a colour that reads anywhere: as text it measured 3.36:1 on
+        # the card in Kids Boutique and 4.12:1 as `--candy-dark` in Midnight, and a
+        # white label on it measured 3.34:1 on the light palettes and 2.10:1 on the
+        # dark one. The design keeps the hue and moves the lightness, which is the
+        # only thing a contrast ratio can be bought with.
+        "--link": ink(tokens["--candy"], "--candy", tokens["--danger-bg"]),
+        "--link-hover": ink(tokens["--candy-dark"], "--candy", tokens["--danger-bg"]),
+        # The same treatment for the other three voices the app speaks in: a
+        # positive figure, a neutral note, a warning. Each was used as text as it
+        # came — `--mint-dark` on a tint of itself read 3.64:1, `--sky-dark` 3.77:1,
+        # and the warning alert printed `--sunshine` on the pale gold of its own
+        # background at 1.84:1.
+        "--success-ink": ink(tokens["--mint-dark"], "--mint", tokens["--success-bg"]),
+        "--info-ink": ink(tokens["--sky-dark"], "--sky"),
+        "--warning-ink": ink(tokens["--sunshine"], "--sunshine", tokens["--warning-bg"]),
+        "--brand-fill": _legible(tokens["--candy"], [label], 4.5),
+        "--brand-fill-dark": _legible(tokens["--candy-dark"], [label], 4.5),
+        "--success-fill": _legible(tokens["--mint"], [label], 4.5),
+        "--success-fill-dark": _legible(tokens["--mint-dark"], [label], 4.5),
+    }
 
 
 def custom_tokens(primary: str, secondary: str) -> dict[str, str]:
@@ -197,12 +299,23 @@ def custom_tokens(primary: str, secondary: str) -> dict[str, str]:
     }
 
 
+# Each palette is completed with the state colours it implies: a theme states the
+# surfaces and its hovers, and the values that exist only to stay legible are
+# worked out from them. One place, so a theme cannot keep a focus ring chosen for
+# a background it no longer uses.
+for _theme in THEMES.values():
+    _theme["tokens"].update(interaction_tokens(_theme["tokens"]))
+
+
 def theme_preview(theme_id: str, custom: dict[str, str] | None = None) -> dict[str, Any]:
     theme = THEMES.get(theme_id) or THEMES[DEFAULT_THEME_ID]
     tokens = dict(theme["tokens"])
     if theme_id == "custom-brand" and custom:
         tokens.update(custom_tokens(custom.get("primary", DEFAULT_CUSTOM_PRIMARY),
                                     custom.get("secondary", DEFAULT_CUSTOM_SECONDARY)))
+        # A shop's own two colours move the brand surfaces, so the state colours
+        # are worked out again from them: the ring follows the brand, not `_BASE`.
+        tokens.update(interaction_tokens(tokens))
     return {
         "id": theme_id if theme_id in THEMES else DEFAULT_THEME_ID,
         "name": theme["name"],

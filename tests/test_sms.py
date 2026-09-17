@@ -1156,9 +1156,12 @@ def test_campaign_send_uses_the_template_and_is_logged(client, authed, db_sessio
 def test_sms_styles_come_from_theme_tokens():
     section = STYLE_CSS[STYLE_CSS.index("/* ── پیامک "):]
     assert not re.search(r"#[0-9a-fA-F]{3,8}\b", section), section[:300]
+    # The small text — a queued badge, a failed one, a hint — reads in the inks
+    # derived for it; the hues stay in the fills and borders beside them.
     for token in ("var(--rule)", "var(--card)", "var(--ink-soft)",
                   "var(--surface-soft)", "var(--sunshine)", "var(--persimmon)",
-                  "var(--mint)", "var(--mint-dark)", "var(--lavender)"):
+                  "var(--mint)", "var(--success-ink)", "var(--lavender)",
+                  "var(--link-hover)"):
         assert token in section, token
     # State is text beside colour, never colour alone, in every theme.
     for state in (".status-badge.is-queued", ".status-badge.is-sent", ".status-badge.is-failed"):

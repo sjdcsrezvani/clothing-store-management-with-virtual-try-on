@@ -42,7 +42,7 @@
                 <td class="tnum">{{ fmt(sale.total_amount) }}</td>
                 <td class="tnum">
                     {% if sale.discount_amount > 0 %}
-                        <span style="color: var(--mint-dark);">−{{ fmt(sale.discount_amount) }}</span>
+                        <span style="color: var(--success-ink);">−{{ fmt(sale.discount_amount) }}</span>
                     {% else %}—{% endif %}
                 </td>
                 <td class="tnum"><strong>{{ fmt(sale.final_amount) }}</strong></td>

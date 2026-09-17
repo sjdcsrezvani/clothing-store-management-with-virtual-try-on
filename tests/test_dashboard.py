@@ -17,6 +17,12 @@ from tests.test_roles import _session_as, _staff
 
 _customer_seq = iter(range(10_000))
 
+# The shell's own `<main>` is read as a pattern, not as a literal tag: this cut
+# must not break every time the shell learns an attribute — it just gained `id`
+# and `tabindex` for the skip link — and a test that stops finding the tag would
+# fail for the wrong reason.
+MAIN_OPEN = re.compile(r'<main class="app-main"[^>]*>')
+
 ROOT_FILES = {
     "dashboard": "templates/admin/dashboard.html",
     "service": "services/dashboard.py",
@@ -38,7 +44,7 @@ def content_only(html: str) -> str:
     this test honest about what it does and does not cover, rather than letting
     it pass because it never looked at the links the page actually draws.
     """
-    return html[html.index('<main class="app-main">'):]
+    return html[MAIN_OPEN.search(html).end():]
 
 
 def attention_counts(html: str) -> dict:
@@ -555,7 +561,7 @@ def test_the_downgrade_card_links_to_the_page_instead_of_running_it(client, db_s
     assert f">{customer.id}<" not in html
     assert "با تأیید شما" in html
     # The dashboard no longer holds the mutation: it draws no form of its own.
-    body = html[html.index('<main class="app-main">'):]
+    body = html[MAIN_OPEN.search(html).end():]
     assert "<form" not in body
 
 

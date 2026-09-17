@@ -41,8 +41,33 @@
   --radius-sm: 8px;
   --surface-soft: #fffaf7;
   --sidebar-width: 260px;
-  --focus-ring: 0 0 0 4px rgba(69, 183, 209, 0.24);
   --touch-target: 44px;
+  /* The state colours. Every theme computes its own from the palette it is given
+     (services/themes.py), because a focus ring or a hover fill that is *inherited*
+     still paints — it just paints a colour chosen for another background. These
+     are the default palette's values, for the first paint before a theme applies;
+     tests/test_keyboard_shell.py measures every pair in all ten palettes. */
+  --ring: #187485;
+  --ring-brand: #5EA2AE;
+  --focus-ring: 0 0 0 3px var(--ring);
+  --hover-surface: #F3D7DE;
+  --sidebar-hover: #2C383F;
+  --disabled-surface: var(--surface-soft);
+  --disabled-ink: #54606B;
+  --danger: #CC3946;
+  /* …and the colours *text* is written in: the brand hue as a link, a figure or a
+     chip label, the other three voices (positive, note, warning), and the fills a
+     label sits on. `--candy` stays the hue — borders, tints, bars — because it was
+     never chosen to be read. */
+  --link: #AB4058;
+  --link-hover: #A03750;
+  --brand-fill: #BF4763;
+  --brand-fill-dark: #A03750;
+  --success-fill: #1F7F47;
+  --success-fill-dark: #166537;
+  --success-ink: #166537;
+  --info-ink: #115664;
+  --warning-ink: #8B6413;
   --sidebar-bg: #17232B;
   --sidebar-text: #EAF0F2;
   --sidebar-active: #2C414C;
@@ -77,10 +102,55 @@ body, input, table, .num {
   font-feature-settings: "tnum" 1, "lnum" 1;
 }
 
-a { color: var(--candy); text-decoration: none; font-weight: 600; }
+a { color: var(--link); text-decoration: none; font-weight: 600; }
 a:hover { text-decoration: underline; }
 
-::selection { background: var(--candy); color: #fff; }
+/* Keyboard-only escape from the menu: without it the first Tab lands on the menu
+   button and a reader walks the whole sidebar — up to 22 entries — before
+   reaching the page. Hidden until it is focused, and drawn in the ring colour so
+   it cannot be missed on the way in. */
+.skip-link {
+  position: absolute;
+  top: -4rem;
+  inset-inline-start: 0.75rem;
+  z-index: 200;
+  padding: 0.6rem 1rem;
+  background: var(--card);
+  color: var(--ink);
+  border: 2px solid var(--ring);
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  transition: top 0.15s ease;
+}
+.skip-link:focus { top: 0.75rem; text-decoration: none; }
+
+/* A picture that opens full size is a button, not an image with a click handler:
+   an <img> is not in the tab order, so the only way into the lightbox was a mouse
+   — and the ✕ that closes it was a <div>. Both are real buttons now; the chrome
+   around the picture is stripped rather than restyled. */
+.lightbox-open { display: block; width: 100%; padding: 0; border: none; background: none; cursor: zoom-in; min-height: 0; }
+.lightbox-open img { display: block; }
+.lightbox-open:focus-visible { outline: 3px solid var(--ring-brand); outline-offset: 2px; }
+.lightbox-close {
+  position: absolute;
+  top: 1rem;
+  inset-inline-start: 1rem;
+  width: 2.6rem;
+  height: 2.6rem;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--scrim-text) 45%, transparent);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--scrim-text) 12%, transparent);
+  color: var(--scrim-text);
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.lightbox-close:focus-visible { outline: 3px solid var(--ring-brand); outline-offset: 2px; }
+
+::selection { background: var(--brand-fill); color: var(--button-text); }
 
 /* ===================== App shell ===================== */
 
@@ -117,13 +187,16 @@ a:hover { text-decoration: underline; }
 .brand-copy strong { font-size: 1.1rem; font-weight: 800; }
 .brand-copy small { opacity: 0.82; font-size: 0.7rem; margin-top: 0.2rem; }
 .topbar-actions { position: absolute; left: 1.25rem; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 0.6rem; direction: rtl; white-space: nowrap; }
+/* The veil over the topbar's own buttons is the bar's text colour, not white: a
+   palette with a light bar needs the buttons to read against *it*, and a 28%
+   white veil was this app's pink-to-blue topbar written into the stylesheet. */
 .quick-sale, .topbar-admin, .menu-toggle {
-  color: var(--topbar-text); border: 1px solid rgba(255,255,255,0.35); background: rgba(255,255,255,0.16);
+  color: var(--topbar-text); border: 1px solid color-mix(in srgb, var(--topbar-text) 35%, transparent); background: color-mix(in srgb, var(--topbar-text) 16%, transparent);
   border-radius: 12px; min-height: 40px; padding: 0.55rem 0.8rem; display: inline-flex;
   align-items: center; justify-content: center; gap: 0.35rem; font-family: inherit; font-weight: 700; cursor: pointer;
   white-space: nowrap;
 }
-.quick-sale:hover, .topbar-admin:hover, .menu-toggle:hover { background: rgba(255,255,255,0.28); text-decoration: none; }
+.quick-sale:hover, .topbar-admin:hover, .menu-toggle:hover { background: color-mix(in srgb, var(--topbar-text) 28%, transparent); text-decoration: none; }
 .topbar-admin { width: auto; min-width: 104px; }
 .topbar-admin .ui-icon, .quick-sale .ui-icon { display: inline-block; }
 
@@ -145,14 +218,20 @@ a:hover { text-decoration: underline; }
 .sidebar-section-label { color: color-mix(in srgb, var(--sidebar-text) 58%, transparent); font-size: 0.68rem; font-weight: 800; margin: 1rem 0.7rem 0.35rem; }
 .sidebar-nav a { display: flex; align-items: center; gap: 0.7rem; padding: 0.68rem 0.75rem; border-radius: var(--radius-sm); color: var(--sidebar-text); font-size: 0.86rem; font-weight: 600; margin: 0.12rem 0; transition: background 0.15s, color 0.15s, transform 0.15s; }
 .sidebar-nav a span { width: 1.35rem; text-align: center; font-size: 1.05rem; }
-.sidebar-nav a:hover { background: var(--sidebar-active); color: var(--sidebar-text); text-decoration: none; transform: translateX(-2px); }
-.sidebar-nav a.active { background: var(--sidebar-active); color: var(--sidebar-text); box-shadow: inset -3px 0 var(--candy); font-weight: 800; }
+/* The hovered pill is its own colour, not the one the current page wears: they
+   were the same, so a hover said nothing on the nine palettes where the fill was
+   all but invisible against the sidebar — 1.10:1 in Kids Boutique. */
+.sidebar-nav a:hover { background: var(--sidebar-hover); color: var(--sidebar-text); text-decoration: none; transform: translateX(-2px); }
+.sidebar-nav a.active, .sidebar-nav a.active:hover { background: var(--sidebar-active); color: var(--sidebar-text); box-shadow: inset -3px 0 var(--candy); font-weight: 800; }
 .sidebar-footer { padding: 0.8rem; border-top: 1px solid var(--rule); }
 .sidebar-logout { width: 100%; border-radius: 10px; padding: 0.7rem; border: none; font-family: inherit; font-weight: 700; cursor: pointer; display: flex; justify-content: center; gap: 0.35rem; }
-.sidebar-logout { color: var(--candy); background: color-mix(in srgb, var(--candy) 12%, var(--sidebar-bg)); }
-.sidebar-logout:hover { background: #ffe3e1; }
+/* The label was `--candy` on a 12% tint of itself, which is the same hue as the
+   sidebar it sits in on every dark palette: 1.09:1 in Forest Ledger. It reads in
+   the shell's own text colour now, and the brand stays in the fill. */
+.sidebar-logout { color: var(--sidebar-text); background: color-mix(in srgb, var(--candy) 12%, var(--sidebar-bg)); }
+.sidebar-logout:hover { background: var(--sidebar-hover); }
 .sidebar-overlay { display: none; }
-.app-main { margin-right: var(--sidebar-width); min-height: calc(100vh - 72px); }
+.app-main { margin-right: var(--sidebar-width); min-height: calc(100vh - 72px); scroll-margin-top: 5.5rem; }
 html[data-theme-mode="dark"] body, html[data-theme-mode="dark-shell"] body, html[data-theme-mode="high-contrast"] body { background: var(--bg); color: var(--ink); }
 html[data-theme-mode="dark"] th, html[data-theme-mode="dark-shell"] th { background: var(--surface-soft); color: var(--ink-soft); }
 html[data-theme-mode="dark"] input, html[data-theme-mode="dark"] select, html[data-theme-mode="dark"] textarea, html[data-theme-mode="dark-shell"] input, html[data-theme-mode="dark-shell"] select, html[data-theme-mode="dark-shell"] textarea { background: var(--surface-soft); color: var(--ink); border-color: var(--rule); }
@@ -191,8 +270,8 @@ footer:not(.app-footer) { text-align: center; padding: 1rem 0; color: var(--ink-
 .page-heading .page-icon { flex: 0 0 1.6rem; width: 1.6rem; height: 1.6rem; }
 .page-heading .page-icon .ui-icon { width: 1.5rem; height: 1.5rem; }
 /* The role badge the dashboard wears next to its name. */
-.page-badge { font-size: 0.7rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 999px; background: color-mix(in srgb, var(--sky) 16%, var(--card)); color: var(--sky-dark); }
-.eyebrow { color: var(--candy-dark); font-size: 0.72rem; font-weight: 800; letter-spacing: 0.02em; }
+.page-badge { font-size: 0.7rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 999px; background: color-mix(in srgb, var(--sky) 16%, var(--card)); color: var(--info-ink); }
+.eyebrow { color: var(--link-hover); font-size: 0.72rem; font-weight: 800; letter-spacing: 0.02em; }
 
 /* ===================== Breadcrumb =====================
    One trail, built from the same registry that draws the sidebar and names the
@@ -200,8 +279,8 @@ footer:not(.app-footer) { text-align: center; padding: 1rem 0; color: var(--ink-
    is printed as context rather than given a link that would go nowhere. */
 .breadcrumb { display: flex; align-items: center; flex-wrap: wrap; gap: 0.35rem; font-size: 0.72rem; font-weight: 700; margin-bottom: 0.3rem; }
 .breadcrumb a { color: var(--ink-soft); }
-.breadcrumb a:hover { color: var(--candy-dark); text-decoration: none; }
-.breadcrumb .current { color: var(--candy-dark); font-weight: 800; }
+.breadcrumb a:hover { color: var(--link-hover); text-decoration: underline; }
+.breadcrumb .current { color: var(--link-hover); font-weight: 800; }
 .breadcrumb-sep { color: var(--rule); font-weight: 400; }
 .invoice-trail, .document-trail { margin-bottom: 0.75rem; }
 
@@ -278,7 +357,20 @@ input:focus, select:focus, textarea:focus {
 }
 
 button, a, input, select, textarea { min-height: var(--touch-target); }
-button:disabled { cursor: wait; opacity: 0.62; transform: none !important; }
+/* A disabled control was faded out as a whole, which washed the label with it:
+   1.85:1 on the dark palette. It goes quiet instead — a soft surface and a label
+   that still reads — and the cursor says why nothing happens rather than showing
+   a spinner that never stops. */
+button:disabled {
+  cursor: not-allowed;
+  opacity: 1;
+  transform: none !important;
+  background: var(--disabled-surface);
+  background-image: none;
+  color: var(--disabled-ink);
+  border-color: var(--rule);
+  box-shadow: none;
+}
 .btn.is-loading::after { content: ""; width: 0.9rem; height: 0.9rem; border: 2px solid currentColor; border-left-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; }
 .status-dot { display: inline-block; width: 0.65rem; height: 0.65rem; border-radius: 50%; margin-inline-end: 0.35rem; background: currentColor; }
 .alert-warning { background: #fff4d6; color: #7b5a00; }
@@ -314,34 +406,40 @@ button:disabled { cursor: wait; opacity: 0.62; transform: none !important; }
   transition: transform 0.1s, box-shadow 0.15s, filter 0.15s;
   line-height: 1.2;
 }
-.btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
+.btn:hover { transform: translateY(-2px); box-shadow: var(--shadow-hover); }
 .btn:active { transform: translateY(0); }
-.btn:focus-visible { outline: 3px solid var(--sky); outline-offset: 2px; }
+.btn:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--candy), var(--candy-dark));
+  background: linear-gradient(135deg, var(--brand-fill), var(--brand-fill-dark));
   color: var(--button-text);
 }
-.btn-primary:hover { filter: brightness(1.08); }
+/* A filled button's hover is the lift `.btn:hover` already draws — it moves the
+   control and shadows it rather than repainting the fill under its label. Both
+   directions of the filter were wrong for a label: brightening took the white
+   label to 2.32:1 on Midnight, and darkening took it to 4.31:1 where it had been
+   4.48:1, because `brightness` multiplies the label too. */
 
 .btn-success {
-  background: linear-gradient(135deg, var(--mint), var(--mint-dark));
+  background: linear-gradient(135deg, var(--success-fill), var(--success-fill-dark));
   color: var(--button-text);
 }
-.btn-success:hover { filter: brightness(1.08); }
+
 
 .btn-danger {
-  background: #FF4757;
-  color: #fff;
+  background: var(--danger);
+  color: var(--button-text);
 }
-.btn-danger:hover { filter: brightness(1.1); }
+
 
 .btn-ghost {
   background: var(--field-bg);
   color: var(--ink);
   border-color: var(--rule);
 }
-.btn-ghost:hover { border-color: var(--candy); color: var(--candy); box-shadow: none; }
+/* The hover is shown by the border, and the label stays in the ink the field was
+   already legible against: the brand colour as small text on a field was 3.36:1. */
+.btn-ghost:hover { border-color: var(--candy); color: var(--ink); box-shadow: none; }
 
 .btn-sm { padding: 0.4rem 0.8rem; font-size: 0.85rem; }
 .btn-large { padding: 1rem 2rem; font-size: 1.1rem; }
@@ -358,12 +456,12 @@ button:disabled { cursor: wait; opacity: 0.62; transform: none !important; }
   align-items: center;
   gap: 0.5rem;
 }
-.alert-success { background: var(--success-bg); color: var(--mint-dark); }
-.alert-error   { background: var(--danger-bg); color: var(--candy-dark); }
-.alert-warning { background: var(--warning-bg); color: var(--sunshine); }
+.alert-success { background: var(--success-bg); color: var(--success-ink); }
+.alert-error   { background: var(--danger-bg); color: var(--link-hover); }
+.alert-warning { background: var(--warning-bg); color: var(--warning-ink); }
 /* Neither a success nor a failure: «اين پيامک خودکار هم مى‌رود» explains the
    machine, so it takes the palette's secondary blue. */
-.alert-info    { background: color-mix(in srgb, var(--sky) 14%, var(--card)); color: var(--sky-dark); }
+.alert-info    { background: color-mix(in srgb, var(--sky) 14%, var(--card)); color: var(--info-ink); }
 
 /* ===================== Tier badges ===================== */
 
@@ -419,7 +517,7 @@ th {
 th:first-child { border-radius: 0 var(--radius-sm) 0 0; }
 th:last-child  { border-radius: var(--radius-sm) 0 0 0; }
 
-tbody tr:hover { background: rgba(255, 107, 138, 0.04); }
+tbody tr:hover { background: var(--hover-surface); }
 tbody tr:last-child td { border-bottom: none; }
 
 /* ===================== Stats grid ===================== */
@@ -557,7 +655,7 @@ tbody tr:last-child td { border-bottom: none; }
 .info-item .value.code {
   font-family: 'Vazirmatn', monospace;
   letter-spacing: 0.2em;
-  color: var(--candy);
+  color: var(--link);
 }
 
 /* Scan section */
@@ -574,7 +672,7 @@ tbody tr:last-child td { border-bottom: none; }
 }
 .scan-section .barcode-input:focus {
   border-color: var(--candy);
-  box-shadow: 0 0 0 4px rgba(255, 107, 138, 0.12);
+  box-shadow: var(--focus-ring);
 }
 
 /* Basket */
@@ -610,10 +708,15 @@ tbody tr:last-child td { border-bottom: none; }
 .basket-item-qty   { color: var(--ink-soft); font-size: 0.9rem; }
 .basket-item-total { font-weight: 800; min-width: 90px; text-align: left; direction: ltr; }
 
+/* The basket's remove button was the alarm red on a pale pink of its own choosing
+   — 2.85:1, and 3.34:1 with the white label its hover swapped in. It wears the
+   attention colour on its own tint, which is the pair the palette guard already
+   measures, and hovering makes the disc paler and rings it instead of
+   swapping the label. */
 .btn-remove {
-  background: #FFE8E8;
-  color: #FF4757;
-  border: none;
+  background: color-mix(in srgb, var(--persimmon) 20%, var(--card));
+  color: var(--persimmon);
+  border: 1px solid transparent;
   border-radius: 50%;
   width: 30px; height: 30px;
   cursor: pointer;
@@ -624,7 +727,7 @@ tbody tr:last-child td { border-bottom: none; }
   align-items: center;
   justify-content: center;
 }
-.btn-remove:hover { background: #FF4757; color: #fff; }
+.btn-remove:hover { background: color-mix(in srgb, var(--persimmon) 8%, var(--card)); border-color: var(--persimmon); }
 
 .basket-summary { padding-top: 0.8rem; }
 
@@ -636,7 +739,7 @@ tbody tr:last-child td { border-bottom: none; }
   direction: ltr;
 }
 .summary-row span:first-child { direction: rtl; }
-.summary-row.discount { color: var(--mint-dark); }
+.summary-row.discount { color: var(--success-ink); }
 .summary-row.total {
   font-size: 1.15rem;
   font-weight: 800;
@@ -656,11 +759,11 @@ tbody tr:last-child td { border-bottom: none; }
 .payment-section { margin-top: 0.8rem; }
 .payment-timeline { display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.8rem; color: var(--ink-soft); font-size: 0.72rem; }
 .timeline-step { padding: 0.35rem 0.5rem; border-radius: 999px; border: 1px solid var(--rule); white-space: nowrap; }
-.timeline-step.active { color: var(--candy-dark); border-color: var(--candy); background: #fff3f6; font-weight: 700; }
+.timeline-step.active { color: var(--link-hover); border-color: var(--candy); background: #fff3f6; font-weight: 700; }
 .timeline-line { flex: 1; height: 1px; background: var(--rule); }
 .cash-calculator { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; align-items: end; margin: 0.8rem 0; padding: 0.8rem; background: var(--surface-soft); border-radius: var(--radius-sm); }
 .cash-calculator label { font-size: 0.8rem; font-weight: 700; grid-column: 1 / -1; }
-.cash-calculator strong { padding: 0.7rem; color: var(--mint-dark); }
+.cash-calculator strong { padding: 0.7rem; color: var(--success-ink); }
 
 .payment-options {
   display: flex;
@@ -682,7 +785,7 @@ tbody tr:last-child td { border-bottom: none; }
 }
 .payment-option:has(input:checked) {
   border-color: var(--candy);
-  background: linear-gradient(135deg, rgba(255,107,138,0.08), rgba(255,107,138,0.02));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--candy) 10%, var(--card)), color-mix(in srgb, var(--candy) 4%, var(--card)));
 }
 .payment-option input { width: auto; }
 
@@ -825,7 +928,7 @@ html[data-theme="kids-boutique"] .context-mark, html[data-theme="kids-boutique"]
 /* ===================== Theme gallery ===================== */
 .appearance-section { --gallery-gap: 0.85rem; }
 .appearance-intro { color: var(--ink-soft); margin: -0.35rem 0 1rem; font-size: 0.88rem; }
-.appearance-active { padding: 0.35rem 0.65rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); color: var(--candy); font-family: ui-monospace, monospace; font-size: 0.72rem; direction: ltr; }
+.appearance-active { padding: 0.35rem 0.65rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); color: var(--link); font-family: ui-monospace, monospace; font-size: 0.72rem; direction: ltr; }
 .theme-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gallery-gap); }
 .theme-option { display: grid; grid-template-columns: 150px 1fr; grid-template-rows: 1fr auto; gap: 0.7rem; align-items: center; min-height: 126px; padding: 0.7rem; text-align: right; color: var(--ink); background: var(--card); border: 2px solid var(--rule); border-radius: var(--radius-sm); font-family: inherit; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s; }
 .theme-option:hover { border-color: var(--candy); transform: translateY(-1px); }
@@ -871,7 +974,7 @@ html[data-theme="kids-boutique"] .context-mark, html[data-theme="kids-boutique"]
    a zero, and a zero is not good news. */
 .action-count { font-size: 1.45rem; font-weight: 800; line-height: 1.1; color: var(--ink); }
 .action-item .action-sub { color: var(--ink-soft); font-size: 0.78rem; }
-.action-item.is-clear .action-count { color: var(--mint-dark); }
+.action-item.is-clear .action-count { color: var(--success-ink); }
 .action-item.is-clear strong { color: var(--ink-soft); font-weight: 600; }
 .action-item.is-clear { border-inline-start-color: var(--rule); }
 .action-warning { border-inline-start: 4px solid var(--sunshine); }
@@ -894,8 +997,8 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
    — spending less is good news too — so colour never comes from the direction of
    the arrow. */
 .stat-delta { display: inline-block; margin-inline-start: 0.4rem; font-size: 0.68rem; font-weight: 700; vertical-align: middle; padding: 0.1rem 0.4rem; border-radius: 999px; background: var(--surface-soft); color: var(--ink-soft); }
-.stat-delta.is-good { background: color-mix(in srgb, var(--mint) 16%, var(--card)); color: var(--mint-dark); }
-.stat-delta.is-bad { background: color-mix(in srgb, var(--candy) 16%, var(--card)); color: var(--candy-dark); }
+.stat-delta.is-good { background: color-mix(in srgb, var(--mint) 16%, var(--card)); color: var(--success-ink); }
+.stat-delta.is-bad { background: color-mix(in srgb, var(--candy) 16%, var(--card)); color: var(--link-hover); }
 
 /* «برترین‌ها» as a ranked list: a five-column table is the heaviest thing on the
    page for its least glanceable information. No bars — a bar needs a width per
@@ -910,12 +1013,12 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 .ranked-figures { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; text-align: end; }
 .ranked-units { color: var(--ink-soft); font-size: 0.75rem; }
 .ranked-money { font-weight: 800; }
-.ranked-profit { color: var(--mint-dark); font-size: 0.78rem; }
+.ranked-profit { color: var(--success-ink); font-size: 0.78rem; }
 
 /* Settings: the standing of the downgrade rule, under the one field that sets it. */
 .settings-downgrade-note { margin: 0 0 1.5rem; font-size: 0.85rem; line-height: 1.9; }
 
-.danger-details { border: 1px dashed var(--candy) !important; padding: 0.9rem 1.1rem; color: var(--candy-dark); background: var(--danger-bg); }
+.danger-details { border: 1px dashed var(--candy) !important; padding: 0.9rem 1.1rem; color: var(--link-hover); background: var(--danger-bg); }
 .danger-details::before { display: none; }
 .danger-details summary { cursor: pointer; font-weight: 700; }
 .danger-details > div { padding-top: 0.8rem; }
@@ -970,7 +1073,7 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
   font-size: 3rem;
   font-weight: 800;
   line-height: 1;
-  color: var(--candy-dark);
+  color: var(--link-hover);
 }
 .error-page h2 { margin: 0.6rem 0 0.8rem; }
 .error-page .error-message { color: var(--ink); line-height: 1.9; }
@@ -1011,8 +1114,8 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 .kpi-card:hover { box-shadow: var(--shadow-hover); }
 .kpi-card h4 { font-size: 0.78rem; color: var(--ink-soft); margin-bottom: 0.3rem; font-weight: 600; }
 .kpi-value { font-size: 1.15rem; font-weight: 800; }
-.kpi-card.profit .kpi-value  { color: var(--mint-dark); }
-.kpi-card.margin .kpi-value  { color: var(--candy); }
+.kpi-card.profit .kpi-value  { color: var(--success-ink); }
+.kpi-card.margin .kpi-value  { color: var(--link); }
 
 .charts-grid {
   display: grid;
@@ -1022,6 +1125,20 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 }
 .chart-card { min-height: 280px; overflow: hidden; }
 .chart-card canvas { max-width: 100% !important; max-height: 260px !important; }
+/* A range that was asked for and could not be read: the page shows its default
+   range and says so here. It is an attention colour, not an error colour —
+   nothing failed, the shop just asked for something the app could not read. */
+.filter-problem {
+  margin: 0 0 0.7rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--persimmon);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--persimmon) 10%, transparent);
+  color: var(--persimmon);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
 /* The sentence beside a chart: what its marks show, for a reader who cannot tell
    the accents apart, for a phone in sunlight, and for a printed page that has
    lost every colour it had. Its numbers are on the marks and in the tables as
@@ -1037,8 +1154,11 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
   .action-grid { grid-template-columns: 1fr 1fr; }
   .page-heading { align-items: stretch; flex-direction: column; }
   .page-heading .btn { align-self: flex-start; }
-  .app-sidebar { transform: translateX(110%); transition: transform 0.22s ease; width: min(300px, 88vw); }
-  body.sidebar-open .app-sidebar { transform: translateX(0); }
+  /* `visibility: hidden` as well as the slide: a translated panel is still in the
+     tab order, so a reader on a narrow window tabbed straight into the closed menu
+     and through every entry of a menu nobody could see. */
+  .app-sidebar { transform: translateX(110%); visibility: hidden; transition: transform 0.22s ease, visibility 0.22s ease; width: min(300px, 88vw); }
+  body.sidebar-open .app-sidebar { transform: translateX(0); visibility: visible; }
   .sidebar-overlay { position: fixed; inset: 72px 0 0; z-index: 60; background: rgba(45,45,45,0.35); backdrop-filter: blur(2px); }
   body.sidebar-open .sidebar-overlay { display: block; }
   .app-main { margin-right: 0; }
@@ -1077,7 +1197,11 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 }
 
 /* ===================== Focus ===================== */
-:focus-visible { outline: 3px solid var(--sky); outline-offset: 2px; }
+:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
+/* The shell's own bars are dark in the light palettes and light in the dark ones,
+   so what a keyboard reader follows there is a value of its own: one ring cannot
+   read on both a white card and a near-black topbar. */
+.app-topbar :focus-visible, .app-sidebar :focus-visible { outline-color: var(--ring-brand); }
 
 /* ===================== Animations ===================== */
 
@@ -1091,14 +1215,18 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
   animation: popIn 0.2s ease-out;
 }
 
-/* Terminal live indicator on checkout */
+/* Terminal live indicator on checkout.
+   Both of its colours are the theme's, and both are read without a fallback: a
+   literal here is not a default, it is the colour every palette silently gets,
+   which is how this chip kept a light grey face on a dark till for as long as
+   nothing looked at it. */
 .terminal-indicator {
   display: flex;
   align-items: center;
   gap: 0.45rem;
   font-size: 0.8rem;
-  color: var(--ink-soft, #555);
-  background: var(--surface-2, #f4f4f5);
+  color: var(--ink-soft);
+  background: var(--surface-soft);
   border-radius: 8px;
   padding: 0.35rem 0.6rem;
 }
@@ -1110,7 +1238,7 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 .staff-record { border: 1px solid var(--rule); border-radius: var(--radius-sm); margin: 0.7rem 0; overflow: hidden; }
 .staff-record > summary { cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.9rem 1rem; background: var(--surface-soft); list-style: none; }
 .staff-record > summary::-webkit-details-marker { display: none; }
-.staff-record > summary::before { content: "＋"; color: var(--candy); font-weight: 800; }
+.staff-record > summary::before { content: "＋"; color: var(--link); font-weight: 800; }
 .staff-record[open] > summary::before { content: "−"; }
 .staff-record > summary span { color: var(--ink-soft); font-size: 0.8rem; }
 .staff-record-body { padding: 1rem; border-top: 1px solid var(--rule); }
@@ -1158,7 +1286,7 @@ html[data-theme="premium-navy"] .app-topbar { background: linear-gradient(135deg
 html[data-theme="premium-navy"] .card::before { height: 3px; }
 
 html[data-theme="atelier"] .app-topbar { background: #292826; }
-html[data-theme="atelier"] .btn-primary { background: var(--candy); }
+html[data-theme="atelier"] .btn-primary { background: var(--brand-fill); }
 html[data-theme="atelier"] .card::before { background: var(--candy); }
 
 html[data-theme="ocean-commerce"] .sidebar-nav a.active { box-shadow: inset -3px 0 #8DE0EA; }
@@ -1250,7 +1378,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .section-heading-row h3,
 .section-heading-row h4 { margin: 0 0 0.25rem; }
 .section-heading-row p { margin: 0; }
-.text-link { color: var(--candy-dark); font-weight: 800; white-space: nowrap; }
+.text-link { color: var(--link-hover); font-weight: 800; white-space: nowrap; }
 .product-page-heading .admin-nav { margin-top: 0; justify-content: flex-start; }
 .products-kpi { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .product-search-card,
@@ -1267,7 +1395,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .product-thumb-empty { display: inline-flex; align-items: center; justify-content: center; color: var(--ink-soft); }
 .variant-summary { display: flex; flex-direction: column; align-items: flex-start; gap: 0.2rem; }
 .variant-summary small { color: var(--ink-soft); font-size: 0.74rem; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
-.badge-info { background: color-mix(in srgb, var(--sky) 14%, var(--card)); color: var(--sky-dark); }
+.badge-info { background: color-mix(in srgb, var(--sky) 14%, var(--card)); color: var(--info-ink); }
 .table-actions { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
 .table-actions form { display: inline; }
 .product-pagination { display: flex; align-items: center; justify-content: center; gap: 1rem; padding-top: 1.2rem; color: var(--ink-soft); }
@@ -1339,8 +1467,8 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .tag-template-actions { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
 .tag-template-actions form { margin: 0; }
 .tag-template-empty { margin-top: 0.8rem !important; font-size: 0.82rem; }
-.tag-template-label { padding: 0.3rem 0.65rem; color: var(--candy-dark); font-size: 0.72rem; font-weight: 800; background: color-mix(in srgb, var(--candy) 8%, var(--card)); border-bottom: 1px solid var(--rule); }
-.product-template-badge { color: var(--candy-dark); font-size: 0.68rem; }
+.tag-template-label { padding: 0.3rem 0.65rem; color: var(--link-hover); font-size: 0.72rem; font-weight: 800; background: color-mix(in srgb, var(--candy) 8%, var(--card)); border-bottom: 1px solid var(--rule); }
+.product-template-badge { color: var(--link-hover); font-size: 0.68rem; }
 @media (max-width: 600px) { .tag-template-row { align-items: stretch; flex-direction: column; } .tag-template-actions { justify-content: flex-start; } }
 .tag-preview-panel { display: grid; place-items: center; min-height: 235px; padding: 1.2rem; overflow: auto; background: repeating-linear-gradient(45deg, var(--surface-soft), var(--surface-soft) 8px, color-mix(in srgb, var(--rule) 45%, var(--surface-soft)) 8px, color-mix(in srgb, var(--rule) 45%, var(--surface-soft)) 16px); border: 1px solid var(--rule); border-radius: var(--radius-sm); }
 .tag-preview-scale { display: block; transform: scale(1.55); transform-origin: center; margin: 2rem; }
@@ -1359,9 +1487,9 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .tag-print-selection-actions { display: flex; gap: 0.45rem; flex-wrap: wrap; }
 .tag-print-secondary-actions { justify-content: flex-start; margin-top: 0.8rem; padding-top: 0.8rem; border-top: 1px solid var(--rule); }
 .tag-print-secondary-actions form { display: inline; }
-.tag-selected-count { color: var(--candy-dark); font-weight: 800; white-space: nowrap; }
+.tag-selected-count { color: var(--link-hover); font-weight: 800; white-space: nowrap; }
 .tag-selection-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(248px, 1fr)); gap: 0.8rem; }
-.tag-selection-item { position: relative; display: flex; flex-direction: column; min-width: 0; border: 2px solid var(--rule); border-radius: var(--radius-md, var(--radius-sm)); background: var(--surface-soft); overflow: hidden; transition: border-color 0.15s, box-shadow 0.15s; }
+.tag-selection-item { position: relative; display: flex; flex-direction: column; min-width: 0; border: 2px solid var(--rule); border-radius: var(--radius-sm); background: var(--surface-soft); overflow: hidden; transition: border-color 0.15s, box-shadow 0.15s; }
 .tag-selection-item.is-selected { border-color: var(--candy); box-shadow: 0 0 0 3px color-mix(in srgb, var(--candy) 13%, transparent); }
 .tag-selection-item.is-printed { opacity: 0.7; }
 .tag-selection-head { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.6rem 0.65rem 0.5rem; }
@@ -1389,15 +1517,15 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
   box-shadow: 0 1px 3px rgba(20, 40, 60, 0.18), 0 4px 14px rgba(20, 40, 60, 0.12);
 }
 .tag-selection-preview .tag-barcode-image, .tag-selection-preview .tag-custom-image { max-width: 100%; height: auto; }
-.printed-badge { position: absolute; left: 0.6rem; top: 0.6rem; padding: 0.2rem 0.5rem; border-radius: 999px; background: var(--candy); color: #fff; font-size: 0.68rem; font-weight: 800; z-index: 2; }
+.printed-badge { position: absolute; left: 0.6rem; top: 0.6rem; padding: 0.2rem 0.5rem; border-radius: 999px; background: var(--brand-fill); color: var(--button-text); font-size: 0.68rem; font-weight: 800; z-index: 2; }
 .barcode-print-sheet { overflow: hidden; }
 .tag-pagination { display: flex; align-items: center; justify-content: center; gap: 0.8rem; margin-bottom: 1rem; }
 .tag-page-btn, .tag-page-number { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 0.45rem 0.8rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--card); color: var(--ink); font-size: 0.8rem; font-weight: 800; }
-.tag-page-number.active { border-color: var(--candy); background: color-mix(in srgb, var(--candy) 12%, var(--card)); color: var(--candy-dark); }
+.tag-page-number.active { border-color: var(--candy); background: color-mix(in srgb, var(--candy) 12%, var(--card)); color: var(--link-hover); }
 
 .catalog-section { overflow: visible; }
 .product-form-heading .admin-nav { margin-top: 0; }
-.section-step { display: inline-grid; place-items: center; width: 1.8rem; height: 1.8rem; flex: 0 0 1.8rem; border-radius: 50%; background: color-mix(in srgb, var(--candy) 12%, var(--card)); color: var(--candy-dark); font-weight: 800; }
+.section-step { display: inline-grid; place-items: center; width: 1.8rem; height: 1.8rem; flex: 0 0 1.8rem; border-radius: 50%; background: color-mix(in srgb, var(--candy) 12%, var(--card)); color: var(--link-hover); font-weight: 800; }
 .section-heading-spaced { margin-top: 1.5rem; padding-top: 1.2rem; border-top: 1px solid var(--rule); }
 .product-form-grid-wide { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .product-form-grid { align-items: start; }
@@ -1408,7 +1536,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .variant-entry-heading { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: 0.8rem; padding-inline-end: 2rem; }
 .variant-entry-heading span { color: var(--ink-soft); font-size: 0.78rem; }
 .variant-entry-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.variant-remove { position: absolute; top: 0.7rem; left: 0.7rem; width: 2rem; min-height: 2rem; border: 1px solid var(--rule); border-radius: 50%; background: var(--card); color: var(--candy-dark); font-size: 1.2rem; cursor: pointer; }
+.variant-remove { position: absolute; top: 0.7rem; left: 0.7rem; width: 2rem; min-height: 2rem; border: 1px solid var(--rule); border-radius: 50%; background: var(--card); color: var(--link-hover); font-size: 1.2rem; cursor: pointer; }
 .variant-edit-layout { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(250px, 0.65fr); gap: 1.2rem; align-items: start; }
 /* The whole side column sticks, not just the summary card: a single sticky
    card would slide down over the danger card below it. */
@@ -1417,7 +1545,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .detail-list > div { display: flex; justify-content: space-between; gap: 0.75rem; padding-bottom: 0.45rem; border-bottom: 1px solid var(--rule); }
 .detail-list dt { color: var(--ink-soft); font-size: 0.8rem; }
 .detail-list dd { margin: 0; font-weight: 800; text-align: left; }
-.stock-status-callout { display: flex; align-items: center; gap: 0.4rem; padding: 0.7rem 0.85rem; border-radius: var(--radius-sm); background: var(--success-bg); color: var(--mint-dark); font-size: 0.82rem; font-weight: 700; }
+.stock-status-callout { display: flex; align-items: center; gap: 0.4rem; padding: 0.7rem 0.85rem; border-radius: var(--radius-sm); background: var(--success-bg); color: var(--success-ink); font-size: 0.82rem; font-weight: 700; }
 .stock-status-callout.is-warning { background: var(--warning-bg); color: #7b5a00; }
 .variant-current-image { display: block; max-width: 150px; max-height: 150px; margin-top: 0.6rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); object-fit: cover; }
 .demand-counter-group { margin-top: 0.9rem; padding-top: 0.75rem; border-top: 1px solid var(--rule); display: grid; gap: 0.55rem; }
@@ -1425,7 +1553,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .demand-counter-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .demand-counter-value { min-width: 2.5rem; text-align: center; padding: 0.3rem 0.6rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); font-weight: 700; }
 .demand-counter-form { display: inline; margin: 0; }
-.required-mark { color: var(--candy-dark); }
+.required-mark { color: var(--link-hover); }
 .tag-quantity-row { display: flex; align-items: center; justify-content: space-between; gap: 0.35rem; width: 100%; color: var(--ink-soft); font-size: 0.68rem; }
 .tag-quantity { width: 4.8rem !important; min-height: 32px !important; padding: 0.25rem 0.35rem !important; text-align: center; font-size: 0.78rem !important; }
 
@@ -1465,7 +1593,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .tag-zoom-seg { display: inline-flex; border: 1px solid var(--rule); border-radius: var(--radius-sm); overflow: hidden; }
 .tag-zoom-seg .zoom-btn { min-height: 34px; padding: 0.25rem 0.7rem; border: 0; border-inline-start: 1px solid var(--rule); background: var(--card); color: var(--ink); font-weight: 800; font-size: 0.78rem; cursor: pointer; }
 .tag-zoom-seg .zoom-btn:first-child { border-inline-start: 0; }
-.tag-zoom-seg .zoom-btn.active { background: var(--candy); color: #fff; }
+.tag-zoom-seg .zoom-btn.active { background: var(--brand-fill); color: var(--button-text); }
 .tag-editor-canvas { touch-action: none; }
 .tag-editor-field { touch-action: none; color: #2b3546; }
 .tag-editor-field-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1474,7 +1602,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .field-layer-buttons { display: flex; gap: 0.4rem; margin-top: 0.35rem; }
 .field-layer-buttons .btn { flex: 1; min-height: 34px; font-size: 0.75rem; }
 .field-layer-help { margin: 0.4rem 0 0; }
-#undo-btn:disabled { opacity: 0.45; cursor: default; }
+#undo-btn:disabled { opacity: 1; cursor: not-allowed; color: var(--disabled-ink); }
 .fit-bad { color: #c0392b; }
 @media (max-width: 1180px) {
   .tag-settings-layout { grid-template-columns: 1fr; }
@@ -1525,7 +1653,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .kbd-hint { display: inline-block; padding: 0.1rem 0.4rem; border: 1px solid var(--rule); border-radius: 6px; background: var(--card); font-size: 0.72rem; font-weight: 700; color: var(--ink-soft); }
 .editor-help { display: flex; flex-wrap: wrap; gap: 0.3rem 0.6rem; align-items: center; }
 .editor-diagnostics { margin-top: 0.65rem; padding: 0.55rem 0.7rem; border-radius: var(--radius-sm); font-size: 0.74rem; line-height: 1.7; }
-.editor-diagnostics.is-ok { background: var(--success-bg); color: var(--mint-dark); }
+.editor-diagnostics.is-ok { background: var(--success-bg); color: var(--success-ink); }
 .editor-diagnostics.is-warning { background: var(--warning-bg); color: #7b5a00; }
 .editor-diagnostics strong { margin-inline-end: 0.35rem; }
 .editor-diagnostics span + span::before { content: " · "; color: currentColor; opacity: 0.65; }
@@ -1536,7 +1664,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .tag-ctl-title { display: flex; gap: 0.7rem; align-items: flex-start; }
 .tag-ctl-title h4 { margin: 0; }
 .tag-ctl-title p { margin: 0.2rem 0 0.9rem; }
-.ctl-step { flex: 0 0 auto; width: 1.7rem; height: 1.7rem; display: inline-grid; place-items: center; border-radius: 50%; background: color-mix(in srgb, var(--candy) 14%, var(--card)); color: var(--candy-dark); font-weight: 800; font-size: 0.85rem; }
+.ctl-step { flex: 0 0 auto; width: 1.7rem; height: 1.7rem; display: inline-grid; place-items: center; border-radius: 50%; background: color-mix(in srgb, var(--candy) 14%, var(--card)); color: var(--link-hover); font-weight: 800; font-size: 0.85rem; }
 .tag-ctl-card .form-row { margin: 0 0 0.7rem; }
 .ctl-row-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .ctl-row-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -1592,7 +1720,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .purchase-scan { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
 .purchase-scan input { flex: 1; min-width: 200px; }
 .purchase-scan-msg { margin: 0; font-size: 0.78rem; color: var(--ink-soft); }
-.purchase-scan-msg.is-error { color: var(--candy-dark); font-weight: 700; }
+.purchase-scan-msg.is-error { color: var(--link-hover); font-weight: 700; }
 
 .purchase-item-row {
   display: grid;
@@ -1608,7 +1736,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .purchase-item-row.is-duplicate { border-color: var(--candy); }
 .purchase-item-total { display: flex; align-items: center; justify-content: flex-end; min-height: var(--touch-target); font-weight: 800; }
 .purchase-item-context { grid-column: 1 / -1; margin: 0; font-size: 0.74rem; color: var(--ink-soft); }
-.purchase-item-row.is-duplicate .purchase-item-context::after { content: " · همین تنوع در ردیف دیگری هم آمده است"; color: var(--candy-dark); font-weight: 700; }
+.purchase-item-row.is-duplicate .purchase-item-context::after { content: " · همین تنوع در ردیف دیگری هم آمده است"; color: var(--link-hover); font-weight: 700; }
 .purchase-item-remove { min-width: 2.4rem; }
 
 /* Supplier-scoped product picker: type, see the supplier's own products. */
@@ -1648,7 +1776,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 /* Quantity and unit price are optional: the product already knows both. */
 .purchase-amount-input { border-style: dashed; font-size: 0.85rem; background: transparent; }
 .purchase-scope-note { margin: 0 0 0.7rem; font-size: 0.78rem; color: var(--ink-soft); }
-.purchase-scope-note.is-warning { color: var(--candy-dark); font-weight: 700; }
+.purchase-scope-note.is-warning { color: var(--link-hover); font-weight: 700; }
 .purchase-draft-banner { margin-bottom: 1rem; }
 
 .purchase-totals { display: grid; gap: 0.4rem; margin: 1rem 0; padding: 0.9rem 1rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--surface-soft); }
@@ -1663,9 +1791,9 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .purchase-table td small,
 .purchase-table td strong { display: block; }
 .purchase-table td small { color: var(--ink-soft); font-size: 0.72rem; }
-.purchase-link { font-weight: 800; color: var(--candy-dark); white-space: nowrap; }
+.purchase-link { font-weight: 800; color: var(--link-hover); white-space: nowrap; }
 .purchase-table .purchase-note { color: var(--ink-soft); font-size: 0.72rem; max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.badge-danger { background: color-mix(in srgb, var(--candy) 16%, var(--card)); color: var(--candy-dark); }
+.badge-danger { background: color-mix(in srgb, var(--candy) 16%, var(--card)); color: var(--link-hover); }
 
 .purchase-detail-layout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.72fr); gap: 1.2rem; align-items: start; }
 .purchase-detail-side { position: sticky; top: 92px; align-self: start; min-width: 0; }
@@ -1713,7 +1841,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .reconcile-label { font-size: 0.78rem; color: var(--ink-soft); font-weight: 700; }
 .reconcile-value { font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
 .reconcile-sub { font-size: 0.75rem; color: var(--ink-soft); }
-.reconcile-ok { font-size: 0.75rem; color: var(--mint-dark); font-weight: 700; }
+.reconcile-ok { font-size: 0.75rem; color: var(--success-ink); font-weight: 700; }
 .reconcile-action { margin: 0 0 0.4rem; }
 .reconcile-action .btn { align-self: flex-start; }
 
@@ -1749,10 +1877,10 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
   font-weight: 700;
   white-space: nowrap;
   background: color-mix(in srgb, var(--sky) 14%, var(--card));
-  color: var(--sky-dark);
+  color: var(--info-ink);
 }
-.movement-type.is-in { background: color-mix(in srgb, var(--mint) 16%, var(--card)); color: var(--mint-dark); }
-.movement-type.is-out { background: color-mix(in srgb, var(--candy) 14%, var(--card)); color: var(--candy-dark); }
+.movement-type.is-in { background: color-mix(in srgb, var(--mint) 16%, var(--card)); color: var(--success-ink); }
+.movement-type.is-out { background: color-mix(in srgb, var(--candy) 14%, var(--card)); color: var(--link-hover); }
 .movement-type.is-zero { background: color-mix(in srgb, var(--sunshine) 22%, var(--card)); color: var(--ink); }
 
 .movement-delta {
@@ -1765,8 +1893,8 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
   direction: ltr;
   unicode-bidi: isolate;
 }
-.movement-delta.is-in { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--mint-dark); }
-.movement-delta.is-out { background: color-mix(in srgb, var(--candy) 16%, var(--card)); color: var(--candy-dark); }
+.movement-delta.is-in { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--success-ink); }
+.movement-delta.is-out { background: color-mix(in srgb, var(--candy) 16%, var(--card)); color: var(--link-hover); }
 .movement-delta.is-zero { background: color-mix(in srgb, var(--sky) 12%, var(--card)); color: var(--ink-soft); }
 
 .movement-balance strong { font-size: 1rem; }
@@ -1829,7 +1957,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
   line-height: 1;
   cursor: pointer;
 }
-.pdp-nav:hover:not(:disabled) { border-color: var(--candy); color: var(--candy-dark); }
+.pdp-nav:hover:not(:disabled) { border-color: var(--candy); color: var(--link-hover); }
 .pdp-nav:disabled { cursor: not-allowed; opacity: 0.5; }
 .pdp-selects select {
   flex: 1;
@@ -1864,8 +1992,8 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .pdp-day:hover:not(:disabled) { background: color-mix(in srgb, var(--candy) 12%, var(--card)); }
 .pdp-day.is-outside { color: var(--ink-soft); opacity: 0.7; }
 .pdp-day.is-today { border-color: var(--candy); font-weight: 800; }
-.pdp-day.is-selected { background: var(--candy); border-color: var(--candy); color: var(--button-text); font-weight: 800; }
-.pdp-day:disabled { cursor: not-allowed; color: var(--ink-soft); opacity: 0.4; text-decoration: line-through; }
+.pdp-day.is-selected { background: var(--brand-fill); border-color: var(--candy); color: var(--button-text); font-weight: 800; }
+.pdp-day:disabled { cursor: not-allowed; color: var(--disabled-ink); opacity: 1; text-decoration: line-through; }
 .pdp-day:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
 .pdp-foot {
@@ -1886,10 +2014,10 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
   font-weight: 700;
   cursor: pointer;
 }
-.pdp-today { background: var(--candy); color: var(--button-text); }
+.pdp-today { background: var(--brand-fill); color: var(--button-text); }
 .pdp-today:hover { background: var(--candy-dark); }
 .pdp-clear { background: transparent; border-color: var(--rule); color: var(--ink-soft); }
-.pdp-clear:hover { border-color: var(--candy); color: var(--candy-dark); }
+.pdp-clear:hover { border-color: var(--candy); color: var(--link-hover); }
 
 /* Type-ahead hint: how to jump to a year, and the digits typed so far. */
 .pdp-hint {
@@ -1937,10 +2065,10 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .customer-table td strong { display: block; }
 
 .customer-name a { font-weight: 700; text-decoration: none; color: inherit; }
-.customer-name a:hover { color: var(--candy-dark); text-decoration: underline; }
+.customer-name a:hover { color: var(--link-hover); text-decoration: underline; }
 .customer-phone { direction: ltr; unicode-bidi: isolate; color: var(--ink-soft); font-size: 0.78rem; }
 .customer-meta { color: var(--ink-soft); font-size: 0.72rem; }
-.customer-stale { color: var(--candy-dark); font-weight: 700; }
+.customer-stale { color: var(--link-hover); font-weight: 700; }
 .customer-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; white-space: nowrap; }
 .customer-actions .btn { min-height: 1.9rem; padding: 0.25rem 0.6rem; font-size: 0.74rem; }
 
@@ -1953,7 +2081,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
   font-weight: 700;
   white-space: nowrap;
   background: color-mix(in srgb, var(--mint) 16%, var(--card));
-  color: var(--mint-dark);
+  color: var(--success-ink);
 }
 .status-badge.is-inactive { background: color-mix(in srgb, var(--sunshine) 26%, var(--card)); color: var(--ink); }
 .status-badge.is-archived { background: color-mix(in srgb, var(--ink-soft) 20%, var(--card)); color: var(--ink-soft); }
@@ -1967,15 +2095,15 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
   font-weight: 700;
   white-space: nowrap;
   background: color-mix(in srgb, var(--sky) 14%, var(--card));
-  color: var(--sky-dark);
+  color: var(--info-ink);
 }
 .tag-chip.is-vip { background: color-mix(in srgb, var(--sunshine) 30%, var(--card)); color: var(--ink); }
-.tag-chip.is-blocked { background: color-mix(in srgb, var(--candy) 16%, var(--card)); color: var(--candy-dark); }
-.tag-chip.is-wholesale { background: color-mix(in srgb, var(--mint) 16%, var(--card)); color: var(--mint-dark); }
+.tag-chip.is-blocked { background: color-mix(in srgb, var(--candy) 16%, var(--card)); color: var(--link-hover); }
+.tag-chip.is-wholesale { background: color-mix(in srgb, var(--mint) 16%, var(--card)); color: var(--success-ink); }
 
 .birthday-line { display: block; white-space: nowrap; }
 .birthday-line .birthday-age { color: var(--ink-soft); font-size: 0.72rem; }
-.birthday-soon { color: var(--candy-dark); font-weight: 800; font-size: 0.72rem; }
+.birthday-soon { color: var(--link-hover); font-weight: 800; font-size: 0.72rem; }
 
 .drift-flag {
   display: inline-block;
@@ -2156,7 +2284,7 @@ html[data-theme-mode="high-contrast"] .pdp-day.is-today { outline: 2px dashed va
 .campaign-table { min-width: 1120px; }
 .campaign-table td small, .campaign-table td strong { display: block; }
 .campaign-name a { font-weight: 700; text-decoration: none; color: inherit; }
-.campaign-name a:hover { color: var(--candy-dark); text-decoration: underline; }
+.campaign-name a:hover { color: var(--link-hover); text-decoration: underline; }
 .campaign-code { direction: ltr; unicode-bidi: isolate; color: var(--ink-soft); font-size: 0.78rem; letter-spacing: 0.08em; }
 .campaign-meta { color: var(--ink-soft); font-size: 0.72rem; }
 .campaign-window { font-size: 0.78rem; color: var(--ink-soft); white-space: nowrap; }
@@ -2164,11 +2292,11 @@ html[data-theme-mode="high-contrast"] .pdp-day.is-today { outline: 2px dashed va
 .campaign-actions .btn { min-height: 1.9rem; padding: 0.25rem 0.6rem; font-size: 0.74rem; }
 
 /* Status badges: live / scheduled / expired / inactive, plus assignment states. */
-.status-badge.is-live { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--mint-dark); }
-.status-badge.is-scheduled { background: color-mix(in srgb, var(--sky) 20%, var(--card)); color: var(--sky-dark); }
+.status-badge.is-live { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--success-ink); }
+.status-badge.is-scheduled { background: color-mix(in srgb, var(--sky) 20%, var(--card)); color: var(--info-ink); }
 .status-badge.is-expired { background: color-mix(in srgb, var(--persimmon) 20%, var(--card)); color: var(--persimmon); }
 .status-badge.is-assignment-invited { background: color-mix(in srgb, var(--sunshine) 30%, var(--card)); color: var(--ink); }
-.status-badge.is-assignment-used { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--mint-dark); }
+.status-badge.is-assignment-used { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--success-ink); }
 .status-badge.is-assignment-removed { background: color-mix(in srgb, var(--ink-soft) 20%, var(--card)); color: var(--ink-soft); }
 
 /* The badge a customer carries: same chip on the list, the profile and checkout. */
@@ -2206,7 +2334,7 @@ html[data-theme-mode="high-contrast"] .pdp-day.is-today { outline: 2px dashed va
   border-radius: var(--radius-sm);
   cursor: pointer;
 }
-.audience-choice:hover { background: var(--surface-soft); }
+.audience-choice:hover { background: var(--hover-surface); }
 .audience-choice.is-empty { cursor: not-allowed; color: var(--ink-soft); }
 .audience-choice input { width: auto; min-height: 0; accent-color: var(--candy); }
 .audience-label { font-weight: 600; font-size: 0.86rem; }
@@ -2324,7 +2452,7 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
 .sms-table td small, .sms-table td strong { display: block; }
 .sms-table td { vertical-align: top; }
 .sms-name a { font-weight: 700; text-decoration: none; color: inherit; }
-.sms-name a:hover { color: var(--candy-dark); text-decoration: underline; }
+.sms-name a:hover { color: var(--link-hover); text-decoration: underline; }
 .sms-meta { color: var(--ink-soft); font-size: 0.72rem; }
 /* «آخرین ارسال» و تعداد کل، تا یک قالب بی‌استفاده همین‌جا دیده شود. The badge
    is dashed on purpose: it is the absence of a state, not another state. */
@@ -2344,7 +2472,7 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
    the current template still reproduces it. Kept quiet until asked for: the
    body is what the reader came for, the audit is what they check next. */
 .sms-values { margin-top: 0.25rem; font-size: 0.72rem; }
-.sms-values summary { cursor: pointer; color: var(--sky-dark); }
+.sms-values summary { cursor: pointer; color: var(--info-ink); }
 .sms-values summary::marker { color: var(--ink-soft); }
 .sms-values-list {
   list-style: none; margin: 0.3rem 0 0; padding: 0.35rem 0.5rem;
@@ -2357,7 +2485,7 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
 .sms-values-value { font-weight: 600; overflow-wrap: anywhere; }
 .sms-values-value em { color: var(--persimmon); font-style: normal; }
 .sms-replay { margin: 0.3rem 0 0; color: var(--ink-soft); }
-.sms-replay.is-match { color: var(--mint-dark); }
+.sms-replay.is-match { color: var(--success-ink); }
 .sms-replay.is-differs, .sms-replay.is-gone { color: var(--persimmon); }
 .sms-replay-body {
   margin: 0.2rem 0 0; padding: 0.3rem 0.5rem;
@@ -2391,12 +2519,12 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
 .sms-fireline { display: flex; gap: 0.45rem; align-items: baseline; flex-wrap: wrap;
   margin: 0.2rem 0 0.1rem; font-size: 0.76rem; line-height: 1.7; color: var(--ink-soft); }
 .sms-fireline > span:not(.sms-fire-badge) { flex: 1 1 12rem; min-width: 0; }
-.sms-fireline a, .sms-help-list a { color: var(--candy-dark); font-weight: 700; text-decoration: none; white-space: nowrap; }
+.sms-fireline a, .sms-help-list a { color: var(--link-hover); font-weight: 700; text-decoration: none; white-space: nowrap; }
 .sms-fireline a:hover, .sms-help-list a:hover { text-decoration: underline; }
 .sms-fire-badge { display: inline-block; flex: 0 0 auto; padding: 0.05rem 0.45rem;
   border-radius: 999px; font-size: 0.68rem; font-weight: 800; }
-.sms-fire-badge.is-auto { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--mint-dark); }
-.sms-fire-badge.is-manual { background: color-mix(in srgb, var(--sky) 20%, var(--card)); color: var(--sky-dark); }
+.sms-fire-badge.is-auto { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--success-ink); }
+.sms-fire-badge.is-manual { background: color-mix(in srgb, var(--sky) 20%, var(--card)); color: var(--info-ink); }
 .sms-help-row { display: flex; gap: 0.45rem; align-items: center; flex-wrap: wrap;
   margin: 0.9rem 0 0.45rem; font-size: 0.82rem; color: var(--ink-soft); }
 .sms-help-row:first-of-type { margin-top: 0.4rem; }
@@ -2492,7 +2620,7 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
   cursor: pointer; font-size: 0.82rem;
 }
 .sms-pick-row:last-child { border-bottom: 0; }
-.sms-pick-row:hover { background: var(--surface-soft); }
+.sms-pick-row:hover { background: var(--hover-surface); }
 .sms-pick-row input { width: auto; min-height: 0; accent-color: var(--candy); }
 .sms-pick-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sms-pick-row small { margin-inline-start: auto; color: var(--ink-soft); font-size: 0.74rem; }
@@ -2518,7 +2646,7 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
 
 /* Queue states: the worker's own verdict, always with its label. */
 .status-badge.is-queued { background: color-mix(in srgb, var(--sunshine) 30%, var(--card)); color: var(--ink); }
-.status-badge.is-sent { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--mint-dark); }
+.status-badge.is-sent { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--success-ink); }
 .status-badge.is-failed { background: color-mix(in srgb, var(--persimmon) 20%, var(--card)); color: var(--persimmon); }
 
 @media (max-width: 900px) {
@@ -2559,15 +2687,15 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
 
 /* The shift's states, and the three ways a count can land. Text, not colour
    alone — the words are in the badge. */
-.status-badge.is-open      { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--mint-dark); }
+.status-badge.is-open      { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--success-ink); }
 .status-badge.is-closed    { background: color-mix(in srgb, var(--ink-soft) 20%, var(--card)); color: var(--ink-soft); }
 .status-badge.is-abandoned { background: color-mix(in srgb, var(--sunshine) 30%, var(--card)); color: var(--ink); }
-.status-badge.is-balanced  { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--mint-dark); }
+.status-badge.is-balanced  { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--success-ink); }
 /* A drawer short is the alarming one, so it takes the danger pair the rest of
    the panel uses for one (`.badge-danger`, `.alert-error`). `--persimmon` is the
    quieter register — money owed, a payment past its date, a message that failed
    — and every theme defines it (see services/themes.py). */
-.status-badge.is-short     { background: color-mix(in srgb, var(--candy) 18%, var(--card)); color: var(--candy-dark); }
+.status-badge.is-short     { background: color-mix(in srgb, var(--candy) 18%, var(--card)); color: var(--link-hover); }
 .status-badge.is-over      { background: color-mix(in srgb, var(--sunshine) 30%, var(--card)); color: var(--ink); }
 
 /* A filter is a row of small controls, not a stack of full-width fields: the

@@ -33,7 +33,7 @@
             </div>
             {% endif %}
             <details>
-                <summary style="cursor: pointer; font-weight: 600; color: var(--candy);">📤 آپلود عکس کودک</summary>
+                <summary style="cursor: pointer; font-weight: 600; color: var(--link);">📤 آپلود عکس کودک</summary>
                 <form method="post" action="/api/image-gen/upload-kid-photo"
                       enctype="multipart/form-data" style="margin-top: 0.8rem;"
                       target="upload-frame"
@@ -174,10 +174,15 @@
             </div>
             {% endif %}
             <div id="final-preview" style="display: inline-block; max-width: 100%;">
-                <img src="{{ last_gen_url }}" alt="generated"
-                     id="generated-img"
-                     style="max-width:100%; max-height:400px; border-radius:12px; box-shadow:0 4px 16px rgba(0,0,0,0.12); cursor:pointer; display:block;"
-                     onclick="openLightbox('{{ last_gen_url }}')">
+                {# A button, not an image with a click handler: an <img> is not in the
+                   tab order, so full size was reachable by mouse only. #}
+                <button type="button" class="lightbox-open" style="max-width:100%;"
+                        onclick="openLightbox('{{ last_gen_url }}')"
+                        aria-label="نمایش تصویر در اندازه کامل">
+                    <img src="{{ last_gen_url }}" alt="generated"
+                         id="generated-img"
+                         style="max-width:100%; max-height:400px; border-radius:12px; box-shadow:0 4px 16px rgba(0,0,0,0.12); display:block;">
+                </button>
             </div>
             <div style="display: flex; gap: 0.5rem; justify-content: center; margin-top: 1rem; flex-wrap: wrap;">
                 <a href="/admin/try-on/download?logo=yes" class="btn btn-success">⬇️ دانلود با لوگو</a>
@@ -227,8 +232,10 @@
 </div>
 
 {# ─── Lightbox ─── #}
+{# The scrim dismisses on a click as a convenience for the mouse; the keyboard's
+   own ways out are the ✕ button below and Escape. #}
 <div id="lightbox" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:var(--scrim);z-index:9999;align-items:center;justify-content:center;"
-     onclick="closeLightbox(event)">
+     class="lightbox-scrim" onclick="closeLightbox(event)">
     <div id="lightbox-stage" style="position:relative;display:inline-block;line-height:0;">
         <img id="lightbox-img" src="" alt="full"
              style="max-width:95vw;max-height:95vh;object-fit:contain;border-radius:8px;display:block;">
@@ -236,12 +243,16 @@
              id="lightbox-logo"
              style="position:absolute;top:0;left:0;width:200px;height:200px;pointer-events:none;filter:drop-shadow(0 2px 6px color-mix(in srgb, var(--scrim) 40%, transparent));">
     </div>
-    <div style="position:absolute;top:1rem;right:1rem;color:var(--scrim-text);font-size:2rem;cursor:pointer;" onclick="closeLightbox()">✕</div>
+    <button type="button" id="lightbox-close" class="lightbox-close" aria-label="بستن تصویر"
+            onclick="closeLightbox()">✕</button>
 </div>
 <script>
 function openLightbox(src) {
     document.getElementById('lightbox-img').src = src;
     document.getElementById('lightbox').style.display = 'flex';
+    // The keyboard goes where the eye went: Tab lands inside the open lightbox
+    // rather than continuing through the page behind it.
+    document.getElementById('lightbox-close').focus();
 }
 function closeLightbox(e) {
     if (!e || e.target === e.currentTarget || e.target.tagName === 'DIV')

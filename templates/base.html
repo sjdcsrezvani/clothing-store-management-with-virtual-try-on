@@ -47,6 +47,10 @@
         </defs>
     </svg>
     <div class="app-shell">
+        {# First in the document, so the first Tab reaches it: without it a keyboard
+           reader walks the menu toggle, the brand, the two topbar actions and up to
+           22 sidebar entries before the page they opened. #}
+        <a class="skip-link" href="#app-main">پرش به محتوای اصلی</a>
         <header class="app-topbar">
             <div class="topbar-inner">
                 <button type="button" class="menu-toggle" id="menu-toggle" aria-label="باز کردن منو" aria-expanded="false" aria-controls="app-sidebar">☰</button>
@@ -98,7 +102,7 @@
         </aside>
         <div class="sidebar-overlay" id="sidebar-overlay"></div>
 
-        <main class="app-main">
+        <main class="app-main" id="app-main" tabindex="-1">
             <div class="page-container">
                 {% block content %}{% endblock %}
             </div>
@@ -140,14 +144,24 @@
         var nav = document.querySelector('.sidebar-nav');
         function setOpen(open) {
             body.classList.toggle('sidebar-open', open);
-            if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+            if (!toggle) return;
+            toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+            // The button says what pressing it does next, not what it did.
+            toggle.setAttribute('aria-label', open ? 'بستن منو' : 'باز کردن منو');
         }
-        if (toggle) toggle.addEventListener('click', function () {
-            setOpen(!body.classList.contains('sidebar-open'));
-        });
+        function isOpen() { return body.classList.contains('sidebar-open'); }
+        if (toggle) toggle.addEventListener('click', function () { setOpen(!isOpen()); });
         if (overlay) overlay.addEventListener('click', function () { setOpen(false); });
         document.querySelectorAll('.sidebar-nav a').forEach(function (link) {
             link.addEventListener('click', function () { setOpen(false); });
+        });
+        // Escape closes the drawer and hands the keyboard back to the button that
+        // opened it. Without this the only way out was a mouse: the overlay behind
+        // the menu is a div, and nothing else on the page hears the key.
+        document.addEventListener('keydown', function (event) {
+            if (event.key !== 'Escape' || !isOpen()) return;
+            setOpen(false);
+            if (toggle) toggle.focus();
         });
         // Keep the sidebar where the user left it across page loads: restore the
         // list's scroll position, then nudge the current item into view (covers

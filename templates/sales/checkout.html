@@ -234,7 +234,7 @@
     <div class="checkout-right">
         {# ── Basket ── #}
         <div class="basket-section card">
-            <h3><span> سبد خرید</span> <span id="basket-count" style="background: var(--candy); color: var(--button-text); padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.8rem;"> {{ basket|length }} قلم </span></h3>
+            <h3><span> سبد خرید</span> <span id="basket-count" style="background: var(--brand-fill); color: var(--button-text); padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.8rem;"> {{ basket|length }} قلم </span></h3>
 
             {% if basket %}
             <div class="basket-list">
@@ -404,7 +404,7 @@ function renderTerminalIndicator(data) {
         text.textContent = '📟 کارت‌خوان: ' + addr + ' — متصل' + (data.latency_ms != null ? ' (' + data.latency_ms + 'ms)' : '');
     } else {
         dot.textContent = '🔴';
-        dot.style.color = 'var(--candy-dark)';
+        dot.style.color = 'var(--link-hover)';
         text.textContent = '📟 کارت‌خوان: ' + addr + ' — قطع است';
     }
 }

@@ -594,7 +594,9 @@ def test_the_error_page_styles_come_from_theme_tokens():
     section = STYLE_CSS[STYLE_CSS.index("/* Error page (403 / 404)"):]
     section = section[:section.index("/* Danger zone */")]
     assert not re.search(r"#[0-9a-fA-F]{3,8}\b", section), section[:200]
-    for token in ("var(--card)", "var(--candy)", "var(--candy-dark)",
+    # `--candy-dark` was the refusal's link colour; the derived ink is what text
+    # uses now, and the hue is left to the bar beside it.
+    for token in ("var(--card)", "var(--candy)", "var(--link-hover)",
                   "var(--ink)", "var(--ink-soft)", "var(--radius)"):
         assert token in section, token
 
