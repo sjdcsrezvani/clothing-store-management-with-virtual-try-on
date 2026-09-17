@@ -1,6 +1,7 @@
 import re
 from pathlib import Path
 
+from database import Base, engine
 from main import app
 from services.themes import (
     DEFAULT_THEME_ID,
@@ -123,6 +124,54 @@ def test_theme_catalog_defines_every_property_the_stylesheet_reads():
     for theme_id, theme in THEMES.items():
         missing = sorted(reads - set(theme["tokens"]))
         assert not missing, (theme_id, missing)
+
+
+# A custom property read with a fallback. The fallback is what the element gets
+# when nothing supplies the property, so it may legitimately be a default — a
+# measure, a zoom set by the page — and it may never be a colour. A colour in
+# there is a hard-coded colour wearing the theme's clothes: it answers for every
+# palette that does not define the property, on every page, and the page looks
+# deliberate while doing it. `var(--surface-2, #f4f4f5)` painted the checkout's
+# terminal chip light grey on the dark till, and nothing failed, because the
+# fallback always answered.
+FALLBACK_VAR = re.compile(r"var\(\s*(--[a-z0-9-]+)\s*,\s*([^()]*(?:\([^()]*\))?[^()]*)\)")
+COLOUR_LITERAL = re.compile(r"#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(", re.I)
+
+
+def test_no_colour_hides_in_a_fallback_for_a_property():
+    """A fallback may be a default; it may not be a colour.
+
+    Two of these were live: one property that no theme and no stylesheet block
+    ever declared, so the chip had carried a light grey through every palette,
+    and one read defaulting to another token. Both rendered, neither failed.
+    """
+    offenders = [f"{name} falls back to {fallback.strip()}"
+                 for name, fallback in FALLBACK_VAR.findall(STYLE_CSS)
+                 if COLOUR_LITERAL.search(fallback)]
+    assert not offenders, (
+        "a colour is answering for a property the theme may not define — read the "
+        "token instead, or define it in the catalogue:\n" + "\n".join(offenders))
+    # The parser has to be finding fallbacks at all, or this passes on nothing.
+    assert FALLBACK_VAR.search(STYLE_CSS)
+
+
+def test_every_property_read_with_a_fallback_is_supplied_somewhere():
+    """A fallback is a default for an optional value, not a licence to read a
+    property that does not exist.
+
+    The property still has to come from somewhere: every palette, the stylesheet
+    itself, or a page at render time (the tag printer measures its own sheets, so
+    the preview sets the frame and its zoom inline). Nothing but a runtime value
+    is excused, and the excused ones are read out of the templates rather than
+    listed here, so a page that stops setting one stops excusing it.
+    """
+    supplied = (set(THEMES[DEFAULT_THEME_ID]["tokens"])
+                | _stylesheet_local_properties() | _template_properties())
+    reads = {name for name, _fallback in FALLBACK_VAR.findall(STYLE_CSS)}
+    unknown = sorted(reads - supplied)
+    assert not unknown, (
+        "these properties are read with a fallback and nothing supplies them, so "
+        "the fallback is silently the value on every page:\n" + "\n".join(unknown))
 
 
 def test_no_template_reads_a_property_nothing_defines():
@@ -441,6 +490,106 @@ def _page_colours(html: str) -> tuple[set[str], set[str]]:
     return set(BARE_VAR.findall(markup)), set(DECLARED.findall(markup))
 
 
+# Words the shop must never read on its own page: the renderer's own vocabulary
+# (`None`, `undefined`), a number that is not a number, and a template that never
+# rendered. These are the visible faces of the same family as a token nobody
+# defined — a page that draws something plausible out of nothing. Everything the
+# reader can see is searched, which includes the value an input was given: a
+# field holding `None` is read as a filled-in field, and saving the form writes
+# the word into the database. A `<script>` or a `<style>` is not a page's text, so
+# those are the only parts removed; searching text with the tags stripped would
+# have hidden exactly the case that found this rule.
+# Deliberately not `{{` and `}}`: a page that documents the placeholder syntax, and
+# a `data-` attribute carrying the tag editor's own layout JSON, both print braces
+# on purpose, and neither is distinguishable from a template that failed to render
+# — which the recorder above already catches by name.
+FAKE_TEXT = re.compile(r"\bNone\b|\bnan\b|\binf\b|\bInfinity\b|\bundefined\b"
+                       r"|\[object Object\]")
+SCRIPT_OR_STYLE = re.compile(r"<(script|style)\b.*?</\1>", re.S | re.I)
+
+
+def _printed_artefacts(html: str) -> list[str]:
+    """The renderer's own words, found anywhere the shop can read them."""
+    words = sorted(set(FAKE_TEXT.findall(SCRIPT_OR_STYLE.sub(" ", html))))
+    return [f"prints {words}, which is the renderer talking and not the shop"] if words else []
+
+
+_PALETTES: dict[str, set[str]] = {}
+
+
+def _palettes() -> dict[str, set[str]]:
+    """What each palette supplies, built once for all three walks."""
+    for theme_id in THEMES:
+        _PALETTES.setdefault(theme_id, set(theme_preview(theme_id)["tokens"]))
+    return _PALETTES
+
+
+def _document_offenders(html: str, theme_id: str, palettes: dict[str, set[str]]) -> list[str]:
+    """Everything wrong with one rendered document: its palette, and its words.
+
+    What a page may read is the palette the theme itself supplies and — only if
+    the document actually loads the stylesheet — the values the stylesheet
+    declares for itself. Deliberately *not* the stylesheet's `:root` as a way to
+    answer for a palette: that block is the fallback for a page rendered without a
+    theme, and letting it answer for one is how `--persimmon` went missing from
+    nine themes while every page kept rendering a plausible colour — the light
+    theme's value, on a dark card, chosen by nobody. The phone capture tool is why
+    the link is checked rather than assumed: it is handed a palette and nothing
+    else, so `:root` was never available to it.
+    """
+    problems = []
+    if f'data-theme="{theme_id}"' not in html:
+        problems.append(f"loaded without the {theme_id} theme")
+    allowed = palettes[theme_id]
+    if STYLESHEET_LINK in html:
+        allowed = allowed | GLOBAL_ONLY | _stylesheet_local_properties()
+    reads, declares = _page_colours(html)
+    unknown = reads - allowed - declares
+    if unknown:
+        problems.append(
+            f"on {theme_id} reads {sorted(unknown)}, which that palette does not "
+            "define — so the declaration is dropped and the colour is inherited, or "
+            "a fallback from outside the theme answers for it")
+    return problems + _printed_artefacts(html)
+
+
+def _walk(client, db, accounts: dict, addresses: list[tuple[str, str]]):
+    """Open every address, as every role, on every palette.
+
+    Returns ``(what is wrong, what each cell answered, how many documents were
+    drawn)``. One function for all three shops, so the rules cannot differ
+    between a shop with records and a shop without them.
+    """
+    from tests.test_roles import _session_as
+
+    palettes = _palettes()
+    answers: dict[tuple[str, str], tuple[int, bool]] = {}
+    offenders: list[str] = []
+    rendered = 0
+    for role in ROLES:
+        _session_as(client, *accounts[role])
+        for theme_id in THEMES:
+            _activate_theme(db, theme_id)
+            for template, address in addresses:
+                response = client.get(address, follow_redirects=False)
+                drawn = (response.status_code in HTML_ANSWERS
+                         and "text/html" in response.headers.get("content-type", ""))
+                answer = (response.status_code, drawn)
+                if response.status_code >= 500:
+                    offenders.append(f"{role} {address} answered {response.status_code}")
+                if (role, template) in answers and answers[(role, template)] != answer:
+                    offenders.append(
+                        f"{role} {address} answered {answer} on {theme_id} and "
+                        f"{answers[(role, template)]} on another theme")
+                answers.setdefault((role, template), answer)
+                if not drawn:
+                    continue
+                rendered += 1
+                offenders.extend(f"{role} {address} {problem}" for problem in
+                                 _document_offenders(response.text, theme_id, palettes))
+    return offenders, answers, rendered
+
+
 def _one_of_everything(db_session, staff: dict) -> dict[str, object]:
     """One record of each kind, so every address can be opened for real.
 
@@ -613,60 +762,12 @@ def test_every_page_the_shell_serves_reads_only_colours_its_theme_defines(client
     reads is defined by that palette, by one of the global values no theme varies,
     or by the page itself.
     """
-    from tests.test_roles import _session_as, _staff
+    from tests.test_roles import _staff
 
     accounts = {role: _staff(db_session, f"matrix-{role}", role) for role in ROLES}
     ids = _one_of_everything(db_session, {role: user for role, (user, _password) in accounts.items()})
     addresses = _filled_addresses(ids)
-
-    # What a page may read: the palette the theme itself supplies, and — only if
-    # the document actually loads the stylesheet — the values the stylesheet
-    # declares for itself. Deliberately *not* the stylesheet's `:root` as a way to
-    # answer for a palette: that block is the fallback for a page rendered without
-    # a theme, and letting it answer for one is how `--persimmon` went missing from
-    # nine themes while every page kept rendering a plausible colour — the light
-    # theme's value, on a dark card, chosen by nobody. The phone capture tool is
-    # why the link is checked rather than assumed: it is handed a palette and
-    # nothing else, so `:root` was never available to it.
-    sheet_only = GLOBAL_ONLY | _stylesheet_local_properties()
-    palettes = {theme_id: set(theme_preview(theme_id)["tokens"]) for theme_id in THEMES}
-
-    answers: dict[tuple[str, str], tuple[int, bool]] = {}
-    offenders: list[str] = []
-    rendered = 0
-    for role in ROLES:
-        user, password = accounts[role]
-        _session_as(client, user, password)
-        for theme_id in THEMES:
-            _activate_theme(db_session, theme_id)
-            for template, address in addresses:
-                response = client.get(address, follow_redirects=False)
-                drawn = (response.status_code in HTML_ANSWERS
-                         and "text/html" in response.headers.get("content-type", ""))
-                answer = (response.status_code, drawn)
-                if response.status_code >= 500:
-                    offenders.append(f"{role} {address} answered {response.status_code}")
-                if (role, template) in answers and answers[(role, template)] != answer:
-                    offenders.append(
-                        f"{role} {address} answered {answer} on {theme_id} and "
-                        f"{answers[(role, template)]} on another theme")
-                answers.setdefault((role, template), answer)
-                if not drawn:
-                    continue
-                rendered += 1
-                if f'data-theme="{theme_id}"' not in response.text:
-                    offenders.append(f"{role} {address} loaded without the {theme_id} theme")
-                reads, declares = _page_colours(response.text)
-                allowed = palettes[theme_id]
-                if STYLESHEET_LINK in response.text:
-                    allowed = allowed | sheet_only
-                unknown = reads - allowed - declares
-                if unknown:
-                    offenders.append(
-                        f"{role} {address} on {theme_id} reads {sorted(unknown)}, which "
-                        "that palette does not define — so the declaration is dropped and "
-                        "the colour is inherited, or a fallback from outside the theme "
-                        "answers for it")
+    offenders, answers, rendered = _walk(client, db_session, accounts, addresses)
 
     # Coverage, so the matrix cannot shrink quietly: every address was asked for
     # as every role and every answer was the same in all ten themes…
@@ -684,4 +785,197 @@ def test_every_page_the_shell_serves_reads_only_colours_its_theme_defines(client
     stale = sorted(set(NOT_A_PAGE) - (served - owner_pages))
     assert not stale, f"these addresses are excused from being pages and no longer need it: {stale}"
 
+    assert not offenders, "\n".join(offenders[:40])
+
+
+# ── The two shops the matrix never renders ────────────────────────────────────
+#
+# The matrix opens a shop holding one record of every kind, which is the only way
+# to reach most of a page's markup — and that seed is why a colour nobody chose
+# survived a release. It has the mirror image of that blind spot, though: a branch
+# that draws only when there is *nothing* to draw is never rendered at all. So the
+# same walk runs twice more, against a shop with no records and against the shop
+# the app's own boot leaves behind on a database nobody has opened. Both are held
+# to the same rules — the palette, the theme, and the words a page may print.
+#
+# It earned its keep before it was finished. The colour × size matrix grouped
+# nothing, so SQLite answered it with one synthesised row: on a full shop the
+# heatmap showed a single cell holding the total of everything, and on an empty one
+# it printed «None» down the page. The seeded matrix and the hex scan could each
+# see neither face of that. The product form had the second face: every optional
+# field a product had not filled printed `None` into its value, so the shop's own
+# shelf wrote the word into the database on the next save.
+
+
+def _unheld_addresses() -> list[tuple[str, str]]:
+    """``(the address as the route table spells it, the same address with an id
+    nothing holds)`` — how a shop with no records is opened.
+
+    An id that matches nothing is the honest way to ask the question. The page
+    must answer with a page — its own empty state, or the Persian 404 — rather
+    than a figure made up out of nothing to summarise.
+    """
+    return [(template, re.sub(r"\{\w+\}", "1", template))
+            for template in _served_addresses() if template not in UNPOLLED]
+
+
+def _assert_collections_draw_themselves(answers: dict, addresses: list[tuple[str, str]]) -> None:
+    """A page whose job is to list records must draw with none of them.
+
+    An address that takes no id is not waiting for data to exist: on a shop with
+    nothing in it, it still has a page to be. What is left is the files, the
+    shortcuts and the demo wizard, each excused by name in ``NOT_A_PAGE``.
+    """
+    silent = sorted(template for template, _address in addresses
+                    if "{" not in template
+                    and answers[("owner", template)] != (200, True)
+                    and template not in NOT_A_PAGE)
+    assert not silent, f"these pages cannot draw a shop with nothing in it: {silent}"
+
+
+# Every call the app's own boot makes, and what the first-run pass does about it.
+# A step that is neither replayed nor explained fails the guard below, so the pass
+# cannot quietly drift into testing a first run the app no longer performs.
+BOOT_STEPS = {
+    "create_all": "replayed: the schema a new file is given",
+    "upgrade": "replayed: the migrations that bring it to this build's revision",
+    "_apply_missing_columns": "replayed: the additive columns `upgrade` leaves to it",
+    "_backfill_buys_for": "replayed: it pins rows that predate the choice and finds none",
+    "_migrate_unknown_customers": "replayed: it looks for one legacy row and finds none",
+    "_seed_legacy_stock_movements": "replayed: it opens a movement for pre-ledger stock and finds none",
+    "ensure_owner_account": "replayed: the owner a first run creates from ADMIN_PASSWORD",
+    "backfill_legacy_events": "replayed: it backfills events for rows that predate them",
+    "ensure_seeded": "replayed: the built-in message templates, inactive until the shop writes one",
+    "validate_production_config": "not data: it reads the environment, and the app refused to start without it",
+    "SessionLocal": "not a step: the session the boot opens to run the three below it",
+    "commit": "not a step: it saves what those three wrote",
+    "close": "not a step: it gives the session back",
+    "create_task": "not data: it supervises the scheduler",
+    "cancel": "not data: it stops the scheduler on shutdown",
+}
+BOOT_CALL = re.compile(r"^\s{4,}(?:[\w.]+\s*=\s*)?([\w.]+)\(", re.M)
+IMPORT_AS = re.compile(r"from\s+[\w.]+\s+import\s+(\w+)\s+as\s+(\w+)")
+
+
+def _boot_a_new_database(db) -> None:
+    """Everything the app's own boot does to a database nobody has opened yet.
+
+    The boot's own functions, in the boot's own order. The schema steps run
+    against a database that already has the schema, which is what they are built
+    for: `create_all` and the additive pass are idempotent, and `upgrade` answers
+    with the revision it is already on.
+    """
+    from main import (_apply_missing_columns, _backfill_buys_for,
+                      _migrate_unknown_customers, _seed_legacy_stock_movements)
+    from migrations import upgrade
+    from services.events import backfill_legacy_events
+    from services.security import ensure_owner_account
+    from services.sms_templates import ensure_seeded
+
+    Base.metadata.create_all(bind=engine)
+    upgrade(engine)
+    _apply_missing_columns()
+    _backfill_buys_for()
+    _migrate_unknown_customers()
+    _seed_legacy_stock_movements()
+    # …and the three the boot runs on a session of its own.
+    ensure_owner_account(db)
+    backfill_legacy_events(db)
+    ensure_seeded(db)
+    db.commit()
+
+
+def test_the_boot_this_pass_replays_is_the_whole_boot():
+    """The replay is checked against the boot it claims to replay.
+
+    Read from `lifespan` rather than kept by hand: a step added to the app's own
+    start-up has to be replayed here or explained below, so the first-run pass
+    cannot become a description of a first run that no longer happens.
+    """
+    import inspect
+
+    source = (ROOT / "main.py").read_text(encoding="utf-8")
+    lifespan = source.split("async def lifespan")[1].split("\napp = FastAPI")[0]
+    aliases = {alias: real for real, alias in IMPORT_AS.findall(lifespan)}
+    called = {aliases.get(name.split(".")[-1], name.split(".")[-1])
+              for name in BOOT_CALL.findall(lifespan)}
+    unexplained = sorted(called - set(BOOT_STEPS))
+    assert not unexplained, (
+        "the boot now does something the first-run pass does not — replay it, or say "
+        "here why a database with no rows is not affected by it: " + ", ".join(unexplained))
+
+    # A *call*, not a mention: the function's own imports name every step it
+    # replays, so searching the source for the name would pass a step that is
+    # imported and never run.
+    body = inspect.getsource(_boot_a_new_database)
+    missing = sorted(name for name, note in BOOT_STEPS.items()
+                     if note.startswith("replayed") and not re.search(rf"\b{name}\(", body))
+    assert not missing, (
+        "the pass says it replays these and does not call them: " + ", ".join(missing))
+    assert len([note for note in BOOT_STEPS.values() if note.startswith("replayed")]) >= 9
+    for name, note in BOOT_STEPS.items():
+        assert note.strip(), name
+
+
+def test_every_page_survives_an_empty_shop(client, db_session):
+    """Every address, as every role, on every palette — with nothing in the shop.
+
+    A page that only draws because a record happens to exist is a page that breaks
+    the first time the shop is new or the records are archived, and neither the
+    seeded matrix nor any source scan can see that: the empty branch is markup
+    nobody renders. What this asks of it is what the matrix asks of the other: a
+    page (never a 5xx), the palette it was loaded with, and no word on it that the
+    renderer should have kept to itself.
+    """
+    from tests.test_roles import _staff
+
+    accounts = {role: _staff(db_session, f"empty-{role}", role) for role in ROLES}
+    addresses = _unheld_addresses()
+    offenders, answers, rendered = _walk(client, db_session, accounts, addresses)
+
+    assert len(answers) == len(addresses) * len(ROLES), (len(answers), len(addresses))
+    assert rendered > 0
+    _assert_collections_draw_themselves(answers, addresses)
+    assert not offenders, "\n".join(offenders[:40])
+
+
+def test_every_page_survives_a_brand_new_install(client, db_session):
+    """And the shop a first run leaves behind: the boot's own rows and nothing else.
+
+    This is the state the app is in the first time the owner opens it — a schema,
+    an owner account, the built-in templates switched off, and not one setting the
+    shop has chosen. The empty shop above is what the test creates; this one is
+    what the app creates, and it is the only pass that checks the app's own start
+    of day renders as a shop.
+    """
+    from config import ADMIN_PASSWORD
+    from models import StaffUser
+
+    from tests.test_roles import _staff
+
+    _boot_a_new_database(db_session)
+    owner = db_session.query(StaffUser).filter(StaffUser.username == "owner").first()
+    assert owner is not None, "the boot created no owner account"
+    accounts = {
+        "owner": (owner, ADMIN_PASSWORD),
+        "manager": _staff(db_session, "fresh-manager", "manager"),
+        "cashier": _staff(db_session, "fresh-cashier", "cashier"),
+    }
+
+    # The very first page, before anybody has chosen a palette: no theme is set
+    # yet, so the default one has to be the one that answers.
+    from tests.test_roles import _session_as
+
+    _session_as(client, owner, ADMIN_PASSWORD)
+    first = client.get("/admin/", follow_redirects=False)
+    assert first.status_code == 200, first.status_code
+    assert f'data-theme="{DEFAULT_THEME_ID}"' in first.text
+    assert not _document_offenders(first.text, DEFAULT_THEME_ID, _palettes()), (
+        "the first page a shop ever loads is already wrong")
+
+    addresses = _unheld_addresses()
+    offenders, answers, rendered = _walk(client, db_session, accounts, addresses)
+    assert len(answers) == len(addresses) * len(ROLES), (len(answers), len(addresses))
+    assert rendered > 0
+    _assert_collections_draw_themselves(answers, addresses)
     assert not offenders, "\n".join(offenders[:40])

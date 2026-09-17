@@ -580,7 +580,109 @@ sentence, or a sentence that disagrees with its own chart, fails the suite.
 One page sits outside the shell — the phone capture tool
 the counter opens — and it is held from the other side: it loads no stylesheet,
 so it may read only what its palette hands it and what it declares itself, and a
-colour it cannot resolve fails the suite too.
+colour it cannot resolve fails the suite too. That walk is then run twice more,
+over the two shops it otherwise cannot see: one with no records at all, and the
+one the app's own boot leaves behind on a database nobody has opened — an owner
+account from the admin password, the built-in message templates switched off, and
+not one setting the shop has chosen. Every address is opened as every role on
+every palette in both, held to the same rules, plus two of their own: a page whose
+job is to list records has to draw with none of them, and no page may print the
+renderer's own words — `None`, `undefined`, a number that is not a number —
+anywhere the shop can read them, a field's value included, because a field holding
+one reads as a field the shop filled in. The replay of the start-up is checked
+against the app's own `lifespan`, so a step added there later has to be replayed
+in the pass or explained. The first run of that pass found two live faults: a
+colour × size matrix that grouped nothing, so SQLite answered one synthesised row
+— the heatmap showed a single cell holding the total on a shop that had sold four
+combinations, and «None» down the page on a shop that had sold nothing — and a
+product form that filled every optional field with `None`, which the next save
+wrote into the database.
+
+The same shape of bug — a value that renders, looks deliberate and is wrong — is
+hunted one layer up, where a missing, unreadable or empty input is quietly
+answered with something that looks like an answer. A name a page was never given
+prints as nothing, so every undefined name the templates reach for is recorded
+while those pages are opened, and the page that printed one fails the build. A
+range nobody could read is answered with the month the app defaults to *and* a
+sentence naming the range that was asked for, rather than silently widening to
+the whole ledger; a half-typed window and an unreadable export range are refused
+the same way instead of being read as «everything». A share over an empty base
+reads «—», not a confident «0٪» — a category nobody bought from has no margin to
+state, a morning before the first sale has none either, and a campaign that
+reached nobody has no response rate — and the arithmetic written out by hand
+fails the suite at the source, in a template and in a service alike: the services
+hand a page `None` where there is nothing to take a share of, and the page prints
+«—». A figure a record simply does not have is not a nought either: a customer
+whose counter was never computed printed as one who had never bought anything —
+`customer.total_spent or 0` on the list the shop uses to decide who to ring, and
+`|default(0)` on the customer's own page — so a figure comes from `figure(x)`, the
+number or «—», and `or 0` on a column that can be empty fails the suite unless the
+empty column means the nought it prints: nothing paid against
+an unpaid invoice, no points earned on it, no referral, no recorded demand. Each of
+those is written down with its reason, and an excuse that stops being used fails
+too. A field the form cannot read is the same defect inside a form: an empty cost
+column printed `None` into the cost input's own value, and a variant's empty stock
+printed `None` into its quantity box, which the next save then writes as nought. A
+cheque whose issue date was typed and not understood is refused
+rather than dated today. A form field that guards its record but not its column —
+`{{ product.brand if product else '' }}`, where the column is simply NULL — prints
+`None` into a field the shop reads as filled in, and fails the suite as well. A
+colour may not hide in a fallback for a property:
+`var(--token, #fff)` is a hard-coded colour wearing the theme's clothes, and one
+was live on the till until this rule found it. And every setting the app reads is
+a key something writes, so a preference the shop can never change cannot sit on a
+settings page looking chosen. Each of those guards was falsified — the thing it
+watches was deliberately broken, and the guard had to notice — before it was
+trusted.
+
+The same question is asked of the controls themselves, in all ten palettes at
+once. A state colour written into the base palette is a colour every palette
+inherits, whether or not it fits the surfaces it lands on: the focus ring read
+1.00:1 on the close-toned topbar, a hovered menu item 1.10:1 against the sidebar
+it sat in, the sign-out label 1.09:1 where the label and its fill were the same
+hue on a dark palette, and a disabled button faded to 62% left its own label at
+2.10:1 while the calendar's own greyed day read 1.72:1. So the ring (one value for the page's surfaces, one for the shell's own
+bars, because no single colour reads on both a white card and a near-black
+topbar), the two sidebar pills, the disabled pair and the fill under a
+destructive button are derived from each palette's own colours and measured
+against them — 3:1 for a ring and for a control's boundary, 4.5:1 for anything
+read as text, 1.2:1 for two surfaces that only have to be told apart — in all ten
+palettes and in a shop's own two brand colours, and a hover may not move the
+ground out from under a label. The rules that paint those states are read out of
+the stylesheet too, so no interaction rule may name a colour of its own, and a
+rule that takes the outline away has to draw a ring in its place. Three states
+were naming their own: a table row's hover was a hard-coded pink that vanished on
+the dark palettes, the sign-out button hovered to a light pink under a dark
+sidebar, and the basket's remove button put a white label on a red at 3.34:1.
+
+A palette's hue is a hue, not a legibility. As text the brand colour read 3.36:1
+on the card in Kids Boutique — and as `--candy-dark` 4.12:1 in Midnight, where
+`--mint-dark` on a tint of itself read 3.64:1 and `--sky-dark` 3.77:1 — so the
+inks the app speaks in (a link, a figure, a chip's label, a positive number, a
+note, a warning) are derived from the hue with the same treatment, each measured
+on the four surfaces a page is made of, on the strongest tint of its own hue
+beneath it, and on the alert that belongs to it: the warning banner printed gold
+on its own pale gold at 1.84:1. The same goes for a fill a label sits on — white
+on the brand colour measured 3.34:1 on the light palettes and 2.10:1 on the dark
+one — so a labelled surface is the brand, success or alarm fill derived against
+its label, both ends of the gradient included. The hue keeps its place in
+borders, tints, gradients and bars, and no rule may write text in it or put a
+label on it: the stylesheet, a template's own `<style>` block and a
+`style="…"` attribute are read for that pair, so a new chip cannot quietly bring
+it back.
+
+And the shell is opened without a mouse. The drawer is *hidden* when it is closed
+rather than only slid off screen — a transform leaves every entry of a menu nobody
+can see in the tab order — Escape closes it and hands the keyboard back to the
+button that opened it, that button says what pressing it does next, a skip link
+before the menu is the first thing Tab reaches, and nothing clickable is a `<div>`
+or an `<img>`: the lightbox's ✕ and the picture that opens it are buttons, and
+opening it moves the keyboard inside. Escape closing the drawer is driven in a
+real JavaScript engine against the shell's own script, so a handler that stops
+closing anything fails the suite rather than the shop, and every guard here was
+falsified the same way as the rest — the state was deliberately broken and the
+guard had to notice.
+
 The suite uses a throwaway SQLite database — never your real data.
 
 Continuous integration runs this suite plus `compileall`, refuses a tracked
