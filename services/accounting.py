@@ -9,7 +9,7 @@ from models import (
     Customer, Sale, SaleItem, Expense, Purchase, PurchaseItem, Payment, Settings,
     Supplier, SupplierPayment, CashSession, CashSessionEntry,
 )
-from services._common import get_setting_int
+from services._common import get_setting_int, share
 
 
 def get_net_pl(db, start, end) -> dict:
@@ -48,12 +48,14 @@ def get_net_pl(db, start, end) -> dict:
         "revenue": revenue,
         "cogs": cogs,
         "gross": gross,
-        "gross_margin": round(gross / revenue * 100, 1) if revenue else 0,
+        # `share`, not a nought: a period that sold nothing has no margin, and
+        # «0٪» under a zero revenue is a figure the shop can only misread.
+        "gross_margin": share(gross, revenue),
         "expenses": total_expenses,
         "expense_cats": expense_cats,
         "expense_type_totals": expense_type_totals,
         "net": gross - total_expenses,
-        "net_margin": round((gross - total_expenses) / revenue * 100, 1) if revenue else 0,
+        "net_margin": share(gross - total_expenses, revenue),
         "invoice_count": len(sales),
         "aov": round(revenue / len(sales)) if sales else 0,
     }

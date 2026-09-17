@@ -15,6 +15,10 @@
 {% endset %}
 {% include 'partials/page_header.html' %}
 
+{# A date the shop typed and the app could not read: the statement below is then
+   the customer's whole history, and this says so instead of leaving the reader
+   with a range that looks applied. #}
+{% if range_notice %}<p class="filter-problem screen-only" role="status">⚠️ {{ range_notice }}</p>{% endif %}
 <form method="get" action="/admin/credit/{{ customer.id }}/statement" class="search-form screen-only statement-range">
     <div class="form-group">
         <label for="start_date">از تاریخ</label>
@@ -42,9 +46,15 @@
             <h3>صورت‌حساب نسیه</h3>
             <p><strong>{{ customer.full_name }}</strong></p>
             <p class="tnum">{{ customer.phone }}</p>
+            {# The range line is what leaves the shop on paper, where the notice
+               above it is not printed. A range that was typed and could not be
+               read was not applied, so this says the whole history is shown
+               rather than restating the unreadable dates as if they were the
+               window — a printed claim nobody can check is the worst place for
+               a value that renders, looks deliberate and is wrong. #}
             <p>
-                {% if start or end %}
-                بازه: {{ start or '—' }} تا {{ end or today }}
+                {% if range_notice %}کل دوره (بازه اعمال نشد)
+                {% elif start or end %}بازه: {{ start or '—' }} تا {{ end or today }}
                 {% else %}کل دوره{% endif %}
                 · تاریخ صدور: {{ today }}
             </p>

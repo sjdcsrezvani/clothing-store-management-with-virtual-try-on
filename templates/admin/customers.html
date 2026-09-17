@@ -148,10 +148,10 @@
                         </span>
                     </td>
                     <td class="tnum">
-                        <strong>{{ fmt(customer.total_spent or 0) }}</strong>
-                        <small>{{ customer.total_purchases or 0 }} خرید</small>
+                        <strong>{{ figure(customer.total_spent) }}</strong>
+                        <small>{{ figure(customer.total_purchases) }} خرید</small>
                     </td>
-                    <td class="tnum">{{ customer.total_points or 0 }}</td>
+                    <td class="tnum">{{ figure(customer.total_points) }}</td>
                     <td class="tnum">
                         {% if customer.total_debt %}
                         <strong>{{ fmt(customer.total_debt) }}</strong>

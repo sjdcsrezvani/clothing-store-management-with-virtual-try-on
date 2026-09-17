@@ -4,6 +4,9 @@
 {% include 'partials/page_header.html' %}
 
 <div class="card">
+    {# A range that was asked for and could not be read says so here, in the shop's
+       own words, rather than being answered with a different range in silence. #}
+    {% if range_notice %}<p class="filter-problem" role="status">⚠️ {{ range_notice }}</p>{% endif %}
     <form method="get" action="/admin/analytics" class="filter-bar">
         <div class="search-form">
             <a href="/admin/analytics?period=today" class="btn {% if period == 'today' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">📅 امروز</a>
@@ -26,7 +29,7 @@
 <div class="kpi-grid">
     <div class="kpi-card"><h4>کل فروش <span class="tip-icon" data-tip="جمع کل فروش تأیید شده (غیرمرجوعی) در بازه زمانی انتخابی. این عدد شامل تمام فاکتورهایی است که پرداخت آن‌ها قطعی شده و مرجوع نشده‌اند.">?</span></h4><p class="kpi-value">{{ fmt(summary.total_revenue) }} ت</p></div>
     <div class="kpi-card profit"><h4>سود ناخالص <span class="tip-icon" data-tip="سود ناخالص = فروش کل منهای هزینه کالاهای فروخته‌شده. این عدد قبل از کسر هزینه‌های اجاره، حقوق و سایر هزینه‌های عملیاتی است.">?</span></h4><p class="kpi-value">{{ fmt(summary.gross_profit) }} ت</p></div>
-    <div class="kpi-card margin"><h4>حاشیه سود <span class="tip-icon" data-tip="حاشیه سود ناخالص = (سود ÷ فروش) × ۱۰۰. هرچه بالاتر باشد، به ازای هر تومان فروش سود بیشتری کسب می‌کنید. برای پوشاک بچه‌گانه ۴۰-۶۰٪ طبیعی است.">?</span></h4><p class="kpi-value">{{ summary.margin }}٪</p></div>
+    <div class="kpi-card margin"><h4>حاشیه سود <span class="tip-icon" data-tip="حاشیه سود ناخالص = (سود ÷ فروش) × ۱۰۰. هرچه بالاتر باشد، به ازای هر تومان فروش سود بیشتری کسب می‌کنید. برای پوشاک بچه‌گانه ۴۰-۶۰٪ طبیعی است.">?</span></h4><p class="kpi-value">{{ percent(summary.margin) }}</p></div>
     <div class="kpi-card"><h4>تعداد فاکتور <span class="tip-icon" data-tip="تعداد کل فاکتورهای تأیید شده در بازه زمانی. هر فاکتور معادل یک سبد خرید یک مشتری است. افزایش تعداد فاکتور نشانه جذب مشتری بیشتر است.">?</span></h4><p class="kpi-value tnum">{{ summary.invoice_count }}</p></div>
     <div class="kpi-card"><h4>میانگین فاکتور <span class="tip-icon" data-tip="میانگین مبلغ هر فاکتور = فروش کل ÷ تعداد فاکتورها. اگر پایین باشد، مشتریان فقط اقلام ارزان می‌خرند؛ افزایش آن با فروش مکمل و پکیج امکان‌پذیر است.">?</span></h4><p class="kpi-value">{{ fmt(summary.aov) }} ت</p></div>
     <div class="kpi-card"><h4>مشتریان جدید <span class="tip-icon" data-tip="تعداد مشتریانی که اولین خرید خود را در این بازه انجام داده‌اند. رشد این عدد نشانه بازاریابی موفق یا معرفی دهان‌به‌دهان است.">?</span></h4><p class="kpi-value tnum">{{ summary.new_customers }}</p></div>
@@ -34,9 +37,9 @@
 
 <!-- Expert KPI row -->
 <div class="kpi-grid" style="margin-top: 0.5rem;">
-    <div class="kpi-card"><h4>نرخ فروش <span class="tip-icon" data-tip="نرخ فروش = تعداد فروش ÷ (فروش + موجودی باقی‌مانده) × ۱۰۰. نشان می‌دهد چقدر سریع موجودی به فروش می‌رسد. در پوشاک ۳۰-۴۰٪ طبیعی است؛ بالای ۵۰٪ عالی است.">?</span></h4><p class="kpi-value">{{ sell_through.pct }}٪</p></div>
+    <div class="kpi-card"><h4>نرخ فروش <span class="tip-icon" data-tip="نرخ فروش = تعداد فروش ÷ (فروش + موجودی باقی‌مانده) × ۱۰۰. نشان می‌دهد چقدر سریع موجودی به فروش می‌رسد. در پوشاک ۳۰-۴۰٪ طبیعی است؛ بالای ۵۰٪ عالی است.">?</span></h4><p class="kpi-value">{{ percent(sell_through.pct, 0) }}</p></div>
     <div class="kpi-card"><h4>اقلام/فاکتور <span class="tip-icon" data-tip="میانگین تعداد اقلام در هر فاکتور. اگر پایین باشد (مثلاً ۱)، مشتریان فقط یک قلم می‌خرند. افزایش آن با پیشنهاد محصولات مکمل (مثلاً ست لباس) امکان‌پذیر است.">?</span></h4><p class="kpi-value tnum">{{ basket.items_per_txn }}</p></div>
-    <div class="kpi-card"><h4>نرخ بازگشت <span class="tip-icon" data-tip="درصد مشتریانی که بیش از یک بار خرید کرده‌اند. فروشگاهی که فقط مشتری یک‌بار دارد همیشه در خطر است. نرخ بازگشت بالای ۳۰٪ هدف خوبی است.">?</span></h4><p class="kpi-value">{{ customer_health.repeat_rate }}٪</p></div>
+    <div class="kpi-card"><h4>نرخ بازگشت <span class="tip-icon" data-tip="درصد مشتریانی که بیش از یک بار خرید کرده‌اند. فروشگاهی که فقط مشتری یک‌بار دارد همیشه در خطر است. نرخ بازگشت بالای ۳۰٪ هدف خوبی است.">?</span></h4><p class="kpi-value">{{ percent(customer_health.repeat_rate, 0) }}</p></div>
     <div class="kpi-card"><h4>کالای مرده <span class="tip-icon" data-tip="تعداد اقلامی که در این بازه هیچ فروشی نداشته‌اند ولی هنوز در انبار هستند. این اقلام سرمایه شما را بی‌استفاده نگه داشته‌اند و باید تخفیف بخورند یا از مجموعه خارج شوند.">?</span></h4><p class="kpi-value tnum">{{ dead_stock.count }} قلم</p></div>
     <div class="kpi-card"><h4>کل موجودی <span class="tip-icon" data-tip="تعداد کل واحدهای موجود در انبار (مجموع تمام واریانت‌های فعال). شامل اقلامی که هنوز فروخته نشده‌اند می‌شود.">?</span></h4><p class="kpi-value tnum">{{ fmt(sell_through.stock) }}</p></div>
     <div class="kpi-card"><h4>ارزش انبار <span class="tip-icon" data-tip="ارزش کل موجودی انبار به قیمت فروش. اگر این عدد خیلی بالا باشد یعنی سرمایه زیادی در انبار بلوکه شده؛ اگر خیلی پایین باشد یعنی خطر نایاب شدن کالا دارید.">?</span></h4><p class="kpi-value">{{ fmt(inventory.total_retail) }} ت</p></div>
@@ -162,16 +165,16 @@
             <thead><tr><th>📂 دسته</th><th>🔢 تعداد</th><th>💰 فروش</th><th>💎 سود</th><th>📊 حاشیه</th></tr></thead>
             <tbody>
             {% for c in categories %}
-                <tr><td>{{ c.category }}</td><td class="tnum">{{ c.quantity }}</td><td class="tnum">{{ fmt(c.revenue) }}</td><td class="tnum">{{ fmt(c.profit) }}</td><td class="tnum">{{ ((c.profit / c.revenue * 100)|round(1)) if c.revenue > 0 else 0 }}٪</td></tr>
+                <tr><td>{{ c.category }}</td><td class="tnum">{{ c.quantity }}</td><td class="tnum">{{ fmt(c.revenue) }}</td><td class="tnum">{{ fmt(c.profit) }}</td><td class="tnum">{{ pct(c.profit, c.revenue) }}</td></tr>
             {% endfor %}
             </tbody>
         </table>
     </div>
     <div class="card">
         <h3>سلامت مشتریان <span class="tip-icon" data-tip="سلامت مشتریان: نرخ بازگشت نشان می‌دهد چند درصد مشتریان دوباره خرید کرده‌اند. نمودار دایره‌ای توزیع درآمد مشتریان را نشان می‌دهد — اگر بیشتر در گروه کم‌خرید باشند، باید برنامه وفاداری را تقویت کنید.">?</span></h3>
-        <div class="inv-row"><span>نر خرید مجدد</span><b>{{ customer_health.repeat_rate }}٪</b></div>
-        <div class="inv-row"><span>مشتریان یک‌بار</span><b>{{ customer_health.one_timer_pct }}٪</b></div>
-        <div class="inv-row"><span>میانگین سفارش</span><b>{{ customer_health.avg_orders }}</b></div>
+        <div class="inv-row"><span>نر خرید مجدد</span><b>{{ percent(customer_health.repeat_rate, 0) }}</b></div>
+        <div class="inv-row"><span>مشتریان یک‌بار</span><b>{{ percent(customer_health.one_timer_pct, 0) }}</b></div>
+        <div class="inv-row"><span>میانگین سفارش</span><b>{{ customer_health.avg_orders if customer_health.avg_orders is not none else '—' }}</b></div>
         <div style="margin-top:0.5rem; border-top:1px solid var(--rule); padding-top:0.5rem;">
             <p class="chart-note" data-chart="customerSegChart">{{ notes.customerSegChart }}</p><canvas id="customerSegChart" role="img" aria-label="{{ notes.customerSegChart }}" style="max-height:180px;"></canvas>
         </div>
@@ -183,7 +186,7 @@
             <thead><tr><th>📋 نوع</th><th>💰 مبلغ کل</th><th>📊 درصد فروش</th></tr></thead>
             <tbody>
             {% for d in discounts %}
-                <tr><td>{{ d.type }}</td><td class="tnum">{{ fmt(d.total_amount) }}</td><td class="tnum">{{ d.pct_of_revenue }}٪</td></tr>
+                <tr><td>{{ d.type }}</td><td class="tnum">{{ fmt(d.total_amount) }}</td><td class="tnum">{{ percent(d.pct_of_revenue) }}</td></tr>
             {% endfor %}
             </tbody>
         </table>

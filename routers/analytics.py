@@ -8,7 +8,7 @@ from services.templating import templates
 from services.reporting import canonical_report, reconciliation_checks
 from services.chart_notes import chart_notes
 from services.analytics import (
-    get_date_range, get_revenue_summary, get_daily_revenue,
+    period_range, get_revenue_summary, get_daily_revenue,
     get_revenue_by_category,
     get_revenue_by_tier, get_monthly_comparison, get_discount_impact,
     get_top_customers, get_categories, get_price_stats, get_variant_stats,
@@ -35,7 +35,10 @@ async def admin_analytics(
     if not hasattr(guard, "role"):
         return guard
 
-    start, end = get_date_range(period, start_date or None, end_date or None)
+    # The range the page shows, and what to say when the range that was asked for
+    # could not be read — a request reading «banana» is not the whole history.
+    window = period_range(period, start_date or None, end_date or None)
+    start, end = window.start, window.end
     cat = category or None
 
     # Gather all analytics data
@@ -89,9 +92,10 @@ async def admin_analytics(
     )
 
     return templates.TemplateResponse(request, "admin/analytics.html", {
-        "period": period,
+        "period": window.period,
         "start_date": start_date,
         "end_date": end_date,
+        "range_notice": window.notice,
         "category": category,
         "all_categories": all_categories,
         "price_stats": price_stats,

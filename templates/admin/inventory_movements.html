@@ -122,7 +122,7 @@
                             {% if row.difference > 0 %}+{% endif %}{{ row.difference }}
                         </span>
                     </td>
-                    <td class="tnum">{{ fmt(row.variant.cost_price or 0) }} ت</td>
+                    <td class="tnum">{{ figure(row.variant.cost_price) }} ت</td>
                     <td>
                         <div class="table-actions">
                             <a href="/admin/inventory-movements?variant_id={{ row.variant.id }}" class="btn btn-sm btn-ghost">حرکت‌های دفتر</a>

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from typing import NamedTuple
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case, and_, or_
 from models import Customer, Sale, SaleItem, Product, ProductVariant, Referral, Expense, Payment, Purchase, Refund, SupplierPayment
@@ -6,12 +7,42 @@ from services._common import (
     parse_jalali_input,
     parse_jalali_input_end,
     gregorian_to_jalali,
+    share,
     PERSIAN_DIGITS,
 )
 from services.tier import TIER_LABELS
 
+DEFAULT_PERIOD = "month"
+KNOWN_PERIODS = ("today", "week", "month", "year", "all", "custom")
+# The shop's first day, used by «همه» and as the lower bound of an open range.
+ALL_TIME_START = datetime(2020, 1, 1, tzinfo=timezone.utc)
+
+
+class UnreadableRange(ValueError):
+    """A range that was asked for and could not be read.
+
+    Raised rather than answered with a different range. A request reading
+    «banana» used to come back as the whole history — five years of trade under
+    a filter that said something else — which is a figure that renders, looks
+    deliberate and answers a question nobody asked.
+    """
+
+
+class PeriodWindow(NamedTuple):
+    """What a range filter resolved to, and what the page must say about it."""
+    start: datetime
+    end: datetime
+    period: str
+    notice: str
+
+
 def get_date_range(period: str, start_date: str = None, end_date: str = None):
-    """Get start and end dates based on period. User-supplied dates are Persian."""
+    """Get start and end dates based on period. User-supplied dates are Persian.
+
+    Refuses anything it cannot read rather than substituting a range: see
+    :class:`UnreadableRange`, and use :func:`period_range` on a page, which
+    answers with the default range *and* the sentence explaining why.
+    """
     now = datetime.now(timezone.utc)
     today = now.date()
 
@@ -39,19 +70,38 @@ def get_date_range(period: str, start_date: str = None, end_date: str = None):
         start_greg = jdatetime.date(jnow.year, 1, 1).togregorian()
         start = datetime.combine(start_greg, datetime.min.time()).replace(tzinfo=timezone.utc)
         end = now
-    elif period == "custom" and start_date and end_date:
+    elif period == "custom":
         # Persian dates from the form → Gregorian for SQL.
-        start = parse_jalali_input(start_date)
-        end = parse_jalali_input_end(end_date)
+        start = parse_jalali_input(start_date) if start_date else None
+        end = parse_jalali_input_end(end_date) if end_date else None
         if start is None or end is None:
-            # Fallback: treat the whole history range so we don't 500 on bad input.
-            start = datetime(2020, 1, 1, tzinfo=timezone.utc)
-            end = now
-    else:  # all
-        start = datetime(2020, 1, 1, tzinfo=timezone.utc)
+            raise UnreadableRange("تاریخ بازه خوانده نشد؛ این ماه نشان داده شده است.")
+    elif period == "all":
+        start = ALL_TIME_START
         end = now
+    else:
+        raise UnreadableRange(
+            f"بازه «{period}» شناخته نشد؛ این ماه نشان داده شده است.")
 
     return start, end
+
+
+def period_range(period: str, start_date: str = None, end_date: str = None):
+    """The range a page should show, and what to say about the range asked for.
+
+    Returns a :class:`PeriodWindow`: the dates, the period the page's own filter
+    should show as selected — which is the default, not the value nobody could
+    read — and a notice that is empty when nothing was refused. A page that
+    shows a range without saying it was not the one requested is the same bug in
+    a quieter form, and a filter whose select matches no option silently shows
+    its first one.
+    """
+    try:
+        start, end = get_date_range(period, start_date, end_date)
+        return PeriodWindow(start, end, period, "")
+    except UnreadableRange as problem:
+        start, end = get_date_range(DEFAULT_PERIOD)
+        return PeriodWindow(start, end, DEFAULT_PERIOD, str(problem))
 
 def get_revenue_summary(db: Session, start: datetime, end: datetime) -> dict:
     """Get revenue summary for a date range."""
@@ -84,7 +134,7 @@ def get_revenue_summary(db: Session, start: datetime, end: datetime) -> dict:
         total_cost -= sum(item.unit_cost * item.quantity for item in items)
     
     gross_profit = net_revenue - total_cost
-    margin = (gross_profit / net_revenue * 100) if net_revenue > 0 else 0
+    margin = share(gross_profit, net_revenue)
     
     invoice_count = len(sales)
     aov = (net_revenue / invoice_count) if invoice_count > 0 else 0
@@ -96,7 +146,8 @@ def get_revenue_summary(db: Session, start: datetime, end: datetime) -> dict:
     return {
         "total_revenue": net_revenue,
         "gross_profit": gross_profit,
-        "margin": round(margin, 1),
+        # `share` already rounds and answers `None` for a period that sold nothing.
+        "margin": margin,
         "invoice_count": max(0, invoice_count),
         "aov": round(aov),
         "new_customers": new_customers,
@@ -203,7 +254,7 @@ def get_top_products(db: Session, start: datetime, end: datetime, limit: int = 1
         revenue = r.revenue or 0
         cost = r.cost or 0
         profit = revenue - cost
-        margin = (profit / revenue * 100) if revenue > 0 else 0
+        margin = share(profit, revenue)
         
         products.append({
             "name": r.name,
@@ -212,7 +263,7 @@ def get_top_products(db: Session, start: datetime, end: datetime, limit: int = 1
             "revenue": revenue,
             "cost": cost,
             "profit": profit,
-            "margin": round(margin, 1),
+            "margin": margin,
         })
     
     if sort_by == "profit":
@@ -313,7 +364,7 @@ def get_discount_impact(db: Session, start: datetime, end: datetime) -> list:
             except:
                 pass
     
-    return [{"type": k, "total_amount": v, "pct_of_revenue": round(v / total_revenue * 100, 1) if total_revenue > 0 else 0}
+    return [{"type": k, "total_amount": v, "pct_of_revenue": share(v, total_revenue)}
             for k, v in sorted(discount_types.items(), key=lambda x: x[1], reverse=True)]
 
 def get_top_customers(db: Session, start: datetime, end: datetime, limit: int = 10) -> list:
@@ -413,6 +464,15 @@ def get_color_size_matrix(db, start, end, category=None):
     )
     if category:
         rows = rows.filter(Product.category == category)
+    # Grouped, or this is not a matrix. Without it SQLite answers an aggregate
+    # query with one synthesised row — the arbitrary colour and size of some row
+    # in the table, and the total quantity of everything joined — so the heatmap
+    # showed a single cell however much the shop had sold, and on a shop that had
+    # sold nothing it showed «None» down the page: a table that renders, looks
+    # deliberate and is wrong twice over. Every other reading in this module
+    # groups; this one did not, because one row still looks like a plausible
+    # matrix.
+    rows = rows.group_by(ProductVariant.color, ProductVariant.size)
     cells = {}
     colors, sizes = [], []
     for color, size, quantity in rows.all():
@@ -502,16 +562,16 @@ def get_abc_products(db, start, end):
         rev = r.revenue or 0
         cost = r.cost or 0
         cum += rev
-        share = cum / total_rev * 100
-        cls = "A" if share <= 80 else ("B" if share <= 95 else "C")
+        cumulative = cum / total_rev * 100
+        cls = "A" if cumulative <= 80 else ("B" if cumulative <= 95 else "C")
         items.append({
             "name": r.name,
             "category": r.category or "—",
             "qty": r.qty or 0,
             "revenue": rev,
             "profit": rev - cost,
-            "margin": round((rev - cost) / rev * 100) if rev else 0,
-            "share": round(share, 1),
+            "margin": share(rev - cost, rev),
+            "share": round(cumulative, 1),
             "class": cls,
         })
     a_count = sum(1 for i in items if i["class"] == "A")
@@ -571,11 +631,13 @@ def get_sell_through(db, start, end):
         Sale.created_at.between(start, end),
     ).scalar() or 0
 
-    pct = round(sold / (total_stock + sold) * 100) if (total_stock + sold) else 0
+    # Named for what it is: the local used to be called `pct` and shadow the
+    # helper, which is how a share of nothing came to be written out by hand.
+    sold_share = share(sold, total_stock + sold, 0)
     return {
         "sold": sold,
         "stock": total_stock,
-        "pct": pct,
+        "pct": sold_share,
         "stock_cost": stock_cost,
         "stock_retail": stock_retail,
     }
@@ -652,7 +714,10 @@ def get_customer_health(db, start, end):
         Sale.customer_id != None,
     ).group_by(Sale.customer_id).all()
     if not customers_in:
-        return {"repeat_rate": 0, "one_timer_pct": 0, "avg_orders": 0, "segments": []}
+        # No customers in the period means no rate to report: `None` asks the page
+        # for «—», where a nought would claim the shop measured something.
+        return {"repeat_rate": None, "one_timer_pct": None, "avg_orders": None,
+                "segments": []}
     total = len(customers_in)
     repeats = sum(1 for c in customers_in if c.orders > 1)
     avg_orders = sum(c.orders for c in customers_in) / total
@@ -668,8 +733,8 @@ def get_customer_health(db, start, end):
         elif s < 2000000: segments["1m-2m"] += 1
         else: segments["2m+"] += 1
     return {
-        "repeat_rate": round(repeats / total * 100),
-        "one_timer_pct": round((total - repeats) / total * 100),
+        "repeat_rate": share(repeats, total, 0),
+        "one_timer_pct": share(total - repeats, total, 0),
         "avg_orders": round(avg_orders, 1),
         "segments": [{"label": segment_labels[k], "count": v} for k, v in segments.items()],
     }
@@ -691,7 +756,7 @@ def get_margin_by_category(db, start, end):
     for r in rows:
         rev = r.rev or 0
         cost = r.cost or 0
-        margin = round((rev - cost) / rev * 100) if rev else 0
+        margin = share(rev - cost, rev)
         result.append({
             "category": r.category or "بدون دسته",
             "revenue": rev,
@@ -700,7 +765,10 @@ def get_margin_by_category(db, start, end):
             "margin": margin,
             "qty": r.qty or 0,
         })
-    return sorted(result, key=lambda x: x["margin"], reverse=True)
+    # A category that sold only free items has no margin to sort by; `None` sorts
+    # below every figure rather than raising the page away.
+    return sorted(result, key=lambda x: -1e9 if x["margin"] is None else x["margin"],
+                  reverse=True)
 
 def get_dead_stock(db, start, end, days_threshold=90):
     """Variants sitting in stock with zero sales in the period.

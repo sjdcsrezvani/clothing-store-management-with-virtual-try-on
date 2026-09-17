@@ -121,7 +121,7 @@
                     <td class="tnum">
                         {% if row.stats.reached %}
                         <strong>{{ row.stats.used }}</strong>
-                        <small>{{ row.stats.response_rate }}٪ پاسخ</small>
+                        <small>{{ percent(row.stats.response_rate, 0) }} پاسخ</small>
                         {% else %}—{% endif %}
                     </td>
                     <td class="tnum">

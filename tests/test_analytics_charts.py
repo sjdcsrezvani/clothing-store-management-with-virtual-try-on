@@ -234,3 +234,75 @@ def test_the_renderer_paints_the_numbers_on_the_marks(tmp_path):
 
     # A horizontal bar is read to its end, where its number is.
     assert "30" in painted["horizontal"] and "10" in painted["horizontal"]
+
+
+def test_the_colour_size_matrix_is_a_matrix_and_adds_up(db_session):
+    """The heatmap is read to decide what to restock, so it has to be the data.
+
+    The matrix is one query over the sales of a period, and a query that groups
+    nothing is answered by SQLite with a *single synthesised row*: an arbitrary
+    colour, an arbitrary size, and the total quantity of everything. The table
+    still drew — one column, one row, a number in the cell — so it read as a
+    matrix with a clear answer, and the answer was wrong for every shop that had
+    ever sold two colours of anything. On a shop that had sold nothing it printed
+    «None» where the labels go, which is how the empty-shop pass found it.
+
+    So this pins the readings to the sales they claim to summarise: every colour
+    and size that sold is in the table, every cell is that variant's own quantity,
+    the cells add up to the units sold, and both margins agree with the other
+    reading of the same sales — the colour and size breakdowns the page draws
+    beside it.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from models import Product, ProductVariant, Sale, SaleItem
+    from services.analytics import get_color_size_matrix, get_variant_stats
+
+    now = datetime.now(timezone.utc)
+    start, end = now - timedelta(days=1), now + timedelta(days=1)
+    product = Product(name="تیشرت تست", category="تست")
+    db_session.add(product)
+    db_session.flush()
+
+    sold = {("مشکی", "S"): 3, ("مشکی", "M"): 1, ("سفید", "S"): 2, ("سفید", "M"): 4}
+    for (colour, size), quantity in sold.items():
+        variant = ProductVariant(product_id=product.id, price=100_000, cost_price=50_000,
+                                 stock_quantity=10, size=size, color=colour,
+                                 barcode=f"MATRIX-{colour}-{size}", is_active=True)
+        db_session.add(variant)
+        db_session.flush()
+        sale = Sale(total_amount=100_000 * quantity, final_amount=100_000 * quantity,
+                    payment_method="cash", payment_confirmed=True, created_at=now)
+        db_session.add(sale)
+        db_session.flush()
+        db_session.add(SaleItem(sale_id=sale.id, product_id=product.id, variant_id=variant.id,
+                                quantity=quantity, unit_price=100_000, unit_cost=50_000,
+                                total_price=100_000 * quantity))
+    db_session.commit()
+
+    matrix = get_color_size_matrix(db_session, start, end)
+    assert set(matrix["colors"]) == {"مشکی", "سفید"}, matrix["colors"]
+    assert {row["size"] for row in matrix["rows"]} == {"S", "M"}, matrix["rows"]
+
+    cell = {(colour, row["size"]): row["cells"][matrix["colors"].index(colour)]["qty"]
+            for row in matrix["rows"] for colour in matrix["colors"]}
+    assert cell == sold, cell
+    assert sum(cell.values()) == sum(sold.values()) == 10
+    assert matrix["max"] == 4
+
+    # The two readings of the same sales cannot disagree: the matrix's margins are
+    # the breakdowns drawn beside it.
+    for attribute, axis in (("color", "column"), ("size", "row")):
+        totals = {row["label"]: row["quantity"]
+                  for row in get_variant_stats(db_session, start, end, attribute)}
+        if attribute == "color":
+            drawn = {colour: sum(row["cells"][matrix["colors"].index(colour)]["qty"]
+                                 for row in matrix["rows"]) for colour in matrix["colors"]}
+        else:
+            drawn = {row["size"]: sum(c["qty"] for c in row["cells"]) for row in matrix["rows"]}
+        assert drawn == totals, (axis, drawn, totals)
+
+    # …and a period with no sales has no matrix at all, rather than one cell of
+    # nothing: the page says the range has no colour or size recorded.
+    empty = get_color_size_matrix(db_session, now + timedelta(days=10), now + timedelta(days=11))
+    assert empty == {"colors": [], "rows": [], "max": 0}

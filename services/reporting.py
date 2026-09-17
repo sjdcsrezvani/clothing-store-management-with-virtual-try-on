@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func
 
 from models import Customer, Expense, Payment, Purchase, ProductVariant, Refund, Sale, SaleItem, StockMovement
+from services._common import share
 
 
 def _refund_total(db, sale_ids, start, end):
@@ -63,7 +64,7 @@ def canonical_report(db, start: datetime, end: datetime) -> dict:
         "cash_collected": cash_collected, "credit_issued": credit_issued,
         "credit_collected": credit_collected, "outstanding_debt": debt,
         "inventory_value": inventory_value, "sale_count": len(active_sales),
-        "gross_margin": round(gross_profit / net_sales * 100, 1) if net_sales else 0,
+        "gross_margin": share(gross_profit, net_sales),
     }
 
 

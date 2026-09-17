@@ -2,7 +2,7 @@ import csv
 import io
 import json
 from datetime import datetime, timezone
-from urllib.parse import quote_plus
+from urllib.parse import quote, quote_plus
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -19,6 +19,7 @@ from models import (
 )
 from services._common import (
     fmt, check_admin, get_setting_int, jalali_str, parse_form_date, parse_form_date_end,
+    read_date_window, share,
     parse_jalali_input, parse_jalali_input_end,
 )
 from services.accounting import (
@@ -43,7 +44,7 @@ from services.accounting import (
     open_cash_session, reverse_cash_withdrawal,
 )
 from services.sms import queue_credit_reminder_sms
-from services.analytics import get_date_range
+from services.analytics import UnreadableRange, get_date_range, period_range
 from services.security import log_action, require_html_role, role_allows
 from services.templating import templates
 from services.inventory import (
@@ -147,7 +148,14 @@ async def admin_check_add(
 
     try:
         amount = parse_amount_rials(amount_rials)
-        issue_at = parse_check_date(issue_date) or datetime.now(timezone.utc)
+        # Blank means the check was issued now; a date that was typed and could
+        # not be read is refused, because dating a cheque today when the shop
+        # wrote something else is a record nobody asked for that looks decided.
+        issue_at = parse_check_date(issue_date)
+        if issue_at is None:
+            if (issue_date or "").strip():
+                raise ValueError("تاریخ صدور چک معتبر نیست")
+            issue_at = datetime.now(timezone.utc)
         due_at = parse_check_date(due_date)
         if due_at is None:
             raise ValueError("تاریخ سررسید چک معتبر نیست")
@@ -294,7 +302,10 @@ async def admin_accounting(
     if not hasattr(guard, "role"):
         return guard
 
-    start, end = get_date_range(period, start_date or None, end_date or None)
+    # The range this page actually shows, and the sentence to put on the page
+    # when the one that was asked for could not be read.
+    window = period_range(period, start_date or None, end_date or None)
+    start, end = window.start, window.end
     report = canonical_report(db, start, end)
     checks = reconciliation_checks(db, start, end)
     pl = {
@@ -306,7 +317,7 @@ async def admin_accounting(
         "one_time_expenses": report["one_time_expenses"],
         "monthly_expenses": report["monthly_expenses"],
         "net": report["net_profit"],
-        "net_margin": round(report["net_profit"] / report["net_sales"] * 100, 1) if report["net_sales"] else 0,
+        "net_margin": share(report["net_profit"], report["net_sales"]),
         "invoice_count": report["sale_count"],
         # The breakdown the page draws its share bars from: `[]` here made the
         # table state «هزینهای در این بازه ثبت نشده است» under a total that
@@ -317,9 +328,11 @@ async def admin_accounting(
     cashbox = get_cashbox(db, start, end, get_opening_balance(db))
 
     return templates.TemplateResponse(request, "admin/accounting.html", {
-        "period": period,
+        "period": window.period,
         "start_date": start_date,
         "end_date": end_date,
+        "range_notice": window.notice,
+        "err": request.query_params.get("err", ""),
         "pl": pl,
         "report": report,
         "reconciliation": checks,
@@ -334,6 +347,15 @@ async def admin_accounting(
 
 # ── CSV exports ──────────────────────────────────────────────────────────────
 
+def _export_refused(problem: str) -> RedirectResponse:
+    """Send the shop back to the page that owns the range, with the reason on it.
+
+    Not a 400 with a JSON body: the export is a button on a page, and the person
+    who pressed it is owed the same Persian sentence everywhere else would use.
+    """
+    return RedirectResponse(url=f"/admin/accounting?err={quote(problem)}", status_code=303)
+
+
 @router.get("/accounting/export")
 async def admin_accounting_export(
     request: Request,
@@ -346,8 +368,15 @@ async def admin_accounting_export(
     if not hasattr(guard, "role"):
         return guard
 
-    start, end = get_date_range("custom" if (start_date and end_date) else "all",
-                                start_date or None, end_date or None)
+    if bool(start_date) != bool(end_date):
+        # Half a window is not a range: the export used to read one bound and an
+        # empty field as «everything», which is a file the shop did not ask for.
+        return _export_refused("تاریخ شروع و پایان را با هم وارد کنید.")
+    try:
+        start, end = get_date_range("custom" if (start_date and end_date) else "all",
+                                    start_date or None, end_date or None)
+    except UnreadableRange as problem:
+        return _export_refused(str(problem))
     today = datetime.now(timezone.utc).strftime("%Y%m%d")
 
     if kind == "customers":
@@ -765,8 +794,13 @@ async def admin_credit_statement(customer_id: int, request: Request, db: Session
 
     # The canonical reader, not parse_jalali_input: an ISO range (`2026-09-12`)
     # would otherwise be read as a Jalali year and land the window in 2647.
-    start = parse_form_date(request.query_params.get("start_date", ""))
-    end = parse_form_date_end(request.query_params.get("end_date", ""))
+    # A date the shop typed and the app could not read is said out loud: the
+    # window used to vanish, leaving a statement of every transaction the
+    # customer ever had under a field that still showed the unreadable date.
+    start, end, window_notice = read_date_window(
+        request.query_params.get("start_date", ""),
+        request.query_params.get("end_date", ""),
+    )
 
     sales = db.query(Sale).filter(
         Sale.customer_id == customer.id,
@@ -830,6 +864,7 @@ async def admin_credit_statement(customer_id: int, request: Request, db: Session
         "debt": customer.total_debt or 0,
         "start": request.query_params.get("start_date", ""),
         "end": request.query_params.get("end_date", ""),
+        "range_notice": window_notice,
         "today": jalali_str(datetime.now(timezone.utc), with_time=False),
         "fmt": fmt,
         "jalali_str": jalali_str,
@@ -2243,10 +2278,11 @@ async def admin_cashbox(
     names = _staff_names(db, [s.cashier_user_id for s in listed] + [s.manager_user_id for s in listed])
     sessions = [_cash_session_row(s, names) for s in listed]
 
+    window = period_range(period, start_date or None, end_date or None)
     report = None
     settings_opening = None
     if verifier:
-        start, end = get_date_range(period, start_date or None, end_date or None)
+        start, end = window.start, window.end
         settings_opening = get_opening_balance(db)
         register = get_cashbox(db, start, end, settings_opening)
         # For «همه» there is no float to have started from, so a closing balance
@@ -2254,14 +2290,15 @@ async def admin_cashbox(
         # figure that means something instead.
         report = {
             "register": register,
-            "timeless": period == "all",
+            "timeless": window.period == "all",
             "net": register["cash_in"] - register["cash_out"],
         }
 
     return templates.TemplateResponse(request, "admin/cashbox.html", {
-        "period": period,
+        "period": window.period,
         "start_date": start_date,
         "end_date": end_date,
+        "range_notice": window.notice,
         "history": history,
         "verify": verifier,
         "shift": shift,

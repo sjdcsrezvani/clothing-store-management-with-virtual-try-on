@@ -9,6 +9,10 @@
 {% endset %}
 {% include 'partials/page_header.html' %}
 
+{# An action that could not be carried out — an export asked for a range nobody
+   could read — says so here rather than in a JSON body the shop cannot read. #}
+{% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}
+
 {# ─── Period filter ─── #}
 {% set filter_action = '/admin/accounting' %}
 {% set filter_id = 'accounting' %}
@@ -24,7 +28,7 @@
     <div class="stat-card accent-persimmon">
         <div class="stat-label">📦 بهای تمام‌شده کالا</div>
         <div class="stat-value tnum">{{ fmt(pl.cogs) }} ت</div>
-        <div class="stat-sub">سود ناخالص: {{ fmt(pl.gross) }} ت ({{ pl.gross_margin }}٪)</div>
+        <div class="stat-sub">سود ناخالص: {{ fmt(pl.gross) }} ت ({{ percent(pl.gross_margin) }})</div>
     </div>
     <div class="stat-card accent-saffron">
         <div class="stat-label">💸 هزینه‌ها</div>
@@ -34,7 +38,7 @@
     <div class="stat-card {% if pl.net >= 0 %}accent-candy{% else %}accent-ink{% endif %}">
         <div class="stat-label">🧮 سود خالص</div>
         <div class="stat-value tnum {% if pl.net < 0 %}">−{% endif %}{{ fmt(pl.net|abs) }} ت</div>
-        <div class="stat-sub">حاشیه: {{ pl.net_margin }}٪</div>
+        <div class="stat-sub">حاشیه: {{ percent(pl.net_margin) }}</div>
     </div>
 </div>
 

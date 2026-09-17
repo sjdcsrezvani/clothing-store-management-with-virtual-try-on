@@ -15,6 +15,11 @@
    each other. `filter_note` is optional and says what the resulting numbers
    mean, when that is not obvious from the page. #}
 <div class="card filter-card">
+    {# `range_notice` is set by the route when the range that was asked for could
+       not be read. The page then shows the default range and says which, because
+       a filter that quietly answers a different question than the one typed is
+       the same defect as a figure that quietly prints a plausible wrong number. #}
+    {% if range_notice %}<p class="filter-problem" role="status">⚠️ {{ range_notice }}</p>{% endif %}
     <form method="get" action="{{ filter_action }}" class="filter-bar is-inline">
         <label class="filter-field">
             <span>بازه</span>

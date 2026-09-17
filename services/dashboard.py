@@ -37,7 +37,7 @@ import jdatetime
 from sqlalchemy.orm import Session
 
 from models import CashSession
-from services._common import fmt, jalali_str
+from services._common import fmt, jalali_str, percent
 from services.accounting import (
     as_utc, debt_totals, get_cashbox, get_opening_balance, open_cash_session,
 )
@@ -393,7 +393,9 @@ def _build_cash_stale(numbers: _Numbers, role: str) -> dict | None:
 def _build_today_profit(numbers: _Numbers, role: str) -> dict:
     today = numbers.today
     return {"value": _money(today["gross_profit"]),
-            "sub": f"حاشیه {today['gross_margin']}٪",
+            # «—» before the day's first sale: a morning with no sales has no
+            # margin, and «حاشیه 0٪» is the one thing it does not have.
+            "sub": f"حاشیه {percent(today['gross_margin'])}",
             "delta": _delta(today["gross_profit"], numbers.yesterday["gross_profit"],
                             label=YESTERDAY_LABEL)}
 

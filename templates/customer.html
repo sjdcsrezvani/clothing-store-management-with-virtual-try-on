@@ -38,15 +38,15 @@
         </div>
         <div class="info-item">
             <span class="label">🌟 امتیاز</span>
-            <span class="value tnum points" style="color: var(--link);">{{ customer.total_points|default(0) }}</span>
+            <span class="value tnum points" style="color: var(--link);">{{ figure(customer.total_points) }}</span>
         </div>
         <div class="info-item">
             <span class="label">🛒 تعداد خرید</span>
-            <span class="value tnum">{{ customer.total_purchases|default(0) }}</span>
+            <span class="value tnum">{{ figure(customer.total_purchases) }}</span>
         </div>
         <div class="info-item">
             <span class="label">💰 مجموع خرید</span>
-            <span class="value tnum">{{ fmt(customer.total_spent|default(0)) }} تومان</span>
+            <span class="value tnum">{{ figure(customer.total_spent) }} تومان</span>
         </div>
         <div class="info-item">
             <span class="label">🤝 معرفی این ماه</span>

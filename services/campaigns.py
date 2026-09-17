@@ -32,6 +32,7 @@ from services._common import (
     is_archived_customer,
     jalali_str,
     marketing_opt_in,
+    share,
 )
 from services.tier import TIER_LABELS
 
@@ -542,7 +543,7 @@ def campaign_stats(db: Session, campaign: Campaign) -> dict:
         "used_money": int(sale_row[0] or 0),
         "redemptions": int(sale_row[1] or 0),
         "revenue": int(sale_row[2] or 0),
-        "response_rate": round((used / reached) * 100) if reached else 0,
+        "response_rate": share(used, reached, 0),
         "status": campaign_status(campaign),
         "status_label": STATUS_LABELS[campaign_status(campaign)],
         "window_label": campaign_window_label(campaign),

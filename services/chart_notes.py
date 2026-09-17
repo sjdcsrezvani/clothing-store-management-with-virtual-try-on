@@ -177,7 +177,10 @@ def _price_dist(buckets) -> str:
 
 
 def _margin(margin_by_cat) -> str:
-    rows = [row for row in _rows(margin_by_cat) if row.get("category")]
+    # A category with no revenue has no margin — the figure is `None`, not nought —
+    # and a sentence about it would be the page stating a margin nobody has.
+    rows = [row for row in _rows(margin_by_cat)
+            if row.get("category") and row.get("margin") is not None]
     if not rows:
         return NO_DATA
     ordered = sorted(rows, key=lambda row: int(row.get("margin") or 0))

@@ -276,7 +276,7 @@
             <ul class="profile-facts">
                 <li><span class="label">تلفن</span><span class="value tnum customer-phone">{{ customer.phone }}</span></li>
                 <li><span class="label">بدهی</span><span class="value tnum">{{ fmt(debt) }} ت</span></li>
-                <li><span class="label">مجموع خرید</span><span class="value tnum">{{ fmt(customer.total_spent or 0) }} ت</span></li>
+                <li><span class="label">مجموع خرید</span><span class="value tnum">{{ figure(customer.total_spent) }} ت</span></li>
                 <li>
                     <span class="label">آخرین خرید</span>
                     <span class="value tnum">{% if customer.last_purchase_date %}{{ jalali_str(customer.last_purchase_date, false) }}{% else %}—{% endif %}</span>
