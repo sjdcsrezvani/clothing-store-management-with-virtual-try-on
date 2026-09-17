@@ -24,15 +24,20 @@
         <div class="form-row product-form-grid product-form-grid-wide">
             <div class="form-group form-span-2">
                 <label for="name">نام محصول <span class="required-mark">*</span></label>
-                <input type="text" id="name" name="name" required value="{{ product.name if product else '' }}" placeholder="مثال: پیراهن نخی دخترانه">
+                {# `or ''`: the field is drawn for an existing product too, and a
+                   column nobody filled is NULL — which prints as «None» into the
+                   value, reads as a filled-in field, and is written back to the
+                   database by the next save. The `if product` guard covered the
+                   new-product case and missed this one. #}
+                <input type="text" id="name" name="name" required value="{{ product.name or '' if product else '' }}" placeholder="مثال: پیراهن نخی دخترانه">
             </div>
             <div class="form-group">
                 <label for="category">دسته‌بندی</label>
-                <input type="text" id="category" name="category" value="{{ product.category if product else '' }}" placeholder="مثال: پیراهن">
+                <input type="text" id="category" name="category" value="{{ product.category or '' if product else '' }}" placeholder="مثال: پیراهن">
             </div>
             <div class="form-group">
                 <label for="brand">برند</label>
-                <input type="text" id="brand" name="brand" value="{{ product.brand if product else '' }}" placeholder="مثال: رای کیدز">
+                <input type="text" id="brand" name="brand" value="{{ product.brand or '' if product else '' }}" placeholder="مثال: رای کیدز">
             </div>
             <div class="form-group">
                 <label for="supplier_id">تأمین‌کننده</label>
@@ -46,17 +51,17 @@
             </div>
             <div class="form-group">
                 <label for="base_sku">SKU پایه</label>
-                <input type="text" id="base_sku" name="base_sku" value="{{ product.base_sku if product else '' }}" dir="ltr" placeholder="مثال: RK-SHIRT-01">
+                <input type="text" id="base_sku" name="base_sku" value="{{ product.base_sku or '' if product else '' }}" dir="ltr" placeholder="مثال: RK-SHIRT-01">
             </div>
             <div class="form-group">
                 <label for="base_barcode">بارکد پایه</label>
-                <input type="text" id="base_barcode" name="base_barcode" value="{{ product.base_barcode if product else '' }}" dir="ltr" placeholder="اختیاری">
+                <input type="text" id="base_barcode" name="base_barcode" value="{{ product.base_barcode or '' if product else '' }}" dir="ltr" placeholder="اختیاری">
             </div>
         </div>
         <div class="form-row product-form-grid product-form-grid-wide">
             <div class="form-group">
                 <label for="garment_type">نوع پوشاک</label>
-                <input type="text" id="garment_type" name="garment_type" value="{{ product.garment_type if product else '' }}" placeholder="تی‌شرت، شلوار، ست">
+                <input type="text" id="garment_type" name="garment_type" value="{{ product.garment_type or '' if product else '' }}" placeholder="تی‌شرت، شلوار، ست">
             </div>
             <div class="form-group">
                 <label for="gender">گروه</label>
@@ -69,15 +74,15 @@
             </div>
             <div class="form-group">
                 <label for="material">جنس / پارچه</label>
-                <input type="text" id="material" name="material" value="{{ product.material if product else '' }}" placeholder="نخی، جین، دورس">
+                <input type="text" id="material" name="material" value="{{ product.material or '' if product else '' }}" placeholder="نخی، جین، دورس">
             </div>
             <div class="form-group">
                 <label for="season">فصل</label>
-                <input type="text" id="season" name="season" value="{{ product.season if product else '' }}" placeholder="بهار و تابستان">
+                <input type="text" id="season" name="season" value="{{ product.season or '' if product else '' }}" placeholder="بهار و تابستان">
             </div>
             <div class="form-group">
                 <label for="collection">کالکشن</label>
-                <input type="text" id="collection" name="collection" value="{{ product.collection if product else '' }}" placeholder="کالکشن ۱۴۰۵">
+                <input type="text" id="collection" name="collection" value="{{ product.collection or '' if product else '' }}" placeholder="کالکشن ۱۴۰۵">
             </div>
             <div class="form-group">
                 <label for="weight_grams">وزن (گرم)</label>
@@ -87,11 +92,11 @@
         <div class="form-row product-form-grid product-form-grid-wide">
             <div class="form-group">
                 <label for="default_reorder_point">نقطه سفارش پیش‌فرض</label>
-                <input type="number" id="default_reorder_point" name="default_reorder_point" min="0" value="{{ product.default_reorder_point if product else 0 }}">
+                <input type="number" id="default_reorder_point" name="default_reorder_point" min="0" value="{{ (product.default_reorder_point or 0) if product else 0 }}">
             </div>
             <div class="form-group">
                 <label for="default_reorder_quantity">مقدار سفارش پیش‌فرض</label>
-                <input type="number" id="default_reorder_quantity" name="default_reorder_quantity" min="0" value="{{ product.default_reorder_quantity if product else 0 }}">
+                <input type="number" id="default_reorder_quantity" name="default_reorder_quantity" min="0" value="{{ (product.default_reorder_quantity or 0) if product else 0 }}">
             </div>
             <div class="form-group form-span-2">
                 <label for="tag_template_id">قالب تگ محصول</label>
@@ -107,11 +112,11 @@
         <div class="form-row product-form-grid">
             <div class="form-group form-span-2">
                 <label for="description">توضیحات داخلی</label>
-                <textarea id="description" name="description" rows="3" placeholder="توضیحاتی که برای مدیریت محصول لازم است...">{{ product.description if product else '' }}</textarea>
+                <textarea id="description" name="description" rows="3" placeholder="توضیحاتی که برای مدیریت محصول لازم است...">{{ product.description or '' if product else '' }}</textarea>
             </div>
             <div class="form-group">
                 <label for="care_instructions">راهنمای نگهداری</label>
-                <textarea id="care_instructions" name="care_instructions" rows="3" placeholder="مثلاً شست‌وشو با آب سرد">{{ product.care_instructions if product else '' }}</textarea>
+                <textarea id="care_instructions" name="care_instructions" rows="3" placeholder="مثلاً شست‌وشو با آب سرد">{{ product.care_instructions or '' if product else '' }}</textarea>
             </div>
         </div>
     </section>
@@ -176,8 +181,8 @@ function addVariant() {
                 <div class="form-group"><label>موجودی اولیه</label><input type="number" name="variant_stock_${index}" min="0" value="0"></div>
                 <div class="form-group"><label>بارکد</label><input type="text" name="variant_barcode_${index}" dir="ltr" placeholder="خالی = تولید خودکار"></div>
                 <div class="form-group"><label>SKU</label><input type="text" name="variant_sku_${index}" dir="ltr"></div>
-                <div class="form-group"><label>نقطه سفارش</label><input type="number" name="variant_reorder_point_${index}" min="0" value="{{ product.default_reorder_point if product else 0 }}"></div>
-                <div class="form-group"><label>مقدار سفارش</label><input type="number" name="variant_reorder_quantity_${index}" min="0" value="{{ product.default_reorder_quantity if product else 0 }}"></div>
+                <div class="form-group"><label>نقطه سفارش</label><input type="number" name="variant_reorder_point_${index}" min="0" value="{{ (product.default_reorder_point or 0) if product else 0 }}"></div>
+                <div class="form-group"><label>مقدار سفارش</label><input type="number" name="variant_reorder_quantity_${index}" min="0" value="{{ (product.default_reorder_quantity or 0) if product else 0 }}"></div>
                 <div class="form-group"><label>محل انبار</label><input type="text" name="variant_storage_location_${index}" placeholder="قفسه A-2"></div>
             </div>
             <div class="form-group"><label>تصویر تنوع</label><input type="file" name="variant_image_${index}" accept="image/png,image/jpeg,image/webp"></div>

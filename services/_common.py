@@ -111,6 +111,85 @@ def fmt(amount: int) -> str:
     return f"{amount:,}"
 
 
+def share(part, whole, digits: int = 1):
+    """A share of a whole as a number, or ``None`` when there is no whole.
+
+    The numeric half of :func:`pct`, for the figures a page *draws* rather than
+    prints — a bar, a tint, a comparison. ``None`` is deliberately not ``0``: a
+    category nobody bought from has no margin, a morning with no sales has no
+    margin either, and a change against a month that traded nothing is not a
+    change of nought. Every reader of this has to say so, which is the point.
+    """
+    base = float(whole or 0)
+    if base == 0:
+        return None
+    return round(float(part or 0) / base * 100, digits)
+
+
+def pct(part, whole, digits: int = 1) -> str:
+    """A share of a whole, or a dash when there is no whole to take a share of.
+
+    Not a helper for tidiness: a share written inline as
+    ``{{ a / b * 100 if b else 0 }}٪`` prints «0٪» for a category with no sales,
+    which renders, looks deliberate and says the opposite of the truth — a
+    category nobody bought from is not a category that made no margin.
+    """
+    value = share(part, whole, digits)
+    return "—" if value is None else f"{value:g}٪"
+
+
+def figure(value) -> str:
+    """A figure that may not be there: the number, or «—» when nothing recorded it.
+
+    `x or 0` is the other way to write this, and it states a nought: a customer
+    whose spending counter was never computed reads as one who never bought
+    anything, and an item whose cost was never entered as one that cost nothing —
+    while the shop's own invoices and purchases say otherwise. A real zero is a
+    figure and prints as one; only a missing one says «—».
+    """
+    return "—" if value is None else fmt(value)
+
+
+def percent(value, digits: int = 1) -> str:
+    """A percentage somebody else worked out, said the way a page says it.
+
+    For the figures the services already hold — the margin of a day, a campaign's
+    response rate — where ``None`` means «there was nothing to take a share of».
+    The page then prints «—» instead of a confident nought, and the same figure
+    reads the same on every page that shows it.
+    """
+    if value is None:
+        return "—"
+    return f"{round(float(value), digits):g}٪"
+
+
+def read_date_window(start_raw, end_raw) -> tuple[datetime | None, datetime | None, str]:
+    """Read a start/end pair somebody typed, and say what could not be read.
+
+    A bound that cannot be read must never quietly vanish. The filter it belongs
+    to drops itself, the page shows every record it has, and the reader takes
+    that for the answer to the range they asked for. Both bounds are dropped
+    together rather than one of them, because half a window is a range nobody
+    asked for either.
+
+    Returns ``(start, end, notice)``: the notice is empty when both bounds were
+    read, and names what was not understood when they were not — the caller is
+    expected to show it.
+    """
+    start_raw = str(start_raw or "").strip()
+    end_raw = str(end_raw or "").strip()
+    start = parse_form_date(start_raw) if start_raw else None
+    end = parse_form_date_end(end_raw) if end_raw else None
+    unreadable = []
+    if start_raw and start is None:
+        unreadable.append(f"تاریخ شروع «{start_raw}»")
+    if end_raw and end is None:
+        unreadable.append(f"تاریخ پایان «{end_raw}»")
+    if not unreadable:
+        return start, end, ""
+    return None, None, " و ".join(unreadable) + " خوانده نشد؛ بازه اعمال نشد."
+
+
 def get_setting_int(db: Session, key: str, default: int) -> int:
     """Read a Settings row by key, return int or default. Used by every router."""
     setting = db.query(Settings).filter(Settings.key == key).first()

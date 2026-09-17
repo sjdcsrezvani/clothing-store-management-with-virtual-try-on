@@ -4,14 +4,18 @@ store branding and the customer-module flags injected automatically.
 from pathlib import Path
 
 from fastapi.templating import Jinja2Templates
+from jinja2 import Undefined
 
 from services._common import (
     birthday_display,
     birthday_form_value,
     days_until_jalali_birthday,
     fmt,
+    figure,
     jalali_age,
     jalali_str,
+    pct,
+    percent,
 )
 from services.customers import customer_context_processor
 from services.navigation import (
@@ -28,6 +32,37 @@ from services.navigation import (
 from services.security import ROLE_LABELS, csrf_context_processor
 from services.store import store_context_processor
 from services.themes import get_theme
+
+
+# Every name a page looked for and did not find, in render order. The suite reads
+# this after opening each page; nothing else does.
+UNDEFINED_NAMES: list[str] = []
+
+
+class WatchedUndefined(Undefined):
+    """A name that is not there, recorded instead of silently rendering blank.
+
+    Jinja's default turns a missing name into an empty string, so a page whose
+    context lost something prints a gap where a figure belongs and looks
+    deliberate doing it — the same shape of bug as a colour that falls back to a
+    plausible one. This behaves exactly like the default: falsy, prints nothing,
+    ``is defined`` still answers no, and a name used as an object still raises.
+    The difference is that *rendering* one is recorded, and the suite fails on a
+    page that did it.
+
+    Rendering, not truth-testing: ``{% if error %}`` on a page whose route passes
+    an error only when there is one is a question, and asking it is not a bug.
+    """
+
+    def __str__(self) -> str:
+        # Bounded: this list exists for the tests to read, and a server that keeps
+        # rendering a blank name must not grow it for ever.
+        if len(UNDEFINED_NAMES) < 200:
+            UNDEFINED_NAMES.append(self._undefined_name or "<unnamed>")
+        return ""
+
+    def __html__(self) -> str:
+        return self.__str__()
 
 
 def theme_context_processor(request) -> dict:
@@ -85,6 +120,11 @@ templates = Jinja2Templates(
     ],
 )
 
+# A name nobody supplied renders as an empty string by Jinja's default, which is
+# how a page prints a blank where a figure belongs. This keeps the rendering
+# identical and hands the suite the list of names it happened to.
+templates.env.undefined = WatchedUndefined
+
 # Birthday helpers every template can reach without a route passing them along.
 # `birthday_form_value` rebuilds a field value, so a stored MM-DD (with or
 # without a year) always renders as something the date picker can read back.
@@ -93,6 +133,17 @@ templates.env.globals.update(
     # any render that forgot one crashed the page — a date formatted with
     # `fmt` — so they live here once and a route can still override them.
     fmt=fmt,
+    # A share of a whole, which says «—» when there is no whole. Inline in a
+    # template it is `{{ pct(a, b) }}`; the arithmetic written out by hand is
+    # what prints a confident «0٪» over an empty base.
+    pct=pct,
+    # …and the same for a percentage a service already worked out: `None` there
+    # means «nothing to take a share of», and the page must say «—» rather than
+    # print a nought as if it had measured one.
+    percent=percent,
+    # A figure a record may simply not have: `x or 0` prints a nought for a
+    # counter nobody computed, which reads as a shop that sold nothing.
+    figure=figure,
     jalali_str=jalali_str,
     birthday_form_value=birthday_form_value,
     birthday_display=birthday_display,
