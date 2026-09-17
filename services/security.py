@@ -13,8 +13,22 @@ import secrets
 import time
 from datetime import datetime, timezone
 
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from database import get_db
+
+# Late-bound so the module import graph stays acyclic: capture_device reads
+# models, and security is imported by nearly every router.
+def capture_auth_header():
+    from services.capture_device import AUTH_HEADER
+    return AUTH_HEADER
+
+
+def capture_device_authenticated(db: Session, key: str) -> bool:
+    from services.capture_device import authenticate_device
+    return authenticate_device(db, key)
 from starlette.responses import JSONResponse, RedirectResponse
 
 from config import ADMIN_PASSWORD, API_TOKEN
@@ -318,12 +332,19 @@ def csrf_context_processor(request: Request) -> dict:
 
 # ── API token gate ────────────────────────────────────────────────────────────
 
-def require_api_token(request: Request) -> None:
+def require_api_token(request: Request, db: Session = Depends(get_db)) -> None:
     """Dependency for /api/* routers. Accepts the `X-API-Token` header (phone
-    app) or an admin login session (browser). When API_TOKEN is empty, only the
-    admin session is accepted — /api/* is never open to the world."""
+    app), the capture phone's own paired key, or an admin login session
+    (browser). When API_TOKEN is empty, only the capture key and the admin
+    session are accepted — /api/* is never open to the world."""
     header_token = request.headers.get("X-API-Token", "")
     if API_TOKEN and header_token and hmac.compare_digest(header_token, API_TOKEN):
+        return
+    # The capture phone pairs by scanning the QR on the try-on page and holds a
+    # per-device key (hash-only at rest, rotated on every re-pair) — it earns
+    # the same /api/* access the static token used to grant the typed phone.
+    capture_key = request.headers.get(capture_auth_header(), "")
+    if capture_key and capture_device_authenticated(db, capture_key):
         return
     if request.session.get("api_token") == API_TOKEN and request.session.get("staff_user_id"):
         return

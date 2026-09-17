@@ -50,6 +50,43 @@
             </div>
         </div>
 
+        {# ── Capture-phone pairing ── #}
+        <div class="card">
+            <h3>گوشی ضبط عکس</h3>
+            {% if pairing %}
+                <p style="font-size: 0.9rem; color: var(--ink); margin-bottom: 0.6rem;">
+                    با دوربین گوشی این کد را اسکن کنید — صفحه جفت‌سازی روی خود گوشی باز می‌شود و کلید را نگه می‌دارد.
+                </p>
+                <div style="text-align:center; margin-bottom: 0.8rem;">
+                    <img src="{{ pairing.qr }}" alt="QR جفت‌سازی گوشی ضبط عکس"
+                         style="width: 200px; height: 200px; border-radius: 12px; border: 2px solid var(--rule);">
+                </div>
+                <div class="alert alert-error" style="font-size: 0.85rem;">
+                    ⚠️ این کد فقط همین یک‌بار نمایش داده می‌شود و فقط تا اسکن اعتبار دارد. دوباره جفت‌سازی کنید تا کلید قبلی گوشی باطل شود.
+                </div>
+            {% elif capture_paired %}
+                <p style="font-size: 0.9rem; color: var(--ink-soft); margin-bottom: 0.8rem;">
+                    ✅ گوشی جفت‌شده است و عکس می‌فرستد. جفت‌سازی دوباره، کلید فعلی را باطل می‌کند — برای گم‌شدن گوشی همین کار را بکنید.
+                </p>
+            {% else %}
+                <p style="font-size: 0.9rem; color: var(--ink-soft); margin-bottom: 0.8rem;">
+                    گوشی‌ای که عکس کودک را می‌گیرد، با اسکن یک QR به این فروشگاه وصل می‌شود — نه با تایپ آدرس و توکن.
+                </p>
+            {% endif %}
+            <div style="display:flex; gap: 0.5rem; flex-wrap: wrap;">
+                <form method="post" action="/admin/try-on/pair-capture"
+                      onsubmit="return confirm('{% if capture_paired %}جفت‌سازی دوباره، کلید گوشی فعلی را باطل می‌کند. ادامه؟{% else %}QR جفت‌سازی ساخته شود؟{% endif %}');">
+                    <button type="submit" class="btn btn-primary btn-sm">🔗 ساخت QR جفت‌سازی</button>
+                </form>
+                {% if capture_paired %}
+                <form method="post" action="/admin/try-on/unpair-capture"
+                      onsubmit="return confirm('اتصال گوشی قطع شود؟ عکس دیگر ارسال نمی‌شود تا دوباره جفت شود.');">
+                    <button type="submit" class="btn btn-ghost btn-sm">✂️ قطع اتصال</button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+
         {# ── Barcode scanning ── #}
         <div class="card">
             <h3>اسکن بارکد محصولات</h3>

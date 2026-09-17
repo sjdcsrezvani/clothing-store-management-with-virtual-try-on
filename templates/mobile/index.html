@@ -32,6 +32,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .status-dot{width:12px;height:12px;border-radius:50%;background:var(--ink-soft);flex-shrink:0}
 .status-dot.online{background:var(--mint)}
 .status-dot.offline{background:var(--persimmon)}
+.pair-state{flex:1;font-size:13px;font-weight:700;color:var(--ink)}
 .connection-help{padding:0 16px 10px;color:var(--ink-soft);font-size:12px;line-height:1.7}
 .connection-help strong{color:var(--ink)}
 
@@ -99,12 +100,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
 <!-- Server Config -->
 <div class="config-bar">
-    <input type="text" id="server-ip" placeholder="آدرس کامپیوتر، مثلاً 192.168.1.181:8000" inputmode="url" autocomplete="off">
-    <input type="text" id="api-token" placeholder="API token" autocomplete="off" style="flex:1;min-width:120px;">
     <div class="status-dot" id="status-dot" title="Connection status"></div>
-    <button onclick="saveConfig();testConnection()">Save</button>
+    <div class="pair-state" id="pair-state">…</div>
+    <button id="btn-connection-test" onclick="testConnection()">بررسی اتصال</button>
 </div>
-<div class="connection-help">گوشی و کامپیوتر باید به یک Wi‑Fi وصل باشند. در حالت وب معمولی، پورت پیش‌فرض <strong>8000</strong> است؛ اگر پورت دیگری می‌بینید همان را بعد از IP وارد کنید.</div>
+<div class="connection-help" id="connection-help">گوشی و کامپیوتر باید به یک Wi‑Fi وصل باشند. جفت‌سازی از صفحه «پروژه تعاملی» در پنل، با QR انجام می‌شود.</div>
 
 <!-- Main Actions -->
 <div class="main-actions">
@@ -148,52 +148,58 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
 <script>
 // ─── State ───
-let baseUrl = '';
-let apiToken = '';
+// No typed address and no typed token any more: the phone is set up by scanning
+// the pairing QR on the try-on page. The QR opens the pairing landing on this
+// same origin, which stores the key in localStorage — so the base address is
+// simply where this page was loaded from, and the key is the one thing a
+// re-pair rotates.
+let baseUrl = window.location.origin;
+let captureKey = localStorage.getItem('capture_key') || '';
 let selectedPhotoFile = null;
 
 // ─── Config ───
 function loadConfig() {
-    const ip = localStorage.getItem('server_ip') || '';
-    apiToken = localStorage.getItem('api_token') || '';
-    document.getElementById('server-ip').value = ip;
-    document.getElementById('api-token').value = apiToken;
-    baseUrl = normalizeBaseUrl(ip);
-    if (ip) testConnection();
+    captureKey = localStorage.getItem('capture_key') || '';
+    updatePairState();
+    testConnection();
 }
-function saveConfig() {
-    const ip = document.getElementById('server-ip').value.trim();
-    apiToken = document.getElementById('api-token').value.trim();
-    localStorage.setItem('server_ip', ip);
-    localStorage.setItem('api_token', apiToken);
-    baseUrl = normalizeBaseUrl(ip);
-    addLog('info', 'Server set to ' + (ip || '(none)') + (apiToken ? ' (token set)' : ' (no token)'));
+function markUnpaired() {
+    localStorage.removeItem('capture_key');
+    captureKey = '';
+    updatePairState();
 }
-function normalizeBaseUrl(value) {
-    value = (value || '').trim().replace(/^https?:\/\//i, '').replace(/\/$/, '');
-    if (!value) return '';
-    // Keep an explicitly supplied port; append 8000 only when omitted.
-    if (!value.includes(':')) value += ':8000';
-    return 'http://' + value;
+function updatePairState() {
+    document.getElementById('pair-state').textContent = captureKey ? 'جفت‌شده' : 'جفت‌نشده';
 }
 function apiHeaders() {
-    return apiToken ? { 'X-API-Token': apiToken } : {};
+    return captureKey ? { 'X-Capture-Key': captureKey } : {};
 }
 
 // ─── Connection test ───
+// The probe is the pairing proof itself: /api/capture/ping sits behind the
+// same gate as the upload, and 401 is how the page learns the key it holds
+// was rotated (or never was one) — it then shows «جفت‌نشده» instead of
+// pretending to be online.
 async function testConnection() {
     const dot = document.getElementById('status-dot');
     dot.className = 'status-dot';
-    saveConfig();
-    if (!baseUrl) { dot.className = 'status-dot offline'; return; }
+    if (!captureKey) { dot.className = 'status-dot offline'; addLog('info', 'هنوز جفت نشده — QR را از پنل اسکن کنید.'); return; }
     try {
-        const r = await fetch(baseUrl + '/admin/try-on', { method: 'GET', signal: AbortSignal.timeout(5000) });
-        dot.className = 'status-dot ' + (r.ok || r.status === 303 ? 'online' : 'offline');
-        if (r.ok || r.status === 303) addLog('ok', 'Connected to server');
-        else addLog('err', 'Server returned ' + r.status);
+        const r = await fetch(baseUrl + '/api/capture/ping', { method: 'GET', headers: apiHeaders(), signal: AbortSignal.timeout(5000) });
+        if (r.ok) {
+            dot.className = 'status-dot online';
+            addLog('ok', 'اتصال برقرار است');
+        } else if (r.status === 401) {
+            dot.className = 'status-dot offline';
+            markUnpaired();
+            addLog('err', 'کلید گوشی معتبر نیست — دوباره QR را اسکن کنید.');
+        } else {
+            dot.className = 'status-dot offline';
+            addLog('err', 'سرور پاسخ ' + r.status + ' داد');
+        }
     } catch(e) {
         dot.className = 'status-dot offline';
-        addLog('err', 'Cannot reach server: ' + e.message);
+        addLog('err', 'سرور در دسترس نیست: ' + e.message);
     }
 }
 
@@ -223,7 +229,7 @@ function showToast(msg, type, ms) {
 
 // ─── Photo Capture ───
 function showPhotoCapture() {
-    if (!baseUrl) { showToast('Set server IP first', 'error'); return; }
+    if (!captureKey) { showToast('اول گوشی را جفت کنید', 'error'); return; }
     selectedPhotoFile = null;
     document.getElementById('photo-preview').style.display = 'none';
     document.getElementById('btn-send-photo').disabled = true;
@@ -292,9 +298,7 @@ async function sendPhoto() {
 
 // ─── Init ───
 loadConfig();
-document.getElementById('server-ip').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') { saveConfig(); testConnection(); }
-});
+document.getElementById('btn-connection-test').addEventListener('click', testConnection);
 </script>
 </body>
 </html>

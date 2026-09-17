@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+{# The page the pairing QR opens on the phone. Deliberately session-free: the
+   capture page is session-guarded and login redirects to the till, dropping
+   anything the URL carried — so the key has to be handed over *before* any
+   login happens. The key rides in the URL fragment (#…), which browsers never
+   transmit; this page reads it locally, stores it, and proves it works by
+   pinging the server. Wears the shop's palette like every other screen. #}
+<html lang="fa" dir="rtl" data-theme="{{ theme.id }}" data-theme-mode="{{ theme.mode }}" style="{{ theme.inline_style }}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="theme-color" content="{{ theme.tokens['--bg'] }}">
+<title>جفت‌سازی گوشی ضبط عکس</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html[data-theme-mode="dark"]{color-scheme:dark}
+body{font-family:Vazirmatn,Tahoma,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.card{background:var(--card);border-radius:16px;padding:32px 24px;max-width:420px;width:100%;text-align:center;box-shadow:var(--shadow)}
+.icon{font-size:56px;margin-bottom:12px}
+h1{font-size:20px;margin-bottom:8px}
+p{font-size:14px;line-height:1.9;color:var(--ink-soft);margin-bottom:12px}
+.status{display:inline-block;padding:8px 18px;border-radius:999px;font-weight:800;font-size:14px;margin-bottom:8px}
+.status.ok{background:var(--success-bg);color:var(--ink)}
+.status.bad{background:var(--danger-bg);color:var(--ink)}
+.btn{display:block;width:100%;margin-top:12px;padding:12px;border-radius:10px;border:none;background:var(--brand-fill);color:var(--brand-label);font-weight:800;font-size:15px;font-family:inherit;text-decoration:none;cursor:pointer}
+.btn:hover{background:var(--brand-fill-dark)}
+.small{font-size:12px;color:var(--ink-soft)}
+</style>
+</head>
+<body>
+<div class="card">
+<div class="icon" id="pair-icon">⏳</div>
+<h1 id="pair-title">در حال بررسی…</h1>
+<div class="status" id="pair-status">…</div>
+<p id="pair-help">در حال خواندن کلید از پیوند جفت‌سازی…</p>
+<a class="btn" href="/admin/login" id="go-login" style="display:none">ورود به حساب</a>
+<p class="small">هر جفت‌سازی تازه، کلید قبلی گوشی را باطل می‌کند.</p>
+</div>
+<script>
+(function () {
+    const icon = document.getElementById('pair-icon');
+    const title = document.getElementById('pair-title');
+    const status = document.getElementById('pair-status');
+    const help = document.getElementById('pair-help');
+    const login = document.getElementById('go-login');
+    function show(state, titleText, statusText, helpText, ok) {
+        icon.textContent = state;
+        title.textContent = titleText;
+        status.textContent = statusText;
+        status.className = 'status ' + (ok ? 'ok' : 'bad');
+        help.textContent = helpText;
+        if (ok) login.style.display = 'block';
+    }
+    // The fragment never reached the server; it is read here and stored, then
+    // the URL is scrubbed so the key does not sit in the address bar or the
+    // browser's history. `replaceState` keeps the back button honest too.
+    const key = window.location.hash.replace(/^#/, '').trim();
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+    if (!key) {
+        // Arrived without a fragment: the phone may already hold a key from an
+        // earlier scan — probe it before declaring failure.
+        const stored = localStorage.getItem('capture_key');
+        if (stored) {
+            probe(stored, false);
+            return;
+        }
+        show('📵', 'پیوند ناقص', 'کلیدی در پیوند نبود',
+             'از پنل مدیریت، صفحه «پروژه تعاملی»، دوباره QR بگیرید و همین صفحه را اسکن کنید.', false);
+        return;
+    }
+    try { localStorage.setItem('capture_key', key); } catch (e) { /* private mode: nothing to hand to */ }
+    probe(key, true);
+
+    // The proof is a ping, not a promise: /api/capture/ping sits behind the
+    // same gate as the photo upload, so 200 is the server saying this key is
+    // the one it currently holds — and 401 is a key that was rotated.
+    function probe(keyWith, fresh) {
+        fetch('/api/capture/ping', { headers: { 'X-Capture-Key': keyWith } })
+            .then(function (r) {
+                if (r.ok) {
+                    show('✅', 'گوشی جفت شد', 'کلید ذخیره شد',
+                         'حالا وارد حساب شوید تا صفحه ضبط عکس باز شود.', true);
+                } else if (r.status === 401) {
+                    localStorage.removeItem('capture_key');
+                    show('📵', 'کلید معتبر نیست', 'جفت‌سازی انجام نشد',
+                         'این کلید باطل شده است. از پنل، صفحه «پروژه تعاملی»، دوباره QR بگیرید و اسکن کنید.', false);
+                } else {
+                    show('⚠️', 'سرور پاسخ ' + r.status + ' داد', 'بررسی ناموفق',
+                         'اتصال اینترنت گوشی را بررسی کنید و صفحه را دوباره باز کنید.', false);
+                }
+            })
+            .catch(function () {
+                show('⚠️', 'سرور در دسترس نیست', 'بررسی ناموفق',
+                     'گوشی و کامپیوتر باید به یک Wi‑Fi وصل باشند.', false);
+            });
+    }
+})();
+</script>
+</body>
+</html>

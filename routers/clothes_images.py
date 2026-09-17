@@ -20,6 +20,10 @@ from models import Product, ProductVariant, GeneratedImage, BackgroundJob, to_en
 from services._common import check_admin, fmt, jalali_str
 from services.image_gen import ImageGenService, ImageGenerationError, composite_logo, MAIN_PROMPT
 from services.security import require_api_token, tryon_can_generate, tryon_record_generation, tryon_daily_remaining, log_action, require_html_role
+from services.capture_device import (
+    AUTH_HEADER, authenticate_device, is_paired, pair_device,
+    pairing_qr_data_uri, unpair_device,
+)
 from services.jobs import enqueue
 from services.templating import templates
 from config import TRYON_BACKGROUNDS, TRYON_POSE_MODES, TRYON_FACE_MODES
@@ -491,15 +495,33 @@ async def mobile_app_page(request: Request, db: Session = Depends(get_db)):
 
 # ─── Admin page ───
 
-@admin_router.get("/try-on", response_class=HTMLResponse)
-async def admin_tryon_page(request: Request, msg: str = "", err: str = "", db: Session = Depends(get_db)):
-    guard = require_html_role(request, db, "manager")
-    if not hasattr(guard, "role"):
-        return guard
+# ─── Capture-phone pairing (the QR flow the SMS gateway uses) ───
 
+def _capture_base_url(request: Request) -> str:
+    """What the phone's camera should dial for the capture page — the app's own
+    address and port, not the gateway's. Same rule as the SMS router's
+    ``_lan_base_url``: a loopback request (tests, the preview) is swapped for
+    the LAN IP, because the word ``localhost`` never reaches this machine from
+    a phone."""
+    host = (request.url.hostname or "127.0.0.1").strip()
+    port = request.url.port or 8000
+    if host in {"127.0.0.1", "localhost", "0.0.0.0"}:
+        import socket
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.connect(("192.0.2.1", 80))
+            host = sock.getsockname()[0]
+        finally:
+            sock.close()
+    return f"http://{host}:{port}"
+
+
+def _tryon_context(db: Session, *, msg: str = "", err: str = "", pairing=None):
+    """Everything the try-on page renders, shared by the page route and the
+    pair route so the two cannot drift. ``pairing`` is set only on the response
+    that just issued a key — the QR is shown exactly once, never on a reload."""
     saved = db.query(GeneratedImage).order_by(GeneratedImage.created_at.desc()).limit(20).all()
-
-    return templates.TemplateResponse(request, "admin/tryon.html", {
+    return {
         "kid_photo_preview": _tryon["kid_photo_preview"],
         "scanned": _tryon["scanned"],
         "last_gen_url": _tryon["last_gen_url"],
@@ -512,7 +534,72 @@ async def admin_tryon_page(request: Request, msg: str = "", err: str = "", db: S
         "err": err,
         "fmt": fmt,
         "jalali_str": jalali_str,
-    })
+        "capture_paired": is_paired(db),
+        "pairing": pairing,
+    }
+
+
+@admin_router.get("/try-on", response_class=HTMLResponse)
+async def admin_tryon_page(request: Request, msg: str = "", err: str = "", db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+
+    return templates.TemplateResponse(request, "admin/tryon.html", _tryon_context(db, msg=msg, err=err))
+
+
+@admin_router.post("/try-on/pair-capture", response_class=HTMLResponse)
+async def admin_pair_capture_phone(request: Request, db: Session = Depends(get_db)):
+    """Issue (or rotate) the capture phone's key and show its QR exactly once.
+
+    Owner-only, like pairing the SMS phone: the key is a credential that can
+    push a child's photo onto the server, and rotating it is how a lost phone
+    is shut out. The raw key exists only inside this response's QR — only its
+    SHA-256 is stored."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+
+    raw_key = pair_device(db)
+    db.commit()
+    log_action(db, "capture_pair", "گوشی ضبط عکس جفت شد (QR یک‌بار نمایش داده شد)",
+               request=request)
+
+    return templates.TemplateResponse(request, "admin/tryon.html", _tryon_context(
+        db, msg="QR برای یک‌بار نمایش ساخته شد؛ همین حالا با دوربین گوشی اسکن کنید.",
+        pairing={"qr": pairing_qr_data_uri(_capture_base_url(request), raw_key)},
+    ))
+
+
+@admin_router.post("/try-on/unpair-capture", response_class=HTMLResponse)
+async def admin_unpair_capture_phone(request: Request, db: Session = Depends(get_db)):
+    """Forget the capture phone: its key stops working immediately."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    unpair_device(db)
+    db.commit()
+    log_action(db, "capture_unpair", "اتصال گوشی ضبط عکس قطع شد",
+               request=request)
+    return RedirectResponse(url="/admin/try-on?err=اتصال گوشی ضبط عکس قطع شد؛ برای اتصال دوباره QR جدید بگیرید.", status_code=303)
+
+
+@admin_router.get("/mobile/pair", response_class=HTMLResponse)
+async def capture_pair_landing(request: Request):
+    """Landing page the pairing QR opens on the phone — deliberately session-free.
+
+    The capture page itself is session-guarded, and login redirects to the till,
+    dropping anything the URL carried; a key handed over after that redirect
+    would be lost. So the QR opens *this* page, which is reachable logged-out
+    and hands the key to the phone's own storage before any login happens.
+
+    The key rides in the URL **fragment** (``#…``), which browsers never
+    transmit: this route sees no key at all, no request on this server ever
+    carries the credential in its request line, and nothing of it can land in
+    an access log. The page itself proves the stored key with
+    ``/api/capture/ping`` — the script does the proof and flips to
+    «جفت‌نشده» on a 401, so a stale key never passes for a fresh pair."""
+    return templates.TemplateResponse(request, "mobile/pair.html", {})
 
 
 # ─── Add product to try-on (NO image generation) ───
@@ -805,6 +892,16 @@ async def admin_tryon_saved_download(
 
 
 # ─── JSON API: Scan barcode from phone (no customer) ───
+
+# ─── JSON API: capture-phone pairing probe ───
+# The whole /api/* router already sits behind require_api_token, which accepts
+# the capture key — so a 200 from here is the phone's proof that its stored key
+# is the one this server currently holds. No state, nothing to leak.
+
+@api_router.get("/capture/ping")
+async def capture_ping():
+    return {"status": "ok"}
+
 
 @api_router.post("/try-on/scan-barcode")
 async def scan_barcode(data: ScanBarcodeRequest, db: Session = Depends(get_db)):
