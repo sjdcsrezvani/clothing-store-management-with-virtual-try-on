@@ -10,7 +10,8 @@ the photo panels and the lightbox), an SMS suite (template manager, manual sends
 welcome / birthday / tier-up / campaign messages, and a send log whose entries
 can be replayed), virtual try-on previews on the child's picture, invoices
 (HTML + Persian PDF), a deep analytics suite whose charts say what they show in
-words and on the marks rather than by colour alone, and accounting-lite: credit sales
+words and on the marks rather than by colour alone, links and filled button
+labels that read at 4.5:1 in every palette, and accounting-lite: credit sales
 (نسیه) with a debt ledger, supplier purchases that update stock & cost,
 expenses, a cash drawer counted open and counted closed with every difference
 recorded, a net profit & loss report that breaks the expenses down by category,
@@ -682,6 +683,21 @@ real JavaScript engine against the shell's own script, so a handler that stops
 closing anything fails the suite rather than the shop, and every guard here was
 falsified the same way as the rest — the state was deliberately broken and the
 guard had to notice.
+
+The walks hold the shop empty as well as full. Two companion passes open every
+address the matrix serves, in every palette and as every role, with *nothing* in
+the database — the empty branch of every table, an id that matches no record —
+and once more as the shop's very first boot, replaying the start-up in order and
+opening the first page as the owner it created, before any palette has been
+chosen. A guard reads `main.py`'s lifespan and requires every call the boot
+makes to be replayed by that pass or excused by name, so the pass cannot quietly
+stop describing the first run. Both found live defects on their first run: the
+colour × size matrix grouped nothing, so SQLite answered the aggregate with one
+synthesised row and a busy shop drew a matrix of a single cell holding the total
+of everything; a page whose job is to list records must draw 200 with none of
+them; and no document may print the renderer's own vocabulary — `None`,
+`undefined`, `nan`, `Infinity` — anywhere the shop can read it, a field's value
+included.
 
 The suite uses a throwaway SQLite database — never your real data.
 
