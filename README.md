@@ -11,7 +11,9 @@ welcome / birthday / tier-up / campaign messages, and a send log whose entries
 can be replayed), virtual try-on previews on the child's picture, invoices
 (HTML + Persian PDF), a deep analytics suite whose charts say what they show in
 words and on the marks rather than by colour alone, links and filled button
-labels that read at 4.5:1 in every palette, and accounting-lite: credit sales
+labels that read at 4.5:1 in every palette — each filled surface deriving its
+own label, the loyalty metals and the printed page included, with a stylesheet
+that names no colour the theme should own — and accounting-lite: credit sales
 (نسیه) with a debt ledger, supplier purchases that update stock & cost,
 expenses, a cash drawer counted open and counted closed with every difference
 recorded, a net profit & loss report that breaks the expenses down by category,
@@ -476,13 +478,16 @@ values editable in the admin panel). See `.env.example` for every variable.
 
 > **Never commit `.env`** — it contains secrets. It is already in `.gitignore`.
 
-## The phone app (photo upload)
+## The phone app (photo capture)
 
-Open `/admin/mobile` on the shop phone (or save it to the home screen as a PWA).
-Enter the computer's IP (e.g. `192.168.1.20:8000`) and the `API_TOKEN`, then
-take the child's photo — it uploads to `/api/image-gen/upload-kid-photo`. The
-page wears the shop's own palette, so the phone at the counter matches whichever
-theme the panel is set to, dark and high-contrast included.
+Pair the phone from the admin panel — **پوشاک مجازی → گوشی ضبط عکس** (owner only):
+a QR appears once; scan it with the phone's camera and the capture page opens
+with the server's address and a per-device key already held. No IP is typed, and
+the shared `API_TOKEN` is no longer part of this flow — the key is stored only
+as its SHA-256 on the server, rides in the QR's URL fragment (which browsers
+never send to any server), and pairing again invalidates the key a lost phone
+holds. The page wears the shop's own palette, so the phone at the counter
+matches whichever theme the panel is set to, dark and high-contrast included.
 
 ## Backups
 
@@ -698,6 +703,15 @@ of everything; a page whose job is to list records must draw 200 with none of
 them; and no document may print the renderer's own vocabulary — `None`,
 `undefined`, `nan`, `Infinity` — anywhere the shop can read it, a field's value
 included.
+
+The stylesheet declares no colour the theme should own: the guard cuts the one
+`:root` block away and fails on any literal left outside it, is not fooled by a
+token name that contains a colour word nor by a hex hidden inside a `var()`
+call, and the loyalty metals and the printed page are measured in all ten
+palettes like every other state — with an inventory so the floors table cannot
+be weakened silently. The capture phone's pairing is guarded the way the
+gateway's is: hash-only storage, a QR shown once, the key gate, the unpair and
+the role, each proven to bite by sabotage before it was trusted.
 
 The suite uses a throwaway SQLite database — never your real data.
 
