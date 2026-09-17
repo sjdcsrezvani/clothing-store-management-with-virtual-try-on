@@ -200,6 +200,31 @@ def _tinted(base: str, accent: str, ratio: float,
     return _mix(base, accent, 0.6)
 
 
+def tier_pair(name: str, light: str, dark: str) -> dict[str, str]:
+    """The metals a customer's loyalty badge is painted in, same doctrine as the
+    fills in `interaction_tokens`.
+
+    These gradients were frozen in the stylesheet — a white label on the
+    diamond's `#A66CFF` end read 3.3:1, the same latent bug the brand fill
+    had on the phone. A metal is light by nature (silver is pale grey in
+    every palette), so the label pole is fixed at black and the *fill* is
+    the thing that moves: the hue a gradient end was frozen at is honoured
+    where black already reads on it, and walked darker where it does not.
+    """
+    label = "#000000"
+
+    def fill(seed: str) -> str:
+        if contrast_ratio(label, seed) >= 4.5:
+            return seed
+        return _legible(seed, [label], 4.5)
+
+    return {
+        f"--tier-{name}-fill": fill(light),
+        f"--tier-{name}-fill-dark": fill(dark),
+        f"--tier-{name}-label": label,
+    }
+
+
 def interaction_tokens(tokens: dict[str, str]) -> dict[str, str]:
     """The colours whose only job is to be legible: focus, hover, disabled, label.
 
@@ -227,6 +252,39 @@ def interaction_tokens(tokens: dict[str, str]) -> dict[str, str]:
         it (the warning banner is pale gold, and gold text on it read 1.84:1)."""
         surfaces = [card, bg, field, soft, _mix(card, tokens[tint], 0.18), *alerts]
         return _legible(seed, surfaces, 4.5)
+
+    def filled_pair(light_key: str, dark_key: str, prefix: str) -> dict[str, str]:
+        """A filled surface and the label that sits on it, derived as a pair.
+
+        One shared label colour for every filled surface cannot work: a white
+        label read 2.66:1 on Midnight's candy and 2.12:1 on its mint, while the
+        dark palettes wanted white on mint and black nowhere — the phone capture
+        page was where white-on-candy at 2.7:1 was finally seen. So each family
+        — the brand pair and the success pair — chooses its own label, the pole
+        (white or black) that reads better on the *worse* end of its gradient,
+        and the fill keeps the palette's hue unless no pole reads on it as it
+        came, in which case it moves just enough for its label: Operations
+        Light's candy was 0.02 below white's floor and moved a single step, and
+        pos-focus's dark mint the same for black.
+        """
+        light, dark = tokens[light_key], tokens[dark_key]
+
+        def worst(pole: str) -> float:
+            return min(contrast_ratio(pole, light), contrast_ratio(pole, dark))
+
+        white, black = worst("#FFFFFF"), worst("#000000")
+        label = "#FFFFFF" if white >= black else "#000000"
+
+        def fill(seed: str) -> str:
+            if contrast_ratio(label, seed) >= 4.5:
+                return seed
+            return _legible(seed, [label], 4.5)
+
+        return {
+            f"{prefix}-fill": fill(light),
+            f"{prefix}-fill-dark": fill(dark),
+            f"{prefix}-label": label,
+        }
 
     return {
         # The ring a keyboard reader follows. One for the page's own surfaces and
@@ -266,10 +324,16 @@ def interaction_tokens(tokens: dict[str, str]) -> dict[str, str]:
         "--success-ink": ink(tokens["--mint-dark"], "--mint", tokens["--success-bg"]),
         "--info-ink": ink(tokens["--sky-dark"], "--sky"),
         "--warning-ink": ink(tokens["--sunshine"], "--sunshine", tokens["--warning-bg"]),
-        "--brand-fill": _legible(tokens["--candy"], [label], 4.5),
-        "--brand-fill-dark": _legible(tokens["--candy-dark"], [label], 4.5),
-        "--success-fill": _legible(tokens["--mint"], [label], 4.5),
-        "--success-fill-dark": _legible(tokens["--mint-dark"], [label], 4.5),
+        # The fourth voice: the special/special-offer colour the catalogue keeps
+        # in `--lavender`, as text — it used to exist only as a fill.
+        "--accent-ink": ink(tokens["--lavender"], "--lavender"),
+        **filled_pair("--candy", "--candy-dark", "--brand"),
+        **filled_pair("--mint", "--mint-dark", "--success"),
+        # Paper: what a printed page is. The print rules used to hard-code a
+        # white-and-black document; a token pair says it once, here, and lets a
+        # palette own even its printer.
+        "--paper": "#FFFFFF",
+        "--paper-ink": "#000000",
     }
 
 
@@ -303,8 +367,19 @@ def custom_tokens(primary: str, secondary: str) -> dict[str, str]:
 # surfaces and its hovers, and the values that exist only to stay legible are
 # worked out from them. One place, so a theme cannot keep a focus ring chosen for
 # a background it no longer uses.
+def _complete(theme: dict[str, Any]) -> None:
+    """The state colours, then the tier metals that have no hue token to hang
+    from: their gradients were frozen in the stylesheet, so the seeds are
+    stated here, once, where the rest of the palette's choices live."""
+    tokens = theme["tokens"]
+    tokens.update(interaction_tokens(tokens))
+    tokens.update(tier_pair("silver", "#E8E8E8", "#D0D0D0"))
+    tokens.update(tier_pair("gold", "#FFE082", tokens["--sunshine"]))
+    tokens.update(tier_pair("diamond", "#D4B0FF", tokens["--lavender"]))
+
+
 for _theme in THEMES.values():
-    _theme["tokens"].update(interaction_tokens(_theme["tokens"]))
+    _complete(_theme)
 
 
 def theme_preview(theme_id: str, custom: dict[str, str] | None = None) -> dict[str, Any]:
@@ -315,7 +390,8 @@ def theme_preview(theme_id: str, custom: dict[str, str] | None = None) -> dict[s
                                     custom.get("secondary", DEFAULT_CUSTOM_SECONDARY)))
         # A shop's own two colours move the brand surfaces, so the state colours
         # are worked out again from them: the ring follows the brand, not `_BASE`.
-        tokens.update(interaction_tokens(tokens))
+        # `_complete` re-derives everything the same way the catalogue did.
+        _complete({"tokens": tokens})
     return {
         "id": theme_id if theme_id in THEMES else DEFAULT_THEME_ID,
         "name": theme["name"],

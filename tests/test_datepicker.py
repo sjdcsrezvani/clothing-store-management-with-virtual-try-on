@@ -50,7 +50,7 @@ def test_picker_styles_come_from_theme_tokens():
     assert ".pdp-popup {" in STYLE_CSS
     section = STYLE_CSS[STYLE_CSS.index("/* ===================== Persian date picker"):]
     for token in ("var(--card)", "var(--rule)", "var(--candy)", "var(--ink)",
-                  "var(--field-bg)", "var(--focus-ring)", "var(--button-text)",
+                  "var(--field-bg)", "var(--focus-ring)", "var(--brand-label)",
                   "var(--surface-soft)", "var(--radius)", "var(--shadow-hover)"):
         assert token in section, token
     # States must not rely on colour alone for high-contrast themes.

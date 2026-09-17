@@ -38,6 +38,7 @@ from services.themes import (
     contrast_ratio,
     interaction_tokens,
     theme_preview,
+    tier_pair,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,9 +55,13 @@ WITHOUT_COMMENTS = re.sub(r"/\*.*?\*/", "", CSS, flags=re.S)
 STATE_TOKENS = (
     "--ring", "--ring-brand", "--focus-ring", "--hover-surface", "--sidebar-hover",
     "--disabled-surface", "--disabled-ink", "--danger",
-    "--link", "--link-hover", "--brand-fill", "--brand-fill-dark",
-    "--success-fill", "--success-fill-dark",
-    "--success-ink", "--info-ink", "--warning-ink",
+    "--link", "--link-hover", "--brand-fill", "--brand-fill-dark", "--brand-label",
+    "--success-fill", "--success-fill-dark", "--success-label",
+    "--success-ink", "--info-ink", "--warning-ink", "--accent-ink",
+    "--tier-silver-fill", "--tier-silver-fill-dark", "--tier-silver-label",
+    "--tier-gold-fill", "--tier-gold-fill-dark", "--tier-gold-label",
+    "--tier-diamond-fill", "--tier-diamond-fill-dark", "--tier-diamond-label",
+    "--paper", "--paper-ink",
 )
 
 # Every colour used as text, the hue it is derived from, and the alert background
@@ -173,11 +178,20 @@ FLOORS: tuple[tuple[str, float, object], ...] = (
     ("brand-coloured text on the strongest tint of the brand beneath it", 4.5,
      lambda t: contrast_ratio(t["--link"], _mix(t["--card"], t["--candy"], 0.18))),
     ("a label on the brand fill, both ends of its gradient", 4.5,
-     lambda t: min(contrast_ratio(t[fill], t["--button-text"])
+     lambda t: min(contrast_ratio(t[fill], t["--brand-label"])
                    for fill in ("--brand-fill", "--brand-fill-dark"))),
     ("a label on the success fill, both ends of its gradient", 4.5,
-     lambda t: min(contrast_ratio(t[fill], t["--button-text"])
+     lambda t: min(contrast_ratio(t[fill], t["--success-label"])
                    for fill in ("--success-fill", "--success-fill-dark"))),
+    ("a label on each loyalty metal, both ends of its gradient", 4.5,
+     lambda t: min(contrast_ratio(t[f"--tier-{metal}-{end}"], t[f"--tier-{metal}-label"])
+                   for metal in ("silver", "gold", "diamond") for end in ("fill", "fill-dark"))),
+    ("the special-offer ink on every surface it is read on", 4.5,
+     lambda t: min(contrast_ratio(t["--accent-ink"], t[s])
+                   for s in ("--card", "--bg", "--field-bg", "--surface-soft"))),
+    ("the printed page's border against the paper it prints on", 1.2,
+     lambda t: contrast_ratio(t["--paper-ink"],
+                              _mix(t["--paper"], t["--paper-ink"], 0.25))),
 )
 
 
@@ -199,6 +213,11 @@ def test_every_state_reads_in_all_ten_palettes():
             if value < floor:
                 failures.append(f"{theme_id}: {what} reads {value:.2f}:1, floor {floor}")
     assert not failures, "\n".join(failures)
+    # The table cannot be weakened silently: an entry deleted from FLOORS turns
+    # this inventory red before a palette reads below a floor nobody measures.
+    assert len(FLOORS) == 22, (
+        f"the floors table holds {len(FLOORS)} entries, expected 22 — "
+        "if a state genuinely stopped existing, update this count in the same change")
 
 
 def test_the_state_colours_are_derived_from_the_palette_not_inherited():
@@ -235,6 +254,120 @@ def test_the_state_colours_are_derived_from_the_palette_not_inherited():
         assert measure(custom) >= floor, f"custom brand: {what} reads {measure(custom):.2f}:1"
 
 
+def test_the_fill_and_its_label_are_one_decision():
+    """No single label colour reads on every filled surface in every palette: a
+    white label read 2.66:1 on Midnight's candy and 2.12:1 on its mint, while
+    Kids Boutique's hue turned the same white away at 3.36:1 — the phone capture
+    page was where white-on-candy at 2.7:1 was finally seen. Each family now
+    chooses its own label, the pole that reads on the worse end of its gradient,
+    and the fill keeps the palette's hue unless no pole reads on it as it came
+    (Operations Light's candy moved one step for white, pos-focus's dark mint
+    one step for black). The loyalty metals follow the same doctrine; silver is
+    pale grey in every palette, so their label is fixed at black and the fill
+    is what moves — the diamond's frozen `#A66CFF` end gave a white label 3.3:1.
+
+    The decision is tied to the palette three ways: a moved hue moves the label
+    with it, a custom brand's pair is chosen from the two colours the shop
+    picked rather than inherited, and no palette may ship a pairing the floors
+    elsewhere in this module would refuse.
+    """
+    for theme_id in THEMES:
+        tokens = theme_preview(theme_id)["tokens"]
+        for family, fill_key, dark_key, label_key in (
+                ("brand", "--candy", "--candy-dark", "--brand-label"),
+                ("success", "--mint", "--mint-dark", "--success-label")):
+            label = tokens[label_key]
+            assert label in {"#FFFFFF", "#000000"}, (theme_id, family, label)
+            # The pole is the one that reads on the worse end of the gradient,
+            # not merely a pole that passes on one end while the other fails
+            # unseen.
+            other = "#000000" if label == "#FFFFFF" else "#FFFFFF"
+            # Measured on the *derived* fills: the raw hue is allowed to sit
+            # below the floor — moving it is half of what the pair is for.
+            derived = (tokens[f"--{family}-fill"], tokens[f"--{family}-fill-dark"])
+            worse = min(contrast_ratio(surface, label) for surface in derived)
+            worse_other = min(contrast_ratio(surface, other) for surface in derived)
+            assert worse >= worse_other, (
+                f"{theme_id}: the {family} label is the pole that reads worse")
+            assert worse >= 4.5, (
+                f"{theme_id}: the {family} label reads {worse:.2f}:1 on its own fill")
+
+    # Derivation, not inheritance: move the hue and the label follows it. A
+    # darker seed keeps the pole (which is why the floors, not this line, catch
+    # a label pinned to one pole) — a lighter one flips it, and an inherited
+    # `--button-text` survives neither.
+    moved = dict(THEMES[DEFAULT_THEME_ID]["tokens"])
+    reference = interaction_tokens(moved)["--brand-label"]
+    moved["--candy"] = "#F5B8C4"
+    flipped = interaction_tokens(moved)["--brand-label"]
+    assert flipped != reference, (
+        "the brand label ignored the hue it is derived from")
+    assert flipped == "#000000" and reference == "#FFFFFF", (
+        "the flipped seed did not flip the pole; the check proves nothing")
+
+    # A shop's own colours get their own decision, and it must read.
+    custom = theme_preview("custom-brand", {"primary": "#003D66", "secondary": "#0F766E"})["tokens"]
+    assert custom["--brand-label"] in {"#FFFFFF", "#000000"}
+    assert min(contrast_ratio(custom[k], custom["--brand-label"])
+               for k in ("--brand-fill", "--brand-fill-dark")) >= 4.5
+
+
+def test_the_tier_metals_are_derived_pairs():
+    """The loyalty badges were painted from hexes frozen in the stylesheet — a
+    white label on the diamond's `#A66CFF` end read 3.3:1, the same latent bug
+    the brand fill had on the phone. Each metal is now a derived pair like the
+    buttons: the label is the palette's choice, the fill keeps the frozen hue
+    where that label already reads on it, and moves where it does not — the
+    diamond's dark end walked from `#A66CFF` to `#7364E8` in most palettes and
+    `#8662D7` in Kids Boutique, whose own lavender is lighter.
+
+    A metal's fill is also tied to its palette: the gold and diamond ends are
+    the palette's own `--sunshine` and `--lavender`, so a palette that moves its
+    hue moves its metals, and a custom brand re-derives them like everything
+    else.
+    """
+    for theme_id in THEMES:
+        tokens = theme_preview(theme_id)["tokens"]
+        for metal in ("silver", "gold", "diamond"):
+            label = tokens[f"--tier-{metal}-label"]
+            assert label in {"#FFFFFF", "#000000"}, (theme_id, metal, label)
+            for end in ("fill", "fill-dark"):
+                ratio = contrast_ratio(tokens[f"--tier-{metal}-{end}"], label)
+                assert ratio >= 4.5, (theme_id, metal, end, f"{ratio:.2f}:1")
+
+    # The gold and diamond ends come from the palette's own hues: lighten the
+    # sunshine and the gold fill follows it, without losing its label.
+    moved = dict(THEMES[DEFAULT_THEME_ID]["tokens"])
+    reference = tier_pair("gold", "#FFE082", moved["--sunshine"])["--tier-gold-fill-dark"]
+    moved["--sunshine"] = "#E7A932"
+    assert tier_pair("gold", "#FFE082", moved["--sunshine"])["--tier-gold-fill-dark"] != reference, (
+        "the gold metal ignored the palette hue it is derived from")
+
+    # The wiring follows the palette, not a constant: a metal's dark end is the
+    # palette's own hue re-derived, in every palette, exactly as `tier_pair`
+    # computes it from that palette's sunshine and lavender.
+    for theme_id in THEMES:
+        tokens = THEMES[theme_id]["tokens"]
+        assert tokens["--tier-gold-fill-dark"] == tier_pair("gold", "#FFE082", tokens["--sunshine"])["--tier-gold-fill-dark"], theme_id
+        assert tokens["--tier-diamond-fill-dark"] == tier_pair("diamond", "#D4B0FF", tokens["--lavender"])["--tier-diamond-fill-dark"], theme_id
+
+    # Honouring the hue is half of the pair's purpose: where black already reads
+    # on the frozen stop, the fill must keep it — a derivation that moved every
+    # stop everywhere would be a repaint, not a derivation.
+    base = THEMES[DEFAULT_THEME_ID]["tokens"]
+    assert base["--tier-silver-fill"] == "#E8E8E8" and base["--tier-silver-fill-dark"] == "#D0D0D0", (
+        "the silver fill moved where its label already read on the frozen hue")
+    assert base["--tier-gold-fill"] == "#FFE082", (
+        "the gold fill moved where its label already read on the frozen hue")
+    assert base["--tier-diamond-fill"] == "#D4B0FF", (
+        "the diamond fill moved where its label already read on the frozen hue")
+
+    custom = theme_preview("custom-brand", {"primary": "#003D66", "secondary": "#0F766E"})["tokens"]
+    for metal in ("silver", "gold", "diamond"):
+        assert min(contrast_ratio(custom[f"--tier-{metal}-{end}"], custom[f"--tier-{metal}-label"])
+                   for end in ("fill", "fill-dark")) >= 4.5
+
+
 def test_the_sidebar_tells_a_hovered_item_from_the_one_that_is_current():
     """Two states that were drawn with one colour, and the colour was almost the
     sidebar itself: measured 1.10:1 in Kids Boutique, 1.37:1 in Atelier.
@@ -265,9 +398,28 @@ STYLE_BLOCK = re.compile(r"<style[^>]*>(.*?)</style>", re.S)
 STYLE_ATTRIBUTE = re.compile(r'style="([^"]*)"')
 
 
+SCRIPT_BLOCK = re.compile(r"<script[^>]*>.*?</script>", re.S)
+JINJA_COMMENT = re.compile(r"\{#.*?#}", re.S)
+
+
+def _css_of(source: str) -> str:
+    """The stylesheet-bearing text of a template. Scripts hold no CSS, and their
+    braces — and a Jinja comment's — would otherwise be parsed as rules by the
+    brace-counting RULE scan, leaving a residue chunk that mispairs a fill with
+    a neighbouring label (the pairing page's landing script did exactly that).
+    """
+    without_scripts = SCRIPT_BLOCK.sub("", source)
+    without_scripts = re.sub(r"/\*.*?\*/", "", without_scripts, flags=re.S)
+    return JINJA_COMMENT.sub("", without_scripts)
+
+
 def _declaration_chunks(source: str) -> list[str]:
-    chunks = [body for _selector, body in _rules_of(source)]
-    chunks += STYLE_BLOCK.findall(source) + STYLE_ATTRIBUTE.findall(source)
+    css = _css_of(source)
+    # Each rule's own body — not the whole <style> block as one net: a block-level
+    # split mispairs the first background with the last colour across different
+    # rules and invents an offender that no browser renders.
+    chunks = [body for _selector, body in _rules_of(css)]
+    chunks += STYLE_ATTRIBUTE.findall(css)
     return chunks
 
 
@@ -362,9 +514,17 @@ def test_a_label_is_never_painted_on_the_raw_brand_hue():
     """The same rule for fills: a white label on `--candy` measured 3.34:1 on the
     light palettes and 2.10:1 on the dark one, because the hue was picked for a
     brand and not for a label. A labelled surface is `--brand-fill`,
-    `--success-fill` or `--danger`, each derived against the label it carries.
+    `--success-fill`, `--danger` or one of the loyalty metals, each derived
+    against the label it carries.
     """
     fills = re.compile(r"var\((%s)\)" % "|".join(HUE_TOKENS))
+    derived_fill = re.compile(r"var\(--((?:brand|success|tier-silver|tier-gold|tier-diamond))-fill(?:-dark)?\)")
+    own_label = {
+        "brand": "--brand-label", "success": "--success-label",
+        "tier-silver": "--tier-silver-label",
+        "tier-gold": "--tier-gold-label",
+        "tier-diamond": "--tier-diamond-label",
+    }
     offenders = []
     chunks = [("style.css", body) for _selector, body in _rules()]
     for relative, source in _template_sources():
@@ -373,12 +533,35 @@ def test_a_label_is_never_painted_on_the_raw_brand_hue():
         pairs = dict(_declarations(chunk))
         background = " ".join(value for name, value in _declarations(chunk)
                               if name.startswith("background"))
-        if not fills.search(background):
+        colour = pairs.get("color", "").strip()
+        if fills.search(background):
+            # A full-strength hue was picked for the brand, not for a label —
+            # any stated colour on one is an offender, whatever token or
+            # literal it names (a literal white was the 2.66:1 on Midnight; an
+            # ink token would be a different family's mistake). A label belongs
+            # on a derived fill (--brand-fill/--success-fill/--danger, each
+            # derived against its label) or on a tinted color-mix surface whose
+            # ink the floors test measures against that very tint.
+            if "color-mix" not in background and colour:
+                offenders.append(
+                    f"{where}: a label `{colour}` on the raw hue {background.strip()[:50]}")
             continue
-        if pairs.get("color", "").strip() in {"var(--button-text)", "#fff", "#ffffff", "white"}:
-            offenders.append(f"{where}: a label on {background.strip()[:60]}")
+        match = derived_fill.search(background)
+        if not match:
+            continue
+        # A derived fill carries its own family's label — the token, not a
+        # literal, and not the other family's label: candy and mint chose
+        # different poles in different palettes, so one shared label colour
+        # (white included — it was the 2.66:1 on Midnight) would be wrong
+        # somewhere by construction. A chunk may repaint the fill alone — the
+        # Atelier button override does — and inherit the label from the base
+        # rule; only a chunk that states a colour must state the right one.
+        if colour and colour != f"var({own_label[match.group(1)]})":
+            offenders.append(
+                f"{where}: {background.strip()[:44]}… carries `{colour}` "
+                f"instead of var({own_label[match.group(1)]})")
     assert not offenders, (
-        "these put a label on the brand hue instead of the fill derived for it:\n"
+        "these put a label on a hue, or the wrong family's label on a derived fill:\n"
         + "\n".join(offenders))
 
 
@@ -456,11 +639,17 @@ def test_a_filled_button_changes_on_hover_without_repainting_its_label():
     assert declarations.get("transform") or declarations.get("box-shadow"), (
         "`.btn:hover` changes nothing a reader can see")
     # A filled button's label and fill are still the pairs the palette guard
-    # measures, in all ten, so nothing below them moved either.
+    # measures, in all ten, so nothing below them moved either: each family's
+    # own label on its own fills, and the shared label on the alarm fill.
     for theme_id in THEMES:
         tokens = theme_preview(theme_id)["tokens"]
         for fill in ("--candy", "--candy-dark", "--mint", "--mint-dark", "--danger"):
             assert contrast_ratio(tokens["--button-text"], tokens[fill]) > 1, (theme_id, fill)
+        for fill, label in (("--brand-fill", "--brand-label"),
+                            ("--brand-fill-dark", "--brand-label"),
+                            ("--success-fill", "--success-label"),
+                            ("--success-fill-dark", "--success-label")):
+            assert contrast_ratio(tokens[label], tokens[fill]) > 1, (theme_id, fill)
 
 
 # ── The shell, driven from the keyboard ───────────────────────────────────────
@@ -708,3 +897,36 @@ def test_the_shell_still_carries_what_the_palette_guard_expects():
     assert ".skip-link:focus" in WITHOUT_COMMENTS
     assert DEFAULT_THEME_ID in THEMES
     assert ".app-topbar :focus-visible" in WITHOUT_COMMENTS
+    # The no-frozen-colour guard reads the stylesheet with its `:root` block cut
+    # away; if a second token block ever appears — or the first is renamed — the
+    # guard would silently start scanning a block that *is* the palette.
+    assert len(re.findall(r"(?m)^:root\s*\{", CSS)) == 1, (
+        "the guard cuts exactly one `:root` block; the stylesheet no longer has it")
+
+
+def test_the_stylesheet_declares_no_colour_the_theme_should_own():
+    """A hex written into the stylesheet is a colour chosen for one palette being
+    worn by all ten: `#E8DDD5` drew an invisible border on the dark palettes, the
+    danger zone froze a red next to palettes whose danger was derived, the print
+    rules froze paper itself, and the badge pairs were hand-tuned variants of
+    derivations the theme already computes. The templates were swept of their own
+    hexes the same way; this is the same rule for the stylesheet.
+
+    The palette's source of truth — the one `:root` block — is cut away before
+    scanning: that block must carry literals, they are the light palette's
+    definition. Everything outside it speaks in tokens, `color-mix` expressions
+    over tokens, or nothing at all; `var(--tier-silver-label)` names a token and
+    is not the named colour `silver`.
+    """
+    without_root = WITHOUT_COMMENTS[WITHOUT_COMMENTS.index("}", WITHOUT_COMMENTS.index(":root")) + 1:]
+    offenders = []
+    for selector, body in RULE.findall(without_root):
+        for name, value in _declarations(body):
+            if not COLOUR_PROPERTY.match(name):
+                continue
+            stripped = re.sub(r"var\(--[a-z0-9-]+\)", "", value, flags=re.I)
+            if COLOUR_LITERAL.search(stripped):
+                offenders.append(f"{selector.strip()[:60]} {{ {name}: {value.strip()[:60]} }}")
+    assert not offenders, (
+        "the stylesheet freezes a colour the theme should own (outside :root):\n"
+        + "\n".join(offenders))

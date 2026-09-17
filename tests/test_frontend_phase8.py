@@ -27,7 +27,11 @@ def test_analytics_has_no_external_chart_dependency():
 
 def test_print_layout_is_light_and_readable_for_all_themes():
     css = (ROOT / "static/css/style.css").read_text()
-    assert "html, body { background: #fff !important; color: #000 !important; }" in css
+    # Paper is a token pair now (`--paper`/`--paper-ink`, derived in
+    # services/themes.py): every palette owns its printer, and
+    # test_keyboard_shell's no-frozen-colour guard keeps literals out of the
+    # print rules entirely.
+    assert "html, body { background: var(--paper) !important; color: var(--paper-ink) !important; }" in css
     assert ".invoice, .invoice .invoice-header" in css
 
 
