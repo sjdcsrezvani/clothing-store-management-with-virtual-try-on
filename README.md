@@ -344,6 +344,20 @@ theme, so it matches light, dark and high-contrast alike.
   known: «دست گوشی» once the phone claims it, «تحویل شد» / «نرسید» from the
   carrier's own report. The text is frozen when the message is queued, so
   editing a template later never rewrites what a customer actually received.
+  Filtered to the خلاصه ماهانه sender, each digest row carries its month
+  («مرداد ۱۴۰۵») and a form lets the owner **re-send a past month by hand** —
+  the recorded text goes out again verbatim, under the same month ref; the
+  scheduler's once-per-month rule never blocks the owner's own decision.
+- **📊 خلاصه ماهانه** — the month's reading, texted to the owner when the
+  Persian month turns: takings and profit, the busiest day, what sold, who
+  bought, the best seller — the same sentences سود و زیان writes, condensed to
+  one message, describing the month that *finished*. The owner's number in the
+  settings is the opt-in (clearing it switches the digest off), the day it
+  fires is configurable, one ref per month keeps retries and restarts from
+  double-sending, and a month with no sales says so instead of inventing
+  zeros. The پیامک page **previews the exact text** from last month's real
+  figures before any phone is saved — composed by the same composer the send
+  uses, so what is shown is what would arrive.
 - **An entry says what it was built from, not only what it said.** The customer
   values behind each message are recorded beside it — every placeholder the
   sentence used, with the shop's own label and the value of that moment («نام

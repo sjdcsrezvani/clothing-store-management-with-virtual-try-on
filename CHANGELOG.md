@@ -1,3 +1,22 @@
+## 2.5.9 — 2026-09-19
+
+### روایت ماه: the month's sentences go where the owner already is
+
+- **«روایت این ماه» on the dashboard.** The same one-sentence-per-chart reading سود و زیان writes now sits under the month cards, owner-only and lazily computed — a manager's visit never pays for it. The chart-sentence builders take the period as a word («این بازه» / «این ماه» / a named month), so the page, the strip and the phone say the same thing about the same figures by construction, guarded against drift.
+- **A monthly digest to the owner's phone.** Once the Persian month turns (day configurable, default the 3rd), the finished month condenses into one text — takings and profit, the day worth naming, what sold, who bought, the best seller — built from the very sentences the analytics page draws. A quiet month says so in its own words rather than inventing zeros. The phone number in the settings **is** the opt-in; the month's ref (`digest:1405-06`) keeps it to one send however many times the scheduler passes, retries or restarts, and a broken reading never disturbs the sweep.
+- **The پیامک page previews the digest before anyone opts in.** The owner sees the actual text, rendered from last month's real figures, composed by the same composer the send uses — so what is shown is what would be sent. Looking queues nothing, and the preview names the finished month even on the 1st, when the send itself is still quiet.
+- **The history groups the digest by its month and re-sends it by hand.** Each digest row carries its month («مرداد ۱۴۰۵») on the خلاصه ماهانه view, beside a form that re-sends any past month: owner-only, replaying the **recorded** body verbatim under the same ref — a summary cannot be silently rewritten after the fact. An unknown ref, an empty body and a shop with no digest phone each refuse with the reason, and every resend lands in the audit log.
+
+### پوسته و صفحات: the shell keeps its promises everywhere
+
+- **Charts prove their palette.** The renderer's harness now drives real catalogue tokens: the suite draws the charts in Midnight and Kids Boutique — one dark, one light, no shared accent — and asserts each takes its own colours (bars, ring fills, the empty state's axis rule) and reads right-to-left in both. Frozen shadows on the try-on and سود و زیان pages read the theme again; the source guard now catches function-form colours (`rgba(`/`hsl(`) the hex rule could not see.
+- **The checkout till and the invoice's print view, swept like the shell.** The payment chooser is a real radiogroup, the terminal status announces itself to a screen reader, and the invoice's debt, points and discount rows print as ink on paper instead of theme colours on white — Midnight's debt line used to print at 2.12:1 and the discount box as a dark rectangle. The floors table gained the till's clean pairings, and its floor values are themselves guarded.
+- **Text on a hovered row reads at the floor.** The cross-measurement found the family's remainder: the row hover tint knew nothing of the inks sitting on it (links at 4.19:1, quiet meta at 3.70:1 in Kids Boutique). The hover surface joined every ink's derivation, and a derived `--ink-on-hover` gives the one authored colour on the row its own walked lightness.
+- **The settings page, audited.** Fifteen numeric fields are validated server-side — negatives refused with the field's Persian label and the owner's value quoted back, Persian digits normalised **into** the store (the owner types «۸», the store keeps `8`) — the surcharge and points readers clamp against pre-existing garbage, the stray English label is translated, and the page's inline styles moved to classes the theme owns.
+- **The accounting share bar states its figure.** The سهم column was a div whose width *was* the share; the number now prints beside it via the house `pct()` (an empty period reads «—», not an invented nought), with the meter labelled for a screen reader.
+
+**No schema change.** The database stays on revision 19.
+
 ## 2.5.8 — 2026-09-17
 
 ### پوسته: every filled surface derives its own label, and the stylesheet owns no colour the theme should
