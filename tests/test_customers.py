@@ -10,7 +10,7 @@ import itertools
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 import jdatetime
 import pytest
@@ -200,9 +200,14 @@ def test_tag_filter_matches_whole_tags_only(authed, db_session):
 
 
 def test_sorts_put_the_expected_customer_first(authed, db_session):
-    small = make_customer(db_session, first_name="کمخرید", total_spent=100_000, total_purchases=1)
-    big = make_customer(db_session, first_name="پرخرید", total_spent=9_000_000, total_purchases=9,
+    # The stored counters are seeded *against* the invoices on purpose: the list
+    # must order — and print — by what the invoices say, not by the counter.
+    small = make_customer(db_session, first_name="کمخرید", total_spent=9_000_000, total_purchases=9)
+    make_sale(db_session, small, amount=100_000)
+    big = make_customer(db_session, first_name="پرخرید", total_spent=100_000, total_purchases=1,
                         total_debt=400_000, total_points=900)
+    make_sale(db_session, big, amount=9_000_000)
+    make_sale(db_session, big, amount=2_000_000)
 
     def first_name_in(body):
         found = re.search(r'/admin/customers/(\d+)"', body)
@@ -1275,3 +1280,135 @@ def test_a_customer_birthday_round_trips_through_the_form(authed, db_session):
     child_customer = make_customer(db_session, buys_for="child", child_name="آوا",
                                    child_birthday="02-03", child_birth_year=1400)
     assert 'value="۱۴۰۰/۰۲/۰۳"' in panel_html(authed, child_customer)
+
+
+# ── list: figures from the invoices ─────────────────────────────────────────
+
+def test_the_list_prints_what_the_invoices_say_not_the_counter(authed, db_session):
+    """A stale counter must not mislead the shop that reads the list.
+
+    The stored counters are the tier's ledger, but they are maintained by
+    hand at every write site — a refund whose reversal missed, a crash
+    between the sale and the counter, and the list would show a customer
+    spending money the invoices never recorded. The page now prints the
+    invoices' own aggregate, so the drift is visible in the counter columns
+    of the profile instead of being printed as truth here.
+    """
+    drifted = make_customer(db_session, first_name="وامانده", total_spent=9_000_000,
+                            total_purchases=7)
+    make_sale(db_session, drifted, amount=1_200_000)
+
+    body = list_html(authed)
+    assert "1,200,000" in body            # the invoices' sum, printed
+    assert "9,000,000" not in body        # the drifted counter, not printed
+    assert ">1 خرید<" in body             # one counted invoice, not seven
+
+
+def test_the_list_counts_only_confirmed_unrefunded_invoices(authed, db_session):
+    """The same rows the profile counts: confirmed, never refunded.
+
+    A waiting payment is not a purchase and a refunded invoice is not spend,
+    so neither may print as one. The three-way seed states each boundary:
+    the waiting sale, the refunded one, and the one that counts.
+    """
+    customer = make_customer(db_session, first_name="مرزی")
+    make_sale(db_session, customer, amount=500_000, confirmed=False)          # waiting
+    refunded = make_sale(db_session, customer, amount=700_000)
+    refunded.is_refunded = True
+    db_session.commit()
+    make_sale(db_session, customer, amount=300_000)                           # counted
+
+    body = list_html(authed)
+    assert "300,000" in body
+    assert "500,000" not in body
+    assert "700,000" not in body
+
+
+def test_the_counter_sort_orders_by_the_counted_invoices(authed, db_session):
+    """count_desc must order by the invoices' count, not the stored counter."""
+    counter_big = make_customer(db_session, first_name="شمارنده‌بزرگ", total_purchases=9)
+    make_sale(db_session, counter_big, amount=100_000)
+    invoice_big = make_customer(db_session, first_name="فاکتوربزرگ", total_purchases=1)
+    make_sale(db_session, invoice_big, amount=100_000)
+    make_sale(db_session, invoice_big, amount=100_000)
+
+    body = list_html(authed, "?sort=count_desc")
+    first = re.search(r'/admin/customers/(\d+)"', body).group(1)
+    assert first == str(invoice_big.id)
+
+
+# ── settings: the server owns the numbers ────────────────────────────────────
+
+def test_a_negative_surcharge_is_refused_not_saved_as_a_hidden_discount(authed, db_session):
+    """«درصد افزایش نسیه» at −10 would take 100,000 تومان *off* a credit sale.
+
+    The input's min="0" is the browser's kindness, not the server's rule: a
+    typed minus sign posts straight through, and the reader happily computed a
+    negative surcharge. The value is refused with the field's Persian name and
+    nothing is written.
+    """
+    from models import Settings
+
+    token = csrf_token(authed, "/admin/settings")
+    response = authed.post("/admin/settings", data={
+        "csrf_token": token,
+        "credit_surcharge_percent": "-10",
+    }, follow_redirects=False)
+    assert response.status_code == 303 and "err=" in response.headers["location"]
+    assert "درصد افزایش نسیه" in unquote(response.headers["location"])
+    assert db_session.query(Settings).filter(
+        Settings.key == "credit_surcharge_percent").first() is None
+
+
+def test_garbage_in_a_numeric_field_is_refused_with_the_field_named(authed, db_session):
+    """«۵۰۶۴» typed as a price, «abc» typed by a slip — neither is a number the
+    app can act on, and `get_setting_int` answering the default would be the
+    third silent answer. The save is refused and the field is named."""
+    from models import Settings
+
+    token = csrf_token(authed, "/admin/settings")
+    response = authed.post("/admin/settings", data={
+        "csrf_token": token,
+        "tier_points_per_amount": "abc",
+    }, follow_redirects=False)
+    assert response.status_code == 303 and "err=" in response.headers["location"]
+    assert "امتیاز به ازای هر خرید" in unquote(response.headers["location"])
+    assert db_session.query(Settings).filter(
+        Settings.key == "tier_points_per_amount").first() is None
+
+
+def test_persian_digits_are_understood_by_the_settings_form(authed, db_session):
+    """The owner types ۸ for the barcode length; the page must read Persian
+    digits the way every other money and count field in the app does."""
+    from models import Settings
+
+    token = csrf_token(authed, "/admin/settings")
+    response = authed.post("/admin/settings", data={
+        "csrf_token": token,
+        "barcode_code_length": "۸",
+    }, follow_redirects=False)
+    assert response.status_code == 303 and "msg=" in response.headers["location"]
+    row = db_session.query(Settings).filter(Settings.key == "barcode_code_length").one()
+    assert row.value == "8"
+
+
+def test_a_negative_points_rate_cannot_take_points_off_a_purchase(db_session):
+    """Defense in depth: a negative rate that somehow reached Settings (a row
+    written before the rule, or by hand) must not drive a customer's points
+    below zero on their next buy."""
+    from services.tier import calculate_points
+
+    config = {"points_per_toman": 100_000, "points_per_amount": -10}
+    assert calculate_points(500_000, config) == 0
+    assert calculate_points(500_000, {"points_per_toman": 100_000, "points_per_amount": 10}) == 50
+
+
+def test_a_negative_surcharge_row_cannot_discount_a_credit_sale(db_session):
+    """The same defence at the نسیه reader: a stored −10 must read as off."""
+    from services.accounting import apply_credit_surcharge
+
+    from tests.test_customers import set_setting
+
+    set_setting(db_session, "credit_surcharge_percent", "-10")
+    surcharge, final = apply_credit_surcharge(db_session, 1_000_000, 0)
+    assert (surcharge, final) == (0, 1_000_000)

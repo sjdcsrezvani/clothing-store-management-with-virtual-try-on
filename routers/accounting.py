@@ -549,12 +549,17 @@ async def admin_credit_customer(customer_id: int, request: Request, db: Session 
     for sale in unpaid:
         key = age_bucket(sale)
         late = days_past_due(sale)
+        # The figures the page prints are worked out here, by the service's own
+        # arithmetic (`sale_remaining` clamps a drifted row at 0), so the page
+        # cannot disagree with the debt report that uses the same helper.
         invoice_status[sale.id] = {
             "bucket": key,
             "label": AGE_BUCKET_LABELS[key],
             "days_late": max(0, late),
             "due": as_utc(sale.credit_due_date),
             "effective": due_effective_at(sale),
+            "paid": sale.credit_paid_amount or 0,
+            "remaining": sale_remaining(sale),
         }
         if key != "current":
             overdue_amount += sale_remaining(sale)
@@ -577,9 +582,9 @@ async def admin_credit_customer(customer_id: int, request: Request, db: Session 
         "credit_limit": get_credit_limit(db, customer),
         "custom_limit": customer.credit_limit,
         "unpaid_sales": unpaid,
+        "invoice_status": invoice_status,
         "payments": payments,
         "reversal_reasons": reversal_reasons,
-        "invoice_status": invoice_status,
         "overdue_amount": overdue_amount,
         "oldest_overdue": oldest_overdue,
         "drift": drift,

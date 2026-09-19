@@ -59,7 +59,7 @@ from services.customers import (
     serialize_tags,
     update_customer_meta,
 )
-from models import to_english_digits
+from models import to_english_digits, to_persian_digits
 from services.backup import create_backup, list_backups, backup_download_path
 from services.dashboard import dashboard_overview
 from services.pos_reconciliation import unresolved_transactions
@@ -801,6 +801,56 @@ async def admin_update_settings(request: Request, db: Session = Depends(get_db))
             code_length = 0
         if code_length < 4 or code_length > 12:
             return RedirectResponse(url="/admin/settings?err=تعداد رقم کد بارکد باید بین ۴ تا ۱۲ باشد.", status_code=303)
+        # Stored normalised like every numeric rule below: readers parse with
+        # int() and must never meet «۸» in the store.
+        updates["barcode_code_length"] = str(code_length)
+    # Every numeric setting the form posts is checked before anything is saved.
+    # The `min`/`max` attributes are the browser's kindness to a careful owner,
+    # not the server's rule: a typed minus sign, a stray Persian digit, or a
+    # cleared field posted straight through to Settings, and the readers
+    # answered in their own ways — a negative نسیه surcharge *discounted* the
+    # invoice, a negative points rate drove a customer's points below zero,
+    # and a negative threshold promoted every customer to gold. A value the
+    # page cannot explain is refused with the field's name, never saved.
+    numeric_rules = {
+        "birthday_sms_days_before": (0, 60, "روزهای قبل از تولد"),
+        "tryon_daily_limit": (0, 1000, "سقف تولید روزانه"),
+        "credit_terms_days": (0, 365, "مهلت پرداخت نسیه"),
+        "credit_reminder_min_hours": (0, 24 * 30, "فاصله بین دو یادآوری"),
+        "default_credit_limit": (0, None, "سقف اعتبار پیش‌فرض"),
+        "credit_surcharge_percent": (0, 100, "درصد افزایش نسیه"),
+        "tier_points_per_amount": (0, None, "امتیاز به ازای هر خرید"),
+        "tier_points_per_toman": (0, None, "مبلغ مبنای امتیاز"),
+        "tier_gold_threshold": (0, None, "آستانه سطح طلایی"),
+        "tier_gold_discount_percent": (0, 100, "درصد تخفیف سطح طلایی"),
+        "tier_gold_birthday_discount": (0, None, "تخفیف تولد سطح طلایی"),
+        "tier_diamond_threshold": (0, None, "آستانه سطح الماس"),
+        "tier_diamond_discount_percent": (0, 100, "درصد تخفیف سطح الماس"),
+        "tier_diamond_birthday_discount": (0, None, "تخفیف تولد سطح الماس"),
+        "tier_downgrade_months": (0, 120, "ماه‌های عدم خرید"),
+    }
+    for key, (low, high, label) in numeric_rules.items():
+        raw = str(form.get(key, "")).strip()
+        if not raw:
+            continue
+        try:
+            number = int(to_english_digits(raw))
+        except (TypeError, ValueError):
+            return RedirectResponse(
+                url=f"/admin/settings?err=«{label}» باید یک عدد باشد — «{raw}» ذخیره نشد.",
+                status_code=303)
+        if number < low or (high is not None and number > high):
+            ceiling = f" تا {to_persian_digits(high)}" if high is not None else ""
+            return RedirectResponse(
+                url=f"/admin/settings?err=«{label}» نمی‌تواند منفی باشد{ceiling} — مقدار ذخیره نشد.",
+                status_code=303)
+    # A validated numeric setting is stored normalised: the owner typed
+    # Persian digits, but every reader (`get_barcode_code_length`, the tier
+    # thresholds…) parses with `int()` and must never meet «۸» in the store.
+    for key, (low, high, label) in numeric_rules.items():
+        raw = str(form.get(key, "")).strip()
+        if raw:
+            updates[key] = str(int(to_english_digits(raw)))
     for key, value in updates.items():
         setting = db.query(Settings).filter(Settings.key == key).first()
         if setting:

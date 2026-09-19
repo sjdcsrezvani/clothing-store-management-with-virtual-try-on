@@ -23,7 +23,7 @@ from services._common import (
 from services.customers import signup_birthday_fields
 from services.accounting import (
     apply_credit_surcharge, credit_due_date_for, credit_sale_allowed, credit_terms_days,
-    open_cash_session,
+    open_cash_session, sale_remaining,
 )
 from services.discount import calculate_discounts, apply_discounts_after_sale
 from services.campaigns import (
@@ -1079,6 +1079,7 @@ async def sales_confirm(
         "discounts": discounts,
         "invoice_path": invoice_path,
         "invoice_text": invoice_text,
+        "credit_remaining": sale_remaining(sale),
         "fmt": fmt,
         "jalali_str": jalali_str,
         "points_earned": points_earned,
@@ -1119,6 +1120,7 @@ async def sales_invoice_view(sale_id: int, request: Request, db: Session = Depen
         "discounts": discounts,
         "invoice_path": invoice_path,
         "invoice_text": invoice_text,
+        "credit_remaining": sale_remaining(sale),
         "fmt": fmt,
         "jalali_str": jalali_str,
         "points_earned": sale.points_earned,
@@ -1240,7 +1242,7 @@ async def sale_refund(sale_id: int, request: Request, refund_reason: str = Form(
             # نسیه: a refund cancels the remaining unpaid debt (payments already
             # received stay in the ledger; the owner refunds cash separately).
             if sale.payment_method == "credit":
-                remaining = sale.final_amount - (sale.credit_paid_amount or 0)
+                remaining = sale_remaining(sale)
                 customer.total_debt = max(0, (customer.total_debt or 0) - remaining)
 
             # Recompute tier after the points reversal (points may have been the

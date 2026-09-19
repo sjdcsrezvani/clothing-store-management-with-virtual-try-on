@@ -523,7 +523,13 @@ th {
 th:first-child { border-radius: 0 var(--radius-sm) 0 0; }
 th:last-child  { border-radius: var(--radius-sm) 0 0 0; }
 
-tbody tr:hover { background: var(--hover-surface); }
+tbody tr:hover { background: var(--hover-surface); color: var(--ink-on-hover); }
+/* Every ink inside a hovered row is derived against the tint it lands on — the
+   link included — so the row may keep its own derived colours under the cursor.
+   The quiet meta text is the one authored colour on the row: it takes the
+   derived hover ink, which is its own lightness walked until it reads on the
+   tint (Kids Boutique's warm grey read 3.70:1 on its candy wash as authored). */
+tbody tr:hover .customer-meta, tbody tr:hover .muted { color: var(--ink-on-hover); }
 tbody tr:last-child td { border-bottom: none; }
 
 /* ===================== Stats grid ===================== */
@@ -746,6 +752,12 @@ tbody tr:last-child td { border-bottom: none; }
 }
 .summary-row span:first-child { direction: rtl; }
 .summary-row.discount { color: var(--success-ink); }
+/* The debt row is the attention colour (money owed); the points row is the
+   brand's voice. Classes rather than inline styles, so the print state below
+   can own what the paper shows — inline styles are outside its reach. */
+.summary-row.attention { color: var(--persimmon); font-weight: 700; }
+.summary-row.points { color: var(--link); font-weight: 700; }
+.discount-details { padding: 0.3rem 0.5rem; font-size: 0.8rem; background: var(--surface-soft); border-radius: 6px; margin: 0.3rem 0; }
 .summary-row.total {
   font-size: 1.15rem;
   font-weight: 800;
@@ -926,6 +938,8 @@ html[data-theme="kids-boutique"] .context-mark, html[data-theme="kids-boutique"]
   html, body { background: var(--paper) !important; color: var(--paper-ink) !important; }
   .invoice, .invoice .invoice-header, .invoice-items, .invoice-customer { background: var(--paper) !important; color: var(--paper-ink) !important; }
   .invoice .summary-row.discount { color: var(--paper-ink) !important; font-weight: 800; }
+  .invoice .summary-row.attention, .invoice .summary-row.points { color: var(--paper-ink) !important; }
+  .invoice .discount-details { background: transparent !important; }
   .invoice table th, .invoice table td { color: var(--paper-ink) !important; background: var(--paper) !important; border-color: color-mix(in srgb, var(--paper) 75%, var(--paper-ink)) !important; }
 }
 
@@ -1024,8 +1038,16 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 .ranked-money { font-weight: 800; }
 .ranked-profit { color: var(--success-ink); font-size: 0.78rem; }
 
+/* The month in prose — the dashboard's reading strip. Prose lines like the
+   ranked rows', but no ranks and no figures to align: it is a paragraph list. */
+.reading-list { list-style: none; margin: 0; padding: 0; }
+.reading-list li { padding: 0.55rem 0; border-bottom: 1px solid var(--rule); line-height: 1.9; }
+.reading-list li:last-child { border-bottom: none; }
+
 /* Settings: the standing of the downgrade rule, under the one field that sets it. */
 .settings-downgrade-note { margin: 0 0 1.5rem; font-size: 0.85rem; line-height: 1.9; }
+.settings-section { margin-top: 2rem; }
+.settings-submit { margin-top: 1.5rem; }
 
 .danger-details { border: 1px dashed var(--candy) !important; padding: 0.9rem 1.1rem; color: var(--link-hover); background: var(--danger-bg); }
 .danger-details::before { display: none; }
@@ -1137,6 +1159,26 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 }
 .chart-card { min-height: 280px; overflow: hidden; }
 .chart-card canvas { max-width: 100% !important; max-height: 260px !important; }
+.print-heading { display: none; }
+
+/* On paper the report is one column: every chart full width, in reading order,
+   with the range it describes under the title — a report carries its own
+   context, because a staple never travels with a URL. */
+@media print {
+  .filter-bar, .search-form, .tip-icon, .breadcrumb, .admin-nav, .screen-only,
+  .app-topbar, .app-sidebar, .app-footer, .sidebar-overlay { display: none !important; }
+  .print-heading { display: block !important; }
+  .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+  .charts-grid, .tables-grid { grid-template-columns: 1fr; }
+  .chart-card { min-height: 0; overflow: visible; border: 1px solid var(--paper-mid); break-inside: avoid; }
+  .chart-card canvas { max-height: none !important; }
+  .kpi-card, .card { border: 0; box-shadow: none; break-inside: avoid; }
+  .kpi-card h4, .card h3 { color: var(--paper-ink) !important; }
+  .kpi-value, .kpi-card.profit .kpi-value, .kpi-card.margin .kpi-value { color: var(--paper-ink) !important; }
+  .card { background: var(--paper) !important; }
+  .matrix td { color: var(--paper-ink) !important; }
+  .chart-note { color: var(--paper-ink) !important; }
+}
 /* A range that was asked for and could not be read: the page shows its default
    range and says so here. It is an attention colour, not an error colour —
    nothing failed, the shop just asked for something the app could not read. */
@@ -2746,3 +2788,41 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
 /* One card alone in the grid would take half a row and leave a gap: the
    cashier's shift shows the float and nothing else. */
 .stats-grid.is-single { grid-template-columns: 1fr; }
+
+/* ===================== Share meter (سود و زیان) ===================== */
+
+/* A row's share of its total: the figure written beside the bar, because a
+   length alone is a value the page cannot read. The bar starts from the right
+   edge like every other bar on an RTL page. */
+.share-meter { background: var(--rule); border-radius: 999px; height: 10px; width: 100%; max-width: 200px; overflow: hidden; }
+.share-meter-fill { background: var(--persimmon); height: 10px; border-radius: 999px; }
+.share-figure { font-size: 0.75rem; color: var(--ink-soft); margin-left: 0.4rem; }
+
+/* The total debt stat wears the attention colour, like the aging rows below. */
+.debt-figure { color: var(--persimmon); }
+
+/* The digest preview: what opting in puts on the owner's phone, rendered from
+   last month's own figures before any phone is saved. */
+.digest-preview { display: grid; gap: 0.4rem; margin-top: 0.6rem; }
+.digest-preview-label {
+  font-size: 0.78rem; color: var(--ink-soft); font-weight: 600;
+}
+.digest-preview-bubble { max-width: 100%; }
+
+/* A digest row's month, named where the owner scans senders and dates. */
+.digest-month-chip {
+  display: inline-block; margin-inline-start: 0.35rem;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid color-mix(in srgb, var(--lavender) 45%, var(--rule));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--lavender) 14%, var(--card));
+  color: var(--ink); font-weight: 600;
+}
+/* One form to send a past month's summary again, on the digests' own view. */
+.digest-resend {
+  display: grid; gap: 0.4rem; margin-top: 0.9rem;
+  padding-top: 0.9rem; border-top: 1px solid var(--rule);
+}
+.digest-resend label { font-weight: 600; font-size: 0.85rem; }
+.digest-resend-row { display: flex; gap: 0.5rem; align-items: center; }
+.digest-resend-row select { min-width: 12rem; }

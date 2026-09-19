@@ -14,7 +14,7 @@ the inventory ledger uses for balances.
 from datetime import datetime, timedelta, timezone
 
 import jdatetime
-from sqlalchemy import and_, func, or_, text
+from sqlalchemy import and_, asc, desc, func, or_, text
 from sqlalchemy.orm import Session
 
 from models import Customer, Referral, Sale
@@ -333,11 +333,26 @@ def _sorted(query, sort: str):
         return query.order_by(tier_order, Customer.total_points.desc())
     if sort == "name":
         return query.order_by(Customer.first_name.asc(), Customer.last_name.asc())
-    if sort in ("purchase_desc", "purchase_asc"):
-        direction = Customer.total_spent.desc() if sort == "purchase_desc" else Customer.total_spent.asc()
-        return query.order_by(direction)
-    if sort == "count_desc":
-        return query.order_by(Customer.total_purchases.desc())
+    if sort in ("purchase_desc", "purchase_asc", "count_desc"):
+        # The sorted figure is the invoices' own aggregate, not the stored
+        # counter: the list must not order by a number it does not show. The
+        # subquery filters the same rows `_invoice_totals` counts — confirmed,
+        # never refunded — so the order and the printed figure cannot disagree.
+        # A grouped subquery outer-joined back keeps one row per customer, so
+        # the query still returns Customer objects, not tuples.
+        totals = query.session.query(
+            Sale.customer_id.label("cid"),
+            func.coalesce(func.sum(Sale.final_amount), 0).label("spent"),
+            func.count(Sale.id).label("purchases"),
+        ).filter(
+            Sale.payment_confirmed == True,  # noqa: E712
+            Sale.is_refunded == False,  # noqa: E712
+        ).group_by(Sale.customer_id).subquery()
+        figure = func.coalesce(totals.c.spent, 0) if sort != "count_desc" \
+            else func.coalesce(totals.c.purchases, 0)
+        direction = asc if sort == "purchase_asc" else desc
+        return query.outerjoin(totals, totals.c.cid == Customer.id) \
+            .order_by(direction(figure))
     if sort == "points":
         return query.order_by(Customer.total_points.desc())
     if sort == "debt":
@@ -459,6 +474,13 @@ def build_customer_rows(db: Session, customers: list) -> list[dict]:
     from services.campaigns import customer_campaign_map
 
     campaign_map = customer_campaign_map(db, [c.id for c in customers])
+    # The spending figure and the purchase count come from the invoices, not
+    # from the stored counters: one grouped query answers the whole page, and a
+    # counter that drifted (a refund that missed its reversal, a crash between
+    # the sale and the counter) can no longer tell the shop a customer spent
+    # something they did not. The counters stay in the model for the tiers and
+    # the SMS variables; what the shop reads on the list is the invoices.
+    invoice_map = _invoice_totals(db, [c.id for c in customers])
     for customer in customers:
         last = customer.last_purchase_date
         if last is not None and last.tzinfo is None:
@@ -466,6 +488,7 @@ def build_customer_rows(db: Session, customers: list) -> list[dict]:
         days_since = None if last is None else max(0, (now - last).days)
         archived = is_archived_customer(customer)
         campaign_entry = campaign_map.get(customer.id, {})
+        spent, count = invoice_map.get(customer.id, (0, 0))
         rows.append({
             "customer": customer,
             "tags": parse_tags(customer.tags),
@@ -477,8 +500,31 @@ def build_customer_rows(db: Session, customers: list) -> list[dict]:
             "status": ("archived" if archived else
                        "active" if days_since is not None and days_since <= ACTIVE_DAYS else
                        "inactive"),
+            "invoice_spent": spent,
+            "invoice_count": count,
         })
     return rows
+
+
+def _invoice_totals(db: Session, customer_ids: list[int]) -> dict[int, tuple[int, int]]:
+    """``customer_id → (spent, purchase count)``, straight from the invoices.
+
+    One grouped query for the whole page. The same rows the customer's own
+    profile counts: confirmed, never refunded. A store sale or a refunded one
+    says nothing about what a customer spent.
+    """
+    if not customer_ids:
+        return {}
+    rows = db.query(
+        Sale.customer_id,
+        func.coalesce(func.sum(Sale.final_amount), 0).label("spent"),
+        func.count(Sale.id).label("purchases"),
+    ).filter(
+        Sale.customer_id.in_(customer_ids),
+        Sale.payment_confirmed == True,  # noqa: E712
+        Sale.is_refunded == False,  # noqa: E712
+    ).group_by(Sale.customer_id).all()
+    return {row.customer_id: (int(row.spent or 0), int(row.purchases or 0)) for row in rows}
 
 
 def birthday_fields(customer: Customer, db: Session) -> dict:

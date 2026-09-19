@@ -245,6 +245,36 @@ def test_the_colour_exemptions_still_excuse_something():
             assert needle in source, f"{relative} no longer contains {needle!r}"
 
 
+# A colour does not have to be a hex to be frozen: `rgba(0,0,0,0.3)` inside a
+# box-shadow is the same refusal to ask the palette, and the hex scan cannot see
+# it. The channels start with a digit — that is what makes it a literal — so the
+# pattern does not match a function the page computes from tokens
+# (`rgba(channels.join(', ') + ', ' + alpha)` in the chart renderer, or a
+# `color-mix` over a token).
+FUNCTION_COLOUR = re.compile(r"\brgba?\(\s*[0-9.]|\bhsla?\(\s*[0-9.]")
+
+
+def test_no_page_paints_with_a_frozen_function_form_colour():
+    """The hex rule's blind spot: a colour literal in function form.
+
+    The try-on pages shadowed their images with `rgba(0,0,0,0.1)` and the
+    analytics tooltip with `rgba(0,0,0,0.3)` — shadows no theme owned, painted
+    identically on Midnight and on paper-white, while the stylesheet's own
+    shadows read `--shadow` and follow the palette. Every template and script
+    is scanned here, the same files the hex rule reads, for a function-form
+    colour with literal channels.
+    """
+    offenders: list[str] = []
+    for relative, source in _colour_sources():
+        for number, line in enumerate(source.splitlines(), 1):
+            for _match in FUNCTION_COLOUR.findall(line):
+                offenders.append(
+                    f"{relative}:{number}: a frozen colour in function form — "
+                    f"{line.strip()[:90]} — read the palette's own shadow or mix it "
+                    "from a token")
+    assert not offenders, "\n".join(offenders)
+
+
 def test_the_chart_renderer_draws_with_the_active_theme():
     """The offline canvas renderer is a fallback for a page whose chart library
     did not load, and it used to paint a palette of its own — so the shop on the
@@ -553,12 +583,13 @@ def _document_offenders(html: str, theme_id: str, palettes: dict[str, set[str]])
     return problems + _printed_artefacts(html)
 
 
-def _walk(client, db, accounts: dict, addresses: list[tuple[str, str]]):
-    """Open every address, as every role, on every palette.
+def _walk(client, db, accounts: dict, addresses: list[tuple[str, str]], themes: list[str] | None = None):
+    """Open every address, as every role, on the given palettes.
 
     Returns ``(what is wrong, what each cell answered, how many documents were
     drawn)``. One function for all three shops, so the rules cannot differ
-    between a shop with records and a shop without them.
+    between a shop with records and a shop without them. The matrix walks every
+    palette; a state walk passes its own, smaller, list.
     """
     from tests.test_roles import _session_as
 
@@ -568,7 +599,7 @@ def _walk(client, db, accounts: dict, addresses: list[tuple[str, str]]):
     rendered = 0
     for role in ROLES:
         _session_as(client, *accounts[role])
-        for theme_id in THEMES:
+        for theme_id in (themes if themes is not None else list(THEMES)):
             _activate_theme(db, theme_id)
             for template, address in addresses:
                 response = client.get(address, follow_redirects=False)
@@ -807,6 +838,59 @@ def test_every_page_the_shell_serves_reads_only_colours_its_theme_defines(client
 # shelf wrote the word into the database on the next save.
 
 
+# The palettes a *state* walk visits. Its question is about the shop's records —
+# what a page does with none of them — not about its colours, so it does not need
+# the full matrix: every built-in theme is derived through the same `_complete`,
+# which makes the ten token *name* sets identical, and what differs between them
+# is the derivation the tokens go through. One theme per mode is what that
+# derivation can actually change — light, dark, dark-shell, high-contrast — plus
+# the one theme whose tokens a shop chooses: `custom-brand` computes its colours
+# from the store's own two hues, so it is the likeliest to leave a token behind.
+# The per-mode guard below keeps that claim honest: a theme whose mode or token
+# names stop matching its sibling joins the sample, so the reduction cannot
+# quietly stop checking a whole family of palettes.
+STATE_THEMES = ["operations-light", "midnight-operations", "pos-focus",
+                "high-contrast", "custom-brand"]
+
+
+def test_the_state_sample_still_covers_what_differs_between_palettes():
+    """The reduction stays true to what a palette can change.
+
+    The sample is honest only while two claims hold: every mode has a theme in it,
+    and every theme still defines the same token *names* its mode-mate does — the
+    fact that made the reduction sound in the first place. A new theme joins
+    neither automatically; this guard refuses to let the walk stay small when the
+    catalogue stops matching it.
+    """
+    by_mode = {}
+    for theme_id, theme in THEMES.items():
+        by_mode.setdefault(theme["mode"], []).append(theme_id)
+    unrepresented = sorted(mode for mode, members in by_mode.items()
+                           if not set(members) & set(STATE_THEMES))
+    assert not unrepresented, (
+        "a derivation mode no state walk visits — add one of "
+        + ", ".join(unrepresented) + " to STATE_THEMES")
+    # …and the one theme whose tokens a shop chooses. Its mode is shared with
+    # themes whose tokens nobody chose, so the mode check above would not notice
+    # it leaving the sample — and it is the likeliest theme to leave a token
+    # behind, which is exactly what the state walks exist to catch.
+    assert "custom-brand" in STATE_THEMES, (
+        "the theme computed from a shop's own colours must stay in the state sample")
+
+    # Same token names within a mode: the property the reduced walk leans on. The
+    # comparison is by *name* — every palette states its own values, and a value
+    # a theme left undefined is what the per-document check catches.
+    token_sets = {theme_id: set(theme["tokens"]) for theme_id, theme in THEMES.items()}
+    for mode, members in by_mode.items():
+        names = [set(token_sets[theme_id]) for theme_id in members]
+        if all(names[0] == other for other in names[1:]):
+            continue
+        unvisited = sorted(set(members) - set(STATE_THEMES))
+        assert not unvisited, (
+            f"the {mode} themes no longer share one token-name set — the state walk "
+            "assumed they did; visit " + ", ".join(unvisited) + " too or fix the derivation")
+
+
 def _unheld_addresses() -> list[tuple[str, str]]:
     """``(the address as the route table spells it, the same address with an id
     nothing holds)`` — how a shop with no records is opened.
@@ -918,20 +1002,23 @@ def test_the_boot_this_pass_replays_is_the_whole_boot():
 
 
 def test_every_page_survives_an_empty_shop(client, db_session):
-    """Every address, as every role, on every palette — with nothing in the shop.
+    """Every address, as every role, on the palettes that differ — with nothing in the shop.
 
     A page that only draws because a record happens to exist is a page that breaks
     the first time the shop is new or the records are archived, and neither the
     seeded matrix nor any source scan can see that: the empty branch is markup
     nobody renders. What this asks of it is what the matrix asks of the other: a
     page (never a 5xx), the palette it was loaded with, and no word on it that the
-    renderer should have kept to itself.
+    renderer should have kept to itself. The palettes are the per-mode sample,
+    `STATE_THEMES` — the full ten run in the matrix above, and the guard beside
+    the sample keeps it covering every derivation mode.
     """
     from tests.test_roles import _staff
 
     accounts = {role: _staff(db_session, f"empty-{role}", role) for role in ROLES}
     addresses = _unheld_addresses()
-    offenders, answers, rendered = _walk(client, db_session, accounts, addresses)
+    offenders, answers, rendered = _walk(client, db_session, accounts, addresses,
+                                         themes=STATE_THEMES)
 
     assert len(answers) == len(addresses) * len(ROLES), (len(answers), len(addresses))
     assert rendered > 0
@@ -974,7 +1061,8 @@ def test_every_page_survives_a_brand_new_install(client, db_session):
         "the first page a shop ever loads is already wrong")
 
     addresses = _unheld_addresses()
-    offenders, answers, rendered = _walk(client, db_session, accounts, addresses)
+    offenders, answers, rendered = _walk(client, db_session, accounts, addresses,
+                                         themes=STATE_THEMES)
     assert len(answers) == len(addresses) * len(ROLES), (len(answers), len(addresses))
     assert rendered > 0
     _assert_collections_draw_themselves(answers, addresses)

@@ -1,9 +1,17 @@
 {% extends "base.html" %}
 {% block content %}
 
+{# The report names the period it describes — on paper there is no URL to #}
+{# remember, so the staple carries its own context. #}
+{% set period_names = {'today': 'امروز', 'week': 'این هفته', 'month': 'این ماه', 'year': 'امسال', 'all': 'همه دوره‌ها', 'custom': 'بازه دلخواه'} %}
+<h2 class="print-heading">سود و زیان — {{ period_names.get(period, 'این ماه') }}{% if period == 'custom' and start_date %} ({{ start_date }} تا {{ end_date }}){% endif %}</h2>
+
+{% set page_actions %}
+<button type="button" class="btn btn-primary" onclick="window.print()">چاپ گزارش</button>
+{% endset %}
 {% include 'partials/page_header.html' %}
 
-<div class="card">
+<div class="card screen-only">
     {# A range that was asked for and could not be read says so here, in the shop's
        own words, rather than being answered with a different range in silence. #}
     {% if range_notice %}<p class="filter-problem" role="status">⚠️ {{ range_notice }}</p>{% endif %}
@@ -75,7 +83,7 @@
                     <tbody>
                     {% for r in color_size_matrix.rows %}
                     <tr><td><b>{{ r.size }}</b></td>
-                        {% for cell in r.cells %}<td style="background: rgba(255,107,138, {{ cell.pct / 100 }}); text-align:center;" class="tnum">{{ cell.qty }}</td>{% endfor %}
+                        {% for cell in r.cells %}<td style="background: color-mix(in srgb, var(--candy) {{ cell.pct }}%, transparent); text-align:center;" class="tnum">{{ cell.qty }}</td>{% endfor %}
                     </tr>
                     {% endfor %}
                     </tbody>
@@ -207,7 +215,7 @@
     </div>
 </div>
 <!-- Global tooltip element (fixed positioning, never clipped) -->
-<div id="globalTip" style="display:none; position:fixed; background:var(--sidebar-bg); color:var(--sidebar-text); padding:0.6rem 0.8rem; border-radius:8px; font-size:0.8rem; line-height:1.6; width:max-content; max-width:340px; white-space:normal; pointer-events:none; z-index:9999; box-shadow:0 4px 20px rgba(0,0,0,0.3); text-align:right; direction:rtl; font-family:Vazirmatn,sans-serif;"></div>
+<div id="globalTip" style="display:none; position:fixed; background:var(--sidebar-bg); color:var(--sidebar-text); padding:0.6rem 0.8rem; border-radius:8px; font-size:0.8rem; line-height:1.6; width:max-content; max-width:340px; white-space:normal; pointer-events:none; z-index:9999; box-shadow:var(--shadow-hover); text-align:right; direction:rtl; font-family:Vazirmatn,sans-serif;"></div>
 
 <script>
 if (typeof Chart === 'undefined') {

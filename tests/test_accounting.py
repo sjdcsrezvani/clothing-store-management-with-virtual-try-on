@@ -802,3 +802,45 @@ def test_collections_redirects_into_the_credit_page(client, db_session, authed):
     assert page.status_code == 200
     assert "حساب نسیه" in page.text
     assert "۱۵۰٬۰۰۰" in page.text or "150,000" in page.text
+
+
+def test_expense_share_bars_state_their_share(client, db_session, authed):
+    """The share of each expense category is written beside its bar.
+
+    The cell used to carry a bare length — a div whose width was the share —
+    which is a figure the page cannot read: a colour-blind owner, a printed
+    page and a screen reader all lost the number the column exists to state,
+    and the bar was the last share on the shop that said nothing. The figure
+    now prints beside the bar, computed by the house pct() so an empty
+    period reads «—», not a nought nobody earned — in the same digits the
+    table's own fmt() figures use.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from models import Expense
+
+    db_session.add(Expense(category="اجاره", amount=300_000,
+                           created_at=datetime.now(timezone.utc) - timedelta(days=1)))
+    db_session.add(Expense(category="تبلیغات", amount=100_000,
+                           created_at=datetime.now(timezone.utc) - timedelta(days=1)))
+    db_session.commit()
+
+    html = authed.get("/admin/accounting").text
+    # The figure sits beside the bar in a stated element of its own — an
+    # aria-label or a stray attribute would not survive a reader that skips it.
+    assert re.search(r'<span class="share-figure tnum">75٪</span>', html), (
+        "the 75٪ figure must be stated in the cell itself")
+    assert re.search(r'<span class="share-figure tnum">25٪</span>', html), (
+        "the 25٪ figure must be stated in the cell itself")
+    # Both bars render with their own width — a stripped or shared div would
+    # leave every row the same length and say nothing.
+    widths = re.findall(r'share-meter-fill" style="width: ([0-9.]+)%;', html)
+    assert sorted(widths, key=float) == ["25.0", "75.0"], widths
+    assert 'style="color' not in html, "the cell must not carry inline colour"
+
+
+def test_an_expense_bar_without_expenses_states_absence(client, db_session, authed):
+    """A quiet period: no categories, no bars, and no figure invented."""
+    html = authed.get("/admin/accounting").text
+    assert "share-meter" not in html
+    assert "هزینه‌ای در این بازه ثبت نشده است" in html

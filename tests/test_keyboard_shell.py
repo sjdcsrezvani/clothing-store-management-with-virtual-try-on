@@ -54,14 +54,14 @@ WITHOUT_COMMENTS = re.sub(r"/\*.*?\*/", "", CSS, flags=re.S)
 # into `_BASE` for a palette to inherit by accident.
 STATE_TOKENS = (
     "--ring", "--ring-brand", "--focus-ring", "--hover-surface", "--sidebar-hover",
-    "--disabled-surface", "--disabled-ink", "--danger",
+    "--disabled-surface", "--disabled-ink", "--danger", "--ink-on-hover",
     "--link", "--link-hover", "--brand-fill", "--brand-fill-dark", "--brand-label",
     "--success-fill", "--success-fill-dark", "--success-label",
     "--success-ink", "--info-ink", "--warning-ink", "--accent-ink",
     "--tier-silver-fill", "--tier-silver-fill-dark", "--tier-silver-label",
     "--tier-gold-fill", "--tier-gold-fill-dark", "--tier-gold-label",
     "--tier-diamond-fill", "--tier-diamond-fill-dark", "--tier-diamond-label",
-    "--paper", "--paper-ink",
+    "--paper", "--paper-ink", "--paper-mid",
 )
 
 # Every colour used as text, the hue it is derived from, and the alert background
@@ -165,6 +165,22 @@ FLOORS: tuple[tuple[str, float, object], ...] = (
      lambda t: contrast_ratio(t["--danger"], t["--button-text"])),
     ("the attention colour on the tint its badges wear", 4.5,
      lambda t: contrast_ratio(t["--persimmon"], _mix(t["--card"], t["--persimmon"], 0.20))),
+    ("a link on the row the cursor hovers", 4.5,
+     lambda t: contrast_ratio(t["--link"], t["--hover-surface"])),
+    ("the quiet meta text on the row the cursor hovers", 4.5,
+     lambda t: contrast_ratio(t["--ink-on-hover"], t["--hover-surface"])),
+    # The checkout till: the chosen payment option's wash, the terminal dot's
+    # online/offline colours, and the error alert the terminal speaks through.
+    # These were measured when the till was swept like the shell and were clean;
+    # the floors keep them so.
+    ("a payment label on the tint of the chosen option", 4.5,
+     lambda t: contrast_ratio(t["--ink"], _mix(t["--card"], t["--candy"], 0.10))),
+    ("the terminal's online dot on the card", 4.5,
+     lambda t: contrast_ratio(t["--mint-dark"], t["--card"])),
+    ("the terminal's offline dot on the card", 4.5,
+     lambda t: contrast_ratio(t["--link-hover"], t["--card"])),
+    ("the error alert's text on its background", 4.5,
+     lambda t: contrast_ratio(t["--link-hover"], t["--danger-bg"])),
     ("the attention colour on the paler tint it hovers to", 4.5,
      lambda t: contrast_ratio(t["--persimmon"], _mix(t["--card"], t["--persimmon"], 0.08))),
     ("a ghost button's label on the field it hovers over", 4.5,
@@ -192,6 +208,8 @@ FLOORS: tuple[tuple[str, float, object], ...] = (
     ("the printed page's border against the paper it prints on", 1.2,
      lambda t: contrast_ratio(t["--paper-ink"],
                               _mix(t["--paper"], t["--paper-ink"], 0.25))),
+    ("the print stylesheet's frame tone against the paper", 1.2,
+     lambda t: contrast_ratio(t["--paper-ink"], t["--paper-mid"])),
 )
 
 
@@ -215,9 +233,15 @@ def test_every_state_reads_in_all_ten_palettes():
     assert not failures, "\n".join(failures)
     # The table cannot be weakened silently: an entry deleted from FLOORS turns
     # this inventory red before a palette reads below a floor nobody measures.
-    assert len(FLOORS) == 22, (
-        f"the floors table holds {len(FLOORS)} entries, expected 22 — "
+    assert len(FLOORS) == 29, (
+        f"the floors table holds {len(FLOORS)} entries, expected 29 — "
         "if a state genuinely stopped existing, update this count in the same change")
+    # …and the floors are exactly the three ratios the suite is built on. A floor
+    # quietly lowered below every palette's reading changes no outcome here — the
+    # value itself has to be pinned, or 4.5 becomes 2.0 and nothing fails.
+    assert {floor for _what, floor, _measure in FLOORS} <= {1.2, 3.0, 4.5}, (
+        "a floor outside the house's stated ratios — lower it in the derivation, "
+        "not in the table")
 
 
 def test_the_state_colours_are_derived_from_the_palette_not_inherited():
@@ -656,7 +680,7 @@ def test_a_filled_button_changes_on_hover_without_repainting_its_label():
 
 PAGES = ("/admin/", "/sales/new", "/admin/customers", "/admin/sms", "/admin/cashbox",
          "/admin/try-on", "/admin/try-on/saved", "/admin/settings/appearance",
-         "/admin/mobile")
+         "/admin/mobile", "/sales/invoice/{sale_id}")
 
 
 class _Interactive:
@@ -683,6 +707,18 @@ def _signed_in(client, db_session, role: str):
     return user
 
 
+def _an_invoice_for_the_keyboard(db_session) -> int:
+    """One settled sale, so the invoice page the walker reads is a real one."""
+    from models import Sale
+
+    sale = Sale(customer_id=None, total_amount=250_000, final_amount=250_000,
+                payment_method="cash", payment_confirmed=True)
+    db_session.add(sale)
+    db_session.commit()
+    db_session.refresh(sale)
+    return sale.id
+
+
 def test_every_click_handler_sits_on_something_a_keyboard_can_reach(client, db_session):
     """A `<div onclick>` is invisible to a keyboard, and so is an `<img onclick>`.
 
@@ -693,10 +729,11 @@ def test_every_click_handler_sits_on_something_a_keyboard_can_reach(client, db_s
     and take focus with `tabindex`.
     """
     _signed_in(client, db_session, "owner")
+    sale_id = _an_invoice_for_the_keyboard(db_session)
     reachable = {"button", "a", "input", "select", "textarea", "summary"}
     offenders, checked, controls = [], 0, 0
     for path in PAGES:
-        response = client.get(path, follow_redirects=False)
+        response = client.get(path.format(sale_id=sale_id), follow_redirects=False)
         assert response.status_code == 200, (path, response.status_code)
         for element in _Interactive.walk(response.text):
             attributes = element["attributes"]
@@ -719,6 +756,12 @@ def test_every_click_handler_sits_on_something_a_keyboard_can_reach(client, db_s
             offenders.append(f"{path}: <{element['tag']} onclick=…> is not in the tab order")
     assert checked >= 5, f"only {checked} click handlers found — the walk is not looking at the shell"
     assert controls >= 300, f"only {controls} controls walked — the pages are not being read"
+    # The invoice was added to PAGES after its print button was the only onclick
+    # outside the shell: without this, dropping the address from the list would
+    # not fail anything above, and the page would leave the sweep silently.
+    seen = {path.format(sale_id=sale_id) for path in PAGES}
+    assert len(seen) == len(PAGES) and "/sales/invoice/" in " ".join(seen), (
+        "the walker's pages lost the invoice")
     assert not offenders, "\n".join(offenders)
 
 
@@ -930,3 +973,48 @@ def test_the_stylesheet_declares_no_colour_the_theme_should_own():
     assert not offenders, (
         "the stylesheet freezes a colour the theme should own (outside :root):\n"
         + "\n".join(offenders))
+
+
+def test_the_hover_row_takes_the_derived_hover_ink():
+    """The derived hover ink is dead unless the stylesheet uses it.
+
+    `--ink-on-hover` exists because the quiet meta text inside a row is the one
+    authored colour a hover tint can wash below the floor — Kids Boutique's warm
+    grey read 3.70:1 on its candy tint. The row rule paints it, so the tint, the
+    ink and the rule must live or die together: drop any one and this guard
+    fails, rather than a derivation computing a colour nothing reads.
+    """
+    row = dict(_declarations(dict(_rules())["tbody tr:hover"]))
+    assert row.get("background", "").strip() == "var(--hover-surface)", row
+    assert row.get("color", "").strip() == "var(--ink-on-hover)", row
+    meta = dict(_declarations(
+        dict(_rules())["tbody tr:hover .customer-meta, tbody tr:hover .muted"]))
+    assert meta.get("color", "").strip() == "var(--ink-on-hover)", meta
+
+
+INVOICE_PRINT = re.compile(
+    r"@media print\s*\{.*?\n\}", re.S)
+
+
+def test_the_invoice_prints_in_paper_ink_wherever_the_theme_had_a_voice():
+    """Paper is the one state no palette can be rendered in, so the print rules
+    are the state.
+
+    The discount row was owned early; the debt and points rows arrived later as
+    inline styles — outside every theme walk and outside the print block's
+    reach — so a Midnight invoice printed its debt line at 2.12:1 on white and
+    its discount-details box as a dark rectangle. The rows are classes now and
+    the print block owns all three: attention, points and the details box.
+    """
+    block = INVOICE_PRINT.search(CSS)
+    assert block and ".invoice" in block.group(0), "the invoice's print block is gone"
+    body = block.group(0)
+    for claim in (".summary-row.discount", ".summary-row.attention",
+                  ".summary-row.points", ".discount-details"):
+        assert claim in body, f"print no longer owns {claim}"
+    assert body.count("var(--paper-ink)") >= 3, "the paper ink is not doing the painting"
+
+    # The inline styles that hid this from every guard must stay gone: the rows
+    # carry classes, and the template no longer paints colour inline.
+    source = (ROOT / "templates" / "sales" / "invoice.html").read_text(encoding="utf-8")
+    assert 'style="color:' not in source, "an inline colour returned to the invoice"

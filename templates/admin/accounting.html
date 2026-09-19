@@ -63,26 +63,31 @@
         <thead><tr><th>دسته</th><th>مبلغ</th><th>سهم</th></tr></thead>
         <tbody>
             {% for row in pl.expense_cats %}
+            {# The share is written beside the bar: a length alone is a figure the
+               page cannot read, and a fill with no stated value is exactly the
+               silent-wrongness the figure arc exists to stop. #}
+            {% set row_share = pct(row.amount, pl.expenses) %}
             <tr>
                 <td>{{ row.category }}</td>
                 <td class="tnum">{{ fmt(row.amount) }} تومان</td>
                 <td>
-                    <div style="background:var(--rule); border-radius:999px; height:10px; width:100%; max-width:200px;">
-                        <div style="background:var(--persimmon); height:10px; border-radius:999px; width:{{ (row.amount / pl.expenses * 100) if pl.expenses else 0 }}%;"></div>
+                    <span class="share-figure tnum">{{ row_share }}</span>
+                    <div class="share-meter" role="img" aria-label="{{ row.category }}: {{ row_share }}">
+                        <div class="share-meter-fill" style="width: {{ (row.amount / pl.expenses * 100) if pl.expenses else 0 }}%;"></div>
                     </div>
                 </td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
-    {% else %}<p style="color: var(--ink-soft);">هزینه‌ای در این بازه ثبت نشده است.</p>{% endif %}
+    {% else %}<p class="empty-state">هزینه‌ای در این بازه ثبت نشده است.</p>{% endif %}
 </div>
 
 {# ─── Debt & cash summary ─── #}
 <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
     <div class="stat-card" style="text-align:center;">
         <div class="stat-label">📒 بدهی نسیه مشتریان</div>
-        <div class="stat-value tnum" style="color: var(--persimmon);">{{ fmt(debts.total_debt) }} ت</div>
+        <div class="stat-value tnum debt-figure">{{ fmt(debts.total_debt) }} ت</div>
         <div class="stat-sub"><a href="/admin/credit">مدیریت نسیه ←</a></div>
     </div>
     <div class="stat-card" style="text-align:center;">

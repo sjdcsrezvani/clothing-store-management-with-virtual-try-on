@@ -138,12 +138,12 @@
                     <tbody>
                         {% for sale in unpaid_sales %}
                         <tr id="invoice-{{ sale.id }}">
+                            {% set status = invoice_status[sale.id] %}
                             <td><a class="text-link" href="/sales/invoice/{{ sale.id }}">#{{ sale.id }}</a></td>
                             <td class="tnum">{{ jalali_str(sale.created_at, false) }}</td>
                             <td class="tnum">{{ fmt(sale.final_amount) }}</td>
-                            <td class="tnum">{{ fmt(sale.credit_paid_amount or 0) }}</td>
-                            <td class="tnum"><strong class="credit-amount">{{ fmt(sale.final_amount - (sale.credit_paid_amount or 0)) }}</strong></td>
-                            {% set status = invoice_status[sale.id] %}
+                            <td class="tnum">{{ fmt(status.paid) }}</td>
+                            <td class="tnum"><strong class="credit-amount">{{ fmt(status.remaining) }}</strong></td>
                             <td class="tnum">
                                 {% if status.due %}{{ jalali_str(status.due, false) }}
                                 {% else %}<span class="customer-meta">بدون سررسید</span>{% endif %}
@@ -164,8 +164,8 @@
                                     <input type="hidden" name="sale_id" value="{{ sale.id }}">
                                     <label class="sr-only" for="invoice-amount-{{ sale.id }}">مبلغ فاکتور {{ sale.id }}</label>
                                     <input type="number" id="invoice-amount-{{ sale.id }}" name="amount" min="1"
-                                           max="{{ sale.final_amount - (sale.credit_paid_amount or 0) }}"
-                                           value="{{ sale.final_amount - (sale.credit_paid_amount or 0) }}" class="tnum">
+                                           max="{{ status.remaining }}"
+                                           value="{{ status.remaining }}" class="tnum">
                                     <label class="sr-only" for="invoice-method-{{ sale.id }}">روش</label>
                                     <select id="invoice-method-{{ sale.id }}" name="method">
                                         <option value="cash">نقد</option>

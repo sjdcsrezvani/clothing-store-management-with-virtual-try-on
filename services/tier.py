@@ -52,8 +52,12 @@ def get_tier_config(db: Session) -> dict:
 
 
 def calculate_points(amount: int, config: dict) -> int:
-    """Calculate points earned from a purchase amount."""
-    if config["points_per_toman"] <= 0:
+    """Calculate points earned from a purchase amount.
+
+    A negative rate would drive a customer's points *down* on a purchase — a
+    value the settings page refuses, so a stray row reads as no points rather
+    than as a penalty the shop never chose."""
+    if config["points_per_toman"] <= 0 or config["points_per_amount"] <= 0:
         return 0
     return (amount // config["points_per_toman"]) * config["points_per_amount"]
 

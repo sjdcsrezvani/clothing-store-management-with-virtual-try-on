@@ -244,13 +244,14 @@ def interaction_tokens(tokens: dict[str, str]) -> dict[str, str]:
     # surface, and the strongest tint of the brand that any rule paints under it
     # (the state badges mix 18% of it into the card).
     ring = _legible(tokens["--sky"], [card, field, bg], 3)
+    hover = _tinted(card, tokens["--candy"], 1.25, others=(tokens["--bg"],))
 
     def ink(seed: str, tint: str, *alerts: str) -> str:
         """A palette's hue, walked until it reads as text everywhere text is read:
         on the four surfaces a page is made of, on the strongest tint of the hue
         that any badge paints under it, and on the alert background that belongs to
         it (the warning banner is pale gold, and gold text on it read 1.84:1)."""
-        surfaces = [card, bg, field, soft, _mix(card, tokens[tint], 0.18), *alerts]
+        surfaces = [card, bg, field, soft, _mix(card, tokens[tint], 0.18), hover, *alerts]
         return _legible(seed, surfaces, 4.5)
 
     def filled_pair(light_key: str, dark_key: str, prefix: str) -> dict[str, str]:
@@ -297,14 +298,26 @@ def interaction_tokens(tokens: dict[str, str]) -> dict[str, str]:
                                  [tokens["--topbar-start"], tokens["--topbar-end"],
                                   tokens["--sidebar-bg"], tokens["--sidebar-active"]], 3),
         # A hovered row or choice, on a card; and a hovered item in the sidebar,
-        # which is its own surface in every palette.
-        "--hover-surface": _tinted(card, tokens["--candy"], 1.25, others=(tokens["--bg"],)),
+        # which is its own surface in every palette. The row tint is derived for
+        # *visibility* (1.2:1); the text that may sit on a hovered row is derived
+        # against it below — the tint cannot carry every ink at floor (no candy
+        # wash does in the light palettes), so the inks walk, the same doctrine
+        # as everywhere else: keep the hue, move the lightness.
+        "--hover-surface": hover,
         "--sidebar-hover": _tinted(tokens["--sidebar-bg"], tokens["--sidebar-text"], 1.3),
         # What a button that cannot be pressed looks like: a quiet surface and a
         # label on it that still reads, rather than the whole control faded out.
         "--disabled-surface": tokens["--surface-soft"],
         "--disabled-ink": _legible(tokens["--ink-soft"],
                                    [tokens["--surface-soft"], card], 4.5),
+        # The quiet meta text — «۲ روز پیش», a share, a phone number — walked out
+        # of its authored lightness until it reads on the hover surface too, the
+        # way the sidebar's own label is already required to read on its hover.
+        # The tint the row hover paints was derived for visibility (1.2:1) and
+        # knew nothing of the text that sits on it; Kids Boutique's warm grey
+        # measured 3.70:1 on its candy-washed hover, and four palettes' links
+        # 4.19:1 — below the text floor, on a surface text is read on.
+        "--ink-on-hover": _legible(tokens["--ink-soft"], [hover], 4.5),
         # The fill under a destructive button's label.
         "--danger": _legible("#FF4757", [label], 4.5),
         # The brand colour as text — a link, a KPI figure, a chip's label — and as
@@ -331,9 +344,12 @@ def interaction_tokens(tokens: dict[str, str]) -> dict[str, str]:
         **filled_pair("--mint", "--mint-dark", "--success"),
         # Paper: what a printed page is. The print rules used to hard-code a
         # white-and-black document; a token pair says it once, here, and lets a
-        # palette own even its printer.
+        # palette own even its printer. The mid tone is what a rule or a chart
+        # frame reads on paper: a quiet grey mixed from the pair, so a print
+        # stylesheet speaks in tokens instead of another hard-coded grey.
         "--paper": "#FFFFFF",
         "--paper-ink": "#000000",
+        "--paper-mid": _mix("#FFFFFF", "#000000", 0.18),
     }
 
 

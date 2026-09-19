@@ -83,6 +83,9 @@ def apply_credit_surcharge(db, total_amount: int, discount_amount: int = 0) -> t
     off or the subtotal is zero/negative."""
     percent = get_credit_surcharge_percent(db)
     subtotal = max(0, total_amount - discount_amount)
+    # A negative percent would *discount* a نسیه invoice — a value below zero is
+    # not a choice the settings page allows, so a row that predates the rule
+    # (or was written by hand) is read as off rather than as a hidden sale.
     if percent <= 0 or subtotal <= 0:
         return 0, subtotal
     surcharge = round(subtotal * percent / 100)

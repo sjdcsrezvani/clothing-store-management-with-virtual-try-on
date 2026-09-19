@@ -332,7 +332,6 @@ SCRIPT_CLOSE = re.compile(r"</(script|style)>", re.I)
 # belongs to `figure()`. A column that cannot be empty needs no mention: the
 # fallback there is dead code rather than a claim.
 NULL_IS_NOUGHT = {
-    "credit_paid_amount": "nothing paid against an unpaid invoice is a nought, and the column beside it subtracts it",
     "points_earned": "an invoice that earned no points earned none",
     "referred_discount": "a customer nobody referred has no referral discount",
     "referrer_discount": "a referrer who has introduced nobody has no discount for it",
@@ -442,12 +441,14 @@ def test_a_share_of_nothing_is_a_dash_on_the_pages_that_show_it(client, db_sessi
 def test_a_customer_whose_counters_were_never_computed_shows_a_dash(client, db_session):
     """The reachable case: a customer row the counters were never written for.
 
-    Rows that predate a counter hold NULL, and so does a row whose counter was
-    never recomputed. The list used to read «۰ تومان · ۰ خرید» for those — the
-    one figure that is certainly wrong for a customer the shop is deciding whether
-    to call.
+    The list no longer reads the counters, so a NULL counter cannot reach the
+    page at all — what it prints comes from the invoices. Two cases: a customer
+    whose counters are NULL but who *has* an invoice must print the invoice's
+    figures (the old page had no honest answer for that row); and a customer
+    with no invoices prints the invoices' own zero — arithmetic over an empty
+    set, not a stand-in for a figure nobody computed.
     """
-    from models import Customer
+    from models import Customer, Sale
 
     from tests.test_roles import _session_as, _staff
 
@@ -464,6 +465,13 @@ def test_a_customer_whose_counters_were_never_computed_shows_a_dash(client, db_s
                                        Customer.total_debt: None})
     db_session.commit()
 
+    customer = db_session.query(Customer).filter(
+        Customer.referral_code == "SILENT-NULL").one()
+    db_session.add(Sale(customer_id=customer.id, total_amount=850_000,
+                        final_amount=850_000, payment_method="cash",
+                        payment_confirmed=True))
+    db_session.commit()
+
     html = client.get("/admin/customers").text
     # The customer's own row, not the header row above it.
     at = html.index("شمارنده")
@@ -471,8 +479,22 @@ def test_a_customer_whose_counters_were_never_computed_shows_a_dash(client, db_s
     while "<th" in html[start:at]:
         start = html.rindex("<tr>", 0, start)
     row = html[start:html.index("</tr>", at)]
-    assert "<strong>—</strong>" in row, "the spending counter printed a figure anyway"
-    assert "0 خرید" not in row, "the purchase counter printed a nought"
+    assert "850,000" in row, "the invoice behind NULL counters was not printed"
+    assert "1 خرید" in row, "the invoice count behind NULL counters was not printed"
+
+    # A customer with no invoices prints the invoices' zero — real arithmetic
+    # over an empty set, not the counter stand-in the old page could not tell
+    # from a computed nought.
+    db_session.add(Customer(phone="09120000078", first_name="بی‌", last_name="بی‌فاکتور",
+                            referral_code="SILENT-NO-SALE"))
+    db_session.commit()
+    html = client.get("/admin/customers").text
+    at = html.index("بی‌فاکتور")
+    start = html.rindex("<tr>", 0, at)
+    while "<th" in html[start:at]:
+        start = html.rindex("<tr>", 0, start)
+    row = html[start:html.index("</tr>", at)]
+    assert "0 خرید" in row, "an empty set of invoices is a computed zero, not a blank"
 
 
 def test_a_category_with_no_revenue_shows_a_dash_in_the_margin_column(client, db_session):

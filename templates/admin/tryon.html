@@ -23,7 +23,7 @@
             {% if kid_photo_preview %}
             <div style="text-align: center; margin-bottom: 0.8rem;">
                 <img src="{{ kid_photo_preview }}" alt="kid"
-                     style="max-width: 200px; max-height: 200px; border-radius: 12px; object-fit: cover; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                     style="max-width: 200px; max-height: 200px; border-radius: 12px; object-fit: cover; box-shadow: var(--shadow-hover);">
             </div>
             {% else %}
             <div style="text-align: center; padding: 1.5rem; background: var(--surface-soft); border-radius: 8px; margin-bottom: 0.8rem;">
@@ -218,7 +218,7 @@
                         aria-label="نمایش تصویر در اندازه کامل">
                     <img src="{{ last_gen_url }}" alt="generated"
                          id="generated-img"
-                         style="max-width:100%; max-height:400px; border-radius:12px; box-shadow:0 4px 16px rgba(0,0,0,0.12); display:block;">
+                         style="max-width:100%; max-height:400px; border-radius:12px; box-shadow:var(--shadow-hover); display:block;">
                 </button>
             </div>
             <div style="display: flex; gap: 0.5rem; justify-content: center; margin-top: 1rem; flex-wrap: wrap;">

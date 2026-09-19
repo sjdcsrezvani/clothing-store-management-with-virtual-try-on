@@ -56,7 +56,7 @@
         {% if sale.discount_amount > 0 %}
         <div class="summary-row discount"><span>🏷️ تخفیف</span><span class="tnum">−{{ fmt(sale.discount_amount) }} تومان</span></div>
         {% if discounts and discounts.details %}
-        <div style="padding: 0.3rem 0.5rem; font-size: 0.8rem; background: var(--surface-soft); border-radius: 6px; margin: 0.3rem 0;">
+        <div class="discount-details">
             {% for detail in discounts.details %}<div>· {{ detail }}</div>{% endfor %}
         </div>
         {% endif %}
@@ -68,13 +68,13 @@
             {% else %}💵 نقد{% endif %}
         </span></div>
         {% if sale.payment_method == 'credit' and customer %}
-        <div class="summary-row" style="color: var(--persimmon); font-weight: 700;">
+        <div class="summary-row attention">
             <span>📒 بدهی نسیه این فاکتور</span>
-            <span class="tnum">{{ fmt(sale.final_amount - sale.credit_paid_amount) }} تومان</span>
+            <span class="tnum">{{ fmt(credit_remaining) }} تومان</span>
         </div>
         {% endif %}
         {% if sale.points_earned %}
-        <div class="summary-row" style="color: var(--link); font-weight: 700;">
+        <div class="summary-row points">
             <span>🌟 امتیاز کسب‌شده</span><span class="tnum">{{ sale.points_earned }}</span>
         </div>
         {% endif %}
