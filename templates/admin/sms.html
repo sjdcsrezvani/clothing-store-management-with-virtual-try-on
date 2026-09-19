@@ -154,6 +154,35 @@
                         مستقل از این سقف.
                     </small>
                 </div>
+                <div class="form-group">
+                    <label for="monthly_digest_phone">خلاصه ماهانه برای مدیر — شماره‌ها</label>
+                    <input type="text" id="monthly_digest_phone" name="monthly_digest_phone"
+                           value="{{ digest_phones }}" placeholder="مثلاً ۰۹۱۲۳۴۵۶۷۸۹">
+                    <small>
+                        وقتی ماه فارسی تمام شود، همان روایتی که داشبورد زیر کارت‌های «این ماه»
+                        می‌نویسد به این شماره پیامک می‌شود: فروش و سود ماه، شلوغ‌ترین روز، پرفروش‌ترین
+                        دسته و سطح مشتری. خالی بماند ارسال نمی‌شود — خودِ این شماره روشن‌کردن خلاصه است.
+                    </small>
+                    {% if digest_preview is defined %}
+                    <div class="digest-preview">
+                        <span class="digest-preview-label">پیش‌نمایش خلاصه بعدی — از فروش واقعی «{{ digest_next_month }}»</span>
+                        {% if digest_preview.state == 'ready' %}
+                        <div class="sms-bubble digest-preview-bubble" dir="auto">{{ digest_preview.body }}</div>
+                        {% else %}
+                        <p class="muted">پیش‌نمایش اکنون ساخته نشد؛ بعداً دوباره این صفحه را باز کنید.</p>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="form-group">
+                    <label for="monthly_digest_day">روز ارسال خلاصه از ماه جدید</label>
+                    <input type="number" id="monthly_digest_day" name="monthly_digest_day" min="1" max="28"
+                           value="{{ digest_day }}">
+                    <small>
+                        مثلاً با عدد ۳، سومِ هر ماه، گزارش ماه قبلی فرستاده می‌شود — همیشه یک ماه کامل،
+                        نه نیمه‌کاره. {% if digest_next_month %}خلاصه بعدی درباره‌ «{{ digest_next_month }}» است.{% endif %}
+                    </small>
+                </div>
                 <div class="form-actions">
                     <button type="submit" class="btn btn-sm btn-primary">ذخیره سقف</button>
                 </div>

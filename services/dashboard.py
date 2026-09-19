@@ -46,6 +46,7 @@ from services.backup import latest_backup
 from services.checks import check_alert_summary
 from services.customers import customer_overview
 from services.inventory import stock_alerts
+from services.month_reading import month_reading
 from services.pos_reconciliation import unresolved_transactions
 from services.reporting import canonical_report
 from services.security import ROLE_LABELS, role_allows
@@ -535,11 +536,32 @@ SECTIONS: tuple[tuple[str, str, str, str], ...] = (
     ("attention", "نیازمند توجه", "اقدام‌های امروز", "attention"),
     ("today", "امروز", "", "stats"),
     ("month", "این ماه", "", "stats"),
+    # The month in prose, from the same builders the analytics page and the
+    # owner's monthly SMS read — one reading, three places it is said.
+    ("reading", "روایت این ماه", "از همان نمودارهای سود و زیان", "reading"),
     ("balances", "مانده‌ها", "", "stats"),
     ("periodic", "کارهای دوره‌ای", "", "stats"),
     ("club", "باشگاه مشتریان", "", "stats"),
     ("top", "پرفروش‌ترین‌های این ماه", "", "top"),
 )
+
+
+def _month_reading(db: Session) -> list[str] | None:
+    """The month's sentences, the same words the owner's SMS carries.
+
+    Built from the same ``month_reading`` call the digest fires from, so the
+    page and the phone cannot disagree about what the month said. Owner-only
+    by construction: the caller never invokes this for a manager, and the
+    sentences name profit and margins — the owner's figures.
+    """
+    start, end = get_date_range("month")
+    reading = month_reading(db, start=start, end=end, span="این ماه")
+    notes = reading["notes"]
+    # The four an owner reads first, in the order the page's own sections put
+    # them: takings, the day worth naming, what sold, who bought.
+    keys = ("dailyChart", "categoryChart", "tierChart", "customerSegChart")
+    sentences = [notes[key] for key in keys if notes.get(key)]
+    return sentences or None
 
 
 def _top_rows(numbers: _Numbers, role: str) -> list[dict]:
@@ -574,7 +596,14 @@ def dashboard_overview(db: Session, *, role: str = "manager") -> dict:
     for key, title, eyebrow, kind in SECTIONS:
         section = {"key": key, "title": title, "eyebrow": eyebrow, "kind": kind,
                    "cards": [], "rows": [], "show_profit": False}
-        if kind == "top":
+        if kind == "reading":
+            # Owner-only, and lazy about it: the strip runs three aggregates
+            # and a day-walk, so a manager's page must never pay for it — the
+            # same discipline the other owner-only cards keep.
+            if not role_allows(role, "owner"):
+                continue
+            section["sentences"] = _month_reading(db) or []
+        elif kind == "top":
             if not role_allows(role, "manager"):
                 continue
             section["rows"] = _top_rows(numbers, role)
@@ -591,7 +620,7 @@ def dashboard_overview(db: Session, *, role: str = "manager") -> dict:
                     "tone": spec["tone"], "href": spec["href"],
                     "delta": None, "clear": False, **card,
                 })
-        if section["cards"] or section["rows"] or kind == "top":
+        if section["cards"] or section["rows"] or section.get("sentences") or kind == "top":
             sections.append(section)
     return {
         "role": role,

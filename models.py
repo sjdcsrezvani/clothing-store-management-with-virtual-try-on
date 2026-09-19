@@ -25,6 +25,12 @@ def to_english_digits(s: str) -> str:
     return result
 
 
+def to_persian_digits(s) -> str:
+    """English digits to Persian, for figures the owner reads in messages."""
+    persian = "۰۱۲۳۴۵۶۷۸۹"
+    return "".join(persian[int(ch)] if ch.isdigit() else ch for ch in str(s))
+
+
 class StaffUser(Base):
     """An authenticated store staff member with an explicit role."""
     __tablename__ = "staff_users"

@@ -58,6 +58,7 @@ SOURCE_LABELS = {
     "credit_reminder": "یادآوری نسیه",
     "purchase": "پس از خرید",
     "follow_up": "پیگیری",
+    "monthly_digest": "خلاصه ماهانه",
     "test": "آزمایشی",
 }
 STATUS_LABELS = {"queued": "در صف", "sent": "ارسال‌شده", "failed": "ناموفق"}

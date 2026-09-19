@@ -113,6 +113,9 @@
                         <small class="sms-meta tnum" dir="ltr">{{ message.phone }}</small>
                         <small class="sms-meta">
                             {{ row.source_label }}
+                            {% if row.digest_month is defined and row.digest_month %}
+                            <span class="digest-month-chip tnum">{{ row.digest_month }}</span>
+                            {% endif %}
                             {%- if message.template_id %} ·
                             <a href="/admin/sms/templates/{{ message.template_id }}/edit">{{ message.template_name }}</a>
                             {%- elif message.template_name %} · {{ message.template_name }}{% endif %}
@@ -183,6 +186,28 @@
         <span>صفحه {{ page }} از {{ total_pages }}</span>
         {% if page < total_pages %}<a class="btn btn-sm btn-ghost" href="?page={{ page + 1 }}{{ filter_qs }}">صفحه بعد</a>{% endif %}
     </nav>
+    {% endif %}
+
+    {# The digests, gathered: when the filter is on them, the owner gets one
+       month-named form to send any month's summary again by hand. #}
+    {% if source == 'monthly_digest' and can_resend_digest %}
+    {% set digest_refs = rows|map(attribute='message.ref')|select|list %}
+    {% if digest_refs %}
+    <form method="post" action="/admin/sms/history/digest/resend" class="digest-resend">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label for="digest-resend-ref">ارسال دوباره خلاصه یک ماه</label>
+        <div class="digest-resend-row">
+            <select id="digest-resend-ref" name="ref">
+                {% for ref in digest_refs|unique %}
+                <option value="{{ ref }}">
+                    {%- set month = rows|selectattr('message.ref', 'equalto', ref)|first -%}
+                    {{ month.digest_month or ref }}
+                {%- endfor %}
+            </select>
+            <button type="submit" class="btn btn-sm btn-primary">ارسال دوباره</button>
+        </div>
+    </form>
+    {% endif %}
     {% endif %}
 
     {% elif search or status != 'all' or source != 'all' %}

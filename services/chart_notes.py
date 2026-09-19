@@ -11,6 +11,13 @@ Every sentence is one line, always says something (a period with nothing in it i
 stated rather than left blank), and is keyed by the canvas it belongs to. The
 test that pins these keys to the canvases the page actually draws is what keeps a
 new chart from arriving without a sentence under it.
+
+The same sentences are read somewhere no canvas is drawn at all — the dashboard's
+month strip and the owner's monthly SMS summary. The builders therefore take the
+period as a word (``span``) instead of hard-coding «این بازه»: the page says
+«این بازه», the dashboard says «این ماه», and the two are guarded to stay the
+same words apart from that one substitution — a sentence edited only on the page
+cannot quietly stop being true of the phone.
 """
 
 from __future__ import annotations
@@ -21,6 +28,11 @@ from services.tier import TIER_LABELS
 # Said instead of a fabricated zero: a range with no sales in it is a fact about
 # the range, and a chart of it shows nothing at all.
 NO_DATA = "در این بازه فروشی ثبت نشده."
+
+# The word the page's sentences use for their period. A consumer reading about a
+# named month passes its own word (the dashboard says «این ماه») — nothing else
+# about the sentences may differ, which the parity guard pins.
+DEFAULT_SPAN = "این بازه"
 
 # Every chart on the analytics page, by the canvas it is drawn on. The page's own
 # markup is what this list is checked against.
@@ -107,7 +119,7 @@ def _trend(months) -> str:
     return sentence
 
 
-def _daily(days) -> str:
+def _daily(days, span: str = DEFAULT_SPAN) -> str:
     days = [row for row in _rows(days) if row.get("date")]
     selling = [row for row in days if float(row.get("revenue") or 0)]
     if not selling:
@@ -115,11 +127,11 @@ def _daily(days) -> str:
     best = max(selling, key=lambda row: float(row.get("revenue") or 0))
     revenue = sum(float(row.get("revenue") or 0) for row in days)
     profit = sum(float(row.get("profit") or 0) for row in days)
-    return (f"در {len(selling)} روز این بازه فروش ثبت شده: بیشترین {_money(best.get('revenue'))} "
+    return (f"در {len(selling)} روز {span} فروش ثبت شده: بیشترین {_money(best.get('revenue'))} "
             f"در {best['date']}، جمع {_money(revenue)} و سود {_money(profit)}.")
 
 
-def _category(categories) -> str:
+def _category(categories, span: str = DEFAULT_SPAN) -> str:
     categories = [row for row in _rows(categories) if float(row.get("revenue") or 0)]
     if not categories:
         return NO_DATA
@@ -128,13 +140,13 @@ def _category(categories) -> str:
     share = _share(top.get("revenue"), total)
     sentence = (f"«{top.get('category') or 'بدون دسته'}» با {share}٪ بیشترین سهم فروش را دارد "
                 f"({_money(top.get('revenue'))} از {_money(total)})؛ "
-                f"{len(categories)} دسته در این بازه فروش داشتهاند.")
+                f"{len(categories)} دسته در {span} فروش داشتهاند.")
     if share >= 50:
         sentence += " بیش از نیمی از فروش به یک دسته وابسته است."
     return sentence
 
 
-def _tier(rows) -> str:
+def _tier(rows, span: str = DEFAULT_SPAN) -> str:
     rows = [row for row in _rows(rows) if float(row.get("revenue") or 0)]
     if not rows:
         return NO_DATA
@@ -142,7 +154,7 @@ def _tier(rows) -> str:
     top = max(rows, key=lambda row: float(row.get("revenue") or 0))
     label = top.get("label") or TIER_LABELS.get(top.get("tier"), top.get("tier") or "—")
     return (f"مشتریان «{label}» با {_share(top.get('revenue'), total)}٪ بیشترین سهم فروش را "
-            f"دارند ({_money(top.get('revenue'))})؛ {len(rows)} سطح در این بازه خرید کردهاند.")
+            f"دارند ({_money(top.get('revenue'))})؛ {len(rows)} سطح در {span} خرید کردهاند.")
 
 
 def _weekday(pattern) -> str:
@@ -165,7 +177,7 @@ def _hour(pattern) -> str:
             f"{_share(best.get('revenue'), total)}٪ از فروش ساعتبندیشده.")
 
 
-def _price_dist(buckets) -> str:
+def _price_dist(buckets, span: str = DEFAULT_SPAN) -> str:
     buckets = [row for row in _rows(buckets) if float(row.get("quantity") or 0)]
     if not buckets:
         return NO_DATA
@@ -173,10 +185,10 @@ def _price_dist(buckets) -> str:
     top = max(buckets, key=lambda row: float(row.get("quantity") or 0))
     return (f"بیشترین فروش در بازه قیمتی {_money(top.get('price'))} بوده: "
             f"{int(float(top.get('quantity') or 0))} واحد، "
-            f"{_share(top.get('quantity'), units)}٪ از اقلام این بازه.")
+            f"{_share(top.get('quantity'), units)}٪ از اقلام {span}.")
 
 
-def _margin(margin_by_cat) -> str:
+def _margin(margin_by_cat, span: str = DEFAULT_SPAN) -> str:
     # A category with no revenue has no margin — the figure is `None`, not nought —
     # and a sentence about it would be the page stating a margin nobody has.
     rows = [row for row in _rows(margin_by_cat)
@@ -189,7 +201,7 @@ def _margin(margin_by_cat) -> str:
     if len(ordered) == 1:
         margin = int(best.get("margin") or 0)
         verdict = "زیانده" if margin < 0 else "سودده"
-        return f"این دسته در این بازه {verdict} است: حاشیه سود {margin}٪."
+        return f"این دسته در {span} {verdict} است: حاشیه سود {margin}٪."
     sentence = (f"بالاترین حاشیه سود «{best['category']}» با {int(best.get('margin') or 0)}٪ و "
                 f"پایینترین «{worst['category']}» با {int(worst.get('margin') or 0)}٪ است.")
     if losing:
@@ -199,14 +211,14 @@ def _margin(margin_by_cat) -> str:
     return sentence
 
 
-def _segments(customer_health) -> str:
+def _segments(customer_health, span: str = DEFAULT_SPAN) -> str:
     health = customer_health if isinstance(customer_health, dict) else {}
     segments = [row for row in _rows(health.get("segments")) if float(row.get("count") or 0)]
     repeat = int(health.get("repeat_rate") or 0)
     one_timer = int(health.get("one_timer_pct") or 0)
     if not segments and not repeat and not one_timer:
         return NO_DATA
-    sentence = (f"{repeat}٪ مشتریان این بازه بیش از یکبار خرید کردهاند و {one_timer}٪ فقط یکبار؛ "
+    sentence = (f"{repeat}٪ مشتریان {span} بیش از یکبار خرید کردهاند و {one_timer}٪ فقط یکبار؛ "
                 f"میانگین {health.get('avg_orders') or 0} سفارش برای هر مشتری.")
     if segments:
         biggest = max(segments, key=lambda row: float(row.get("count") or 0))
@@ -218,26 +230,35 @@ def _segments(customer_health) -> str:
 def chart_notes(*, price_stats=None, color_stats=None, size_stats=None, daily=None,
                 categories=None, tier_revenue=None, revenue_trend=None,
                 sales_pattern=None, price_dist=None, margin_by_cat=None,
-                customer_health=None) -> dict[str, str]:
+                customer_health=None, span: str = DEFAULT_SPAN) -> dict[str, str]:
     """One sentence per chart, keyed by the canvas it belongs to.
 
     Every argument is optional and any of them may be empty: an owner looking at a
     day with no sales gets a sentence saying so rather than a chart with a caption
-    that claims something.
+    that claims something. ``span`` is the word the sentences use for their period
+    — the page's default, or a named month for a reader with no charts in front
+    of them.
     """
     colour_units = sum(int(float(row.get("quantity") or 0)) for row in _rows(color_stats))
     size_units = sum(int(float(row.get("quantity") or 0)) for row in _rows(size_stats))
-    return {
+    notes = {
         "pricingChart": _pricing(price_stats),
         "colorChart": _variant(color_stats, "رنگ", colour_units),
         "sizeChart": _variant(size_stats, "سایز", size_units),
         "trendChart": _trend(revenue_trend),
-        "dailyChart": _daily(daily),
-        "categoryChart": _category(categories),
-        "tierChart": _tier(tier_revenue),
+        "dailyChart": _daily(daily, span),
+        "categoryChart": _category(categories, span),
+        "tierChart": _tier(tier_revenue, span),
         "weekdayChart": _weekday(sales_pattern),
         "hourChart": _hour(sales_pattern),
-        "priceDistChart": _price_dist(price_dist),
-        "marginCatChart": _margin(margin_by_cat),
-        "customerSegChart": _segments(customer_health),
+        "priceDistChart": _price_dist(price_dist, span),
+        "marginCatChart": _margin(margin_by_cat, span),
+        "customerSegChart": _segments(customer_health, span),
     }
+    if span != DEFAULT_SPAN:
+        # A reader with no charts in front of them is not reading about «این
+        # بازه»: the empty sentence is rewritten to name their period too.
+        empty = NO_DATA.replace(DEFAULT_SPAN, span)
+        notes = {key: (empty if value == NO_DATA else value)
+                 for key, value in notes.items()}
+    return notes

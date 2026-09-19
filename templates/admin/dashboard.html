@@ -65,6 +65,23 @@
     {% endif %}
 </section>
 
+{% elif section.kind == 'reading' %}
+<section class="card" aria-labelledby="dash-{{ section.key }}">
+    <div class="section-heading">
+        <div>
+            {% if section.eyebrow %}<span class="eyebrow">{{ section.eyebrow }}</span>{% endif %}
+            <h3 id="dash-{{ section.key }}">{{ section.title }}</h3>
+        </div>
+    </div>
+    {# The month said in words — the same sentences سود و زیان writes under its
+       charts and the monthly SMS carries to the owner's phone. #}
+    <ul class="reading-list">
+        {% for sentence in section.sentences %}
+        <li>{{ sentence }}</li>
+        {% endfor %}
+    </ul>
+</section>
+
 {% else %}
 <section aria-labelledby="dash-{{ section.key }}">
     <div class="section-heading">
