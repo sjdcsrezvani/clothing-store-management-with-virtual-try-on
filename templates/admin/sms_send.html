@@ -12,7 +12,6 @@
 {% endset %}
 {% include 'partials/page_header.html' %}
 
-{% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
 {% if error %}<div class="alert alert-error" role="alert">⚠️ {{ error }}</div>{% endif %}
 
 <div class="sms-send-layout">
@@ -70,6 +69,8 @@
                             <span>{{ customer.full_name }}</span>
                             <small class="tnum" dir="ltr">{{ customer.phone }}</small>
                         </label>
+                        {% else %}
+                        <p class="muted">مشتری برای دست‌چین‌کردن وجود ندارد — مخاطب دیگری انتخاب کنید.</p>
                         {% endfor %}
                     </div>
                     <small class="tnum" id="sms-picked-count">۰ مشتری انتخاب شده</small>

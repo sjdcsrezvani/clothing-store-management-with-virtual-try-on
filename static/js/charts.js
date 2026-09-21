@@ -103,6 +103,59 @@
 
     window.themeTones = themeTones;
 
+    // The appearance page's theme cards carry a small sample chart so the owner
+    // sees how a palette shades its charts before committing — the swatches say
+    // what the hues are, the sample says what they do together. It reads the
+    // same tokens every real chart reads: the card's own style is swapped onto
+    // the document element for the length of one synchronous draw, then the
+    // page's style is put back. Deliberately not a Chart instance: no config to
+    // remember and no print cycle to join — a preview that dies with the
+    // decision it illustrates.
+    window.renderThemeChartSample = function (canvas, styleText) {
+        if (!canvas || !canvas.getContext) return;
+        var root = document.documentElement;
+        var previous = root.getAttribute('style') || '';
+        root.setAttribute('style', styleText || previous);
+        try {
+            var width = Math.max(canvas.clientWidth || 0, 40);
+            var height = Math.max(canvas.clientHeight || 0, 24);
+            var ratio = window.devicePixelRatio || 1;
+            canvas.width = Math.round(width * ratio);
+            canvas.height = Math.round(height * ratio);
+            var context = canvas.getContext('2d');
+            context.setTransform(ratio, 0, 0, ratio, 0, 0);
+            context.clearRect(0, 0, width, height);
+            context.direction = 'rtl';
+            var tones = themeTones();
+            var pad = 6;
+            var base = height - 8;
+            var usable = base - pad;
+            // The neutrals first — the baseline and one mid gridline, the same
+            // quiet furniture the app's charts sit on.
+            context.strokeStyle = tones.rule;
+            context.lineWidth = 1;
+            context.beginPath();
+            context.moveTo(pad, pad + usable / 2 + 0.5);
+            context.lineTo(width - pad, pad + usable / 2 + 0.5);
+            context.moveTo(pad + 0.5, base + 0.5);
+            context.lineTo(width - pad + 0.5, base + 0.5);
+            context.stroke();
+            // Four bars over the four leading accents, the tallest beside the
+            // first: read right to left, the way the app's charts are read.
+            var shares = [0.52, 0.86, 0.38, 0.66];
+            var slot = (width - pad * 2) / shares.length;
+            var barWidth = Math.min(slot * 0.5, 18);
+            shares.forEach(function (share, index) {
+                var x = width - pad - slot * index - slot / 2;
+                var barHeight = usable * share;
+                context.fillStyle = tones.palette[index % tones.palette.length];
+                context.fillRect(x - barWidth / 2, base - barHeight, barWidth, barHeight);
+            });
+        } finally {
+            root.setAttribute('style', previous);
+        }
+    };
+
     // A translucent fill for the area under a line: the canvas needs a real colour
     // string, and a token can be hex or the rgb() a computed style hands back.
     function tintColour(colour, alpha) {
@@ -468,6 +521,7 @@
         var tones = activeTones();
         datasets.forEach(function (dataset, datasetIndex) {
             var color = mapColour(dataset.borderColor || tones.palette[datasetIndex % tones.palette.length]);
+            if (typeof context.recordStrokeStyle === 'function') context.recordStrokeStyle(String(color));
             context.strokeStyle = color;
             context.fillStyle = color;
             context.lineWidth = 2;

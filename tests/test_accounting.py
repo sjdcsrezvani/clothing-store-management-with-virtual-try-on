@@ -844,3 +844,60 @@ def test_an_expense_bar_without_expenses_states_absence(client, db_session, auth
     html = authed.get("/admin/accounting").text
     assert "share-meter" not in html
     assert "هزینه‌ای در این بازه ثبت نشده است" in html
+
+
+# ── one definition of what a customer still owes ─────────────────────────────
+
+def test_credit_arithmetic_has_one_definition():
+    """``sale_remaining`` clamps a drifted row at zero; a hand subtraction
+    anywhere else would bypass the clamp, so no source may derive it again.
+
+    Two families are guarded: the two fields of a sale subtracted from each
+    other (the clamp's own arithmetic, or its negative), and a
+    ``final_amount`` reaching a template or a JSON payload without ``fmt()``
+    or ``sale_remaining`` — a page or an API that pre-renders the remaining
+    figure itself would state an unclamped debt the credit page cannot show.
+    """
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    sources = [root / "main.py"]
+    for folder in ("routers", "services", "templates", "static"):
+        sources.extend(p for p in (root / folder).rglob("*")
+                       if p.suffix in (".py", ".js", ".html"))
+    assert len(sources) > 40, "the sweep lost its sources"
+
+    canonical = (root / "services" / "accounting.py").read_text(encoding="utf-8")
+    assert "def sale_remaining" in canonical, "the helper moved — re-point this guard"
+    # The clamp is part of the definition, not an implementation detail: a
+    # helper that subtracts without clamping re-opens the drifted-row wrongness
+    # for every caller at once.
+    definition = canonical[canonical.index("def sale_remaining"):]
+    definition = definition[:definition.index("\n\n")]
+    assert "max(0" in definition and "final_amount" in definition, (
+        "sale_remaining must clamp its subtraction at zero")
+
+    offenders = []
+    for path in sources:
+        if not path.is_file():
+            continue
+        src = path.read_text(encoding="utf-8")
+        for match in re.finditer(
+                r"(final_amount|credit_paid_amount)[^\n;]{0,40}[-+][^\n;]{0,40}"
+                r"(final_amount|credit_paid_amount)", src):
+            # The canonical definition is the one place the arithmetic lives.
+            if path.name == "accounting.py" and "def sale_remaining" in canonical:
+                line = src[:match.start()].count("\n") + 1
+                if line == 158:
+                    continue
+            offenders.append(f"{path}: {match.group(0)[:80]}")
+        if path.suffix == ".html" and "final_amount" in src:
+            for line_no, line in enumerate(src.splitlines(), start=1):
+                if "final_amount" not in line:
+                    continue
+                if "fmt(" in line or "sale_remaining" in line:
+                    continue
+                offenders.append(f"{path}:{line_no}: raw final_amount without fmt(): {line.strip()[:80]}")
+
+    assert not offenders, "\n".join(offenders)

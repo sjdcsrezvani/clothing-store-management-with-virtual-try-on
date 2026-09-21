@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block content %}
-{% set filter_qs = '&movement_type=' ~ movement_type_filter ~ '&direction=' ~ direction_filter
-    ~ '&product_id=' ~ product_filter ~ '&variant_id=' ~ variant_filter
-    ~ '&actor=' ~ actor_filter ~ '&start_date=' ~ start_date_filter
-    ~ '&end_date=' ~ end_date_filter ~ '&q=' ~ (search|urlencode) %}
-{% set list_qs = ('&reconcile=' ~ reconcile) if reconcile else filter_qs %}
+{# Query strings are urlencoded once in the route (the purchases page's rule):
+   these values land inside quoted hrefs, and a hand-concatenated one put raw
+   text in reach of the attribute. #}
+{% set list_qs = ('reconcile=' ~ reconcile) if reconcile else filter_qs %}
+{% set qs_prefix = ('&' ~ list_qs) if list_qs else '' %}
 
 {% set page_description %}
 هر تغییر موجودی به‌صورت غیرقابل‌ویرایش ثبت می‌شود؛ این صفحه برای حسابرسی و بررسی اختلاف‌هاست.
@@ -16,8 +16,6 @@
 {% endset %}
 {% include 'partials/page_header.html' %}
 
-{% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
-{% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}
 
 <p class="muted movement-legacy-note">
     از نسخه ۲.۳.۰ خریدها موجودی را تغییر نمی‌دهند و فقط بهای تمام‌شده را به‌روز می‌کنند؛
@@ -143,9 +141,9 @@
 
     {% if total_pages > 1 %}
     <nav class="product-pagination" aria-label="صفحه‌بندی فهرست همخوانی">
-        {% if page > 1 %}<a class="btn btn-sm btn-ghost" href="?page={{ page - 1 }}{{ list_qs }}">صفحه قبل</a>{% endif %}
+        {% if page > 1 %}<a class="btn btn-sm btn-ghost" href="?page={{ page - 1 }}{{ qs_prefix }}">صفحه قبل</a>{% endif %}
         <span>صفحه {{ page }} از {{ total_pages }}</span>
-        {% if page < total_pages %}<a class="btn btn-sm btn-ghost" href="?page={{ page + 1 }}{{ list_qs }}">صفحه بعد</a>{% endif %}
+        {% if page < total_pages %}<a class="btn btn-sm btn-ghost" href="?page={{ page + 1 }}{{ qs_prefix }}">صفحه بعد</a>{% endif %}
     </nav>
     {% endif %}
 </section>
@@ -310,9 +308,9 @@
 
     {% if total_pages > 1 %}
     <nav class="product-pagination" aria-label="صفحه‌بندی دفتر انبار">
-        {% if page > 1 %}<a class="btn btn-sm btn-ghost" href="?page={{ page - 1 }}{{ list_qs }}">صفحه قبل</a>{% endif %}
+        {% if page > 1 %}<a class="btn btn-sm btn-ghost" href="?page={{ page - 1 }}{{ qs_prefix }}">صفحه قبل</a>{% endif %}
         <span>صفحه {{ page }} از {{ total_pages }}</span>
-        {% if page < total_pages %}<a class="btn btn-sm btn-ghost" href="?page={{ page + 1 }}{{ list_qs }}">صفحه بعد</a>{% endif %}
+        {% if page < total_pages %}<a class="btn btn-sm btn-ghost" href="?page={{ page + 1 }}{{ qs_prefix }}">صفحه بعد</a>{% endif %}
     </nav>
     {% endif %}
 </section>

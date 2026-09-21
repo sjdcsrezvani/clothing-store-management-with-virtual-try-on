@@ -14,6 +14,14 @@
 
    `heading_class` stays available because the catalog pages lay their actions
    out differently; it defaults to the shared one. #}
+{# Flash messages live in the header, not each page: the «ذخیره شد» / «خطا»
+   the redirect carries was stamped on every page by hand, and paper needs to
+   know which of them survive — the confirmation and the error are the screen's
+   reply, the warning states something true of the record and travels. #}
+{% set flash_tone = msg_tone | default('success') %}
+{% if msg %}<div class="alert alert-{{ flash_tone }}" role="status">{{ msg }}</div>{% endif %}
+{% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}
+{% if print_heading %}<h2 class="print-heading">{{ print_heading }}</h2>{% endif %}
 <div class="{{ heading_class | default('page-heading') }}">
     <div class="page-heading-body">
         {% include 'partials/breadcrumb.html' %}
@@ -21,4 +29,13 @@
         {% if page_description %}<p>{{ page_description }}</p>{% endif %}
     </div>
     {% if page_actions %}<div class="admin-nav">{{ page_actions }}</div>{% endif %}
+    {# The print affordance: one button, drawn by the one header every page
+       shares, parked at the heading's end beside the page's own actions.
+       `window.print()` was a browser-menu accident on every page that never
+       grew its own button; the paper state each page owns is unchanged. A page
+       that must not offer paper (none today) sets `skip_print_action`. #}
+    {% if not skip_print_action %}
+    <button type="button" class="print-action screen-only" onclick="window.print()"
+            aria-label="چاپ این صفحه"><svg class="ui-icon" focusable="false" aria-hidden="true"><use href="#icon-print"></use></svg>چاپ</button>
+    {% endif %}
 </div>

@@ -16,6 +16,7 @@ from services._common import (
     jalali_str,
     pct,
     percent,
+    today_jalali_str,
 )
 from services.customers import customer_context_processor
 from services.navigation import (
@@ -153,4 +154,10 @@ templates.env.globals.update(
     # was handed, so a page that renames itself (a customer record) gets a trail
     # ending in that same name rather than a second, stale one.
     trail_for=trail_for,
+    # The date a printed page carries in its own heading: a staple travels
+    # without a URL, so the sheet says which day it describes. It is the
+    # function, not a value captured at import — a server running past midnight
+    # must print the day it is, not the day it started. A page with a more
+    # specific subject (the analytics period) names that instead.
+    today_jalali=today_jalali_str,
 )

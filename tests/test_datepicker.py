@@ -51,7 +51,7 @@ def test_picker_styles_come_from_theme_tokens():
     section = STYLE_CSS[STYLE_CSS.index("/* ===================== Persian date picker"):]
     for token in ("var(--card)", "var(--rule)", "var(--candy)", "var(--ink)",
                   "var(--field-bg)", "var(--focus-ring)", "var(--brand-label)",
-                  "var(--surface-soft)", "var(--radius)", "var(--shadow-hover)"):
+                  "var(--surface-soft)", "var(--radius)", "var(--shadow-overlay)"):
         assert token in section, token
     # States must not rely on colour alone for high-contrast themes.
     assert "html[data-theme-mode=\"high-contrast\"] .pdp-day.is-selected" in STYLE_CSS
@@ -290,8 +290,9 @@ def test_campaign_route_stores_a_jalali_date_as_the_same_gregorian_day(client, d
     ("admin/analytics.html", 'data-pdp-pair="#analytics-end"'),
     ("admin/purchases.html", 'data-pdp-pair="#filter-end"'),
     ("admin/inventory_movements.html", 'data-pdp-pair="#filter-end"'),
-    ("admin/checks.html", 'data-pdp-pair="#due_date"'),
-    ("admin/staff.html", 'data-pdp-pair="#contract_end_date"'),
+    ("admin/checks.html", 'data-pdp-pair="#due_date"'),        # The staff page renders one record per employee, so the pair ids are
+        # parametrized by the record — the pin follows the template's shape.
+        ("admin/staff.html", 'data-pdp-pair="#contract_end_date_{{ user.id }}"'),
     ("admin/campaign_form.html", 'data-pdp-pair="#end_date"'),
 ])
 def test_range_pairs_are_declared_once(template, fragment):

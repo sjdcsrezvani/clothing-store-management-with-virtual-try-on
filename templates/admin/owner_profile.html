@@ -4,8 +4,6 @@
 این اطلاعات در قراردادهای استخدامی و رسیدهای حقوقی استفاده می‌شود.
 {% endset %}
 {% include 'partials/page_header.html' %}
-{% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
-{% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
 <div class="card">
   <form method="post" action="/admin/owner-profile" class="form-row">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,9 +21,9 @@ from models import (
     generate_barcode,
     to_english_digits,
 )
-from services.security import require_html_role
-from services._common import fmt, check_admin, jalali_str
-from services.barcode import generate_barcode_image, generate_barcode_number
+from services.security import log_action, require_html_role
+from services._common import fmt, check_admin, jalali_str, page_arg
+from services.barcode import BARCODE_DENSITIES, generate_barcode_image, generate_barcode_number
 from services.templating import templates
 from services.inventory import (
     record_opening_stock,
@@ -33,7 +34,13 @@ from services.inventory import (
 from services.store import get_store
 from services.events import append_event
 from services.tags import (
+    ALLOWED_ALIGNMENTS,
+    ALLOWED_BARCODE_MODES,
+    ALLOWED_LAYOUT_MODES,
+    FIELD_LABELS,
     PRESETS,
+    TAG_INPUT_KEYS,
+    TAG_NUMERIC_RULES,
     calculate_a4_fit,
     item_from_variant,
     load_tag_config,
@@ -138,13 +145,14 @@ async def admin_products(
     request: Request,
     search: str = "",
     category: str = "",
-    page: int = 1,
+    page: str = "1",
     db: Session = Depends(get_db),
 ):
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
+    page = page_arg(page)
     query = db.query(Product).filter(Product.is_active == True)
 
     if search:
@@ -187,12 +195,31 @@ async def admin_products(
     })
 
 
+def _safe_tag_preview(config, sample_item, store) -> str:
+    """The preview, or an empty string when the layout cannot be re-validated.
+
+    A broken rules table must not take the page down before its own drift
+    checks can report; a layout that simply does not validate (an old saved
+    shape, say) leaves the page without its preview rather than without its
+    error screen.
+    """
+    try:
+        return render_tag_html(config, sample_item, store)
+    except (ValueError, TypeError, KeyError):
+        return ""
+
+
 @router.get("/settings/tags", response_class=HTMLResponse)
 async def admin_tag_settings(request: Request, db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
+    # The context is built before the drift checks so the check render and the
+    # page's own error path share one context: a template that hard-codes a
+    # bound the table lacks — or a numeric field the map never told about —
+    # fails visibly here, on the page the owner is looking at, instead of
+    # surfacing later as a rule the browser showed and the server ignored.
     config = load_tag_config(db)
     tag_templates = list_tag_templates(db)
     sample_variant = (
@@ -213,8 +240,24 @@ async def admin_tag_settings(request: Request, db: Session = Depends(get_db)):
         density: generate_barcode_image(sample_item["barcode"], density=density)
         for density in ("compact", "standard")
     }
-    return templates.TemplateResponse(request, "admin/settings_tags.html", {
+    context = {
+        "request": request,
         "tag_config": config,
+        # The one table of bounds the validator enforces; the template renders
+        # its min/max attributes from it, so a bound is written once.
+        "tag_numeric_rules": TAG_NUMERIC_RULES,
+        # The field names the designer script shows, served from the service's
+        # own map instead of a second copy hard-coded in the page.
+        "field_labels": FIELD_LABELS,
+        # The choices each select offers, from the same allow-lists the
+        # validator enforces — an option the server would refuse cannot be
+        # offered, and a new accepted value cannot be missing from the page.
+        "allow_list_sources": {
+            "layout_modes": sorted(ALLOWED_LAYOUT_MODES),
+            "alignments": sorted(ALLOWED_ALIGNMENTS),
+            "barcode_modes": sorted(ALLOWED_BARCODE_MODES),
+            "barcode_densities": sorted(BARCODE_DENSITIES),
+        },
         "tag_presets": PRESETS,
         "tag_field_options": [
             {
@@ -234,12 +277,64 @@ async def admin_tag_settings(request: Request, db: Session = Depends(get_db)):
         ],
         "tag_fit": calculate_a4_fit(config),
         "sample_item": sample_item,
-        "preview_html": render_tag_html(config, sample_item, store),
+        # A corrupted rules table raises inside the preview's own re-validation;
+        # the page must still render so the drift checks below can name the
+        # problem instead of the route crashing on it.
+        "preview_html": _safe_tag_preview(config, sample_item, store),
         "barcode_preview_sources": barcode_preview_sources,
         "store": store,
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
-    })
+    }
+
+    # Source check, source side: the template's own map must be exactly the
+    # canonical one, every macro call must name a mapped input, and the table
+    # must name no key no input ships — either way one of the sources drifted.
+    template_source = (Path("templates") / "admin" / "settings_tags.html").read_text(encoding="utf-8")
+    start = template_source.index("{% set tag_input_keys")
+    map_block = template_source[start:template_source.index("} %}", start)]
+    mapped = dict(re.findall(r"'([a-z-]+)':\s*'([a-z_]+)'", map_block))
+    calls = set(re.findall(r"num\('([a-z-]+)'", template_source))
+    if mapped != TAG_INPUT_KEYS:
+        context["err"] = "خطای قالب: نقشه ورودی‌ها با جدول کلیدها هم‌خوان نیست — هر دو را با هم به‌روز کنید."
+        return templates.TemplateResponse(request, "admin/settings_tags.html", context)
+    unmapped = sorted(calls - set(TAG_INPUT_KEYS))
+    if unmapped:
+        context["err"] = "خطای قالب: «" + "، ".join(unmapped) + "» در نقشه ورودی‌ها نیست — صفحه از ذخیره‌سازی محافظت می‌کند."
+        return templates.TemplateResponse(request, "admin/settings_tags.html", context)
+    orphan_rules = sorted(set(TAG_NUMERIC_RULES) - set(TAG_INPUT_KEYS.values()))
+    if orphan_rules:
+        context["err"] = "خطای قالب: «" + "، ".join(orphan_rules) + "» قاعده‌ای بی‌میدان است."
+        return templates.TemplateResponse(request, "admin/settings_tags.html", context)
+
+    # Source check, painted side: the bounds are verified in what the page
+    # actually paints, against the table, so a macro overridden per field or a
+    # hand-written min/max names itself here as a figure the table never said.
+    for processor in templates.context_processors:
+        context.update(processor(request))
+    rendered = templates.get_template("admin/settings_tags.html").render(context)
+    hard_bounds = []
+    for m in re.finditer(r'<input\b[^>]*>', rendered):
+        tag = m.group(0)
+        if 'type="number"' not in tag:
+            continue
+        id_m = re.search(r'id="([a-z-]+)"', tag)
+        key = TAG_INPUT_KEYS.get(id_m.group(1)) if id_m else None
+        rule = TAG_NUMERIC_RULES.get(key) if key else None
+        min_m = re.search(r'\bmin="([0-9.]+)"', tag)
+        max_m = re.search(r'\bmax="([0-9.]+)"', tag)
+        painted = (float(min_m.group(1)) if min_m else None,
+                   float(max_m.group(1)) if max_m else None)
+        expected = (float(rule[0]), float(rule[1])) if rule else (None, None)
+        if painted != expected:
+            hard_bounds.append(id_m.group(1) if id_m else tag[:60])
+    hard_bounds = sorted(set(hard_bounds))
+    if hard_bounds:
+        context["err"] = "خطای قالب: «" + "، ".join(hard_bounds) + "» مرز خودش را نوشته — از جدول قواعد استفاده کنید."
+        context["msg"] = ""
+        return templates.TemplateResponse(request, "admin/settings_tags.html", context)
+
+    return templates.TemplateResponse(request, "admin/settings_tags.html", context)
 
 
 @router.post("/settings/tags", response_class=HTMLResponse)
@@ -250,9 +345,12 @@ async def admin_tag_settings_save(request: Request, tag_config: str = Form(""), 
     try:
         save_tag_config(db, json.loads(tag_config))
         db.commit()
-    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+    except (json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError) as exc:
         db.rollback()
-        return RedirectResponse(url="/admin/settings/tags?err=" + quote_plus(str(exc)), status_code=303)
+        message = str(exc) if isinstance(exc, ValueError) else "داده طراحی تگ خوانده نشد؛ دوباره تلاش کنید."
+        return RedirectResponse(url="/admin/settings/tags?err=" + quote_plus(message), status_code=303)
+    # A settings change worth an audit row, like every other settings save.
+    log_action(db, "tag_settings_update", "به‌روزرسانی طرح تگ و بارکد", request=request, target_type="settings")
     return RedirectResponse(url="/admin/settings/tags?msg=تنظیمات تگ ذخیره شد.", status_code=303)
 
 
@@ -271,9 +369,11 @@ async def admin_tag_template_save(
         parsed_id = int(template_id) if template_id.strip() else None
         save_tag_template(db, template_name, json.loads(tag_config), parsed_id)
         db.commit()
-    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+    except (json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError) as exc:
         db.rollback()
-        return RedirectResponse(url="/admin/settings/tags?err=" + quote_plus(str(exc)), status_code=303)
+        message = str(exc) if isinstance(exc, ValueError) else "داده طراحی تگ خوانده نشد؛ دوباره تلاش کنید."
+        return RedirectResponse(url="/admin/settings/tags?err=" + quote_plus(message), status_code=303)
+    log_action(db, "tag_template_update", "به‌روزرسانی قالب تگ", request=request, target_type="settings")
     return RedirectResponse(url="/admin/settings/tags?msg=" + quote_plus("قالب تگ ذخیره شد."), status_code=303)
 
 
@@ -292,10 +392,14 @@ async def admin_tag_template_delete(template_id: int, request: Request, db: Sess
 
 
 @router.post("/settings/tags/image", response_class=HTMLResponse)
-async def admin_tag_settings_image(request: Request, image: UploadFile = File(...), db: Session = Depends(get_db)):
+async def admin_tag_settings_image(request: Request, image: UploadFile | None = File(None), db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
+    if image is None or not (image.filename or "").strip():
+        return RedirectResponse(
+            url="/admin/settings/tags?err=" + quote_plus("ابتدا یک تصویر انتخاب کنید."),
+            status_code=303)
     try:
         config = load_tag_config(db)
         config["custom_image_path"] = save_tag_image(await image.read(), image.filename or "", image.content_type)
@@ -304,6 +408,7 @@ async def admin_tag_settings_image(request: Request, image: UploadFile = File(..
     except ValueError as exc:
         db.rollback()
         return RedirectResponse(url="/admin/settings/tags?err=" + quote_plus(str(exc)), status_code=303)
+    log_action(db, "tag_image_update", "به‌روزرسانی تصویر سفارشی بارکد", request=request, target_type="settings")
     return RedirectResponse(url="/admin/settings/tags?msg=تصویر تگ ذخیره شد.", status_code=303)
 
 
@@ -938,13 +1043,14 @@ async def admin_variant_demand_reset(variant_id: int, request: Request, db: Sess
 async def admin_barcodes_print(
     request: Request,
     category: str = "",
-    page: int = 1,
+    page: str = "1",
     db: Session = Depends(get_db),
 ):
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
+    page = page_arg(page)
     query = db.query(Product).filter(Product.is_active == True)
 
     if category:

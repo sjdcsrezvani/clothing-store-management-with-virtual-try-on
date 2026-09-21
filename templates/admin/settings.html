@@ -3,8 +3,13 @@
 
 {% include 'partials/page_header.html' %}
 
-{% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
-{% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
+{# Numeric inputs render through this helper so the bounds on screen come from
+   the same table the server validates (SETTINGS_NUMERIC_RULES in
+   routers/admin.py) — the form and the rules cannot drift apart, and the
+   table is the one place a bound is ever written. A numeric field with no
+   rule in the table is marked data-unbounded so it stays findable. #}
+{% from 'partials/numeric_input.html' import num with context %}
+
 
 <div class="card settings-card">
     <form method="post" action="/admin/settings">
@@ -14,7 +19,7 @@
                 <h3>ظاهر فروشگاه</h3>
                 <p>تم، رنگ‌بندی و حالت نمایش پنل را در صفحه اختصاصی ظاهر فروشگاه مدیریت کنید.</p>
             </div>
-            <a href="/admin/settings/appearance" class="btn btn-ghost">🎨 مدیریت ظاهر و تم‌ها</a>
+            <a href="/admin/settings/appearance" class="btn btn-ghost">مدیریت ظاهر و تم‌ها</a>
         </div>
 
         <div class="settings-appearance-link settings-tag-link">
@@ -31,21 +36,20 @@
         <div class="form-row">
             <div class="form-group">
                 <label for="barcode_code_length">تعداد رقم کد بارکد جدید</label>
-                <input type="number" id="barcode_code_length" name="barcode_code_length" min="4" max="12"
-                       value="{{ settings.get('barcode_code_length', '5') }}">
+                {{ num('barcode_code_length', settings.get('barcode_code_length', '5')) }}
                 <small>برای تنوع‌های جدیدی که بارکد دستی ندارند، کد با این تعداد رقم ساخته می‌شود (۴ تا ۱۲ رقم). کدهای موجود تغییر نمی‌کنند و تصویر بارکد همیشه دقیقاً از همان کد تولید می‌شود.</small>
             </div>
         </div>
 
         <div class="form-row">
             <div class="form-group">
-                <label for="store_name">🏪 نام فروشگاه</label>
+                <label for="store_name">نام فروشگاه</label>
                 <input type="text" id="store_name" name="store_name"
                        value="{{ settings.get('store_name', store.name) }}">
                 <small>روی همه صفحات، فاکتور و تگ‌ها نمایش داده می‌شود</small>
             </div>
             <div class="form-group">
-                <label for="store_instagram">📸 اینستاگرام</label>
+                <label for="store_instagram">اینستاگرام</label>
                 <input type="text" id="store_instagram" name="store_instagram"
                        value="{{ settings.get('store_instagram', store.instagram) }}"
                        placeholder="@your_store">
@@ -54,13 +58,13 @@
         </div>
         <div class="form-row">
             <div class="form-group">
-                <label for="store_tagline">🏷️ شعار / توضیح کوتاه</label>
+                <label for="store_tagline">شعار / توضیح کوتاه</label>
                 <input type="text" id="store_tagline" name="store_tagline"
                        value="{{ settings.get('store_tagline', store.tagline) }}"
                        placeholder="فروشگاه پوشاک کودک">
             </div>
             <div class="form-group">
-                <label for="store_footer">📝 متن پایین صفحات</label>
+                <label for="store_footer">متن پایین صفحات</label>
                 <input type="text" id="store_footer" name="store_footer"
                        value="{{ settings.get('store_footer', store.footer) }}">
             </div>
@@ -69,29 +73,25 @@
         <h3>تنظیمات تخفیف</h3>
         <div class="form-row">
             <div class="form-group">
-                <label for="default_referrer_discount">🤝 مبلغ تخفیف معرف (تومان)</label>
-                <input type="number" id="default_referrer_discount" name="default_referrer_discount"
-                       value="{{ settings.get('default_referrer_discount', '50000') }}" min="0">
+                <label for="default_referrer_discount">مبلغ تخفیف معرف (تومان)</label>
+                {{ num('default_referrer_discount', settings.get('default_referrer_discount', '50000')) }}
                 <small>مبلغی که معرف به ازای هر معرفی دریافت می‌کند</small>
             </div>
             <div class="form-group">
-                <label for="default_referred_discount">🎁 مبلغ تخفیف معرفی‌شده (تومان)</label>
-                <input type="number" id="default_referred_discount" name="default_referred_discount"
-                       value="{{ settings.get('default_referred_discount', '30000') }}" min="0">
+                <label for="default_referred_discount">مبلغ تخفیف معرفی‌شده (تومان)</label>
+                {{ num('default_referred_discount', settings.get('default_referred_discount', '30000')) }}
                 <small>مبلغ تخفیف برای مشتری جدید (فقط اولین خرید)</small>
             </div>
         </div>
         <div class="form-row">
             <div class="form-group">
-                <label for="min_purchase_for_discount">🛒 حداقل مبلغ خرید (تومان)</label>
-                <input type="number" id="min_purchase_for_discount" name="min_purchase_for_discount"
-                       value="{{ settings.get('min_purchase_for_discount', '500000') }}" min="0">
+                <label for="min_purchase_for_discount">حداقل مبلغ خرید (تومان)</label>
+                {{ num('min_purchase_for_discount', settings.get('min_purchase_for_discount', '500000')) }}
                 <small>مشتری باید حداقل این مبلغ خرید کرده باشد تا بتواند از تخفیف استفاده کند</small>
             </div>
             <div class="form-group">
-                <label for="monthly_referral_limit">📋 سقف معرفی ماهانه (نفر)</label>
-                <input type="number" id="monthly_referral_limit" name="monthly_referral_limit"
-                       value="{{ settings.get('monthly_referral_limit', '10') }}" min="1">
+                <label for="monthly_referral_limit">سقف معرفی ماهانه (نفر)</label>
+                {{ num('monthly_referral_limit', settings.get('monthly_referral_limit', '10')) }}
                 <small>حداکثر تعداد افرادی که یک مشتری می‌تواند در ماه معرفی کند</small>
             </div>
         </div>
@@ -99,53 +99,45 @@
         <h3 class="settings-section">تنظیمات سطوح مشتریان</h3>
         <div class="form-row">
             <div class="form-group">
-                <label for="tier_points_per_amount">🌟 امتیاز به ازای هر خرید</label>
-                <input type="number" id="tier_points_per_amount" name="tier_points_per_amount"
-                       value="{{ tier_config.points_per_amount }}" min="0">
+                <label for="tier_points_per_amount">امتیاز به ازای هر خرید</label>
+                {{ num('tier_points_per_amount', tier_config.points_per_amount) }}
             </div>
             <div class="form-group">
-                <label for="tier_points_per_toman">💰 به ازای هر مبلغ (تومان)</label>
-                <input type="number" id="tier_points_per_toman" name="tier_points_per_toman"
-                       value="{{ tier_config.points_per_toman }}" min="0">
-                <small>مثال: 10 امتیاز به ازای هر 100,000 تومان</small>
+                <label for="tier_points_per_toman">به ازای هر مبلغ (تومان)</label>
+                {{ num('tier_points_per_toman', tier_config.points_per_toman) }}
+                <small>مثال: ۱۰ امتیاز به ازای هر ۱۰۰٬۰۰۰ تومان</small>
             </div>
         </div>
 
         <h4>سطح طلایی</h4>
         <div class="form-row">
             <div class="form-group">
-                <label for="tier_gold_threshold">📊 آستانه امتیاز</label>
-                <input type="number" id="tier_gold_threshold" name="tier_gold_threshold"
-                       value="{{ tier_config.gold_threshold }}" min="0">
+                <label for="tier_gold_threshold">آستانه امتیاز</label>
+                {{ num('tier_gold_threshold', tier_config.gold_threshold) }}
             </div>
             <div class="form-group">
-                <label for="tier_gold_discount_percent">🏷️ درصد تخفیف دائمی</label>
-                <input type="number" id="tier_gold_discount_percent" name="tier_gold_discount_percent"
-                       value="{{ tier_config.gold_discount_percent }}" min="0" max="100">
+                <label for="tier_gold_discount_percent">درصد تخفیف دائمی</label>
+                {{ num('tier_gold_discount_percent', tier_config.gold_discount_percent) }}
             </div>
             <div class="form-group">
-                <label for="tier_gold_birthday_discount">🎂 تخفیف تولد (تومان)</label>
-                <input type="number" id="tier_gold_birthday_discount" name="tier_gold_birthday_discount"
-                       value="{{ tier_config.gold_birthday_discount }}" min="0">
+                <label for="tier_gold_birthday_discount">تخفیف تولد (تومان)</label>
+                {{ num('tier_gold_birthday_discount', tier_config.gold_birthday_discount) }}
             </div>
         </div>
 
         <h4>سطح الماس</h4>
         <div class="form-row">
             <div class="form-group">
-                <label for="tier_diamond_threshold">📊 آستانه امتیاز</label>
-                <input type="number" id="tier_diamond_threshold" name="tier_diamond_threshold"
-                       value="{{ tier_config.diamond_threshold }}" min="0">
+                <label for="tier_diamond_threshold">آستانه امتیاز</label>
+                {{ num('tier_diamond_threshold', tier_config.diamond_threshold) }}
             </div>
             <div class="form-group">
-                <label for="tier_diamond_discount_percent">🏷️ درصد تخفیف دائمی</label>
-                <input type="number" id="tier_diamond_discount_percent" name="tier_diamond_discount_percent"
-                       value="{{ tier_config.diamond_discount_percent }}" min="0" max="100">
+                <label for="tier_diamond_discount_percent">درصد تخفیف دائمی</label>
+                {{ num('tier_diamond_discount_percent', tier_config.diamond_discount_percent) }}
             </div>
             <div class="form-group">
-                <label for="tier_diamond_birthday_discount">🎂 تخفیف تولد (تومان)</label>
-                <input type="number" id="tier_diamond_birthday_discount" name="tier_diamond_birthday_discount"
-                       value="{{ tier_config.diamond_birthday_discount }}" min="0">
+                <label for="tier_diamond_birthday_discount">تخفیف تولد (تومان)</label>
+                {{ num('tier_diamond_birthday_discount', tier_config.diamond_birthday_discount) }}
             </div>
         </div>
 
@@ -155,9 +147,8 @@
            field that changes nothing is worse than no field at all. #}
         <div class="form-row">
             <div class="form-group">
-                <label for="tier_downgrade_months">📅 ماه‌های عدم خرید</label>
-                <input type="number" id="tier_downgrade_months" name="tier_downgrade_months"
-                       value="{{ tier_config.downgrade_months }}" min="0">
+                <label for="tier_downgrade_months">ماه‌های عدم خرید</label>
+                {{ num('tier_downgrade_months', tier_config.downgrade_months) }}
                 <small>اگر مشتری بیشتر از این مدت خرید نکند، یک سطح پایین می‌آید. ۰ = این بررسی را نمی‌خواهم.</small>
             </div>
         </div>
@@ -175,7 +166,7 @@
         {% set target = settings.get('birthday_target', 'child') %}
         {% set child_on = settings.get('child_profile_enabled', '1') not in ['0', 'false', 'False', 'no', 'off'] %}
         <div class="form-group">
-            <label for="birthday_target">🎈 مبنای تخفیف و پیامک تولد</label>
+            <label for="birthday_target">مبنای تخفیف و پیامک تولد</label>
             <select id="birthday_target" name="birthday_target">
                 <option value="child" {% if target == 'child' %}selected{% endif %}>تولد فرزند (فروشگاه کودک)</option>
                 <option value="customer" {% if target == 'customer' %}selected{% endif %}>تولد خود مشتری</option>
@@ -201,9 +192,8 @@
             </small>
         </div>
         <div class="form-group">
-            <label for="birthday_sms_days_before">📅 روزهای قبل از تولد</label>
-            <input type="number" id="birthday_sms_days_before" name="birthday_sms_days_before"
-                   value="{{ tier_config.birthday_sms_days_before }}" min="0">
+            <label for="birthday_sms_days_before">روزهای قبل از تولد</label>
+            {{ num('birthday_sms_days_before', tier_config.birthday_sms_days_before) }}
             <small>چند روز قبل از تولد، تخفیف فعال و پیامک ارسال شود (برای فروشگاه کودک: تولد فرزند)</small>
         </div>
 
@@ -219,27 +209,24 @@
         <h3 class="settings-section">سقف تولید تصویر هوش مصنوعی</h3>
         <div class="form-row">
             <div class="form-group">
-                <label for="tryon_daily_limit">🎨 سقف تولید روزانه</label>
-                <input type="number" id="tryon_daily_limit" name="tryon_daily_limit" min="0"
-                       value="{{ settings.get('tryon_daily_limit', '20') }}">
+                <label for="tryon_daily_limit">سقف تولید روزانه</label>
+                {{ num('tryon_daily_limit', settings.get('tryon_daily_limit', '20')) }}
                 <small>حداکثر تصویر تولیدشده با هوش مصنوعی در روز (هر تصویر هزینه دارد)</small>
             </div>
         </div>
         <h3 class="settings-section">سقف اعتبار و سررسید نسیه</h3>
         <div class="form-row">
             <div class="form-group">
-                <label for="credit_terms_days">📅 مهلت پرداخت نسیه (روز)</label>
-                <input type="number" id="credit_terms_days" name="credit_terms_days" min="0"
-                       value="{{ settings.get('credit_terms_days', '30') }}">
+                <label for="credit_terms_days">مهلت پرداخت نسیه (روز)</label>
+                {{ num('credit_terms_days', settings.get('credit_terms_days', '30')) }}
                 <small>
                     هر فاکتور نسیه با این مهلت سررسید می‌گیرد و «حساب نسیه» دیرکرد را از همان سررسید می‌سنجد.
                     ۰ = بدون سررسید (سن بدهی از تاریخ فاکتور حساب می‌شود).
                 </small>
             </div>
             <div class="form-group">
-                <label for="credit_reminder_min_hours">⏳ فاصله مجاز بین دو یادآوری (ساعت)</label>
-                <input type="number" id="credit_reminder_min_hours" name="credit_reminder_min_hours" min="0"
-                       value="{{ settings.get('credit_reminder_min_hours', '24') }}">
+                <label for="credit_reminder_min_hours">فاصله مجاز بین دو یادآوری (ساعت)</label>
+                {{ num('credit_reminder_min_hours', settings.get('credit_reminder_min_hours', '24')) }}
                 <small>تا این مدت، یادآوری دوباره برای همان مشتری رد می‌شود؛ جلوی پیامک ناخواسته را می‌گیرد.</small>
             </div>
         </div>
@@ -251,15 +238,13 @@
         </div>
         <div class="form-row">
             <div class="form-group">
-                <label for="default_credit_limit">📒 سقف اعتبار پیش‌فرض مشتریان</label>
-                <input type="number" id="default_credit_limit" name="default_credit_limit" min="0"
-                       value="{{ settings.get('default_credit_limit', '0') }}">
+                <label for="default_credit_limit">سقف اعتبار پیش‌فرض مشتریان</label>
+                {{ num('default_credit_limit', settings.get('default_credit_limit', '0')) }}
                 <small>حداکثر بدهی نسیه هر مشتری (تومان). ۰ = بدون محدودیت. روی هر مشتری در «حساب نسیه» می‌توان سقف اختصاصی گذاشت.</small>
             </div>
             <div class="form-group">
-                <label for="credit_surcharge_percent">➕ درصد افزایش نسیه</label>
-                <input type="number" id="credit_surcharge_percent" name="credit_surcharge_percent" min="0" max="100"
-                       value="{{ settings.get('credit_surcharge_percent', '0') }}">
+                <label for="credit_surcharge_percent">درصد افزایش نسیه</label>
+                {{ num('credit_surcharge_percent', settings.get('credit_surcharge_percent', '0')) }}
                 <small>درصدی که به مبلغ نهایی فروش نسیه اضافه می‌شود (۰ = بدون افزایش). تخفیف روی نسیه اعمال نمی‌شود.</small>
             </div>
         </div>
@@ -267,57 +252,44 @@
         <h3 class="settings-section">کارت‌خوان</h3>
         <div class="form-row">
             <div class="form-group">
-                <label for="pos_terminal_host">🖥️ آدرس کارت‌خوان (IP)</label>
+                <label for="pos_terminal_host">آدرس کارت‌خوان (IP)</label>
                 <input type="text" id="pos_terminal_host" name="pos_terminal_host" dir="ltr"
                        value="{{ settings.get('pos_terminal_host', '192.168.1.155') }}" placeholder="192.168.1.155">
                 <small>آدرس دستگاه در شبکه (مثل 192.168.1.155). برای غیرفعال‌کردن، خالی بگذارید.</small>
             </div>
             <div class="form-group">
-                <label for="pos_terminal_port">🔌 پورت</label>
-                <input type="number" id="pos_terminal_port" name="pos_terminal_port" min="1" max="65535" dir="ltr"
-                       value="{{ settings.get('pos_terminal_port', '8500') }}" placeholder="8500">
+                <label for="pos_terminal_port">پورت</label>
+                <span dir="ltr">{{ num('pos_terminal_port', settings.get('pos_terminal_port', '8500')) }}</span>
                 <small>پورتی که کارت‌خوان روی آن در حالت اتصال با کامپیوتر باز می‌کند</small>
             </div>
         </div>
 
         <div class="settings-submit">
-            <button type="submit" class="btn btn-primary btn-large">💾 ذخیره تنظیمات</button>
+            <button type="submit" class="btn btn-primary btn-large">ذخیره تنظیمات</button>
         </div>
     </form>
 </div>
 
 
 <div class="card">
-    <h3>تغییر رمز عبور مدیریت</h3>
+    <h3>تغییر رمز ورود خودتان</h3>
+    <p class="muted" style="margin: 0 0 .75rem;">رمز حسابی که هم‌اکنون با آن وارد شده‌اید تغییر می‌کند؛ ورود بقیه کاربران دست نمی‌خورد.</p>
     <form method="post" action="/admin/change-password">
         <div class="form-row">
             <div class="form-group">
-                <label for="current_password">🔒 رمز فعلی</label>
+                <label for="current_password">رمز فعلی</label>
                 <input type="password" id="current_password" name="current_password" required autocomplete="current-password">
             </div>
             <div class="form-group">
-                <label for="new_password">🔑 رمز جدید</label>
+                <label for="new_password">رمز جدید</label>
                 <input type="password" id="new_password" name="new_password" required minlength="6" autocomplete="new-password">
             </div>
             <div class="form-group">
-                <label for="new_password_confirm">🔁 تکرار رمز جدید</label>
+                <label for="new_password_confirm">تکرار رمز جدید</label>
                 <input type="password" id="new_password_confirm" name="new_password_confirm" required minlength="6" autocomplete="new-password">
             </div>
         </div>
-        <button type="submit" class="btn btn-primary">🔑 تغییر رمز</button>
+        <button type="submit" class="btn btn-primary">تغییر رمز</button>
     </form>
 </div>
-
-{# The danger zone lives here because this page is owner-only, like the route it
-   posts to. On the dashboard it was a trap: its reset button answered a manager
-   with raw JSON instead of a page. #}
-<details class="danger-zone danger-details">
-    <summary>⚠️ منطقه خطر — عملیات غیرقابل بازگشت</summary>
-    <div>
-        <p>این عمل تمام اطلاعات مشتریان، معرفی‌ها و تنظیمات را حذف می‌کند.</p>
-        <form method="post" action="/admin/reset-database" onsubmit="return confirm('⚠️ آیا مطمئن هستید؟ تمام اطلاعات حذف خواهد شد!')">
-            <button type="submit" class="btn btn-danger">🗑️ ریست دیتابیس</button>
-        </form>
-    </div>
-</details>
 {% endblock %}

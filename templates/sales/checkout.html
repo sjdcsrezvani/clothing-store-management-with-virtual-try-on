@@ -206,12 +206,15 @@
             <div class="form-row">
                 <div class="form-group">
                     <label>مبلغ (تومان)</label>
-                    <input type="number" min="0" value="{{ custom_discount_amount|default(0) }}"
+                    {# Bounds painted from CUSTOM_DISCOUNT_RULES via the route's
+                       numeric_rules — this input is a setAll mirror with no name,
+                       so the shared macro's name attribute does not apply. #}
+                    <input type="number" min="{{ numeric_rules['custom_discount_amount'][0] }}" value="{{ custom_discount_amount|default(0) }}"
                            oninput="setAll('custom_discount_amount', this.value)">
                 </div>
                 <div class="form-group">
                     <label>درصد</label>
-                    <input type="number" min="0" max="100" value="{{ custom_discount_percent|default(0) }}"
+                    <input type="number" min="{{ numeric_rules['custom_discount_percent'][0] }}" max="{{ numeric_rules['custom_discount_percent'][1] }}" value="{{ custom_discount_percent|default(0) }}"
                            oninput="setAll('custom_discount_percent', this.value)">
                 </div>
             </div>

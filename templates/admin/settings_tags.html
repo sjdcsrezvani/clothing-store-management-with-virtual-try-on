@@ -7,9 +7,37 @@
 <a href="/admin/barcodes/print" class="btn btn-primary">برو به چاپ تگ</a>
         <a href="/admin/products" class="btn btn-ghost">محصولات</a>
 {% endset %}
+{# This page reads well on paper — the designer is a worksheet the owner may
+   pin to the wall. The chrome (toolbar, action chips, save row) is the
+   screen's; the guide, the preview and the settings themselves travel. #}
+{% set print_heading = 'طرح تگ و بارکد' %}
 {% include 'partials/page_header.html' %}
-{% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
-{% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}
+
+{# Numeric bounds come from the same table the server validates
+   (TAG_NUMERIC_RULES in services/tags.py) — the page and the rules cannot
+   drift, and the table is the one place a bound is ever written. The inputs
+   are keyed by id (the designer's script packs them by id), so this map
+   translates each id to its config key; an input whose id is missing here is
+   marked data-unbounded so it stays findable. #}
+{% set tag_input_keys = {
+    'field-x': 'x', 'field-y': 'y', 'field-width': 'width', 'field-height': 'height',
+    'field-font-size': 'font_size',
+    'tag-width': 'tag_width_mm', 'tag-height': 'tag_height_mm',
+    'margin-top': 'margin_top_mm', 'margin-bottom': 'margin_bottom_mm',
+    'margin-right': 'margin_right_mm', 'margin-left': 'margin_left_mm',
+    'gap-horizontal': 'gap_horizontal_mm', 'gap-vertical': 'gap_vertical_mm',
+    'tag-columns': 'columns', 'tag-rows': 'rows',
+    'tag-border-width': 'border_width_mm', 'tag-radius': 'corner_radius_mm',
+    'tag-padding': 'padding_mm',
+} %}
+{% macro num(input_id, step='', aria='') %}
+{% set key = tag_input_keys[input_id] %}
+{% set rule = tag_numeric_rules.get(key) if key else none %}
+<input type="number" id="{{ input_id }}"
+       {% if rule %}min="{{ rule[0] }}"{% if rule[1] is not none %} max="{{ rule[1] }}"{% endif %}{% else %}data-unbounded="1"{% endif %}
+       {% if step %}step="{{ step }}"{% endif %}
+       {% if aria %}aria-label="{{ aria }}"{% endif %}>
+{% endmacro %}
 
 <div class="tag-settings-layout">
 <section class="card tag-editor-card">
@@ -51,7 +79,7 @@
                     <button type="button" class="btn btn-sm btn-ghost tag-template-load" data-template-id="{{ template.id }}">ویرایش در بوم</button>
                     <form method="post" action="/admin/settings/tags/template/{{ template.id }}/delete" onsubmit="return confirm('این قالب حذف شود؟')">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                        <button type="submit" class="btn btn-sm btn-danger">حذف</button>
+                        <button type="submit" class="btn btn-sm btn-danger" aria-label="حذف قالب {{ template.name }}">حذف</button>
                     </form>
                 </div>
             </div>
@@ -108,12 +136,17 @@
                     <label class="switch-inline" title="نمایش فیلد"><input type="checkbox" id="field-visible"> نمایش</label>
                 </div>
                 <div class="tag-prop-grid">
-                    <label>موقعیت افقی<input type="number" id="field-x" min="0" step="0.1"></label>
-                    <label>موقعیت عمودی<input type="number" id="field-y" min="0" step="0.1"></label>
-                    <label>عرض<input type="number" id="field-width" min="2" step="0.1"></label>
-                    <label>ارتفاع<input type="number" id="field-height" min="2" step="0.1"></label>
-                    <label>اندازه متن<input type="number" id="field-font-size" min="4" max="48" step="1"></label>
-                    <label>تراز<select id="field-align"><option value="right">راست</option><option value="center">وسط</option><option value="left">چپ</option></select></label>
+                    <label>موقعیت افقی{{ num('field-x', step='0.1', aria='موقعیت افقی فیلد') }}</label>
+                    <label>موقعیت عمودی{{ num('field-y', step='0.1', aria='موقعیت عمودی فیلد') }}</label>
+                    <label>عرض{{ num('field-width', step='0.1', aria='عرض فیلد') }}</label>
+                    <label>ارتفاع{{ num('field-height', step='0.1', aria='ارتفاع فیلد') }}</label>
+                    <label>اندازه متن{{ num('field-font-size', step='1', aria='اندازه متن فیلد') }}</label>
+                    {# The options come from the validator's own allow-list, so
+                       an alignment the server would refuse cannot be offered. #}
+                    <label>تراز<select id="field-align" aria-label="تراز متن فیلد">
+                        {% for alignment in allow_list_sources.alignments %}
+                        <option value="{{ alignment }}">{{ {'right': 'راست', 'center': 'وسط', 'left': 'چپ'}[alignment] }}</option>
+                        {% endfor %}</select></label>
                     <label>رنگ<input type="color" id="field-color"></label>
                     <label class="check-row"><input type="checkbox" id="field-bold"> ضخیم</label>
                 </div>
@@ -143,20 +176,20 @@
                     <span class="ctl-step">۱</span><div><h4>اندازه و چاپ روی A4</h4><p class="muted">ابعاد تگ، حاشیهٔ صفحه و تعداد در هر برگه.</p></div>
                 </div>
                 <div class="form-row ctl-row-2">
-                    <label>عرض تگ <em>میلی‌متر</em><input type="number" id="tag-width" min="25" max="100" step="0.1"></label>
-                    <label>ارتفاع تگ <em>میلی‌متر</em><input type="number" id="tag-height" min="20" max="100" step="0.1"></label>
+                    <label>عرض تگ <em>میلی‌متر</em>{{ num('tag-width', step='0.1') }}</label>
+                    <label>ارتفاع تگ <em>میلی‌متر</em>{{ num('tag-height', step='0.1') }}</label>
                 </div>
                 <div class="form-row ctl-row-4">
-                    <label>حاشیه بالا<input type="number" id="margin-top" min="0" max="50" step="0.1"></label>
-                    <label>حاشیه پایین<input type="number" id="margin-bottom" min="0" max="50" step="0.1"></label>
-                    <label>حاشیه راست<input type="number" id="margin-right" min="0" max="50" step="0.1"></label>
-                    <label>حاشیه چپ<input type="number" id="margin-left" min="0" max="50" step="0.1"></label>
+                    <label>حاشیه بالا{{ num('margin-top', step='0.1') }}</label>
+                    <label>حاشیه پایین{{ num('margin-bottom', step='0.1') }}</label>
+                    <label>حاشیه راست{{ num('margin-right', step='0.1') }}</label>
+                    <label>حاشیه چپ{{ num('margin-left', step='0.1') }}</label>
                 </div>
                 <div class="form-row ctl-row-4">
-                    <label>فاصله افقی<input type="number" id="gap-horizontal" min="0" max="20" step="0.1"></label>
-                    <label>فاصله عمودی<input type="number" id="gap-vertical" min="0" max="20" step="0.1"></label>
-                    <label>ستون‌ها<input type="number" id="tag-columns" min="0" max="20"></label>
-                    <label>سطرها<input type="number" id="tag-rows" min="0" max="30"></label>
+                    <label>فاصله افقی{{ num('gap-horizontal', step='0.1') }}</label>
+                    <label>فاصله عمودی{{ num('gap-vertical', step='0.1') }}</label>
+                    <label>ستون‌ها{{ num('tag-columns') }}</label>
+                    <label>سطرها{{ num('tag-rows') }}</label>
                 </div>
                 <div class="form-row ctl-row-4 ctl-row-last">
                     <label>حالت چیدمان<select id="layout-mode"><option value="fixed">ثابت</option><option value="auto">بیشترین تعداد قابل‌جای‌گیری</option></select></label>
@@ -178,11 +211,11 @@
                     <label>رنگ حاشیه<input type="color" id="tag-border-color"></label>
                 </div>
                 <div class="form-row ctl-row-2">
-                    <label>ضخامت حاشیه <em>میلی‌متر</em><input type="number" id="tag-border-width" min="0" max="3" step="0.1"></label>
-                    <label>گردی گوشه <em>میلی‌متر</em><input type="number" id="tag-radius" min="0" max="10" step="0.1"></label>
+                    <label>ضخامت حاشیه <em>میلی‌متر</em>{{ num('tag-border-width', step='0.1') }}</label>
+                    <label>گردی گوشه <em>میلی‌متر</em>{{ num('tag-radius', step='0.1') }}</label>
                 </div>
                 <div class="form-row ctl-row-2">
-                    <label>فاصله داخلی <em>میلی‌متر</em><input type="number" id="tag-padding" min="0" max="10" step="0.1"></label>
+                    <label>فاصله داخلی <em>میلی‌متر</em>{{ num('tag-padding', step='0.1') }}</label>
                     <label>متن سفارشی<input type="text" id="tag-custom-text" maxlength="120" placeholder="مثلاً: تعویض تا ۷ روز"></label>
                 </div>
             </div>
@@ -252,11 +285,16 @@
 const initialTagConfig = {{ tag_config|tojson }};
 const tagPresets = {{ tag_presets|tojson }};
 const savedTagTemplates = {{ tag_templates|tojson }};
-const fieldLabels = {{ {'product_name':'نام محصول','barcode':'تصویر بارکد','barcode_text':'کد بارکد','price':'قیمت فروش','size':'سایز','color':'رنگ','sku':'کد SKU','brand':'برند','category':'دسته‌بندی','store_name':'نام فروشگاه','instagram':'اینستاگرام','product_image':'تصویر محصول','custom_text':'متن سفارشی'}|tojson }};
+// The field names come from the service's own map (FIELD_LABELS) — the page
+// used to hard-code a second copy that could silently drift from the editor's
+// labels and the chips'.
+const fieldLabels = {{ field_labels|tojson }};
+const allowLists = {{ allow_list_sources|tojson }};
 const tagSample = {{ {'product_name': sample_item.product_name, 'name': sample_item.name, 'barcode': sample_item.barcode, 'price': sample_item.price_display, 'size': sample_item.size, 'color': sample_item.color, 'sku': sample_item.sku, 'brand': sample_item.brand, 'category': sample_item.category, 'instagram': (store.instagram or ''), 'store_name': store.name, 'image_path': sample_item.image_path}|tojson }};
 const barcodePreviewSources = {{ barcode_preview_sources|tojson }};
 
 const chipOrder = ['product_name','price','size','color','barcode','barcode_text','sku','brand','category','store_name','instagram','product_image','custom_text'];
+const A4 = { width: 210, height: 297 };
 
 let workingConfig = JSON.parse(JSON.stringify(initialTagConfig));
 let selectedField = null;
@@ -271,7 +309,12 @@ const $ = id => document.getElementById(id);
 const canvasEl = () => $('tag-editor-canvas');
 
 const globalInputs = {tag_width_mm:'tag-width',tag_height_mm:'tag-height',margin_top_mm:'margin-top',margin_bottom_mm:'margin-bottom',margin_right_mm:'margin-right',margin_left_mm:'margin-left',gap_horizontal_mm:'gap-horizontal',gap_vertical_mm:'gap-vertical',columns:'tag-columns',rows:'tag-rows',layout_mode:'layout-mode',background:'tag-background',border_color:'tag-border-color',border_width_mm:'tag-border-width',padding_mm:'tag-padding',corner_radius_mm:'tag-radius',custom_text:'tag-custom-text',barcode_density:'barcode-density'};
-const numberLimits = {tag_width_mm:[25,100],tag_height_mm:[20,100],margin_top_mm:[0,50],margin_bottom_mm:[0,50],margin_right_mm:[0,50],margin_left_mm:[0,50],gap_horizontal_mm:[0,20],gap_vertical_mm:[0,20],columns:[0,20],rows:[0,30],border_width_mm:[0,3],padding_mm:[0,10],corner_radius_mm:[0,10]};
+// The bounds come from the server's own table (TAG_NUMERIC_RULES), injected as
+// tagNumericRules — the third copy this page used to carry is gone, so a bound
+// edited on the server reaches the clamps here in the same build.
+const tagNumericRules = {{ tag_numeric_rules|tojson }};
+const numberLimits = {};
+Object.entries(tagNumericRules).forEach(([key, rule]) => { numberLimits[key] = [rule[0], rule[1] === null ? Infinity : rule[1]]; });
 const IMG_FIT_STYLE = 'max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block;margin:0 auto;';
 
 function copy(v){ return JSON.parse(JSON.stringify(v)); }
@@ -395,8 +438,8 @@ function updateDiagnostics(){
 
 function updateFitGuide(){
   const w = numberValue(workingConfig.tag_width_mm), h = numberValue(workingConfig.tag_height_mm);
-  const aw = 210 - numberValue(workingConfig.margin_left_mm) - numberValue(workingConfig.margin_right_mm);
-  const ah = 297 - numberValue(workingConfig.margin_top_mm) - numberValue(workingConfig.margin_bottom_mm);
+  const aw = A4.width - numberValue(workingConfig.margin_left_mm) - numberValue(workingConfig.margin_right_mm);
+  const ah = A4.height - numberValue(workingConfig.margin_top_mm) - numberValue(workingConfig.margin_bottom_mm);
   const gx = numberValue(workingConfig.gap_horizontal_mm), gy = numberValue(workingConfig.gap_vertical_mm);
   const mc = Math.floor((aw + gx) / (w + gx)), mr = Math.floor((ah + gy) / (h + gy));
   const ok = w >= 2 && h >= 2 && aw > 0 && ah > 0 && mc >= 1 && mr >= 1;
@@ -497,10 +540,24 @@ function fieldBox(name, field){
   box.title = (field.visible ? 'ویرایش ' : 'فیلد مخفی: ') + (fieldLabels[name] || name);
   box.addEventListener('click', e => { e.stopPropagation(); selectField(name); });
   box.addEventListener('pointerdown', e => startDrag(e, name));
+  // The corner is a real control, not a pointer-only decoration: a keyboard
+  // user reaches it with Tab (it sits inside the field's own button, which is
+  // in the tab order), presses Enter or Space, and then drags the same
+  // resize the mouse drags — with the arrow keys, ending with Enter. The
+  // label names the field it resizes, so screen-reader text is not just
+  // «تغییر اندازه» ten times over.
   const handle = document.createElement('span');
   handle.className = 'tag-resize-handle';
-  handle.setAttribute('aria-label', 'تغییر اندازه');
+  handle.setAttribute('role', 'button');
+  handle.tabIndex = 0;
+  handle.setAttribute('aria-label', 'تغییر اندازه ' + (fieldLabels[name] || name));
   handle.addEventListener('pointerdown', e => startResize(e, name));
+  handle.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    e.stopPropagation();
+    startKeyboardResize(name);
+  });
   box.appendChild(handle);
   return box;
 }
@@ -601,6 +658,56 @@ function startResize(e, name){
   resizing = { name, startX: p.x, startY: p.y, width: field.width, height: field.height };
   try { canvasEl().setPointerCapture(e.pointerId); } catch (_) {}
 }
+
+// The same resize from the keyboard: Enter on the corner handle starts a
+// session, the arrows grow or shrink by 1 mm (Shift for 5 mm, the coarse
+// step the nudge buttons use), Escape backs the change out, Enter or Tab
+// ends it. Reuses the pointer path's clamps — width/height can never leave
+// [2, tag size − position] any more than a dragged resize could.
+let keyboardResize = null;
+function startKeyboardResize(name){
+  selectField(name);
+  pushUndo();
+  keyboardResize = { name };
+  const box = canvasEl().querySelector('.tag-editor-field[data-field="' + name + '"] .tag-resize-handle');
+  if (box) box.classList.add('is-keyboard-resizing');
+}
+function endKeyboardResize(){
+  if (!keyboardResize) return;
+  const handle = canvasEl().querySelector('.tag-editor-field[data-field="' + keyboardResize.name + '"] .tag-resize-handle');
+  if (handle) handle.classList.remove('is-keyboard-resizing');
+  keyboardResize = null;
+}
+document.addEventListener('keydown', e => {
+  if (!keyboardResize) return;
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    // Escape restores the state as it was when the session started — the
+    // undo entry pushed at the start is the state before the resize.
+    const snapshot = undoStack[undoStack.length - 1];
+    if (snapshot) { workingConfig = JSON.parse(snapshot); undoStack.pop(); updateUndoBtn(); }
+    endKeyboardResize();
+    renderEditor();
+    populateFieldControls();
+    applyLivePreview();
+    refreshDirty();
+    return;
+  }
+  if (e.key === 'Enter' || e.key === 'Tab') { endKeyboardResize(); return; }
+  const steps = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+  const step = steps[e.key];
+  if (!step) return;
+  e.preventDefault();
+  const f = workingConfig.fields[keyboardResize.name];
+  const mm = e.shiftKey ? 5 : 1;
+  f.width = clamp(f.width + step[0] * mm, 2, workingConfig.tag_width_mm - f.x);
+  f.height = clamp(f.height + step[1] * mm, 2, workingConfig.tag_height_mm - f.y);
+  workingConfig.preset = 'custom';
+  renderEditor();
+  populateFieldControls();
+  applyLivePreview();
+  markUnsaved();
+});
 canvasEl().addEventListener('pointermove', e => {
   const p = canvasPoint(e);
   if (dragging) {

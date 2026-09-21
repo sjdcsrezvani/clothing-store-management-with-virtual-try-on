@@ -1,8 +1,12 @@
+import re
 from pathlib import Path
+
+from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from database import get_db
 from datetime import datetime, timezone
@@ -32,6 +36,8 @@ from services._common import (
     get_setting_int as get_discount_setting,
     jalali_age,
     jalali_str,
+    page_arg,
+    int_arg,
     parse_jalali_input,
 )
 from services.customers import (
@@ -56,6 +62,7 @@ from services.customers import (
     list_customers,
     marketing_opt_in,
     parse_tags,
+    reconcile_customer_counters,
     serialize_tags,
     update_customer_meta,
 )
@@ -66,7 +73,6 @@ from services.pos_reconciliation import unresolved_transactions
 from services.operations import verify_sqlite_backup
 from services.navigation import home_for
 from services.security import (
-    check_admin_password,
     login_locked,
     login_failure,
     login_success,
@@ -77,6 +83,7 @@ from services.security import (
     require_role,
     current_staff_user,
     hash_password,
+    verify_password,
     require_html_role,
 )
 from services.store import invalidate_store_cache, get_store
@@ -92,9 +99,9 @@ from services.tier import (
     tier_up_sent_rank,
     TIER_RANK,
 )
-from services.events import event_history, event_payload, append_event
-from services.payroll import create_salary_payment, current_period_key
-from services.themes import THEMES, DEFAULT_THEME_ID, THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY, DEFAULT_CUSTOM_PRIMARY, DEFAULT_CUSTOM_SECONDARY, all_theme_previews, validate_hex, contrast_ratio, get_theme
+from services.events import EVENT_LIMIT_RULES, event_history, event_payload, append_event
+from services.payroll import create_salary_payment, current_period_key, normalize_period_key
+from services.themes import THEMES, DEFAULT_THEME_ID, THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY, DEFAULT_CUSTOM_PRIMARY, DEFAULT_CUSTOM_SECONDARY, all_theme_previews, validate_hex, contrast_ratio, get_theme, invalidate_theme_cache
 
 router = APIRouter(prefix="/admin")
 
@@ -257,6 +264,8 @@ async def admin_dashboard(request: Request, db: Session = Depends(get_db)):
     view = dashboard_overview(db, role=guard.role)
     return templates.TemplateResponse(request, "admin/dashboard.html", {
         **view,
+        # The print heading names the day; a staple carries no URL.
+        "today": jalali_str(datetime.now(), with_time=False),
         # Nothing redirects here with a result any more: the only action the
         # dashboard used to carry was the downgrade sweep, and it now reports
         # back on its own page.
@@ -271,7 +280,8 @@ async def admin_customers(
     tier: str = "",
     status: str = "all",
     tag: str = "",
-    page: int = 1,
+    page: str = "1",
+    drifted: str = "0",
     db: Session = Depends(get_db),
 ):
     """The customer list: who they are, what they bought, and what is due."""
@@ -279,8 +289,10 @@ async def admin_customers(
     if not hasattr(guard, "role"):
         return guard
 
+    page = page_arg(page)
     listing = list_customers(
         db, search=search, tier=tier, status=status, tag=tag, sort=sort, page=page,
+        drifted=bool(int_arg(drifted, default=0)),
     )
 
     return templates.TemplateResponse(request, "admin/customers.html", {
@@ -293,6 +305,7 @@ async def admin_customers(
         "sort_labels": SORT_LABELS,
         "tag_palette": TAG_PALETTE,
         "tag_labels": TAG_LABELS,
+        "is_owner": request.session.get("staff_role") == "owner",
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
         "tier_config": get_tier_config(db),
@@ -341,6 +354,7 @@ async def admin_customer_profile(
     return templates.TemplateResponse(request, "admin/customer_detail.html", {
         "customer": customer,
         "profile": profile,
+        "is_owner": request.session.get("staff_role") == "owner",
         "campaign_history": profile["campaign_history"],
         "assignable_campaigns": assignable,
         "campaign_source_labels": CAMPAIGN_SOURCE_LABELS,
@@ -399,6 +413,74 @@ async def admin_customer_meta(
                "birth_month_day": customer.birth_month_day},
     )
     return RedirectResponse(url=f"/admin/customers/{customer.id}?msg=پرونده ذخیره شد.", status_code=303)
+
+
+@router.post("/customers/{customer_id}/reconcile", response_class=HTMLResponse)
+async def admin_customer_reconcile(
+    customer_id: int, request: Request, db: Session = Depends(get_db)
+):
+    """Set the stored counters to what the invoices add up to.
+
+    The drift banner on the page says the counters disagree; this is where the
+    owner says «trust the invoices». The before/after of both counters goes to
+    the audit trail, so a reconcile that moved a figure can always be traced.
+    """
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="مشتری یافت نشد")
+
+    before_spent, after_spent, before_count, after_count = reconcile_customer_counters(db, customer)
+    log_action(
+        db, "customer_reconcile", f"هم‌سازی شمارنده‌ها با فاکتورها: {customer.phone}",
+        request=request, target_type="customer", target_id=customer.id,
+        before={"total_spent": before_spent, "total_purchases": before_count},
+        after={"total_spent": after_spent, "total_purchases": after_count},
+    )
+    if (before_spent, before_count) == (after_spent, after_count):
+        message = "شمارنده‌ها هم‌ساز بودند؛ چیزی تغییر نکرد."
+    else:
+        message = "شمارنده‌ها با فاکتورها هم‌ساز شد."
+    return RedirectResponse(url=f"/admin/customers/{customer.id}?msg={message}", status_code=303)
+
+
+@router.post("/customers/reconcile-all", response_class=HTMLResponse)
+async def admin_reconcile_all_counters(
+    request: Request, db: Session = Depends(get_db)
+):
+    """Trust the invoices everywhere, at once.
+
+    The drift card counts the customers whose stored counters disagree with
+    their invoices, and the digest reports the same count monthly; this is the
+    owner's one-action answer. Owner-only like the per-profile reconcile, and
+    the audit row says both numbers — the drift that was found, and the rows
+    whose figures actually moved — so a no-op run is traceable too.
+    """
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+
+    from services.customers import reconcile_all_counters
+    result = reconcile_all_counters(db)
+    log_action(
+        db, "customer_reconcile_all",
+        f"هم‌سازی یک‌جای شمارنده‌ها با فاکتورها: {result['found']} ناهم‌خوان، "
+        f"{result['reconciled']} مورد اصلاح شد.",
+        request=request, target_type="customer",
+        before={"drifted": result["found"]},
+        after={"reconciled": result["reconciled"]},
+    )
+    if result["found"] == 0:
+        message = "هیچ شمارنده‌ی ناهم‌خوانی نبود؛ چیزی تغییر نکرد."
+    elif result["reconciled"] == 0:
+        message = "ناهم‌خوانی پیدا شد ولی چیزی برای اصلاح نبود."
+    else:
+        message = (f"شمارنده‌های {to_persian_digits(result['reconciled'])} مشتری "
+                   "با فاکتورها هم‌ساز شد.")
+    return RedirectResponse(url=f"/admin/customers?msg={quote_plus(message)}", status_code=303)
 
 
 @router.post("/customers/{customer_id}/archive", response_class=HTMLResponse)
@@ -462,20 +544,33 @@ def _parse_staff_date(value: str):
     return parse_jalali_input(value)
 
 
-def _staff_amount(value: str, default: int = 0) -> int:
-    try:
-        amount = int(to_english_digits((value or "").replace(",", "").strip()))
-    except (TypeError, ValueError):
+def _staff_amount(value: str, default: int = 0, field: str = "مبلغ") -> int:
+    text = to_english_digits((value or "").replace(",", "").strip())
+    if not text:
         return default
-    return amount
+    try:
+        return int(text)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field} معتبر نیست.")
+
+
+# The staff forms' numeric fields, with the bound the server enforces and the
+# label it refuses by. One table, two readers: the POST validates against it
+# (_staff_profile_data for the two salary fields, the payroll service for
+# deductions) and the forms render their min/max from it.
+STAFF_NUMERIC_RULES = {
+    "salary_amount": (0, None, "حقوق ماهانه"),
+    "salary_payment_day": (1, 31, "روز پرداخت حقوق"),
+    "deductions": (0, None, "کسورات"),
+}
 
 
 def _staff_profile_data(form):
     employment_type = str(form.get("employment_type", "full_time")).strip()
     if employment_type not in {"full_time", "part_time", "contractor"}:
         raise ValueError("نوع همکاری نامعتبر است.")
-    salary_amount = _staff_amount(str(form.get("salary_amount", "0")))
-    if salary_amount < 0:
+    salary_amount = _staff_amount(str(form.get("salary_amount", "0")), field="حقوق ماهانه")
+    if salary_amount < STAFF_NUMERIC_RULES["salary_amount"][0]:
         raise ValueError("حقوق ماهانه نمی‌تواند منفی باشد.")
     salary_day_value = to_english_digits(str(form.get("salary_payment_day", "")).strip())
     salary_day = None
@@ -484,7 +579,7 @@ def _staff_profile_data(form):
             salary_day = int(salary_day_value)
         except ValueError:
             raise ValueError("روز پرداخت حقوق نامعتبر است.")
-        if not 1 <= salary_day <= 31:
+        if not STAFF_NUMERIC_RULES["salary_payment_day"][0] <= salary_day <= STAFF_NUMERIC_RULES["salary_payment_day"][1]:
             raise ValueError("روز پرداخت حقوق باید بین ۱ تا ۳۱ باشد.")
     return {
         "full_name": str(form.get("full_name", "")).strip()[:200] or None,
@@ -510,18 +605,39 @@ def _staff_profile_data(form):
 
 
 @router.get("/staff", response_class=HTMLResponse)
-async def admin_staff(request: Request, db: Session = Depends(get_db)):
+async def admin_staff(request: Request, q: str = "", status: str = "all", db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "owner")
     if not hasattr(guard, "role"):
         return guard
+    search = (q or "").strip()
+    status_filter = status if status in {"active", "inactive"} else "all"
+    query = db.query(StaffUser).order_by(StaffUser.created_at.desc())
+    if search:
+        like = f"%{search}%"
+        query = query.filter(or_(
+            StaffUser.full_name.ilike(like),
+            StaffUser.username.ilike(like),
+            StaffUser.employee_code.ilike(like),
+        ))
+    if status_filter == "active":
+        query = query.filter(StaffUser.is_active == True)  # noqa: E712
+    elif status_filter == "inactive":
+        query = query.filter(StaffUser.is_active == False)  # noqa: E712
+    staff_users = query.all()
     return templates.TemplateResponse(request, "admin/staff.html", {
-        "staff_users": db.query(StaffUser).order_by(StaffUser.created_at.desc()).all(),
+        "staff_users": staff_users,
         "owner_settings": {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()},
         "current_period": current_period_key(),
+        "search": search,
+        "status_filter": status_filter,
+        "has_filters": bool(search or status_filter != "all"),
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
         "fmt": fmt,
         "jalali_str": jalali_str,
+        # The staff forms paint their bounds from the same table the POSTs
+        # validate against.
+        "numeric_rules": STAFF_NUMERIC_RULES,
     })
 
 
@@ -561,6 +677,14 @@ async def admin_staff_update(staff_id: int, request: Request, db: Session = Depe
     role = str(form.get("role", user.role)).strip()
     if role not in {"cashier", "manager", "owner"}:
         return RedirectResponse(url="/admin/staff?err=نقش کاربر نامعتبر است.", status_code=303)
+    if user.role == "owner" and role != "owner":
+        if user.id == guard.id:
+            return RedirectResponse(url="/admin/staff?err=نمی‌توانید نقش خودتان را از مالک تغییر دهید.", status_code=303)
+        remaining_owners = db.query(StaffUser).filter(
+            StaffUser.role == "owner", StaffUser.is_active == True,  # noqa: E712
+            StaffUser.id != user.id).count()
+        if remaining_owners == 0:
+            return RedirectResponse(url="/admin/staff?err=نمی‌توانید نقش آخرین مالک فعال را تغییر دهید.", status_code=303)
     try:
         profile = _staff_profile_data(form)
     except ValueError as error:
@@ -589,21 +713,39 @@ async def admin_staff_salary(staff_id: int, request: Request, db: Session = Depe
         raise HTTPException(status_code=404, detail="کاربر یافت نشد")
     form = await request.form()
     try:
+        period = normalize_period_key(str(form.get("period_key", "")))
+    except ValueError as error:
+        return RedirectResponse(url=f"/admin/staff?err={error}", status_code=303)
+    existing = db.query(SalaryPayment).filter(
+        SalaryPayment.staff_user_id == user.id,
+        SalaryPayment.period_key == period).first()
+    if existing is not None:
+        return RedirectResponse(url=f"/admin/payroll/{existing.id}/receipt?msg=پرداخت حقوق قبلاً ثبت شده بود.", status_code=303)
+    try:
         payment = create_salary_payment(
             db,
             user,
             guard,
-            str(form.get("period_key", "")),
-            deductions=_staff_amount(str(form.get("deductions", "0"))),
+            period,
+            deductions=_staff_amount(str(form.get("deductions", "0")), field="کسورات"),
             payment_method=str(form.get("payment_method", "cash")),
             note=str(form.get("note", "")),
             request_id=request.headers.get("X-Request-ID"),
         )
         db.commit()
-    except (ValueError, IntegrityError) as error:
+    except ValueError as error:
         db.rollback()
-        message = str(error) if isinstance(error, ValueError) else "حقوق این کارمند برای این ماه قبلاً ثبت شده است."
-        return RedirectResponse(url=f"/admin/staff?err={message}", status_code=303)
+        return RedirectResponse(url=f"/admin/staff?err={error}", status_code=303)
+    except IntegrityError:
+        # A race for the same staff and month: the record already exists, so
+        # land on its receipt instead of erroring.
+        db.rollback()
+        existing = db.query(SalaryPayment).filter(
+            SalaryPayment.staff_user_id == user.id,
+            SalaryPayment.period_key == period).first()
+        if existing is None:
+            return RedirectResponse(url="/admin/staff?err=حقوق این کارمند برای این ماه قبلاً ثبت شده است.", status_code=303)
+        return RedirectResponse(url=f"/admin/payroll/{existing.id}/receipt?msg=پرداخت حقوق قبلاً ثبت شده بود.", status_code=303)
     log_action(db, "salary_payment", f"پرداخت حقوق {user.username} برای {payment.period_key}", request=request, target_type="salary_payment", target_id=payment.id, after={"net_amount": payment.net_amount, "expense_id": payment.expense_id})
     return RedirectResponse(url=f"/admin/payroll/{payment.id}/receipt?msg=پرداخت حقوق ثبت شد.", status_code=303)
 
@@ -685,6 +827,8 @@ async def admin_staff_disable(staff_id: int, request: Request, db: Session = Dep
     user = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="کاربر یافت نشد")
+    if user.id == guard.id:
+        return RedirectResponse(url="/admin/staff?err=نمی‌توانید دسترسی خودتان را ببندید.", status_code=303)
     if user.username == "owner":
         return RedirectResponse(url="/admin/staff?err=کاربر مالک اصلی را نمی‌توان غیرفعال کرد.", status_code=303)
     before = {"is_active": user.is_active}
@@ -694,11 +838,118 @@ async def admin_staff_disable(staff_id: int, request: Request, db: Session = Dep
     return RedirectResponse(url="/admin/staff?msg=کاربر غیرفعال شد.", status_code=303)
 
 
+@router.post("/staff/{staff_id}/enable", response_class=HTMLResponse)
+async def admin_staff_enable(staff_id: int, request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    user = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="کاربر یافت نشد")
+    before = {"is_active": user.is_active}
+    user.is_active = True
+    db.commit()
+    log_action(db, "staff_enable", f"فعال‌سازی کاربر {user.username}", request=request, target_type="staff_user", target_id=user.id, before=before, after={"is_active": True})
+    return RedirectResponse(url="/admin/staff?msg=کاربر فعال شد.", status_code=303)
+
+
+# Every numeric field the settings form posts, with the bounds the server
+# enforces and the label it refuses by. One table, two readers: the POST
+# validates against it and the form renders its min/max from it, so the two
+# cannot drift — a field added here is bounded on the page and on the server
+# in the same edit, and the browser's attributes stay a kindness, not the rule.
+SETTINGS_NUMERIC_RULES = {
+    "barcode_code_length": (4, 12, "تعداد رقم کد بارکد"),
+    "default_referrer_discount": (0, None, "مبلغ تخفیف معرف"),
+    "default_referred_discount": (0, None, "مبلغ تخفیف معرفی‌شده"),
+    "min_purchase_for_discount": (0, None, "حداقل مبلغ خرید برای تخفیف"),
+    "monthly_referral_limit": (1, None, "سقف معرفی ماهانه"),
+    "birthday_sms_days_before": (0, 60, "روزهای قبل از تولد"),
+    "tryon_daily_limit": (0, 1000, "سقف تولید روزانه"),
+    "credit_terms_days": (0, 365, "مهلت پرداخت نسیه"),
+    "credit_reminder_min_hours": (0, 24 * 30, "فاصله بین دو یادآوری"),
+    "default_credit_limit": (0, None, "سقف اعتبار پیش‌فرض"),
+    "credit_surcharge_percent": (0, 100, "درصد افزایش نسیه"),
+    "tier_points_per_amount": (0, None, "امتیاز به ازای هر خرید"),
+    "tier_points_per_toman": (0, None, "مبلغ مبنای امتیاز"),
+    "tier_gold_threshold": (0, None, "آستانه سطح طلایی"),
+    "tier_gold_discount_percent": (0, 100, "درصد تخفیف سطح طلایی"),
+    "tier_gold_birthday_discount": (0, None, "تخفیف تولد سطح طلایی"),
+    "tier_diamond_threshold": (0, None, "آستانه سطح الماس"),
+    "tier_diamond_discount_percent": (0, 100, "درصد تخفیف سطح الماس"),
+    "tier_diamond_birthday_discount": (0, None, "تخفیف تولد سطح الماس"),
+    "tier_downgrade_months": (0, 120, "ماه‌های عدم خرید"),
+    "pos_terminal_port": (1, 65535, "پورت کارت‌خوان"),
+}
+
+
 @router.get("/settings", response_class=HTMLResponse)
 async def admin_settings(request: Request, db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "owner")
     if not hasattr(guard, "role"):
         return guard
+
+    # The form and the table are checked against each other on every render, so
+    # a template that hard-codes a bound the table lacks — or a numeric field
+    # the table was never told about — fails visibly here, on the page the
+    # owner is looking at, instead of surfacing later as a rule the browser
+    # showed and the server ignored.
+    template_source = (Path("templates") / "admin" / "settings.html").read_text(encoding="utf-8")
+    macro_fields = set(re.findall(r"num\('([a-z_]+)'", template_source))
+    missing = sorted(macro_fields - set(SETTINGS_NUMERIC_RULES))
+    if missing:
+        return templates.TemplateResponse(request, "admin/settings.html", {
+            "settings": {}, "tier_config": {}, "downgrade_rule": tier_downgrade_rule(db),
+            "numeric_rules": {}, "store": get_store(db),
+            "msg": "",
+            "err": "خطای قالب: «" + "، ".join(missing) + "» در جدول قواعد نیست — صفحه از ذخیره‌سازی محافظت می‌کند.",
+        })
+    orphans = sorted(set(SETTINGS_NUMERIC_RULES) - macro_fields)
+    if orphans:
+        return templates.TemplateResponse(request, "admin/settings.html", {
+            "settings": {}, "tier_config": {}, "downgrade_rule": tier_downgrade_rule(db),
+            "numeric_rules": {}, "store": get_store(db),
+            "msg": "",
+            "err": "خطای قالب: «" + "، ".join(orphans) + "» در فرم نیست — یک قاعده بی‌میدان.",
+        })
+    # Source checks alone cannot see a bypassed helper: the bounds must be
+    # verified in what the page actually paints, compared against the table,
+    # so a macro overridden per field or a hand-written min/max names itself
+    # here as a figure the table never said.
+    check_context = {
+        "request": request,
+        "settings": {s.key: s.value for s in db.query(Settings).all()},
+        "tier_config": get_tier_config(db),
+        "downgrade_rule": tier_downgrade_rule(db),
+        "numeric_rules": SETTINGS_NUMERIC_RULES,
+        "store": get_store(db), "msg": "", "err": "",
+    }
+    for processor in templates.context_processors:
+        check_context.update(processor(request))
+    rendered = templates.get_template("admin/settings.html").render(check_context)
+    hard_bounds = []
+    for m in re.finditer(r'<input\b[^>]*>', rendered):
+        tag = m.group(0)
+        if 'type="number"' not in tag:
+            continue
+        name_m = re.search(r'name="([a-z_]+)"', tag)
+        rule = SETTINGS_NUMERIC_RULES.get(name_m.group(1)) if name_m else None
+        min_m = re.search(r'\bmin="(-?\d+)"', tag)
+        max_m = re.search(r'\bmax="(-?\d+)"', tag)
+        painted = (int(min_m.group(1)) if min_m else None,
+                   int(max_m.group(1)) if max_m else None)
+        expected = (rule[0], rule[1]) if rule else (None, None)
+        if painted != expected:
+            hard_bounds.append(name_m.group(1) if name_m else tag[:60])
+    hard_bounds = sorted(set(hard_bounds))
+
+    if hard_bounds:
+        return templates.TemplateResponse(request, "admin/settings.html", {
+            "settings": {}, "tier_config": {}, "downgrade_rule": tier_downgrade_rule(db),
+            "numeric_rules": {}, "store": get_store(db),
+            "msg": "",
+            "err": "خطای قالب: «" + "، ".join(hard_bounds) + "» مرز خودش را نوشته — از جدول قواعد استفاده کنید.",
+        })
 
     settings = {s.key: s.value for s in db.query(Settings).all()}
     tier_config = get_tier_config(db)
@@ -708,6 +959,7 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
         # The one answer to «is the downgrade rule in use», shared with the
         # review page and the dashboard card rather than re-derived here.
         "downgrade_rule": tier_downgrade_rule(db),
+        "numeric_rules": SETTINGS_NUMERIC_RULES,
         "store": get_store(db),
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
@@ -726,7 +978,10 @@ async def admin_settings_appearance(request: Request, db: Session = Depends(get_
         return guard
 
     settings = {s.key: s.value for s in db.query(Settings).all()}
+    # The theme cards each carry a live sample chart painted by the same
+    # renderer the analytics pages use, so the owner judges real shading.
     return templates.TemplateResponse(request, "admin/settings_appearance.html", {
+        "show_charts": True,
         "settings": settings,
         "store": get_store(db),
         "themes": all_theme_previews(db),
@@ -767,6 +1022,7 @@ async def admin_update_appearance(request: Request, db: Session = Depends(get_db
             db.add(Settings(key=key, value=value))
     db.commit()
     invalidate_store_cache()
+    invalidate_theme_cache()
     log_action(db, "theme_update", "به‌روزرسانی ظاهر فروشگاه", request=request, target_type="settings", after={"theme": theme_id})
 
     return RedirectResponse(url="/admin/settings/appearance?msg=ظاهر فروشگاه ذخیره شد.", status_code=303)
@@ -793,42 +1049,19 @@ async def admin_update_settings(request: Request, db: Session = Depends(get_db))
     )
     if child_off and updates.get(BIRTHDAY_TARGET_KEY) == "child":
         updates[BIRTHDAY_TARGET_KEY] = "customer"
-    raw_length = str(form.get("barcode_code_length", "")).strip()
-    if raw_length:
-        try:
-            code_length = int(to_english_digits(raw_length))
-        except (TypeError, ValueError):
-            code_length = 0
-        if code_length < 4 or code_length > 12:
-            return RedirectResponse(url="/admin/settings?err=تعداد رقم کد بارکد باید بین ۴ تا ۱۲ باشد.", status_code=303)
-        # Stored normalised like every numeric rule below: readers parse with
-        # int() and must never meet «۸» in the store.
-        updates["barcode_code_length"] = str(code_length)
-    # Every numeric setting the form posts is checked before anything is saved.
-    # The `min`/`max` attributes are the browser's kindness to a careful owner,
-    # not the server's rule: a typed minus sign, a stray Persian digit, or a
-    # cleared field posted straight through to Settings, and the readers
-    # answered in their own ways — a negative نسیه surcharge *discounted* the
-    # invoice, a negative points rate drove a customer's points below zero,
-    # and a negative threshold promoted every customer to gold. A value the
-    # page cannot explain is refused with the field's name, never saved.
-    numeric_rules = {
-        "birthday_sms_days_before": (0, 60, "روزهای قبل از تولد"),
-        "tryon_daily_limit": (0, 1000, "سقف تولید روزانه"),
-        "credit_terms_days": (0, 365, "مهلت پرداخت نسیه"),
-        "credit_reminder_min_hours": (0, 24 * 30, "فاصله بین دو یادآوری"),
-        "default_credit_limit": (0, None, "سقف اعتبار پیش‌فرض"),
-        "credit_surcharge_percent": (0, 100, "درصد افزایش نسیه"),
-        "tier_points_per_amount": (0, None, "امتیاز به ازای هر خرید"),
-        "tier_points_per_toman": (0, None, "مبلغ مبنای امتیاز"),
-        "tier_gold_threshold": (0, None, "آستانه سطح طلایی"),
-        "tier_gold_discount_percent": (0, 100, "درصد تخفیف سطح طلایی"),
-        "tier_gold_birthday_discount": (0, None, "تخفیف تولد سطح طلایی"),
-        "tier_diamond_threshold": (0, None, "آستانه سطح الماس"),
-        "tier_diamond_discount_percent": (0, 100, "درصد تخفیف سطح الماس"),
-        "tier_diamond_birthday_discount": (0, None, "تخفیف تولد سطح الماس"),
-        "tier_downgrade_months": (0, 120, "ماه‌های عدم خرید"),
-    }
+    # Every numeric setting the form posts is checked before anything is saved,
+    # against the same table (SETTINGS_NUMERIC_RULES) the form is rendered from,
+    # so the two cannot disagree — and the fields the page bounded but the
+    # server ignored (the referral discounts, the card-reader port…) are
+    # bounded here too. The `min`/`max` attributes are the browser's kindness
+    # to a careful owner, not the rule: a typed minus sign, a stray Persian
+    # digit, or a cleared field posted straight through to Settings, and the
+    # readers answered in their own ways — a negative نسیه surcharge
+    # *discounted* the invoice, a negative points rate drove a customer's
+    # points below zero, and a negative threshold promoted every customer to
+    # gold. A value the page cannot explain is refused with the field's name,
+    # never saved.
+    numeric_rules = SETTINGS_NUMERIC_RULES
     for key, (low, high, label) in numeric_rules.items():
         raw = str(form.get(key, "")).strip()
         if not raw:
@@ -840,9 +1073,13 @@ async def admin_update_settings(request: Request, db: Session = Depends(get_db))
                 url=f"/admin/settings?err=«{label}» باید یک عدد باشد — «{raw}» ذخیره نشد.",
                 status_code=303)
         if number < low or (high is not None and number > high):
-            ceiling = f" تا {to_persian_digits(high)}" if high is not None else ""
+            if low > 0:
+                band = f"بین {to_persian_digits(low)} و {to_persian_digits(high)}" if high is not None else f"حداقل {to_persian_digits(low)}"
+            else:
+                band = f"حداکثر {to_persian_digits(high)}" if high is not None else ""
+            tail = f" {band}" if band else ""
             return RedirectResponse(
-                url=f"/admin/settings?err=«{label}» نمی‌تواند منفی باشد{ceiling} — مقدار ذخیره نشد.",
+                url=f"/admin/settings?err=«{label}»{tail} — مقدار ذخیره نشد.",
                 status_code=303)
     # A validated numeric setting is stored normalised: the owner typed
     # Persian digits, but every reader (`get_barcode_code_length`, the tier
@@ -877,15 +1114,16 @@ async def admin_change_password(
     if not hasattr(guard, "role"):
         return guard
 
-    if not check_admin_password(db, current_password):
+    if not verify_password(current_password, guard.password_hash):
         return RedirectResponse(url="/admin/settings?err=رمز عبور فعلی اشتباه است.", status_code=303)
     if len(new_password) < 6:
         return RedirectResponse(url="/admin/settings?err=رمز جدید باید حداقل ۶ کاراکتر باشد.", status_code=303)
     if new_password != new_password_confirm:
         return RedirectResponse(url="/admin/settings?err=رمز جدید و تکرار آن یکسان نیستند.", status_code=303)
 
-    set_admin_password(db, new_password)
-    log_action(db, "change_password", "تغییر رمز عبور مدیریت", request=request, target_type="settings")
+    guard.password_hash = hash_password(new_password)
+    db.commit()
+    log_action(db, "change_password", f"تغییر رمز ورود {guard.username}", request=request, target_type="staff_user", target_id=guard.id)
     return RedirectResponse(url="/admin/settings?msg=رمز عبور با موفقیت تغییر کرد.", status_code=303)
 
 
@@ -1049,6 +1287,9 @@ async def admin_events(
         "aggregate_type": aggregate_type,
         "event_type": event_type,
         "limit": limit,
+        # The filter's limit box paints its bounds from the same rules the
+        # query clamps with — one definition in services/events.py.
+        "numeric_rules": {"limit": (EVENT_LIMIT_RULES["min"], EVENT_LIMIT_RULES["max"], "تعداد رویدادها")},
     })
 
 
@@ -1063,74 +1304,6 @@ async def admin_logs(request: Request, db: Session = Depends(get_db)):
         "logs": logs,
         "jalali_str": jalali_str,
     })
-
-
-@router.post("/reset-database", response_class=HTMLResponse)
-async def admin_reset_database(request: Request, db: Session = Depends(get_db)):
-    guard = require_html_role(request, db, "owner")
-    if not hasattr(guard, "role"):
-        return guard
-
-    from models import (
-        CheckoutEvent,
-        CheckoutSession,
-        FinancialEntry,
-        Payment,
-        PaymentReversal,
-        Refund,
-        ProductVariant,
-        RefundLine,
-        StockReservation,
-    )
-    refund_ids = [row.id for row in db.query(Refund.id).all()]
-    reversal_ids = [row.id for row in db.query(PaymentReversal.id).all()]
-
-    append_event(
-        db,
-        "DatabaseReset",
-        "database",
-        None,
-        idempotency_key=f"database-reset:{datetime.now(timezone.utc).isoformat()}",
-        actor_user_id=guard.id,
-        request_id=request.headers.get("X-Request-ID"),
-        payload={
-            "sales": db.query(Sale).count(),
-            "customers": db.query(Customer).count(),
-            "pos_transactions": db.query(POSTransaction).count(),
-        },
-    )
-
-    if refund_ids:
-        db.query(FinancialEntry).filter(FinancialEntry.refund_id.in_(refund_ids)).delete(synchronize_session=False)
-    if reversal_ids:
-        db.query(FinancialEntry).filter(FinancialEntry.payment_reversal_id.in_(reversal_ids)).delete(synchronize_session=False)
-    db.query(RefundLine).delete(synchronize_session=False)
-    db.query(PaymentReversal).delete(synchronize_session=False)
-    db.query(Refund).delete(synchronize_session=False)
-    db.query(CheckoutEvent).delete(synchronize_session=False)
-    db.query(StockReservation).delete(synchronize_session=False)
-    db.query(ProductVariant).update(
-        {ProductVariant.reserved_quantity: 0},
-        synchronize_session=False,
-    )
-    db.query(CheckoutSession).delete(synchronize_session=False)
-    db.query(SaleCampaign).delete(synchronize_session=False)
-    db.query(SaleItem).delete(synchronize_session=False)
-    db.query(StockMovement).filter(StockMovement.sale_id.isnot(None)).delete(synchronize_session=False)
-    db.query(POSTransaction).delete(synchronize_session=False)
-    db.query(Payment).delete(synchronize_session=False)
-    db.query(Sale).delete(synchronize_session=False)
-    db.query(GeneratedImage).delete(synchronize_session=False)
-    db.query(Referral).delete(synchronize_session=False)
-    db.query(Customer).update(
-        {Customer.referred_by: None},
-        synchronize_session=False,
-    )
-    db.query(Customer).delete(synchronize_session=False)
-    db.commit()
-    log_action(db, "reset_database", "ریست کامل دیتابیس", request=request, target_type="database")
-
-    return RedirectResponse(url="/admin", status_code=303)
 
 
 def _birthday_marker(db: Session, customer, occasion: str) -> Settings | None:

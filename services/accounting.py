@@ -947,26 +947,54 @@ def purchase_overview(db, start, end, now: datetime | None = None) -> dict:
     balances = get_supplier_balances(db)
     owed = sum(row["owed"] for row in balances)
 
-    open_purchases = db.query(Purchase).filter(
-        Purchase.is_reversed == False,
-        Purchase.is_draft == False,
+    # The overdue cell is a count and a sum, not a list: the whole decision —
+    # due date passed, paid, remaining — is computed in SQL, so the page does
+    # not load every due-dated purchase into Python on every view. The paid
+    # figure follows the same rule as `purchase_paid_from_rollup`: live linked
+    # payments win, the cached amount only fills in for rows with no payments.
+    paid_sq = db.query(
+        SupplierPayment.purchase_id.label("purchase_id"),
+        func.coalesce(func.sum(
+            case((SupplierPayment.reversed_at.is_(None), SupplierPayment.amount), else_=0)
+        ), 0).label("paid"),
+        func.count(SupplierPayment.id).label("rows"),
+    ).filter(SupplierPayment.purchase_id.isnot(None)) \
+        .group_by(SupplierPayment.purchase_id).subquery()
+    paid_amount = case(
+        (paid_sq.c.rows > 0, func.coalesce(paid_sq.c.paid, 0)),
+        else_=func.coalesce(Purchase.amount_paid, 0),
+    )
+    remaining = func.coalesce(Purchase.total_cost, 0) - paid_amount
+    remaining_pos = case((remaining > 0, remaining), else_=0)
+    overdue_row = db.query(
+        func.count(Purchase.id),
+        func.coalesce(func.sum(remaining_pos), 0),
+    ).outerjoin(paid_sq, paid_sq.c.purchase_id == Purchase.id).filter(
+        Purchase.is_reversed == False,  # noqa: E712
+        Purchase.is_draft == False,  # noqa: E712
         Purchase.due_date.isnot(None),
-    ).all()
-    rollup = purchase_payment_rollup(db, [p.id for p in open_purchases])
-    overdue_count = 0
-    overdue_amount = 0
-    for purchase in open_purchases:
-        paid = purchase_paid_from_rollup(purchase, rollup.get(purchase.id))
-        settlement = purchase_settlement(db, purchase, paid=paid, now=now)
-        if settlement["overdue"]:
-            overdue_count += 1
-            overdue_amount += settlement["remaining"]
+        Purchase.due_date < now,
+        remaining_pos > 0,
+    ).one()
+    overdue_count, overdue_amount = int(overdue_row[0] or 0), int(overdue_row[1] or 0)
+
+    # The period clauses read finalised invoices only, so drafts dated this
+    # month are invisible to `period_spend` until they are finalised — the
+    # page's own action. Naming them in the page's sentence is the honest
+    # state: the number is not wrong, it is scoped, and the scope is stated.
+    draft_row = db.query(func.count(Purchase.id)).filter(
+        Purchase.is_draft == True,  # noqa: E712
+        Purchase.is_reversed == False,  # noqa: E712
+        purchase_effective_column().between(start, end),
+    ).scalar()
+    drafts_in_period = int(draft_row or 0)
 
     return {
         "period_spend": spend,
         "period_count": count,
         "period_units": units,
         "supplier_owed": owed,
+        "drafts_in_period": drafts_in_period,
         "overdue_count": overdue_count,
         "overdue_amount": overdue_amount,
     }
@@ -1211,22 +1239,39 @@ def reverse_cash_withdrawal(db, entry: CashSessionEntry, operator_user_id: int,
     return entry
 
 
-def get_supplier_balances(db) -> list:
+def get_supplier_balances(db, with_purchases: bool = False) -> list:
+    """Each supplier's invoiced / paid / owed, in two queries total.
+
+    ``with_purchases=True`` keeps loading each supplier's purchase objects —
+    the payment form needs the purchase picker, nothing else does. Every other
+    caller (overview, suppliers page) reads only the numbers, so loading full
+    Purchase rows to compute a sum was an N+1-shaped tax on three pages and
+    every payment POST."""
     suppliers = db.query(Supplier).order_by(Supplier.name.asc()).all()
+    invoiced_by_supplier = dict(
+        db.query(Purchase.supplier_id, func.coalesce(func.sum(Purchase.total_cost), 0))
+        .filter(Purchase.is_reversed == False, Purchase.is_draft == False)  # noqa: E712
+        .group_by(Purchase.supplier_id).all()
+    )
+    paid_by_supplier = dict(
+        db.query(SupplierPayment.supplier_id, func.coalesce(func.sum(SupplierPayment.amount), 0))
+        .filter(SupplierPayment.reversed_at.is_(None))
+        .group_by(SupplierPayment.supplier_id).all()
+    )
     result = []
     for supplier in suppliers:
-        purchases = db.query(Purchase).filter(
-            Purchase.supplier_id == supplier.id,
-            Purchase.is_reversed == False,
-            Purchase.is_draft == False,
-        ).all()
-        invoiced = sum(p.total_cost or 0 for p in purchases)
-        paid = db.query(func.coalesce(func.sum(SupplierPayment.amount), 0)).filter(
-            SupplierPayment.supplier_id == supplier.id,
-            SupplierPayment.reversed_at.is_(None),
-        ).scalar() or 0
+        if with_purchases:
+            purchases = db.query(Purchase).filter(
+                Purchase.supplier_id == supplier.id,
+                Purchase.is_reversed == False,  # noqa: E712
+                Purchase.is_draft == False,  # noqa: E712
+            ).all()
+        else:
+            purchases = []
+        invoiced = invoiced_by_supplier.get(supplier.id, 0)
+        paid = paid_by_supplier.get(supplier.id, 0)
         result.append({"supplier": supplier, "invoiced": invoiced, "paid": paid,
-                       "owed": max(0, invoiced - paid), "purchases": purchases})
+                       "owed": max(0, (invoiced or 0) - (paid or 0)), "purchases": purchases})
     return result
 
 

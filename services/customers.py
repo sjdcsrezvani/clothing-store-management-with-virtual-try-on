@@ -24,6 +24,8 @@ from services._common import (
     BUYS_FOR_CHOICES,
     BUYS_FOR_LABELS,
     BUYS_FOR_SELF,
+    BIRTHDAY_TARGET_KEY,
+    CHILD_PROFILE_KEY,
     birthday_form_value,
     birthday_display,
     birthday_subjects,
@@ -56,20 +58,31 @@ _flags_cache = {"at": 0.0, "data": None}
 
 def _load_flags(db=None) -> dict:
     from database import SessionLocal
+    from models import Settings
+
+    from services._common import birthday_flags_from_rows
 
     close = db is None
     if db is None:
         db = SessionLocal()
     try:
+        # One read of the settings table answers both flag keys; the derivation
+        # (what counts as off, how the default choice follows the target) is
+        # `birthday_flags_from_rows`'s, shared with the per-row readers — the
+        # loader must not restate it. A cache miss is one query, not one per
+        # flag.
+        rows = {
+            row.key: row.value
+            for row in db.query(Settings).filter(Settings.key.in_(
+                [CHILD_PROFILE_KEY, BIRTHDAY_TARGET_KEY])).all()
+        }
         return {
-            "child_profile": child_profile_enabled(db),
-            "birthday_target": get_birthday_target(db),
+            **birthday_flags_from_rows(rows),
             # A signup form asks the customer themselves: these are the two
             # options it offers and the one it pre-selects from the store's
             # target. The choice is stored per customer and decides whose
             # birthday the discount uses — the store setting is only the default
             # for someone who has never chosen.
-            "default_buys_for": default_buys_for(db),
             "buys_for_choices": BUYS_FOR_CHOICES,
             "buys_for_labels": BUYS_FOR_LABELS,
         }
@@ -354,7 +367,18 @@ def _sorted(query, sort: str):
         return query.outerjoin(totals, totals.c.cid == Customer.id) \
             .order_by(direction(figure))
     if sort == "points":
-        return query.order_by(Customer.total_points.desc())
+        # Same discipline as the spending sort: order by the invoices' own
+        # points sum, not the stored counter — the list must not sort by a
+        # number it does not show.
+        points_totals = query.session.query(
+            Sale.customer_id.label("cid"),
+            func.coalesce(func.sum(Sale.points_earned), 0).label("points"),
+        ).filter(
+            Sale.payment_confirmed == True,  # noqa: E712
+            Sale.is_refunded == False,  # noqa: E712
+        ).group_by(Sale.customer_id).subquery()
+        return query.outerjoin(points_totals, points_totals.c.cid == Customer.id) \
+            .order_by(desc(func.coalesce(points_totals.c.points, 0)))
     if sort == "debt":
         return query.order_by(Customer.total_debt.desc())
     if sort == "last_purchase":
@@ -365,13 +389,31 @@ def _sorted(query, sort: str):
 
 
 def list_customers(db: Session, *, search: str = "", tier: str = "", status: str = "all",
-                   tag: str = "", sort: str = "date", page: int = 1) -> dict:
-    """One page of customers plus the totals the page needs to describe itself."""
+                   tag: str = "", sort: str = "date", page: int = 1,
+                   drifted: bool = False) -> dict:
+    """One page of customers plus the totals the page needs to describe itself.
+
+    ``drifted`` swaps the whole query for the drift worklist: only customers
+    whose stored counters disagree with their invoices, searchable by name but
+    deliberately ignoring the status/tier/tag filters — an archived customer's
+    counter is still a lie somewhere, so the view the drift card links to must
+    show exactly the set the card counts, or the count and the list would
+    disagree (the quiet kind of wrongness this page exists to end).
+    """
     status = status if status in STATUSES else "all"
     sort = sort if sort in SORTS else "date"
     page = max(1, int(page or 1))
 
-    query = _filtered_query(db, search=search, tier=tier, status=status, tag=tag)
+    if drifted:
+        drift_ids = drifted_customer_ids(db)
+        query = db.query(Customer).filter(Customer.id.in_(drift_ids))
+        if (search or "").strip():
+            query = query.filter(
+                or_(Customer.phone.contains(search),
+                    Customer.first_name.contains(search),
+                    Customer.last_name.contains(search)))
+    else:
+        query = _filtered_query(db, search=search, tier=tier, status=status, tag=tag)
     total = query.count()
     total_pages = max(1, (total + PER_PAGE - 1) // PER_PAGE)
     page = min(page, total_pages)
@@ -388,7 +430,8 @@ def list_customers(db: Session, *, search: str = "", tier: str = "", status: str
         "status": status,
         "tag": tag,
         "sort": sort,
-        "has_filters": bool(search or tier or tag or status != "all" or sort != "date"),
+        "drifted": drifted,
+        "has_filters": bool(search or tier or tag or status != "all" or sort != "date" or drifted),
     }
 
 
@@ -417,6 +460,7 @@ def customer_overview(db: Session) -> dict:
             if birthday_condition is not None else 0
         ),
         "archived_count": db.query(Customer).filter(Customer.is_archived == True).count(),  # noqa: E712
+        "drifted_count": drifted_counter_count(db),
         "campaign_count": (
             db.query(Customer).filter(
                 _not_archived(), Customer.id.in_(campaign_ids),
@@ -481,6 +525,7 @@ def build_customer_rows(db: Session, customers: list) -> list[dict]:
     # something they did not. The counters stay in the model for the tiers and
     # the SMS variables; what the shop reads on the list is the invoices.
     invoice_map = _invoice_totals(db, [c.id for c in customers])
+    points_map = _invoice_points(db, [c.id for c in customers])
     for customer in customers:
         last = customer.last_purchase_date
         if last is not None and last.tzinfo is None:
@@ -489,6 +534,7 @@ def build_customer_rows(db: Session, customers: list) -> list[dict]:
         archived = is_archived_customer(customer)
         campaign_entry = campaign_map.get(customer.id, {})
         spent, count = invoice_map.get(customer.id, (0, 0))
+        points = points_map.get(customer.id, 0)
         rows.append({
             "customer": customer,
             "tags": parse_tags(customer.tags),
@@ -502,8 +548,114 @@ def build_customer_rows(db: Session, customers: list) -> list[dict]:
                        "inactive"),
             "invoice_spent": spent,
             "invoice_count": count,
+            "invoice_points": points,
+            # The same rule the drift card and the digest count by — surfaced
+            # per row so the drifted view reads as a worklist, not a mystery.
+            # Points are in the rule too: the stored counter must equal the
+            # invoices' own points sum, or the tier and the SMS variable lie.
+            "counter_drift": (spent != int(customer.total_spent or 0)
+                              or count != int(customer.total_purchases or 0)
+                              or points != int(customer.total_points or 0)),
         })
     return rows
+
+
+def _counted_sales_query(db: Session, customer_id: int):
+    """The sales that count as purchases, shared by every reader of the counters.
+
+    Confirmed, never refunded — the same rule the list's aggregate and the
+    profile's own figures apply, so all three can never disagree about what a
+    purchase is. One definition; a fourth restatement would be the first step
+    back to the drift this page exists to expose.
+    """
+    return db.query(Sale).filter(
+        Sale.customer_id == customer_id,
+        Sale.payment_confirmed == True,  # noqa: E712
+        Sale.is_refunded == False,  # noqa: E712
+    )
+
+
+def reconcile_customer_counters(db: Session, customer: Customer) -> tuple[int, int, int, int]:
+    """Recompute the stored counters from the invoices, and say what moved.
+
+    The profile shows the drift; this closes it — the stored counters are set
+    to what the invoices (confirmed, never refunded) add up to. Returns
+    ``(stored before, computed after)`` pairs for both counters, so the audit
+    trail can name the exact movement without re-deriving anything.
+    """
+    row = _counted_sales_query(db, customer.id).with_entities(
+        func.coalesce(func.sum(Sale.final_amount), 0),
+        func.count(Sale.id),
+    ).one()
+    computed_spent = int(row[0] or 0)
+    computed_count = int(row[1] or 0)
+    before_spent = int(customer.total_spent or 0)
+    before_count = int(customer.total_purchases or 0)
+    customer.total_spent = computed_spent
+    customer.total_purchases = computed_count
+    db.commit()
+    return before_spent, computed_spent, before_count, computed_count
+
+
+def drifted_customer_ids(db: Session) -> set[int]:
+    """The customers whose stored counters disagree with their invoices.
+
+    The same aggregate the list page reads (`_invoice_totals`, one definition
+    of what the invoices say), compared against the stored columns — so the
+    monthly digest can report drift that no profile visit ever surfaced, and
+    the list can offer the whole worklist at once. The counters feed the
+    tiers and the SMS variables, so a drifted one is a lie the owner cannot
+    see from anywhere but here.
+    """
+    ids = [row[0] for row in db.query(Customer.id).all()]
+    invoice_map = _invoice_totals(db, ids)
+    points_map = _invoice_points(db, ids)
+    drifted: set[int] = set()
+    for stored_id, stored_spent, stored_count, stored_points in \
+            db.query(Customer.id, Customer.total_spent, Customer.total_purchases,
+                     Customer.total_points).all():
+        spent, count = invoice_map.get(stored_id, (0, 0))
+        points = points_map.get(stored_id, 0)
+        if (int(stored_spent or 0) != spent or int(stored_count or 0) != count
+                or int(stored_points or 0) != points):
+            drifted.add(stored_id)
+    return drifted
+
+
+def drifted_counter_count(db: Session) -> int:
+    """How many customers' stored counters disagree with their invoices."""
+    return len(drifted_customer_ids(db))
+
+
+def reconcile_all_counters(db: Session) -> dict:
+    """Set every drifted counter to what the invoices say, in one pass.
+
+    One aggregate for the whole shop — the same `_invoice_totals` the list and
+    the per-profile reconcile read — so the bulk action and the single one can
+    never disagree about what a counter should be. Only drifted rows are
+    written, and in one commit: a bulk action that touches thousands of rows
+    must not pay a commit per customer. Returns ``(found, reconciled)`` —
+    drifted rows seen, rows whose values actually moved — so the audit trail
+    can say both honestly.
+    """
+    ids = [row[0] for row in db.query(Customer.id).all()]
+    invoice_map = _invoice_totals(db, ids)
+    points_map = _invoice_points(db, ids)
+    found = reconciled = 0
+    for customer in db.query(Customer).all():
+        spent, count = invoice_map.get(customer.id, (0, 0))
+        points = points_map.get(customer.id, 0)
+        before = (int(customer.total_spent or 0), int(customer.total_purchases or 0),
+                  int(customer.total_points or 0))
+        if before != (spent, count, points):
+            found += 1
+            customer.total_spent = spent
+            customer.total_purchases = count
+            customer.total_points = points
+            reconciled += 1
+    if reconciled:
+        db.commit()
+    return {"found": found, "reconciled": reconciled}
 
 
 def _invoice_totals(db: Session, customer_ids: list[int]) -> dict[int, tuple[int, int]]:
@@ -525,6 +677,28 @@ def _invoice_totals(db: Session, customer_ids: list[int]) -> dict[int, tuple[int
         Sale.is_refunded == False,  # noqa: E712
     ).group_by(Sale.customer_id).all()
     return {row.customer_id: (int(row.spent or 0), int(row.purchases or 0)) for row in rows}
+
+
+def _invoice_points(db: Session, customer_ids: list[int]) -> dict[int, int]:
+    """``customer_id → points``, summed from the invoices themselves.
+
+    The one definition the stored ``total_points`` must equal: each confirmed,
+    never-refunded invoice carries the ``points_earned`` snapshot it awarded,
+    so the invoices' own sum is what the counter should always say. No
+    counterpart of this counter existed before — unlike spent/count, points
+    had no computed definition anywhere, so drift here was invisible.
+    """
+    if not customer_ids:
+        return {}
+    rows = db.query(
+        Sale.customer_id,
+        func.coalesce(func.sum(Sale.points_earned), 0).label("points"),
+    ).filter(
+        Sale.customer_id.in_(customer_ids),
+        Sale.payment_confirmed == True,  # noqa: E712
+        Sale.is_refunded == False,  # noqa: E712
+    ).group_by(Sale.customer_id).all()
+    return {row.customer_id: int(row.points or 0) for row in rows}
 
 
 def birthday_fields(customer: Customer, db: Session) -> dict:
@@ -551,19 +725,18 @@ def customer_profile(db: Session, customer: Customer) -> dict:
     from services.campaigns import customer_campaign_history
     sales_query = db.query(Sale).filter(Sale.customer_id == customer.id)
 
-    counted_sales = sales_query.filter(
-        Sale.payment_confirmed == True,  # noqa: E712
-        Sale.is_refunded == False,  # noqa: E712
-    )
-    computed_row = counted_sales.with_entities(
+    computed_row = _counted_sales_query(db, customer.id).with_entities(
         func.coalesce(func.sum(Sale.final_amount), 0),
         func.count(Sale.id),
+        func.coalesce(func.sum(Sale.points_earned), 0),
     ).one()
     computed_spent = int(computed_row[0] or 0)
     computed_count = int(computed_row[1] or 0)
+    computed_points = int(computed_row[2] or 0)
 
     stored_spent = int(customer.total_spent or 0)
     stored_count = int(customer.total_purchases or 0)
+    stored_points = int(customer.total_points or 0)
 
     unpaid = db.query(Sale).filter(
         Sale.customer_id == customer.id,
@@ -582,11 +755,14 @@ def customer_profile(db: Session, customer: Customer) -> dict:
         "history_limit": PROFILE_SALES,
         "computed_spent": computed_spent,
         "computed_count": computed_count,
+        "computed_points": computed_points,
         "stored_spent": stored_spent,
         "stored_count": stored_count,
+        "stored_points": stored_points,
         # A counter that disagrees with the sales is shown, not silently fixed.
         "spent_mismatch": stored_spent != computed_spent,
         "count_mismatch": stored_count != computed_count,
+        "points_mismatch": stored_points != computed_points,
         "unpaid_credit": unpaid,
         "unpaid_credit_total": sum(int(sale.final_amount or 0) for sale in unpaid),
         "referrals": referrals,

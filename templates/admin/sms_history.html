@@ -12,8 +12,12 @@
 {% endset %}
 {% include 'partials/page_header.html' %}
 
-{% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
-{% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}
+{# The send, the digest resend and the digest send-now routes all land back here
+   with their answer in the query — a redirect that said nothing anywhere would
+   leave the owner guessing whether the queue took the message. #}
+{% if err %}<div class="alert alert-error" role="alert">⚠️ {{ err }}</div>{% endif %}
+{% if msg %}<div class="alert alert-info" role="status">{{ msg }}</div>{% endif %}
+
 
 <div class="stats-grid sms-kpi" aria-label="خلاصه ارسال‌ها">
     <a class="stat-card accent-sky" href="/admin/sms/history">
@@ -46,6 +50,18 @@
                 متن هر ردیف همان متنی است که در لحظه صف‌شدن رندر شده؛ ویرایش قالب بعداً آن را تغییر نمی‌دهد.
             </p>
         </div>
+    </div>
+
+    {# The quick path to one sender: the same vocabulary the select below
+       renders, as links that keep the other filters in place — the digests
+       view (خلاصه ماهانه) is one click, not a select and a submit. #}
+    {% set chip_base = '&status=' ~ status ~ '&order=' ~ order ~ '&search=' ~ (search|urlencode) %}
+    <div class="sms-source-chips" role="group" aria-label="فیلتر سریع فرستنده">
+        {% for value, label in source_filters %}
+        <a href="/admin/sms/history?source={{ value }}{{ chip_base }}"
+           class="source-chip{% if source == value %} is-active{% endif %}"
+           {% if source == value %}aria-pressed="true"{% endif %}>{{ label }}</a>
+        {% endfor %}
     </div>
 
     <form method="get" action="/admin/sms/history" class="search-form sms-filter-form">

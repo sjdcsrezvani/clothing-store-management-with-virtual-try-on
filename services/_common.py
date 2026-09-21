@@ -107,6 +107,30 @@ def parse_form_date_end(value) -> datetime | None:
     return parse_jalali_input_end(cleaned)
 
 
+def int_arg(value, default: int = 0) -> int:
+    """A typed or malformed integer query value falls back to ``default``.
+
+    ``?id=abc`` against a route that declared ``id: int`` is a bare 422 JSON —
+    not an answer a shop can read. Routes take such parameters as plain strings
+    and funnel them through here.
+    """
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+
+
+def page_arg(value, default: int = 1) -> int:
+    """A ``page`` query value degrades to a sane integer, clamped to at least 1.
+
+    Same refusal of the bare 422 as :func:`int_arg`, plus the pagination floor:
+    digits parse (0 and negatives clamp to 1), anything else falls back to
+    ``default``. For non-pagination integers (flags, ids) use :func:`int_arg` —
+    its 0 must stay a 0.
+    """
+    return max(1, int_arg(value, default))
+
+
 def fmt(amount: int) -> str:
     return f"{amount:,}"
 
@@ -161,6 +185,63 @@ def percent(value, digits: int = 1) -> str:
     if value is None:
         return "—"
     return f"{round(float(value), digits):g}٪"
+
+
+def delta(current, previous, *, label: str, lower_is_better: bool = False,
+          subject: str = "فروشی") -> dict | None:
+    """How a figure moved — and when no ratio is fair, the fact instead.
+
+    A percentage against a base of zero is not a percentage, and neither is one
+    taken from a base so small the ratio is arithmetic. But *saying nothing*
+    there was its own wrong: the first days of a month, the first sale after a
+    quiet yesterday — exactly the moments an owner is reading for — rendered a
+    bare number with no reference at all. So each impossible ratio is replaced
+    by the sentence the figure cannot carry:
+
+    * nothing last period, something now — «{label} {subject} نداشت», the
+      arrival stated as the news it is (reversed for spending, where the
+      arrival of a cost is the bad news);
+    * a base too small or a span gone negative — the base itself, «{label} X ت
+      بود», so the figure is read against a number rather than against nothing.
+
+    ``lower_is_better`` is the whole reason this returns a verdict instead of
+    leaving the colour to the direction of the arrow: spending less moves the
+    same way as earning more, and only the card's owner knows which is good news.
+    ``subject`` names what the card counts, so «نداشت» can be said about sales,
+    profit or expenses in the shop's own grammar.
+
+    Written once here after living on the dashboard, because سود و زیان's
+    comparison cards ask the same question of the same shape of data — one
+    doctrine, so the two pages can never disagree about what a fair
+    comparison is.
+    """
+    if previous is None:
+        return None
+    if previous <= 0:
+        if current > 0:
+            return {"text": f"{label} {subject} نداشت", "good": not lower_is_better}
+        # Both periods empty — the card's own figures already say it — or a
+        # red period standing on nothing. Neither has a comparison inside it.
+        return None
+    if current < 0:
+        # The sign is visible in the value itself; what it needs is its base.
+        return {"text": f"{label} {_money_text(previous)} بود", "good": None}
+    change = int(round((current - previous) / previous * 100))
+    if abs(change) > 999:
+        # The base was so small that the ratio is arithmetic rather than
+        # information — «۴۰۰۰٪ بیشتر» is a rounding artefact, not a trend.
+        # The base is small enough to say, so it is said.
+        return {"text": f"{label} {_money_text(previous)} بود", "good": None}
+    if change == 0:
+        return {"text": f"بدون تغییر نسبت به {label}", "good": None}
+    good = (change < 0) if lower_is_better else (change > 0)
+    word = "بیشتر" if change > 0 else "کمتر"
+    return {"text": f"{abs(change)}٪ {word} از {label}", "good": good}
+
+
+def _money_text(amount) -> str:
+    """«X ت» for the delta sentences — the dashboard's own money voice."""
+    return f"{fmt(int(amount or 0))} ت"
 
 
 def read_date_window(start_raw, end_raw) -> tuple[datetime | None, datetime | None, str]:
@@ -301,6 +382,44 @@ def get_setting_bool(db: Session, key: str, default: bool = True) -> bool:
     return str(setting.value).strip().lower() not in ("0", "false", "no", "off")
 
 
+def parse_setting_bool(value, default: bool = True) -> bool:
+    """A stored setting string → boolean, by the same rule get_setting_bool reads.
+
+    The single definition of "what does this stored word mean": the readers
+    that already hold their rows hand the value here instead of re-deriving
+    the truthiness, so a new spelling added in one place is understood
+    everywhere.
+    """
+    if value is None or str(value) == "":
+        return default
+    return str(value).strip().lower() not in ("0", "false", "no", "off")
+
+
+def birthday_flags_from_rows(rows: dict[str, str | None]) -> dict[str, object]:
+    """Derive the store-level birthday flags from two already-read settings rows.
+
+    The single derivation behind `child_profile_enabled`, `get_birthday_target`
+    and `default_buys_for`: the row readers call it so the rules — what counts
+    as off, which targets are valid, how the default choice follows the target
+    and the module — live once. A loader that reads the rows itself (the
+    shell's cached flags) derives through here too, so a cache miss is one
+    query, not one per flag.
+
+    `rows` maps the raw setting keys to their stored values (missing keys are
+    the same as unset rows).
+    """
+    child_on = parse_setting_bool(rows.get(CHILD_PROFILE_KEY), True)
+    raw_target = (rows.get(BIRTHDAY_TARGET_KEY) or "").strip()
+    target = raw_target if raw_target in BIRTHDAY_TARGETS else "child"
+    default_buys_for = BUYS_FOR_SELF if not child_on else (
+        BUYS_FOR_CHILD if target in ("child", "both") else BUYS_FOR_SELF)
+    return {
+        "child_profile": child_on,
+        "birthday_target": target,
+        "default_buys_for": default_buys_for,
+    }
+
+
 def child_profile_enabled(db: Session) -> bool:
     """Whether this store collects and shows child details (a children's shop)."""
     return get_setting_bool(db, CHILD_PROFILE_KEY, True)
@@ -311,7 +430,6 @@ def get_birthday_target(db: Session) -> str:
     setting = db.query(Settings).filter(Settings.key == BIRTHDAY_TARGET_KEY).first()
     value = (setting.value or "").strip() if setting is not None else ""
     return value if value in BIRTHDAY_TARGETS else "child"
-
 
 def birthday_subjects(db: Session) -> tuple[str, ...]:
     """The store's *default* birthdays, in priority order.

@@ -117,17 +117,25 @@ def month_reading(db: Session, *, start: datetime, end: datetime,
 
 
 def digest_text(reading: dict, *, month: str, year: int,
-                top_products: list[dict] | None = None) -> str:
+                top_products: list[dict] | None = None,
+                drifted_counters: int = 0) -> str:
     """The month's SMS: the reading, condensed to what one text holds.
 
     Four sentences — takings, the day worth naming, what sold, who bought —
     and the best seller, which is the one figure an owner repeats out loud.
     The sentences come from ``reading["notes"]`` unchanged: whatever the
     analytics page says about this data, this text says too.
+
+    The last line, when there is one, is not a month figure at all: the count
+    of customers whose stored counters disagree with their invoices — a
+    standing wrongness no profile visit may have surfaced, reported monthly
+    so the owner hears about it even when nobody opened the page. Silent at
+    zero, like every honest figure here.
     """
     notes = reading.get("notes") or {}
     daily = [row for row in (reading.get("daily") or [])
              if float(row.get("revenue") or 0)]
+    drift = _drift_sentence(drifted_counters)
     parts: list[str] = [f"گزارش {month} {year}:"]
 
     if not daily:
@@ -135,6 +143,10 @@ def digest_text(reading: dict, *, month: str, year: int,
         # is reused verbatim so the text cannot hold two spellings of the same
         # fact (its own fallback below only covers a reading that never came).
         parts.append(notes.get("dailyChart") or EMPTY_MONTH.format(month=month))
+        # Drift is a standing state, not a month figure: a quiet month is
+        # exactly when nobody is looking, so the line rides along here too.
+        if drift:
+            parts.append(drift)
         return " ".join(parts)
 
     revenue = sum(float(row.get("revenue") or 0) for row in daily)
@@ -151,7 +163,18 @@ def digest_text(reading: dict, *, month: str, year: int,
     if top:
         first = top[0]
         parts.append(f"پرفروش‌ترین: {first.get('name')} ({int(float(first.get('qty_sold') or 0))} عدد).")
+    if drift:
+        parts.append(drift)
     return " ".join(part for part in parts if part)
+
+
+def _drift_sentence(count: int) -> str:
+    """The drift line, or nothing: a count of zero states no fact."""
+    if count <= 0:
+        return ""
+    from services._common import _to_persian_digits as to_persian_digits
+    return (f"شمارنده‌ی {to_persian_digits(str(count))} مشتری با فاکتورها نمی‌خواند — "
+            "از پروفایل مشتری، هم‌ساز کنید.")
 
 
 def _fmt(amount: float) -> str:
@@ -219,10 +242,12 @@ def compose_digest(db: Session, *, start: datetime, end: datetime) -> dict:
     compose — one composer, not two that agree by discipline.
     """
     from services.analytics import get_top_products
+    from services.customers import drifted_counter_count
     month, year = month_name_of(start)
     reading = month_reading(db, start=start, end=end, span=f"ماه {month}")
     body = digest_text(reading, month=month, year=year,
-                       top_products=get_top_products(db, start, end, limit=1))
+                       top_products=get_top_products(db, start, end, limit=1),
+                       drifted_counters=drifted_counter_count(db))
     return {"ref": _ref_for(start), "month": month, "year": year, "body": body}
 
 
@@ -307,3 +332,45 @@ async def fire_monthly_digest(db: Session, *, at: datetime | None = None) -> dic
         logger.exception("Monthly digest failed for %s", ref)
         db.rollback()
         return {"sent": 0, "skipped": "error"}
+
+
+async def send_digest_now(db: Session, *, at: datetime | None = None) -> dict:
+    """Queue last month's digest by hand — the «ارسال همین حالا» button.
+
+    The calendar gate is the scheduler's alone: it paces the automatic send to
+    the owner's chosen day, while a human pressing the button has already
+    decided the time is right. What is *not* the scheduler's alone is the
+    once-per-month ref — the same ``already_fired`` check stands here, so this
+    send and the scheduler's send cannot both speak for one month. Whichever
+    happens first covers the month; the other becomes a quiet no-op.
+    """
+    at = at or datetime.now(timezone.utc)
+    phones = digest_phones(db)
+    if not phones:
+        return {"queued": 0, "state": "no_phone"}
+    start, end = _finished_month_window(at)
+    ref = _ref_for(start)
+    if already_fired(db, ref):
+        return {"queued": 0, "state": "already_sent", "ref": ref}
+    try:
+        composed = compose_digest(db, start=start, end=end)
+        body = composed["body"]
+        if not body.strip():
+            return {"queued": 0, "state": "empty", "ref": ref}
+        queued = 0
+        for phone in phones:
+            row = await queue_sms(body, phone, {}, db, source=SOURCE,
+                                  body=body, ref=ref)
+            if row is not None:
+                queued += 1
+        if queued:
+            db.commit()
+        else:
+            db.rollback()
+        return {"queued": queued,
+                "state": "queued" if queued else "failed",
+                "ref": ref, "month": composed["month"]}
+    except Exception:                                  # noqa: BLE001 — a broken reading must not take the page down
+        logger.exception("Hand digest send failed for %s", ref)
+        db.rollback()
+        return {"queued": 0, "state": "error", "ref": ref}

@@ -46,13 +46,19 @@ def normalize_reminder_days(value: str | Iterable[int] | None) -> list[int]:
     return sorted(days, reverse=True)
 
 
+# The check form's amount floor, named once: the form paints its min from it
+# and parse_amount_rials refuses below it, so the input can never invite a
+# figure the server refuses.
+CHECK_AMOUNT_MIN = 1
+
+
 def parse_amount_rials(value: str | int | None) -> int:
     cleaned = to_english_digits(str(value or "")).replace(",", "").replace("٬", "").replace(" ", "")
     try:
         amount = int(cleaned)
     except (TypeError, ValueError) as error:
         raise ValueError("مبلغ چک معتبر نیست") from error
-    if amount <= 0:
+    if amount < CHECK_AMOUNT_MIN:
         raise ValueError("مبلغ چک باید بیشتر از صفر باشد")
     return amount
 

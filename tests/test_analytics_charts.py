@@ -193,13 +193,17 @@ const rects = [];
 const arcs = [];
 const strokes = [];
 const strokeStyles = [];
+const lineStrokes = [];
 const arcFills = [];
 const canvases = [];
 const printListeners = {};
 function context2d() {
+  let strokeStyleValue = '';
   return {
-    fillStyle: '', strokeStyle: '', lineWidth: 1, font: '', textAlign: '',
+    fillStyle: '', lineWidth: 1, font: '', textAlign: '',
     direction: '', globalCompositeOperation: '',
+    get strokeStyle() { return strokeStyleValue; },
+    set strokeStyle(value) { strokeStyleValue = String(value); lineStrokes.push(strokeStyleValue); },
     setTransform() {}, clearRect() {}, beginPath() {}, closePath() {},
     moveTo(x, y) { strokes.push({ op: 'move', x, y }); },
     lineTo(x, y) { strokes.push({ op: 'line', x, y }); },
@@ -240,6 +244,7 @@ function paint(config) {
   arcs.length = 0;
   strokes.length = 0;
   strokeStyles.length = 0;
+  lineStrokes.length = 0;
   arcFills.length = 0;
   const canvas = {
     parentElement: { clientWidth: 420, clientHeight: 240 },
@@ -249,10 +254,20 @@ function paint(config) {
   };
   canvases.push(canvas);
   new sandbox.window.Chart(canvas, config);
-  return { text: texts.map((call) => call.text), texts: texts.slice(), rects: rects.slice(), arcs: arcs.slice(), strokes: strokes.slice(), strokeStyles: strokeStyles.slice(), arcFills: arcFills.slice() };
+  return { text: texts.map((call) => call.text), texts: texts.slice(), rects: rects.slice(), arcs: arcs.slice(), strokes: strokes.slice(), strokeStyles: strokeStyles.slice(), lineStrokes: lineStrokes.slice(), arcFills: arcFills.slice() };
 }
 
 const many = Array.from({ length: 30 }, (_, index) => (index === 7 ? 9000000 : 100000));
+
+// The page builds its charts from a named `tone` map, so the harness mirrors
+// that name — the reading shapes below can be lifted straight from the page's
+// own builders and stay true to what the page draws.
+const tone = {
+  candy: tokens['--candy'], sky: tokens['--sky'], sunshine: tokens['--sunshine'],
+  mint: tokens['--mint'], lavender: tokens['--lavender'], persimmon: tokens['--persimmon'],
+};
+tone.palette = [tone.candy, tone.sky, tone.sunshine, tone.mint, tone.lavender, tone.persimmon];
+const baseOpts = (extra={}) => Object.assign({ responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { family: 'Vazirmatn' } } } }, scales: { y: { beginAtZero: true } } }, extra);
 
 // An empty chart is a state the theme matrix never renders: a shop with no
 // sales drives drawBars through `datasets` empty, and its neutrals are what
@@ -263,8 +278,83 @@ const paletteCharts = {
     data: { labels: ['الف', 'ب', 'پ'], datasets: [{ label: 'فروش', data: [1500000, 2400000, 900000], backgroundColor: tokens['--candy'] }] } }),
   doughnut: paint({ type: 'doughnut', options: { valueFormat: 'count' },
     data: { labels: ['یک', 'دو'], datasets: [{ data: [75, 25], backgroundColor: [tokens['--sky'], tokens['--mint']] }] } }),
-  line: paint({ type: 'line', valueFormat: 'money',
+  lineSeries: paint({ type: 'line', valueFormat: 'money',
     data: { labels: ['1/1403', '2/1403', '3/1403'], datasets: [{ label: 'درآمد', data: [100, 300, 200], borderColor: tokens['--candy'] }] } }),
+  // ── the dashboard's monthly reading, by canvas id ───────────────────────
+  // The reading strip quotes four charts of سود و زیان (the same four ids the
+  // strip's builder reads, in the same order). These shapes are lifted from
+  // the page's own builders — a drive per palette exercises the *real*
+  // geometry, including the grouped two-dataset path nothing generic below
+  // draws. Each is judged in the test by the hues its own page line names.
+  readingDaily: paint({ type: 'bar',
+    data: { labels: ['۰۱/۰۱', '۰۱/۰۲', '۰۱/۰۳'], datasets: [
+        { label: 'فروش', data: [1000, 3000, 2000], backgroundColor: tone.candy },
+        { label: 'سود', data: [400, 900, 700], backgroundColor: tone.mint }
+    ]},
+    options: baseOpts({ valueFormat: 'money' })
+  }),
+  readingCategory: paint({ type: 'doughnut',
+    data: { labels: ['پسرانه', 'دخترانه'], datasets: [{ data: [8000, 2000], backgroundColor: tone.palette }]},
+    options: { responsive: true, valueFormat: 'money', plugins: { legend: { position: 'bottom', labels: { font: { family: 'Vazirmatn' } } } } }
+  }),
+  readingTier: paint({ type: 'bar',
+    data: { labels: ['الماس', 'طلایی', 'نقره‌ای'], datasets: [{ label: 'فروش', data: [6000, 4000, 2000], backgroundColor: [tone.lavender, tone.sunshine, tone.sky] }]},
+    options: baseOpts({ valueFormat: 'money', plugins: { legend: { display: false } } })
+  }),
+  readingSegments: paint({ type: 'doughnut',
+    data: { labels: ['تا 500 هزار', '1 تا 2 میلیون'], datasets: [{ data: [7, 3], backgroundColor: [tone.lavender, tone.sunshine, tone.sky, tone.candy] }]},
+    options: { responsive: true, valueFormat: 'count', plugins: { legend: { position: 'bottom', labels: { font: { family: 'Vazirmatn', size: 11 } } } } }
+  }),
+  // ── the page's remaining canvases, in the shapes their builders draw ────
+  // The reading strip quotes four of سود و زیان's twelve canvases; these are
+  // the other eight, lifted from the same builders (pricing/color/size/hour/
+  // weekday/priceDist/marginCat/trend), so every chart id the page renders is
+  // driven per palette and judged by the hue its own builder line names.
+  pricing: paint({ type: 'bar',
+    data: { labels: ['میانگین قیمت', 'میانگین هزینه', 'میانگین سود'], datasets: [
+        { label: 'تومان', data: [480000, 300000, 180000], backgroundColor: [tone.sunshine, tone.sky, tone.mint] }]},
+    options: baseOpts({ valueFormat: 'money', plugins: { legend: { display: false } } })
+  }),
+  colors: paint({ type: 'bar',
+    data: { labels: ['مشکی', 'سفید'], datasets: [{ label: 'تعداد', data: [30, 12], backgroundColor: tone.lavender }]},
+    options: baseOpts({ valueFormat: 'count', plugins: { legend: { display: false } } })
+  }),
+  sizes: paint({ type: 'bar',
+    data: { labels: ['۸ سال', '۱۰ سال'], datasets: [{ label: 'تعداد', data: [18, 9], backgroundColor: tone.persimmon }]},
+    options: baseOpts({ valueFormat: 'count', plugins: { legend: { display: false } } })
+  }),
+  hours: paint({ type: 'bar',
+    data: { labels: ['۸', '۱۲', '۲۰'], datasets: [{ label: 'فروش', data: [1000, 4000, 2500], backgroundColor: tone.sunshine }]},
+    options: baseOpts({ valueFormat: 'money', plugins: { legend: { display: false } } })
+  }),
+  weekdays: paint({ type: 'bar',
+    data: { labels: ['شنبه', 'جمعه'], datasets: [{ label: 'فروش', data: [3000, 1500], backgroundColor: tone.sky }]},
+    options: baseOpts({ valueFormat: 'money', plugins: { legend: { display: false } } })
+  }),
+  priceDist: paint({ type: 'bar',
+    data: { labels: ['زیر ۵۰۰ هزار', 'بالای ۲ میلیون'], datasets: [{ label: 'تعداد', data: [40, 10], backgroundColor: tone.lavender }]},
+    options: baseOpts({ valueFormat: 'count', plugins: { legend: { display: false } } })
+  }),
+  marginCat: paint({ type: 'bar',
+    data: { labels: ['پسرانه', 'دخترانه'], datasets: [{ label: 'حاشیه سود ٪', data: [42, -8], backgroundColor: [tone.mint, tone.candy] }]},
+    options: baseOpts({ valueFormat: 'percent', plugins: { legend: { display: false } } })
+  }),
+  trend: (function () {
+    // tintColour as the builder reaches it (window.tintColour on the page);
+    // the harness scope has no window, so the same rgba is spelled here.
+    const tint = (hex, alpha) => {
+      const h = hex.replace('#', '');
+      const c = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+      return 'rgba(' + c.join(', ') + ', ' + alpha + ')';
+    };
+    return paint({ type: 'line',
+      data: { labels: ['1/1403', '2/1403'], datasets: [
+          { label: 'درآمد', data: [5000, 7000], borderColor: tone.candy, backgroundColor: tint(tone.candy, 0.1), fill: true, tension: 0.3 },
+          { label: 'سود', data: [2000, 2600], borderColor: tone.mint, backgroundColor: tint(tone.mint, 0.1), fill: true, tension: 0.3 }
+      ]},
+      options: baseOpts({ valueFormat: 'money' })
+    });
+  })(),
 };
 
 process.stdout.write(JSON.stringify({
@@ -286,6 +376,7 @@ process.stdout.write(JSON.stringify({
   // The chart is built once (one canvas, one remembered config); then the
   // renderer's own listeners repaint it for paper and put the screen palette
   // back. The three fills of the same bar are the whole evidence.
+  tone,
   printCycle: (function () {
     const canvas = {
       parentElement: { clientWidth: 420, clientHeight: 240 },
@@ -491,11 +582,35 @@ RENDERER_TOKENS = (
     "--rule", "--ink", "--ink-soft", "--paper", "--paper-ink",
 )
 
-# Midnight: dark, cool, pink-on-charcoal. Kids Boutique: light, warm, and no
-# hue in common. A chart painted in one constant — or in the harness's own
-# token set, which every other test in this file drives — can be right for at
-# most one of the two.
-PALETTE_SAMPLES = ("midnight-operations", "kids-boutique")
+# Every palette the shell ships, the whole matrix: the theme walk has checked
+# token *names* on rendered pages since the harness existed, but the renderer
+# was driven per palette from a two-theme sample — enough to catch a
+# constant-coloured renderer, not enough to catch one palette's accent being
+# the only hue a shape ever gets. So every palette drives the doughnut and the
+# line now, and a ring fill or a series stroke that does not come from the
+# palette driving it fails here by name.
+PALETTE_SAMPLES = tuple(THEMES)
+
+
+def _drive_renderer(tmp_path, with_palette=True):
+    """Run the harness once, optionally with the first sample palette's tokens.
+
+    Returns the JSON the harness painted. One place so the default-token runs
+    (geometry, print cycle) and the per-palette runs share the load path.
+    """
+    script = tmp_path / "palette_paint.js"
+    script.write_text(RENDER_HARNESS, encoding="utf-8")
+    command = [shutil.which("node"), str(script), str(RENDERER)]
+    if with_palette:
+        tokens = THEMES[PALETTE_SAMPLES[0]]["tokens"]
+        missing = [token for token in RENDERER_TOKENS if not tokens.get(token)]
+        assert not missing, (PALETTE_SAMPLES[0], missing)
+        palette_file = tmp_path / f"{PALETTE_SAMPLES[0]}.json"
+        palette_file.write_text(json.dumps({token: tokens[token] for token in RENDERER_TOKENS}), encoding="utf-8")
+        command.append(str(palette_file))
+    result = subprocess.run(command, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
 
 
 @needs_node
@@ -505,12 +620,12 @@ def test_the_charts_paint_each_palette_s_own_colours_and_read_rtl_in_both(tmp_pa
     The renderer reads every colour through ``getComputedStyle``, and the
     harness answers those reads from one hard-coded token set — so a chart
     could have gone theme-blind and every test here would stay green. This
-    drives the same renderer with two real catalogues' own tokens, one dark
-    and one light with no shared accent, and asks two independent things of
-    each run: the paint is the palette's own (shading), and the geometry is
-    the page's own (bars, months and ring sweeping the way a Persian reader
-    scans) — direction proved per palette, so it cannot be a light-theme
-    accident the dark palette never took.
+    drives the same renderer with every catalogue's own tokens, light and dark
+    and high-contrast alike, and asks two independent things of each run: the
+    paint is the palette's own (shading), and the geometry is the page's own
+    (bars, months and ring sweeping the way a Persian reader scans) —
+    direction proved per palette, so it cannot be a light-theme accident the
+    dark palette never took.
     """
     palettes = {}
     for theme_id in PALETTE_SAMPLES:
@@ -519,12 +634,11 @@ def test_the_charts_paint_each_palette_s_own_colours_and_read_rtl_in_both(tmp_pa
         assert not missing, (theme_id, missing)
         palettes[theme_id] = {token: tokens[token] for token in RENDERER_TOKENS}
 
-    # The two samples must disagree on every accent: shared hues would let a
-    # constant-coloured renderer pass both runs.
-    accents = ("--candy", "--sky", "--sunshine", "--mint", "--lavender", "--persimmon")
-    shared = {palettes[PALETTE_SAMPLES[0]][a] for a in accents} & {
-        palettes[PALETTE_SAMPLES[1]][a] for a in accents}
-    assert not shared, shared
+    # Every run is judged against its own palette's exact hues below, so a
+    # constant-coloured renderer fails in every run whose candy is not that
+    # constant — no cross-palette uniqueness premise needed, and palettes
+    # that legitimately share a hue (pos-focus and operations-light do) cost
+    # nothing.
 
     outputs = {}
     for theme_id, tokens in palettes.items():
@@ -538,12 +652,12 @@ def test_the_charts_paint_each_palette_s_own_colours_and_read_rtl_in_both(tmp_pa
         assert result.returncode == 0, result.stderr
         outputs[theme_id] = json.loads(result.stdout)
 
-    default_candy = "#f07a91"  # the harness's own set: no theme's colour
+    default_candy = "#f07a91"  # the harness's own set: also midnight's real candy
     for theme_id, tokens in palettes.items():
         painted = outputs[theme_id]
 
         # Shading — bars carry the palette's own first accent, exactly, and
-        # nothing else: not the harness default, not a neighbouring token.
+        # nothing else: not a neighbouring token, not a fallback.
         bar_fills = {rect["fill"] for rect in painted["bars"]["rects"] if rect["w"] > 20}
         assert bar_fills == {tokens["--candy"]}, (theme_id, bar_fills)
 
@@ -551,6 +665,16 @@ def test_the_charts_paint_each_palette_s_own_colours_and_read_rtl_in_both(tmp_pa
         ring_fills = set(painted["paletteCharts"]["doughnut"]["arcFills"])
         assert ring_fills and ring_fills <= {tokens["--sky"], tokens["--mint"]}, (
             theme_id, ring_fills)
+
+        # The single-accent ring and the trend line name their palette too:
+        # the doughnut's every slice and the line's every stroke come from the
+        # catalogue driving the run, never from another theme or the harness
+        # default. (Slice boundaries share the fill via strokeStyle; strokes
+        # 0–1 are the axes, so the series strokes start at index 2.)
+        single_ring = set(painted["doughnutGeom"]["arcFills"])
+        assert single_ring == {tokens["--sky"]}, (theme_id, single_ring)
+        series_strokes = {s.upper() for s in painted["trendLine"]["lineStrokes"][2:]}
+        assert series_strokes == {tokens["--candy"].upper()}, (theme_id, series_strokes)
 
         # The neutrals follow the palette too — in the empty state most of
         # all, where the axis rule is all there is to see.
@@ -574,10 +698,59 @@ def test_the_charts_paint_each_palette_s_own_colours_and_read_rtl_in_both(tmp_pa
         mid = (slice_arcs[0]["start"] + slice_arcs[0]["end"]) / 2
         assert math.cos(mid) < 0, (theme_id, slice_arcs[0], mid)
 
+        # ── the dashboard's monthly reading, chart by chart ────────────────
+        # The strip quotes four real charts of سود و زیان (dailyChart,
+        # categoryChart, tierChart, customerSegChart — the ids its builder
+        # reads). Each is driven here in the shape the page builds it, and
+        # judged by the hues the page's own builder line names — exactly, per
+        # palette, so a hue that stopped following its theme fails by name.
+        charts = painted["paletteCharts"]
+        daily_bars = {rect["fill"] for rect in charts["readingDaily"]["rects"] if rect["w"] > 2}
+        assert daily_bars == {tokens["--candy"], tokens["--mint"]}, (theme_id, daily_bars)
+        assert set(charts["readingCategory"]["arcFills"]) <= set(tone_palette(tokens)), (
+            theme_id, charts["readingCategory"]["arcFills"])
+        assert {tokens["--candy"], tokens["--sky"]} <= set(charts["readingCategory"]["arcFills"]), (
+            theme_id, charts["readingCategory"]["arcFills"])
+        tier_fills = {rect["fill"] for rect in charts["readingTier"]["rects"] if rect["w"] > 2}
+        assert tier_fills == {tokens["--lavender"], tokens["--sunshine"], tokens["--sky"]}, (
+            theme_id, tier_fills)
+        assert set(charts["readingSegments"]["arcFills"]) <= set(tone_palette(tokens)), (
+            theme_id, charts["readingSegments"]["arcFills"])
+        assert {tokens["--lavender"], tokens["--sunshine"]} <= set(charts["readingSegments"]["arcFills"]), (
+            theme_id, charts["readingSegments"]["arcFills"])
+
+        # ── the page's remaining canvases, judged the same way ───────────────
+        # Each is held to exactly the hue its own builder line names on
+        # analytics.html, so a builder that reached for a stranger's token —
+        # or a palette that couldn't supply one — fails by name here.
+        pricing_fills = {rect["fill"] for rect in charts["pricing"]["rects"] if rect["w"] > 2}
+        assert pricing_fills == {tokens["--sunshine"], tokens["--sky"], tokens["--mint"]}, (
+            theme_id, pricing_fills)
+        for key, token in (("colors", "--lavender"), ("sizes", "--persimmon"),
+                           ("hours", "--sunshine"), ("weekdays", "--sky"),
+                           ("priceDist", "--lavender")):
+            fills = {rect["fill"] for rect in charts[key]["rects"] if rect["w"] > 2}
+            assert fills == {tokens[token]}, (theme_id, key, fills)
+        margin_fills = {rect["fill"] for rect in charts["marginCat"]["rects"] if rect["w"] > 2}
+        assert margin_fills == {tokens["--mint"], tokens["--candy"]}, (theme_id, margin_fills)
+        # The trend line's strokes come from the palette. (The offline renderer
+        # paints a line from borderColor alone — its fill/tension options are
+        # inert here — so the stroke hues are the whole judgment.)
+        trend_strokes = {s.upper() for s in charts["trend"]["lineStrokes"][2:]}
+        assert trend_strokes == {tokens["--candy"].upper(), tokens["--mint"].upper()}, (
+            theme_id, trend_strokes)
+
 
 def label_positions(painted):
     """Text call positions by content, for assertions that reason in words."""
     return {call["text"]: call["x"] for call in painted["texts"]}
+
+
+def tone_palette(tokens):
+    """The page's six accents in the order ``themeTones`` lays them out — the
+    palette a doughnut built with ``tone.palette`` fills from."""
+    return [tokens["--candy"], tokens["--sky"], tokens["--sunshine"],
+            tokens["--mint"], tokens["--lavender"], tokens["--persimmon"]]
 
 
 def test_the_colour_size_matrix_is_a_matrix_and_adds_up(db_session):
@@ -697,13 +870,17 @@ def test_the_report_can_be_printed_from_the_page_itself():
     html = (ROOT / "templates" / "admin" / "analytics.html").read_text(encoding="utf-8")
     css = (ROOT / "static" / "css" / "style.css").read_text(encoding="utf-8")
 
-    assert 'onclick="window.print()"' in html
-    assert 'class="print-heading"' in html
+    # The print action is the header partial's — one button for every page —
+    # so the page no longer carries its own.
+    assert 'onclick="window.print()"' not in html
+    # The paper heading is the shared one: the page names its period into
+    # `print_heading`, and the page-header partial draws it.
+    assert "print_heading" in html
+    assert "{% if print_heading %}" in (ROOT / "templates" / "partials" / "page_header.html").read_text(encoding="utf-8")
     # The heading is hidden on screen and shown on paper — it exists for print.
     assert ".print-heading { display: none; }" in css
     assert ".print-heading { display: block !important; }" in css
     # The screen-only controls card is excluded from paper: the analytics
-    # block's own hide-list names it (the file has several print blocks, so
-    # the rule is pinned verbatim rather than found by position).
-    assert (".filter-bar, .search-form, .tip-icon, .breadcrumb, .admin-nav, "
-            ".screen-only,") in css
+    # block's own hide-list names it (chrome — breadcrumb, admin-nav — is the
+    # shell block's business now, so it no longer appears here).
+    assert ".filter-bar, .search-form, .tip-icon, .screen-only" in css

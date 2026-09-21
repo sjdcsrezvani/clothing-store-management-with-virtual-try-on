@@ -12,8 +12,6 @@
 {% endset %}
 {% include 'partials/page_header.html' %}
 
-{% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
-{% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}
 
 <div class="stats-grid sms-kpi" aria-label="خلاصه پیامک‌ها">
     <a class="stat-card accent-sky" href="/admin/sms/history">
@@ -137,14 +135,13 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="form-group">
                     <label for="campaign_sms_limit">سقف هر ارسال گروهی</label>
-                    <input type="number" id="campaign_sms_limit" name="campaign_sms_limit" min="1"
-                           value="{{ config.get('campaign_sms_limit', '100') }}">
+                    {% from 'partials/numeric_input.html' import num with context %}
+                    {{ num('campaign_sms_limit', config.get('campaign_sms_limit', '100')) }}
                     <small>هر پیامک هزینه دارد؛ ارسال گروهی به همین تعداد محدود می‌شود.</small>
                 </div>
                 <div class="form-group">
                     <label for="trigger_sms_limit">سقف ارسال خودکار در هر بررسی</label>
-                    <input type="number" id="trigger_sms_limit" name="trigger_sms_limit" min="1"
-                           value="{{ config.get('trigger_sms_limit', '50') }}">
+                    {{ num('trigger_sms_limit', config.get('trigger_sms_limit', '50')) }}
                     <small>
                         قالب‌هایی که برایشان «پیگیری» انتخاب کرده‌اید هر چند دقیقه یک‌بار بررسی
                         می‌شوند؛ در هر بررسی حداکثر همین تعداد پیامک فرستاده می‌شود تا هزینه یک‌جا
@@ -163,21 +160,10 @@
                         می‌نویسد به این شماره پیامک می‌شود: فروش و سود ماه، شلوغ‌ترین روز، پرفروش‌ترین
                         دسته و سطح مشتری. خالی بماند ارسال نمی‌شود — خودِ این شماره روشن‌کردن خلاصه است.
                     </small>
-                    {% if digest_preview is defined %}
-                    <div class="digest-preview">
-                        <span class="digest-preview-label">پیش‌نمایش خلاصه بعدی — از فروش واقعی «{{ digest_next_month }}»</span>
-                        {% if digest_preview.state == 'ready' %}
-                        <div class="sms-bubble digest-preview-bubble" dir="auto">{{ digest_preview.body }}</div>
-                        {% else %}
-                        <p class="muted">پیش‌نمایش اکنون ساخته نشد؛ بعداً دوباره این صفحه را باز کنید.</p>
-                        {% endif %}
-                    </div>
-                    {% endif %}
                 </div>
                 <div class="form-group">
                     <label for="monthly_digest_day">روز ارسال خلاصه از ماه جدید</label>
-                    <input type="number" id="monthly_digest_day" name="monthly_digest_day" min="1" max="28"
-                           value="{{ digest_day }}">
+                    {{ num('monthly_digest_day', digest_day) }}
                     <small>
                         مثلاً با عدد ۳، سومِ هر ماه، گزارش ماه قبلی فرستاده می‌شود — همیشه یک ماه کامل،
                         نه نیمه‌کاره. {% if digest_next_month %}خلاصه بعدی درباره‌ «{{ digest_next_month }}» است.{% endif %}
@@ -187,6 +173,24 @@
                     <button type="submit" class="btn btn-sm btn-primary">ذخیره سقف</button>
                 </div>
             </form>
+            {% if digest_preview is defined %}
+            {# Outside the settings form on purpose: the send-now button posts to
+               its own route, and a form inside a form would be folded into the
+               settings save by the HTML parser. #}
+            <div class="digest-preview">
+                <span class="digest-preview-label">پیش‌نمایش خلاصه بعدی — از فروش واقعی «{{ digest_next_month }}»</span>
+                {% if digest_preview.state == 'ready' %}
+                <div class="sms-bubble digest-preview-bubble" dir="auto">{{ digest_preview.body }}</div>
+                {% else %}
+                <p class="muted">پیش‌نمایش اکنون ساخته نشد؛ بعداً دوباره این صفحه را باز کنید.</p>
+                {% endif %}
+                <form method="post" action="/admin/sms/digest/send-now" class="digest-preview-actions">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="btn btn-sm btn-ghost">ارسال همین حالا</button>
+                    <small>همین متن برای شماره‌های بالا در صف قرار می‌گیرد؛ اگر ارسال خودکار این ماه انجام شده باشد، دوباره فرستاده نمی‌شود.</small>
+                </form>
+            </div>
+            {% endif %}
             {% else %}
             <p class="muted">سقف ارسال فقط توسط مالک فروشگاه قابل تغییر است.</p>
             {% endif %}
@@ -250,6 +254,16 @@
                         <small class="sms-meta tnum">{{ card.metrics.length }} نویسه · {{ card.metrics.segments }} پیامک</small>
                         {% else %}
                         <span class="sms-empty-body">متنی نوشته نشده — تا نوشتن متن، ارسالی ندارد.</span>
+                        {% endif %}
+                        {# The automatic sends are shown the message they would
+                           write before «فعال‌کردن» is pressed — a real customer's
+                           message for a due follow-up, the message's own shape
+                           with sample values when nobody is due yet. #}
+                        {% if card.trigger_preview %}
+                        <div class="sms-trigger-preview">
+                            <div class="sms-bubble" dir="auto">{{ card.trigger_preview.body }}</div>
+                            <small class="sms-trigger-preview-note">{{ card.trigger_preview.note }}</small>
+                        </div>
                         {% endif %}
                     </td>
                     <td>

@@ -13,8 +13,6 @@
 {% endset %}
 {% include 'partials/page_header.html' %}
 
-{% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
-{% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}
 {% if purchase.is_draft %}
 <div class="alert alert-info" role="status">
     این فاکتور پیش‌نویس است. تا نهایی‌سازی نه بهای تمام‌شده تغییر کرده، نه بدهی تأمین‌کننده و نه صندوق — و پرداخت روی آن ثبت نمی‌شود.
@@ -30,6 +28,18 @@
         <div class="stat-value tnum">{{ fmt(settlement.total) }} ت</div>
         <div class="stat-sub">اقلام {{ fmt(items_subtotal) }} ت + هزینه {{ fmt(purchase.extra_cost or 0) }} ت</div>
     </div>
+    {% if purchase.is_draft %}
+    <div class="stat-card accent-pine">
+        <div class="stat-label">پرداخت‌شده</div>
+        <div class="stat-value">—</div>
+        <div class="stat-sub">پرداخت پس از نهایی‌سازی ثبت می‌شود</div>
+    </div>
+    <div class="stat-card accent-saffron">
+        <div class="stat-label">مانده</div>
+        <div class="stat-value">—</div>
+        <div class="stat-sub">پیش از نهایی‌سازی بدهی‌ای وجود ندارد</div>
+    </div>
+    {% else %}
     <div class="stat-card accent-pine">
         <div class="stat-label">پرداخت‌شده</div>
         <div class="stat-value tnum">{{ fmt(settlement.paid) }} ت</div>
@@ -40,6 +50,7 @@
         <div class="stat-value tnum">{{ fmt(settlement.remaining) }} ت</div>
         <div class="stat-sub">{% if settlement.due_date %}سررسید {{ jalali_str(settlement.due_date, with_time=False) }}{% else %}بدون سررسید{% endif %}</div>
     </div>
+    {% endif %}
     <div class="stat-card {% if settlement.overdue %}accent-persimmon{% else %}accent-ink{% endif %}">
         <div class="stat-label">وضعیت</div>
         <div class="stat-value">
@@ -196,7 +207,7 @@
         </section>
 
         {% if purchase.is_draft %}
-        <section class="card">
+        <section class="card purchase-action-card">
             <h3>نهایی‌سازی فاکتور</h3>
             <p class="muted">با نهایی‌سازی، بهای تمام‌شده اقلام و بدهی تأمین‌کننده ثبت می‌شود. تا آن لحظه هیچ‌چیز روی حساب‌ها اثر ندارد.</p>
             <form method="post" action="/admin/purchases/{{ purchase.id }}/finalize" class="purchase-payment-form">
@@ -214,9 +225,9 @@
             </form>
         </section>
         {% elif not purchase.is_reversed and settlement.remaining > 0 and purchase.supplier_id %}
-        <section class="card">
+        <section class="card purchase-action-card">
             <h3>ثبت پرداخت</h3>
-            <p class="muted">تا {{ fmt(settlement.remaining) }} تومان مانده است.</p>
+            <p class="muted">تا {{ fmt(settlement.remaining) }} ت مانده است.</p>
             <form method="post" action="/admin/purchases/{{ purchase.id }}/payment" class="purchase-payment-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="form-group">
@@ -231,7 +242,7 @@
             </form>
         </section>
         {% elif not purchase.is_reversed and settlement.remaining > 0 %}
-        <section class="card">
+        <section class="card purchase-action-card">
             <h3>ثبت پرداخت</h3>
             <p class="muted">برای ثبت پرداخت، اول تأمین‌کننده این خرید را مشخص کنید.</p>
             <a href="/admin/suppliers" class="btn btn-ghost" target="_blank">تأمین‌کنندگان</a>

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 {% set filter_qs = '&tier=' ~ tier ~ '&status=' ~ status ~ '&tag=' ~ tag ~ '&sort=' ~ sort
-    ~ '&search=' ~ (search|urlencode) %}
+    ~ '&search=' ~ (search|urlencode) ~ ('&drifted=1' if drifted else '') %}
 
 {% set page_description %}
 پرونده هر مشتری: خریدها، امتیاز، بدهی و تولدها. برای دیدن پرونده کامل روی نام بزنید.
@@ -14,8 +14,6 @@
 {% endset %}
 {% include 'partials/page_header.html' %}
 
-{% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
-{% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}
 
 <div class="stats-grid customer-kpi" aria-label="خلاصه مشتریان">
     <a class="stat-card accent-sky" href="/admin/customers">
@@ -41,7 +39,29 @@
         <div class="stat-value tnum">{{ overview.birthday_count }}</div>
         <div class="stat-sub">در {{ overview.birthday_window }} روز آینده</div>
     </a>
+    <a class="stat-card {% if overview.drifted_count %}accent-persimmon{% else %}accent-ink{% endif %}"
+       href="/admin/customers?drifted=1">
+        <div class="stat-label">شمارنده ناهم‌خوان</div>
+        <div class="stat-value tnum">{{ overview.drifted_count }}</div>
+        <div class="stat-sub">با فاکتورها نمی‌خواند — فهرست هم‌سازی</div>
+    </a>
 </div>
+
+{% if drifted %}
+<div class="alert alert-info drift-banner" role="status">
+    <div>
+        <strong>فهرست هم‌سازی شمارنده‌ها.</strong>
+        شمارنده‌ی ذخیره‌شده‌ی این مشتری‌ها با فاکتورهایشان نمی‌خواند. فهرست و پیامک‌ها
+        از فاکتورها می‌خوانند، اما سطح مشتری و امتیازها تا هم‌سازی روی عدد قدیمی می‌مانند.
+    </div>
+    {% if is_owner %}
+    <form method="post" action="/admin/customers/reconcile-all" class="drift-banner-action">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn btn-sm btn-primary">هم‌سازی همه با فاکتورها</button>
+    </form>
+    {% endif %}
+</div>
+{% endif %}
 
 {% if overview.campaign_count %}
 <p class="customer-campaign-note">
@@ -60,7 +80,26 @@
         </div>
     </div>
 
+    {# View chips, not filter shortcuts: «همه» is the plain list, the drifted
+       chip is the reconciliation worklist the drift card and the monthly SMS
+       both point at. They carry no other filters on purpose — the form below
+       is for precision, and the drifted view ignores status/tier/tag by
+       design (an archived customer's counter is still a lie). #}
+    <div class="customer-chips" role="group" aria-label="نمای فهرست مشتریان">
+        <a href="/admin/customers"
+           class="source-chip{% if not drifted %} is-active{% endif %}"
+           {% if not drifted %}aria-pressed="true"{% endif %}>همه مشتریان</a>
+        {% if overview.drifted_count or drifted %}
+        <a href="/admin/customers?drifted=1"
+           class="source-chip{% if drifted %} is-active{% endif %}"
+           {% if drifted %}aria-pressed="true"{% endif %}>
+            شمارنده ناهم‌خوان{% if overview.drifted_count %} ({{ overview.drifted_count }}){% endif %}
+        </a>
+        {% endif %}
+    </div>
+
     <form method="get" action="/admin/customers" class="search-form customer-filter-form">
+        {% if drifted %}<input type="hidden" name="drifted" value="1">{% endif %}
         <div class="form-group">
             <label class="sr-only" for="filter-search">جست‌وجو</label>
             <input type="text" id="filter-search" name="search" value="{{ search }}"
@@ -139,6 +178,9 @@
                         {% if child_profile and customer.child_name %}
                         <small class="customer-meta">فرزند: {{ customer.child_name }}</small>
                         {% endif %}
+                        {% if row.counter_drift %}
+                        <span class="drift-flag" title="شمارنده‌ی ذخیره‌شده با فاکتورها نمی‌خواند">ناهم‌خوان</span>
+                        {% endif %}
                     </td>
                     <td>
                         <span class="tier-badge tier-{{ customer.tier }}">
@@ -151,7 +193,7 @@
                         <strong>{{ figure(row.invoice_spent) }}</strong>
                         <small>{{ figure(row.invoice_count) }} خرید</small>
                     </td>
-                    <td class="tnum">{{ figure(customer.total_points) }}</td>
+                    <td class="tnum">{{ figure(row.invoice_points) }}</td>
                     <td class="tnum">
                         {% if customer.total_debt %}
                         <strong>{{ fmt(customer.total_debt) }}</strong>

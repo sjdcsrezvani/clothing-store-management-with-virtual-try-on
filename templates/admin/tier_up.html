@@ -43,6 +43,7 @@
                 <tr>
                     <td>
                         <input type="checkbox" name="customer_ids" value="{{ c.id }}"
+                               aria-label="ارسال پیامک ارتقا به {{ c.full_name }}"
                                {% if loop.index0 < limit %}checked{% endif %}>
                     </td>
                     <td><strong>{{ c.full_name }}</strong></td>

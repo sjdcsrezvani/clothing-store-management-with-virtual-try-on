@@ -1,6 +1,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -424,6 +425,26 @@ async def app_error_page(request: Request, exc: StarletteHTTPException):
             status_code=exc.status_code,
         )
     return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+
+
+# The other raw-JSON leak: request validation. A typed URL like
+# /admin/sms/templates/abc/edit never reaches the route — FastAPI refuses the
+# path parameter before any handler runs and answers with its default
+# {"detail": […]} wall of field locations, in English. The page rule above only
+# sees exceptions a route raises, so validation needs its own handler, turning
+# the whole refusal into the shop's own 404 page under /admin and /sales.
+# /api keeps its JSON contract — the phone and any script depend on it.
+@app.exception_handler(RequestValidationError)
+async def app_validation_error_page(request: Request, exc: RequestValidationError):
+    if request.url.path.startswith(("/admin", "/sales")):
+        title, message = _PAGE_ERRORS[404]
+        return templates.TemplateResponse(
+            request, "admin/error.html",
+            {"status_code": 404, "error_title": title,
+             "error_message": message, "detail": ""},
+            status_code=404,
+        )
+    return JSONResponse({"detail": exc.errors()}, status_code=422)
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")

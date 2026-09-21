@@ -28,11 +28,20 @@ def _load(db=None) -> dict:
     if db is None:
         db = SessionLocal()
     try:
+        # One read of the settings table answers all four branding keys — the
+        # same one-query shape the shell theme read uses. A page render pays
+        # for this loader only on a cache miss, and a miss is one query, not
+        # four.
         data = dict(DEFAULT_STORE)
-        for key in ("name", "tagline", "instagram", "footer"):
-            row = db.query(Settings).filter(Settings.key == f"store_{key}").first()
-            if row and row.value:
-                data[key] = row.value
+        rows = {
+            row.key: row.value
+            for row in db.query(Settings).filter(Settings.key.in_(
+                [f"store_{key}" for key in DEFAULT_STORE])).all()
+        }
+        for key in DEFAULT_STORE:
+            value = rows.get(f"store_{key}")
+            if value:
+                data[key] = value
         return data
     finally:
         if close:

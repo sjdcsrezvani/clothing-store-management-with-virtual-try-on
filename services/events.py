@@ -145,6 +145,12 @@ def event_payload(event: BusinessEvent) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+# One table, two readers: the events route's form paints its min/max from it
+# and the query below bounds the limit with it, so a filter box that promises
+# «حداکثر ۱۰۰۰» can never read a server that accepts 5000.
+EVENT_LIMIT_RULES = {"min": 1, "max": 1000}
+
+
 def event_history(
     db: Session,
     aggregate_type: str | None = None,
@@ -160,7 +166,7 @@ def event_history(
         query = query.filter(BusinessEvent.aggregate_id == int(aggregate_id))
     if event_type:
         query = query.filter(BusinessEvent.event_type == event_type)
-    bounded_limit = max(1, min(int(limit or 200), 1000))
+    bounded_limit = max(EVENT_LIMIT_RULES["min"], min(int(limit or 200), EVENT_LIMIT_RULES["max"]))
     return query.order_by(BusinessEvent.occurred_at.asc(), BusinessEvent.id.asc()).limit(bounded_limit).all()
 
 

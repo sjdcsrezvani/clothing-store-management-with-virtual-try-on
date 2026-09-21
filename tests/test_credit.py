@@ -149,7 +149,9 @@ def test_every_receipt_can_be_reversed_with_a_reason():
 
 def test_statement_is_a_printable_document():
     assert 'class="card credit-statement"' in STATEMENT_HTML
-    assert "window.print()" in STATEMENT_HTML
+    # The print affordance lives in the shared header partial now; the page
+    # carries none of its own.
+    assert "window.print()" not in STATEMENT_HTML
     assert 'class="statement-table' in STATEMENT_HTML or "statement-table" in STATEMENT_HTML
     assert "مانده از قبل" in STATEMENT_HTML
     for hook in ("بدهکار (فاکتور)", "بستانکار (دریافت)", "مانده"):
@@ -579,3 +581,22 @@ def test_the_page_costs_a_fixed_number_of_queries_per_debtor(client, db_session,
 
     assert len(rows) == 12
     assert len(counted) <= 6, counted
+
+
+# ── the statement's paper ────────────────────────────────────────────────────
+
+def test_the_statement_prints_on_the_theme_s_own_paper():
+    """A document page that predates the paper doctrine: its print block must
+    paint with --paper/--paper-ink, not leave the theme's cards to the printer."""
+    from pathlib import Path
+    css = (Path(__file__).resolve().parents[1] / "static/css/style.css").read_text(encoding="utf-8")
+    block = css[css.index("A statement is a document"):]
+    block = block[:block.index("\n}")]  # the @media close, not a rule's
+
+    assert "--paper-ink" in block
+    assert "var(--paper) !important" in block
+    # The figures' borders read against paper, not against the screen's rule.
+    assert "--paper-mid" in block
+    # The screen-only chrome (range form, print button) is hidden — already
+    # true before, and pinned so it survives the block's rewrite.
+    assert ".screen-only" in block

@@ -13,7 +13,8 @@
         <input name="event_type" value="{{ event_type }}" maxlength="60" placeholder="SaleCompleted">
     </label>
     <label>تعداد
-        <input name="limit" type="number" min="1" max="1000" value="{{ limit }}">
+        {% from 'partials/numeric_input.html' import num with context %}
+        {{ num('limit', limit, input_id='events-limit') }}
     </label>
     <button class="btn btn-primary" type="submit">فیلتر</button>
 </form>

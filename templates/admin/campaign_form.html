@@ -14,7 +14,6 @@
 {% endset %}
 {% include 'partials/page_header.html' %}
 
-{% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
 {% if error %}<div class="alert alert-error" role="alert">⚠️ {{ error }}</div>{% endif %}
 
 <div class="campaign-form-layout">
@@ -45,14 +44,13 @@
                 <div class="form-row">
                     <div class="form-group">
                         <label for="discount_percent">درصد تخفیف *</label>
-                        <input type="number" id="discount_percent" name="discount_percent" required
-                               min="1" max="100" value="{{ values.discount_percent }}">
+                        {% from 'partials/numeric_input.html' import num with context %}
+                        {{ num('discount_percent', values.discount_percent, required=True) }}
                         <small>روی مبلغ سبد حساب می‌شود و با تخفیف‌های دیگر جمع می‌شود (سقف: کل سبد).</small>
                     </div>
                     <div class="form-group">
                         <label for="min_purchase">حداقل خرید (تومان)</label>
-                        <input type="number" id="min_purchase" name="min_purchase" min="0"
-                               value="{{ values.min_purchase }}">
+                        {{ num('min_purchase', values.min_purchase) }}
                         <small>صفر یعنی بدون حداقل خرید.</small>
                     </div>
                 </div>

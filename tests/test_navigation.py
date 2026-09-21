@@ -566,7 +566,7 @@ def test_a_refusal_on_a_form_post_is_a_page_as_well(client, db_session):
     manager, password = _staff(db_session, "nav-refused-post", "manager")
     _session_as(client, manager, password)
 
-    response = client.post("/admin/reset-database",
+    response = client.post("/admin/backup",
                            data={"csrf_token": csrf_token(client, "/sales/new")},
                            follow_redirects=False)
     assert response.status_code == 403

@@ -2,75 +2,210 @@
 {% block content %}
 
 {% set page_description %}
-<span>مجموع هزینه‌ها:</span> <strong class="tnum">{{ fmt(total) }} تومان</strong>
+هزینه‌های عملیاتی فروشگاه (اجاره، قبوض، تعمیرات و…) را اینجا ثبت کنید. هزینه نقدی از صندوق کم می‌شود و هزینه کارتی فقط در سود و زیان اثر می‌گذارد.
+{% endset %}
+{% set page_actions %}
+<a href="/admin/cashbox" class="btn btn-ghost">صندوق</a>
+<a href="/admin/accounting" class="btn btn-ghost">سود و زیان</a>
+<a href="/admin/accounting/export?{{ export_qs }}" class="btn btn-ghost">خروجی هزینه‌ها</a>
 {% endset %}
 {% include 'partials/page_header.html' %}
 
-{% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
-{% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
 
-<div class="stats-grid expense-type-summary">
+{% set filter_action = '/admin/expenses' %}
+{% set filter_id = 'expenses' %}
+{% set filter_note = 'جمع‌ها و فهرست، همین بازه را نشان می‌دهند.' %}
+{% include 'partials/period_filter.html' %}
+
+<div class="stats-grid expense-type-summary" aria-label="جمع هزینه‌های بازه">
+    <div class="stat-card accent-saffron">
+        <div class="stat-label">جمع هزینه‌های بازه</div>
+        <div class="stat-value tnum">{{ fmt(total) }} ت</div>
+        <div class="stat-sub">{{ total_count }} مورد در بازه</div>
+    </div>
     <div class="stat-card accent-sky">
         <div class="stat-label">هزینه‌های یک‌باره</div>
         <div class="stat-value tnum">{{ fmt(expense_type_totals.one_time) }} ت</div>
-        <div class="stat-sub">هزینه‌های غیرتکرارشونده</div>
+        <div class="stat-sub">غیرتکرارشونده</div>
     </div>
     <div class="stat-card accent-pine">
         <div class="stat-label">هزینه‌های ماهانه</div>
         <div class="stat-value tnum">{{ fmt(expense_type_totals.monthly) }} ت</div>
-        <div class="stat-sub">هزینه‌های ثابت ماهانه</div>
+        <div class="stat-sub">ثابت ماه (تمدید خودکار نیست)</div>
     </div>
 </div>
 
-<div class="card">
-    <h3>ثبت هزینه</h3>
-    <form method="post" action="/admin/expenses/add" class="filter-bar" style="margin: 0;">
-        <input type="number" name="amount" min="1" placeholder="💰 مبلغ (تومان) *" required style="flex:1;">
-        <select name="expense_type" aria-label="نوع هزینه" style="flex:1;">
-            <option value="one_time">یک‌باره</option>
-            <option value="monthly">ماهانه</option>
-        </select>
-        <input type="text" name="category" list="expense-cats" placeholder="🗂️ دسته (مثلاً: اجاره)" style="flex:1;">
-        <datalist id="expense-cats">
-            <option value="اجاره"><option value="برق و آب"><option value="اینترنت و تلفن">
-            <option value="حقوق"><option value="تعمیرات"><option value="بسته‌بندی">
-            <option value="حمل و نقل"><option value="متفرقه">
-        </datalist>
-        <input type="text" name="note" placeholder="📝 توضیح" style="flex:2;">
-        <button type="submit" class="btn btn-primary">💾 ثبت</button>
+<section class="card">
+    <div class="section-heading-row">
+        <div>
+            <h3>ثبت هزینه جدید</h3>
+            <p class="muted">مبلغ به تومان. هزینه کارتی به صندوق دست نمی‌زند؛ برداشت یا واریز بانک را در «صندوق» ثبت کنید نه اینجا.</p>
+        </div>
+    </div>
+    <form method="post" action="/admin/expenses/add">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="form-row">
+            <div class="form-group">
+                <label for="expense-amount">مبلغ (تومان) <span class="required-mark">*</span></label>
+                <input id="expense-amount" name="amount" type="text" inputmode="numeric" required placeholder="مثلاً ۱۵۰۰۰۰۰">
+                <small class="field-help">ارقام فارسی هم پذیرفته می‌شود.</small>
+            </div>
+            <div class="form-group">
+                <label for="expense-type">نوع هزینه</label>
+                <select id="expense-type" name="expense_type">
+                    <option value="one_time">یک‌باره</option>
+                    <option value="monthly">ماهانه</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="expense-method">روش پرداخت</label>
+                <select id="expense-method" name="payment_method">
+                    <option value="cash">نقدی (از صندوق)</option>
+                    <option value="card">کارتی (بدون اثر بر صندوق)</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="expense-category">دسته</label>
+                <input id="expense-category" type="text" name="category" list="expense-cats" placeholder="مثلاً اجاره">
+                <datalist id="expense-cats">
+                    <option value="اجاره"></option>
+                    <option value="برق و آب"></option>
+                    <option value="اینترنت و تلفن"></option>
+                    <option value="حقوق کارکنان"></option>
+                    <option value="تعمیرات"></option>
+                    <option value="بسته‌بندی"></option>
+                    <option value="حمل و نقل"></option>
+                    <option value="متفرقه"></option>
+                </datalist>
+            </div>
+            <div class="form-group form-span-2">
+                <label for="expense-note">توضیح</label>
+                <input id="expense-note" type="text" name="note" placeholder="توضیح کوتاه (اختیاری)">
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primary">ثبت هزینه</button>
     </form>
-</div>
+</section>
 
-<div class="card">
+<section class="card">
+    <div class="section-heading-row">
+        <div>
+            <h3>فهرست هزینه‌ها</h3>
+            <p class="muted">صفحه {{ page }} از {{ total_pages }} · {{ total_count }} مورد در بازه</p>
+        </div>
+        <a class="text-link" href="/admin/accounting/export?{{ export_qs }}">خروجی CSV</a>
+    </div>
+
+    <form method="get" action="/admin/expenses" class="search-form purchase-filter-form">
+        <input type="hidden" name="period" value="{{ period }}">
+        <input type="hidden" name="start_date" value="{{ start_date }}">
+        <input type="hidden" name="end_date" value="{{ end_date }}">
+        <div class="form-group">
+            <label class="sr-only" for="expense-q">جست‌وجو</label>
+            <input type="text" id="expense-q" name="q" value="{{ search }}" placeholder="شماره (#۱۲)، دسته یا توضیح">
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="expense-type-filter">نوع</label>
+            <select id="expense-type-filter" name="type">
+                <option value="all" {% if type_filter == 'all' %}selected{% endif %}>همه انواع</option>
+                <option value="one_time" {% if type_filter == 'one_time' %}selected{% endif %}>یک‌باره</option>
+                <option value="monthly" {% if type_filter == 'monthly' %}selected{% endif %}>ماهانه</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="expense-method-filter">روش پرداخت</label>
+            <select id="expense-method-filter" name="method">
+                <option value="all" {% if method_filter == 'all' %}selected{% endif %}>نقدی و کارتی</option>
+                <option value="cash" {% if method_filter == 'cash' %}selected{% endif %}>نقدی</option>
+                <option value="card" {% if method_filter == 'card' %}selected{% endif %}>کارتی</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="expense-status-filter">وضعیت</label>
+            <select id="expense-status-filter" name="status">
+                <option value="all" {% if status_filter == 'all' %}selected{% endif %}>فعال و برگشت‌شده</option>
+                <option value="active" {% if status_filter == 'active' %}selected{% endif %}>فعال</option>
+                <option value="reversed" {% if status_filter == 'reversed' %}selected{% endif %}>برگشت‌شده</option>
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary">اعمال فیلتر</button>
+        {% if has_filters %}<a href="/admin/expenses" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
+    </form>
+
     {% if expenses %}
-    <table>
-        <thead>
-            <tr>
-                <th>تاریخ</th>
-                <th>نوع هزینه</th>
-                <th>دسته</th>
-                <th>مبلغ</th>
-                <th>توضیح</th>
-                <th>🔧</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for e in expenses %}
-            <tr>
-                <td class="tnum">{{ jalali_str(e.created_at) }}</td>
-                <td><span class="badge {% if e.expense_type == 'monthly' %}badge-info{% else %}badge-used{% endif %}">{{ expense_type_labels.get(e.expense_type, expense_type_labels['one_time']) }}</span></td>
-                <td>{{ e.category or '—' }}</td>
-                <td class="tnum"><strong>{{ fmt(e.amount) }} ت</strong></td>
-                <td>{{ e.note or '—' }}</td>
-                <td>
-                    <form method="post" action="/admin/expenses/{{ e.id }}/delete" style="display:inline;"
-                          onsubmit="return confirm('⚠️ حذف این هزینه؟')">
-                        <button type="submit" class="btn btn-sm btn-danger">🗑️</button>
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% else %}<p style="color: var(--ink-soft); text-align: center; padding: 1.5rem;">هزینه‌ای ثبت نشده است.</p>{% endif %}
-</div>{% endblock %}
+    <div class="table-scroll">
+        <table>
+            <thead>
+                <tr>
+                    <th scope="col">تاریخ</th>
+                    <th scope="col">وضعیت</th>
+                    <th scope="col">نوع</th>
+                    <th scope="col">دسته</th>
+                    <th scope="col">مبلغ</th>
+                    <th scope="col">روش</th>
+                    <th scope="col">شیفت</th>
+                    <th scope="col">توضیح</th>
+                    <th scope="col">عملیات</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for e in expenses %}
+                {% set is_reversed = e.reversed_at is not none %}
+                {% set payroll_id = salary_map.get(e.id) %}
+                <tr {% if is_reversed %}class="is-reversed"{% endif %}>
+                    <td class="tnum">{{ jalali_str(e.created_at) }}</td>
+                    <td>
+                        {% if is_reversed %}<span class="badge badge-danger">برگشت‌شده</span>
+                        {% elif payroll_id %}<span class="badge badge-info">حقوق</span>
+                        {% else %}<span class="badge badge-available">فعال</span>{% endif %}
+                    </td>
+                    <td><span class="badge {% if e.expense_type == 'monthly' %}badge-info{% else %}badge-used{% endif %}">{{ expense_type_labels.get(e.expense_type, expense_type_labels['one_time']) }}</span></td>
+                    <td>{{ e.category or 'بدون دسته' }}</td>
+                    <td class="tnum"><strong>{{ fmt(e.amount) }} تومان</strong></td>
+                    <td>{{ expense_payment_labels.get(e.payment_method, e.payment_method or '—') }}</td>
+                    <td class="tnum">{% if e.cash_session_id %}<a class="text-link" href="/admin/cashbox/sessions/{{ e.cash_session_id }}">#{{ e.cash_session_id }}</a>{% else %}—{% endif %}</td>
+                    <td>
+                        {{ e.note or '—' }}
+                        {% if actor_map.get(e.id) %}<br><small class="muted">ثبت: {{ actor_map.get(e.id) }}</small>{% endif %}
+                    </td>
+                    <td>
+                        {% if payroll_id %}
+                        <a class="btn btn-sm btn-ghost" href="/admin/payroll/{{ payroll_id }}/receipt" target="_blank">رسید حقوق</a>
+                        {% elif not is_reversed %}
+                        <form method="post" action="/admin/expenses/{{ e.id }}/delete"
+                              onsubmit="return confirm('این هزینه برگشت داده می‌شود و از سود و صندوق خارج می‌گردد. ادامه؟')">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <input type="hidden" name="reason" value="">
+                            <button type="submit" class="btn btn-sm btn-danger">ابطال</button>
+                        </form>
+                        {% else %}—
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <h3>{% if has_filters %}هزینه‌ای با این فیلترها پیدا نشد{% else %}هزینه‌ای ثبت نشده است{% endif %}</h3>
+        <p>{% if has_filters %}فیلترها را تغییر دهید یا بازه دیگری را ببینید.{% else %}اولین هزینه را از فرم بالا ثبت کنید.{% endif %}</p>
+        {% if has_filters %}<a href="/admin/expenses" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
+    </div>
+    {% endif %}
+
+    {% if total_pages > 1 %}
+    <nav class="product-pagination" aria-label="صفحه‌بندی هزینه‌ها">
+        {% if page > 1 %}
+        <a class="btn btn-sm btn-ghost" href="/admin/expenses?page={{ page - 1 }}&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}&q={{ search }}&type={{ type_filter }}&method={{ method_filter }}&status={{ status_filter }}">صفحه قبل</a>
+        {% endif %}
+        <span>صفحه {{ page }} از {{ total_pages }}</span>
+        {% if page < total_pages %}
+        <a class="btn btn-sm btn-ghost" href="/admin/expenses?page={{ page + 1 }}&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}&q={{ search }}&type={{ type_filter }}&method={{ method_filter }}&status={{ status_filter }}">صفحه بعد</a>
+        {% endif %}
+    </nav>
+    {% endif %}
+</section>
+{% endblock %}

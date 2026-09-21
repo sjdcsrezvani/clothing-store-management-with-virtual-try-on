@@ -144,6 +144,17 @@ FLOORS: tuple[tuple[str, float, object], ...] = (
     ("the focus ring on the topbar and the sidebar", 3.0,
      lambda t: min(contrast_ratio(t["--ring-brand"], t[s])
                    for s in ("--topbar-start", "--topbar-end", "--sidebar-bg", "--sidebar-active"))),
+    # The shell's two labels are derived pairs now, so their floors live here
+    # with the rest: the topbar's label must read on both ends of the gradient
+    # it is painted over (Kids Boutique's white measured 3.19:1 on its sky end
+    # before the derivation existed), and the sidebar's label on the surface
+    # itself — the hover, active and sign-out rows below cover the rest of
+    # where that label travels.
+    ("the topbar's label on both ends of the bar's gradient", 4.5,
+     lambda t: min(contrast_ratio(t["--topbar-text"], t[s])
+                   for s in ("--topbar-start", "--topbar-end"))),
+    ("the sidebar's label on the sidebar itself", 4.5,
+     lambda t: contrast_ratio(t["--sidebar-text"], t["--sidebar-bg"])),
     ("a hovered row against the card it lies on", 1.2,
      lambda t: contrast_ratio(t["--hover-surface"], t["--card"])),
     ("a hovered row against the page behind the card", 1.2,
@@ -233,9 +244,9 @@ def test_every_state_reads_in_all_ten_palettes():
     assert not failures, "\n".join(failures)
     # The table cannot be weakened silently: an entry deleted from FLOORS turns
     # this inventory red before a palette reads below a floor nobody measures.
-    assert len(FLOORS) == 29, (
-        f"the floors table holds {len(FLOORS)} entries, expected 29 — "
-        "if a state genuinely stopped existing, update this count in the same change")
+    assert len(FLOORS) == 31, (
+            f"the floors table holds {len(FLOORS)} entries, expected 31 — "
+            "if a state genuinely stopped existing, update this count in the same change")
     # …and the floors are exactly the three ratios the suite is built on. A floor
     # quietly lowered below every palette's reading changes no outcome here — the
     # value itself has to be pinned, or 4.5 becomes 2.0 and nothing fails.
@@ -680,7 +691,7 @@ def test_a_filled_button_changes_on_hover_without_repainting_its_label():
 
 PAGES = ("/admin/", "/sales/new", "/admin/customers", "/admin/sms", "/admin/cashbox",
          "/admin/try-on", "/admin/try-on/saved", "/admin/settings/appearance",
-         "/admin/mobile", "/sales/invoice/{sale_id}")
+         "/admin/settings/tags", "/admin/mobile", "/sales/invoice/{sale_id}")
 
 
 class _Interactive:
@@ -853,10 +864,11 @@ function element(id, classes) {
   return {
     id, className: id, classes: new Set(classes), attributes: {}, listeners: {}, focused: 0,
     scrollTop: 0, offsetTop: 0, offsetHeight: 10, clientHeight: 40,
+    offsetParent: {}, // non-null: the harness's focusables are 'visible'
     addEventListener(type, handler) { (this.listeners[type] ||= []).push(handler); },
     setAttribute(name, value) { this.attributes[name] = value; },
     getAttribute(name) { return this.attributes[name]; },
-    focus() { this.focused += 1; },
+    focus() { this.focused += 1; global.document.activeElement = this; },
     fire(type, event) { (this.listeners[type] || []).forEach(handler => handler(event || {})); },
   };
 }
@@ -867,13 +879,23 @@ body.classList = {
   toggle(name, on) { on ? body.classes.add(name) : body.classes.delete(name); },
   contains(name) { return body.classes.has(name); },
 };
+// The drawer and its focusables, as the trap's querySelectorAll sees them:
+// two links (first/last) plus the logout button between them.
+const firstLink = element('first-link', []);
+const logoutBtn = element('logout-btn', []);
+const lastLink = element('last-link', []);
+const sidebarEl = element('.app-sidebar', []);
+sidebarEl.querySelectorAll = () => [firstLink, logoutBtn, lastLink];
+sidebarEl.contains = (el) => el === firstLink || el === logoutBtn || el === lastLink;
+const navEl = element('.sidebar-nav', []);
 const calls = { raf: 0, stored: {} };
 const document = {
   body,
   listeners: {},
+  activeElement: null,
   getElementById: id => (id === 'menu-toggle' ? toggle : null),
-  querySelector: selector => (selector === '.app-sidebar' || selector === '.sidebar-nav'
-    ? element(selector, []) : null),
+  querySelector: selector => (selector === '.app-sidebar' ? sidebarEl
+    : selector === '.sidebar-nav' ? navEl : null),
   querySelectorAll: () => [{ addEventListener() {} }],
   addEventListener(type, handler) { (this.listeners[type] ||= []).push(handler); },
   fire(type, event) { (this.listeners[type] || []).forEach(handler => handler(event || {})); },
@@ -881,17 +903,57 @@ const document = {
 global.document = document;
 global.sessionStorage = { getItem: () => null, setItem: (key, value) => { calls.stored[key] = value; } };
 global.requestAnimationFrame = () => { calls.raf += 1; };
+global.window = { matchMedia: () => ({ get matches() { return global.__narrow !== false; } }) };
 
 new Function(script)();
 
+// The stub browser walks the drawer's own controls naturally when the shell
+// does not preventDefault — the trap only intervenes at the ends. But the page
+// behind the scrim is exactly what the trap exists to hold out: the natural
+// next focusable from outside the drawer (or past either end of it) is the
+// document *behind*, modelled as a sentinel the shell cannot reach by name.
+const order = [firstLink, logoutBtn, lastLink];
+const behind = element('behind-the-scrim', []);
+const pageControl = element('topbar-search', []);
+const tab = (shift) => {
+  const ev = { key: 'Tab', shiftKey: !!shift, prevented: false,
+               preventDefault() { this.prevented = true; } };
+  document.fire('keydown', ev);
+  if (!ev.prevented) {
+    const index = order.indexOf(document.activeElement);
+    const nextIndex = shift ? index - 1 : index + 1;
+    let target;
+    if (index >= 0 && nextIndex >= 0 && nextIndex < order.length) {
+      target = order[nextIndex];
+    } else {
+      // Past the drawer's ends the browser moves to the next focusable in
+      // DOM order: on a narrow screen that is the page behind the scrim
+      // (unreachable while the drawer is its modal), on the desktop it is
+      // simply the page's own chrome — the sidebar is not a modal there.
+      target = global.__narrow !== false ? behind : pageControl;
+    }
+    target.focus();
+  }
+};
+const state = () => ({
+  open: body.classes.has('sidebar-open'),
+  active: document.activeElement === firstLink ? 'first'
+    : document.activeElement === lastLink ? 'last'
+    : document.activeElement === logoutBtn ? 'logout'
+    : document.activeElement === toggle ? 'toggle'
+    : document.activeElement === pageControl ? 'topbar-search'
+    : document.activeElement === behind ? 'behind' : String(document.activeElement),
+});
+
 const report = { afterClick: null, afterEscape: null, afterOtherKey: null };
+const key = (k, shift) => document.fire('keydown', { key: k, shiftKey: !!shift, preventDefault() {} });
 toggle.fire('click', {});
 report.afterClick = {
   open: body.classes.has('sidebar-open'),
   expanded: toggle.attributes['aria-expanded'],
   label: toggle.attributes['aria-label'],
 };
-document.fire('keydown', { key: 'Escape' });
+document.fire('keydown', { key: 'Escape', preventDefault() {} });
 report.afterEscape = {
   open: body.classes.has('sidebar-open'),
   expanded: toggle.attributes['aria-expanded'],
@@ -899,10 +961,33 @@ report.afterEscape = {
   focused: toggle.focused,
 };
 toggle.fire('click', {});
-document.fire('keydown', { key: 'x' });
+document.fire('keydown', { key: 'x', preventDefault() {} });
 report.afterOtherKey = { open: body.classes.has('sidebar-open') };
-document.fire('keydown', { key: 'Escape' });
+document.fire('keydown', { key: 'Escape', preventDefault() {} });
 report.secondEscape = { open: body.classes.has('sidebar-open'), focused: toggle.focused };
+
+// ── the focus trap, narrow screen ──
+report.trap = {};
+toggle.fire('click', {});                    // drawer open
+tab();                                       // Tab from outside is pulled to the first item
+report.trap.outsideTab = state().active;
+tab();                                       // first → logout
+report.trap.firstStep = state().active;
+tab();                                       // logout → last
+report.trap.secondStep = state().active;
+tab();                                       // last → wraps to first
+report.trap.wrapForward = state().active;
+tab(true);                                   // shift-Tab from first wraps to last
+report.trap.wrapBackward = state().active;
+
+// ── desktop: the same Tab at the drawer's last item must NOT wrap ──
+global.__narrow = false;
+report.desktop = {};
+lastLink.focus();
+const desktopBefore = state().active;
+tab();                                       // on desktop the natural next stop is the page's chrome
+report.desktop.noWrap = { before: desktopBefore, after: state().active, prevented: false };
+
 console.log(JSON.stringify(report));
 """
 
@@ -931,6 +1016,22 @@ def test_the_shell_opens_and_closes_from_the_keyboard_alone(tmp_path):
     assert report["afterOtherKey"]["open"] is True, "a key that is not Escape closed the drawer"
     assert report["secondEscape"]["open"] is False
     assert report["secondEscape"]["focused"] == 2
+
+    # The trap, on the narrow screen the drawer is drawn at: Tab cycles inside
+    # the open drawer — an outside Tab is pulled in, the last item wraps to the
+    # first, shift-Tab from the first wraps to the last — and on the desktop's
+    # always-visible sidebar the same Tab is left alone.
+    trap = report["trap"]
+    assert trap["outsideTab"] == "first", (
+        "a Tab from outside the open drawer escaped behind the overlay instead of "
+        "being pulled to the drawer's first control")
+    assert trap["firstStep"] == "logout" and trap["secondStep"] == "last", (
+        "Tab does not walk the drawer's own controls in order")
+    assert trap["wrapForward"] == "first", "Tab from the drawer's last control escaped to the page behind the scrim"
+    assert trap["wrapBackward"] == "last", "shift-Tab from the drawer's first control escaped backwards"
+    desktop = report["desktop"]["noWrap"]
+    assert desktop["before"] == "last" and desktop["after"] == "topbar-search", (
+        "the desktop sidebar trapped Tab — it is a menu, not a modal")
 
 
 def test_the_shell_still_carries_what_the_palette_guard_expects():
@@ -996,6 +1097,58 @@ INVOICE_PRINT = re.compile(
     r"@media print\s*\{.*?\n\}", re.S)
 
 
+TAG_DESIGNER = (ROOT / "templates" / "admin" / "settings_tags.html").read_text(encoding="utf-8")
+
+
+def test_the_tag_designer_resizes_from_the_keyboard_alone():
+    """The editor canvas' corner handle was pointer-only: a `<span>` with a
+    pointerdown listener, invisible to a keyboard — the same defect family as
+    the lightbox's `<div onclick>` ✕. The handle is a control now, and the
+    resize session it starts shares the pointer path's clamps, so arrows
+    cannot move a field box outside the geometry a drag could reach either.
+
+    The session semantics live in the page's script, so the guard reads the
+    same source the browser runs: if the Escape rollback, the session end, or
+    the clamp reuse is edited away, this fails by name.
+    """
+    # The handle is a keyboard-reachable control that names its field.
+    assert 'handle.className = \'tag-resize-handle\'' in TAG_DESIGNER
+    assert "handle.setAttribute('role', 'button')" in TAG_DESIGNER
+    assert "handle.tabIndex = 0" in TAG_DESIGNER
+    assert "'تغییر اندازه ' + (fieldLabels[name] || name)" in TAG_DESIGNER
+    # A session that starts from the keyboard, clamps like a drag, and ends.
+    # The definition is pinned with its call signature — a rename that leaves
+    # the key branches calling a function that no longer exists fails here.
+    assert "function startKeyboardResize(" in TAG_DESIGNER
+    assert "function endKeyboardResize(" in TAG_DESIGNER
+    assert "keyboardResize = { name }" in TAG_DESIGNER
+    # The arrows go through the same clamp the pointer path uses — the two
+    # resize paths cannot disagree about what geometry is reachable.
+    clamp_uses = len(re.findall(r"clamp\(f\.width \+ step", TAG_DESIGNER))
+    assert clamp_uses == 1, "the keyboard resize must reuse the pointer path's clamps"
+    assert "clamp(f.width + step[0] * mm, 2, workingConfig.tag_width_mm - f.x)" in TAG_DESIGNER
+    assert "clamp(f.height + step[1] * mm, 2, workingConfig.tag_height_mm - f.y)" in TAG_DESIGNER
+    # Escape backs the change out and ends the session; Enter and Tab end it.
+    # Each call is asserted inside its own branch, so a refactor that leaves a
+    # key check calling nothing fails here rather than at a keyboard.
+    assert re.search(r"e\.key === 'Escape'\).{0,600}?endKeyboardResize\(\);", TAG_DESIGNER, re.S), (
+        "the Escape branch no longer ends the session")
+    assert "if (e.key === 'Enter' || e.key === 'Tab') { endKeyboardResize(); return; }" in TAG_DESIGNER, (
+        "the Enter/Tab branch no longer ends the session")
+    # The corner's focused and mid-session states are the stylesheet's, in the
+    # theme's own tokens — nothing inherited, nothing frozen.
+    assert ".tag-resize-handle:focus-visible" in WITHOUT_COMMENTS
+    assert ".tag-resize-handle.is-keyboard-resizing" in WITHOUT_COMMENTS
+    handle_rule = dict(_rules())[".tag-resize-handle:focus-visible"]
+    assert "var(--ring)" in handle_rule, handle_rule
+    session_rule = dict(_rules())[".tag-resize-handle.is-keyboard-resizing"]
+    assert "var(--focus-ring)" in session_rule, session_rule
+    # The zoom segment no longer clips the global ring off its end buttons:
+    # the segment's own rule carries no overflow declaration at all.
+    zoom_rule = dict(_rules()).get(".tag-zoom-seg", "")
+    assert "overflow" not in zoom_rule, zoom_rule
+
+
 def test_the_invoice_prints_in_paper_ink_wherever_the_theme_had_a_voice():
     """Paper is the one state no palette can be rendered in, so the print rules
     are the state.
@@ -1006,7 +1159,18 @@ def test_the_invoice_prints_in_paper_ink_wherever_the_theme_had_a_voice():
     its discount-details box as a dark rectangle. The rows are classes now and
     the print block owns all three: attention, points and the details box.
     """
-    block = INVOICE_PRINT.search(CSS)
+    # The shell's own print block comes first in the file; the invoice's must
+    # be found after it, so the search starts from the invoice block's own
+    # comment rather than grabbing whichever block happens to be first.
+    # The invoice's block is the one that hides `.invoice-actions` inside the
+    # print media; that exact declaration exists nowhere else. The search is
+    # anchored on the block opener *before* that anchor — rfind, not find —
+    # so the shell block that precedes it can never be the one matched.
+    offset = CSS.find(".invoice-actions { display: none")
+    assert offset >= 0, "the invoice block's rule anchor is gone"
+    block_start = CSS.rfind("@media print", 0, offset)
+    assert block_start >= 0, "no print block opens before the invoice's own rules"
+    block = INVOICE_PRINT.match(CSS, block_start)
     assert block and ".invoice" in block.group(0), "the invoice's print block is gone"
     body = block.group(0)
     for claim in (".summary-row.discount", ".summary-row.attention",

@@ -25,6 +25,7 @@ key.pem
 
 # ── Local / scratch ──
 .DS_Store
+.snapshots/
 session1.txt
 
 # ── User-generated uploads ──

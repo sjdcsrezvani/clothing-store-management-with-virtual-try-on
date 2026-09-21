@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+{% set role_labels = {'cashier': 'صندوقدار', 'manager': 'مدیر', 'owner': 'مالک'} %}
 {% set page_description %}
 اطلاعات پرسنلی، سطح دسترسی، قرارداد و پرداخت حقوق را یکجا مدیریت کنید.
 {% endset %}
@@ -7,8 +8,6 @@
 <a class="btn btn-ghost" href="/admin/owner-profile">اطلاعات مالک و قرارداد</a>
 {% endset %}
 {% include 'partials/page_header.html' %}
-{% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
-{% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
 <div class="card">
   <h3>افزودن کارمند و حساب ورود</h3>
   <form method="post" action="/admin/staff" class="form-row">
@@ -19,16 +18,38 @@
     <label>نام و نام خانوادگی<input name="full_name"></label>
     <label>کد پرسنلی<input name="employee_code"></label>
     <label>عنوان شغلی<input name="job_title"></label>
-    <label>حقوق ماهانه<input name="salary_amount" inputmode="numeric" value="0" min="0"></label>
+    {% from 'partials/numeric_input.html' import num with context %}
+    <label>حقوق ماهانه (تومان){{ num('salary_amount', 0) }}</label>
     <label>نوع همکاری<select name="employment_type"><option value="full_time">تمام‌وقت</option><option value="part_time">پاره‌وقت</option><option value="contractor">قراردادی</option></select></label>
     <button class="btn btn-primary" type="submit">ثبت کارمند</button>
   </form>
 </div>
 <div class="card">
-  <h3>فهرست کارکنان</h3>
+  <div class="section-heading-row">
+    <div>
+      <h3>فهرست کارکنان</h3>
+      <p class="muted">{{ staff_users|length }} نفر</p>
+    </div>
+  </div>
+  <form method="get" action="/admin/staff" class="search-form purchase-filter-form">
+    <div class="form-group">
+      <label class="sr-only" for="staff-q">جست‌وجو</label>
+      <input type="text" id="staff-q" name="q" value="{{ search }}" placeholder="نام، نام کاربری یا کد پرسنلی">
+    </div>
+    <div class="form-group">
+      <label class="sr-only" for="staff-status">وضعیت</label>
+      <select id="staff-status" name="status">
+        <option value="all" {% if status_filter == 'all' %}selected{% endif %}>فعال و غیرفعال</option>
+        <option value="active" {% if status_filter == 'active' %}selected{% endif %}>فعال</option>
+        <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>غیرفعال</option>
+      </select>
+    </div>
+    <button type="submit" class="btn btn-primary">اعمال فیلتر</button>
+    {% if has_filters %}<a href="/admin/staff" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
+  </form>
   {% for user in staff_users %}
   <details class="staff-record" {% if loop.first %}open{% endif %}>
-    <summary><strong>{{ user.full_name or user.username }}</strong><span>{{ user.job_title or 'بدون عنوان' }} · {{ user.role }} · {{ fmt(user.salary_amount) }} تومان</span></summary>
+    <summary><strong>{{ user.full_name or user.username }}</strong><span>{{ user.job_title or 'بدون عنوان' }} · {{ role_labels.get(user.role, user.role) }} · {{ fmt(user.salary_amount) }} تومان</span>{% if user.is_active %}<span class="badge badge-available">فعال</span>{% else %}<span class="badge badge-none">غیرفعال</span>{% endif %}</summary>
     <div class="staff-record-body">
       <form method="post" action="/admin/staff/{{ user.id }}" class="form-row">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -42,10 +63,12 @@
         <label>ایمیل<input name="email" type="email" value="{{ user.email or '' }}"></label>
         <label>عنوان شغلی<input name="job_title" value="{{ user.job_title or '' }}"></label>
         <label>نوع همکاری<select name="employment_type"><option value="full_time" {% if user.employment_type == 'full_time' %}selected{% endif %}>تمام‌وقت</option><option value="part_time" {% if user.employment_type == 'part_time' %}selected{% endif %}>پاره‌وقت</option><option value="contractor" {% if user.employment_type == 'contractor' %}selected{% endif %}>قراردادی</option></select></label>
-        <label>حقوق ماهانه<input name="salary_amount" value="{{ user.salary_amount or 0 }}" inputmode="numeric" min="0"></label>
-        <label>روز پرداخت ماهانه<input name="salary_payment_day" value="{{ user.salary_payment_day or '' }}" inputmode="numeric" min="1" max="31"></label>
-        <label>تاریخ شروع<input class="persian-date-input" id="hire_date" name="hire_date" data-pdp-pair="#contract_end_date" value="{{ jalali_str(user.hire_date, with_time=False) if user.hire_date else '' }}"></label>
-        <label>پایان قرارداد<input class="persian-date-input" id="contract_end_date" name="contract_end_date" value="{{ jalali_str(user.contract_end_date, with_time=False) if user.contract_end_date else '' }}"></label>
+        {% from 'partials/numeric_input.html' import num with context %}
+        <label>حقوق ماهانه (تومان){{ num('salary_amount', user.salary_amount or 0, input_id='salary_amount_' ~ user.id) }}</label>
+        <label>روز پرداخت ماهانه{{ num('salary_payment_day', user.salary_payment_day or '', input_id='salary_payment_day_' ~ user.id) }}</label>
+        <label>تاریخ شروع<input class="persian-date-input" id="hire_date_{{ user.id }}" name="hire_date" data-pdp-pair="#contract_end_date_{{ user.id }}" value="{{ jalali_str(user.hire_date, with_time=False) if user.hire_date else '' }}"></label>
+        <label>پایان قرارداد<input class="persian-date-input" id="contract_end_date_{{ user.id }}" name="contract_end_date" value="{{ jalali_str(user.contract_end_date, with_time=False) if user.contract_end_date else '' }}"></label>
+        <label>تاریخ تولد<input class="persian-date-input" name="birth_date" value="{{ jalali_str(user.birth_date, with_time=False) if user.birth_date else '' }}"></label>
         <label>تحصیلات<input name="education" value="{{ user.education or '' }}"></label>
         <label>برنامه کاری<input name="work_schedule" value="{{ user.work_schedule or '' }}"></label>
         <label>حساب بانکی<input name="bank_account" value="{{ user.bank_account or '' }}"></label>
@@ -57,22 +80,24 @@
       </form>
       <div class="staff-actions">
         <a class="btn btn-ghost" href="/admin/staff/{{ user.id }}/contract" target="_blank">چاپ قرارداد</a>
-        {% if user.is_active and user.username != 'owner' %}<form method="post" action="/admin/staff/{{ user.id }}/disable"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-danger" type="submit">غیرفعال‌کردن دسترسی</button></form>{% endif %}
+        {% if user.is_active and user.username != 'owner' %}<form method="post" action="/admin/staff/{{ user.id }}/disable" onsubmit="return confirm('ورود {{ user.full_name or user.username }} بسته می‌شود. ادامه؟')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-danger" type="submit">غیرفعال‌کردن دسترسی</button></form>{% endif %}
+        {% if not user.is_active %}<form method="post" action="/admin/staff/{{ user.id }}/enable"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-success" type="submit">فعال‌سازی مجدد دسترسی</button></form>{% endif %}
       </div>
       {% if user.is_active and user.salary_amount > 0 %}
       <div class="salary-box">
         <h4>ثبت پرداخت حقوق</h4>
-        <form method="post" action="/admin/staff/{{ user.id }}/salary" class="form-row">
+        <form method="post" action="/admin/staff/{{ user.id }}/salary" class="form-row" onsubmit="return confirm('پرداخت حقوق ثبت و سند هزینه ماهانه ساخته می‌شود. ادامه؟')">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <label>ماه پرداخت<input name="period_key" value="{{ current_period }}" placeholder="YYYY-MM" dir="ltr" required></label>
-          <label>کسورات<input name="deductions" value="0" inputmode="numeric" min="0"></label>
+          <label>ماه پرداخت (شمسی)<input name="period_key" value="{{ current_period }}" placeholder="۱۴۰۵-۰۶" dir="ltr" required><small class="field-help">ماه شمسی به شکل YYYY-MM</small></label>
+          {% from 'partials/numeric_input.html' import num with context %}
+          <label>کسورات (تومان){{ num('deductions', 0) }}</label>
           <label>روش پرداخت<select name="payment_method"><option value="cash">نقدی</option><option value="card">کارت</option></select></label>
           <label>توضیح<input name="note"></label>
           <button class="btn btn-success" type="submit">ثبت حقوق و چاپ رسید</button>
         </form>
       </div>
       {% endif %}
-      {% if user.salary_payments %}<div class="table-wrap"><table><thead><tr><th>ماه</th><th>ناخالص</th><th>کسورات</th><th>خالص</th><th>تاریخ</th><th>رسید</th></tr></thead><tbody>{% for payment in user.salary_payments[:12] %}<tr><td>{{ payment.period_key }}</td><td>{{ fmt(payment.gross_amount) }}</td><td>{{ fmt(payment.deductions) }}</td><td>{{ fmt(payment.net_amount) }}</td><td>{{ jalali_str(payment.paid_at) }}</td><td><a class="btn btn-sm btn-ghost" href="/admin/payroll/{{ payment.id }}/receipt" target="_blank">چاپ</a></td></tr>{% endfor %}</tbody></table></div>{% endif %}
+      {% if user.salary_payments %}<div class="table-scroll"><table><thead><tr><th scope="col">ماه</th><th scope="col">ناخالص (تومان)</th><th scope="col">کسورات (تومان)</th><th scope="col">خالص (تومان)</th><th scope="col">تاریخ</th><th scope="col">رسید</th></tr></thead><tbody>{% for payment in user.salary_payments[:12] %}<tr><td>{{ payment.period_key }}</td><td>{{ fmt(payment.gross_amount) }}</td><td>{{ fmt(payment.deductions) }}</td><td>{{ fmt(payment.net_amount) }}</td><td>{{ jalali_str(payment.paid_at) }}</td><td><a class="btn btn-sm btn-ghost" href="/admin/payroll/{{ payment.id }}/receipt" target="_blank">چاپ</a></td></tr>{% endfor %}</tbody></table></div>{% endif %}
     </div>
   </details>
   {% else %}<p class="empty-state">هنوز کارمندی ثبت نشده است.</p>{% endfor %}

@@ -203,11 +203,11 @@ def test_sorts_put_the_expected_customer_first(authed, db_session):
     # The stored counters are seeded *against* the invoices on purpose: the list
     # must order — and print — by what the invoices say, not by the counter.
     small = make_customer(db_session, first_name="کمخرید", total_spent=9_000_000, total_purchases=9)
-    make_sale(db_session, small, amount=100_000)
+    make_sale(db_session, small, amount=100_000, points_earned=10)
     big = make_customer(db_session, first_name="پرخرید", total_spent=100_000, total_purchases=1,
                         total_debt=400_000, total_points=900)
-    make_sale(db_session, big, amount=9_000_000)
-    make_sale(db_session, big, amount=2_000_000)
+    make_sale(db_session, big, amount=9_000_000, points_earned=900)
+    make_sale(db_session, big, amount=2_000_000, points_earned=200)
 
     def first_name_in(body):
         found = re.search(r'/admin/customers/(\d+)"', body)
@@ -1403,6 +1403,74 @@ def test_a_negative_points_rate_cannot_take_points_off_a_purchase(db_session):
     assert calculate_points(500_000, {"points_per_toman": 100_000, "points_per_amount": 10}) == 50
 
 
+def test_points_arithmetic_has_one_definition():
+    """``calculate_points`` owns the rate → points conversion; a hand
+    re-derivation anywhere else would silently disagree with the settings page
+    when the rate changes — points awarded at yesterday's rate, tiers moved by
+    a rule the shop no longer set. No source may do the division again.
+
+    Mirrors the credit guard: the canonical definition must keep the two
+    properties that make it the definition — the non-positive-rate refusal
+    (a stray row reads as no points, never a penalty) and floor division
+    (points are whole) — and the award path must go through it, not inline it.
+    """
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    sources = [root / "main.py"]
+    for folder in ("routers", "services", "templates", "static"):
+        sources.extend(p for p in (root / folder).rglob("*")
+                       if p.suffix in (".py", ".js", ".html"))
+    assert len(sources) > 40, "the sweep lost its sources"
+
+    canonical_path = root / "services" / "tier.py"
+    canonical = canonical_path.read_text(encoding="utf-8")
+    assert "def calculate_points" in canonical, "the helper moved — re-point this guard"
+    start = canonical.index("def calculate_points")
+    definition = canonical[start:canonical.index("\ndef ", start)]
+    assert "<= 0" in definition and "return 0" in definition, (
+        "calculate_points must refuse a non-positive rate — a stray row is no points, not a penalty")
+    assert "//" in definition, "points are whole: the conversion must floor, not float"
+    assert "*" in definition and "points_per_amount" in definition, (
+        "the rate multiplication belongs to the definition")
+    # The award path must call the definition — an inlined copy inside tier.py
+    # itself would drift the moment the refusal or the floor changed.
+    assert "calculate_points(" in canonical.split("def update_customer_after_purchase")[1]
+
+    # Anywhere else, the rate tokens may be named (the settings form, the
+    # config reader) but never combined with the derivation operators.
+    offenders = []
+    for path in sources:
+        if not path.is_file():
+            continue
+        src = path.read_text(encoding="utf-8")
+        for line_no, line in enumerate(src.splitlines(), start=1):
+            if "points_per_toman" not in line and "points_per_amount" not in line:
+                # The literal-rate family: a hand copy bakes today's defaults in
+                # (`// 100000) * 10`) and never names the tokens. It must name
+                # points and derive them arithmetically to be one.
+                if ("point" in line.lower()
+                        and re.search(r"//|\*", line)
+                        and re.search(r"\b\d{4,}\b", line)):
+                    offenders.append(f"{path}:{line_no}: literal-rate derivation: {line.strip()[:80]}")
+                continue
+            if not re.search(r"//|\*|[^a-z/]/[^a-z]|%", line.replace("https://", "").replace("http://", "")):
+                continue
+            if path.name == "tier.py":
+                # Byte offset of the line vs the character window of the definition.
+                char_at_line = src.rindex(line)
+                def_start = src.index("def calculate_points")
+                def_end = src.index("\ndef ", def_start)
+                if def_start <= char_at_line <= def_end:
+                    continue
+            offenders.append(f"{path}:{line_no}: {line.strip()[:80]}")
+
+    assert not offenders, (
+        "points arithmetic re-derived by hand outside calculate_points — "
+        "call the helper instead:\n" + "\n".join(offenders))
+
+
 def test_a_negative_surcharge_row_cannot_discount_a_credit_sale(db_session):
     """The same defence at the نسیه reader: a stored −10 must read as off."""
     from services.accounting import apply_credit_surcharge
@@ -1412,3 +1480,121 @@ def test_a_negative_surcharge_row_cannot_discount_a_credit_sale(db_session):
     set_setting(db_session, "credit_surcharge_percent", "-10")
     surcharge, final = apply_credit_surcharge(db_session, 1_000_000, 0)
     assert (surcharge, final) == (0, 1_000_000)
+
+
+# ── profile: the drift banner and the reconcile that closes it ───────────────
+
+def test_the_drift_banner_names_both_sides_and_offers_the_fix(authed, db_session):
+    """A mismatched counter is a page-width warning with the figures and, for
+    the owner, the button — not a quiet note under one KPI."""
+    from services.customers import reconcile_customer_counters
+
+    drifted = make_customer(db_session, first_name="ناسازگار", total_spent=9_000_000,
+                            total_purchases=7)
+    make_sale(db_session, drifted, amount=1_200_000)
+    reconcile_customer_counters(db_session, drifted)   # heal it for the role test below
+    drifted.total_spent = 9_000_000                    # re-drift both counters
+    drifted.total_purchases = 7
+    db_session.commit()
+
+    body = list_html(authed, f"/{drifted.id}")
+    assert "شمارنده‌های این پرونده با فاکتورها نمی‌خوانند." in body
+    assert "ثبت‌شده 9,000,000 ت، از فاکتورها 1,200,000 ت." in body
+    assert "تعداد خرید: ثبت‌شده 7، از فاکتورها 1" in body
+    assert "هم‌سازی با فاکتورها" in body
+
+
+def test_a_clean_profile_carries_no_banner_and_no_button(authed, db_session):
+    customer = make_customer(db_session, first_name="هم‌ساز", total_spent=400_000,
+                             total_purchases=1)
+    make_sale(db_session, customer, amount=400_000)
+    body = list_html(authed, f"/{customer.id}")
+    assert "نامطابق" not in body
+    assert "هم‌سازی با فاکتورها" not in body
+
+
+def test_reconcile_writes_the_invoices_sum_and_says_what_moved(authed, db_session):
+    from models import AdminLog
+
+    drifted = make_customer(db_session, first_name="ترمیم", total_spent=9_000_000,
+                            total_purchases=7)
+    make_sale(db_session, drifted, amount=1_200_000)
+    token = csrf_token(authed, f"/admin/customers/{drifted.id}")
+    response = authed.post(f"/admin/customers/{drifted.id}/reconcile",
+                           data={"csrf_token": token}, follow_redirects=False)
+    assert response.status_code == 303
+    db_session.expire(drifted)
+    assert drifted.total_spent == 1_200_000
+    assert drifted.total_purchases == 1
+    log = db_session.query(AdminLog).filter(AdminLog.action == "customer_reconcile").one()
+    import json as _json
+    assert _json.loads(log.before_json)["total_spent"] == 9_000_000
+    assert _json.loads(log.after_json)["total_purchases"] == 1
+    from urllib.parse import unquote
+    assert "هم‌ساز شد" in unquote(response.headers["location"])
+
+
+def test_reconcile_does_not_touch_an_already_clean_counter(authed, db_session):
+    from models import AdminLog
+
+    # Counters already say what the invoice says: reconcile must change nothing.
+    customer = make_customer(db_session, first_name="سالم", total_spent=400_000,
+                             total_purchases=1)
+    make_sale(db_session, customer, amount=400_000)
+    db_session.expire(customer)
+    token = csrf_token(authed, f"/admin/customers/{customer.id}")
+    response = authed.post(f"/admin/customers/{customer.id}/reconcile",
+                           data={"csrf_token": token}, follow_redirects=False)
+    assert response.status_code == 303
+    from urllib.parse import unquote
+    assert "چیزی تغییر نکرد" in unquote(response.headers["location"])
+    log = db_session.query(AdminLog).filter(AdminLog.action == "customer_reconcile").one()
+    import json as _json
+    assert _json.loads(log.before_json) == _json.loads(log.after_json)
+
+
+def test_reconcile_counts_only_confirmed_unrefunded_invoices(authed, db_session):
+    customer = make_customer(db_session, first_name="مرزها", total_purchases=5)
+    make_sale(db_session, customer, amount=500_000, confirmed=False)   # waiting: not a purchase
+    refunded = make_sale(db_session, customer, amount=700_000)
+    refunded.is_refunded = True
+    db_session.commit()
+    make_sale(db_session, customer, amount=300_000)                    # the one that counts
+    token = csrf_token(authed, f"/admin/customers/{customer.id}")
+    authed.post(f"/admin/customers/{customer.id}/reconcile", data={"csrf_token": token},
+                follow_redirects=False)
+    db_session.expire(customer)
+    assert customer.total_spent == 300_000
+    assert customer.total_purchases == 1
+
+
+def test_reconcile_is_owner_only(client, db_session):
+    """A manager POSTing the reconcile is refused and the counter is untouched."""
+    from services.security import hash_password
+
+    manager = StaffUser(username="manager-rec", password_hash=hash_password("role-pass"), role="manager")
+    db_session.add(manager)
+    db_session.commit()
+    drifted = make_customer(db_session, first_name="دسترس", total_spent=9_000_000)
+    make_sale(db_session, drifted, amount=1_200_000)
+    token = csrf_token(client)
+    client.post("/admin/login", data={"username": "manager-rec", "password": "role-pass",
+                                      "csrf_token": token}, follow_redirects=False)
+    assert client.post(f"/admin/customers/{drifted.id}/reconcile",
+                       data={"csrf_token": csrf_token(client, f"/admin/customers/{drifted.id}")},
+                       follow_redirects=False).status_code == 403
+    db_session.expire_all()
+    assert drifted.total_spent == 9_000_000   # untouched
+
+
+def test_the_reconcile_machinery_keeps_its_shape():
+    """One counted-sales definition; the POST route guarded and audited."""
+    service_src = (ROOT / "services" / "customers.py").read_text(encoding="utf-8")
+    assert service_src.count("_counted_sales_query(") >= 3, \
+        "the counted-sales rule must be shared, not restated"
+    admin_src = (ROOT / "routers" / "admin.py").read_text(encoding="utf-8")
+    start = admin_src.index("async def admin_customer_reconcile")
+    route = admin_src[start:admin_src.index("\n@router.", start)]
+    assert 'require_html_role(request, db, "owner")' in route
+    assert "log_action(" in route
+    assert "reconcile_customer_counters(db, customer)" in route

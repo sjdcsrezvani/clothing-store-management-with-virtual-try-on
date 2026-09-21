@@ -27,6 +27,7 @@ from services._common import (
     fmt,
     is_archived_customer,
     jalali_str,
+    page_arg,
     parse_form_date,
     parse_form_date_end,
 )
@@ -108,6 +109,15 @@ def _values_from_campaign(campaign: Campaign) -> dict:
     }
 
 
+# The campaign form's numeric fields, with the bounds _validate enforces and
+# the label it refuses by. One table, two readers: the form paints its min/max
+# from it, so a percent the browser allows and the server refuses cannot exist.
+CAMPAIGN_NUMERIC_RULES = {
+    "discount_percent": (1, 100, "درصد تخفیف"),
+    "min_purchase": (0, None, "حداقل خرید"),
+}
+
+
 def _validate(db, *, campaign_id=None, values, start_dt, end_dt) -> str:
     """Everything the form can get wrong, in the order a person would fix it."""
     if not values["name"].strip():
@@ -122,7 +132,7 @@ def _validate(db, *, campaign_id=None, values, start_dt, end_dt) -> str:
         percent = int(to_english_digits(str(values["discount_percent"])))
     except (TypeError, ValueError):
         return "درصد تخفیف باید عدد باشد."
-    if not 1 <= percent <= 100:
+    if not CAMPAIGN_NUMERIC_RULES["discount_percent"][0] <= percent <= CAMPAIGN_NUMERIC_RULES["discount_percent"][1]:
         return "درصد تخفیف باید بین ۱ تا ۱۰۰ باشد."
     try:
         min_purchase = int(to_english_digits(str(values["min_purchase"] or 0)))
@@ -147,13 +157,14 @@ async def admin_campaigns(
     search: str = "",
     status: str = "all",
     order: str = "newest",
-    page: int = 1,
+    page: str = "1",
     db: Session = Depends(get_db),
 ):
     guard = _guard(request, db)
     if not hasattr(guard, "role"):
         return guard
 
+    page = page_arg(page)
     listing = campaign_filtered(db, search=search, status=status, order=order, page=page)
     return templates.TemplateResponse(request, "admin/campaigns.html", {
         **listing,
@@ -182,6 +193,8 @@ def _form_response(
         "msg": message,
         "fmt": fmt,
         "jalali_str": jalali_str,
+        # The form paints its bounds from the same table _validate enforces.
+        "numeric_rules": CAMPAIGN_NUMERIC_RULES,
     }, status_code=status_code)
 
 

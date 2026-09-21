@@ -14,7 +14,10 @@
     {# The browser's own chrome takes the theme's background, so an installed
        shortcut does not stay one colour across all ten palettes. #}
     <meta name="theme-color" content="{{ theme.tokens['--bg'] }}">
-    <script src="/static/js/charts.js"></script>
+    {# The canvas chart renderer is only needed where canvases are drawn. Pages
+       that do not set `show_charts` skip it; the analytics page opts in, and
+       its inline init already falls back to an offline message without it. #}
+    {% if show_charts %}<script src="/static/js/charts.js"></script>{% endif %}
 </head>
 <body data-app-shell="store-management">
     <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -39,6 +42,7 @@
             <symbol id="icon-backup" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 20h14"/></symbol>
             <symbol id="icon-staff" viewBox="0 0 24 24"><circle cx="12" cy="7" r="3"/><path d="M5 21a7 7 0 0 1 14 0"/></symbol>
             <symbol id="icon-logs" viewBox="0 0 24 24"><path d="M5 4h14v16H5z"/><path d="M8 8h8M8 12h8M8 16h5"/></symbol>
+            <symbol id="icon-print" viewBox="0 0 24 24"><path d="M7 8V4h10v4"/><rect x="4" y="8" width="16" height="8" rx="2"/><path d="M7 13h10v7H7z"/></symbol>
             <symbol id="icon-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></symbol>
             <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
             <symbol id="icon-logout" viewBox="0 0 24 24"><path d="M10 4H5v16h5M14 8l4 4-4 4M18 12H9"/></symbol>
@@ -162,6 +166,28 @@
             if (event.key !== 'Escape' || !isOpen()) return;
             setOpen(false);
             if (toggle) toggle.focus();
+        });
+        // The drawer is a modal on a narrow screen: Tab must cycle inside it —
+        // the page behind the scrim is not reachable while the menu is open.
+        // Desktop's always-visible sidebar is not a modal, so the trap only
+        // arms below the same 900px breakpoint the stylesheet draws the drawer
+        // at; shift-Tab wraps backwards, and a Tab from anywhere outside the
+        // open drawer is pulled in rather than escaping behind the overlay.
+        var narrowQuery = window.matchMedia ? window.matchMedia('(max-width: 900px)') : null;
+        function drawerActive() { return isOpen() && (!narrowQuery || narrowQuery.matches); }
+        document.addEventListener('keydown', function (event) {
+            if (event.key !== 'Tab' || !drawerActive() || !sidebar) return;
+            var items = Array.prototype.filter.call(
+                sidebar.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])'),
+                function (el) { return el.offsetParent !== null; });
+            if (!items.length) return;
+            var first = items[0], last = items[items.length - 1];
+            var current = document.activeElement;
+            if (!current || !sidebar.contains(current)) {
+                event.preventDefault(); first.focus(); return;
+            }
+            if (event.shiftKey && current === first) { event.preventDefault(); last.focus(); }
+            else if (!event.shiftKey && current === last) { event.preventDefault(); first.focus(); }
         });
         // Keep the sidebar where the user left it across page loads: restore the
         // list's scroll position, then nudge the current item into view (covers

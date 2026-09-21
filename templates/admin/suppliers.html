@@ -8,8 +8,6 @@
 {% endset %}
 {% include 'partials/page_header.html' %}
 
-{% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
-{% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
 
 <div class="card">
     <h3>افزودن تأمین‌کننده</h3>
@@ -46,10 +44,36 @@
                 <td class="tnum">{{ fmt(balances.get(s.id, {}).get('paid', 0)) }} تومان</td>
                 <td class="tnum"><strong>{{ fmt(balances.get(s.id, {}).get('owed', 0)) }} تومان</strong></td>
                 <td>
-                    <form method="post" action="/admin/suppliers/{{ s.id }}/payment" style="display:flex; gap:.25rem;">
-                        <input type="number" name="amount" min="1" required placeholder="مبلغ" style="width:100px;">
-                        <button type="submit" class="btn btn-sm btn-primary">ثبت</button>
+                    {% set owed = balances.get(s.id, {}).get('owed', 0) %}
+                    <form method="post" action="/admin/suppliers/{{ s.id }}/payment" style="display:flex; gap:.25rem; flex-wrap:wrap;">
+                        {# The clamp the server enforces, painted on the input: a
+                           figure above the debt is refused before the POST and
+                           the two bounds cannot drift. Zero owed disables the
+                           row — nothing to pay against. #}
+                        {% if open_invoices.get(s.id) %}
+                        {# The invoice picker: a payment can name the invoice it
+                           settles. The max on the input stays the supplier's
+                           whole debt — an over-invoice figure is still refused
+                           server-side (فقط بدهی کل) — but the chosen invoice's
+                           own remaining is the tighter bound the script
+                           enforces and the option label names it. #}
+                        <select name="purchase_id" aria-label="فاکتور این پرداخت — {{ s.name }}"
+                                data-supplier="{{ s.id }}" style="min-width:180px; flex:1;">
+                            <option value="">پرداخت کلی (بدون فاکتور)</option>
+                            {% for inv in open_invoices[s.id] %}
+                            <option value="{{ inv.id }}" data-remaining="{{ inv.remaining }}">{{ inv.label }}</option>
+                            {% endfor %}
+                        </select>
+                        {% endif %}
+                        <input type="number" name="amount" min="1" max="{{ owed }}"
+                               data-owed="{{ owed }}" required
+                               aria-label="مبلغ پرداخت به {{ s.name }}"
+                               {% if owed <= 0 %}disabled title="بدهی‌ای برای پرداخت نیست"{% endif %}
+                               placeholder="مبلغ" style="width:110px;">
+                        <button type="submit" class="btn btn-sm btn-primary"
+                                {% if owed <= 0 %}disabled{% endif %}>ثبت</button>
                     </form>
+                    {% if owed <= 0 %}<small class="customer-meta">تسویه است</small>{% endif %}
                 </td>
                 <td>
                     <form method="post" action="/admin/suppliers/{{ s.id }}/delete" style="display:inline;"
@@ -64,4 +88,31 @@
     {% else %}
     <p style="text-align: center; color: var(--ink-soft); padding: 2rem;">هنوز تأمین‌کننده‌ای ثبت نشده است.</p>
     {% endif %}
-</div>{% endblock %}
+</div>
+
+<script>
+(function () {
+  // The picker's tighter clamp: once a payment names an invoice, the amount
+  // may not exceed that invoice's own remaining — the number the option label
+  // states. The supplier-level max stays on the input; this only narrows it.
+  // No clamp here can widen anything: the server re-reads both bounds.
+  document.querySelectorAll('select[name="purchase_id"]').forEach(function (select) {
+    var input = select.closest('form').querySelector('input[name="amount"]');
+    if (!input) return;
+    var supplierMax = parseInt(input.getAttribute('data-owed'), 10) || 0;
+    function applyClamp() {
+      var option = select.selectedOptions[0];
+      var remaining = option ? parseInt(option.getAttribute('data-remaining'), 10) : NaN;
+      if (!isNaN(remaining)) {
+        input.max = Math.min(supplierMax, remaining);
+        if (parseInt(input.value, 10) > input.max) input.value = input.max;
+      } else {
+        input.max = supplierMax;
+      }
+    }
+    select.addEventListener('change', applyClamp);
+    applyClamp();
+  });
+})();
+</script>
+{% endblock %}

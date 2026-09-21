@@ -5,6 +5,10 @@
 {% set page_actions %}
 <a href="/sales/new" class="btn btn-success">🛒 ثبت فروش</a>
 {% endset %}
+{# The paper heading names the day and the reader's role — a printed dashboard
+   travels without a URL or a badge, and a manager's printout shows fewer
+   figures than the owner's. #}
+{% set print_heading = 'داشبورد فروشگاه — ' ~ today ~ ((' (' ~ role_label ~ ')') if role_label else '') %}
 {% include 'partials/page_header.html' %}
 
 {# Every section and card here was chosen before the page was drawn: a card this
@@ -14,7 +18,9 @@
 {% for section in sections %}
 
 {% if section.kind == 'attention' %}
-<section class="card" aria-labelledby="dash-{{ section.key }}">
+{# The action row is the page's navigation: on paper it is a list of links to
+   screens the printout cannot open, so it lives on the screen only. #}
+<section class="card screen-only" aria-labelledby="dash-{{ section.key }}">
     <div class="section-heading">
         <div>
             <span class="eyebrow">{{ section.eyebrow }}</span>

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from typing import Any
 
 from models import Settings
@@ -10,6 +11,12 @@ DEFAULT_THEME_ID = "operations-light"
 THEME_SETTING_KEY = "ui_theme"
 CUSTOM_PRIMARY_KEY = "theme_custom_primary"
 CUSTOM_SECONDARY_KEY = "theme_custom_secondary"
+
+# The shell theme changes only through the appearance form, so the value every
+# page render reads is cached briefly and invalidated at that one writer —
+# the same discipline the store profile keeps.
+_SHELL_THEME_TTL = 60.0
+_SHELL_THEME_CACHE: dict[str, Any] = {"data": None, "at": 0.0}
 # What the Custom Brand colour pickers start on, and what a form that carries no
 # colour falls back to. One source for both, so the page and the service cannot
 # disagree about the brand a shop gets before it chooses one.
@@ -48,12 +55,9 @@ _BASE = {
     "--field-bg": "#FFFFFF",
     "--table-header": "#F3F6F8",
     "--card-accent": "linear-gradient(90deg, var(--candy), var(--sky))",
-    "--shadow": "0 2px 8px rgba(20, 35, 45, 0.08)",
-    "--shadow-hover": "0 8px 20px rgba(20, 35, 45, 0.14)",
     "--radius": "8px",
     "--radius-sm": "6px",
     "--sidebar-bg": "#17232B",
-    "--sidebar-text": "#EAF0F2",
     "--sidebar-active": "#2C414C",
     # The text on a filled brand surface — a primary button, a count chip. The
     # stylesheet declares a white default in `:root`, but a page that does *not*
@@ -61,14 +65,18 @@ _BASE = {
     # phone capture tool is one of those: without this it read `--button-text`
     # from nowhere and painted the label in the inherited ink. So every theme
     # supplies it, and `custom_tokens` still derives its own for Custom Brand.
+    #
+    # Its one stylesheet consumer is now the destructive button's label
+    # (`.btn-danger`), and `--danger` is derived *against this value* — so the
+    # pair is designed together and measured together in the keyboard guard.
+    # It is the pole the danger fill walks to, not a universal button ink: the
+    # brand and success fills each derive their own label in `filled_pair`.
     "--button-text": "#FFFFFF",
     "--topbar-start": "#17232B",
     "--topbar-end": "#334C59",
-    # What stays legible on that bar. The shell hard-coded white for its brand and
-    # its two topbar buttons, and the phone's capture page wears the same surface,
-    # so the colour is named here rather than repeated in three places: a theme
-    # with a light bar answers it once and both surfaces follow.
-    "--topbar-text": "#FFFFFF",
+    # What stays legible on that bar is derived per palette in
+    # `interaction_tokens` — a bar built from the theme's own hues cannot
+    # assume white reads on it (Kids Boutique's candy end measured 3.19:1).
     "--success-bg": "#E8F5ED",
     "--warning-bg": "#FFF5D9",
     "--danger-bg": "#FDEBEC",
@@ -77,6 +85,12 @@ _BASE = {
     # is the wrong shape for that — a light surface in the light palettes has to
     # dim, not brighten, or the photo is washed out.
     "--scrim": "rgba(12, 10, 34, 0.92)",
+    # What stays legible on that dim. The scrim is near-black in every palette
+    # by design (a picture is viewed against something that dims, not
+    # brightens), so white reads on it wherever it is laid — over a white page
+    # the composite still measures ~13:1. A designed pair, declared together;
+    # if a palette ever lightens its scrim, this constant is the first thing
+    # to move with it.
     "--scrim-text": "#FFFFFF",
     "--density-scale": "1",
 }
@@ -110,7 +124,7 @@ THEMES: dict[str, dict[str, Any]] = {
         "name": "Kids Boutique",
         "description": "The colorful, playful RaiKids identity with emoji accents.",
         "mode": "light",
-        "tokens": {**_BASE, "--candy": "#E85D75", "--candy-dark": "#C84660", "--sky": "#2A9DB5", "--sky-dark": "#217D91", "--sunshine": "#E7A932", "--mint": "#35A853", "--mint-dark": "#278640", "--lavender": "#805AD5", "--bg": "#FFF7F2", "--card": "#FFFFFF", "--ink": "#2D2D2D", "--ink-soft": "#756F6A", "--rule": "#F0E4D8", "--surface-soft": "#FFFBF8", "--field-bg": "#FFFFFF", "--table-header": "#FFFAF5", "--card-accent": "linear-gradient(90deg, #E85D75, #E7A932, #35A853, #2A9DB5)", "--sidebar-bg": "#FFFFFF", "--sidebar-text": "#5B5551", "--sidebar-active": "#FFF0F4", "--topbar-start": "#E85D75", "--topbar-end": "#2A9DB5", "--success-bg": "#E8F8EC", "--warning-bg": "#FFF3D6", "--danger-bg": "#FFE8E8", "--shadow": "0 4px 16px rgba(0,0,0,0.06)", "--shadow-hover": "0 8px 24px rgba(0,0,0,0.10)", "--radius": "14px", "--radius-sm": "8px"},
+        "tokens": {**_BASE, "--candy": "#E85D75", "--candy-dark": "#C84660", "--sky": "#2A9DB5", "--sky-dark": "#217D91", "--sunshine": "#E7A932", "--mint": "#35A853", "--mint-dark": "#278640", "--lavender": "#805AD5", "--bg": "#FFF7F2", "--card": "#FFFFFF", "--ink": "#2D2D2D", "--ink-soft": "#756F6A", "--rule": "#F0E4D8", "--surface-soft": "#FFFBF8", "--field-bg": "#FFFFFF", "--table-header": "#FFFAF5", "--card-accent": "linear-gradient(90deg, #E85D75, #E7A932, #35A853, #2A9DB5)", "--sidebar-bg": "#FFFFFF", "--sidebar-text": "#5B5551", "--sidebar-active": "#FFF0F4", "--topbar-start": "#E85D75", "--topbar-end": "#2A9DB5", "--success-bg": "#E8F8EC", "--warning-bg": "#FFF3D6", "--danger-bg": "#FFE8E8", "--radius": "14px", "--radius-sm": "8px"},
     },
     "ocean-commerce": {
         "name": "Ocean Commerce",
@@ -134,7 +148,7 @@ THEMES: dict[str, dict[str, Any]] = {
         "name": "High Contrast",
         "description": "Strong borders, explicit states, and maximum visual clarity.",
         "mode": "high-contrast",
-        "tokens": {**_BASE, "--candy": "#8B0000", "--candy-dark": "#650000", "--sky": "#003D66", "--sky-dark": "#002B49", "--sunshine": "#7A4F00", "--persimmon": "#8F3A00", "--mint": "#005A2B", "--mint-dark": "#003D1D", "--bg": "#FFFFFF", "--card": "#FFFFFF", "--ink": "#000000", "--ink-soft": "#202020", "--rule": "#000000", "--surface-soft": "#F1F1F1", "--sidebar-bg": "#000000", "--sidebar-text": "#FFFFFF", "--sidebar-active": "#303030", "--topbar-start": "#000000", "--topbar-end": "#202020", "--success-bg": "#E6F4EA", "--warning-bg": "#FFF1CC", "--danger-bg": "#FFE6E6", "--field-bg": "#FFFFFF", "--table-header": "#F1F1F1", "--card-accent": "#000000", "--shadow": "0 0 0 1px #000000", "--shadow-hover": "0 0 0 2px #000000", "--radius": "2px", "--radius-sm": "2px"},
+        "tokens": {**_BASE, "--candy": "#8B0000", "--candy-dark": "#650000", "--sky": "#003D66", "--sky-dark": "#002B49", "--sunshine": "#7A4F00", "--persimmon": "#8F3A00", "--mint": "#005A2B", "--mint-dark": "#003D1D", "--bg": "#FFFFFF", "--card": "#FFFFFF", "--ink": "#000000", "--ink-soft": "#202020", "--rule": "#000000", "--surface-soft": "#F1F1F1", "--sidebar-bg": "#000000", "--sidebar-text": "#FFFFFF", "--sidebar-active": "#303030", "--topbar-start": "#000000", "--topbar-end": "#202020", "--success-bg": "#E6F4EA", "--warning-bg": "#FFF1CC", "--danger-bg": "#FFE6E6", "--field-bg": "#FFFFFF", "--table-header": "#F1F1F1", "--card-accent": "#000000", "--shadow": "0 0 0 1px #000000", "--shadow-hover": "0 0 0 2px #000000", "--shadow-overlay": "0 0 0 3px #000000", "--radius": "2px", "--radius-sm": "2px"},
     },
     "custom-brand": {
         "name": "Custom Brand",
@@ -246,6 +260,38 @@ def interaction_tokens(tokens: dict[str, str]) -> dict[str, str]:
     ring = _legible(tokens["--sky"], [card, field, bg], 3)
     hover = _tinted(card, tokens["--candy"], 1.25, others=(tokens["--bg"],))
 
+    # The shell's top bar is a gradient of the palette's own two hues, and the
+    # brand, the two topbar buttons and the mobile capture page's header all
+    # sit on it. White was assumed for every palette and Kids Boutique's bar
+    # proved the assumption wrong: its candy end read 3.36:1 and its sky end
+    # 3.19:1. The label is the pole that reads on the *worse* end, walked if
+    # neither pole manages the floor as it came — the same decision
+    # `filled_pair` makes for a button.
+    def bar_label(dark_end: str, light_end: str) -> str:
+        white = min(contrast_ratio("#FFFFFF", dark_end), contrast_ratio("#FFFFFF", light_end))
+        black = min(contrast_ratio("#000000", dark_end), contrast_ratio("#000000", light_end))
+        pole = "#FFFFFF" if white >= black else "#000000"
+        if min(contrast_ratio(pole, dark_end), contrast_ratio(pole, light_end)) >= 4.5:
+            return pole
+        return _legible(pole, [dark_end, light_end], 4.5)
+
+    topbar_text = bar_label(tokens["--topbar-start"], tokens["--topbar-end"])
+    # The sidebar's label is derived against the surfaces the sidebar itself
+    # paints — its own background, its hover tint, its active item — the way
+    # every other label is derived against the surface it is read on. A palette
+    # that declares its own `--sidebar-text` (Kids Boutique's warm charcoal,
+    # the high-contrast palette's white-on-black) is honoured, not overwritten:
+    # a declared value is a designed value, and this only fills what a palette
+    # left to inherit.
+    sidebar_text = tokens.get("--sidebar-text")
+    if not sidebar_text:
+        sidebar_surfaces = [tokens["--sidebar-bg"],
+                            _tinted(tokens["--sidebar-bg"], "#EAF0F2", 1.3),
+                            tokens["--sidebar-active"]]
+        seed = "#EAF0F2"
+        sidebar_text = (seed if all(contrast_ratio(seed, s) >= 4.5 for s in sidebar_surfaces)
+                        else _legible(seed, sidebar_surfaces, 4.5))
+
     def ink(seed: str, tint: str, *alerts: str) -> str:
         """A palette's hue, walked until it reads as text everywhere text is read:
         on the four surfaces a page is made of, on the strongest tint of the hue
@@ -304,10 +350,14 @@ def interaction_tokens(tokens: dict[str, str]) -> dict[str, str]:
         # wash does in the light palettes), so the inks walk, the same doctrine
         # as everywhere else: keep the hue, move the lightness.
         "--hover-surface": hover,
-        "--sidebar-hover": _tinted(tokens["--sidebar-bg"], tokens["--sidebar-text"], 1.3),
+        "--sidebar-hover": _tinted(tokens["--sidebar-bg"], sidebar_text, 1.3),
         # What a button that cannot be pressed looks like: a quiet surface and a
         # label on it that still reads, rather than the whole control faded out.
         "--disabled-surface": tokens["--surface-soft"],
+        # The two shell labels, derived above against the surfaces they are read
+        # on. Declared values win; the derivation fills what a palette inherited.
+        "--topbar-text": topbar_text,
+        "--sidebar-text": sidebar_text,
         "--disabled-ink": _legible(tokens["--ink-soft"],
                                    [tokens["--surface-soft"], card], 4.5),
         # The quiet meta text — «۲ روز پیش», a share, a phone number — walked out
@@ -353,6 +403,57 @@ def interaction_tokens(tokens: dict[str, str]) -> dict[str, str]:
     }
 
 
+def elevation_tokens(tokens: dict[str, str], mode: str) -> dict[str, str]:
+    """The elevation ladder a palette lifts its surfaces with, from its own
+    colours.
+
+    The pair used to live in `_BASE` and be inherited: one light-tuned blur
+    (`rgba(20, 35, 45, …)`) served every palette, and on Midnight it separated
+    card from backdrop by 1.017:1 — a shadow the eye cannot find — while its
+    hover state *lightened* the dark background instead of deepening it. A
+    palette's elevation is part of its surfaces, so it is worked out here from
+    the palette that owns them, the same doctrine as `interaction_tokens`:
+
+    * a light palette tints its blur from its own `--ink`, so the shadow is
+      that palette's darkness, not a neutral grey chosen for someone else;
+    * a dark palette cannot darken by blur (its background is already the
+      deepest colour it has), so it lifts with a 1px rim mixed from its card
+      toward white — the edge is the elevation — plus a deepening blur drawn
+      from its own `--bg`;
+    * the high-contrast palette has designed its own idiom and keeps it: a
+      hard ring instead of any blur. It is declared on the theme, and this
+      derivation deliberately leaves declared pairs alone.
+
+    The ladder has three rungs. `--shadow` is the rest state of a card,
+    `--shadow-hover` the hover of a clickable one, and `--shadow-overlay` the
+    depth of what floats above the page — modals, dropdown pickers, the
+    lightbox. An overlay is a third, higher depth, not the hover value
+    reused: it must clear whatever it floats over by more than hover does, in
+    every palette, which is what the guard in tests/test_themes.py measures.
+    """
+    if mode == "high-contrast":
+        return {}
+    if mode == "dark":
+        card = tokens["--card"]
+        deep = _hex(tokens["--bg"])
+        deep_rgba = f"rgba({deep[0]}, {deep[1]}, {deep[2]},"
+        return {
+            "--shadow": f"0 0 0 1px {_mix(card, '#FFFFFF', 0.06)}, "
+                        f"0 6px 20px {deep_rgba} 0.55)",
+            "--shadow-hover": f"0 0 0 1px {_mix(card, '#FFFFFF', 0.09)}, "
+                              f"0 10px 28px {deep_rgba} 0.65)",
+            "--shadow-overlay": f"0 0 0 1px {_mix(card, '#FFFFFF', 0.12)}, "
+                                f"0 16px 44px {deep_rgba} 0.80)",
+        }
+    ink = _hex(tokens["--ink"])
+    ink_rgba = f"rgba({ink[0]}, {ink[1]}, {ink[2]},"
+    return {
+        "--shadow": f"0 2px 8px {ink_rgba} 0.08)",
+        "--shadow-hover": f"0 8px 20px {ink_rgba} 0.14)",
+        "--shadow-overlay": f"0 14px 40px {ink_rgba} 0.22)",
+    }
+
+
 def custom_tokens(primary: str, secondary: str) -> dict[str, str]:
     primary = primary.strip().upper()
     secondary = secondary.strip().upper()
@@ -389,6 +490,7 @@ def _complete(theme: dict[str, Any]) -> None:
     stated here, once, where the rest of the palette's choices live."""
     tokens = theme["tokens"]
     tokens.update(interaction_tokens(tokens))
+    tokens.update(elevation_tokens(tokens, theme.get("mode", "light")))
     tokens.update(tier_pair("silver", "#E8E8E8", "#D0D0D0"))
     tokens.update(tier_pair("gold", "#FFE082", tokens["--sunshine"]))
     tokens.update(tier_pair("diamond", "#D4B0FF", tokens["--lavender"]))
@@ -421,21 +523,47 @@ def theme_inline_style(theme: dict[str, Any]) -> str:
     return "; ".join(f"{key}: {value}" for key, value in theme["tokens"].items())
 
 
+# The hues the chart renderer leads with, in paint order — the appearance page
+# prints them as the swatch strip under each theme's sample chart, so what the
+# owner reads on the card is the order the charts actually use.
+_CHART_ACCENT_TOKENS = ("--candy", "--sky", "--sunshine", "--mint")
+
+
+def chart_accents(theme: dict[str, Any]) -> list[str]:
+    tokens = theme["tokens"]
+    return [tokens[name] for name in _CHART_ACCENT_TOKENS if tokens.get(name)]
+
+
 def theme_json(theme: dict[str, Any]) -> str:
     return json.dumps(theme, ensure_ascii=False, separators=(",", ":"))
 
 
 def get_theme(db=None) -> dict[str, Any]:
+    # The shell asks for the theme on every page render, but it changes only
+    # through the appearance form — the same shape the store profile keeps: a
+    # short cache, invalidated at the writer. Only the shell path (no session
+    # handed in) may read the cache; an explicit session gets a live read, so
+    # a caller mid-transaction never sees a stale answer.
+    global _SHELL_THEME_CACHE
+    if db is None:
+        now = time.time()
+        if _SHELL_THEME_CACHE["data"] is not None and now - _SHELL_THEME_CACHE["at"] <= _SHELL_THEME_TTL:
+            return _SHELL_THEME_CACHE["data"]
     close = db is None
     if db is None:
         from database import SessionLocal
         db = SessionLocal()
     try:
-        setting = db.query(Settings).filter(Settings.key == THEME_SETTING_KEY).first()
-        theme_id = setting.value if setting and setting.value in THEMES else DEFAULT_THEME_ID
+        # One read of the settings table answers the theme, the custom primary
+        # and the custom secondary — a page render asks once, not three times.
+        chosen = {s.key: s.value for s in db.query(Settings).filter(
+            Settings.key.in_([THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY])).all()}
+        theme_id = chosen.get(THEME_SETTING_KEY)
+        if not theme_id or theme_id not in THEMES:
+            theme_id = DEFAULT_THEME_ID
         custom = {
-            "primary": (db.query(Settings).filter(Settings.key == CUSTOM_PRIMARY_KEY).first() or Settings(value=DEFAULT_CUSTOM_PRIMARY)).value or DEFAULT_CUSTOM_PRIMARY,
-            "secondary": (db.query(Settings).filter(Settings.key == CUSTOM_SECONDARY_KEY).first() or Settings(value=DEFAULT_CUSTOM_SECONDARY)).value or DEFAULT_CUSTOM_SECONDARY,
+            "primary": chosen.get(CUSTOM_PRIMARY_KEY) or DEFAULT_CUSTOM_PRIMARY,
+            "secondary": chosen.get(CUSTOM_SECONDARY_KEY) or DEFAULT_CUSTOM_SECONDARY,
         }
         try:
             theme = theme_preview(theme_id, custom)
@@ -443,10 +571,19 @@ def get_theme(db=None) -> dict[str, Any]:
             theme_id = DEFAULT_THEME_ID
             theme = theme_preview(theme_id)
         theme["inline_style"] = theme_inline_style(theme)
+        if close:
+            _SHELL_THEME_CACHE["data"] = dict(theme)
+            _SHELL_THEME_CACHE["at"] = time.time()
         return theme
     finally:
         if close:
             db.close()
+
+
+def invalidate_theme_cache() -> None:
+    """Drop the shell's cached theme; called where the appearance form writes."""
+    global _SHELL_THEME_CACHE
+    _SHELL_THEME_CACHE = {"data": None, "at": 0.0}
 
 
 def all_theme_previews(db=None) -> list[dict[str, Any]]:
@@ -459,5 +596,6 @@ def all_theme_previews(db=None) -> list[dict[str, Any]]:
     for theme_id in THEMES:
         preview = theme_preview(theme_id, custom)
         preview["inline_style"] = theme_inline_style(preview)
+        preview["chart_accent"] = chart_accents(preview)
         previews.append(preview)
     return previews

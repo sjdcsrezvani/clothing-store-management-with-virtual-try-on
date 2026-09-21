@@ -9,8 +9,6 @@
 {% endset %}
 {% include 'partials/page_header.html' %}
 
-{% if msg %}<div class="alert alert-success">✅ {{ msg }}</div>{% endif %}
-{% if err %}<div class="alert alert-error">⚠️ {{ err }}</div>{% endif %}
 
 <div class="card appearance-card">
     <form method="post" action="/admin/settings/appearance">
@@ -28,7 +26,10 @@
                     <span class="theme-preview theme-preview-{{ theme.mode }}" style="{{ theme.inline_style }}" aria-hidden="true">
                         <span class="theme-preview-top"></span>
                         <span class="theme-preview-body"><span></span><i></i><b></b></span>
-                        <span class="theme-preview-table"><em></em><em></em><em></em></span>
+                        <span class="theme-preview-table">
+                            <canvas class="theme-sample-chart" width="1" height="1" aria-hidden="true"></canvas>
+                            {% for hex in theme.chart_accent %}<i style="background: {{ hex }}"></i>{% endfor %}
+                        </span>
                     </span>
                     <span class="theme-option-copy"><strong>{{ theme.name }}</strong><small>{{ theme.description }}</small></span>
                     <span class="theme-swatch-row" aria-hidden="true"><i style="background: {{ theme.tokens['--candy'] }}"></i><i style="background: {{ theme.tokens['--sky'] }}"></i><i style="background: {{ theme.tokens['--mint'] }}"></i><i style="background: {{ theme.tokens['--bg'] }}"></i></span>
@@ -85,9 +86,31 @@
         var field = document.getElementById(id);
         if (field) field.addEventListener('input', function () {
             var selected = document.querySelector('.theme-option.is-selected');
-            if (selected && selected.dataset.themeId === 'custom-brand') applyOption(selected);
+            if (selected && selected.dataset.themeId === 'custom-brand') {
+                applyOption(selected);
+                paintSamples();
+            }
         });
     });
+    // The sample chart in every card paints from the page's palette reader, so
+    // what the owner judges here is what the charts will do after «اعمال».
+    var samples = document.querySelectorAll('canvas.theme-sample-chart');
+    function paintSamples() {
+        if (!samples.length || typeof window.renderThemeChartSample !== 'function') return;
+        samples.forEach(function (canvas) {
+            var option = canvas.closest('.theme-option');
+            if (!option) return;
+            var style = option.dataset.themeStyle || '';
+            if (option.dataset.themeId === 'custom-brand') {
+                var primary = document.getElementById('theme_custom_primary');
+                var secondary = document.getElementById('theme_custom_secondary');
+                if (primary && secondary) style += '; --candy: ' + primary.value + '; --candy-dark: ' + primary.value + '; --sky: ' + secondary.value + '; --sky-dark: ' + secondary.value;
+            }
+            window.renderThemeChartSample(canvas, style);
+        });
+    }
+    paintSamples();
 })();
 </script>
+{% if show_charts %}<script src="/static/js/charts.js"></script>{% endif %}
 {% endblock %}

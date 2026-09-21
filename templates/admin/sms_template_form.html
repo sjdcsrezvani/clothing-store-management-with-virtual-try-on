@@ -15,9 +15,7 @@
 {% endset %}
 {% include 'partials/page_header.html' %}
 
-{% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
 {% if error %}<div class="alert alert-error" role="alert">⚠️ {{ error }}</div>{% endif %}
-{% if err %}<div class="alert alert-error" role="alert">⚠️ {{ err }}</div>{% endif %}
 
 <div class="sms-editor-layout">
     <section class="card">
@@ -141,8 +139,8 @@
                     </div>
                     <div class="form-group sms-trigger-days" id="trigger-days-group">
                         <label for="trigger_days">چند روز پس از آخرین خرید؟</label>
-                        <input type="number" id="trigger_days" name="trigger_days" min="1" max="365"
-                               value="{{ template.trigger_days if template and template.trigger_days else trigger_days_default }}">
+                        {% from 'partials/numeric_input.html' import num with context %}
+                        {{ num('trigger_days', template.trigger_days if template and template.trigger_days else trigger_days_default) }}
                         <small>
                             خرید تازه این شمارش را از نو شروع می‌کند؛ برای هر دورهٔ خرید فقط یک پیام می‌رود.
                         </small>

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+{% from 'partials/numeric_input.html' import num with context %}
 
 {% set page_description %}
 کشوی نقدی مغازه: با شمارش باز میشود، با شمارش بسته میشود و هر اختلافی ثبت میگردد.
@@ -16,9 +17,6 @@
 {% endif %}
 {% endset %}
 {% include 'partials/page_header.html' %}
-
-{% if msg %}<div class="alert alert-{{ msg_tone }}" role="status">{{ msg }}</div>{% endif %}
-{% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}
 
 {# ─── The shift: the drawer as it stands right now ──────────────────────────
    Everything that adds up to «what should be in here» reaches a manager only
@@ -100,7 +98,7 @@
         <form method="post" action="/admin/cashbox/withdraw" class="filter-bar is-inline">
             <label class="filter-field">
                 <span>مبلغ (تومان)</span>
-                <input type="number" name="amount" min="1" required>
+                {{ num('amount', '', required=True) }}
             </label>
             <label class="filter-field">
                 <span>دلیل</span>
@@ -116,7 +114,7 @@
         <form method="post" action="/admin/cashbox/close" class="filter-bar is-inline">
             <label class="filter-field">
                 <span>پولی که شمرده‌اید (تومان)</span>
-                <input type="number" name="counted" min="0" required>
+                {{ num('counted', '', required=True) }}
             </label>
             <button type="submit" class="btn btn-primary btn-large">ثبت شمارش و بستن صندوق</button>
         </form>
@@ -144,8 +142,7 @@
     <form method="post" action="/admin/cashbox/open" class="filter-bar is-inline">
         <label class="filter-field">
             <span>موجودی ابتدای شیفت (تومان)</span>
-            <input type="number" name="opening" min="0" required
-                   value="{{ opening_suggestion if opening_suggestion is not none else (settings_opening if settings_opening is not none else 0) }}">
+            {{ num('opening', opening_suggestion if opening_suggestion is not none else (settings_opening if settings_opening is not none else 0), required=True) }}
         </label>
         <button type="submit" class="btn btn-primary btn-large">باز کردن صندوق</button>
     </form>
@@ -280,8 +277,8 @@
         </p>
         <form method="post" action="/admin/cashbox/opening" class="filter-bar is-inline">
             <label class="filter-field">
-                <span>مبلغ پیش‌فرض (تومان)</span>
-                <input type="number" name="opening" min="0" required value="{{ settings_opening }}">
+            <span>مبلغ پیش‌فرض (تومان)</span>
+            {{ num('opening', settings_opening, required=True, input_id='opening-default') }}
             </label>
             <button type="submit" class="btn btn-ghost">ذخیره</button>
         </form>

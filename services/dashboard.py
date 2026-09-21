@@ -36,7 +36,7 @@ from functools import cached_property
 import jdatetime
 from sqlalchemy.orm import Session
 
-from models import CashSession
+from models import CashSession, to_persian_digits
 from services._common import fmt, jalali_str, percent
 from services.accounting import (
     as_utc, debt_totals, get_cashbox, get_opening_balance, open_cash_session,
@@ -66,27 +66,52 @@ def _money(amount) -> str:
     return f"{fmt(int(amount or 0))} ت"
 
 
-def _delta(current, previous, *, label: str, lower_is_better: bool = False) -> dict | None:
-    """How a figure moved, or nothing when there is no fair comparison.
+from services._common import delta as _delta
 
-    A change measured against zero is not a percentage, and neither is one
-    measured against a loss or taken from a period that had none — so all three
-    are reported as no comparison rather than as a number nobody could act on.
-    The last guard matters most: a month that went into the red against a month
-    that only broke even is a sign change, and rendering it as «۲۰۰۰٪ کمتر»
-    turns a bad month into a catastrophe that never happened.
+
+def _delta(current, previous, *, label: str, lower_is_better: bool = False,
+           subject: str = "فروشی"):
+    """How a figure moved, shared with سود و زیان. The sentence lives in
+    ``services._common`` now; this alias keeps the dashboard's callers and
+    pins reading the same name they always have."""
+    """How a figure moved — and when no ratio is fair, the fact instead.
+
+    A percentage against a base of zero is not a percentage, and neither is one
+    taken from a base so small the ratio is arithmetic. But *saying nothing*
+    there was its own wrong: the first days of a month, the first sale after a
+    quiet yesterday — exactly the moments an owner is reading for — rendered a
+    bare number with no reference at all. So each impossible ratio is replaced
+    by the sentence the figure cannot carry:
+
+    * nothing last period, something now — «{label} {subject} نداشت», the
+      arrival stated as the news it is (reversed for spending, where the
+      arrival of a cost is the bad news);
+    * a base too small or a span gone negative — the base itself, «{label} X ت
+      بود», so the card is read against a figure rather than against nothing.
 
     ``lower_is_better`` is the whole reason this returns a verdict instead of
     leaving the colour to the direction of the arrow: spending less moves the
     same way as earning more, and only the card's owner knows which is good news.
+    ``subject`` names what the card counts, so «نداشت» can be said about sales,
+    profit or expenses in the shop's own grammar.
     """
-    if previous is None or previous <= 0 or current < 0:
+    if previous is None:
         return None
+    if previous <= 0:
+        if current > 0:
+            return {"text": f"{label} {subject} نداشت", "good": not lower_is_better}
+        # Both periods empty — the card's own figures already say it — or a
+        # red period standing on nothing. Neither has a comparison inside it.
+        return None
+    if current < 0:
+        # The sign is visible in the value itself; what it needs is its base.
+        return {"text": f"{label} {_money(previous)} بود", "good": None}
     change = int(round((current - previous) / previous * 100))
     if abs(change) > 999:
         # The base was so small that the ratio is arithmetic rather than
         # information — «۴۰۰۰٪ بیشتر» is a rounding artefact, not a trend.
-        return None
+        # The base is small enough to say, so it is said.
+        return {"text": f"{label} {_money(previous)} بود", "good": None}
     if change == 0:
         return {"text": f"بدون تغییر نسبت به {label}", "good": None}
     good = (change < 0) if lower_is_better else (change > 0)
@@ -285,7 +310,13 @@ def _build_sms(numbers: _Numbers, role: str) -> dict:
 
 def _build_birthdays_due(numbers: _Numbers, role: str) -> dict:
     count = numbers.club["birthday_count"]
-    return {"value": str(count), "sub": "مشتری در آستانه تولد", "clear": not count}
+    window = numbers.club["birthday_window"]
+    # The count alone is a number waiting for its window: «۷ نفر» means nothing
+    # until «در ۷ روز آینده» says how soon the wishes are due. A window the
+    # store has switched off says that, rather than a count of an empty set.
+    sub = (f"تولد در {to_persian_digits(window)} روز آینده" if window
+           else "پنجره تولد خاموش است — تنظیمات")
+    return {"value": str(count), "sub": sub, "clear": not count}
 
 
 def _build_follow_ups_due(numbers: _Numbers, role: str) -> dict:
@@ -337,7 +368,7 @@ def _build_today_sales(numbers: _Numbers, role: str) -> dict:
     return {"value": _money(today["net_sales"]),
             "sub": f"{today['sale_count']} فاکتور",
             "delta": _delta(today["net_sales"], numbers.yesterday["net_sales"],
-                            label=YESTERDAY_LABEL)}
+                            label=YESTERDAY_LABEL, subject="فروشی")}
 
 
 def _build_cashbox(numbers: _Numbers, role: str) -> dict:
@@ -398,7 +429,7 @@ def _build_today_profit(numbers: _Numbers, role: str) -> dict:
             # margin, and «حاشیه 0٪» is the one thing it does not have.
             "sub": f"حاشیه {percent(today['gross_margin'])}",
             "delta": _delta(today["gross_profit"], numbers.yesterday["gross_profit"],
-                            label=YESTERDAY_LABEL)}
+                            label=YESTERDAY_LABEL, subject="سودی")}
 
 
 def _build_month_sales(numbers: _Numbers, role: str) -> dict:
@@ -406,7 +437,7 @@ def _build_month_sales(numbers: _Numbers, role: str) -> dict:
     return {"value": _money(month["net_sales"]),
             "sub": f"{month['sale_count']} فاکتور",
             "delta": _delta(month["net_sales"], numbers.previous_month["net_sales"],
-                            label=LAST_MONTH_LABEL)}
+                            label=LAST_MONTH_LABEL, subject="فروشی")}
 
 
 def _build_month_profit(numbers: _Numbers, role: str) -> dict:
@@ -414,7 +445,7 @@ def _build_month_profit(numbers: _Numbers, role: str) -> dict:
     return {"value": _money(month["net_profit"]),
             "sub": f"پس از کسر {_money(month['operating_expenses'])} هزینه",
             "delta": _delta(month["net_profit"], numbers.previous_month["net_profit"],
-                            label=LAST_MONTH_LABEL)}
+                            label=LAST_MONTH_LABEL, subject="سودی")}
 
 
 def _build_month_expenses(numbers: _Numbers, role: str) -> dict:
@@ -422,10 +453,12 @@ def _build_month_expenses(numbers: _Numbers, role: str) -> dict:
     return {"value": _money(month["operating_expenses"]),
             "sub": "هزینه‌های ثبت‌شده",
             # Spending less is the good news here, which is why the verdict is
-            # computed rather than left to the direction of an arrow.
+            # computed rather than left to the direction of an arrow. And the
+            # arrival of a cost is the bad news, so «نداشت» flips with it.
             "delta": _delta(month["operating_expenses"],
                             numbers.previous_month["operating_expenses"],
-                            label=LAST_MONTH_LABEL, lower_is_better=True)}
+                            label=LAST_MONTH_LABEL, lower_is_better=True,
+                            subject="هزینه‌ای")}
 
 
 def _build_debt(numbers: _Numbers, role: str) -> dict:

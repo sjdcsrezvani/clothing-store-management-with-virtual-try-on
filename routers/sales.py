@@ -19,13 +19,14 @@ from services._common import (
     fmt,
     get_setting_int as get_discount_setting,
     jalali_str,
+    page_arg,
 )
 from services.customers import signup_birthday_fields
 from services.accounting import (
     apply_credit_surcharge, credit_due_date_for, credit_sale_allowed, credit_terms_days,
     open_cash_session, sale_remaining,
 )
-from services.discount import calculate_discounts, apply_discounts_after_sale
+from services.discount import CUSTOM_DISCOUNT_RULES, calculate_discounts, apply_discounts_after_sale
 from services.campaigns import (
     campaign_discount_amount,
     campaign_for_customer,
@@ -313,6 +314,12 @@ def _render_scan(request, customer, basket, total_amount, db,
         "campaign_code": campaign_code,
         "campaign_error": campaign_error,
         "discounts": discounts,
+        # The till's manual-discount fields paint these bounds from the same
+        # table the discount service clamps with — one definition.
+        "numeric_rules": {
+            "custom_discount_amount": (CUSTOM_DISCOUNT_RULES["amount_min"], None, "مبلغ تخفیف"),
+            "custom_discount_percent": (CUSTOM_DISCOUNT_RULES["percent_min"], CUSTOM_DISCOUNT_RULES["percent_max"], "درصد تخفیف"),
+        },
         "net_profit": net_profit,
         "credit_limit_info": credit_limit_info,
         # A saved POS configuration enables the strict approval gate. Before
@@ -326,10 +333,11 @@ def _render_scan(request, customer, basket, total_amount, db,
 
 
 @router.get("/", response_class=HTMLResponse)
-async def sales_list(request: Request, search: str = "", page: int = 1, db: Session = Depends(get_db)):
+async def sales_list(request: Request, search: str = "", page: str = "1", db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
+    page = page_arg(page)
     query = db.query(Sale).filter(Sale.payment_confirmed == True)
 
     if search:

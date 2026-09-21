@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import Customer, Settings, SmsMessage, SmsTemplate, to_english_digits
-from services._common import fmt, get_setting_int, jalali_str
+from services._common import fmt, get_setting_int, jalali_str, page_arg, int_arg
 from services.security import log_action, require_html_role
 from services.sms import device_status_label, queue_sms
 from services.sms_gateway import (
@@ -59,6 +59,7 @@ from services.month_reading import (
     digest_phones,
     digest_preview,
     digest_ref,
+    send_digest_now,
 )
 from services.sms_templates import (
     CUSTOMER_SOURCES,
@@ -68,6 +69,7 @@ from services.sms_templates import (
     # «خودکار/دستی» for a template — not to be confused with the audience
     # MODE_LABELS imported above, which name how a *blast* picks its people.
     MODE_LABELS as TEMPLATE_MODE_LABELS,
+    MAX_TRIGGER_DAYS,
     SOURCE_FIELDS,
     SOURCE_LABELS,
     STATUS_LABELS,
@@ -100,6 +102,19 @@ GATEWAY_KEYS = ("sms_api_key", "sms_device_id", "campaign_sms_limit", SETTING_AU
 # A just-issued device key lives only for this long in the request cycle — long
 # enough to render the pairing QR, never persisted anywhere it could be read back.
 _PAIRING_FLASH_LIMIT_SECONDS = 60
+
+# Every numeric field the پیامک forms post, with the bound the server enforces
+# and the label it refuses by. One table, two readers: the POST validates
+# against it and the two forms render their min/max from it, so the browser's
+# attributes stay a kindness, not the rule.
+SMS_NUMERIC_RULES = {
+    "campaign_sms_limit": (1, None, "سقف هر ارسال گروهی"),
+    "trigger_sms_limit": (1, None, "سقف ارسال خودکار در هر بررسی"),
+    "monthly_digest_day": (1, 28, "روز ارسال خلاصه"),
+    # The upper bound *is* MAX_TRIGGER_DAYS — the editor's field and the
+    # trigger_days() clamp read the same constant.
+    "trigger_days": (1, MAX_TRIGGER_DAYS, "روزهای پیگیری"),
+}
 
 
 def _guard(request, db):
@@ -167,10 +182,10 @@ async def admin_sms_config(
         return guard
 
     for field, key, label in (
-        (campaign_sms_limit, "campaign_sms_limit", "سقف هر ارسال گروهی"),
+        (campaign_sms_limit, "campaign_sms_limit", SMS_NUMERIC_RULES["campaign_sms_limit"][2]),
         # Templates the owner gave a trigger can spend money with nobody
         # watching, so their pace is a setting rather than a constant.
-        (trigger_sms_limit, SETTING_AUTO_SEND_LIMIT, "سقف ارسال خودکار در هر بررسی"),
+        (trigger_sms_limit, SETTING_AUTO_SEND_LIMIT, SMS_NUMERIC_RULES["trigger_sms_limit"][2]),
     ):
         limit = field.strip()
         if not limit:
@@ -179,7 +194,7 @@ async def admin_sms_config(
             value = int(to_english_digits(limit))
         except (TypeError, ValueError):
             value = 0
-        if value < 1:
+        if value < SMS_NUMERIC_RULES["campaign_sms_limit"][0]:
             return RedirectResponse(url=f"/admin/sms?err={label} باید عددی بزرگ‌تر از صفر باشد.",
                                     status_code=303)
         _save_setting(db, key, str(value))
@@ -206,9 +221,10 @@ async def admin_sms_config(
             day = int(to_english_digits(day_field))
         except (TypeError, ValueError):
             day = 0
-        if day < 1 or day > 28:
+        day_rule = SMS_NUMERIC_RULES["monthly_digest_day"]
+        if not day_rule[0] <= day <= day_rule[1]:
             return RedirectResponse(
-                url="/admin/sms?err=روز ارسال خلاصه باید عددی از ۱ تا ۲۸ باشد.",
+                url=f"/admin/sms?err={day_rule[2]} باید عددی از ۱ تا ۲۸ باشد.",
                 status_code=303)
         _save_setting(db, SETTING_DIGEST_DAY, str(day))
     db.commit()
@@ -267,6 +283,9 @@ def _manager_context(request, db, guard, *, usage="all", sort="default",
         "template_sorts": TEMPLATE_SORTS,
         "overview": message_overview(db),
         "config": _settings_map(db),
+        # The config form paints its bounds from the same table the POST
+        # validates against.
+        "numeric_rules": SMS_NUMERIC_RULES,
         # The digest form reads its current values and the month it would next
         # describe; both are computed here so the template stays declarative.
         "digest_phones": " ".join(digest_phones(db)),
@@ -379,6 +398,9 @@ def _form_context(request, db, *, template, edit_mode, values, error="", message
         "unfilled": unfilled,
         "triggers": TRIGGERS,
         "trigger_days_default": DEFAULT_FOLLOW_UP_DAYS,
+        # The editor's trigger-days field paints its bounds from the same
+        # table the save validates through trigger_from_form's clamp.
+        "numeric_rules": SMS_NUMERIC_RULES,
         "template_mode_labels": TEMPLATE_MODE_LABELS,
         "CUSTOM_TRIGGER": CUSTOM_TRIGGER,
         "preview": preview_body(template) if template is not None else "",
@@ -715,11 +737,11 @@ def _template_or_default(db: Session, template_id) -> SmsTemplate | None:
 
 
 @router.get("/sms/send", response_class=HTMLResponse)
-async def admin_sms_send_form(request: Request, template_id: int = 0, db: Session = Depends(get_db)):
+async def admin_sms_send_form(request: Request, template_id: str = "0", db: Session = Depends(get_db)):
     guard = _guard(request, db)
     if not hasattr(guard, "role"):
         return guard
-    template = _template_or_default(db, template_id)
+    template = _template_or_default(db, int_arg(template_id, default=0))
     if template is None:
         return RedirectResponse(url="/admin/sms?err=قالب پیامک فعالی برای ارسال وجود ندارد.",
                                 status_code=303)
@@ -753,6 +775,20 @@ async def admin_sms_send(
     template = get_template_by_id(db, template_id)
     if template is None:
         return RedirectResponse(url="/admin/sms/send?err=قالب پیامک پیدا نشد.", status_code=303)
+
+    # The editor refuses to store a custom text that uses a token nothing fills;
+    # the accept path has to hold the same line, or a template stored before the
+    # rule (or edited by a scripted post) would queue empty-welcomed messages
+    # here without a word of refusal.
+    holes = unfilled_tokens(template)
+    if holes:
+        names = "، ".join(f"%{item['token']}%" for item in holes)
+        return _send_context(
+            request, db, template=template,
+            error=(f"قالب «{template.name}» از {names} استفاده می‌کند اما به هیچ مقداری وصل "
+                   "نیست؛ پیامک خالی فرستاده نمی‌شود. در ویرایش قالب یک مقدار برایش انتخاب کنید."),
+            body=preview_body(template),
+        )
 
     is_transactional = transactional == "on"
     plan = plan_from_form(db, audience=audience, picked=picked, numbers=numbers,
@@ -795,13 +831,14 @@ async def admin_sms_history(
     status: str = "all",
     source: str = "all",
     order: str = "newest",
-    page: int = 1,
+    page: str = "1",
     db: Session = Depends(get_db),
 ):
     guard = _guard(request, db)
     if not hasattr(guard, "role"):
         return guard
 
+    page = page_arg(page)
     listing = message_filtered(db, search=search, status=status, source=source,
                               order=order, page=page)
     if source == DIGEST_SOURCE:
@@ -822,6 +859,55 @@ async def admin_sms_history(
         "can_resend_digest": guard.role == "owner",
         "fmt": fmt,
     })
+
+
+@router.post("/sms/digest/send-now")
+async def admin_sms_digest_send_now(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Queue last month's digest by hand — the button beside the preview.
+
+    It goes through ``send_digest_now``, so it faces the same once-per-month
+    ref the scheduler faces: if the automatic send already spoke for this
+    month, the hand send is refused rather than doubling the message, and the
+    owner reads which month is covered. The calendar gate stays the
+    scheduler's; the ref guard is shared, or it would guard nothing.
+    """
+    guard = _owner_guard(request, db)
+    if not hasattr(guard, "role"):
+        return guard
+
+    result = await send_digest_now(db)
+    month = result.get("ref", "")
+    if result["state"] == "no_phone":
+        return RedirectResponse(
+            url="/admin/sms?err=شماره‌ای برای خلاصه ماهانه ذخیره نشده؛ اول آن را در همین صفحه بنویسید.",
+            status_code=303)
+    if result["state"] == "already_sent":
+        return RedirectResponse(
+            url=f"/admin/sms?err=خلاصه این ماه پیش‌تر ارسال شده است؛ دوباره فرستاده نشد.",
+            status_code=303)
+    if result["state"] == "empty":
+        return RedirectResponse(
+            url=f"/admin/sms?err=متن خلاصه ساخته نشد؛ دوباره امتحان کنید.",
+            status_code=303)
+    if result["state"] == "error":
+        return RedirectResponse(
+            url=f"/admin/sms?err=ساخت خلاصه با خطا مواجه شد؛ بعداً دوباره امتحان کنید.",
+            status_code=303)
+    if result["state"] == "failed":
+        return RedirectResponse(
+            url=f"/admin/sms?err=هیچ پیامکی در صف قرار نگرفت.",
+            status_code=303)
+    month_label = digest_month_of_ref(month) if month else ""
+    log_action(db, "sms_digest_send_now",
+               f"ارسال دستی خلاصه ماهانه{f' «{month_label}»' if month_label else ''} برای {result['queued']} شماره",
+               request=request, target_type="settings",
+               after={"ref": month, "queued": result["queued"]})
+    return RedirectResponse(
+        url=f"/admin/sms?msg=خلاصه{f' «{month_label}»' if month_label else ''} برای {result['queued']} شماره در صف قرار گرفت.",
+        status_code=303)
 
 
 @router.post("/sms/history/digest/resend")

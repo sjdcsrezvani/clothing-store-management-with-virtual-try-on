@@ -12,7 +12,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from models import Settings, TagTemplate
+from models import Settings, TagTemplate, to_persian_digits
 from services.barcode import BARCODE_DENSITIES, BARCODE_DENSITY_DEFAULT, generate_barcode_image
 
 A4_WIDTH_MM = 210
@@ -54,6 +54,25 @@ FIELD_LABELS = {
 }
 _COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 _TAG_ASSET_RE = re.compile(r"^/static/uploads/tag-assets/[A-Za-z0-9_.-]+$")
+
+# The Persian name of every layout-level config key, so a refusal names the
+# quantity the owner knows («عرض تگ») rather than the config's spelling
+# («tag_width_mm»). Field keys answer through FIELD_LABELS below.
+TAG_KEY_LABELS = {
+    "tag_width_mm": "عرض تگ",
+    "tag_height_mm": "ارتفاع تگ",
+    "margin_top_mm": "حاشیه بالا",
+    "margin_bottom_mm": "حاشیه پایین",
+    "margin_right_mm": "حاشیه راست",
+    "margin_left_mm": "حاشیه چپ",
+    "gap_horizontal_mm": "فاصله افقی",
+    "gap_vertical_mm": "فاصله عمودی",
+    "padding_mm": "فاصله داخلی",
+    "corner_radius_mm": "گردی گوشه",
+    "border_width_mm": "ضخامت حاشیه",
+    "columns": "ستون‌ها",
+    "rows": "سطرها",
+}
 
 
 def _field(x, y, width, height, *, visible=True, font_size=8, bold=False,
@@ -132,28 +151,114 @@ PRESETS = {
 }
 
 
+# The one place a tag designer bound is ever written. The template renders its
+# min/max attributes from this table (TAG_NUMERIC_RULES in the route context)
+# and the validator bounds every value through it, so a browser's kindness and
+# the server's rule cannot drift — the same one-source discipline the settings
+# form keeps with SETTINGS_NUMERIC_RULES.
+#
+# Keys are config keys and field keys, not input ids: the template maps each
+# input id to its key (TAG_INPUT_KEYS), because the page's ids spell the same
+# quantity in page language (margin-top, field-width) while the config spells
+# it in config language (margin_top_mm, width).
+TAG_NUMERIC_RULES: dict[str, tuple[float, float]] = {
+    "tag_width_mm": (25, 100),
+    "tag_height_mm": (20, 100),
+    "margin_top_mm": (0, 50),
+    "margin_right_mm": (0, 50),
+    "margin_bottom_mm": (0, 50),
+    "margin_left_mm": (0, 50),
+    "gap_horizontal_mm": (0, 20),
+    "gap_vertical_mm": (0, 20),
+    "padding_mm": (0, 10),
+    "corner_radius_mm": (0, 10),
+    "border_width_mm": (0, 3),
+    "columns": (0, 20),
+    "rows": (0, 30),
+    "font_size": (4, 48),
+    "x": (0, 100),
+    "y": (0, 100),
+    "width": (2, 100),
+    "height": (2, 100),
+}
+
+# The pairs the validator composes from the table: a field box must fit inside
+# its tag, and z sits on its own scale the page never asks the browser to
+# police. Listed by name so the cross-rules below read as rules, not magic.
+FIELD_BOX_KEYS = ("x", "y", "width", "height")
+TAG_FIT_KEYS = ("x", "width")
+# The table keys that bound one *field*, not the whole layout — they never
+# appear in the top-level config, and the validator applies them per field.
+FIELD_LEVEL_KEYS = FIELD_BOX_KEYS + ("font_size",)
+
+# The page's input ids are the designer script's language (margin-top,
+# field-width); the config spells the same quantity in config language
+# (margin_top_mm, width). This map is the canonical translation — the template
+# keeps a copy to render from, and the route checks the copy against it.
+TAG_INPUT_KEYS: dict[str, str] = {
+    "field-x": "x",
+    "field-y": "y",
+    "field-width": "width",
+    "field-height": "height",
+    "field-font-size": "font_size",
+    "tag-width": "tag_width_mm",
+    "tag-height": "tag_height_mm",
+    "margin-top": "margin_top_mm",
+    "margin-bottom": "margin_bottom_mm",
+    "margin-right": "margin_right_mm",
+    "margin-left": "margin_left_mm",
+    "gap-horizontal": "gap_horizontal_mm",
+    "gap-vertical": "gap_vertical_mm",
+    "tag-columns": "columns",
+    "tag-rows": "rows",
+    "tag-border-width": "border_width_mm",
+    "tag-radius": "corner_radius_mm",
+    "tag-padding": "padding_mm",
+}
+
+
 def default_tag_config(preset: str = "kids_boutique") -> dict[str, Any]:
     """Return a fresh default configuration, never a shared mutable object."""
     return copy.deepcopy(PRESETS.get(preset, PRESETS["kids_boutique"]))
 
 
 def _number(value, name, minimum, maximum, *, integer=False):
+    # Every message names the quantity the way the designer page labels it —
+    # «عرض تگ», not `tag_width_mm`; «قیمت فروش — اندازه متن», not
+    # `price.font_size` — the same words the form's own labels carry.
+    label = _label_of(name)
     if isinstance(value, bool):
-        raise ValueError(f"{name} is invalid")
+        raise ValueError(f"«{label}» باید یک عدد باشد")
     try:
         converted = int(value) if integer else float(value)
     except (TypeError, ValueError):
-        raise ValueError(f"{name} is invalid")
+        raise ValueError(f"«{label}» باید یک عدد باشد")
     if not math.isfinite(converted) or converted < minimum or converted > maximum:
-        raise ValueError(f"{name} is outside the allowed range")
+        if converted < minimum:
+            raise ValueError(f"«{label}» نمی‌تواند کمتر از {to_persian_digits(minimum)} باشد")
+        raise ValueError(f"«{label}» نمی‌تواند بیشتر از {to_persian_digits(maximum)} باشد")
     if integer and isinstance(value, float) and not value.is_integer():
-        raise ValueError(f"{name} is invalid")
+        raise ValueError(f"«{label}» باید یک عدد صحیح باشد")
     return converted
+
+
+def _label_of(name: str) -> str:
+    """The Persian name a message shows for a config key — the field's label
+    when the key belongs to a field (`price.x`), the layout quantity's own
+    words otherwise (`tag_width_mm`)."""
+    if "." in name:
+        field_key, attribute = name.split(".", 1)
+        label = FIELD_LABELS.get(field_key, field_key)
+        attributes = {"x": "موقعیت افقی", "y": "موقعیت عمودی", "width": "عرض",
+                      "height": "ارتفاع", "font_size": "اندازه متن", "z": "لایه",
+                      "color": "رنگ"}
+        return f"{label} — {attributes.get(attribute, attribute)}"
+    return TAG_KEY_LABELS.get(name) or FIELD_LABELS.get(name, name)
 
 
 def _validate_color(value, name):
     if not isinstance(value, str) or not _COLOR_RE.fullmatch(value):
-        raise ValueError(f"{name} must be a six-digit hexadecimal color")
+        raise ValueError(f"رنگ «{_label_of(name)}» معتبر نیست")
     return value.upper()
 
 
@@ -225,21 +330,22 @@ def validate_tag_config(raw: dict[str, Any]) -> dict[str, Any]:
     if config["version"] != TAG_CONFIG_VERSION:
         raise ValueError("نسخه تنظیمات تگ پشتیبانی نمی‌شود")
 
-    for key, minimum, maximum in (
-        ("tag_width_mm", 25, 100), ("tag_height_mm", 20, 100),
-        ("margin_top_mm", 0, 50), ("margin_right_mm", 0, 50),
-        ("margin_bottom_mm", 0, 50), ("margin_left_mm", 0, 50),
-        ("gap_horizontal_mm", 0, 20), ("gap_vertical_mm", 0, 20),
-        ("padding_mm", 0, 10), ("corner_radius_mm", 0, 10),
-        ("border_width_mm", 0, 3),
-    ):
-        config[key] = _number(raw.get(key, config[key]), key, minimum, maximum)
+    # Every bound comes from TAG_NUMERIC_RULES — the same table the form's
+    # min/max attributes render from — so a bound edited in the table reaches
+    # the browser and the server in the same commit. A key the default config
+    # does not carry (and no field carries either) is a table typo, not a
+    # setting: refuse it loudly rather than crash a reader later.
+    for key, (minimum, maximum) in TAG_NUMERIC_RULES.items():
+        if key not in config and key not in FIELD_LEVEL_KEYS:
+            raise ValueError(f"قاعده «{key}» به هیچ مقدار شناخته‌شده‌ای وصل نیست")
+        if key in FIELD_LEVEL_KEYS:
+            continue  # field-level bounds, applied per field below
+        integer = key in ("columns", "rows")
+        config[key] = _number(raw.get(key, config[key]), key, minimum, maximum, integer=integer)
 
     config["layout_mode"] = raw.get("layout_mode", config["layout_mode"])
     if config["layout_mode"] not in ALLOWED_LAYOUT_MODES:
         raise ValueError("حالت چیدمان نامعتبر است")
-    config["columns"] = _number(raw.get("columns", config["columns"]), "columns", 0, 20, integer=True)
-    config["rows"] = _number(raw.get("rows", config["rows"]), "rows", 0, 30, integer=True)
     if config["layout_mode"] == "fixed" and (config["columns"] == 0 or config["rows"] == 0):
         raise ValueError("در چیدمان ثابت تعداد سطر و ستون الزامی است")
     if config["margin_left_mm"] + config["margin_right_mm"] >= A4_WIDTH_MM:
@@ -278,26 +384,32 @@ def validate_tag_config(raw: dict[str, Any]) -> dict[str, Any]:
     merged_fields = copy.deepcopy(config["fields"])
     for name, incoming in fields.items():
         if not isinstance(incoming, dict):
-            raise ValueError(f"تنظیم فیلد {name} معتبر نیست")
+            raise ValueError(f"تنظیم «{_label_of(name)}» معتبر نیست")
         field = merged_fields[name]
         visible = incoming.get("visible", field["visible"])
         bold = incoming.get("bold", field["bold"])
         if not isinstance(visible, bool) or not isinstance(bold, bool):
-            raise ValueError(f"تنظیم فیلد {name} معتبر نیست")
+            raise ValueError(f"تنظیم «{_label_of(name)}» معتبر نیست")
         field["visible"] = visible
         field["bold"] = bold
-        for key, minimum, maximum in (
-            ("x", 0, config["tag_width_mm"]), ("y", 0, config["tag_height_mm"]),
-            ("width", 2, config["tag_width_mm"]), ("height", 2, config["tag_height_mm"]),
-            ("font_size", 4, 48),
-        ):
+        # Field bounds come from the same table; x/y/width/height add the tag's
+        # own size as their ceiling, so the browser's min/max and the server's
+        # rule share one number even where the ceiling is relational. (width's
+        # table ceiling is the tag's own width by design, so x and width take
+        # the same relational ceiling here.)
+        for key in FIELD_LEVEL_KEYS:
+            minimum, maximum = TAG_NUMERIC_RULES[key]
+            if key in TAG_FIT_KEYS:
+                maximum = config["tag_width_mm"]
+            elif key in ("y", "height"):
+                maximum = config["tag_height_mm"]
             field[key] = _number(incoming.get(key, field[key]), f"{name}.{key}", minimum, maximum)
         if field["x"] + field["width"] > config["tag_width_mm"] or field["y"] + field["height"] > config["tag_height_mm"]:
-            raise ValueError(f"فیلد {name} خارج از محدوده تگ است")
+            raise ValueError(f"«{_label_of(name)}» خارج از محدوده تگ است")
         field["color"] = _validate_color(incoming.get("color", field["color"]), f"{name}.color")
         field["align"] = incoming.get("align", field["align"])
         if field["align"] not in ALLOWED_ALIGNMENTS:
-            raise ValueError(f"تراز فیلد {name} نامعتبر است")
+            raise ValueError(f"تراز «{_label_of(name)}» نامعتبر است")
         field["z"] = _number(incoming.get("z", field["z"]), f"{name}.z", -100, 100, integer=True)
     _migrate_legacy_barcode_fields(merged_fields, fields)
     config["fields"] = merged_fields

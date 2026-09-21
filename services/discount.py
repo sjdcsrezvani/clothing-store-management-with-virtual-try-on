@@ -13,6 +13,16 @@ from services.tier import (
     birthday_occasion_due,
 )
 
+# The manual-discount clamp, named once: the till's مبلغ/درصد fields render
+# their min/max from this (routers/sales.py passes it to the template) and
+# the sanitize below enforces it — the form can never promise a bound the
+# clamp does not keep.
+CUSTOM_DISCOUNT_RULES = {
+    "amount_min": 0,
+    "percent_min": 0,
+    "percent_max": 100,
+}
+
 
 def calculate_discounts(
     customer: Customer = None,
@@ -37,8 +47,11 @@ def calculate_discounts(
     min_purchase = get_setting_int(db, "min_purchase_for_discount", 500000)
 
     # Sanitize the owner-entered manual discount: never negative, never > 100%.
-    custom_amount = max(0, custom_amount or 0)
-    custom_percent = min(max(0, custom_percent or 0), 100)
+    # The till's discount fields paint these same bounds from CUSTOM_DISCOUNT_RULES
+    # (routers/sales.py), so the input's promise and the clamp are one definition.
+    custom_amount = max(CUSTOM_DISCOUNT_RULES["amount_min"], custom_amount or 0)
+    custom_percent = min(max(CUSTOM_DISCOUNT_RULES["percent_min"], custom_percent or 0),
+                         CUSTOM_DISCOUNT_RULES["percent_max"])
 
     discounts = {
         "referred_discount": 0,

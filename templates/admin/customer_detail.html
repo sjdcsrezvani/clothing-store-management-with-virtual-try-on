@@ -15,8 +15,25 @@
 {% endset %}
 {% include 'partials/page_header.html' %}
 
-{% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
-{% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}
+
+{% if profile.spent_mismatch or profile.count_mismatch or profile.points_mismatch %}
+<div class="alert alert-warning drift-banner" role="alert">
+    <div>
+        <strong>شمارنده‌های این پرونده با فاکتورها نمی‌خوانند.</strong>
+        <span class="tnum">
+            {% if profile.spent_mismatch %}مجموع خرید: ثبت‌شده {{ fmt(profile.stored_spent) }} ت، از فاکتورها {{ fmt(profile.computed_spent) }} ت.{% endif %}
+            {% if profile.count_mismatch %}تعداد خرید: ثبت‌شده {{ profile.stored_count }}، از فاکتورها {{ profile.computed_count }}.{% endif %}
+            {% if profile.points_mismatch %}امتیاز: ثبت‌شده {{ figure(profile.stored_points) }}، از فاکتورها {{ figure(profile.computed_points) }}.{% endif %}
+        </span>
+    </div>
+    {% if is_owner %}
+    <form method="post" action="/admin/customers/{{ customer.id }}/reconcile">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn btn-sm btn-primary">هم‌سازی با فاکتورها</button>
+    </form>
+    {% endif %}
+</div>
+{% endif %}
 
 <div class="stats-grid customer-kpi" aria-label="خلاصه پرونده مشتری">
     <div class="stat-card accent-sky">
@@ -40,8 +57,12 @@
     </div>
     <div class="stat-card accent-saffron">
         <div class="stat-label">امتیاز</div>
-        <div class="stat-value tnum">{{ figure(customer.total_points) }}</div>
+        <div class="stat-value tnum">{{ figure(profile.computed_points) }}</div>
         <div class="stat-sub">
+            {% if profile.points_mismatch %}
+            <span class="drift-flag">نامطابق</span>
+            شمارنده ثبت‌شده: {{ figure(profile.stored_points) }} ·
+            {% endif %}
             سطح
             {% if customer.tier == 'diamond' %}الماس
             {% elif customer.tier == 'gold' %}طلایی

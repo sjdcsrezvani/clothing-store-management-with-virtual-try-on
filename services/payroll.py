@@ -7,18 +7,23 @@ from models import Expense, SalaryPayment, StaffUser, to_english_digits
 from services.accounting import open_cash_session
 from services.events import append_event
 
-_PERIOD_PATTERN = re.compile(r"^(\d{4})-(0[1-9]|1[0-2])$")
+# A Jalali payroll month: the shop pays by the Persian calendar, so the key is
+# a Jalali year and month. Pre-existing Gregorian keys stay valid history;
+# only new writes are validated here.
+_PERIOD_PATTERN = re.compile(r"^((13|14)\d{2})-(0[1-9]|1[0-2])$")
 
 
 def current_period_key(value: datetime | None = None) -> str:
-    value = value or datetime.now(timezone.utc)
-    return value.strftime("%Y-%m")
+    import jdatetime
+    day = (value or datetime.now(timezone.utc)).date()
+    jd = jdatetime.date.fromgregorian(date=day)
+    return f"{jd.year:04d}-{jd.month:02d}"
 
 
 def normalize_period_key(value: str) -> str:
     cleaned = to_english_digits((value or "").strip())
     if not _PERIOD_PATTERN.fullmatch(cleaned):
-        raise ValueError("ماه پرداخت باید به شکل YYYY-MM باشد.")
+        raise ValueError("ماه پرداخت باید به شکل YYYY-MM شمسی باشد (مثلاً ۱۴۰۵-۰۶).")
     return cleaned
 
 

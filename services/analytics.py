@@ -153,85 +153,211 @@ def get_revenue_summary(db: Session, start: datetime, end: datetime) -> dict:
         "new_customers": new_customers,
     }
 
+def get_new_customers(db: Session, start: datetime, end: datetime) -> int:
+    """Customers whose first confirmed, non-refunded purchase falls in range.
+
+    A customer counts as new when they buy here for the first time in the
+    window — not when their account row was created, which may predate any
+    purchase by months.
+    """
+    bought_before = set(
+        cid for (cid,) in db.query(Sale.customer_id).filter(
+            Sale.payment_confirmed == True,  # noqa: E712
+            Sale.is_refunded == False,  # noqa: E712
+            Sale.customer_id != None,  # noqa: E711
+            Sale.created_at < start,
+        ).distinct().all()
+    )
+    bought_in = set(
+        cid for (cid,) in db.query(Sale.customer_id).filter(
+            Sale.payment_confirmed == True,  # noqa: E712
+            Sale.is_refunded == False,  # noqa: E712
+            Sale.customer_id != None,  # noqa: E711
+            Sale.created_at.between(start, end),
+        ).distinct().all()
+    )
+    return len([cid for cid in bought_in if cid not in bought_before])
+
+def _net_sale_lines(db: Session, start: datetime, end: datetime):
+    """Per-item net revenue and cost sharing canonical_report's exact semantics.
+
+    One base the daily, category and margin readings all draw from, so the
+    three cannot disagree with each other — or with سود و زیان:
+    * the sale set is confirmed sales created in range, refunded ones included,
+      exactly like canonical_report;
+    * revenue is total_amount minus discount_amount (final_amount would smuggle
+      the نسیه surcharge back in, which سود و زیان does not count as sales);
+    * a matched refund subtracts Refund.total_amount — the same rows and the
+      same window canonical_report's refund total reads;
+    * cost drops flagged sales' items entirely, mirroring canonical cogs.
+    A discount is spread across its sale's items pro-rata by item gross (even
+    split on a zero gross), the integer remainder going to the largest item;
+    a refund is spread the same way by item gross. The lines therefore add up
+    to their sale's own net to the toman, and the readings add up to the books.
+    Returns (item_lines, refund_lines, sales).
+    """
+    sales = db.query(Sale).filter(
+        Sale.payment_confirmed == True,  # noqa: E712
+        Sale.created_at.between(start, end),
+    ).all()
+    if not sales:
+        return [], [], []
+    sale_ids = [s.id for s in sales]
+    refunds = db.query(Refund).filter(
+        Refund.sale_id.in_(sale_ids),
+        Refund.created_at.between(start, end),
+    ).all()
+    refund_by_sale = {}
+    for refund in refunds:
+        refund_by_sale.setdefault(refund.sale_id, []).append(refund)
+    rows = db.query(
+        SaleItem.sale_id, SaleItem.total_price,
+        SaleItem.unit_cost, SaleItem.quantity,
+        Product.category,
+    ).join(Product, Product.id == SaleItem.product_id
+           ).filter(SaleItem.sale_id.in_(sale_ids)).all()
+    by_sale: dict[int, list[dict]] = {}
+    for sid, gross, unit_cost, qty, cat in rows:
+        by_sale.setdefault(sid, []).append({
+            "gross": gross or 0,
+            "cost": (unit_cost or 0) * (qty or 0),
+            "qty": qty or 0,
+            "category": cat,
+        })
+
+    def _split(amount: int, weights: list[int]) -> list[int]:
+        total = sum(weights)
+        if not weights:
+            return []
+        if total <= 0:
+            base, remainder = divmod(amount, len(weights))
+            shares = [base] * len(weights)
+        else:
+            shares = [amount * w // total for w in weights]
+            remainder = amount - sum(shares)
+        order = sorted(range(len(weights)), key=lambda k: weights[k], reverse=True)
+        for position in range(remainder):
+            shares[order[position % len(order)]] += 1
+        return shares
+
+    item_lines, refund_lines = [], []
+    for sale in sales:
+        sale_items = by_sale.get(sale.id, [])
+        discount = sale.discount_amount or 0
+        day = sale.created_at.date() if sale.created_at else start.date()
+        if sale_items:
+            grosses = [i["gross"] for i in sale_items]
+            discounts = _split(discount, grosses)
+            nets = [i["gross"] - d for i, d in zip(sale_items, discounts)]
+            cost_off = bool(sale.is_refunded)
+            for item, net in zip(sale_items, nets):
+                item_lines.append({
+                    "sale_id": sale.id, "day": day,
+                    "category": item["category"],
+                    "net": net,
+                    "cost": 0 if cost_off else item["cost"],
+                    "qty": 0 if cost_off else item["qty"],
+                })
+            refund_weights = grosses
+        else:
+            # A confirmed sale with no lines is pathological; its net still
+            # belongs to the day, under no category.
+            nets = [(sale.total_amount or 0) - discount]
+            item_lines.append({
+                "sale_id": sale.id, "day": day,
+                "category": None,
+                "net": nets[0],
+                "cost": 0,
+                "qty": 0,
+            })
+            refund_weights = []
+        for refund in refund_by_sale.get(sale.id, []):
+            amount = refund.total_amount or 0
+            refund_day = refund.created_at.date() if refund.created_at else day
+            parts = _split(amount, refund_weights) if refund_weights else [amount]
+            cats = ([i["category"] for i in sale_items] if sale_items else [None])
+            for cat, part in zip(cats, parts):
+                refund_lines.append({
+                    "sale_id": sale.id, "day": refund_day,
+                    "category": cat, "amount": part,
+                })
+    return item_lines, refund_lines, sales
+
+
 def get_daily_revenue(db: Session, start: datetime, end: datetime) -> list:
-    """Get daily revenue and profit."""
+    """Get daily net revenue and profit.
+
+    Two grouped reads (the sale set, its lines) no matter how long the range
+    is, bucketed in Python: a day with no sales still gets its row, so the
+    chart's axis stays continuous and a quiet day reads as quiet rather than
+    missing. Refunds land on the day the money left; the range still adds up
+    to سود و زیان by construction (see :func:`_net_sale_lines`).
+    """
+    item_lines, refund_lines, sales = _net_sale_lines(db, start, end)
+    revenue: dict = {}
+    cost: dict = {}
+    for line in item_lines:
+        revenue[line["day"]] = revenue.get(line["day"], 0) + line["net"]
+        cost[line["day"]] = cost.get(line["day"], 0) + line["cost"]
+    for line in refund_lines:
+        revenue[line["day"]] = revenue.get(line["day"], 0) - line["amount"]
+    counts: dict = {}
+    for sale in sales:
+        if sale.is_refunded or not sale.created_at:
+            continue
+        day = sale.created_at.date()
+        counts[day] = counts.get(day, 0) + 1
+
+    import jdatetime
     results = []
     current = start.date()
     end_date = end.date()
-    
     while current <= end_date:
-        day_start = datetime.combine(current, datetime.min.time()).replace(tzinfo=timezone.utc)
-        day_end = datetime.combine(current, datetime.max.time()).replace(tzinfo=timezone.utc)
-        
-        sales = db.query(Sale).filter(
-            Sale.payment_confirmed == True,
-            Sale.is_refunded == False,
-            Sale.created_at.between(day_start, day_end)
-        ).all()
-        
-        revenue = sum(s.final_amount for s in sales)
-        
-        cost = 0
-        for sale in sales:
-            items = db.query(SaleItem).filter(SaleItem.sale_id == sale.id).all()
-            cost += sum(item.unit_cost * item.quantity for item in items)
-        
-        profit = revenue - cost
-        
+        day_revenue = revenue.get(current, 0)
         # Persian MM/DD label for the daily revenue chart.
-        import jdatetime
         jd = jdatetime.date.fromgregorian(date=current)
         mm = jd.strftime("%m").translate(str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹"))
         dd = jd.strftime("%d").translate(str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹"))
         results.append({
             "date": f"{mm}/{dd}",
-            "revenue": revenue,
-            "profit": profit,
-            "count": len(sales),
+            "revenue": day_revenue,
+            "profit": day_revenue - cost.get(current, 0),
+            "count": counts.get(current, 0),
         })
-        
         current += timedelta(days=1)
-    
     return results
 
+def _category_totals(db: Session, start: datetime, end: datetime) -> list[dict]:
+    """Net revenue, cost and quantity per category — one aggregation both the
+    category doughnut and the margin table draw from (see :func:`_net_sale_lines`
+    for the semantics both share with سود و زیان)."""
+    item_lines, refund_lines, _sales = _net_sale_lines(db, start, end)
+    agg: dict[str, dict] = {}
+
+    def _bucket(category):
+        key = category or "بدون دسته"
+        return agg.setdefault(key, {"category": key, "revenue": 0, "cost": 0, "quantity": 0})
+
+    for line in item_lines:
+        bucket = _bucket(line["category"])
+        bucket["revenue"] += line["net"]
+        bucket["cost"] += line["cost"]
+        bucket["quantity"] += line["qty"]
+    for line in refund_lines:
+        _bucket(line["category"])["revenue"] -= line["amount"]
+    for bucket in agg.values():
+        bucket["profit"] = bucket["revenue"] - bucket["cost"]
+    return sorted(agg.values(), key=lambda b: b["revenue"], reverse=True)
+
+
 def get_revenue_by_category(db: Session, start: datetime, end: datetime) -> list:
-    """Get revenue by product category."""
-    results = db.query(
-        Product.category,
-        func.sum(SaleItem.total_price).label("revenue"),
-        func.sum(SaleItem.quantity).label("quantity"),
-    ).join(SaleItem, SaleItem.product_id == Product.id) \
-     .join(Sale, Sale.id == SaleItem.sale_id) \
-     .filter(
-        Sale.payment_confirmed == True,
-        Sale.is_refunded == False,
-        Sale.created_at.between(start, end)
-    ).group_by(Product.category).all()
-    
-    categories = []
-    for r in results:
-        cat = r.category or "بدون دسته"
-        revenue = r.revenue or 0
-        
-        # Calculate cost for this category
-        cost = db.query(func.sum(SaleItem.unit_cost * SaleItem.quantity)) \
-            .join(Sale, Sale.id == SaleItem.sale_id) \
-            .join(Product, Product.id == SaleItem.product_id) \
-            .filter(
-                Sale.payment_confirmed == True,
-                Sale.is_refunded == False,
-                Sale.created_at.between(start, end),
-                Product.category == r.category
-            ).scalar() or 0
-        
-        categories.append({
-            "category": cat,
-            "revenue": revenue,
-            "profit": revenue - cost,
-            "quantity": r.quantity or 0,
-        })
-    
-    return sorted(categories, key=lambda x: x["revenue"], reverse=True)
+    """Get net revenue by product category (discounts spread pro-rata,
+    matched refunds subtracted — the range adds up to سود و زیان)."""
+    return [
+        {"category": b["category"], "revenue": b["revenue"],
+         "profit": b["profit"], "quantity": b["quantity"]}
+        for b in _category_totals(db, start, end)
+    ]
 
 def get_top_products(db: Session, start: datetime, end: datetime, limit: int = 10, sort_by: str = "revenue") -> list:
     """Get top products by revenue or profit."""
@@ -740,30 +866,18 @@ def get_customer_health(db, start, end):
     }
 
 def get_margin_by_category(db, start, end):
-    """Margin % per category — which category actually makes money."""
-    rows = db.query(
-        Product.category,
-        func.sum(SaleItem.total_price).label("rev"),
-        func.sum(SaleItem.unit_cost * SaleItem.quantity).label("cost"),
-        func.sum(SaleItem.quantity).label("qty"),
-    ).join(Sale, Sale.id == SaleItem.sale_id) \
-     .join(Product, Product.id == SaleItem.product_id) \
-     .filter(
-        Sale.payment_confirmed == True, Sale.is_refunded == False,
-        Sale.created_at.between(start, end),
-    ).group_by(Product.category).all()
+    """Margin % per category — which category actually makes money, net of
+    discounts and matched refunds like the category doughnut beside it."""
     result = []
-    for r in rows:
-        rev = r.rev or 0
-        cost = r.cost or 0
-        margin = share(rev - cost, rev)
+    for b in _category_totals(db, start, end):
+        rev, cost = b["revenue"], b["cost"]
         result.append({
-            "category": r.category or "بدون دسته",
+            "category": b["category"],
             "revenue": rev,
             "cost": cost,
-            "profit": rev - cost,
-            "margin": margin,
-            "qty": r.qty or 0,
+            "profit": b["profit"],
+            "margin": share(b["profit"], rev),
+            "qty": b["quantity"],
         })
     # A category that sold only free items has no margin to sort by; `None` sorts
     # below every figure rather than raising the page away.

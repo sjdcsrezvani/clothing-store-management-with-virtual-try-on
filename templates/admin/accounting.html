@@ -2,16 +2,19 @@
 {% block content %}
 
 {% set page_actions %}
-<a href="/admin/accounting/export?kind=sales" class="btn btn-sm btn-ghost">📄 خروجی فروش</a>
-        <a href="/admin/accounting/export?kind=customers" class="btn btn-sm btn-ghost">📄 خروجی مشتریان</a>
-        <a href="/admin/accounting/export?kind=purchases" class="btn btn-sm btn-ghost">📄 خروجی خریدها</a>
-        <a href="/admin/accounting/export?kind=expenses" class="btn btn-sm btn-ghost">📄 خروجی هزینه‌ها</a>
+{% set export_period = 'custom' if start_date and end_date else period %}
+{% set export_window = (('start_date=' ~ (start_date|urlencode)) if start_date else '') %}
+{% set export_window = (export_window ~ ('&' if export_window and end_date else '') ~ ('end_date=' ~ (end_date|urlencode)) if end_date else export_window) %}
+{% set export_window = ('&' ~ export_window) if export_window else '' %}
+<a href="/admin/accounting/export?kind=sales&period={{ export_period }}{{ export_window }}" class="btn btn-sm btn-ghost">📄 خروجی فروش</a>
+        <a href="/admin/accounting/export?kind=customers&period={{ export_period }}{{ export_window }}" class="btn btn-sm btn-ghost">📄 خروجی مشتریان</a>
+        <a href="/admin/accounting/export?kind=purchases&period={{ export_period }}{{ export_window }}" class="btn btn-sm btn-ghost">📄 خروجی خریدها</a>
+        <a href="/admin/accounting/export?kind=expenses&period={{ export_period }}{{ export_window }}" class="btn btn-sm btn-ghost">📄 خروجی هزینه‌ها</a>
 {% endset %}
 {% include 'partials/page_header.html' %}
 
 {# An action that could not be carried out — an export asked for a range nobody
    could read — says so here rather than in a JSON body the shop cannot read. #}
-{% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}
 
 {# ─── Period filter ─── #}
 {% set filter_action = '/admin/accounting' %}
@@ -19,10 +22,15 @@
 {% include 'partials/period_filter.html' %}
 
 {# ─── Net P&L ─── #}
+{# Every delta reads the same window of equal length before this one, and
+   speaks only when a comparison is fair — the same doctrine the dashboard
+   cards follow, so «۲۰۰٪ بیشتر» is never printed against an empty base. #}
 <div class="stats-grid">
     <div class="stat-card accent-pine">
         <div class="stat-label">💰 درآمد فروش</div>
-        <div class="stat-value tnum">{{ fmt(pl.revenue) }} ت</div>
+        <div class="stat-value tnum">{{ fmt(pl.revenue) }} ت
+            {% if pl.delta_revenue %}<span class="stat-delta{% if pl.delta_revenue.good is not none %} is-{{ 'good' if pl.delta_revenue.good else 'bad' }}{% endif %}">{{ pl.delta_revenue.text }}</span>{% endif %}
+        </div>
         <div class="stat-sub">{{ pl.invoice_count }} فاکتور</div>
     </div>
     <div class="stat-card accent-persimmon">
@@ -32,12 +40,16 @@
     </div>
     <div class="stat-card accent-saffron">
         <div class="stat-label">💸 هزینه‌ها</div>
-        <div class="stat-value tnum">{{ fmt(pl.expenses) }} ت</div>
+        <div class="stat-value tnum">{{ fmt(pl.expenses) }} ت
+            {% if pl.delta_expenses %}<span class="stat-delta{% if pl.delta_expenses.good is not none %} is-{{ 'good' if pl.delta_expenses.good else 'bad' }}{% endif %}">{{ pl.delta_expenses.text }}</span>{% endif %}
+        </div>
         <div class="stat-sub">{{ pl.expense_cats|length }} دسته هزینه</div>
     </div>
     <div class="stat-card {% if pl.net >= 0 %}accent-candy{% else %}accent-ink{% endif %}">
         <div class="stat-label">🧮 سود خالص</div>
-        <div class="stat-value tnum {% if pl.net < 0 %}">−{% endif %}{{ fmt(pl.net|abs) }} ت</div>
+        <div class="stat-value tnum {% if pl.net < 0 %}">−{% endif %}{{ fmt(pl.net|abs) }} ت
+            {% if pl.delta_net %}<span class="stat-delta{% if pl.delta_net.good is not none %} is-{{ 'good' if pl.delta_net.good else 'bad' }}{% endif %}">{{ pl.delta_net.text }}</span>{% endif %}
+        </div>
         <div class="stat-sub">حاشیه: {{ percent(pl.net_margin) }}</div>
     </div>
 </div>

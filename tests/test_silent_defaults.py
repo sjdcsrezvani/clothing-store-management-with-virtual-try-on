@@ -626,14 +626,19 @@ def _setting_keys_written() -> set[str]:
     """Every key something writes: a literal write, or a form field name.
 
     The settings page saves whatever the form posted, so a field name is a write;
-    anything else written by code is a literal `Settings(key=...)`.
+    anything else written by code is a literal `Settings(key=...)`. Numeric
+    settings fields render through the settings form's num() macro, so their
+    names arrive as macro arguments rather than name="..." literals — but the
+    macro writes the same input the POST saves, so it counts as the write path.
     """
     keys: set[str] = set()
     for path in _python_sources("services") + _python_sources("routers"):
         for name in SETTINGS_WRITTEN.findall(path.read_text(encoding="utf-8")):
             keys.add(name.strip('"'))
     for path in (ROOT / "templates").rglob("*.html"):
-        keys |= set(re.findall(r'name="([a-z0-9_]+)"', path.read_text(encoding="utf-8")))
+        text = path.read_text(encoding="utf-8")
+        keys |= set(re.findall(r'name="([a-z0-9_]+)"', text))
+        keys |= set(re.findall(r"num\('([a-z0-9_]+)'", text))
     return keys
 
 

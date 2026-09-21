@@ -122,10 +122,10 @@ def test_owner_sees_the_numbers_and_the_work_that_are_theirs(client, db_session)
     assert "سود ناخالص" in labels
     assert "سود خالص" in labels
     assert "کاهش سطح" in labels
-    # The reset button lives on the settings page, which is owner-only like the
-    # route it posts to — not here, where a manager could press it.
+    # There is no database-wipe action anywhere in the shell: backups are the
+    # safe path, and no page carries a reset button for any role.
     assert "منطقه خطر" not in html
-    assert "منطقه خطر" in client.get("/admin/settings").text
+    assert "منطقه خطر" not in client.get("/admin/settings").text
 
 
 def test_manager_is_never_shown_an_owner_number_or_button(client, db_session):
@@ -448,14 +448,28 @@ def test_the_dashboard_hosts_no_action_at_all():
 
 def test_a_change_is_only_reported_where_a_comparison_means_something():
     """
-    A percentage against nothing, against a loss, or against a base so small the
-    ratio is arithmetic rather than information: all three say nothing instead.
+    A percentage against nothing or against a base so small the ratio is
+    arithmetic is not a percentage — but the moment is exactly when the owner is
+    reading, so each impossible ratio is replaced by the fact instead of
+    silence: the arrival is stated, or the small base is named.
     """
     from services.dashboard import _delta
 
-    assert _delta(200, 0, label="دیروز") is None
-    assert _delta(-5_000_000, 200_000, label="دیروز") is None
-    assert _delta(200_000, 100, label="دیروز") is None
+    # Yesterday was empty and today is not: the arrival is the news, not a
+    # percentage against nothing.
+    arrival = _delta(200, 0, label="دیروز", subject="فروشی")
+    assert arrival == {"text": "دیروز فروشی نداشت", "good": True}
+    # Both periods empty: the card's own figures already say it.
+    assert _delta(0, 0, label="دیروز") is None
+    # A red period standing on nothing has no comparison inside it.
+    assert _delta(-5_000_000, 0, label="دیروز") is None
+    # A base too small for a ratio: the base is named instead.
+    small = _delta(200_000, 100, label="دیروز")
+    assert small["text"] == "دیروز 100 ت بود" and small["good"] is None
+    # A month that went into the red against a month that broke even: the base,
+    # never a «۲۰۰۰٪ کمتر» catastrophe that never happened.
+    loss = _delta(-5_000_000, 200_000, label="ماه گذشته")
+    assert loss["text"] == "ماه گذشته 200,000 ت بود" and loss["good"] is None
 
     fall = _delta(80, 100, label="دیروز")
     assert fall["good"] is False
@@ -468,6 +482,12 @@ def test_a_change_is_only_reported_where_a_comparison_means_something():
     # Spending less moves the same way as earning more, and only the card knows.
     cheaper = _delta(80, 100, label="ماه گذشته", lower_is_better=True)
     assert cheaper["good"] is True
+
+    # And for spending, the arrival of a cost is the bad news — the same
+    # sentence, but the verdict flips with the card's own notion of good.
+    cost_arrival = _delta(500_000, 0, label="ماه گذشته", subject="هزینه‌ای",
+                          lower_is_better=True)
+    assert cost_arrival == {"text": "ماه گذشته هزینه‌ای نداشت", "good": False}
 
     assert _delta(100, 100, label="دیروز") == {"text": "بدون تغییر نسبت به دیروز",
                                               "good": None}
@@ -580,3 +600,102 @@ def test_the_downgrade_card_says_the_rule_is_off_rather_than_reporting_nobody(cl
     page = client.get("/admin/tier-downgrades").text
     assert "غیرفعال است" in page
     assert "تنظیمات" in page
+
+
+# ── the sentences a bare number used to leave unsaid ─────────────────────────
+
+def test_the_first_sale_after_a_quiet_yesterday_is_said_as_news(client, db_session):
+    """Yesterday empty, today not: the arrival is stated, never a percentage
+    against nothing and never silence — the exact moment the owner reads for."""
+    from datetime import datetime, timezone
+
+    from models import Sale, SaleItem
+
+    owner, password = _staff(db_session, "dash-arrival", "owner")
+    _session_as(client, owner, password)
+
+    product = Product(name="شال")
+    db_session.add(product)
+    db_session.flush()
+    sale = Sale(total_amount=600_000, final_amount=600_000, payment_method="card",
+                payment_confirmed=True, created_at=datetime.now(timezone.utc))
+    db_session.add(sale)
+    db_session.flush()
+    db_session.add(SaleItem(sale_id=sale.id, product_id=product.id, quantity=1,
+                            unit_price=600_000, unit_cost=0, total_price=600_000))
+    db_session.commit()
+
+    card = _today_sales_card(content_only(client.get("/admin").text))
+    assert "همین بازه دیروز فروشی نداشت" in card
+    assert "is-good" in card
+    # The old wrongness — a ratio against a base of zero — cannot return.
+    assert "٪ بیشتر" not in card
+
+
+def test_the_birthday_card_names_the_window_that_makes_its_count_mean_something(client, db_session):
+    """«۷ نفر» is a number waiting for «در ۷ روز آینده»; an off window says so."""
+    from models import Settings
+    from tests.test_customers import make_customer, month_day_in
+
+    owner, password = _staff(db_session, "dash-birthday", "owner")
+    _session_as(client, owner, password)
+
+    make_customer(db_session, first_name="تولدی", birth_month_day=month_day_in(3),
+                  birth_year=1360)
+    html = content_only(client.get("/admin").text)
+    periodic = html[html.index("کارهای دوره‌ای"):]
+    assert "تولد در ۷ روز آینده" in periodic
+    # One birthday due is not good news in the «nothing to do» sense.
+    assert "is-clear" not in periodic
+
+    # The store can switch the window off; then the card says *that* rather
+    # than counting a set it emptied.
+    db_session.add(Settings(key="birthday_sms_days_before", value="0"))
+    db_session.commit()
+    html = content_only(client.get("/admin").text)
+    assert "پنجره تولد خاموش است — تنظیمات" in html
+
+
+def test_every_delta_names_what_it_counts():
+    """«نداشت» is said about sales, profit or expenses in the shop's grammar —
+    a future card's delta must say which, or the sentence lies about the card."""
+    import re
+
+    service = _read("service")
+    calls = re.findall(r"(?<!def )_delta\([^)]*\)", service)
+    assert calls, "the deltas moved — this guard is looking at the wrong thing"
+    unnamed = [call for call in calls if "subject=" not in call]
+    assert not unnamed, unnamed
+
+
+# ── the paper form ───────────────────────────────────────────────────────────
+
+def test_the_dashboard_prints_as_the_days_own_brief():
+    """The print affordance, the paper context and the paper pair are part of
+    the page, not a browser-menu accident — and the paper pair is the theme's,
+    so a dark palette's cards never reach the printer as grey rectangles."""
+    from pathlib import Path
+    html = (Path(__file__).resolve().parents[1] / "templates/admin/dashboard.html").read_text(encoding="utf-8")
+    css = (Path(__file__).resolve().parents[1] / "static/css/style.css").read_text(encoding="utf-8")
+
+    # The print action is the header partial's — one button for every page —
+    # so the page no longer carries its own; the partial's pin below is the
+    # witness it exists.
+    assert 'onclick="window.print()"' not in html
+    # The paper heading is the shared one: the page names the day and the
+    # reader's role into `print_heading`, and the page-header partial draws it.
+    assert "print_heading" in html and "today" in html
+    assert "{% if print_heading %}" in (Path(__file__).resolve().parents[1] / "templates/partials/page_header.html").read_text(encoding="utf-8")
+    # The action row is navigation; the figures and the reading stay on paper.
+    assert 'class="card screen-only"' in html
+    assert ".stats-grid { grid-template-columns: 1fr 1fr; }" in css
+    # The block is bounded to its own @media close — the file carries other
+    # print blocks further down, and an unbounded slice would pass on theirs.
+    block = css[css.index("The dashboard on paper"):]
+    block = block[:block.index("\n}")]
+    # The cards themselves — not merely the body — are painted with paper:
+    # a dark palette's card surfaces must never reach the printer as grey
+    # rectangles just because the page background went white.
+    assert ".card, .stat-card { background: var(--paper) !important" in block
+    assert "--paper-ink" in block
+    assert ".action-grid { display: none !important; }" in block

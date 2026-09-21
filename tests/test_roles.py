@@ -39,7 +39,7 @@ def test_cashier_can_checkout_but_cannot_refund_or_change_settings(client, db_se
     assert client.get("/sales/new").status_code == 200
     assert client.get("/admin/settings", follow_redirects=False).status_code == 403
     assert client.get("/admin/analytics", follow_redirects=False).status_code == 403
-    assert client.post("/admin/reset-database", data={"csrf_token": csrf_token(client, "/sales/new")}, follow_redirects=False).status_code == 403
+    assert client.post("/admin/backup", data={"csrf_token": csrf_token(client, "/sales/new")}, follow_redirects=False).status_code == 403
 
 
 def test_manager_can_manage_inventory_and_credit_but_not_owner_operations(client, db_session):
@@ -50,7 +50,7 @@ def test_manager_can_manage_inventory_and_credit_but_not_owner_operations(client
     assert client.get("/admin/settings", follow_redirects=False).status_code == 403
     assert client.get("/admin/analytics", follow_redirects=False).status_code == 403
     assert client.get("/admin/staff", follow_redirects=False).status_code == 403
-    assert client.post("/admin/reset-database", data={"csrf_token": csrf_token(client, "/sales/new")}, follow_redirects=False).status_code == 403
+    assert client.post("/admin/backup", data={"csrf_token": csrf_token(client, "/sales/new")}, follow_redirects=False).status_code == 403
 
 
 def test_owner_can_access_owner_operations(client, db_session):

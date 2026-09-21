@@ -7,6 +7,8 @@ from services.themes import (
     DEFAULT_THEME_ID,
     THEME_SETTING_KEY,
     THEMES,
+    _BASE,
+    _hex,
     contrast_ratio,
     custom_tokens,
     theme_preview,
@@ -88,15 +90,30 @@ def _root_properties() -> set[str]:
     return set(DECLARED.findall(root.group(1)))
 
 
+_LOCAL_PROPERTIES: set[str] | None = None
+
+
 def _stylesheet_local_properties() -> set[str]:
     """Properties the stylesheet declares for itself outside `:root` — a section
-    that needs one value in two places (the theme gallery's gap)."""
-    without_root = re.sub(r":root\s*\{.*?\}", "", STYLE_CSS, count=1, flags=re.S)
-    return set(DECLARED.findall(without_root))
+    that needs one value in two places (the theme gallery's gap). A pure function
+    of a static file, so it is computed once; re-substituting the whole 200KB
+    stylesheet for every rendered document cost more than the requests it
+    guarded."""
+    global _LOCAL_PROPERTIES
+    if _LOCAL_PROPERTIES is None:
+        without_root = re.sub(r":root\s*\{.*?\}", "", STYLE_CSS, count=1, flags=re.S)
+        _LOCAL_PROPERTIES = set(DECLARED.findall(without_root))
+    return _LOCAL_PROPERTIES
+
+
+_TEMPLATE_SOURCES: list[str] | None = None
 
 
 def _template_sources() -> list[str]:
-    return [COMMENT.sub("", path.read_text()) for path in sorted((ROOT / "templates").rglob("*.html"))]
+    global _TEMPLATE_SOURCES
+    if _TEMPLATE_SOURCES is None:
+        _TEMPLATE_SOURCES = [COMMENT.sub("", path.read_text()) for path in sorted((ROOT / "templates").rglob("*.html"))]
+    return _TEMPLATE_SOURCES
 
 
 def _template_properties() -> set[str]:
@@ -334,6 +351,160 @@ def test_the_dark_and_high_contrast_themes_lift_or_deepen_the_attention_hue():
     assert contrast_ratio(dark, THEMES["midnight-operations"]["tokens"]["--bg"]) >= 4.5
 
 
+def _shadow_composite(background: str, shadow: str) -> str:
+    """What the background becomes once every rgba layer of the shadow has
+    composited over it — the same algebra a browser applies to a box-shadow:
+    each layer's alpha blends its colour into what is already there."""
+    channels = list(_hex(background))
+    for match in re.findall(r"rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\)", shadow):
+        r, g, b, alpha = int(match[0]), int(match[1]), int(match[2]), float(match[3])
+        for index, value in enumerate((r, g, b)):
+            channels[index] = round(value * alpha + channels[index] * (1 - alpha))
+    return "#%02X%02X%02X" % tuple(channels)
+
+
+def test_every_palette_lifts_with_a_shadow_designed_for_it():
+    """Elevation is part of a palette's surfaces, so the shadow pair is derived
+    per palette and no pair is inherited from `_BASE` — the same doctrine as
+    the interaction tokens.
+
+    The wrongness this measures was live: Midnight inherited the light palettes'
+    blur and separated card from backdrop by 1.017:1 — a shadow the eye cannot
+    find — while its hover state *lightened* the dark background (1.010:1,
+    hover weaker than rest). The guard measures each palette's pair against its
+    own backdrop, composited the way the browser composites it, and requires:
+
+    * a hover elevation at least as strong as rest — hover must never soften;
+    * the rest shadow must separate a card from the page (≥ 1.05:1) and a
+      raised card from the one beneath it (≥ 1.02:1);
+    * the hover elevation must separate by ≥ 1.20:1 against the page, the
+      separation the light palettes have always shown;
+    * a dark palette's rim must be visible on its own card — its elevation is
+      an edge, and an invisible edge is no edge;
+    * the light blur must be tinted from the palette's own ink, not a neutral
+      grey chosen for someone else's surfaces.
+    """
+    HOVER_FLOOR, REST_PAGE_FLOOR, REST_CARD_FLOOR = 1.20, 1.05, 1.02
+    offenders: list[str] = []
+    for theme_id, theme in THEMES.items():
+        tokens = theme_preview(theme_id)["tokens"]
+        missing = [name for name in ("--shadow", "--shadow-hover", "--shadow-overlay")
+                   if name not in tokens]
+        if missing:
+            offenders.append(f"{theme_id}: no elevation of its own — {', '.join(missing)} missing")
+            continue
+        rest, hover = tokens["--shadow"], tokens["--shadow-hover"]
+        overlay = tokens["--shadow-overlay"]
+        bg, card = tokens["--bg"], tokens["--card"]
+        mode = theme["mode"]
+
+        rest_on_bg = contrast_ratio(bg, _shadow_composite(bg, rest))
+        rest_on_card = contrast_ratio(card, _shadow_composite(card, rest))
+        hover_on_bg = contrast_ratio(bg, _shadow_composite(bg, hover))
+        overlay_on_bg = contrast_ratio(bg, _shadow_composite(bg, overlay))
+        if hover_on_bg + 0.02 < rest_on_bg:
+            offenders.append(f"{theme_id}: hover elevation {hover_on_bg:.3f} is weaker than rest {rest_on_bg:.3f}")
+        # The overlay rung is the depth of what floats above the page — a modal,
+        # a dropdown picker, the lightbox. It must clear the page by more than
+        # hover does: the third rung of a real ladder, not the hover value
+        # reused, and never weaker than the rung beneath it.
+        if mode != "high-contrast" and overlay_on_bg + 0.02 < hover_on_bg:
+            offenders.append(
+                f"{theme_id}: overlay elevation {overlay_on_bg:.3f} does not clear "
+                f"hover {hover_on_bg:.3f} — the ladder's third rung is missing")
+
+        if mode in ("light", "dark-shell"):
+            # A light palette's elevation is a blur, and the blur is that
+            # palette's own ink — the exact tint the derivation builds, not a
+            # neutral grey chosen for someone else's surfaces.
+            ink = tokens["--ink"]
+            for name, value in (("--shadow", rest), ("--shadow-hover", hover),
+                                ("--shadow-overlay", overlay)):
+                rgba = re.search(r"rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,", value)
+                if not rgba:
+                    offenders.append(f"{theme_id}: {name} is not a tinted blur — {value[:50]}")
+                    continue
+                tint = "#%02X%02X%02X" % tuple(int(rgba.group(i)) for i in (1, 2, 3))
+                if tint.upper() != ink.upper():
+                    offenders.append(f"{theme_id}: {name} tints from {tint}, not the palette's own ink {ink}")
+            if rest_on_bg < REST_PAGE_FLOOR:
+                offenders.append(f"{theme_id}: rest shadow separates {rest_on_bg:.3f} from the page (floor {REST_PAGE_FLOOR})")
+            if rest_on_card < REST_CARD_FLOOR:
+                offenders.append(f"{theme_id}: rest shadow separates {rest_on_card:.3f} between cards (floor {REST_CARD_FLOOR})")
+            if hover_on_bg < HOVER_FLOOR:
+                offenders.append(f"{theme_id}: hover elevation separates {hover_on_bg:.3f} from the page (floor {HOVER_FLOOR})")
+        elif mode == "dark":
+            # A dark palette lifts with an edge: a rim that reads on the card
+            # it draws around, plus a deepening blur that darkens the card's
+            # own vicinity. An invisible rim is no edge; a blur drawn toward
+            # the page background separates nothing from it.
+            def rim_and_blur(value: str) -> tuple[str | None, str | None]:
+                hex_layer = re.search(r"#[0-9A-Fa-f]{6}", value)
+                blur_layer = re.search(r"rgba\([^)]*\)", value)
+                return (hex_layer.group(0) if hex_layer else None,
+                        blur_layer.group(0) if blur_layer else None)
+
+            rest_rim, rest_blur = rim_and_blur(rest)
+            hover_rim, hover_blur = rim_and_blur(hover)
+            overlay_rim, overlay_blur = rim_and_blur(overlay)
+            if not rest_rim or not rest_blur or not hover_rim or not hover_blur \
+                    or not overlay_rim or not overlay_blur:
+                offenders.append(f"{theme_id}: dark elevation needs a rim and a deepening blur — {rest[:50]}")
+            else:
+                rest_edge = contrast_ratio(card, rest_rim)
+                hover_edge = contrast_ratio(card, hover_rim)
+                overlay_edge = contrast_ratio(card, overlay_rim)
+                if rest_edge < 1.15:
+                    offenders.append(f"{theme_id}: dark rim {rest_rim} reads {rest_edge:.3f} on its own card (floor 1.15)")
+                if hover_edge + 0.02 < rest_edge:
+                    offenders.append(f"{theme_id}: hover rim {hover_rim} is weaker than rest rim {rest_rim}")
+                if overlay_edge <= hover_edge:
+                    offenders.append(f"{theme_id}: overlay rim {overlay_rim} does not rise above hover rim {hover_rim}")
+                rest_deep = contrast_ratio(card, _shadow_composite(card, rest_blur))
+                hover_deep = contrast_ratio(card, _shadow_composite(card, hover_blur))
+                overlay_deep = contrast_ratio(card, _shadow_composite(card, overlay_blur))
+                if rest_deep < 1.05:
+                    offenders.append(f"{theme_id}: deepening blur separates {rest_deep:.3f} from the card")
+                if hover_deep + 0.02 < rest_deep:
+                    offenders.append(f"{theme_id}: hover blur deepens less than rest")
+                if overlay_deep <= hover_deep:
+                    offenders.append(f"{theme_id}: overlay blur deepens no more than hover — a modal would sit at hover depth")
+        else:
+            # The high-contrast palette's designed idiom: a hard ring, never a
+            # blur — and the ring must actually read against its page. The
+            # ladder is in the ring's width: 1px at rest, 2px on hover, 3px for
+            # what floats above the page.
+            for name, value in (("--shadow", rest), ("--shadow-hover", hover),
+                                ("--shadow-overlay", overlay)):
+                if re.search(r"rgba\(", value):
+                    offenders.append(f"{theme_id}: {name} blurs where the palette demands a ring — {value[:50]}")
+            rings = re.findall(r"#[0-9A-Fa-f]{6}", rest + " " + hover + " " + overlay)
+            if not rings or any(contrast_ratio(bg, ring) < 1.05 for ring in rings):
+                offenders.append(f"{theme_id}: a ring the page cannot see — {rest[:50]}")
+            widths = [int(m) for m in re.findall(r"0 0 0 (\d+)px", rest + " " + hover + " " + overlay)]
+            if len(widths) != 3 or widths != sorted(widths) or len(set(widths)) != 3:
+                offenders.append(
+                    f"{theme_id}: the ring ladder is not 1px < 2px < 3px — {widths}")
+
+    # The derivation owns the ladder: `_BASE` may not carry a shadow literal
+    # that every palette's own elevation would silently overwrite — a dead value
+    # pretending to be the design.
+    assert "--shadow" not in _BASE and "--shadow-hover" not in _BASE
+    assert "--shadow-overlay" not in _BASE
+
+    # The stylesheet's fallback stays a bare marker: it must not carry a colour
+    # the themes are meant to own, and it must keep the three names alive for a
+    # page that loads the stylesheet before its palette.
+    root = (ROOT / "static" / "css" / "style.css").read_text(encoding="utf-8")
+    for name in ("--shadow", "--shadow-hover", "--shadow-overlay"):
+        assert f"{name}: var(--{name[2:]}" not in root, name
+    assert re.search(r"--shadow:\s*0\s+0\s+0\s+transparent", root), "the :root fallback vanished"
+    assert re.search(r"--shadow-hover:\s*0\s+0\s+0\s+transparent", root), "the :root fallback vanished"
+    assert re.search(r"--shadow-overlay:\s*0\s+0\s+0\s+transparent", root), "the :root fallback vanished"
+
+    assert not offenders, "\n".join(offenders)
+
+
 def test_owner_appearance_page_is_protected(client, db_session):
     from tests.test_roles import _staff, _session_as
 
@@ -374,6 +545,71 @@ def test_owner_can_persist_theme_and_shared_shell_loads_it(client, db_session):
     page = client.get("/admin/settings")
     assert 'data-theme="midnight-operations"' in page.text
     assert 'data-theme-mode="dark"' in page.text
+
+
+def test_a_page_after_the_form_switch_wears_the_new_palette(client, db_session):
+    """The shell caches its theme between renders; the switch must still be live.
+
+    The cache exists so a page render reads the settings table once instead of
+    three times — the store profile keeps the same shape. Its one way to be
+    wrong is staleness: the owner saves a new palette, and the next page they
+    open still wears the old one because nothing told the cache. So the guard
+    walks the owner's real sequence — a page first (which warms the cache with
+    the old theme), then the form POST, then a page that must carry the new
+    palette immediately.
+    """
+    from tests.conftest import csrf_token
+    from tests.test_roles import _staff, _session_as
+
+    owner, password = _staff(db_session, "theme-switch-live", "owner")
+    _session_as(client, owner, password)
+
+    # Warm the cache with whatever palette the shop starts on, then switch.
+    assert 'data-theme="operations-light"' in client.get("/admin/settings").text
+    token = csrf_token(client, "/admin/settings/appearance")
+    response = client.post(
+        "/admin/settings/appearance",
+        data={"csrf_token": token, "ui_theme": "midnight-operations",
+              "theme_custom_primary": "#C94B68", "theme_custom_secondary": "#197A8C"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    page = client.get("/admin/settings")
+    assert 'data-theme="midnight-operations"' in page.text, \
+        "the shell kept wearing the old palette after the form saved a new one"
+
+
+def test_the_shell_theme_cache_keeps_its_discipline():
+    """The cache must be exactly as wide as its honesty allows.
+
+    Only the shell path may read it (a caller handing in a session gets a live
+    read, so a caller mid-transaction never sees yesterday's palette), and every
+    writer must invalidate it by name — the appearance form here, and any writer
+    the future adds. The appearance route is pinned by name so the invalidation
+    next to it cannot be deleted while this test still passes for the wrong
+    reason.
+    """
+    import inspect
+
+    from services import themes as themes_module
+
+    source = inspect.getsource(themes_module.get_theme)
+    assert "if db is None" in source, "the cache must apply to the shell path only"
+    # The cache read has to sit *inside* that guard: a caller handing in a
+    # session must never be answered from memory.
+    body = source[source.index("global _SHELL_THEME_CACHE"):]
+    assert body.index("if db is None:") < body.index('_SHELL_THEME_CACHE["data"] is not None'), \
+        "the cache must be consulted only after the explicit-session branch is decided"
+
+    admin_source = (ROOT / "routers" / "admin.py").read_text(encoding="utf-8")
+    start = admin_source.index("async def admin_update_appearance")
+    appearance = admin_source[start:admin_source.index("\n@router.", start)]
+    assert "invalidate_theme_cache()" in appearance, \
+        "the appearance form must drop the shell's cached theme when it saves"
+
+    assert themes_module._SHELL_THEME_TTL <= 120, \
+        "a palette switch must reach every page within a couple of minutes even " \
+        "if a writer forgets to invalidate"
 
 
 def test_owner_can_load_appearance_gallery(client, db_session):
@@ -430,6 +666,7 @@ ROLES = ("cashier", "manager", "owner")
 # served at all — so an excuse cannot outlive the thing it excuses.
 NOT_A_PAGE: dict[str, str] = {
     "/admin/accounting/export": "the سود و زیان export is a CSV for the shop's books program",
+    "/admin/analytics/export": "the تحلیل فروش export is a CSV of one tab's figures",
     "/admin/backups/download": "the download is the backup file itself",
     "/admin/try-on/download": "the try-on engine answers with its own response",
     "/admin/collections": "a shortcut that redirects to the invoices it collects",
@@ -497,12 +734,17 @@ def _activate_theme(db, theme_id: str) -> None:
     """Put the shop on one of the ten palettes, the way the appearance page does."""
     from models import Settings
 
+    from services.themes import invalidate_theme_cache
+
     row = db.query(Settings).filter(Settings.key == THEME_SETTING_KEY).first()
     if row is None:
         db.add(Settings(key=THEME_SETTING_KEY, value=theme_id))
     else:
         row.value = theme_id
     db.commit()
+    # The shell caches its theme for a page's lifetime; a walk that flips the
+    # palette under it must drop that cache exactly as the form does.
+    invalidate_theme_cache()
 
 
 def _page_colours(html: str) -> tuple[set[str], set[str]]:
@@ -1067,3 +1309,36 @@ def test_every_page_survives_a_brand_new_install(client, db_session):
     assert rendered > 0
     _assert_collections_draw_themselves(answers, addresses)
     assert not offenders, "\n".join(offenders[:40])
+
+
+def test_the_shell_theme_read_is_one_query_and_the_cache_saves_the_rest(db_session):
+    """The speed the cache buys, stated as a count rather than a hope.
+
+    The whole reason the shell caches its theme is that a page render was paying
+    for a settings read it did not need. So the claim is measured the way the
+    other query-count guards are: with the cache cold, `get_theme` touches the
+    database exactly once (one query answers theme, primary and secondary
+    together); with it warm, not at all.
+    """
+    from sqlalchemy import event
+
+    from services.themes import get_theme, invalidate_theme_cache
+
+    invalidate_theme_cache()
+    statements: list[str] = []
+
+    def _record(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    event.listen(db_session.get_bind(), "before_cursor_execute", _record)
+    try:
+        get_theme()
+        cold = len(statements)
+        get_theme()
+        warm = len(statements) - cold
+    finally:
+        event.remove(db_session.get_bind(), "before_cursor_execute", _record)
+
+    assert cold == 1, f"expected one query for theme + custom colours, made {cold}"
+    assert warm == 0, f"the warm cache must answer without the database, made {warm}"
+    invalidate_theme_cache()

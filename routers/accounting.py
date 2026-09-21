@@ -1,7 +1,7 @@
 import csv
 import io
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, quote_plus
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Form
@@ -13,13 +13,13 @@ from sqlalchemy.orm import Session, joinedload
 from database import get_db
 from models import (
     BusinessEvent, Customer, Expense, Payment, ProductVariant, Product, Purchase,
-    PurchaseItem, Sale, SaleItem, Settings, StaffUser, Supplier, StockMovement,
+    PurchaseItem, Sale, SaleItem, SalaryPayment, Settings, StaffUser, Supplier, StockMovement,
     CashSession, CashSessionEntry, SupplierPayment, FinancialEntry, CheckRecord,
     CheckReminder, PaymentReversal, to_english_digits,
 )
 from services._common import (
-    fmt, check_admin, get_setting_int, jalali_str, parse_form_date, parse_form_date_end,
-    read_date_window, share,
+    delta, fmt, check_admin, get_setting_int, jalali_str, page_arg, parse_form_date,
+    parse_form_date_end, read_date_window, share,
     parse_jalali_input, parse_jalali_input_end,
 )
 from services.accounting import (
@@ -44,7 +44,7 @@ from services.accounting import (
     open_cash_session, reverse_cash_withdrawal,
 )
 from services.sms import queue_credit_reminder_sms
-from services.analytics import UnreadableRange, get_date_range, period_range
+from services.analytics import KNOWN_PERIODS, UnreadableRange, get_date_range, period_range
 from services.security import log_action, require_html_role, role_allows
 from services.templating import templates
 from services.inventory import (
@@ -62,6 +62,7 @@ from services.inventory import (
 )
 from services.reporting import canonical_report, reconciliation_checks
 from services.checks import (
+    CHECK_AMOUNT_MIN,
     add_reminders,
     check_alert_summary,
     dismiss_reminders,
@@ -69,12 +70,15 @@ from services.checks import (
     normalize_reminder_days,
     parse_amount_rials,
     parse_check_date,
+    reminders_enabled,
     trigger_due_reminders,
 )
 from services.events import append_event
 
 PAYMENT_LABELS = {"card": "💳 کارت", "cash": "💵 نقد", "credit": "📒 نسیه"}
 EXPENSE_TYPE_LABELS = {"one_time": "یک‌باره", "monthly": "ماهانه"}
+EXPENSE_PAYMENT_LABELS = {"cash": "نقدی", "card": "کارتی"}
+EXPENSE_PAGE_SIZE = 50
 
 MOVEMENT_PAGE_SIZE = 25
 MOVEMENT_DIRECTIONS = {"all": "همه حرکت‌ها", "in": "فقط ورودی", "out": "فقط خروجی"}
@@ -97,11 +101,38 @@ def _csv_response(filename: str, rows: list[list]) -> Response:
 
 router = APIRouter(prefix="/admin")
 
+# How the P&L cards name the window they are read against — the same grammar
+# the dashboard cards use, adapted to this page's arbitrary ranges.
+PREV_LABEL = "همین بازه پیش از آن"
+
 
 # ── Issued checks ────────────────────────────────────────────────────────────
 
+CHECK_STATUSES = {
+    "all": "همه",
+    "issued": "صادرشده",
+    "overdue": "سررسیدگذشته",
+    "upcoming": "دو هفته آینده",
+    "paid": "پرداخت‌شده",
+    "cancelled": "لغو‌شده",
+    "bounced": "برگشتی",
+}
+CHECKS_PAGE_SIZE = 20
+CHECKS_UPCOMING_DAYS = 14
+
+
 @router.get("/checks", response_class=HTMLResponse)
-async def admin_checks(request: Request, db: Session = Depends(get_db)):
+async def admin_checks(
+    request: Request,
+    q: str = "",
+    status: str = "all",
+    supplier_id: str = "",
+    bank: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    page: str = "1",
+    db: Session = Depends(get_db),
+):
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
@@ -109,17 +140,123 @@ async def admin_checks(request: Request, db: Session = Depends(get_db)):
     triggered_count = trigger_due_reminders(db)
     if triggered_count:
         db.commit()
+    now_aware = datetime.now(timezone.utc)
+    now_naive = now_aware.replace(tzinfo=None)
+    upcoming_end = now_aware + timedelta(days=CHECKS_UPCOMING_DAYS)
     summary = check_alert_summary(db)
-    checks = db.query(CheckRecord).order_by(CheckRecord.due_at.asc(), CheckRecord.id.asc()).all()
+
+    status_filter = status if status in CHECK_STATUSES else "all"
+    search = (q or "").strip()
+    bank_search = (bank or "").strip()
+    page = page_arg(page)
+
+    conds = []
+    if search:
+        digits = search.lstrip("#").strip()
+        if digits.isdigit():
+            conds.append(CheckRecord.id == int(digits))
+        else:
+            like = f"%{search}%"
+            conds.append(or_(
+                CheckRecord.provider_name.ilike(like),
+                CheckRecord.check_number.ilike(like),
+                CheckRecord.note.ilike(like),
+            ))
+    if supplier_id.isdigit():
+        conds.append(CheckRecord.supplier_id == int(supplier_id))
+    if bank_search:
+        conds.append(CheckRecord.bank_name.ilike(f"%{bank_search}%"))
+    start = parse_form_date(start_date)
+    if start:
+        conds.append(CheckRecord.due_at >= start.replace(tzinfo=None))
+    end = parse_form_date_end(end_date)
+    if end:
+        conds.append(CheckRecord.due_at <= end.replace(tzinfo=None))
+
+    base = db.query(CheckRecord).filter(*conds)
+    issued = [CheckRecord.status == "issued"]
+    stats = {}
+    for key, extra in {
+        "overdue": issued + [CheckRecord.due_at < now_naive],
+        "upcoming": issued + [CheckRecord.due_at >= now_naive,
+                              CheckRecord.due_at <= upcoming_end.replace(tzinfo=None)],
+        "paid": [CheckRecord.status == "paid"],
+    }.items():
+        count, amount = base.filter(*extra).with_entities(
+            func.count(CheckRecord.id),
+            func.coalesce(func.sum(CheckRecord.amount_rials), 0)).one()
+        stats[key] = {"count": count or 0, "amount": amount or 0}
+    stats["triggered"] = {
+        "count": db.query(func.count(CheckReminder.id)).join(
+            CheckRecord, CheckRecord.id == CheckReminder.check_id).filter(
+            CheckReminder.status == "triggered",
+            CheckRecord.status == "issued", *conds).scalar() or 0,
+    }
+
+    listing = base
+    if status_filter == "issued":
+        listing = listing.filter(CheckRecord.status == "issued")
+    elif status_filter == "overdue":
+        listing = listing.filter(CheckRecord.status == "issued",
+                                 CheckRecord.due_at < now_naive)
+    elif status_filter == "upcoming":
+        listing = listing.filter(
+            CheckRecord.status == "issued",
+            CheckRecord.due_at >= now_naive,
+            CheckRecord.due_at <= upcoming_end.replace(tzinfo=None))
+    elif status_filter in {"paid", "cancelled", "bounced"}:
+        listing = listing.filter(CheckRecord.status == status_filter)
+    total_count = listing.count()
+    total_pages = max(1, -(-total_count // CHECKS_PAGE_SIZE))
+    page = min(page, total_pages)
+    checks = listing.order_by(CheckRecord.due_at.asc(), CheckRecord.id.asc()) \
+        .offset((page - 1) * CHECKS_PAGE_SIZE).limit(CHECKS_PAGE_SIZE).all()
     suppliers = db.query(Supplier).order_by(Supplier.name.asc()).all()
-    reminders_setting = db.query(Settings).filter(Settings.key == "check_reminders_enabled").first()
+    overdue_ids = {check.id for check in summary["overdue"]}
+    operator_names = {u.id: (u.full_name or u.username) for u in db.query(StaffUser).filter(
+        StaffUser.id.in_([c.operator_user_id for c in checks])).all()} if checks else {}
+    days_left_map: dict[int, int | None] = {}
+    for check in checks:
+        due_at = check.due_at
+        if due_at is not None and due_at.tzinfo is not None:
+            due_at = due_at.replace(tzinfo=None)
+        days_left_map[check.id] = (due_at - now_naive).days if due_at is not None else None
+    alert_rows = []
+    for reminder in summary["triggered"]:
+        due_at = reminder.check.due_at if reminder.check else None
+        if due_at is not None and due_at.tzinfo is not None:
+            due_at = due_at.replace(tzinfo=None)
+        days_left = (due_at - now_naive).days if due_at is not None else None
+        alert_rows.append({"reminder": reminder, "days_left": days_left})
+    has_filters = bool(search or status_filter != "all" or supplier_id
+                        or bank_search or start_date or end_date)
     return templates.TemplateResponse(request, "admin/checks.html", {
         "checks": checks,
         "suppliers": suppliers,
         "summary": summary,
+        "stats": stats,
+        "overdue_ids": overdue_ids,
+        "operator_names": operator_names,
+        "days_left_map": days_left_map,
+        "alert_rows": alert_rows,
+        "is_owner": role_allows(guard.role, "owner"),
+        "status_filter": status_filter,
+        "statuses": CHECK_STATUSES,
+        "search": search,
+        "supplier_filter": supplier_id,
+        "bank_filter": bank_search,
+        "start_date_filter": start_date,
+        "end_date_filter": end_date,
+        "page": page,
+        "total_pages": total_pages,
+        "total_count": total_count,
+        "has_filters": has_filters,
         "default_reminder_days": get_default_reminder_days(db),
-        "reminders_enabled": reminders_setting is None or reminders_setting.value not in {"0", "false", "False", "off"},
-        "now": datetime.now(timezone.utc).replace(tzinfo=None),
+        "reminders_enabled": reminders_enabled(db),
+        # The check form paints its amount floor from the same constant
+        # parse_amount_rials refuses below.
+        "numeric_rules": {"amount_rials": (CHECK_AMOUNT_MIN, None, "مبلغ چک")},
+        "now": now_naive,
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
         "fmt": fmt,
@@ -168,6 +305,26 @@ async def admin_check_add(
     provider_name = provider_name.strip()
     if not provider_name:
         return RedirectResponse(url="/admin/checks?err=نام دریافت‌کننده چک الزامی است.", status_code=303)
+    check_number_clean = check_number.strip()[:100] or None
+    submitted_at = datetime.now(timezone.utc)
+    # Double-submit guard: the same operator recording the identical cheque
+    # twice within two minutes is a double-click, not two cheques.
+    due_naive = due_at.replace(tzinfo=None) if due_at.tzinfo else due_at
+    recent = db.query(CheckRecord).filter(
+        CheckRecord.provider_name == provider_name[:200],
+        CheckRecord.amount_rials == amount,
+        CheckRecord.due_at == due_naive,
+        CheckRecord.operator_user_id == guard.id,
+        CheckRecord.created_at >= (submitted_at - timedelta(minutes=2)).replace(tzinfo=None),
+    ).first()
+    if recent is not None:
+        return RedirectResponse(url="/admin/checks?msg=این چک لحظاتی پیش ثبت شده بود.", status_code=303)
+    duplicate_number = None
+    if check_number_clean:
+        duplicate_number = db.query(CheckRecord).filter(
+            CheckRecord.check_number == check_number_clean,
+            CheckRecord.status == "issued",
+        ).first()
     supplier = None
     if supplier_id.isdigit():
         supplier = db.query(Supplier).filter(Supplier.id == int(supplier_id)).first()
@@ -175,7 +332,7 @@ async def admin_check_add(
     check = CheckRecord(
         supplier_id=supplier.id if supplier else None,
         provider_name=provider_name[:200],
-        check_number=check_number.strip()[:100] or None,
+        check_number=check_number_clean,
         amount_rials=amount,
         issue_at=issue_at,
         due_at=due_at,
@@ -200,26 +357,32 @@ async def admin_check_add(
     )
     db.commit()
     log_action(db, "check_add", f"ثبت چک برای {provider_name}", request=request, target_type="check", target_id=check.id, after={"amount_rials": amount, "due_at": check.due_at.isoformat()})
+    if duplicate_number is not None:
+        return RedirectResponse(url="/admin/checks?msg=چک ثبت شد. توجه: چک صادرشده دیگری با همین شماره وجود دارد.", status_code=303)
     return RedirectResponse(url="/admin/checks?msg=چک ثبت شد.", status_code=303)
 
 
 @router.post("/checks/settings", response_class=HTMLResponse)
 async def admin_check_settings(
     request: Request,
-    reminder_days: str = Form(""),
-    enabled: str = Form("1"),
     db: Session = Depends(get_db),
 ):
     guard = require_html_role(request, db, "owner")
     if not hasattr(guard, "role"):
         return guard
+    form = await request.form()
     try:
-        days = normalize_reminder_days(reminder_days or get_default_reminder_days(db))
+        days = normalize_reminder_days(str(form.get("reminder_days", "") or "") or get_default_reminder_days(db))
     except ValueError as error:
         return RedirectResponse(url=f"/admin/checks?err={error}", status_code=303)
+    # The form posts the checkbox plus a "0" companion, so accept whichever
+    # truthy value arrives; without the companion an unchecked box posts
+    # nothing and the feature could never be switched off.
+    enabled_values = [str(value).strip().lower() for value in form.getlist("enabled")]
+    enabled = any(value in {"on", "1", "true", "yes"} for value in enabled_values)
     values = {
         "check_default_reminders": ",".join(str(day) for day in days),
-        "check_reminders_enabled": "1" if enabled == "1" else "0",
+        "check_reminders_enabled": "1" if enabled else "0",
     }
     for key, value in values.items():
         setting = db.query(Settings).filter(Settings.key == key).first()
@@ -324,6 +487,32 @@ async def admin_accounting(
         # said otherwise, whatever the period held.
         "expense_cats": report["expense_categories"],
     }
+
+    # Every figure on this page is read against the window before it — but a
+    # percentage against a base of zero, or from a base so small the ratio is
+    # arithmetic, is not a comparison. The dashboard's doctrine says what each
+    # impossible ratio becomes instead: the arrival stated as the news it is,
+    # or the base itself, so no card here is read against nothing. «همه» is
+    # its own honest exception: an open-ended window has no before, and the
+    # range beneath the shop's first day is fiction, not a base.
+    if window.period != "all":
+        span = end - start
+        prev_start = start - span
+        prev_end = start
+        prev = canonical_report(db, prev_start, prev_end)
+        pl["delta_revenue"] = delta(report["net_sales"], prev["net_sales"],
+                                     label=PREV_LABEL, subject="فروشی")
+        pl["delta_gross"] = delta(report["gross_profit"], prev["gross_profit"],
+                                  label=PREV_LABEL, subject="سودی")
+        pl["delta_expenses"] = delta(report["operating_expenses"], prev["operating_expenses"],
+                                     label=PREV_LABEL, lower_is_better=True,
+                                     subject="هزینه‌ای")
+        pl["delta_net"] = delta(report["net_profit"], prev["net_profit"],
+                                label=PREV_LABEL, subject="سودی")
+    else:
+        pl["delta_revenue"] = pl["delta_gross"] = None
+        pl["delta_expenses"] = pl["delta_net"] = None
+
     debts = debt_totals(db)
     cashbox = get_cashbox(db, start, end, get_opening_balance(db))
 
@@ -360,40 +549,74 @@ def _export_refused(problem: str) -> RedirectResponse:
 async def admin_accounting_export(
     request: Request,
     kind: str = "sales",
+    period: str = "month",
     start_date: str = "",
     end_date: str = "",
+    q: str = "",
+    supplier_id: str = "",
+    status: str = "all",
+    type: str = "all",
+    method: str = "all",
     db: Session = Depends(get_db),
 ):
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
+    # The buttons sit inside filtered views — the accounting header's period
+    # bar, the purchases and expenses pages' own filter forms — so the file
+    # answers with the view the owner was looking at, not the whole ledger.
+    # KNOWN_PERIODS is the one vocabulary; the page routes degrade an unreadable
+    # one to the default, and the export reads the same answer from period_range.
+    if period not in KNOWN_PERIODS:
+        period = "month"
     if bool(start_date) != bool(end_date):
         # Half a window is not a range: the export used to read one bound and an
         # empty field as «everything», which is a file the shop did not ask for.
         return _export_refused("تاریخ شروع و پایان را با هم وارد کنید.")
-    try:
-        start, end = get_date_range("custom" if (start_date and end_date) else "all",
-                                    start_date or None, end_date or None)
-    except UnreadableRange as problem:
-        return _export_refused(str(problem))
+    window = period_range(period, start_date or None, end_date or None)
+    start, end = window.start, window.end
     today = datetime.now(timezone.utc).strftime("%Y%m%d")
 
     if kind == "customers":
+        # The figures the screen shows are the invoices', so the file must say
+        # the same: one bulk aggregate per column, not the stored counters a
+        # drift could make lie against the page they came from.
+        from services.customers import _invoice_points, _invoice_totals
+        customer_rows = db.query(Customer).order_by(Customer.created_at.desc()).all()
+        ids = [c.id for c in customer_rows]
+        totals = _invoice_totals(db, ids)
+        points = _invoice_points(db, ids)
         rows = [["تلفن", "نام", "نام خانوادگی", "نام فرزند", "سطح", "امتیاز",
                  "تعداد خرید", "مجموع خرید", "بدهی نسیه", "کد معرفی", "تاریخ عضویت"]]
-        for c in db.query(Customer).order_by(Customer.created_at.desc()).all():
+        for c in customer_rows:
+            spent, count = totals.get(c.id, (0, 0))
             rows.append([
                 c.phone, c.first_name or "", c.last_name or "", c.child_name or "",
-                c.tier, c.total_points or 0, c.total_purchases or 0,
-                c.total_spent or 0, c.total_debt or 0, c.referral_code,
+                c.tier, points.get(c.id, 0), count,
+                spent, c.total_debt or 0, c.referral_code,
                 jalali_str(c.created_at, with_time=False),
             ])
         return _csv_response(f"customers_{today}.csv", rows)
 
     if kind == "purchases":
+        # The button sits inside a filtered view, so the file must be that
+        # view: the same filter chain the list route reads, not the whole
+        # ledger the owner had already narrowed on screen.
+        now = datetime.now(timezone.utc)
+        paid_sq = _purchase_paid_subquery(db)
+        paid_expr = func.coalesce(paid_sq.c.paid, 0)
+        remaining_expr = func.coalesce(Purchase.total_cost, 0) - paid_expr
+        export_q = db.query(Purchase).outerjoin(paid_sq, paid_sq.c.purchase_id == Purchase.id)
+        export_q = _purchase_query_filters(
+            export_q, search=(q or "").strip(),
+            supplier_id=int(supplier_id) if supplier_id.isdigit() else None,
+            status=status if status in PURCHASE_STATUSES else "all",
+            start=start, end=end, paid_expr=paid_expr,
+            remaining_expr=remaining_expr, now=now,
+        )
         rows = [["شماره", "تاریخ", "تأمین‌کننده", "مبلغ کل", "وضعیت", "توضیح"]]
-        for p in db.query(Purchase).order_by(Purchase.created_at.desc()).all():
+        for p in export_q.order_by(purchase_effective_column().desc(), Purchase.id.desc()).all():
             if p.is_draft:
                 purchase_state = "پیش‌نویس"
             elif p.is_reversed:
@@ -408,12 +631,40 @@ async def admin_accounting_export(
         return _csv_response(f"purchases_{today}.csv", rows)
 
     if kind == "expenses":
-        rows = [["شماره", "تاریخ", "نوع هزینه", "دسته", "مبلغ", "توضیح"]]
-        for e in db.query(Expense).order_by(Expense.created_at.desc()).all():
+        # The CSV link sits inside the expenses page's filtered view, so the
+        # file is that view: the same search, type, method and status clauses
+        # the list route reads, over the same window. (Before, it handed over
+        # every expense ever recorded whatever the screen said.)
+        expense_type = type if type in EXPENSE_TYPE_LABELS else "all"
+        payment_method = method if method in EXPENSE_PAYMENT_LABELS else "all"
+        status_filter = status if status in {"active", "reversed"} else "all"
+        query = db.query(Expense).filter(Expense.created_at.between(start, end))
+        search = (q or "").strip()
+        if search:
+            digits = search.lstrip("#").strip()
+            if digits.isdigit():
+                query = query.filter(Expense.id == int(digits))
+            else:
+                like = f"%{search}%"
+                query = query.filter(or_(Expense.category.ilike(like), Expense.note.ilike(like)))
+        if expense_type != "all":
+            query = query.filter(Expense.expense_type == expense_type)
+        if payment_method != "all":
+            query = query.filter(Expense.payment_method == payment_method)
+        if status_filter == "active":
+            query = query.filter(Expense.reversed_at.is_(None))
+        elif status_filter == "reversed":
+            query = query.filter(Expense.reversed_at.isnot(None))
+        rows = [["شماره", "تاریخ", "وضعیت", "نوع هزینه", "دسته", "مبلغ", "روش پرداخت", "شیفت", "توضیح"]]
+        for e in query.order_by(Expense.created_at.desc(), Expense.id.desc()).all():
             rows.append([
                 e.id, jalali_str(e.created_at, with_time=False),
+                "برگشت‌شده" if e.reversed_at is not None else "فعال",
                 EXPENSE_TYPE_LABELS.get(e.expense_type, EXPENSE_TYPE_LABELS["one_time"]),
-                e.category or "—", e.amount, e.note or "",
+                e.category or "بدون دسته", e.amount,
+                EXPENSE_PAYMENT_LABELS.get(e.payment_method, e.payment_method or "—"),
+                f"#{e.cash_session_id}" if e.cash_session_id else "—",
+                e.note or "",
             ])
         return _csv_response(f"expenses_{today}.csv", rows)
 
@@ -459,7 +710,7 @@ async def admin_credit(
     bucket: str = "",
     sort: str = "debt",
     view: str = "customers",
-    page: int = 1,
+    page: str = "1",
     db: Session = Depends(get_db),
 ):
     """نسیه, one page: who owes what, how late it is, and how to collect it.
@@ -477,6 +728,7 @@ async def admin_credit(
     bucket = _clean(bucket, AGE_BUCKETS, "")
     view = _clean(view, ("customers", "invoices"), "customers")
 
+    page = page_arg(page)
     listing = list_debts(db, search=search, status=status, bucket=bucket,
                          sort=sort, page=page, per_page=DEBTS_PER_PAGE)
     invoices = (list_open_invoices(db, search=search, status=status, bucket=bucket,
@@ -961,11 +1213,35 @@ async def admin_suppliers(request: Request, db: Session = Depends(get_db)):
         .join(Purchase, (Purchase.supplier_id == Supplier.id) & (Purchase.is_reversed == False), isouter=True)
         .group_by(Supplier.id).all()
     )
+    # The payment rows get a picker of this supplier's open invoices, so a
+    # payment can name the invoice it settles. One query for the page; the
+    # paid side comes from the same rollup the detail page trusts, so the
+    # picker's remaining figure cannot disagree with the clamp's arithmetic.
+    open_rows = db.query(Purchase).filter(
+        Purchase.is_reversed == False,  # noqa: E712
+        Purchase.is_draft == False,  # noqa: E712
+        Purchase.total_cost > func.coalesce(Purchase.amount_paid, 0),
+    ).order_by(Purchase.created_at.desc()).all()
+    rollup = purchase_payment_rollup(db, [p.id for p in open_rows])
+    now = datetime.now(timezone.utc)
+    open_invoices: dict[int, list[dict]] = {}
+    for purchase in open_rows:
+        paid = purchase_paid_from_rollup(purchase, rollup.get(purchase.id))
+        remaining = max(0, (purchase.total_cost or 0) - paid)
+        if remaining <= 0:
+            continue
+        open_invoices.setdefault(purchase.supplier_id, []).append({
+            "id": purchase.id,
+            "remaining": remaining,
+            "label": f"فاکتور #{purchase.id} — مانده {fmt(remaining)} تومان"
+                     + (" — سررسیدگذشته" if purchase.due_date and as_utc(purchase.due_date) < now else ""),
+        })
     balances = {row["supplier"].id: row for row in get_supplier_balances(db)}
     return templates.TemplateResponse(request, "admin/suppliers.html", {
         "suppliers": suppliers,
         "total_by_supplier": totals,
         "balances": balances,
+        "open_invoices": open_invoices,
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
         "fmt": fmt,
@@ -1000,17 +1276,54 @@ async def admin_supplier_payment(supplier_id: int, request: Request, amount: str
     if not hasattr(guard, "role"):
         return guard
     supplier = db.query(Supplier).filter(Supplier.id == supplier_id).first()
-    try:
-        amount_int = int(amount)
-    except (TypeError, ValueError):
-        amount_int = 0
+    if not supplier:
+        # Before the balances, not after: the clamp's `next()` reads
+        # `supplier.id`, and an unknown id used to raise AttributeError — a 500
+        # where a redirect was meant.
+        return RedirectResponse(url="/admin/suppliers?err=تأمین‌کننده یافت نشد.", status_code=303)
+    # The same tolerant reader the purchases page pays with: Persian digits and
+    # thousands separators are how this shop types money. A raw `int()` read
+    # «۵۰۰٬۰۰۰» as 0 and the refusal then claimed the amount exceeded the debt —
+    # the message named the wrong reason.
+    amount_int = _purchase_money(amount)
     purchase = None
     if purchase_id.isdigit():
-        purchase = db.query(Purchase).filter(Purchase.id == int(purchase_id), Purchase.supplier_id == supplier.id, Purchase.is_reversed == False).first()
+        # Drafts excluded: they are not invoices yet, so they are not in the
+        # owed figure this payment is clamped against — a payment against one
+        # would raise `paid` while `owed` stayed still, and after finalisation
+        # the same invoice could be paid twice.
+        purchase = db.query(Purchase).filter(
+            Purchase.id == int(purchase_id),
+            Purchase.supplier_id == supplier.id,
+            Purchase.is_reversed == False,  # noqa: E712
+            Purchase.is_draft == False,  # noqa: E712
+        ).first()
+    # The clamp reads the shared owed arithmetic — two aggregate queries, and
+    # no purchase objects since `with_purchases` stopped being the default.
     supplier_owed = get_supplier_balances(db)
     balance = next((row["owed"] for row in supplier_owed if row["supplier"].id == supplier.id), 0)
-    if not supplier or amount_int <= 0 or amount_int > balance:
-        return RedirectResponse(url="/admin/suppliers?err=پرداخت تأمین‌کننده از بدهی بیشتر است یا نامعتبر است.", status_code=303)
+    if amount_int <= 0:
+        return RedirectResponse(url="/admin/suppliers?err=" + quote_plus("مبلغ پرداخت معتبر نیست."), status_code=303)
+    if amount_int > balance:
+        # The cap is named: a figure that refuses without saying what it allows
+        # sends the owner hunting through the table for the number.
+        return RedirectResponse(
+            url="/admin/suppliers?err=" + quote_plus(
+                f"مبلغ بیشتر از بدهی تأمین‌کننده است — بدهی {_pd_money(balance)} تومان."),
+            status_code=303)
+    if purchase is not None:
+        # The named invoice's own bound, enforced where the form's script can
+        # be bypassed: a payment that names an invoice may not exceed that
+        # invoice's remaining — the same figure the picker's label states and
+        # the client clamp narrows to. The read is the rollup the picker and
+        # the detail page use, so all three say the same remaining.
+        invoice_paid = purchase_paid_amount(db, purchase)
+        invoice_remaining = max(0, (purchase.total_cost or 0) - invoice_paid)
+        if amount_int > invoice_remaining:
+            return RedirectResponse(
+                url="/admin/suppliers?err=" + quote_plus(
+                    f"مبلغ بیشتر از ماندهٔ فاکتور #{purchase.id} است — مانده {_pd_money(invoice_remaining)} تومان."),
+                status_code=303)
     open_session = open_cash_session(db)
     supplier_payment = SupplierPayment(
         supplier_id=supplier.id,
@@ -1041,7 +1354,14 @@ async def admin_supplier_payment(supplier_id: int, request: Request, amount: str
     )
     db.commit()
     log_action(db, "supplier_payment", f"پرداخت به {supplier.name}", request=request, target_type="supplier", target_id=supplier.id, after={"amount": amount_int})
-    return RedirectResponse(url="/admin/suppliers?msg=پرداخت تأمین‌کننده ثبت شد.", status_code=303)
+    # The shift linkage is said, not silent: a payment recorded with no open
+    # session leaves no row in any shift's statement, and an owner reading the
+    # cashbox deserves to know why today's figure moved without a shift row.
+    if open_session:
+        message = f"پرداخت {_pd_money(amount_int)} تومانی به {supplier.name} در شیفت جاری ثبت شد."
+    else:
+        message = f"پرداخت {_pd_money(amount_int)} تومانی به {supplier.name} ثبت شد — شیفت بازی نبود، در صورت‌جدول شیفت نمی‌آید."
+    return RedirectResponse(url="/admin/suppliers?msg=" + quote_plus(message), status_code=303)
 
 
 @router.post("/suppliers/{supplier_id}/delete", response_class=HTMLResponse)
@@ -1073,6 +1393,59 @@ PURCHASE_STATUSES = {
 }
 
 
+def _purchase_query_filters(query, *, search, supplier_id, status, start, end, paid_expr, remaining_expr, now):
+    """The purchases table's filter chain, in the list route's exact order.
+
+    The list route and the CSV export must read the same rows, and the export
+    was reading *every* purchase while the page showed a filtered slice — the
+    owner filtered to one month, hit «خروجی CSV» and got the whole ledger.
+    One chain, two callers.
+    """
+    if supplier_id:
+        query = query.filter(Purchase.supplier_id == supplier_id)
+    if search:
+        query = query.outerjoin(Supplier, Purchase.supplier_id == Supplier.id)
+        digits = search.lstrip("#").strip()
+        if digits.isdigit():
+            query = query.filter(Purchase.id == int(digits))
+        else:
+            query = query.filter(or_(
+                Purchase.note.ilike(f"%{search}%"),
+                Supplier.name.ilike(f"%{search}%"),
+            ))
+    if start:
+        query = query.filter(purchase_effective_column() >= start)
+    if end:
+        query = query.filter(purchase_effective_column() <= end)
+
+    if status == "draft":
+        query = query.filter(Purchase.is_draft == True)
+    elif status == "reversed":
+        query = query.filter(Purchase.is_reversed == True, Purchase.is_draft == False)
+    elif status == "overdue":
+        query = query.filter(
+            Purchase.is_reversed == False,
+            Purchase.is_draft == False,
+            Purchase.due_date.isnot(None),
+            Purchase.due_date < now,
+            remaining_expr > 0,
+        )
+    elif status == "paid":
+        query = query.filter(
+            Purchase.is_reversed == False, Purchase.is_draft == False, remaining_expr <= 0,
+        )
+    elif status == "partial":
+        query = query.filter(
+            Purchase.is_reversed == False, Purchase.is_draft == False,
+            paid_expr > 0, remaining_expr > 0,
+        )
+    elif status == "unpaid":
+        query = query.filter(
+            Purchase.is_reversed == False, Purchase.is_draft == False, paid_expr == 0,
+        )
+    return query
+
+
 
 def _purchase_form_date(value) -> datetime | None:
     """Persian (۱۴۰۵/۰۶/۲۱) or ISO date from a form → aware UTC datetime."""
@@ -1099,13 +1472,44 @@ def _purchase_form_date_end(value) -> datetime | None:
     return parse_jalali_input_end(value)
 
 
+def _pd_money(amount: int) -> str:
+    """A money figure in the digits and separator this shop reads: «۷۰۰٬۰۰۰».
+
+    `fmt` groups with the ASCII comma; a Persian sentence wants the Persian
+    thousands separator. One definition — three messages in the supplier
+    payment flow were spelling this composite inline.
+    """
+    from services._common import _to_persian_digits as _pd
+    return _pd(fmt(amount).replace(",", "٬"))
+
+
 def _purchase_money(value) -> int:
-    """Tolerant money reader: Persian digits and thousands separators allowed."""
+    """Tolerant money reader: Persian digits and thousands separators allowed.
+
+    Both separators — the ASCII comma and the Persian «٬» (U+066C) — plus any
+    spaces: this shop types «۵۰۰٬۰۰۰» and the reader must not read it as 0.
+    The expenses route spelled this same cleanup inline first; this is the one
+    definition both paths now share.
+    """
     try:
-        cleaned = to_english_digits(str(value or "").replace(",", "").strip() or "0")
+        cleaned = (to_english_digits(str(value or ""))
+                   .replace(",", "").replace("٬", "").replace(" ", "").strip() or "0")
         return max(0, int(float(cleaned)))
     except (TypeError, ValueError):
         return 0
+
+
+# The cashbox forms' numeric fields, with the bound each route enforces and
+# the label it refuses by. One table, two readers: the POST validates against
+# it and the forms render their min/max from it, so the browser's attributes
+# stay a kindness, not the rule. (The withdrawal's *upper* bound is the register
+# balance — a live figure that belongs to no table, and the form deliberately
+# does not show it: the count must be a real observation.)
+CASHBOX_NUMERIC_RULES = {
+    "amount": (1, None, "مبلغ برداشت"),
+    "counted": (0, None, "مبلغ شمارش‌شده"),
+    "opening": (0, None, "موجودی ابتدای روز"),
+}
 
 
 def _record_purchase_payment(db, purchase, amount: int, note: str, guard, request: Request):
@@ -1116,8 +1520,7 @@ def _record_purchase_payment(db, purchase, amount: int, note: str, guard, reques
     to the open cash session. Cash-vs-card is a distinction that only matters
     for the shop's own checks, not for paying a wholesaler.
     """
-    open_session = db.query(CashSession).filter(CashSession.status == "open") \
-        .order_by(CashSession.opened_at.desc()).first()
+    open_session = open_cash_session(db)
     payment = SupplierPayment(
         supplier_id=purchase.supplier_id,
         purchase_id=purchase.id,
@@ -1177,13 +1580,10 @@ def _purchase_items_from_form(form, db, supplier_pk: int | None):
             continue
         if variant_id in merged:
             # The same product on two rows is one line: the quantities add up.
-            try:
-                extra = int(to_english_digits(
-                    str(form.get(f"purchase_qty_{idx}", "") or "").replace(",", "").strip() or "1"
-                ))
-            except ValueError:
-                extra = 1
-            merged[variant_id][1] += max(1, extra)
+            # The same tolerant reader as the first row — Persian digits and
+            # separators included — so one quantity cannot be read two ways.
+            extra = str(form.get(f"purchase_qty_{idx}", "") or "").strip() or "1"
+            merged[variant_id][1] += max(1, _purchase_money(extra))
             continue
         variant = db.query(ProductVariant).filter(
             ProductVariant.id == variant_id,
@@ -1298,7 +1698,7 @@ async def admin_purchases(
     q: str = "",
     start_date: str = "",
     end_date: str = "",
-    page: int = 1,
+    page: str = "1",
     db: Session = Depends(get_db),
 ):
     guard = require_html_role(request, db, "manager")
@@ -1306,7 +1706,9 @@ async def admin_purchases(
         return guard
 
     status = status if status in PURCHASE_STATUSES else "all"
-    page = max(1, page)
+    # A typed or malformed page number degrades to page 1 — a bare 422 JSON is
+    # not an answer a shop can read.
+    page = max(1, int(page)) if str(page).isdigit() else 1
     now = datetime.now(timezone.utc)
 
     paid_sq = _purchase_paid_subquery(db)
@@ -1315,53 +1717,17 @@ async def admin_purchases(
     remaining_expr = total_expr - paid_expr
 
     query = db.query(Purchase, paid_expr.label("paid"), paid_sq.c.payment_rows) \
-        .outerjoin(paid_sq, paid_sq.c.purchase_id == Purchase.id)
+        .outerjoin(paid_sq, paid_sq.c.purchase_id == Purchase.id) \
+        .options(joinedload(Purchase.supplier))  # the table names the supplier
 
     search = (q or "").strip()
-    if supplier_id.isdigit():
-        query = query.filter(Purchase.supplier_id == int(supplier_id))
-    if search:
-        query = query.outerjoin(Supplier, Purchase.supplier_id == Supplier.id)
-        digits = search.lstrip("#").strip()
-        if digits.isdigit():
-            query = query.filter(Purchase.id == int(digits))
-        else:
-            query = query.filter(or_(
-                Purchase.note.ilike(f"%{search}%"),
-                Supplier.name.ilike(f"%{search}%"),
-            ))
     start = _purchase_form_date(start_date)
     end = _purchase_form_date_end(end_date)
-    if start:
-        query = query.filter(purchase_effective_column() >= start)
-    if end:
-        query = query.filter(purchase_effective_column() <= end)
-
-    if status == "draft":
-        query = query.filter(Purchase.is_draft == True)
-    elif status == "reversed":
-        query = query.filter(Purchase.is_reversed == True, Purchase.is_draft == False)
-    elif status == "overdue":
-        query = query.filter(
-            Purchase.is_reversed == False,
-            Purchase.is_draft == False,
-            Purchase.due_date.isnot(None),
-            Purchase.due_date < now,
-            remaining_expr > 0,
-        )
-    elif status == "paid":
-        query = query.filter(
-            Purchase.is_reversed == False, Purchase.is_draft == False, remaining_expr <= 0,
-        )
-    elif status == "partial":
-        query = query.filter(
-            Purchase.is_reversed == False, Purchase.is_draft == False,
-            paid_expr > 0, remaining_expr > 0,
-        )
-    elif status == "unpaid":
-        query = query.filter(
-            Purchase.is_reversed == False, Purchase.is_draft == False, paid_expr == 0,
-        )
+    query = _purchase_query_filters(
+        query, search=search, supplier_id=int(supplier_id) if supplier_id.isdigit() else None,
+        status=status, start=start, end=end,
+        paid_expr=paid_expr, remaining_expr=remaining_expr, now=now,
+    )
 
     total_count = query.count()
     total_pages = max(1, -(-total_count // PURCHASE_PAGE_SIZE))
@@ -1388,6 +1754,15 @@ async def admin_purchases(
         Purchase.is_draft == True, Purchase.is_reversed == False,
     ).scalar() or 0
 
+    from urllib.parse import urlencode
+    filter_qs = urlencode({
+        "status": status,
+        "q": search,
+        "supplier_id": supplier_id,
+        "start_date": start_date,
+        "end_date": end_date,
+    })
+
     return templates.TemplateResponse(request, "admin/purchases.html", {
         "products": products,
         "suppliers": suppliers,
@@ -1404,6 +1779,7 @@ async def admin_purchases(
         "end_date_filter": end_date,
         "page": page,
         "total_pages": total_pages,
+        "filter_qs": filter_qs,
         "total_count": total_count,
         "has_filters": bool(search or supplier_id or start_date or end_date or status != "all"),
         "today_jalali": jalali_str(now, with_time=False),
@@ -1495,7 +1871,8 @@ async def admin_purchase_edit(purchase_id: int, request: Request, db: Session = 
         )
 
     now = datetime.now(timezone.utc)
-    month_start, month_end = get_date_range("month")
+    # The editing layout draws no KPI row — the draft banner replaces it — so
+    # the overview (four aggregate queries) is not computed to be ignored.
     return templates.TemplateResponse(request, "admin/purchases.html", {
         "products": db.query(Product).filter(Product.is_active == True)
             .order_by(Product.name).all(),
@@ -1504,7 +1881,7 @@ async def admin_purchase_edit(purchase_id: int, request: Request, db: Session = 
         "draft_count": 0,
         "edit_purchase": purchase,
         "edit_lines": _purchase_draft_lines(purchase),
-        "overview": purchase_overview(db, month_start, month_end, now=now),
+        "overview": None,
         "status": "all",
         "statuses": PURCHASE_STATUSES,
         "supplier_filter": "",
@@ -1666,7 +2043,7 @@ async def admin_purchase_finalize(
     )
     message = "فاکتور نهایی شد و بهای تمام‌شده به‌روز شد."
     if value > 0:
-        message += f" {value:,} تومان پرداخت ثبت شد."
+        message += f" {value:,} ت پرداخت ثبت شد."
     return RedirectResponse(url=f"/admin/purchases/{purchase.id}?msg={message}", status_code=303)
 
 
@@ -1709,7 +2086,7 @@ async def admin_inventory_movements(
     start_date: str = "",
     end_date: str = "",
     reconcile: str = "",
-    page: int = 1,
+    page: str = "1",
     db: Session = Depends(get_db),
 ):
     """Read-only audit view of the append-only inventory ledger.
@@ -1727,7 +2104,9 @@ async def admin_inventory_movements(
     direction = direction if direction in MOVEMENT_DIRECTIONS else "all"
     reconcile = reconcile if reconcile in RECONCILE_VIEWS else ""
     search = (q or "").strip()
-    page = max(1, page)
+    # A typed or malformed page number degrades to page 1 — a bare 422 JSON is
+    # not an answer a shop can read (the purchases list route's rule too).
+    page = max(1, int(page)) if str(page).isdigit() else 1
 
     missing_variants = ledger_missing_variants(db)
     mismatched = ledger_mismatched_variants(db)
@@ -1843,6 +2222,18 @@ async def admin_inventory_movements(
         BusinessEvent, BusinessEvent.actor_user_id == StaffUser.id
     ).filter(BusinessEvent.idempotency_key.like("stock-movement:%")).distinct().all()
 
+    from urllib.parse import urlencode
+    filter_qs = urlencode({
+        "q": search,
+        "movement_type": movement_type,
+        "direction": direction,
+        "product_id": product_id,
+        "variant_id": variant_id,
+        "actor": actor,
+        "start_date": start_date,
+        "end_date": end_date,
+    })
+
     return templates.TemplateResponse(request, "admin/inventory_movements.html", {
         "movements": movements,
         "reconcile_rows": reconcile_rows,
@@ -1862,6 +2253,7 @@ async def admin_inventory_movements(
         "start_date_filter": start_date,
         "end_date_filter": end_date,
         "page": page,
+        "filter_qs": filter_qs,
         "total_pages": total_pages,
         "total_count": total_count,
         "page_size": MOVEMENT_PAGE_SIZE,
@@ -2092,22 +2484,116 @@ async def admin_purchase_print(purchase_id: int, request: Request, db: Session =
 # ── Expenses ─────────────────────────────────────────────────────────────────
 
 @router.get("/expenses", response_class=HTMLResponse)
-async def admin_expenses(request: Request, db: Session = Depends(get_db)):
+async def admin_expenses(
+    request: Request,
+    period: str = "month",
+    start_date: str = "",
+    end_date: str = "",
+    q: str = "",
+    type: str = "all",
+    method: str = "all",
+    status: str = "all",
+    page: str = "1",
+    db: Session = Depends(get_db),
+):
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
-    expenses = db.query(Expense).order_by(Expense.created_at.desc()).limit(100).all()
-    all_active_expenses = db.query(Expense).filter(Expense.reversed_at.is_(None)).all()
-    total = sum(expense.amount for expense in all_active_expenses)
-    expense_type_totals = {"one_time": 0, "monthly": 0}
-    for expense in all_active_expenses:
-        expense_type = expense.expense_type if expense.expense_type in EXPENSE_TYPE_LABELS else "one_time"
-        expense_type_totals[expense_type] += expense.amount
+    window = period_range(period, start_date or None, end_date or None)
+    start, end = window.start, window.end
+    search = (q or "").strip()
+    expense_type = type if type in EXPENSE_TYPE_LABELS else "all"
+    payment_method = method if method in EXPENSE_PAYMENT_LABELS else "all"
+    status_filter = status if status in {"active", "reversed"} else "all"
+    page = page_arg(page)
+
+    query = db.query(Expense).filter(Expense.created_at.between(start, end))
+    if search:
+        digits = search.lstrip("#").strip()
+        if digits.isdigit():
+            query = query.filter(Expense.id == int(digits))
+        else:
+            like = f"%{search}%"
+            query = query.filter(or_(Expense.category.ilike(like), Expense.note.ilike(like)))
+    if expense_type != "all":
+        query = query.filter(Expense.expense_type == expense_type)
+    if payment_method != "all":
+        query = query.filter(Expense.payment_method == payment_method)
+    if status_filter == "active":
+        query = query.filter(Expense.reversed_at.is_(None))
+    elif status_filter == "reversed":
+        query = query.filter(Expense.reversed_at.isnot(None))
+
+    total = query.filter(Expense.reversed_at.is_(None)).with_entities(
+        func.coalesce(func.sum(Expense.amount), 0)).scalar() or 0
+    one_time_total = query.filter(
+        Expense.reversed_at.is_(None), Expense.expense_type == "one_time").with_entities(
+        func.coalesce(func.sum(Expense.amount), 0)).scalar() or 0
+    monthly_total = query.filter(
+        Expense.reversed_at.is_(None), Expense.expense_type == "monthly").with_entities(
+        func.coalesce(func.sum(Expense.amount), 0)).scalar() or 0
+    total_count = query.count()
+    total_pages = max(1, -(-total_count // EXPENSE_PAGE_SIZE))
+    page = min(page, total_pages)
+    expenses = query.order_by(Expense.created_at.desc(), Expense.id.desc()) \
+        .offset((page - 1) * EXPENSE_PAGE_SIZE).limit(EXPENSE_PAGE_SIZE).all()
+
+    ids = [e.id for e in expenses]
+    salary_map: dict[int, int] = {}
+    if ids:
+        for row in db.query(SalaryPayment.expense_id, SalaryPayment.id).filter(
+                SalaryPayment.expense_id.in_(ids)).all():
+            salary_map[row[0]] = row[1]
+    actor_map: dict[int, str] = {}
+    if ids:
+        events = db.query(BusinessEvent).filter(
+            BusinessEvent.event_type == "ExpenseRecorded",
+            BusinessEvent.aggregate_id.in_(ids)).all()
+        user_ids = {ev.actor_user_id for ev in events if ev.actor_user_id}
+        names = {u.id: (u.full_name or u.username) for u in db.query(StaffUser).filter(
+            StaffUser.id.in_(list(user_ids))).all()} if user_ids else {}
+        for ev in events:
+            if ev.aggregate_id is not None and ev.actor_user_id in names:
+                actor_map[ev.aggregate_id] = names[ev.actor_user_id]
+
+    has_filters = bool(search or expense_type != "all" or payment_method != "all"
+                        or status_filter != "all" or window.period != "month"
+                        or start_date or end_date)
+    # One urlencode-built string for every link that must land back on this
+    # view: pagination, and the CSV export whose file must be the view it
+    # sits inside. Hand-concatenating raw values here was how a filter value
+    # could break out of a quoted href (the ledger page's fix, before that).
+    from urllib.parse import urlencode
+    export_qs = urlencode({
+        "kind": "expenses", "period": window.period,
+        **({"start_date": start_date} if start_date else {}),
+        **({"end_date": end_date} if end_date else {}),
+        **({"q": search} if search else {}),
+        **({"type": expense_type} if expense_type != "all" else {}),
+        **({"method": payment_method} if payment_method != "all" else {}),
+        **({"status": status_filter} if status_filter != "all" else {}),
+    })
     return templates.TemplateResponse(request, "admin/expenses.html", {
         "expenses": expenses,
         "total": total,
-        "expense_type_totals": expense_type_totals,
+        "expense_type_totals": {"one_time": one_time_total, "monthly": monthly_total},
         "expense_type_labels": EXPENSE_TYPE_LABELS,
+        "expense_payment_labels": EXPENSE_PAYMENT_LABELS,
+        "salary_map": salary_map,
+        "actor_map": actor_map,
+        "period": window.period,
+        "start_date": start_date,
+        "end_date": end_date,
+        "range_notice": window.notice,
+        "search": search,
+        "type_filter": expense_type,
+        "method_filter": payment_method,
+        "status_filter": status_filter,
+        "page": page,
+        "total_pages": total_pages,
+        "total_count": total_count,
+        "has_filters": has_filters,
+        "export_qs": export_qs,
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
         "fmt": fmt,
@@ -2121,6 +2607,7 @@ async def admin_expense_add(
     amount: str = Form(...),
     category: str = Form(""),
     expense_type: str = Form("one_time"),
+    payment_method: str = Form("cash"),
     note: str = Form(""),
     db: Session = Depends(get_db),
 ):
@@ -2128,21 +2615,33 @@ async def admin_expense_add(
     if not hasattr(guard, "role"):
         return guard
     try:
-        amount_int = int(amount)
+        cleaned = to_english_digits(str(amount or "")).replace(",", "").replace("٬", "").replace(" ", "").strip()
+        amount_int = int(cleaned) if cleaned else 0
     except (TypeError, ValueError):
         amount_int = 0
-    if amount_int <= 0:
+    if amount_int <= 0 or amount_int > 999_999_999_999:
         return RedirectResponse(url="/admin/expenses?err=مبلغ معتبر نیست.", status_code=303)
     if expense_type not in EXPENSE_TYPE_LABELS:
         return RedirectResponse(url="/admin/expenses?err=نوع هزینه نامعتبر است.", status_code=303)
+    if payment_method not in EXPENSE_PAYMENT_LABELS:
+        return RedirectResponse(url="/admin/expenses?err=روش پرداخت نامعتبر است.", status_code=303)
+    category_clean = (category or "").strip()[:100] or None
+    note_clean = (note or "").strip()[:1000] or None
+    request_id = request.headers.get("X-Request-ID")
+    if request_id:
+        existing = db.query(BusinessEvent).filter(
+            BusinessEvent.event_type == "ExpenseRecorded",
+            BusinessEvent.request_id == request_id).first()
+        if existing is not None:
+            return RedirectResponse(url="/admin/expenses?msg=هزینه ثبت شد.", status_code=303)
     open_session = open_cash_session(db)
     expense = Expense(
         amount=amount_int,
-        category=category.strip() or None,
+        category=category_clean,
         expense_type=expense_type,
-        payment_method="cash",
-        cash_session_id=open_session.id if open_session else None,
-        note=note.strip() or None,
+        payment_method=payment_method,
+        cash_session_id=open_session.id if (open_session and payment_method == "cash") else None,
+        note=note_clean,
     )
     db.add(expense)
     db.flush()
@@ -2153,7 +2652,7 @@ async def admin_expense_add(
         expense.id,
         idempotency_key=f"expense:{expense.id}:recorded",
         actor_user_id=guard.id,
-        request_id=request.headers.get("X-Request-ID"),
+        request_id=request_id,
         payload={
             "amount": expense.amount,
             "category": expense.category,
@@ -2163,7 +2662,7 @@ async def admin_expense_add(
         },
     )
     db.commit()
-    log_action(db, "expense_add", f"{amount_int:,} تومان ({category or '—'}, {EXPENSE_TYPE_LABELS[expense_type]})", request=request, target_type="expense", target_id=expense.id, after={"amount": amount_int, "category": category, "expense_type": expense_type})
+    log_action(db, "expense_add", f"{amount_int:,} تومان ({category_clean or 'بدون دسته'}، {EXPENSE_TYPE_LABELS[expense_type]}، {EXPENSE_PAYMENT_LABELS[payment_method]})", request=request, target_type="expense", target_id=expense.id, after={"amount": amount_int, "category": category_clean, "expense_type": expense_type, "payment_method": payment_method})
     return RedirectResponse(url="/admin/expenses?msg=هزینه ثبت شد.", status_code=303)
 
 
@@ -2173,18 +2672,31 @@ async def admin_expense_delete(expense_id: int, request: Request, db: Session = 
     if not hasattr(guard, "role"):
         return guard
     expense = db.query(Expense).filter(Expense.id == expense_id).first()
-    if expense:
-        from services.ledger import reverse_expense_immutably
-        reverse_expense_immutably(
-            db,
-            expense,
-            guard.id,
-            "Expense reversal",
-            request_id=request.headers.get("X-Request-ID"),
+    if expense is None:
+        return RedirectResponse(url="/admin/expenses?err=هزینه یافت نشد.", status_code=303)
+    if expense.reversed_at is not None:
+        return RedirectResponse(url="/admin/expenses?err=این هزینه قبلاً برگشت داده شده است.", status_code=303)
+    payroll_link = db.query(SalaryPayment).filter(SalaryPayment.expense_id == expense.id).first()
+    if payroll_link is not None:
+        return RedirectResponse(
+            url="/admin/expenses?err=این هزینه حقوق است و فقط از پرونده پرسنل قابل پیگیری است.",
+            status_code=303,
         )
-        db.commit()
-        log_action(db, "expense_reverse", f"برگشت هزینه {expense.amount:,}", request=request, target_type="expense", target_id=expense_id, after={"reversed": True, "operator_user_id": guard.id})
-    return RedirectResponse(url="/admin/expenses", status_code=303)
+    form = await request.form()
+    raw_reason = str(form.get("reason", "") or "").strip()[:500]
+    from services.ledger import reverse_expense_immutably
+    entry = reverse_expense_immutably(
+        db,
+        expense,
+        guard.id,
+        raw_reason or "ابطال دستی هزینه",
+        request_id=request.headers.get("X-Request-ID"),
+    )
+    if entry is None:
+        return RedirectResponse(url="/admin/expenses?err=این هزینه قبلاً برگشت داده شده است.", status_code=303)
+    db.commit()
+    log_action(db, "expense_reverse", f"ابطال هزینه {expense.amount:,} تومان ({expense.category or 'بدون دسته'})", request=request, target_type="expense", target_id=expense_id, after={"reversed": True, "operator_user_id": guard.id, "reason": raw_reason or None})
+    return RedirectResponse(url="/admin/expenses?msg=هزینه برگشت داده شد.", status_code=303)
 
 
 # ── Cash box (the drawer) ────────────────────────────────────────────────────
@@ -2314,6 +2826,9 @@ async def admin_cashbox(
         "sessions_total": total_shifts,
         "report": report,
         "settings_opening": settings_opening,
+        # The cashbox forms paint their bounds from the same table the POSTs
+        # validate against.
+        "numeric_rules": CASHBOX_NUMERIC_RULES,
         "opening_suggestion": suggestion,
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
@@ -2345,7 +2860,7 @@ async def admin_cashbox_open(request: Request, opening: str = Form("0"), db: Ses
         opening_int = int(to_english_digits(opening))
     except (TypeError, ValueError):
         opening_int = -1
-    if opening_int < 0:
+    if opening_int < CASHBOX_NUMERIC_RULES["opening"][0]:
         return RedirectResponse(url=f"/admin/cashbox?err={quote_plus('موجودی ابتدای صندوق باید عددی صفر یا بیشتر باشد.')}", status_code=303)
     session = CashSession(cashier_user_id=guard.id, opening_balance=opening_int)
     db.add(session)
@@ -2396,7 +2911,7 @@ async def admin_cashbox_close(request: Request, counted: str = Form("0"), db: Se
         counted_int = int(to_english_digits(counted))
     except (TypeError, ValueError):
         counted_int = -1
-    if counted_int < 0:
+    if counted_int < CASHBOX_NUMERIC_RULES["counted"][0]:
         return RedirectResponse(url=f"/admin/cashbox?err={quote_plus('مبلغ شمارش‌شده باید عددی صفر یا بیشتر باشد.')}", status_code=303)
     start = session.opened_at
     end = datetime.now(timezone.utc)
@@ -2471,7 +2986,7 @@ async def admin_cashbox_withdraw(
         amount_int = int(to_english_digits(amount))
     except (TypeError, ValueError):
         amount_int = 0
-    if amount_int <= 0:
+    if amount_int < CASHBOX_NUMERIC_RULES["amount"][0]:
         return RedirectResponse(url=f"/admin/cashbox?err={quote_plus('مبلغ برداشت باید بیشتر از صفر باشد.')}", status_code=303)
     reason_text = reason.strip()
     if not reason_text:
@@ -2570,7 +3085,7 @@ async def admin_cashbox_opening(request: Request, opening: str = Form("0"), db: 
         opening_int = int(to_english_digits(opening))
     except (TypeError, ValueError):
         opening_int = -1
-    if opening_int < 0:
+    if opening_int < CASHBOX_NUMERIC_RULES["opening"][0]:
         return RedirectResponse(url=f"/admin/cashbox?err={quote_plus('موجودی پیش‌فرض نمی‌تواند منفی باشد.')}", status_code=303)
     row = db.query(Settings).filter(Settings.key == "cash_opening_balance").first()
     if row:

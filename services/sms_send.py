@@ -24,7 +24,9 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from models import Customer, SmsMessage, SmsTemplate, to_english_digits
-from services._common import get_setting_int, is_archived_customer, jalali_str, marketing_opt_in
+from services._common import (_to_persian_digits as to_persian_digits,
+                              get_setting_int, is_archived_customer, jalali_str,
+                              marketing_opt_in)
 from services.customers import TAG_LABELS, TAG_PALETTE, parse_tags
 from services.sms import queue_sms
 from services.tier import TIER_LABELS
@@ -34,6 +36,7 @@ from services.sms_templates import (
     STATUS_LABELS,
     grouped_templates,
     render_template,
+    send_info,
     sms_metrics,
     template_variables,
     templates_for,
@@ -293,6 +296,52 @@ def preview_body(template: SmsTemplate, values: dict | None = None) -> str:
     return render_template(template, values, use_samples=True)
 
 
+def trigger_preview(db: Session, template: SmsTemplate) -> dict | None:
+    """What an automatic send actually writes, shown before the owner opts in.
+
+    The manager row is where «فعال‌کردن» is pressed, so a template that can
+    leave without a click must show its message there — the fire line names the
+    moment, this shows the text. The follow-up is the one trigger with a real
+    audience already waiting, so its preview is a real message for a real
+    person, rendered the way the sweep will render it; the other automatic
+    sends have no recipient yet, so they show the message's own shape with the
+    sample values, and the note says so — nothing here pretends a customer
+    exists when one does not.
+    """
+    info = send_info(template)
+    if info["mode"] != "auto" or not (template.body or "").strip():
+        return None
+    key = info.get("trigger", "")
+    if key == "follow_up":
+        # Imported here, not at the top: sms_triggers reads this module, and a
+        # module-level import would be a circle.
+        from services.sms_triggers import follow_up_candidates
+        candidates = follow_up_candidates(db, template=template)
+        due = candidates["due"]
+        if due:
+            customer = due[0]
+            name = customer.first_name or normalise_phone(customer.phone)
+            return {
+                "body": render_template(template, values_for_customer(customer, template)),
+                "note": (f"پیام واقعی برای «{name}» — یکی از "
+                         f"{to_persian_digits(str(len(due)))} نفری که موعدشان رسیده."),
+                "real": True,
+            }
+        return {
+            "body": preview_body(template),
+            "note": ("فعلاً کسی موعدش نرسیده؛ وقتی برسد همین متن با نام و کد "
+                     "همان مشتری فرستاده می‌شود."),
+            "real": False,
+        }
+    return {
+        "body": preview_body(template),
+        "note": ("با ثبت‌نام هر مشتری، همین متن با نام و کد معرف خودش فرستاده می‌شود."
+                 if key == "welcome" else
+                 "پس از ثبت هر فاکتور، همین متن با نام همان مشتری فرستاده می‌شود."),
+        "real": False,
+    }
+
+
 def template_card(db: Session, template: SmsTemplate) -> dict:
     """Everything the editor and the manager list show about one template.
 
@@ -328,6 +377,7 @@ def template_card(db: Session, template: SmsTemplate) -> dict:
         "last_sent_at": last_sent_at,
         "last_activity_at": last_activity_at,
         "preview": preview_body(template),
+        "trigger_preview": trigger_preview(db, template),
         "category_label": CATEGORY_LABELS.get(template.category, template.category),
     }
 

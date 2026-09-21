@@ -4,10 +4,9 @@
 {# The report names the period it describes — on paper there is no URL to #}
 {# remember, so the staple carries its own context. #}
 {% set period_names = {'today': 'امروز', 'week': 'این هفته', 'month': 'این ماه', 'year': 'امسال', 'all': 'همه دوره‌ها', 'custom': 'بازه دلخواه'} %}
-<h2 class="print-heading">سود و زیان — {{ period_names.get(period, 'این ماه') }}{% if period == 'custom' and start_date %} ({{ start_date }} تا {{ end_date }}){% endif %}</h2>
+{% set print_heading = 'تحلیل فروش — ' ~ period_names.get(period, 'این ماه') ~ ((' (' ~ start_date ~ ' تا ' ~ end_date ~ ')') if period == 'custom' and start_date else '') %}
 
 {% set page_actions %}
-<button type="button" class="btn btn-primary" onclick="window.print()">چاپ گزارش</button>
 {% endset %}
 {% include 'partials/page_header.html' %}
 
@@ -17,37 +16,63 @@
     {% if range_notice %}<p class="filter-problem" role="status">⚠️ {{ range_notice }}</p>{% endif %}
     <form method="get" action="/admin/analytics" class="filter-bar">
         <div class="search-form">
-            <a href="/admin/analytics?period=today" class="btn {% if period == 'today' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">📅 امروز</a>
-            <a href="/admin/analytics?period=week" class="btn {% if period == 'week' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">📅 هفته</a>
-            <a href="/admin/analytics?period=month" class="btn {% if period == 'month' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">📅 ماه</a>
-            <a href="/admin/analytics?period=year" class="btn {% if period == 'year' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">📅 سال</a>
-            <a href="/admin/analytics?period=all" class="btn {% if period == 'all' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">📅 همه</a>
+            <a href="/admin/analytics?period=today" class="btn {% if period == 'today' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">امروز</a>
+            <a href="/admin/analytics?period=week" class="btn {% if period == 'week' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">هفته</a>
+            <a href="/admin/analytics?period=month" class="btn {% if period == 'month' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">ماه</a>
+            <a href="/admin/analytics?period=year" class="btn {% if period == 'year' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">سال</a>
+            <a href="/admin/analytics?period=all" class="btn {% if period == 'all' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">همه</a>
         </div>
         <div class="search-form" style="margin-top: 0.7rem;">
-            <input type="text" id="analytics-start" name="start_date" value="{{ start_date }}" placeholder="📅 از تاریخ" class="persian-date-input" data-pdp-pair="#analytics-end">
+            <input type="text" id="analytics-start" name="start_date" value="{{ start_date }}" placeholder="از تاریخ" class="persian-date-input" data-pdp-pair="#analytics-end">
             <span>تا</span>
-            <input type="text" id="analytics-end" name="end_date" value="{{ end_date }}" placeholder="📅 تا تاریخ" class="persian-date-input">
+            <input type="text" id="analytics-end" name="end_date" value="{{ end_date }}" placeholder="تا تاریخ" class="persian-date-input">
             <input type="hidden" name="period" value="custom">
-            <button type="submit" class="btn btn-primary btn-sm">✅ اعمال</button>
+            <input type="hidden" name="category" value="{{ category }}">
+            <button type="submit" class="btn btn-primary btn-sm">اعمال</button>
         </div>
     </form>
 </div>
 
-<!-- KPI Cards -->
-<div class="kpi-grid">
-    <div class="kpi-card"><h4>کل فروش <span class="tip-icon" data-tip="جمع کل فروش تأیید شده (غیرمرجوعی) در بازه زمانی انتخابی. این عدد شامل تمام فاکتورهایی است که پرداخت آن‌ها قطعی شده و مرجوع نشده‌اند.">?</span></h4><p class="kpi-value">{{ fmt(summary.total_revenue) }} ت</p></div>
-    <div class="kpi-card profit"><h4>سود ناخالص <span class="tip-icon" data-tip="سود ناخالص = فروش کل منهای هزینه کالاهای فروخته‌شده. این عدد قبل از کسر هزینه‌های اجاره، حقوق و سایر هزینه‌های عملیاتی است.">?</span></h4><p class="kpi-value">{{ fmt(summary.gross_profit) }} ت</p></div>
-    <div class="kpi-card margin"><h4>حاشیه سود <span class="tip-icon" data-tip="حاشیه سود ناخالص = (سود ÷ فروش) × ۱۰۰. هرچه بالاتر باشد، به ازای هر تومان فروش سود بیشتری کسب می‌کنید. برای پوشاک بچه‌گانه ۴۰-۶۰٪ طبیعی است.">?</span></h4><p class="kpi-value">{{ percent(summary.margin) }}</p></div>
-    <div class="kpi-card"><h4>تعداد فاکتور <span class="tip-icon" data-tip="تعداد کل فاکتورهای تأیید شده در بازه زمانی. هر فاکتور معادل یک سبد خرید یک مشتری است. افزایش تعداد فاکتور نشانه جذب مشتری بیشتر است.">?</span></h4><p class="kpi-value tnum">{{ summary.invoice_count }}</p></div>
-    <div class="kpi-card"><h4>میانگین فاکتور <span class="tip-icon" data-tip="میانگین مبلغ هر فاکتور = فروش کل ÷ تعداد فاکتورها. اگر پایین باشد، مشتریان فقط اقلام ارزان می‌خرند؛ افزایش آن با فروش مکمل و پکیج امکان‌پذیر است.">?</span></h4><p class="kpi-value">{{ fmt(summary.aov) }} ت</p></div>
-    <div class="kpi-card"><h4>مشتریان جدید <span class="tip-icon" data-tip="تعداد مشتریانی که اولین خرید خود را در این بازه انجام داده‌اند. رشد این عدد نشانه بازاریابی موفق یا معرفی دهان‌به‌دهان است.">?</span></h4><p class="kpi-value tnum">{{ summary.new_customers }}</p></div>
+{# Tab bar: every tab is a real link carrying the current filters, so a tab is
+   deep-linkable, survives reload, and works with no JavaScript at all. The
+   server marks the active one; all sections stay in the DOM (hidden ones with
+   the `hidden` attribute) so captions, print and the canvas tests see one page. #}
+<div class="card screen-only tab-card">
+    <nav class="tab-bar" aria-label="بخش‌های تحلیل">
+        {% for value, label in tabs.items() %}
+        <a href="/admin/analytics?tab={{ value }}&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}&category={{ category }}" class="btn {% if tab == value %}btn-primary{% else %}btn-ghost{% endif %} btn-sm"{% if tab == value %} aria-current="page"{% endif %}>{{ label }}</a>
+        {% endfor %}
+    </nav>
 </div>
 
-<!-- Expert KPI row -->
-<div class="kpi-grid" style="margin-top: 0.5rem;">
-    <div class="kpi-card"><h4>نرخ فروش <span class="tip-icon" data-tip="نرخ فروش = تعداد فروش ÷ (فروش + موجودی باقی‌مانده) × ۱۰۰. نشان می‌دهد چقدر سریع موجودی به فروش می‌رسد. در پوشاک ۳۰-۴۰٪ طبیعی است؛ بالای ۵۰٪ عالی است.">?</span></h4><p class="kpi-value">{{ percent(sell_through.pct, 0) }}</p></div>
+<!-- Sales tab -->
+<section class="analytics-tab" data-tab="sales" aria-label="فروش"{% if tab != 'sales' %} hidden{% endif %}>
+<div class="kpi-grid">
+    <div class="kpi-card"><h4>کل فروش <span class="tip-icon" data-tip="جمع کل فروش تأیید شده (غیرمرجوعی) در بازه زمانی انتخابی. این عدد شامل تمام فاکتورهایی است که پرداخت آن‌ها قطعی شده و مرجوع نشده‌اند.">?</span></h4><p class="kpi-value">{{ fmt(summary.total_revenue) }} ت</p></div>
+    <div class="kpi-card"><h4>تعداد فاکتور <span class="tip-icon" data-tip="تعداد کل فاکتورهای تأیید شده در بازه زمانی. هر فاکتور معادل یک سبد خرید یک مشتری است. افزایش تعداد فاکتور نشانه جذب مشتری بیشتر است.">?</span></h4><p class="kpi-value tnum">{{ summary.invoice_count }}</p></div>
+    <div class="kpi-card"><h4>میانگین فاکتور <span class="tip-icon" data-tip="میانگین مبلغ هر فاکتور = فروش کل ÷ تعداد فاکتورها. اگر پایین باشد، مشتریان فقط اقلام ارزان می‌خرند؛ افزایش آن با فروش مکمل و پکیج امکان‌پذیر است.">?</span></h4><p class="kpi-value">{{ fmt(summary.aov) }} ت</p></div>
     <div class="kpi-card"><h4>اقلام/فاکتور <span class="tip-icon" data-tip="میانگین تعداد اقلام در هر فاکتور. اگر پایین باشد (مثلاً ۱)، مشتریان فقط یک قلم می‌خرند. افزایش آن با پیشنهاد محصولات مکمل (مثلاً ست لباس) امکان‌پذیر است.">?</span></h4><p class="kpi-value tnum">{{ basket.items_per_txn }}</p></div>
-    <div class="kpi-card"><h4>نرخ بازگشت <span class="tip-icon" data-tip="درصد مشتریانی که بیش از یک بار خرید کرده‌اند. فروشگاهی که فقط مشتری یک‌بار دارد همیشه در خطر است. نرخ بازگشت بالای ۳۰٪ هدف خوبی است.">?</span></h4><p class="kpi-value">{{ percent(customer_health.repeat_rate, 0) }}</p></div>
+</div>
+
+<div class="section-heading-row">
+    <div>
+        <h3>فروش در بازه</h3>
+        <p class="muted">روند روزانه، روزهای هفته، ساعت‌ها و رنج‌های قیمتی.</p>
+    </div>
+    <a class="text-link" href="/admin/analytics/export?kind=daily&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}">خروجی فروش روزانه</a>
+</div>
+<div class="charts-grid">
+    <div class="card chart-card"><h3>فروش روزانه <span class="tip-icon" data-tip="فروش و سود روزانه، خالص پس از کسر تخفیف و مرجوعی — با سود و زیان همین بازه می‌خواند. روزهای شلوغ و کم‌فروش مشخص می‌شوند. می‌توانید ببینید کدام روزها بیشترین فروش را دارید (مثلاً آخر هفته) تا برنامه‌ریزی کنید.">?</span></h3><p class="chart-note" data-chart="dailyChart">{{ notes.dailyChart }}</p><canvas id="dailyChart" role="img" aria-label="{{ notes.dailyChart }}"></canvas></div>
+    <div class="card chart-card"><h3>فروش روزهای هفته <span class="tip-icon" data-tip="فروش به تفکیک روزهای هفته (شنبه تا جمعه). کدام روزها شلوغ‌تر و کدام کم‌فروش‌ترند؟ برای برنامه‌ریزی نیروی کار و تبلیغات در روزهای کم‌فروش مفید است.">?</span></h3><p class="chart-note" data-chart="weekdayChart">{{ notes.weekdayChart }}</p><canvas id="weekdayChart" role="img" aria-label="{{ notes.weekdayChart }}"></canvas></div>
+    <div class="card chart-card"><h3>فروش ساعتی <span class="tip-icon" data-tip="فروش به تفکیک ساعت (از ۸ صبح تا ۹ شب). ساعت‌های اوج فروش مشخص می‌شوند. می‌توانید در ساعت‌های کم‌فروش تخفیف ویژه بدهید یا نیروی کار را تنظیم کنید.">?</span></h3><p class="chart-note" data-chart="hourChart">{{ notes.hourChart }}</p><canvas id="hourChart" role="img" aria-label="{{ notes.hourChart }}"></canvas></div>
+    <div class="card chart-card"><h3>توزیع قیمت فروش <span class="tip-icon" data-tip="توزیع قیمت‌های فروش واقعی. نشان می‌دهد مشتریان بیشتر در چه رنج قیمتی خرید می‌کنند. اگر قیمت‌های پایین بیشتر باشد، شاید باید روی محصولات بالاتر تمرکز کنید.">?</span></h3><p class="chart-note" data-chart="priceDistChart">{{ notes.priceDistChart }}</p><canvas id="priceDistChart" role="img" aria-label="{{ notes.priceDistChart }}"></canvas></div>
+</div>
+</section>
+
+<!-- Product tab -->
+<section class="analytics-tab" data-tab="product" aria-label="محصول"{% if tab != 'product' %} hidden{% endif %}>
+<div class="kpi-grid">
+    <div class="kpi-card"><h4>نرخ فروش <span class="tip-icon" data-tip="نرخ فروش = تعداد فروش ÷ (فروش + موجودی باقی‌مانده) × ۱۰۰. نشان می‌دهد چقدر سریع موجودی به فروش می‌رسد. در پوشاک ۳۰-۴۰٪ طبیعی است؛ بالای ۵۰٪ عالی است.">?</span></h4><p class="kpi-value">{{ percent(sell_through.pct, 0) }}</p></div>
     <div class="kpi-card"><h4>کالای مرده <span class="tip-icon" data-tip="تعداد اقلامی که در این بازه هیچ فروشی نداشته‌اند ولی هنوز در انبار هستند. این اقلام سرمایه شما را بی‌استفاده نگه داشته‌اند و باید تخفیف بخورند یا از مجموعه خارج شوند.">?</span></h4><p class="kpi-value tnum">{{ dead_stock.count }} قلم</p></div>
     <div class="kpi-card"><h4>کل موجودی <span class="tip-icon" data-tip="تعداد کل واحدهای موجود در انبار (مجموع تمام واریانت‌های فعال). شامل اقلامی که هنوز فروخته نشده‌اند می‌شود.">?</span></h4><p class="kpi-value tnum">{{ fmt(sell_through.stock) }}</p></div>
     <div class="kpi-card"><h4>ارزش انبار <span class="tip-icon" data-tip="ارزش کل موجودی انبار به قیمت فروش. اگر این عدد خیلی بالا باشد یعنی سرمایه زیادی در انبار بلوکه شده؛ اگر خیلی پایین باشد یعنی خطر نایاب شدن کالا دارید.">?</span></h4><p class="kpi-value">{{ fmt(inventory.total_retail) }} ت</p></div>
@@ -58,11 +83,12 @@
     <div style="display:flex; align-items:center; gap:0.8rem; flex-wrap:wrap;">
         <h3 style="margin:0;">بُرد محصول (قیمت‌گذاری واقعی، رنگ، سایز) <span class="tip-icon" data-tip="هسته اصلی تحلیل پوشاک: قیمت فروش واقعی (نه لیست)، بهترین رنگ و سایز، و ماتریس ترکیبی آن‌ها. با فیلتر دسته‌بندی می‌توانید هر گروه محصول را جداگانه بررسی کنید.">?</span></h3>
         <form method="get" action="/admin/analytics" style="margin:0; flex:1; display:flex; gap:0.5rem; align-items:center;">
+            <input type="hidden" name="tab" value="product">
             <input type="hidden" name="period" value="{{ period }}">
             <input type="hidden" name="start_date" value="{{ start_date }}">
             <input type="hidden" name="end_date" value="{{ end_date }}">
             <select name="category" onchange="this.form.submit()" style="padding:0.35rem 0.6rem; border-radius:6px; border:1px solid var(--rule); background:var(--surface-soft); color:inherit; font-family:Vazirmatn;">
-                <option value="">📦 همه محصولات</option>
+                <option value="">همه محصولات</option>
                 {% for c in all_categories %}
                 <option value="{{ c }}" {% if c == category %}selected{% endif %}>{{ c }}</option>
                 {% endfor %}
@@ -108,23 +134,13 @@
     </div>
 </div>
 
-<!-- Revenue Trend + Daily + Category + Tier -->
-<div class="charts-grid">
-    <div class="card chart-card"><h3>روند درآمد (۱۲ ماه) <span class="tip-icon" data-tip="روند درآمد و سود در ۱۲ ماه اخیر. اگر خط بالا برود یعنی رشد دارید، اگر پایین بیاید یعنی افت فروش. الگوهای فصلی (مثلاً شروع مدارس) هم مشخص می‌شوند.">?</span></h3><p class="chart-note" data-chart="trendChart">{{ notes.trendChart }}</p><canvas id="trendChart" role="img" aria-label="{{ notes.trendChart }}"></canvas></div>
-    <div class="card chart-card"><h3>فروش روزانه <span class="tip-icon" data-tip="فروش و سود روزانه. روزهای شلوغ و کم‌فروش مشخص می‌شوند. می‌توانید ببینید کدام روزها بیشترین فروش را دارید (مثلاً آخر هفته) تا برنامه‌ریزی کنید.">?</span></h3><p class="chart-note" data-chart="dailyChart">{{ notes.dailyChart }}</p><canvas id="dailyChart" role="img" aria-label="{{ notes.dailyChart }}"></canvas></div>
-    <div class="card chart-card"><h3>فروش بر اساس دسته‌بندی <span class="tip-icon" data-tip="سهم هر دسته‌بندی از کل فروش (نمودار دایره‌ای). اگر یک دسته بیش از ۵۰٪ فروش را تشکیل دهد، کسب‌وکار شما به آن وابسته است و ریسک دارد.">?</span></h3><p class="chart-note" data-chart="categoryChart">{{ notes.categoryChart }}</p><canvas id="categoryChart" role="img" aria-label="{{ notes.categoryChart }}"></canvas></div>
-    <div class="card chart-card"><h3>فروش بر اساس سطح <span class="tip-icon" data-tip="فروش به تفکیک سطح وفاداری مشتری (نقره‌ای/طلایی/الماس). اگر مشتریان الماس بیشترین فروش را داشته باشند، برنامه وفاداری شما مؤثر است.">?</span></h3><p class="chart-note" data-chart="tierChart">{{ notes.tierChart }}</p><canvas id="tierChart" role="img" aria-label="{{ notes.tierChart }}"></canvas></div>
+<div class="section-heading-row" style="margin-top: 1.5rem;">
+    <div>
+        <h3>کالاها در بازه</h3>
+        <p class="muted">پارتو، واریانت‌های پرفروش و کالای مرده.</p>
+    </div>
+    <a class="text-link" href="/admin/analytics/export?kind=variants&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}">خروجی واریانت‌ها</a>
 </div>
-
-<!-- Sales Patterns + Price Dist -->
-<div class="charts-grid">
-    <div class="card chart-card"><h3>فروش روزهای هفته <span class="tip-icon" data-tip="فروش به تفکیک روزهای هفته (شنبه تا جمعه). کدام روزها شلوغ‌تر و کدام کم‌فروش‌ترند؟ برای برنامه‌ریزی نیروی کار و تبلیغات در روزهای کم‌فروش مفید است.">?</span></h3><p class="chart-note" data-chart="weekdayChart">{{ notes.weekdayChart }}</p><canvas id="weekdayChart" role="img" aria-label="{{ notes.weekdayChart }}"></canvas></div>
-    <div class="card chart-card"><h3>فروش ساعتی <span class="tip-icon" data-tip="فروش به تفکیک ساعت (از ۸ صبح تا ۹ شب). ساعت‌های اوج فروش مشخص می‌شوند. می‌توانید در ساعت‌های کم‌فروش تخفیف ویژه بدهید یا نیروی کار را تنظیم کنید.">?</span></h3><p class="chart-note" data-chart="hourChart">{{ notes.hourChart }}</p><canvas id="hourChart" role="img" aria-label="{{ notes.hourChart }}"></canvas></div>
-    <div class="card chart-card"><h3>توزیع قیمت فروش <span class="tip-icon" data-tip="توزیع قیمت‌های فروش واقعی. نشان می‌دهد مشتریان بیشتر در چه رنج قیمتی خرید می‌کنند. اگر قیمت‌های پایین بیشتر باشد، شاید باید روی محصولات بالاتر تمرکز کنید.">?</span></h3><p class="chart-note" data-chart="priceDistChart">{{ notes.priceDistChart }}</p><canvas id="priceDistChart" role="img" aria-label="{{ notes.priceDistChart }}"></canvas></div>
-    <div class="card chart-card"><h3>حاشیه سود به تفکیک دسته <span class="tip-icon" data-tip="حاشیه سود ناخالص به ازای هر دسته‌بندی. رنگ سبز یعنی سودآور، قرمز یعنی زیان‌ده. مهم‌ترین نمودار برای تصمیم‌گیری: کدام دسته را بیشتر تبلیغ کنید و کدام را کمتر سفارش دهید.">?</span></h3><p class="chart-note" data-chart="marginCatChart">{{ notes.marginCatChart }}</p><canvas id="marginCatChart" role="img" aria-label="{{ notes.marginCatChart }}"></canvas></div>
-</div>
-
-<!-- Tables -->
 <div class="tables-grid">
     <div class="card">
         <h3>تحلیل ABC (Pareto) <span class="tip-icon" data-tip="تحلیل ABC بر اساس اصل پارتو (۸۰/۲۰): کلاس A معدود محصولاتی هستند که ~۸۰٪ درآمد را می‌سازند (هرگز تمام نشوند)، کلاس C دم بلند هستند (تا تقاضا نداشته باشند سفارش ندهید).">?</span></h3>
@@ -165,12 +181,74 @@
             {% endfor %}
             </tbody>
         </table>
-        {% else %}<p style="color:var(--ink-soft);">همه اقلام فروش داشته‌اند. ✅</p>{% endif %}
+        {% else %}<p style="color:var(--ink-soft);">همه اقلام فروش داشته‌اند.</p>{% endif %}
     </div>
+</div>
+</section>
+
+<!-- Customers tab -->
+<section class="analytics-tab" data-tab="customers" aria-label="مشتریان"{% if tab != 'customers' %} hidden{% endif %}>
+<div class="kpi-grid">
+    <div class="kpi-card"><h4>مشتریان جدید <span class="tip-icon" data-tip="تعداد مشتریانی که اولین خرید خود را در این بازه انجام داده‌اند. رشد این عدد نشانه بازاریابی موفق یا معرفی دهان‌به‌دهان است.">?</span></h4><p class="kpi-value tnum">{{ summary.new_customers }}</p></div>
+    <div class="kpi-card"><h4>نرخ بازگشت <span class="tip-icon" data-tip="درصد مشتریانی که بیش از یک بار خرید کرده‌اند. فروشگاهی که فقط مشتری یک‌بار دارد همیشه در خطر است. نرخ بازگشت بالای ۳۰٪ هدف خوبی است.">?</span></h4><p class="kpi-value">{{ percent(customer_health.repeat_rate, 0) }}</p></div>
+</div>
+
+<div class="section-heading-row">
+    <div>
+        <h3>مشتریان در بازه</h3>
+        <p class="muted">سلامت، سطوح وفاداری و پرخرج‌ترین‌ها.</p>
+    </div>
+    <a class="text-link" href="/admin/analytics/export?kind=customers&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}">خروجی مشتریان برتر</a>
+</div>
+<div class="charts-grid">
+    <div class="card chart-card"><h3>فروش بر اساس سطح <span class="tip-icon" data-tip="فروش به تفکیک سطح وفاداری مشتری (نقره‌ای/طلایی/الماس). اگر مشتریان الماس بیشترین فروش را داشته باشند، برنامه وفاداری شما مؤثر است.">?</span></h3><p class="chart-note" data-chart="tierChart">{{ notes.tierChart }}</p><canvas id="tierChart" role="img" aria-label="{{ notes.tierChart }}"></canvas></div>
+    <div class="card">
+        <h3>سلامت مشتریان <span class="tip-icon" data-tip="سلامت مشتریان: نرخ بازگشت نشان می‌دهد چند درصد مشتریان دوباره خرید کرده‌اند. نمودار دایره‌ای توزیع درآمد مشتریان را نشان می‌دهد — اگر بیشتر در گروه کم‌خرید باشند، باید برنامه وفاداری را تقویت کنید.">?</span></h3>
+        <div class="inv-row"><span>نرخ خرید مجدد</span><b>{{ percent(customer_health.repeat_rate, 0) }}</b></div>
+        <div class="inv-row"><span>مشتریان یک‌بار</span><b>{{ percent(customer_health.one_timer_pct, 0) }}</b></div>
+        <div class="inv-row"><span>میانگین سفارش</span><b>{{ customer_health.avg_orders if customer_health.avg_orders is not none else '—' }}</b></div>
+        <div style="margin-top:0.5rem; border-top:1px solid var(--rule); padding-top:0.5rem;">
+            <p class="chart-note" data-chart="customerSegChart">{{ notes.customerSegChart }}</p><canvas id="customerSegChart" role="img" aria-label="{{ notes.customerSegChart }}" style="max-height:180px;"></canvas>
+        </div>
+    </div>
+</div>
+<div class="tables-grid">
+    <div class="card">
+        <h3>مشتریان برتر <span class="tip-icon" data-tip="پرخرج‌ترین مشتریان در بازه زمانی. سطح وفاداری (نقره‌ای/طلایی/الماس) و تعداد سفارشات هر کدام مشخص است. این مشتریان ستون فقرات کسب‌وکار شما هستند.">?</span></h3>
+        <table>
+            <thead><tr><th>نام</th><th>تلفن</th><th>سطح</th><th>مجموع خرید</th><th>سفارش</th></tr></thead>
+            <tbody>
+            {% for c in top_customers %}
+                <tr><td>{{ c.name }}</td><td class="tnum">{{ c.phone }}</td><td><span class="tier-badge tier-{{ c.tier }}">
+                    {% if c.tier == 'diamond' %}الماس{% elif c.tier == 'gold' %}طلایی{% else %}نقره‌ای{% endif %}
+                </span></td><td class="tnum">{{ fmt(c.total_spent) }}</td><td class="tnum">{{ c.orders }}</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+</section>
+
+<!-- Profit tab -->
+<section class="analytics-tab" data-tab="profit" aria-label="سود"{% if tab != 'profit' %} hidden{% endif %}>
+<div class="kpi-grid">
+    <div class="kpi-card profit"><h4>سود ناخالص <span class="tip-icon" data-tip="سود ناخالص = فروش کل منهای هزینه کالاهای فروخته‌شده. این عدد قبل از کسر هزینه‌های اجاره، حقوق و سایر هزینه‌های عملیاتی است.">?</span></h4><p class="kpi-value">{{ fmt(summary.gross_profit) }} ت</p></div>
+    <div class="kpi-card margin"><h4>حاشیه سود <span class="tip-icon" data-tip="حاشیه سود ناخالص = (سود ÷ فروش) × ۱۰۰. هرچه بالاتر باشد، به ازای هر تومان فروش سود بیشتری کسب می‌کنید. برای پوشاک بچه‌گانه ۴۰-۶۰٪ طبیعی است.">?</span></h4><p class="kpi-value">{{ percent(summary.margin) }}</p></div>
+</div>
+
+<div class="section-heading-row">
+    <div>
+        <h3>سود در بازه</h3>
+        <p class="muted">حاشیه به تفکیک دسته، جدول دسته‌ها و تخفیف‌ها.</p>
+    </div>
+    <a class="text-link" href="/admin/analytics/export?kind=categories&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}">خروجی دسته‌ها</a>
+</div>
+<div class="charts-grid">
+    <div class="card chart-card"><h3>حاشیه سود به تفکیک دسته <span class="tip-icon" data-tip="حاشیه سود ناخالص خالص به ازای هر دسته‌بندی (پس از کسر تخفیف و مرجوعی). رنگ سبز یعنی سودآور، قرمز یعنی زیان‌ده. مهم‌ترین نمودار برای تصمیم‌گیری: کدام دسته را بیشتر تبلیغ کنید و کدام را کمتر سفارش دهید.">?</span></h3><p class="chart-note" data-chart="marginCatChart">{{ notes.marginCatChart }}</p><canvas id="marginCatChart" role="img" aria-label="{{ notes.marginCatChart }}"></canvas></div>
     <div class="card">
         <h3>دسته‌بندی‌ها <span class="tip-icon" data-tip=" مقایسه دسته‌بندی‌ها: کدام بیشتر می‌فروشد، کدام سودآورتر است و کدام حاشیه سود بهتری دارد. حاشیه سود بالاتر مهم‌تر از فروش بالاتر است — یک دسته کم‌فروش با حاشیه بالا بهتر از دسته پرفروش با حاشیه پایین است.">?</span></h3>
         <table>
-            <thead><tr><th>📂 دسته</th><th>🔢 تعداد</th><th>💰 فروش</th><th>💎 سود</th><th>📊 حاشیه</th></tr></thead>
+            <thead><tr><th>دسته</th><th>تعداد</th><th>فروش</th><th>سود</th><th>حاشیه</th></tr></thead>
             <tbody>
             {% for c in categories %}
                 <tr><td>{{ c.category }}</td><td class="tnum">{{ c.quantity }}</td><td class="tnum">{{ fmt(c.revenue) }}</td><td class="tnum">{{ fmt(c.profit) }}</td><td class="tnum">{{ pct(c.profit, c.revenue) }}</td></tr>
@@ -179,43 +257,37 @@
         </table>
     </div>
     <div class="card">
-        <h3>سلامت مشتریان <span class="tip-icon" data-tip="سلامت مشتریان: نرخ بازگشت نشان می‌دهد چند درصد مشتریان دوباره خرید کرده‌اند. نمودار دایره‌ای توزیع درآمد مشتریان را نشان می‌دهد — اگر بیشتر در گروه کم‌خرید باشند، باید برنامه وفاداری را تقویت کنید.">?</span></h3>
-        <div class="inv-row"><span>نر خرید مجدد</span><b>{{ percent(customer_health.repeat_rate, 0) }}</b></div>
-        <div class="inv-row"><span>مشتریان یک‌بار</span><b>{{ percent(customer_health.one_timer_pct, 0) }}</b></div>
-        <div class="inv-row"><span>میانگین سفارش</span><b>{{ customer_health.avg_orders if customer_health.avg_orders is not none else '—' }}</b></div>
-        <div style="margin-top:0.5rem; border-top:1px solid var(--rule); padding-top:0.5rem;">
-            <p class="chart-note" data-chart="customerSegChart">{{ notes.customerSegChart }}</p><canvas id="customerSegChart" role="img" aria-label="{{ notes.customerSegChart }}" style="max-height:180px;"></canvas>
-        </div>
-    </div>
-    <div class="card">
         <h3>تخفیف‌ها <span class="tip-icon" data-tip="تخفیف‌های اعمال شده در بازه زمانی: کدام نوع تخفیف بیشتر استفاده شده و چه تأثیری روی درآمد داشته. اگر تخفیف خیلی زیاد باشد، ممکن است حاشیه سود را خورده باشد.">?</span></h3>
         {% if discounts %}
         <table>
-            <thead><tr><th>📋 نوع</th><th>💰 مبلغ کل</th><th>📊 درصد فروش</th></tr></thead>
+            <thead><tr><th>نوع</th><th>مبلغ کل</th><th>درصد فروش</th></tr></thead>
             <tbody>
             {% for d in discounts %}
                 <tr><td>{{ d.type }}</td><td class="tnum">{{ fmt(d.total_amount) }}</td><td class="tnum">{{ percent(d.pct_of_revenue) }}</td></tr>
             {% endfor %}
             </tbody>
         </table>
-        {% else %}<p style="color: var(--ink-soft);">🏷️ تخفیفی در این دوره ثبت نشده.</p>{% endif %}
-    </div>
-    <div class="card">
-        <h3>مشتریان برتر <span class="tip-icon" data-tip="پرخرج‌ترین مشتریان در بازه زمانی. سطح وفاداری (نقره‌ای/طلایی/الماس) و تعداد سفارشات هر کدام مشخص است. این مشتریان ستون فقرات کسب‌وکار شما هستند.">?</span></h3>
-        <table>
-            <thead><tr><th>👤 نام</th><th>📱 تلفن</th><th>🏷️ سطح</th><th>💰 مجموع خرید</th><th>🛒 سفارش</th></tr></thead>
-            <tbody>
-            {% for c in top_customers %}
-                <tr><td>{{ c.name }}</td><td class="tnum">{{ c.phone }}</td><td><span class="tier-badge tier-{{ c.tier }}">
-                    {% if c.tier == 'diamond' %}💎 الماس{% elif c.tier == 'gold' %}⭐ طلایی{% else %}🥈 نقره‌ای{% endif %}
-                </span></td><td class="tnum">{{ fmt(c.total_spent) }}</td><td class="tnum">{{ c.orders }}</td></tr>
-            {% endfor %}
-            </tbody>
-        </table>
+        {% else %}<p style="color: var(--ink-soft);">تخفیفی در این دوره ثبت نشده.</p>{% endif %}
     </div>
 </div>
+</section>
+
+<!-- Trends tab -->
+<section class="analytics-tab" data-tab="trends" aria-label="روند"{% if tab != 'trends' %} hidden{% endif %}>
+<div class="section-heading-row">
+    <div>
+        <h3>روند در بازه</h3>
+        <p class="muted">دوازده ماه اخیر و سهم دسته‌ها — مستقل از بازه انتخابی.</p>
+    </div>
+</div>
+<div class="charts-grid">
+    <div class="card chart-card"><h3>روند درآمد (۱۲ ماه) <span class="tip-icon" data-tip="روند درآمد و سود در ۱۲ ماه اخیر. اگر خط بالا برود یعنی رشد دارید، اگر پایین بیاید یعنی افت فروش. الگوهای فصلی (مثلاً شروع مدارس) هم مشخص می‌شوند.">?</span></h3><p class="chart-note" data-chart="trendChart">{{ notes.trendChart }}</p><canvas id="trendChart" role="img" aria-label="{{ notes.trendChart }}"></canvas></div>
+    <div class="card chart-card"><h3>فروش بر اساس دسته‌بندی <span class="tip-icon" data-tip="سهم خالص هر دسته‌بندی از کل فروش پس از کسر تخفیف و مرجوعی (نمودار دایره‌ای). اگر یک دسته بیش از ۵۰٪ فروش را تشکیل دهد، کسب‌وکار شما به آن وابسته است و ریسک دارد.">?</span></h3><p class="chart-note" data-chart="categoryChart">{{ notes.categoryChart }}</p><canvas id="categoryChart" role="img" aria-label="{{ notes.categoryChart }}"></canvas></div>
+</div>
+</section>
+
 <!-- Global tooltip element (fixed positioning, never clipped) -->
-<div id="globalTip" style="display:none; position:fixed; background:var(--sidebar-bg); color:var(--sidebar-text); padding:0.6rem 0.8rem; border-radius:8px; font-size:0.8rem; line-height:1.6; width:max-content; max-width:340px; white-space:normal; pointer-events:none; z-index:9999; box-shadow:var(--shadow-hover); text-align:right; direction:rtl; font-family:Vazirmatn,sans-serif;"></div>
+<div id="globalTip" style="display:none; position:fixed; background:var(--sidebar-bg); color:var(--sidebar-text); padding:0.6rem 0.8rem; border-radius:8px; font-size:0.8rem; line-height:1.6; width:max-content; max-width:340px; white-space:normal; pointer-events:none; z-index:9999; box-shadow:var(--shadow-overlay); text-align:right; direction:rtl; font-family:Vazirmatn,sans-serif;"></div>
 
 <script>
 if (typeof Chart === 'undefined') {
@@ -308,7 +380,7 @@ new Chart(document.getElementById('hourChart'), {
 
 new Chart(document.getElementById('priceDistChart'), {
     type: 'bar',
-    data: { labels: priceDist.map(p => window.chartValueText(p.price, 'money') + 'ت'), datasets: [
+    data: { labels: priceDist.map(p => window.chartValueText(p.price, 'count') + ' ت'), datasets: [
         { label: 'تعداد', data: priceDist.map(p => p.quantity), backgroundColor: tone.lavender },
     ]},
     options: baseOpts({ valueFormat: 'count', plugins: { legend: { display: false } } })
@@ -327,46 +399,6 @@ new Chart(document.getElementById('customerSegChart'), {
 });
 }
 </script>
-
-<style>
-.kpi-grid {
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    gap: 0.8rem;
-    margin-bottom: 1.5rem;
-}
-@media (max-width: 900px) {
-    .kpi-grid { grid-template-columns: repeat(2, 1fr); }
-    .charts-grid, .tables-grid { grid-template-columns: 1fr; }
-}
-.matrix { border-collapse: collapse; font-size: 0.85rem; }
-.matrix th, .matrix td { border: 1px solid var(--rule); padding: 0.35rem 0.6rem; min-width: 2.8rem; white-space: nowrap; }
-.inv-row { display: flex; justify-content: space-between; padding: 0.25rem 0; }
-
-/* Question mark icon */
-.tip-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: var(--rule);
-    color: var(--ink-soft);
-    font-size: 12px;
-    font-weight: 700;
-    line-height: 1;
-    cursor: help;
-    vertical-align: middle;
-    margin-inline-start: 4px;
-    transition: background 0.15s, color 0.15s;
-    font-family: sans-serif;
-}
-.tip-icon:hover {
-    background: var(--brand-fill);
-    color: var(--brand-label);
-}
-</style>
 
 <script>
 (function() {

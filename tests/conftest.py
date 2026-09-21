@@ -69,6 +69,8 @@ def _clean_db(client, db_session):
     # The customer-module flags (child profiles, birthday target) are cached the
     # same way the store profile is, so they must be dropped between tests too.
     invalidate_customer_cache()
+    from services.themes import invalidate_theme_cache
+    invalidate_theme_cache()
     yield
 
 

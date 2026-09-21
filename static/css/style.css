@@ -21,6 +21,10 @@
 */
 
 :root {
+  /* The browser's own chrome follows the palette's pole: which side its native
+     widget ink, scrollbars and date-field indicator paint at. `light dark`
+     here means "either" for the unthemed fallback; each theme-mode pins it. */
+  color-scheme: light dark;
   --candy: #FF6B8A;
   --candy-dark: #E85878;
   --sky: #45B7D1;
@@ -35,8 +39,14 @@
   --ink: #2D2D2D;
   --ink-soft: #999;
   --rule: #F0E4D8;
-  --shadow: 0 4px 16px rgba(0,0,0,0.06);
-  --shadow-hover: 0 8px 24px rgba(0,0,0,0.10);
+  /* The elevation pair is the active theme's own — derived per palette in
+     services/themes.py and applied with the rest of the tokens. These root
+     values are a bare marker: a page that loads the stylesheet before its
+     palette must cast no shadow at all, never a light-tuned blur inherited
+     onto a dark workspace. */
+  --shadow: 0 0 0 transparent;
+  --shadow-hover: 0 0 0 transparent;
+  --shadow-overlay: 0 0 0 transparent;
   --radius: 14px;
   --radius-sm: 8px;
   --surface-soft: #fffaf7;
@@ -135,6 +145,7 @@ a:hover { text-decoration: underline; }
 .lightbox-open { display: block; width: 100%; padding: 0; border: none; background: none; cursor: zoom-in; min-height: 0; }
 .lightbox-open img { display: block; }
 .lightbox-open:focus-visible { outline: 3px solid var(--ring-brand); outline-offset: 2px; }
+.lightbox-stage { box-shadow: var(--shadow-overlay); }
 .lightbox-close {
   position: absolute;
   top: 1rem;
@@ -272,6 +283,20 @@ footer:not(.app-footer) { text-align: center; padding: 1rem 0; color: var(--ink-
 .page-heading p { color: var(--ink-soft); font-size: 0.82rem; margin: 0; }
 .page-heading .page-icon { flex: 0 0 1.6rem; width: 1.6rem; height: 1.6rem; }
 .page-heading .page-icon .ui-icon { width: 1.5rem; height: 1.5rem; }
+/* The shared print action: the last child of the page-heading row, after the
+   page's own actions. Screen-only — paper knows which of the page's buttons
+   travel by the page's own print block, and the shell's block already hides
+   .btn, .admin-nav and this button from the printer. */
+.print-action {
+  display: flex; align-items: center; gap: 0.4rem;
+  flex: 0 0 auto; align-self: flex-start;
+  padding: 0.5rem 0.9rem; border: 1px solid var(--rule); border-radius: var(--radius-sm);
+  background: var(--surface-soft); color: var(--ink); font: inherit; font-size: 0.82rem;
+  cursor: pointer;
+}
+.print-action:hover { background: var(--hover-surface); }
+.print-action:focus-visible { outline: 3px solid var(--ring-brand); outline-offset: 2px; }
+.print-action .ui-icon { width: 1rem; height: 1rem; }
 /* The role badge the dashboard wears next to its name. */
 .page-badge { font-size: 0.7rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 999px; background: color-mix(in srgb, var(--sky) 16%, var(--card)); color: var(--info-ink); }
 .eyebrow { color: var(--link-hover); font-size: 0.72rem; font-weight: 800; letter-spacing: 0.02em; }
@@ -805,7 +830,27 @@ tbody tr:last-child td { border-bottom: none; }
   border-color: var(--candy);
   background: linear-gradient(135deg, color-mix(in srgb, var(--candy) 10%, var(--card)), color-mix(in srgb, var(--candy) 4%, var(--card)));
 }
-.payment-option input { width: auto; }
+/* Native controls the browser paints with its own idea of colour: the radio's
+   accent (the defect the credit walk photographed), the checkbox's tick and
+   fill, the range's thumb, the progress/meter bars. One accent for every one
+   of them, from the theme — previously eight per-family rules hardcoded
+   `--candy` per family while the orphan checkboxes in table rows (bulk sends,
+   follow-ups, settings, tag designer) kept Chrome blue. The family rules
+   below keep their sizing half (width/min-height) and now inherit this rule's
+   colour. `color-scheme` tells the browser which pole its own chrome —
+   scrollbars, widget ink, the date input's indicator — should paint at, so a
+   dark palette's native widgets do not render light-on-light or vice versa. */
+input[type="checkbox"],
+input[type="radio"],
+input[type="range"],
+progress,
+meter {
+  accent-color: var(--candy);
+}
+html[data-theme-mode="dark"],
+html[data-theme-mode="dark-shell"] { color-scheme: dark; }
+html[data-theme-mode="light"],
+html[data-theme-mode="high-contrast"] { color-scheme: light; }
 
 .referral-section { background: var(--surface-soft); }
 
@@ -928,8 +973,95 @@ html[data-theme="kids-boutique"] .quick-sale .icon-sale::before { content: "🛒
 html[data-theme="kids-boutique"] .topbar-settings-icon::before { content: "⚙"; }
 html[data-theme="kids-boutique"] .context-mark, html[data-theme="kids-boutique"] .footer-mark { border-radius: 50%; background: linear-gradient(135deg, var(--candy), var(--sky)); }
 
+/* ── Paper: the shell's own print state ────────────────────────────────
+   Every page carries its own print block for the parts only it owns; this is
+   the state of the shell itself, so a page that never thought about paper
+   still prints as a document. The topbar, sidebar, footer, breadcrumb and
+   pagination are the screen's furniture; the page-heading's own buttons
+   («چاپ», «مشتری جدید») are the screen's reply to being on a screen. What
+   remains is the record and the figures. */
 @media print {
-  header, footer, .invoice-actions, .alert, nav, .btn { display: none !important; }
+  .app-topbar, .app-sidebar, .app-footer, .sidebar-overlay, .menu-toggle,
+  .breadcrumb, .product-pagination, .admin-nav, .skip-link, .btn, .print-action { display: none !important; }
+  .print-heading { display: block !important; }
+  .app-main { margin: 0; }
+  html, body { background: var(--paper) !important; color: var(--paper-ink) !important; }
+  .card { background: var(--paper) !important; border: 0 !important; box-shadow: none !important; break-inside: avoid; }
+  /* The figures a page shows in stat cards — سود و زیان's P&L, the history
+     KPIs — are the record, not the screen's furniture, so they repaint as
+     paper too. A page block (the dashboard's) may add to this; it may not
+     need to, because the shell already says it. */
+  .stat-card { background: var(--paper) !important; border: 0 !important; box-shadow: none !important; break-inside: avoid; }
+  .stat-label, .stat-value, .stat-sub, .stat-delta { color: var(--paper-ink) !important; }
+  table { display: table; width: 100%; white-space: normal; }
+  th, td { color: var(--paper-ink) !important; background: var(--paper) !important; border-color: var(--paper-mid) !important; }
+  tr { break-inside: avoid; }
+  /* A link inside the record («مشاهده فهرست», a customer's name) is a
+     reference to a screen; on paper it is plain text — and a dark palette's
+     link hue on white would read faintly. Scoped to the main area because the
+     screen's own link rule is pinned elsewhere and chrome links never print. */
+  .app-main a { color: var(--paper-ink) !important; text-decoration: none; }
+  .badge, .drift-flag { background: var(--paper) !important; color: var(--paper-ink) !important; border: 1px solid var(--paper-mid) !important; }
+  /* Every pill the app states a status with — plus the quick-filter chips and
+     the soft-ink sentence classes. In a dark palette these carry dark tints
+     and soft greys chosen against a dark card; on paper they are ink, a
+     hairline border, and nothing the printer renders as a grey box. */
+  .status-badge, .source-chip, .sms-fire-badge, .sms-unused-badge,
+  .digest-month-chip, .tier-badge { background: var(--paper) !important; color: var(--paper-ink) !important; border: 1px solid var(--paper-mid) !important; }
+  .text-link, .muted, .eyebrow, .field-help, .sms-meta, .sms-results,
+  .filter-note, .stat-sub, .sms-trigger-preview-note, .sms-fireline,
+  .sms-fireline small, .chart-note { color: var(--paper-ink) !important; }
+  /* The accent bars the stat cards wear are screen decoration; on paper the
+     card's own label already names the figure. The card's top gradient strip
+     (`--candy` → `--sky`) goes the same way — on paper it is a two-pixel
+     rainbow across every card, decoration the record does not carry. */
+  .stat-card::before { background: var(--paper-mid) !important; }
+  .card::before { display: none !important; }
+  /* Wide tables must not stop at the screen's edge, and a min-width set for
+     the screen would clip them again; the record is allowed to reflow. */
+  .table-scroll { overflow: visible !important; }
+  table { min-width: 0 !important; }
+  /* Whatever form still prints: its buttons are the screen's reply, and its
+     fields read as text — the value is the fact, not the box around it. */
+  .form-actions, .inline-form { display: none !important; }
+  input:not([type="hidden"]), select, textarea { background: transparent !important; border: 0 !important; color: var(--paper-ink) !important; box-shadow: none !important; }
+  /* A success banner is the screen's reply («ذخیره شد») and dies with it; an
+     error states something true of the record and is worth the staple, as is
+     the page's own warning (the drift banner, a skipped campaign upload) —
+     and so does the info notice, which explains the machine, not the screen. */
+  .alert-success { display: none !important; }
+  .alert-error, .alert-warning, .alert-info { background: var(--paper) !important; color: var(--paper-ink) !important; border: 1px solid var(--paper-mid) !important; }
+  /* The soft boxes a page builds from `--surface-soft` and the accent pills —
+     the reconcile checks, the ageing buckets, the direction pills, the salary
+     box, the error page itself, the delta chip. In a dark palette each is a
+     dark rectangle chosen against the dark screen; on paper the box is the
+     paper, the hairline is its edge, and the label carries what the tint did. */
+  .reconcile-stat, .bucket-card, .error-page, .salary-box, .profile-note,
+  .info-item, .referral-section, .cash-calculator, .discount-details,
+  .badge-none, .stat-delta, .page-badge, .section-step, .campaign-chip,
+  .tag-chip, .campaign-history-row, .staff-record > summary,
+  .profile-avatar, .choice-card, .danger-details,
+  .movement-type, .movement-delta, .movement-flag, .badge-legacy {
+    background: var(--paper) !important;
+    color: var(--paper-ink) !important;
+    border: 1px solid var(--paper-mid) !important;
+    box-shadow: none !important;
+  }
+  /* And the state voices that live in *text*: a dark palette's success,
+     attention and link inks are light hues that fade off white paper. The
+     emphasis is already in the weight; the colour was the screen's echo. */
+  .credit-amount, .credit-over-limit, .summary-row.attention, .summary-row.discount,
+  .summary-row.points, .reconcile-ok, .reconcile-label, .reconcile-sub,
+  .customer-stale, .birthday-soon, .birthday-age, .empty-state, .loading-state,
+  .tag-custom-warning { color: var(--paper-ink) !important; }
+  tr:target { outline: none !important; background: var(--paper) !important; }
+}
+
+@media print {
+  /* Chrome is the shell block's business now; this block owns the invoice's
+     own parts. Its success banner is the just-paid confirmation — the payment
+     state is in the invoice's own meta line — so it stays screen-only. */
+  .invoice-actions { display: none !important; }
   .invoice { border: none; box-shadow: none; max-width: 100%; }
   .invoice::before { display: none; }
   /* Paper is a palette of its own, so it has tokens: even the printer is owned
@@ -969,7 +1101,8 @@ html[data-theme="kids-boutique"] .context-mark, html[data-theme="kids-boutique"]
 .theme-preview-body i { background: var(--candy); border: 0; }
 .theme-preview-body b { background: var(--sky); border: 0; }
 .theme-preview-table { display: flex; gap: 3px; height: 30px; padding: 5px; background: var(--card); }
-.theme-preview-table em { flex: 1; height: 12px; border-bottom: 2px solid var(--rule); }
+.theme-preview-table canvas { width: 62%; height: 18px; }
+.theme-preview-table i { width: 6px; height: 18px; border-radius: 2px; }
 @media (max-width: 700px) { .theme-gallery { grid-template-columns: 1fr; } .theme-option { grid-template-columns: 120px 1fr; } .theme-preview { width: 120px; } }
 
 /* ===================== Admin ===================== */
@@ -1043,6 +1176,25 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 .reading-list { list-style: none; margin: 0; padding: 0; }
 .reading-list li { padding: 0.55rem 0; border-bottom: 1px solid var(--rule); line-height: 1.9; }
 .reading-list li:last-child { border-bottom: none; }
+
+@media print {
+  /* The dashboard on paper is the day's own brief: the action row is the page's
+     navigation and dies with the screen, while the figures and the month's
+     reading — the parts worth a staple — come out as ink on the theme's paper,
+     one column, in reading order. */
+  /* Chrome is the shell block's business; this block owns the dashboard's own
+     parts: the action tiles are the screen's navigation and die with it. */
+  .screen-only { display: none !important; }
+  .print-heading { display: block !important; }
+  .stats-grid { grid-template-columns: 1fr 1fr; }
+  .action-grid { display: none !important; }
+  .card, .stat-card { background: var(--paper) !important; border: 0 !important; box-shadow: none !important; break-inside: avoid; }
+  .stat-card, .stat-label, .stat-value, .stat-sub, .stat-delta, .ranked-list,
+  .ranked-row, .ranked-name, .ranked-figures, .reading-list li,
+  .section-heading h3, .eyebrow { color: var(--paper-ink) !important; }
+  .ranked-row, .reading-list li { border-bottom-color: var(--paper-mid) !important; }
+  body { background: var(--paper) !important; color: var(--paper-ink) !important; }
+}
 
 /* Settings: the standing of the downgrade rule, under the one field that sets it. */
 .settings-downgrade-note { margin: 0 0 1.5rem; font-size: 0.85rem; line-height: 1.9; }
@@ -1165,8 +1317,7 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
    with the range it describes under the title — a report carries its own
    context, because a staple never travels with a URL. */
 @media print {
-  .filter-bar, .search-form, .tip-icon, .breadcrumb, .admin-nav, .screen-only,
-  .app-topbar, .app-sidebar, .app-footer, .sidebar-overlay { display: none !important; }
+  .filter-bar, .search-form, .tip-icon, .screen-only { display: none !important; }
   .print-heading { display: block !important; }
   .kpi-grid { grid-template-columns: repeat(3, 1fr); }
   .charts-grid, .tables-grid { grid-template-columns: 1fr; }
@@ -1211,9 +1362,13 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
   /* `visibility: hidden` as well as the slide: a translated panel is still in the
      tab order, so a reader on a narrow window tabbed straight into the closed menu
      and through every entry of a menu nobody could see. */
-  .app-sidebar { transform: translateX(110%); visibility: hidden; transition: transform 0.22s ease, visibility 0.22s ease; width: min(300px, 88vw); }
+  /* The drawer is a floating layer, so it paints the floating-layer surface
+     — the card, like the popup and the lightbox stage — not the desktop
+     sidebar's panel fill: Midnight's sidebar-bg sat *darker* than the dimmed
+     page and the drawer read at 1.05:1, not as a layer at all. */
+  .app-sidebar { transform: translateX(110%); visibility: hidden; transition: transform 0.22s ease, visibility 0.22s ease; width: min(300px, 88vw); box-shadow: var(--shadow-overlay); background: var(--card); color: var(--ink); }
   body.sidebar-open .app-sidebar { transform: translateX(0); visibility: visible; }
-  .sidebar-overlay { position: fixed; inset: 72px 0 0; z-index: 60; background: color-mix(in srgb, var(--paper-ink) 35%, transparent); backdrop-filter: blur(2px); }
+  .sidebar-overlay { position: fixed; inset: 72px 0 0; z-index: 60; background: color-mix(in srgb, var(--paper-ink) 50%, transparent); backdrop-filter: blur(2px); }
   body.sidebar-open .sidebar-overlay { display: block; }
   .app-main { margin-right: 0; }
   .quick-sale > span:last-child, .topbar-admin > span:last-child { display: none; }
@@ -1308,7 +1463,7 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 .document-signatures div { border-top: 1px solid var(--ink); padding-top: 0.5rem; }
 .document-actions { display: flex; justify-content: center; gap: 0.6rem; margin: 1rem auto; }
 @media (max-width: 700px) { .staff-record > summary { align-items: flex-start; flex-direction: column; } .form-span-2 { grid-column: auto; } .document-signatures { gap: 1.5rem; } }
-@media print { .print-document { max-width: none; margin: 0; padding: 0; box-shadow: none; border: none; } .document-actions, .app-topbar, .app-sidebar, .app-footer, .breadcrumb, .sidebar-overlay { display: none !important; } .app-main { margin: 0; } body { background: var(--paper) !important; color: var(--paper-ink) !important; } .print-document, .print-document * { color: var(--paper-ink) !important; background: var(--paper) !important; } }
+@media print { .print-document { max-width: none; margin: 0; padding: 0; box-shadow: none; border: none; } .document-actions { display: none !important; } body { background: var(--paper) !important; color: var(--paper-ink) !important; } .print-document, .print-document * { color: var(--paper-ink) !important; background: var(--paper) !important; } }
 
 /* Theme signatures: each workspace keeps the same structure while changing its visual rhythm. */
 .card::before { background: var(--card-accent); }
@@ -1464,6 +1619,11 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .tag-editor-field:hover, .tag-editor-field.is-selected { border-style: solid; border-color: var(--candy); box-shadow: var(--focus-ring); }
 .tag-editor-field.is-hidden-field { opacity: 0.4; border-style: dotted; background: color-mix(in srgb, var(--ink-soft) 8%, transparent); }
 .tag-resize-handle { position: absolute; left: -4px; bottom: -4px; width: 10px; height: 10px; border: 2px solid var(--card); border-radius: 50%; background: var(--candy); cursor: nwse-resize; }
+/* The corner is a control now (role=button, tabbable): focused it shows the
+   shell's ring, mid-session it reads as held down. The ring sits inside the
+   handle's own box so the canvas' hidden overflow never clips it. */
+.tag-resize-handle:focus-visible { outline: 3px solid var(--ring); outline-offset: -2px; }
+.tag-resize-handle.is-keyboard-resizing { transform: scale(1.45); box-shadow: var(--focus-ring); }
 .editor-help { margin: 0.7rem 0 0; color: var(--ink-soft); font-size: 0.75rem; }
 .tag-field-controls { padding: 1rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--surface-soft); }
 .tag-field-controls h4 { margin: 0 0 0.6rem; }
@@ -1499,7 +1659,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 
 .choice-card { display: flex; flex-direction: column; gap: 0.2rem; padding: 0.8rem; border: 2px solid var(--rule); border-radius: var(--radius-sm); cursor: pointer; background: var(--surface-soft); }
 .choice-card:has(input:checked) { border-color: var(--candy); background: color-mix(in srgb, var(--candy) 8%, var(--card)); }
-.choice-card input { width: auto; min-height: 0; accent-color: var(--candy); }
+.choice-card input { width: auto; min-height: 0; }
 .choice-card strong { font-size: 0.85rem; }
 .choice-card small { color: var(--ink-soft); font-size: 0.7rem; }
 .tag-custom-warning { margin: 0.8rem 0; color: var(--warning-ink); }
@@ -1547,7 +1707,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .tag-selection-item.is-printed { opacity: 0.7; }
 .tag-selection-head { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.6rem 0.65rem 0.5rem; }
 .tag-selection-label { display: flex; align-items: flex-start; gap: 0.5rem; min-height: 0; padding: 0; cursor: pointer; }
-.tag-selection-label input { position: static; flex: 0 0 auto; width: 20px; height: 20px; min-height: 0; margin-top: 0.1rem; accent-color: var(--candy); z-index: auto; }
+.tag-selection-label input { position: static; flex: 0 0 auto; width: 20px; height: 20px; min-height: 0; margin-top: 0.1rem; z-index: auto; }
 .tag-selection-check { display: none; }
 .tag-selection-title { max-width: 100%; min-width: 0; padding-inline: 0; overflow: hidden; color: var(--ink); font-size: 0.82rem; font-weight: 800; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .tag-stock-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.25rem 0.6rem; padding: 0.45rem 0.65rem; border-top: 1px dashed var(--rule); color: var(--ink-soft); font-size: 0.72rem; }
@@ -1643,8 +1803,11 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 
 /* ===================== Tag editor improvements ===================== */
 .tag-editor-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.6rem; flex-wrap: wrap; }
-.tag-zoom-seg { display: inline-flex; border: 1px solid var(--rule); border-radius: var(--radius-sm); overflow: hidden; }
-.tag-zoom-seg .zoom-btn { min-height: 34px; padding: 0.25rem 0.7rem; border: 0; border-inline-start: 1px solid var(--rule); background: var(--card); color: var(--ink); font-weight: 800; font-size: 0.78rem; cursor: pointer; }
+/* overflow:hidden here clipped the global focus ring off the segment's end
+   buttons — the keyboard-shell guard's own family of defect. The separators
+   between buttons carry the edge instead, so nothing is clipped. */
+.tag-zoom-seg { display: inline-flex; border: 1px solid var(--rule); border-radius: var(--radius-sm); }
+.tag-zoom-seg .zoom-btn { min-height: 34px; padding: 0.25rem 0.7rem; border: 0; border-inline-start: 1px solid var(--rule); border-radius: 0; background: var(--card); color: var(--ink); font-weight: 800; font-size: 0.78rem; cursor: pointer; }
 .tag-zoom-seg .zoom-btn:first-child { border-inline-start: 0; }
 .tag-zoom-seg .zoom-btn.active { background: var(--brand-fill); color: var(--brand-label); }
 .tag-editor-canvas { touch-action: none; }
@@ -1683,6 +1846,14 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .tag-field-chip .chip-dot { width: 9px; height: 9px; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent); flex: 0 0 auto; }
 .tag-field-chip[aria-pressed="false"] { background: var(--surface-soft); }
 
+/* The history page's source quick-filter: the select's vocabulary as pills,
+   one click to «خلاصه ماهانه» and friends. Same vocabulary, so a chip and
+   the select can never disagree about what senders exist. */
+.source-chip { display: inline-flex; align-items: center; padding: 0.3rem 0.7rem; border: 1.5px solid var(--rule); border-radius: 999px; background: var(--card); color: var(--ink); font-size: 0.76rem; font-weight: 700; text-decoration: none; transition: border-color 0.15s, background 0.15s; }
+.source-chip:hover { border-color: var(--candy); }
+.source-chip.is-active { background: var(--brand-fill); border-color: var(--brand-fill); color: var(--brand-label); }
+.customer-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.8rem; }
+
 .tag-editor-workspace { grid-template-columns: minmax(0, 1.65fr) minmax(250px, 0.85fr); }
 .tag-editor-toolbar-left, .tag-editor-toolbar-right { display: flex; align-items: center; gap: 0.6rem; }
 .dims-chip { padding: 0.3rem 0.7rem; border-radius: var(--radius-sm); background: var(--surface-soft); border: 1px solid var(--rule); font-size: 0.78rem; font-weight: 800; white-space: nowrap; }
@@ -1693,7 +1864,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .selected-field-title { display: flex; align-items: center; gap: 0.5rem; margin: 0.7rem 0 0.6rem; }
 .selected-field-title strong { font-size: 0.92rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .switch-inline { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.76rem; font-weight: 700; color: var(--ink-soft); cursor: pointer; }
-.switch-inline input { width: auto; min-height: 0; accent-color: var(--candy); }
+.switch-inline input { width: auto; min-height: 0; }
 .tag-prop-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; }
 .tag-prop-grid label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.72rem; font-weight: 700; color: var(--ink-soft); }
 .tag-prop-grid input, .tag-prop-grid select { min-height: 38px; font-size: 0.85rem; }
@@ -1874,6 +2045,22 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
   .purchase-filter-form { grid-template-columns: 1fr; }
 }
 
+@media print {
+  /* The purchase detail on paper is the record of the buy: the KPIs, the
+     lines, the payments, the cost history, the financial summary. Its
+     finalise and payment forms and the danger zone are the screen's reply —
+     the document the supplier signs is the /print view — so they die with
+     the screen; the grid closes to one column and the summary closes the
+     page. The summary's soft labels and the total's hairline are palette
+     choices made against a dark screen: on paper they are ink and the
+     paper's own mid. */
+  .purchase-action-card, .purchase-detail-side .danger-zone { display: none !important; }
+  .purchase-detail-layout { display: block; }
+  .purchase-detail-side { position: static; }
+  .purchase-amount-list dt { color: var(--paper-ink) !important; }
+  .purchase-amount-list .is-total { border-top-color: var(--paper-mid) !important; }
+}
+
 /* ===================== Inventory ledger (دفتر انبار) ===================== */
 
 .movement-legacy-note { font-size: 0.78rem; margin: -0.6rem 0 1.1rem; }
@@ -1987,7 +2174,10 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
   color: var(--ink);
   border: 1px solid var(--rule);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-hover);
+  /* A floating picker is the page's third depth: it must clear the cards it
+     hovers over by more than a hover does, so it takes the overlay rung of
+     the palette's elevation ladder, not the hover shadow reused. */
+  box-shadow: var(--shadow-overlay);
   direction: rtl;
   font-family: inherit;
   font-size: 0.85rem;
@@ -2308,13 +2498,27 @@ html[data-theme-mode="high-contrast"] .bucket-card.is-active { border-color: var
 }
 
 @media print {
-  /* A statement is a document: no chrome, no colour work, just the figures. */
-  .app-header, .app-sidebar, .app-footer, .screen-only, .admin-nav, .search-form { display: none !important; }
-  .credit-statement { border: 0; box-shadow: none; padding: 0; }
+  /* A statement is a document: no chrome, no colour work, just the figures —
+     and it is the theme's paper it prints on, like every printed page, so a
+     dark palette's card surfaces never reach the printer as grey rectangles. */
+  .screen-only, .search-form { display: none !important; }
+  .credit-statement { border: 0; box-shadow: none; padding: 0; background: var(--paper) !important; }
   .credit-statement .table-scroll { overflow: visible; }
   .statement-table { min-width: 0; width: 100%; font-size: 0.8rem; }
-  .statement-table th, .statement-table td { border-bottom: 1px solid var(--rule); }
-  body { background: var(--paper); }
+  .statement-table th, .statement-table td {
+    border-bottom: 1px solid var(--paper-mid);
+    color: var(--paper-ink) !important;
+    background: var(--paper) !important;
+  }
+  .statement-head h2, .statement-head h3, .statement-head p,
+  .statement-summary p { color: var(--paper-ink) !important; }
+  .statement-summary { color: var(--paper-ink) !important; }
+  .credit-table thead th { border-bottom: 2px solid color-mix(in srgb, var(--paper) 70%, var(--paper-ink)) !important; }
+  .statement-table tfoot th, .statement-table tfoot td {
+    border-top: 2px solid color-mix(in srgb, var(--paper) 70%, var(--paper-ink)) !important;
+    color: var(--paper-ink) !important; background: var(--paper) !important;
+  }
+  body { background: var(--paper) !important; color: var(--paper-ink) !important; }
 }
 
 /* High-contrast: state must not depend on colour alone. */
@@ -2389,7 +2593,7 @@ html[data-theme-mode="high-contrast"] .pdp-day.is-today { outline: 2px dashed va
 }
 .audience-choice:hover { background: var(--hover-surface); }
 .audience-choice.is-empty { cursor: not-allowed; color: var(--ink-soft); }
-.audience-choice input { width: auto; min-height: 0; accent-color: var(--candy); }
+.audience-choice input { width: auto; min-height: 0; }
 .audience-label { font-weight: 600; font-size: 0.86rem; }
 .audience-count { margin-inline-start: auto; font-size: 0.78rem; color: var(--ink-soft); font-weight: 700; }
 
@@ -2408,7 +2612,7 @@ html[data-theme-mode="high-contrast"] .pdp-day.is-today { outline: 2px dashed va
 .form-section:last-of-type { border-bottom: 0; }
 .form-section h3 { margin-bottom: 0.6rem; }
 .switch-row { display: flex; gap: 0.6rem; align-items: flex-start; min-height: var(--touch-target); cursor: pointer; }
-.switch-row input { width: auto; min-height: 0; margin-top: 0.35rem; accent-color: var(--candy); }
+.switch-row input { width: auto; min-height: 0; margin-top: 0.35rem; }
 .switch-row small { display: block; color: var(--ink-soft); font-size: 0.76rem; }
 .form-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-top: 1rem; }
 
@@ -2521,6 +2725,11 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
 .sms-body-cell { max-width: 22rem; }
 .sms-body { display: block; font-size: 0.82rem; line-height: 1.6; overflow-wrap: anywhere; }
 .sms-body-cell small { color: var(--ink-soft); font-size: 0.72rem; }
+/* What an automatic template would actually write, shown on its manager row
+   before «فعال‌کردن» is pressed — same bubble the owner reads elsewhere. */
+.sms-trigger-preview { margin-top: 0.45rem; display: grid; gap: 0.25rem; max-width: 26rem; }
+.sms-trigger-preview .sms-bubble { font-size: 0.8rem; }
+.sms-trigger-preview-note { color: var(--ink-soft); font-size: 0.72rem; }
 /* Which values the frozen text was built out of, and whether a replay through
    the current template still reproduces it. Kept quiet until asked for: the
    body is what the reader came for, the audit is what they check next. */
@@ -2656,7 +2865,7 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
   cursor: pointer;
 }
 .sms-audience-option:hover { background: var(--surface-soft); }
-.sms-audience-option input { width: auto; min-height: 0; accent-color: var(--candy); }
+.sms-audience-option input { width: auto; min-height: 0; }
 .sms-audience-option span { display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; font-size: 0.84rem; }
 .sms-audience-option small { color: var(--ink-soft); font-size: 0.74rem; font-weight: 700; }
 .sms-picked-block { border-top: 1px dashed var(--rule); padding-top: 0.7rem; }
@@ -2674,7 +2883,7 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
 }
 .sms-pick-row:last-child { border-bottom: 0; }
 .sms-pick-row:hover { background: var(--hover-surface); }
-.sms-pick-row input { width: auto; min-height: 0; accent-color: var(--candy); }
+.sms-pick-row input { width: auto; min-height: 0; }
 .sms-pick-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sms-pick-row small { margin-inline-start: auto; color: var(--ink-soft); font-size: 0.74rem; }
 .sms-summary { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
@@ -2808,6 +3017,10 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
   font-size: 0.78rem; color: var(--ink-soft); font-weight: 600;
 }
 .digest-preview-bubble { max-width: 100%; }
+/* The hand-send action under the preview: its own form, so it never posts the
+   settings form's fields along with it. */
+.digest-preview-actions { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.2rem; }
+.digest-preview-actions small { color: var(--ink-soft); }
 
 /* A digest row's month, named where the owner scans senders and dates. */
 .digest-month-chip {
@@ -2826,3 +3039,92 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
 .digest-resend label { font-weight: 600; font-size: 0.85rem; }
 .digest-resend-row { display: flex; gap: 0.5rem; align-items: center; }
 .digest-resend-row select { min-width: 12rem; }
+
+/* The profile's drift banner: a warning the width of the page, so a counter
+   that disagrees with the invoices is read before the KPIs under it. */
+.drift-banner {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.drift-banner .tnum {
+  font-weight: 400;
+  margin-inline-start: 0.5rem;
+}
+
+/* ===================== Analytics extras =====================
+   Moved out of the analytics page so the rules live with the rest of the
+   theme (and its print/high-contrast overrides) instead of in a page-local
+   <style> block. `.kpi-grid` itself already lives above; only what the page
+   adds beyond it is kept here. */
+@media (max-width: 900px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .charts-grid, .tables-grid { grid-template-columns: 1fr; }
+}
+.matrix { border-collapse: collapse; font-size: 0.85rem; }
+.matrix th, .matrix td { border: 1px solid var(--rule); padding: 0.35rem 0.6rem; min-width: 2.8rem; white-space: nowrap; }
+.inv-row { display: flex; justify-content: space-between; padding: 0.25rem 0; }
+
+/* Question mark icon */
+.tip-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--rule);
+    color: var(--ink-soft);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: help;
+    vertical-align: middle;
+    margin-inline-start: 4px;
+    transition: background 0.15s, color 0.15s;
+    font-family: sans-serif;
+}
+.tip-icon:hover {
+    background: var(--brand-fill);
+    color: var(--brand-label);
+}
+
+/* Tab bar: one link per analytics section, carrying the current filters. */
+.tab-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+.tab-card {
+    margin-bottom: 1.25rem;
+}
+@media print {
+    .tab-card { display: none; }
+    /* Paper shows every tab in reading order: a staple travels with all of
+       the report, not just the tab that happened to be open on screen. */
+    .analytics-tab[hidden] { display: block; }
+}
+
+/* ===================== طرح تگ: paper ===================== */
+
+/* The tag designer is a worksheet: on paper it is the layout's own figures and
+   the A4 guide, not an editor. Every control that drives the screen — the
+   editor's canvas, its side panel, the zoom segment, the field chips, the
+   forms and their save row — stays with the screen; the settings' labels and
+   figures are what a printed sheet is for. The interactive surfaces themselves
+   (color wells, spinner arrows, a live preview wired to the script) draw
+   nothing meaningful on paper, so the guide and the heading carry the page. */
+@media print {
+  .tag-editor-workspace,
+  .tag-fields-strip-head,
+  .tag-fields-strip,
+  .tag-template-form,
+  .tag-template-actions,
+  .tag-save-row,
+  .tag-image-upload,
+  .tag-zoom-seg { display: none !important; }
+  .tag-ctl-card { border: 0 !important; box-shadow: none !important; }
+  .tag-ctl-card input,
+  .tag-ctl-card select { border: 0 !important; padding: 0 !important; background: transparent !important; }
+  .tag-preview-panel { overflow: visible !important; }
+}
