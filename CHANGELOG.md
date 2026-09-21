@@ -1,3 +1,22 @@
+## 2.6.0 — 2026-10-03
+
+### پوسته و صفحات: the app keeps its promises on any input, in every state, on paper
+
+- **Garbage query parameters answer a page, not a bare 422.** A hand-typed, stale-bookmark or crafted `?page=abc` was refused by FastAPI's validation layer with raw English JSON on nine paginated pages — one family the ledger and purchases audits had each fixed in isolation. One shared definition now serves all of them: `page_arg` parses and clamps to a real page, `int_arg` parses flags and ids without clamping their meaningful zero, and every route renders its list instead of refusing. Under `/admin` and `/sales` even a bad **path** integer (`/admin/sms/templates/abc/edit`) now gets the shop's Persian error page, while `/api` keeps its JSON contract for the phone.
+- **CSV exports read the filters the view shows.** The expenses export accepted `q`/`type`/`method`/`status` and ignored all of them — the file could list a year while the screen showed three rows; the sales export was blind to the page's own default period; the customers export recomputed its aggregates per customer. All of them now run the view's clause chain and window, and the links carry the page's current state, so the file cannot disagree with the screen it came from.
+- **The supplier payment form names the invoice it settles.** The server accepted `purchase_id` but the form never offered one; each payment row now picks from that supplier's open invoices with each invoice's remaining shown (overdue named), the input clamps client-side to the chosen invoice, the **server refuses** a crafted POST above an invoice's remaining even under the supplier cap, and the audit event carries the reference.
+- **Every native control paints from the theme.** Eight component families hardcoded an accent while the orphan checkboxes in bulk rows kept the browser's blue; one `accent-color` rule now covers checkbox, radio, range, progress and meter, and each theme pins its `color-scheme` so the browser's own chrome — scrollbars, widget ink — follows the palette's pole. The tier-up bulk checkboxes also gained the accessible names they lacked.
+- **The mobile drawer is a keyboard modal.** While open on a narrow screen, Tab used to walk through the menu into the page behind the scrim; focus now cycles inside it, Escape still closes and returns, and the always-visible desktop sidebar deliberately never traps.
+- **The till's payment options are photographed in both states.** The visual probe renders the real checkout in all ten palettes and measures what is painted: selected and unselected options are measurably different surfaces (Midnight's selected کارت reads 12.67:1, unselected 14.09:1), every label far above the AA floor.
+- **Documents print as paper everywhere.** The shell's print block — breadcrumbs, filter bars and flash chrome stripped, links plain, rows unsplit — covers every page the dedicated blocks don't, so nothing prints theme colours on white by accident.
+
+### باشگاه مشتریان: a counter that can drift is computed from its source
+
+- **Points joined the one-definition family.** `total_spent`, `total_purchases` and `total_debt` already computed from the invoices; `total_points` — which feeds the tier thresholds, the tier-up candidates and the SMS variables — was a stored counter with no computed counterpart. The invoices' own sum of `points_earned` is now the definition: the list shows and sorts by it, the profile flags «نامطابق» with both numbers, the drift worklist and the monthly digest sentence count it, and the per-profile and bulk reconcile actions repair it. The customers CSV reads the same figures, so the file cannot disagree with the screen.
+- **The drifted worklist is one click from the page.** The customer list carries a view-chip row («همه مشتریان» / «شمارنده ناهم‌خوان (N)») reusing the SMS history's pill styling; the drifted view deliberately ignores status/tier/tag filters so the chip lands on exactly the set the drift card counts, and disappears once the shop is clean.
+
+**No schema change.** The database stays on revision 19.
+
 ## 2.5.9 — 2026-09-19
 
 ### روایت ماه: the month's sentences go where the owner already is

@@ -13,7 +13,15 @@ can be replayed), virtual try-on previews on the child's picture, invoices
 words and on the marks rather than by colour alone, links and filled button
 labels that read at 4.5:1 in every palette — each filled surface deriving its
 own label, the loyalty metals and the printed page included, with a stylesheet
-that names no colour the theme should own — and accounting-lite: credit sales
+that names no colour the theme should own, every native control taking the theme's
+accent, form bounds that share one table with the server rules, pages that answer
+garbage query parameters with their list instead of a bare 422 (and a bad path
+integer with the shop's error page, never raw JSON), CSV exports that honour the
+filters the view shows, supplier payments that name the invoice they settle and
+are bounded by it server-side, a mobile drawer that traps focus like a modal,
+document pages that print as paper in every palette, and loyalty counters
+computed from the invoices they came from — with a drift worklist, a bulk view
+and reconcile actions when a stored counter disagrees — and accounting-lite: credit sales
 (نسیه) with a debt ledger, supplier purchases that update stock & cost,
 expenses, a cash drawer counted open and counted closed with every difference
 recorded, a net profit & loss report that breaks the expenses down by category,
