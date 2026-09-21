@@ -1208,11 +1208,10 @@ async def admin_suppliers(request: Request, db: Session = Depends(get_db)):
     if not hasattr(guard, "role"):
         return guard
     suppliers = db.query(Supplier).order_by(Supplier.created_at.desc()).all()
-    totals = dict(
-        db.query(Supplier.id, func.coalesce(func.sum(Purchase.total_cost), 0))
-        .join(Purchase, (Purchase.supplier_id == Supplier.id) & (Purchase.is_reversed == False), isouter=True)
-        .group_by(Supplier.id).all()
-    )
+    # One definition for every figure on the page: get_supplier_balances's
+    # `invoiced` runs the same filter chain (non-reversed, non-draft) the
+    # dedicated total_by_supplier query used to re-derive per render. The
+    # template reads balances for مجموع خرید, پرداخت‌شده and بدهی alike.
     # The payment rows get a picker of this supplier's open invoices, so a
     # payment can name the invoice it settles. One query for the page; the
     # paid side comes from the same rollup the detail page trusts, so the
@@ -1239,7 +1238,6 @@ async def admin_suppliers(request: Request, db: Session = Depends(get_db)):
     balances = {row["supplier"].id: row for row in get_supplier_balances(db)}
     return templates.TemplateResponse(request, "admin/suppliers.html", {
         "suppliers": suppliers,
-        "total_by_supplier": totals,
         "balances": balances,
         "open_invoices": open_invoices,
         "msg": request.query_params.get("msg", ""),
@@ -1370,13 +1368,34 @@ async def admin_supplier_delete(supplier_id: int, request: Request, db: Session 
     if not hasattr(guard, "role"):
         return guard
     supplier = db.query(Supplier).filter(Supplier.id == supplier_id).first()
-    if supplier:
-        for p in db.query(Purchase).filter(Purchase.supplier_id == supplier.id).all():
-            p.supplier_id = None
-        db.delete(supplier)
-        db.commit()
-        log_action(db, "supplier_delete", supplier.name, request=request, target_type="supplier", target_id=supplier_id, before={"name": supplier.name})
-    return RedirectResponse(url="/admin/suppliers", status_code=303)
+    if not supplier:
+        return RedirectResponse(url="/admin/suppliers", status_code=303)
+    # The name is read before anything else: the audit entry is written *now*,
+    # not after `db.delete(supplier)` — the old order read `supplier.name` on a
+    # deleted object, so log_action's own try/except swallowed the error and a
+    # destructive action left no trail.
+    name = supplier.name
+    payment_count = db.query(func.count(SupplierPayment.id)).filter(
+        SupplierPayment.supplier_id == supplier.id).scalar() or 0
+    if payment_count:
+        # Money history is never destroyed: a supplier the shop has ever paid
+        # (or recorded a payment for) stays on the books. The purchases are
+        # the other half of their story — naming that count too tells the
+        # owner what deleting would have orphaned.
+        purchase_count = db.query(func.count(Purchase.id)).filter(
+            Purchase.supplier_id == supplier.id).scalar() or 0
+        return RedirectResponse(
+            url="/admin/suppliers?err=" + quote_plus(
+                f"حذف ممکن نیست: {name} {fmt(payment_count)} پرداخت ثبت‌شده دارد."
+                + (f" ({fmt(purchase_count)} خرید هم ثبت شده است.)" if purchase_count else "")
+                + " تأمین‌کننده‌ای که پولی به او پرداخت شده از تاریخ حذف نمی‌شود."),
+            status_code=303)
+    for p in db.query(Purchase).filter(Purchase.supplier_id == supplier.id).all():
+        p.supplier_id = None
+    db.delete(supplier)
+    db.commit()
+    log_action(db, "supplier_delete", name, request=request, target_type="supplier", target_id=supplier_id, before={"name": name})
+    return RedirectResponse(url="/admin/suppliers?msg=" + quote_plus(f"تأمین‌کننده {name} حذف شد."), status_code=303)
 
 
 # ── Purchases ────────────────────────────────────────────────────────────────

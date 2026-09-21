@@ -522,6 +522,8 @@ button:disabled {
 .badge-available { background: var(--success-bg); color: var(--success-ink); }
 .badge-used      { background: var(--warning-bg); color: var(--warning-ink); }
 .badge-none      { background: var(--surface-soft); color: var(--ink-soft); }
+.badge-warning   { background: var(--warning-bg); color: var(--warning-ink); }
+.badge-success   { background: var(--success-bg); color: var(--success-ink); }
 
 /* ===================== Tables ===================== */
 
@@ -594,6 +596,7 @@ tbody tr:last-child td { border-bottom: none; }
 .stat-card.accent-saffron::before   { background: var(--sunshine); }
 .stat-card.accent-ink::before       { background: var(--sky); }
 .stat-card.accent-sky::before       { background: var(--sky); }
+.stat-card.accent-danger::before    { background: var(--danger); }
 
 .stat-card .stat-label {
   font-size: 0.78rem;
@@ -1217,6 +1220,28 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 .search-form > select { flex: 1; min-width: 180px; }
 
 .filter-bar { margin-bottom: 1.25rem; }
+
+/* The suppliers page's two forms: the add row and the per-row payment cell.
+   The payment form lives inside a table cell, so it wraps instead of
+   overflowing on a narrow screen — the select gets the room, the amount a
+   fixed hand-width, like every money input. */
+.supplier-add-form {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0;
+}
+.supplier-add-form input[name="name"] { flex: 2; min-width: 220px; }
+.supplier-add-form input[name="phone"] { flex: 1; min-width: 150px; }
+.supplier-add-form input[name="note"] { flex: 2; min-width: 220px; }
+.supplier-payment-form {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.supplier-payment-form select { min-width: 180px; flex: 1; }
+.supplier-payment-form input[name="amount"] { width: 110px; }
 
 /* Login */
 .login-card {

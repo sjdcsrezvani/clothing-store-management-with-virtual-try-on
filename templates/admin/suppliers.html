@@ -1,21 +1,42 @@
 {% extends "base.html" %}
 {% block content %}
 
-{# The footer nav this page used to carry held one real action; the rest of it
-   was a way back the breadcrumb now provides. #}
-{% set page_actions %}
-<a href="/admin/purchases" class="btn btn-primary">ثبت خرید جدید</a>
+{% set page_description %}
+پرداخت‌ها و بدهیِ تأمین‌کنندگان اینجا مدیریت می‌شود؛ خریدها و فاکتورها در صفحه «خرید» ثبت می‌شوند. پرداخت می‌تواند کلی باشد یا فاکتور مشخصی را تسویه کند.
 {% endset %}
 {% include 'partials/page_header.html' %}
 
+{# The number the owner came for, stated once: the debt the shop carries, how
+   many suppliers hold it, and who the rows below will show it for. The same
+   balances the table reads — no second arithmetic. #}
+{% set total_owed = balances.values() | map(attribute='owed') | sum %}
+{% set owing = balances.values() | selectattr('owed', '>', 0) | list %}
+<div class="stats-grid" aria-label="خلاصه بدهی تأمین‌کنندگان">
+    <div class="stat-card {{ 'accent-danger' if total_owed > 0 else 'accent-pine' }}">
+        <div class="stat-label">بدهی کل به تأمین‌کنندگان</div>
+        <div class="stat-value tnum">{{ fmt(total_owed) }} ت</div>
+        <div class="stat-sub">{{ 'سررسید و پرداخت از همین صفحه' if total_owed > 0 else 'بدهی‌ای وجود ندارد' }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">تعداد تأمین‌کننده</div>
+        <div class="stat-value tnum">{{ fmt(balances | length) }}</div>
+        <div class="stat-sub">همهٔ تأمین‌کنندگان ثبت‌شده</div>
+    </div>
+    <div class="stat-card {{ 'accent-saffron' if owing else '' }}">
+        <div class="stat-label">دارای بدهی</div>
+        <div class="stat-value tnum">{{ fmt(owing | length) }}</div>
+        <div class="stat-sub">{{ fmt(total_owed) }} تومان بین آن‌ها تقسیم شده</div>
+    </div>
+</div>
 
 <div class="card">
     <h3>افزودن تأمین‌کننده</h3>
-    <form method="post" action="/admin/suppliers/add" class="filter-bar" style="margin: 0;">
-        <input type="text" name="name" placeholder="نام تأمین‌کننده / عمده‌فروش *" required style="flex:2;">
-        <input type="tel" name="phone" placeholder="📱 تلفن" style="flex:1;">
-        <input type="text" name="note" placeholder="📝 توضیح" style="flex:2;">
-        <button type="submit" class="btn btn-primary">➕ افزودن</button>
+    <form method="post" action="/admin/suppliers/add" class="supplier-add-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="text" name="name" placeholder="نام تأمین‌کننده / عمده‌فروش *" required>
+        <input type="tel" name="phone" placeholder="تلفن">
+        <input type="text" name="note" placeholder="توضیح">
+        <button type="submit" class="btn btn-primary">افزودن</button>
     </form>
 </div>
 
@@ -24,41 +45,53 @@
     <table>
         <thead>
             <tr>
-                <th>🏭 نام</th>
-                <th>📱 تلفن</th>
-                <th>📝 توضیح</th>
-                <th>📦 مجموع خرید</th>
-                <th>💳 پرداخت‌شده</th>
-                <th>📒 بدهی</th>
-                <th>💳 ثبت پرداخت</th>
-                <th>🔧</th>
+                <th>نام</th>
+                <th>تلفن</th>
+                <th>توضیح</th>
+                <th>مجموع خرید</th>
+                <th>پرداخت‌شده</th>
+                <th>بدهی</th>
+                <th>ثبت پرداخت</th>
+                <th>عملیات</th>
             </tr>
         </thead>
         <tbody>
             {% for s in suppliers %}
+            {% set row = balances.get(s.id, {}) %}
+            {% set owed = row.get('owed', 0) %}
             <tr>
-                <td><strong>{{ s.name }}</strong></td>
+                <td>
+                    <strong>{{ s.name }}</strong>
+                    <br><small><a class="text-link" href="/admin/purchases?supplier_id={{ s.id }}">خریدهای این تأمین‌کننده</a></small>
+                </td>
                 <td class="tnum">{{ s.phone or '—' }}</td>
                 <td>{{ s.note or '—' }}</td>
-                <td class="tnum">{{ fmt(total_by_supplier.get(s.id, 0)) }} تومان</td>
-                <td class="tnum">{{ fmt(balances.get(s.id, {}).get('paid', 0)) }} تومان</td>
-                <td class="tnum"><strong>{{ fmt(balances.get(s.id, {}).get('owed', 0)) }} تومان</strong></td>
+                <td class="tnum">{{ fmt(row.get('invoiced', 0)) }} تومان</td>
+                <td class="tnum">{{ fmt(row.get('paid', 0)) }} تومان</td>
+                <td class="tnum">
+                    {% if owed > 0 %}
+                    <strong>{{ fmt(owed) }} تومان</strong>
+                    <span class="badge badge-warning">بدهکار</span>
+                    {% else %}
+                    <span class="badge badge-success">تسویه است</span>
+                    {% endif %}
+                </td>
                 <td>
-                    {% set owed = balances.get(s.id, {}).get('owed', 0) %}
-                    <form method="post" action="/admin/suppliers/{{ s.id }}/payment" style="display:flex; gap:.25rem; flex-wrap:wrap;">
+                    {% if owed > 0 %}
+                    <form method="post" action="/admin/suppliers/{{ s.id }}/payment" class="supplier-payment-form">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                         {# The clamp the server enforces, painted on the input: a
                            figure above the debt is refused before the POST and
-                           the two bounds cannot drift. Zero owed disables the
-                           row — nothing to pay against. #}
+                           the two bounds cannot drift. #}
                         {% if open_invoices.get(s.id) %}
                         {# The invoice picker: a payment can name the invoice it
                            settles. The max on the input stays the supplier's
                            whole debt — an over-invoice figure is still refused
-                           server-side (فقط بدهی کل) — but the chosen invoice's
-                           own remaining is the tighter bound the script
-                           enforces and the option label names it. #}
+                           server-side — but the chosen invoice's own remaining
+                           is the tighter bound the script enforces and the
+                           option label names it. #}
                         <select name="purchase_id" aria-label="فاکتور این پرداخت — {{ s.name }}"
-                                data-supplier="{{ s.id }}" style="min-width:180px; flex:1;">
+                                data-supplier="{{ s.id }}">
                             <option value="">پرداخت کلی (بدون فاکتور)</option>
                             {% for inv in open_invoices[s.id] %}
                             <option value="{{ inv.id }}" data-remaining="{{ inv.remaining }}">{{ inv.label }}</option>
@@ -68,17 +101,18 @@
                         <input type="number" name="amount" min="1" max="{{ owed }}"
                                data-owed="{{ owed }}" required
                                aria-label="مبلغ پرداخت به {{ s.name }}"
-                               {% if owed <= 0 %}disabled title="بدهی‌ای برای پرداخت نیست"{% endif %}
-                               placeholder="مبلغ" style="width:110px;">
-                        <button type="submit" class="btn btn-sm btn-primary"
-                                {% if owed <= 0 %}disabled{% endif %}>ثبت</button>
+                               placeholder="مبلغ">
+                        <button type="submit" class="btn btn-sm btn-primary">ثبت</button>
                     </form>
-                    {% if owed <= 0 %}<small class="customer-meta">تسویه است</small>{% endif %}
+                    {% else %}
+                    <span class="customer-meta">پرداختی برای ثبت نیست</span>
+                    {% endif %}
                 </td>
                 <td>
-                    <form method="post" action="/admin/suppliers/{{ s.id }}/delete" style="display:inline;"
-                          onsubmit="return confirm('⚠️ حذف {{ s.name }}؟ خریدهای ثبت‌شده باقی می‌مانند.')">
-                        <button type="submit" class="btn btn-sm btn-danger">🗑️</button>
+                    <form method="post" action="/admin/suppliers/{{ s.id }}/delete" class="inline-form"
+                          onsubmit="return confirm('⚠️ حذف {{ s.name }}؟ اگر پرداختی ثبت شده باشد، حذف ممکن نخواهد بود.')">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <button type="submit" class="btn btn-sm btn-danger" aria-label="حذف {{ s.name }}">حذف</button>
                     </form>
                 </td>
             </tr>
@@ -86,7 +120,7 @@
         </tbody>
     </table>
     {% else %}
-    <p style="text-align: center; color: var(--ink-soft); padding: 2rem;">هنوز تأمین‌کننده‌ای ثبت نشده است.</p>
+    <p class="empty-state">هنوز تأمین‌کننده‌ای ثبت نشده است. اولین تأمین‌کننده را از فرم بالا اضافه کنید؛ بعد می‌توانید در صفحه «خرید» از او خرید ثبت کنید.</p>
     {% endif %}
 </div>
 
