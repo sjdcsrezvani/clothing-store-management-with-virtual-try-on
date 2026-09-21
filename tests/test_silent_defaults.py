@@ -473,8 +473,10 @@ def test_a_customer_whose_counters_were_never_computed_shows_a_dash(client, db_s
     db_session.commit()
 
     html = client.get("/admin/customers").text
-    # The customer's own row, not the header row above it.
-    at = html.index("شمارنده")
+    # The customer's own row, located by the phone only that row carries — a
+    # word like «شمارنده» also lives in the view chips above the table, and
+    # the anchor must never land on chrome.
+    at = html.index("09120000077")
     start = html.rindex("<tr>", 0, at)
     while "<th" in html[start:at]:
         start = html.rindex("<tr>", 0, start)
@@ -489,7 +491,7 @@ def test_a_customer_whose_counters_were_never_computed_shows_a_dash(client, db_s
                             referral_code="SILENT-NO-SALE"))
     db_session.commit()
     html = client.get("/admin/customers").text
-    at = html.index("بی‌فاکتور")
+    at = html.index("09120000078")
     start = html.rindex("<tr>", 0, at)
     while "<th" in html[start:at]:
         start = html.rindex("<tr>", 0, start)

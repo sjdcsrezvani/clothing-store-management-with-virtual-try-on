@@ -566,16 +566,27 @@ async def admin_accounting_export(
     # The buttons sit inside filtered views — the accounting header's period
     # bar, the purchases and expenses pages' own filter forms — so the file
     # answers with the view the owner was looking at, not the whole ledger.
-    # KNOWN_PERIODS is the one vocabulary; the page routes degrade an unreadable
-    # one to the default, and the export reads the same answer from period_range.
-    if period not in KNOWN_PERIODS:
-        period = "month"
+    # KNOWN_PERIODS is the one vocabulary the page links carry.
     if bool(start_date) != bool(end_date):
         # Half a window is not a range: the export used to read one bound and an
         # empty field as «everything», which is a file the shop did not ask for.
         return _export_refused("تاریخ شروع و پایان را با هم وارد کنید.")
-    window = period_range(period, start_date or None, end_date or None)
-    start, end = window.start, window.end
+    if start_date and end_date:
+        # Typed dates are the window, whatever the period bar said — the same
+        # precedence the page's own filter uses. And unlike a page, which can
+        # degrade an unreadable range to its default *because it says so on
+        # screen*, an export is a file the shop keeps: a file of the wrong
+        # period is worse than no file, nothing about it looks wrong
+        # afterwards. A range that cannot be read is refused, reason named.
+        try:
+            start, end = get_date_range("custom", start_date, end_date)
+        except UnreadableRange as problem:
+            return _export_refused(str(problem))
+    elif period not in KNOWN_PERIODS:
+        return _export_refused(f"بازه «{period}» شناخته نشد؛ فایل ساخته نشد.")
+    else:
+        window = period_range(period)
+        start, end = window.start, window.end
     today = datetime.now(timezone.utc).strftime("%Y%m%d")
 
     if kind == "customers":
