@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 20
+MIGRATION_VERSION = 21
 
 
 def migration_status(engine) -> int:
@@ -238,6 +238,24 @@ def _rebuild_sms_messages(conn) -> None:
 
 
 def _apply_revision(conn, version: int) -> None:
+    if version == 21:
+        # A gallery per sellable variant: frames ordered first-is-primary.
+        # Purely additive — existing rows keep their single image_path.
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS variant_images (
+                id INTEGER PRIMARY KEY,
+                variant_id INTEGER NOT NULL REFERENCES product_variants(id),
+                image_path VARCHAR(500) NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at DATETIME NOT NULL
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_variant_images_variant_id "
+            "ON variant_images (variant_id)"
+        ))
+        return
+
     if version == 20:
         # Weight is weighed per sellable unit: sizes of one product rarely
         # share it, so the scale moves from the product to the variant.

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode, quote_plus
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, File, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 from database import get_db
@@ -21,6 +21,7 @@ from models import (
     TagTemplate,
     TagPrintBatch,
     TagPrintBatchLine,
+    VariantImage,
     generate_barcode,
     to_english_digits,
 )
@@ -193,7 +194,8 @@ PRODUCT_PER_PAGE_OPTIONS = (10, 25, 50)
 PRODUCT_STOCK_FILTERS = ("all", "low", "out")
 
 
-def _product_list_query(db, search: str = "", category: str = "", stock: str = "all"):
+def _product_list_query(db, search: str = "", category: str = "", stock: str = "all",
+                        active_only: bool = True):
     """The filtered products query the list, the CSV and the bulk bar share.
 
     Price and stock are variant aggregates, so the query carries them as
@@ -220,7 +222,7 @@ def _product_list_query(db, search: str = "", category: str = "", stock: str = "
     )
     query = (
         db.query(Product)
-        .filter(Product.is_active == True)  # noqa: E712
+        .filter(Product.is_active == active_only)
         .outerjoin(price_sq, price_sq.c.product_id == Product.id)
         .outerjoin(avail_sq, avail_sq.c.product_id == Product.id)
     )
@@ -274,6 +276,14 @@ def _product_order(sort_key: str, sort_dir: str, price_sq, avail_sq):
     order = column.desc() if sort_dir == "desc" else column.asc()
     return order, Product.id.desc()
 
+def _safe_next(value, fallback: str) -> str:
+    """A return address the shop itself issued: same-origin paths only, never
+    a full URL smuggled in a query string."""
+    text = str(value or "").strip()
+    if text.startswith("/") and not text.startswith("//"):
+        return text
+    return fallback
+
 
 def _product_per_page(raw: str) -> int:
     try:
@@ -304,6 +314,7 @@ async def admin_products(
     page: str = "1",
     per_page: str = "10",
     stock: str = "all",
+    state: str = "active",
     db: Session = Depends(get_db),
 ):
     guard = require_html_role(request, db, "manager")
@@ -314,11 +325,15 @@ async def admin_products(
     per_page = _product_per_page(per_page)
     if stock not in PRODUCT_STOCK_FILTERS:
         stock = "all"
+    # The archive is a view, not a mode: anything but «archived» answers the
+    # active shelf, never an error.
+    archived_view = (state == "archived")
     # Ledger sorting, same convention as the sales list: an unknown key or
     # direction answers the default newest-first list, never an error.
     sort_key, sort_dir = parse_sort(request.query_params, PRODUCT_SORTS, "newest")
 
-    query, price_sq, avail_sq = _product_list_query(db, search, category, stock)
+    query, price_sq, avail_sq = _product_list_query(
+        db, search, category, stock, active_only=not archived_view)
     total = query.count()
     total_pages = max(1, (total + per_page - 1) // per_page)
     page = min(max(page, 1), total_pages)
@@ -346,6 +361,13 @@ async def admin_products(
         "per_page": per_page,
         "per_page_options": PRODUCT_PER_PAGE_OPTIONS,
         "stock_filter": stock,
+        "state": "archived" if archived_view else "active",
+        "archived_count": db.query(Product).filter(Product.is_active == False).count(),  # noqa: E712
+        "list_qs": urlencode({
+            "search": search, "category": category, "stock": stock,
+            "state": "archived" if archived_view else "active",
+            "per_page": per_page, "sort": sort_key, "dir": sort_dir, "page": page,
+        }),
         "fmt": fmt,
         "jalali_str": jalali_str,
     })
@@ -825,7 +847,8 @@ async def admin_product_add(
 
 
 @router.get("/products/{product_id}", response_class=HTMLResponse)
-async def admin_product_edit_form(product_id: int, request: Request, db: Session = Depends(get_db)):
+async def admin_product_edit_form(product_id: int, request: Request, next: str = "",
+                                  db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
@@ -840,6 +863,7 @@ async def admin_product_edit_form(product_id: int, request: Request, db: Session
         "suppliers": db.query(Supplier).order_by(Supplier.name.asc()).all(),
         "tag_templates": list_tag_templates(db),
         **_catalog_datalists(db),
+        "return_to": _safe_next(next, "/admin/products"),
         "fmt": fmt,
         "jalali_str": jalali_str,
     })
@@ -1013,7 +1037,10 @@ async def admin_product_update(
         )
     db.commit()
 
-    return RedirectResponse(url="/admin/products", status_code=303)
+    return RedirectResponse(
+        url=_safe_next(form.get("next", ""), "/admin/products"),
+        status_code=303,
+    )
 
 
 @router.post("/products/{product_id}/delete", response_class=HTMLResponse)
@@ -1033,7 +1060,8 @@ async def admin_product_delete(product_id: int, request: Request, db: Session = 
 
 
 @router.get("/variants/{variant_id}/edit", response_class=HTMLResponse)
-async def admin_variant_edit_form(variant_id: int, request: Request, db: Session = Depends(get_db)):
+async def admin_variant_edit_form(variant_id: int, request: Request, next: str = "",
+                                  db: Session = Depends(get_db)):
     """Edit a specific variant."""
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
@@ -1046,6 +1074,7 @@ async def admin_variant_edit_form(variant_id: int, request: Request, db: Session
     return templates.TemplateResponse(request, "admin/variant_form.html", {
         "variant": variant,
         "product": variant.product,
+        "return_to": _safe_next(next, f"/admin/products/{variant.product_id}"),
     })
 
 
@@ -1059,7 +1088,6 @@ async def admin_variant_update(
     cost_price: str = Form("0"),
     fake_cost_price: str = Form(""),
     stock_quantity: str = Form("0"),
-    barcode: str = Form(""),
     sku: str = Form(""),
     tryon_details: str = Form(""),
     reorder_point: str = Form("0"),
@@ -1155,26 +1183,9 @@ async def admin_variant_update(
     else:
         weight_int = None
 
-    # Validate unique barcode
-    normalized_barcode = to_english_digits(str(barcode or "").strip())
-    if not normalized_barcode:
-        return templates.TemplateResponse(request, "admin/variant_form.html", {
-            "variant": variant,
-            "product": variant.product,
-            "error": "بارکد الزامی است.",
-        })
-    if normalized_barcode != variant.barcode:
-        existing = db.query(ProductVariant).filter(
-            ProductVariant.barcode == normalized_barcode,
-            ProductVariant.id != variant_id
-        ).first()
-        if existing:
-            return templates.TemplateResponse(request, "admin/variant_form.html", {
-                "variant": variant,
-                "product": variant.product,
-                "error": "بارکد تکراری است.",
-            })
-        variant.barcode = normalized_barcode
+    # The barcode locked at creation: the edit form no longer sends it, and
+    # this handler never rewrites it. A damaged label gets a fresh code from
+    # the regenerate action below, never from a typed field.
 
     # Handle variant image upload
     form = await request.form()
@@ -1189,6 +1200,28 @@ async def admin_variant_update(
             content = await variant_image.read()
             f.write(content)
         variant.image_path = f"/static/uploads/products/{filename}"
+
+    # Gallery frames: every picked file joins the end of the row. The first
+    # frame doubles as the legacy single image while none is set, so every
+    # display that reads image_path keeps working.
+    gallery_files = [
+        upload for upload in form.getlist("variant_images")
+        if hasattr(upload, "filename") and upload.filename
+    ]
+    if gallery_files:
+        upload_dir = Path("static/uploads/products")
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        order = max([frame.sort_order for frame in variant.images] + [-1]) + 1
+        for upload in gallery_files:
+            ext = Path(upload.filename).suffix or ".jpg"
+            filename = f"{uuid.uuid4().hex}{ext}"
+            with open(upload_dir / filename, "wb") as f:
+                f.write(await upload.read())
+            path = f"/static/uploads/products/{filename}"
+            db.add(VariantImage(variant_id=variant.id, image_path=path, sort_order=order))
+            order += 1
+            if not variant.image_path:
+                variant.image_path = path
 
     # Update variant. Cost edits are also recorded so the current cost can be
     # explained without rewriting historical SaleItem costs.
@@ -1234,7 +1267,10 @@ async def admin_variant_update(
     from services.security import log_action
     log_action(db, "variant_update", f"ویرایش تنوع #{variant.id}", request=request, target_type="variant", target_id=variant.id)
 
-    return RedirectResponse(url="/admin/products/" + str(variant.product_id), status_code=303)
+    return RedirectResponse(
+        url=_safe_next(form.get("next", ""), "/admin/products/" + str(variant.product_id)),
+        status_code=303,
+    )
 
 
 @router.post("/variants/{variant_id}/delete", response_class=HTMLResponse)
@@ -1254,8 +1290,139 @@ async def admin_variant_delete(variant_id: int, request: Request, db: Session = 
     return RedirectResponse(url="/admin/products", status_code=303)
 
 
+@router.post("/products/{product_id}/restore", response_class=HTMLResponse)
+async def admin_product_restore(product_id: int, request: Request, db: Session = Depends(get_db)):
+    """Bring an archived product — and its variants — back to the shelf.
+
+    The cascade runs both ways by rule: archiving a product shelves every
+    variant with it, restoring it unshelves them all. A variant archived on
+    its own is restored on its own, from the product page.
+    """
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="محصول یافت نشد")
+    product.is_active = True
+    for variant in product.variants:
+        variant.is_active = True
+    db.commit()
+    return RedirectResponse(
+        url="/admin/products?msg=" + quote_plus(f"«{product.name}» به فهرست برگشت."),
+        status_code=303,
+    )
+
+
+@router.post("/variants/{variant_id}/restore", response_class=HTMLResponse)
+async def admin_variant_restore(variant_id: int, request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+
+    variant = db.query(ProductVariant).filter(ProductVariant.id == variant_id).first()
+    if not variant:
+        raise HTTPException(status_code=404, detail="تنوع یافت نشد")
+    if not variant.product.is_active:
+        return RedirectResponse(
+            url=f"/admin/products/{variant.product_id}?err=" + quote_plus(
+                "ابتدا محصول را از بایگانی برگردانید."),
+            status_code=303,
+        )
+    variant.is_active = True
+    db.commit()
+    return RedirectResponse(
+        url=f"/admin/products/{variant.product_id}?msg=" + quote_plus("تنوع به فهرست برگشت."),
+        status_code=303,
+    )
+
+
+@router.post("/variants/{variant_id}/regenerate-barcode", response_class=HTMLResponse)
+async def admin_variant_regenerate_barcode(
+    variant_id: int, request: Request, db: Session = Depends(get_db)
+):
+    """Mint a fresh barcode for a damaged label. The old code dies with this
+    request — printed tags carrying it stop scanning to this variant."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+
+    variant = db.query(ProductVariant).filter(ProductVariant.id == variant_id).first()
+    if not variant:
+        raise HTTPException(status_code=404, detail="تنوع یافت نشد")
+
+    while True:
+        code = generate_barcode_number(db)
+        if not db.query(ProductVariant).filter(ProductVariant.barcode == code).first():
+            break
+    variant.barcode = code
+    db.commit()
+    return RedirectResponse(
+        url=f"/admin/variants/{variant.id}/edit?msg=" + quote_plus(f"بارکد تازه: {code}"),
+        status_code=303,
+    )
+
+
+def _variant_gallery_back(variant_id: int, message: str) -> RedirectResponse:
+    return RedirectResponse(
+        url=f"/admin/variants/{variant_id}/edit?msg=" + quote_plus(message),
+        status_code=303,
+    )
+
+
+@router.post("/variant-images/{image_id}/primary", response_class=HTMLResponse)
+async def admin_variant_image_primary(image_id: int, request: Request, db: Session = Depends(get_db)):
+    """Pin a frame as the gallery's first — and the variant's display image."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+
+    frame = db.query(VariantImage).filter(VariantImage.id == image_id).first()
+    if not frame:
+        raise HTTPException(status_code=404, detail="تصویر یافت نشد")
+    siblings = db.query(VariantImage).filter(
+        VariantImage.variant_id == frame.variant_id,
+        VariantImage.id != frame.id,
+    ).all()
+    floor = min([each.sort_order for each in siblings] + [0])
+    frame.sort_order = floor - 1
+    frame.variant.image_path = frame.image_path
+    db.commit()
+    return _variant_gallery_back(frame.variant_id, "تصویر اصلی شد.")
+
+
+@router.post("/variant-images/{image_id}/delete", response_class=HTMLResponse)
+async def admin_variant_image_delete(image_id: int, request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+
+    frame = db.query(VariantImage).filter(VariantImage.id == image_id).first()
+    if not frame:
+        raise HTTPException(status_code=404, detail="تصویر یافت نشد")
+    variant = frame.variant
+    path = Path(frame.image_path.lstrip("/"))
+    doomed_path = frame.image_path
+    db.delete(frame)
+    db.flush()
+    remaining = db.query(VariantImage).filter(
+        VariantImage.variant_id == variant.id
+    ).order_by(VariantImage.sort_order).all()
+    if variant.image_path == doomed_path:
+        variant.image_path = remaining[0].image_path if remaining else None
+    db.commit()
+    try:
+        if path.is_file():
+            path.unlink()
+    except OSError:
+        pass
+    return _variant_gallery_back(variant.id, "تصویر حذف شد.")
+
+
 @router.post("/variants/{variant_id}/demand", response_class=HTMLResponse)
-async def admin_variant_demand_up(variant_id: int, request: Request, db: Session = Depends(get_db)):
+async def admin_variant_demand_up(variant_id: int, request: Request, next: str = "",
+                                  db: Session = Depends(get_db)):
     """Record one customer asking for this variant (out-of-stock)."""
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
@@ -1269,7 +1436,12 @@ async def admin_variant_demand_up(variant_id: int, request: Request, db: Session
     db.commit()
     from services.security import log_action
     log_action(db, "variant_demand_up", f"ثبت تقاضا برای تنوع #{variant.id}", request=request, target_type="variant", target_id=variant.id)
-    return RedirectResponse(url=f"/admin/variants/{variant.id}/edit", status_code=303)
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return JSONResponse({"ok": True, "demand_count": variant.demand_count})
+    return RedirectResponse(
+        url=_safe_next(next, f"/admin/variants/{variant.id}/edit"),
+        status_code=303,
+    )
 
 
 @router.post("/variants/{variant_id}/demand/reset", response_class=HTMLResponse)

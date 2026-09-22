@@ -154,9 +154,16 @@ spellings. Every number that ever confused anyone carries a hover, focus and
 tap explanation; weight is weighed per variant; the colour field shows a
 swatch with presets instead of an invisible native picker; variant rows
 collapse, value their stock live, and suggest their own SKUs; and the submit
-bar pins itself to the bottom of the long form. Frontend scripts are
-cache-busted by content age, so a script-only change reaches the browser
-exactly like a stylesheet change does.
+bar pins itself to the bottom of the long form. Each variant wears its own
+ordered image gallery (revision 21, additive) with the first frame as its
+primary shot; the product list keeps an archive view whose items restore from
+where they sit; and the edit forms return to the view they were opened from,
+with the return target validated. The form's long selects draw their popups
+from the theme instead of the OS, and period boundaries («today», «week»,
+«month», «year») all flip at the same instant the day window does — the local
+calendar can no longer run ahead of the shop's day boundary in the early
+hours. Frontend scripts are cache-busted by content age, so a script-only
+change reaches the browser exactly like a stylesheet change does.
 
 ## Accounting features (admin panel)
 
