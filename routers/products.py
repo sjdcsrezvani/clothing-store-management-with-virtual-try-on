@@ -97,16 +97,49 @@ def _form_tag_template_id(form, db):
     return template.id if template else None
 
 
+_HEX_SHORT = re.compile(r"^#?([0-9a-fA-F]{3})$")
+_HEX_FULL = re.compile(r"^#?([0-9a-fA-F]{6})$")
+
+
+def _normalize_hex_color(value) -> str | None:
+    """A colour code as uppercase #RRGGBB, or None when left empty.
+
+    Raises ValueError with a shop-readable reason when malformed — a code the
+    tag printer cannot read must be refused on the form, not stored.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return None
+    short = _HEX_SHORT.match(text)
+    if short:
+        return "#" + "".join(ch * 2 for ch in short.group(1)).upper()
+    full = _HEX_FULL.match(text)
+    if full:
+        return "#" + full.group(1).upper()
+    raise ValueError(f"کد رنگ «{text}» معتبر نیست (مثال: #4AA3DF).")
+
+
 def _product_form_error(request, db, product, edit_mode: bool, message: str):
     context = {
         "product": product,
         "edit_mode": edit_mode,
         "suppliers": db.query(Supplier).order_by(Supplier.name.asc()).all(),
+        "tag_templates": list_tag_templates(db),
         "error": message,
     }
+    context.update(_catalog_datalists(db))
     if edit_mode:
         context.update({"fmt": fmt, "jalali_str": jalali_str})
     return templates.TemplateResponse(request, "admin/product_form.html", context)
+
+
+def _catalog_datalists(db) -> dict:
+    """Distinct categories and brands already on the shelf, so the form can
+    suggest instead of demanding a fresh spelling every time. Typing a new
+    value stays allowed — the list suggests, never restricts."""
+    categories = [row[0] for row in db.query(Product.category).distinct().all() if row[0]]
+    brands = [row[0] for row in db.query(Product.brand).distinct().all() if row[0]]
+    return {"categories": sorted(categories), "brands": sorted(brands)}
 
 
 def _selected_quantities(form) -> dict[int, int]:
@@ -607,6 +640,7 @@ async def admin_product_add_form(request: Request, db: Session = Depends(get_db)
         "edit_mode": False,
         "suppliers": db.query(Supplier).order_by(Supplier.name.asc()).all(),
         "tag_templates": list_tag_templates(db),
+        **_catalog_datalists(db),
     })
 
 
@@ -656,7 +690,6 @@ async def admin_product_add(
         description=description.strip() or None,
         base_sku=_form_text(form, "base_sku") or None,
         base_barcode=to_english_digits(_form_text(form, "base_barcode")) or None,
-        weight_grams=_form_optional_int(form, "weight_grams"),
         garment_type=_form_text(form, "garment_type") or None,
         gender=_form_text(form, "gender") or None,
         material=_form_text(form, "material") or None,
@@ -690,6 +723,12 @@ async def admin_product_add(
         storage_location = _form_text(form, f"variant_storage_location_{idx}") or None
         size_system = _form_text(form, f"variant_size_system_{idx}") or None
         color_code = _form_text(form, f"variant_color_code_{idx}") or None
+        variant_weight = _form_optional_int(form, f"variant_weight_{idx}")
+        try:
+            color_code = _normalize_hex_color(form.get(f"variant_color_code_{idx}", ""))
+        except ValueError as problem:
+            db.rollback()
+            return _product_form_error(request, db, error_product, error_edit_mode, str(problem))
 
         if not price_str:
             continue
@@ -761,6 +800,7 @@ async def admin_product_add(
             storage_location=storage_location,
             size_system=size_system,
             color_code=color_code,
+            weight_grams=variant_weight,
         )
         db.add(variant)
         created_variants.append((variant, stock_int))
@@ -799,6 +839,7 @@ async def admin_product_edit_form(product_id: int, request: Request, db: Session
         "edit_mode": True,
         "suppliers": db.query(Supplier).order_by(Supplier.name.asc()).all(),
         "tag_templates": list_tag_templates(db),
+        **_catalog_datalists(db),
         "fmt": fmt,
         "jalali_str": jalali_str,
     })
@@ -832,7 +873,6 @@ async def admin_product_update(
     product.description = description.strip() or None
     product.base_sku = _form_text(form, "base_sku") or None
     product.base_barcode = to_english_digits(_form_text(form, "base_barcode")) or None
-    product.weight_grams = _form_optional_int(form, "weight_grams")
     product.garment_type = _form_text(form, "garment_type") or None
     product.gender = _form_text(form, "gender") or None
     product.material = _form_text(form, "material") or None
@@ -875,6 +915,12 @@ async def admin_product_update(
         storage_location = _form_text(form, f"variant_storage_location_{idx}") or None
         size_system = _form_text(form, f"variant_size_system_{idx}") or None
         color_code = _form_text(form, f"variant_color_code_{idx}") or None
+        variant_weight = _form_optional_int(form, f"variant_weight_{idx}")
+        try:
+            color_code = _normalize_hex_color(form.get(f"variant_color_code_{idx}", ""))
+        except ValueError as problem:
+            db.rollback()
+            return _product_form_error(request, db, error_product, error_edit_mode, str(problem))
 
         if not price_str:
             continue
@@ -946,6 +992,7 @@ async def admin_product_update(
             storage_location=storage_location,
             size_system=size_system,
             color_code=color_code,
+            weight_grams=variant_weight,
         )
         db.add(variant)
         created_variants.append((variant, stock_int))
@@ -1017,6 +1064,7 @@ async def admin_variant_update(
     tryon_details: str = Form(""),
     reorder_point: str = Form("0"),
     reorder_quantity: str = Form("0"),
+    weight_grams: str = Form(""),
     storage_location: str = Form(""),
     size_system: str = Form(""),
     color_code: str = Form(""),
@@ -1094,6 +1142,19 @@ async def admin_variant_update(
             "error": "مقدار نقطه سفارش معتبر نیست.",
         })
 
+    weight_raw = (weight_grams or "").strip()
+    if weight_raw:
+        try:
+            weight_int = max(0, int(to_english_digits(weight_raw)))
+        except ValueError:
+            return templates.TemplateResponse(request, "admin/variant_form.html", {
+                "variant": variant,
+                "product": variant.product,
+                "error": "وزن معتبر نیست.",
+            })
+    else:
+        weight_int = None
+
     # Validate unique barcode
     normalized_barcode = to_english_digits(str(barcode or "").strip())
     if not normalized_barcode:
@@ -1158,9 +1219,15 @@ async def admin_variant_update(
     variant.tryon_details = tryon_details.strip() if tryon_details.strip() else None
     variant.reorder_point = reorder_point_int
     variant.reorder_quantity = reorder_quantity_int
+    variant.weight_grams = weight_int
     variant.storage_location = storage_location.strip() if storage_location else None
     variant.size_system = size_system.strip() if size_system else None
-    variant.color_code = color_code.strip() if color_code else None
+    # Lenient where the add flow refuses: a legacy free-text colour already on
+    # the row must not lock the whole edit. Valid codes still normalise.
+    try:
+        variant.color_code = _normalize_hex_color(color_code)
+    except ValueError:
+        variant.color_code = color_code.strip() if color_code and color_code.strip() else None
     variant.updated_at = datetime.now(timezone.utc)
 
     db.commit()

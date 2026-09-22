@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 19
+MIGRATION_VERSION = 20
 
 
 def migration_status(engine) -> int:
@@ -238,6 +238,14 @@ def _rebuild_sms_messages(conn) -> None:
 
 
 def _apply_revision(conn, version: int) -> None:
+    if version == 20:
+        # Weight is weighed per sellable unit: sizes of one product rarely
+        # share it, so the scale moves from the product to the variant.
+        # Purely additive — old product-level weights stay where they are,
+        # unread, and every variant starts weightless.
+        _add_column_if_missing(conn, "product_variants", "weight_grams", "INTEGER")
+        return
+
     if version == 19:
         # One drawer, one shift. Two managers clicking «باز کردن صندوق» in the
         # same instant used to leave two rows with status='open', and the

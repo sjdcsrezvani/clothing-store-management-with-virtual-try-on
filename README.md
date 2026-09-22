@@ -146,6 +146,17 @@ shared sorting convention, page-size picker, stock chips reading the same
 definition as the KPIs, bulk archive, a filter-honouring CSV export,
 search-term highlighting, and expandable variant rows.
 
+Adding a product leads with the basics — name, category, brand, supplier,
+group — and folds codes, fabric details and reorder defaults into an
+optional disclosure, with category and brand suggested from the shelf's own
+spellings. Every number that ever confused anyone carries a hover, focus and
+tap explanation; weight is weighed per variant; the colour field shows a
+swatch with presets instead of an invisible native picker; variant rows
+collapse, value their stock live, and suggest their own SKUs; and the submit
+bar pins itself to the bottom of the long form. Frontend scripts are
+cache-busted by content age, so a script-only change reaches the browser
+exactly like a stylesheet change does.
+
 ## Accounting features (admin panel)
 
 - **📒 حساب نسیه** (`/admin/credit`) — sell on credit at checkout and collect

@@ -317,6 +317,9 @@ class ProductVariant(Base):
     demand_count = Column(Integer, default=0)
     reorder_point = Column(Integer, nullable=False, default=0)
     reorder_quantity = Column(Integer, nullable=False, default=0)
+    # Weighed per sellable unit: sizes of one product rarely share a weight,
+    # so the scale lives on the variant, not the product.
+    weight_grams = Column(Integer, nullable=True)
     storage_location = Column(String(100), nullable=True)
     size_system = Column(String(30), nullable=True)
     color_code = Column(String(30), nullable=True)

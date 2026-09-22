@@ -1,3 +1,15 @@
+## 2.6.3 — 1405/07/01 (2026-09-23)
+
+### افزودن محصول: fast entry that explains itself, weighed per variant
+
+- **Weight moved to the variant.** Sizes of one product rarely share a weight, so the scale now lives on `ProductVariant` (migration revision 20, purely additive — old product-level weights stay put, unread). The add, update and variant-edit flows all read and write it.
+- **The form leads with the basics.** Name, category, brand, supplier and group stay on top; codes, fabric details and reorder defaults fold into a «جزئیات بیشتر» disclosure. Category and brand suggest from the shelf's own spellings without ever refusing a new one, and the name field takes focus on arrival.
+- **Every confusing field explains itself.** Hover, keyboard-focus and tap ⓘ popups on the reorder defaults and on each variant's point, quantity and opening stock — plain sentences saying what each number does and, for the defaults, that they are only starting values. The variant page's stock fields keep their visible explanations.
+- **A colour picker you can see.** The invisible native-palette hack is now a visible swatch showing the field's own colour, an eight-preset row with a clear and a custom-colour entry, and server-side hex refusal with the expected shape named. Variant defaults live-sync into untouched rows, finished rows collapse to one line, each row values its stock live with a running total in the pinned submit bar, and SKUs suggest themselves from the base code.
+- **Stale scripts stop haunting the shop.** `app.js` and `datepicker.js` join the versioned script tags, and the version now tracks the newest file across all of `static/css` and `static/js` — a script-only change busts the browser cache exactly like a stylesheet change does.
+
+**Schema change.** The database moves to revision 20 (variant weight column).
+
 ## 2.6.2 — 1405/06/31 (2026-09-22)
 
 ### فهرست‌ها: sorting never loses the scroll, and every palette holds on every page

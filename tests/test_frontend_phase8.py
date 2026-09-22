@@ -115,4 +115,5 @@ def test_color_code_fields_open_a_native_colour_palette():
     assert "initColorPickers(container)" in product_form
     assert "function initColorPickers" in js
     assert "picker.type = 'color'" in js
-    assert "field.value = picker.value.toUpperCase()" in js
+    # The picker's chosen colour reaches the field in upper-case hex.
+    assert "field.value = hex.toUpperCase()" in js
