@@ -55,7 +55,7 @@
             </div>
             <div class="form-group">
                 <label for="base_barcode">بارکد پایه</label>
-                <input type="text" id="base_barcode" name="base_barcode" value="{{ product.base_barcode or '' if product else '' }}" dir="ltr" placeholder="اختیاری">
+                <input type="text" id="base_barcode" name="base_barcode" value="{{ product.base_barcode or '' if product else '' }}" dir="ltr" placeholder="خالی = تولید خودکار">
             </div>
         </div>
         <div class="form-row product-form-grid product-form-grid-wide">
@@ -86,17 +86,17 @@
             </div>
             <div class="form-group">
                 <label for="weight_grams">وزن (گرم)</label>
-                <input type="number" id="weight_grams" name="weight_grams" min="0" value="{{ product.weight_grams if product and product.weight_grams is not none else '' }}">
+                <input type="text" inputmode="numeric" id="weight_grams" name="weight_grams" min="0" value="{{ product.weight_grams if product and product.weight_grams is not none else '' }}" placeholder="مثال: 350">
             </div>
         </div>
         <div class="form-row product-form-grid product-form-grid-wide">
             <div class="form-group">
                 <label for="default_reorder_point">نقطه سفارش پیش‌فرض</label>
-                <input type="number" id="default_reorder_point" name="default_reorder_point" min="0" value="{{ (product.default_reorder_point or 0) if product else 0 }}">
+                <input type="text" inputmode="numeric" id="default_reorder_point" name="default_reorder_point" min="0" value="{{ (product.default_reorder_point or 0) if product else 0 }}" placeholder="مثال: 5">
             </div>
             <div class="form-group">
                 <label for="default_reorder_quantity">مقدار سفارش پیش‌فرض</label>
-                <input type="number" id="default_reorder_quantity" name="default_reorder_quantity" min="0" value="{{ (product.default_reorder_quantity or 0) if product else 0 }}">
+                <input type="text" inputmode="numeric" id="default_reorder_quantity" name="default_reorder_quantity" min="0" value="{{ (product.default_reorder_quantity or 0) if product else 0 }}" placeholder="مثال: 12">
             </div>
             <div class="form-group form-span-2">
                 <label for="tag_template_id">قالب تگ محصول</label>
@@ -176,13 +176,13 @@ function addVariant() {
                 <div class="form-group"><label>رنگ</label><input type="text" name="variant_color_${index}" placeholder="مثلاً آبی"></div>
                 <div class="form-group"><label>سیستم سایز</label><input type="text" name="variant_size_system_${index}" placeholder="ایران / EU"></div>
                 <div class="form-group"><label>کد رنگ</label><input type="text" name="variant_color_code_${index}" dir="ltr" placeholder="#4AA3DF" data-color-picker></div>
-                <div class="form-group"><label>قیمت فروش <span class="required-mark">*</span></label><input type="number" name="variant_price_${index}" required min="0"></div>
-                <div class="form-group"><label>قیمت خرید</label><input type="number" name="variant_cost_price_${index}" min="0"></div>
-                <div class="form-group"><label>موجودی اولیه</label><input type="number" name="variant_stock_${index}" min="0" value="0"></div>
+                <div class="form-group"><label>قیمت فروش <span class="required-mark">*</span></label><input type="text" inputmode="numeric" name="variant_price_${index}" required min="0" placeholder="مثال: 350000"></div>
+                <div class="form-group"><label>قیمت خرید</label><input type="text" inputmode="numeric" name="variant_cost_price_${index}" min="0" placeholder="مثال: 220000"></div>
+                <div class="form-group"><label>موجودی اولیه</label><input type="text" inputmode="numeric" name="variant_stock_${index}" min="0" value="0" placeholder="مثال: 12"></div>
                 <div class="form-group"><label>بارکد</label><input type="text" name="variant_barcode_${index}" dir="ltr" placeholder="خالی = تولید خودکار"></div>
                 <div class="form-group"><label>SKU</label><input type="text" name="variant_sku_${index}" dir="ltr"></div>
-                <div class="form-group"><label>نقطه سفارش</label><input type="number" name="variant_reorder_point_${index}" min="0" value="{{ (product.default_reorder_point or 0) if product else 0 }}"></div>
-                <div class="form-group"><label>مقدار سفارش</label><input type="number" name="variant_reorder_quantity_${index}" min="0" value="{{ (product.default_reorder_quantity or 0) if product else 0 }}"></div>
+                <div class="form-group"><label>نقطه سفارش</label><input type="text" inputmode="numeric" name="variant_reorder_point_${index}" min="0" value="{{ (product.default_reorder_point or 0) if product else 0 }}" placeholder="مثال: 5"></div>
+                <div class="form-group"><label>مقدار سفارش</label><input type="text" inputmode="numeric" name="variant_reorder_quantity_${index}" min="0" value="{{ (product.default_reorder_quantity or 0) if product else 0 }}" placeholder="مثال: 12"></div>
                 <div class="form-group"><label>محل انبار</label><input type="text" name="variant_storage_location_${index}" placeholder="قفسه A-2"></div>
             </div>
             <div class="form-group"><label>تصویر تنوع</label><input type="file" name="variant_image_${index}" accept="image/png,image/jpeg,image/webp"></div>

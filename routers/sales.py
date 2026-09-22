@@ -175,9 +175,11 @@ def _reuse_pos_transaction(request: Request, db: Session, transaction: POSTransa
 
 
 def _discount_int(v: str) -> int:
-    """Tolerant parse for client-supplied discount strings: empty/non-numeric -> 0."""
+    """Tolerant parse for client-supplied discount strings: empty/non-numeric -> 0.
+    Persian digits and separators are normalized first, so a fa-keyboard till
+    writes the same value it reads."""
     try:
-        return int(v)
+        return max(0, int(to_english_digits(str(v or "")).replace(",", "").replace("٬", "").replace(" ", "") or 0))
     except (TypeError, ValueError):
         return 0
 
@@ -345,9 +347,17 @@ async def sales_list(request: Request, search: str = "", page: str = "1", db: Se
             Customer.phone.contains(search) | Customer.first_name.contains(search) | Customer.last_name.contains(search)
         )
 
+    # Ledger sorting: date or final amount, direction toggled from the header.
+    # Anything unknown answers the default newest-first list, never an error.
+    from services.sorting import parse_sort
+    sort_key, sort_dir = parse_sort(request.query_params,
+                                    {"date": "desc", "amount": "desc"}, "date")
+    order_column = Sale.final_amount if sort_key == "amount" else Sale.created_at
+    order = order_column.desc() if sort_dir == "desc" else order_column.asc()
+
     per_page = 15
     total = query.count()
-    sales = query.order_by(Sale.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
+    sales = query.order_by(order, Sale.id.desc()).offset((page - 1) * per_page).limit(per_page).all()
     total_pages = max(1, (total + per_page - 1) // per_page)
     page = min(max(page, 1), total_pages)
 
@@ -356,6 +366,8 @@ async def sales_list(request: Request, search: str = "", page: str = "1", db: Se
         "search": search,
         "page": page,
         "total_pages": total_pages,
+        "sort_key": sort_key,
+        "sort_dir": sort_dir,
         "fmt": fmt,
         "jalali_str": jalali_str,
     })

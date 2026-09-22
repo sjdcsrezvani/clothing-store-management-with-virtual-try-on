@@ -80,7 +80,7 @@
                 <div class="form-row">
                     <div class="form-group">
                         <label for="receive-amount">💰 مبلغ (تومان)</label>
-                        <input type="number" id="receive-amount" name="amount" min="1" max="{{ debt }}"
+                        <input type="text" inputmode="numeric" id="receive-amount" name="amount" min="1" max="{{ debt }}"
                                value="{{ debt }}" required class="tnum">
                         <small>حداکثر بدهی: {{ fmt(debt) }} تومان</small>
                     </div>
@@ -120,7 +120,7 @@
             </div>
             {% if unpaid_sales %}
             <div class="table-scroll">
-                <table class="credit-table">
+                <table class="data-table credit-table">
                     <thead>
                         <tr>
                             <th scope="col">فاکتور</th>
@@ -161,7 +161,7 @@
                                     <input type="hidden" name="customer_id" value="{{ customer.id }}">
                                     <input type="hidden" name="sale_id" value="{{ sale.id }}">
                                     <label class="sr-only" for="invoice-amount-{{ sale.id }}">مبلغ فاکتور {{ sale.id }}</label>
-                                    <input type="number" id="invoice-amount-{{ sale.id }}" name="amount" min="1"
+                                    <input type="text" inputmode="numeric" id="invoice-amount-{{ sale.id }}" name="amount" min="1"
                                            max="{{ status.remaining }}"
                                            value="{{ status.remaining }}" class="tnum">
                                     <label class="sr-only" for="invoice-method-{{ sale.id }}">روش</label>
@@ -196,7 +196,7 @@
             </div>
             {% if payments %}
             <div class="table-scroll">
-                <table class="credit-table">
+                <table class="data-table credit-table">
                     <thead>
                         <tr>
                             <th scope="col">تاریخ</th>
@@ -311,7 +311,7 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="form-group">
                     <label for="credit-limit">سقف اختصاصی (تومان)</label>
-                    <input type="number" id="credit-limit" name="credit_limit" min="0"
+                    <input type="text" inputmode="numeric" id="credit-limit" name="credit_limit" min="0"
                            value="{{ custom_limit or '' }}" placeholder="خالی = پیش‌فرض فروشگاه" class="tnum">
                     <small>۰ یا خالی یعنی همان پیش‌فرض فروشگاه.</small>
                 </div>

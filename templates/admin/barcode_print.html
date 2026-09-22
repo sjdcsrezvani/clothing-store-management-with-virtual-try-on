@@ -78,7 +78,7 @@
                         </label>
                         <span class="tag-quantity-row">
                             <label for="tag-quantity-{{ item.variant_id }}-{{ loop.index0 }}">تعداد چاپ</label>
-                            <input type="number"
+                            <input type="text" inputmode="numeric"
                                    id="tag-quantity-{{ item.variant_id }}-{{ loop.index0 }}"
                                    name="selected_quantity_{{ item.variant_id }}"
                                    class="tag-quantity"

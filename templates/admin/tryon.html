@@ -10,14 +10,18 @@
 {% endset %}
 {% include 'partials/page_header.html' %}
 
+{# Wizard: photo → options → result, the same numbered rhythm as the till. #}
+<div class="payment-timeline wizard-timeline" aria-label="مراحل پرو مجازی">
+    <span class="timeline-step active">۱ عکس کودک</span><span class="timeline-line"></span><span class="timeline-step">۲ محصولات و تنظیمات</span><span class="timeline-line"></span><span class="timeline-step">۳ نتیجه</span>
+</div>
 
 <div class="checkout-layout">
-    {# ─── LEFT COLUMN ─── #}
+    {# ─── STEP 1: the kid + the paired phone ─── #}
     <div class="checkout-left">
 
-        {# ── Kid photo ── #}
+        {# ── Kid photo (QR pairing lives here: the phone exists to take it) ── #}
         <div class="card">
-            <h3>عکس کودک</h3>
+            <h3>۱ · عکس کودک</h3>
             {% if kid_photo_preview %}
             <div style="text-align: center; margin-bottom: 0.8rem;">
                 <img src="{{ kid_photo_preview }}" alt="kid"
@@ -43,59 +47,56 @@
                 </form>
                 <iframe name="upload-frame" style="display:none;"></iframe>
             </details>
-            <div style="margin-top: 0.8rem; font-size: 0.85rem; color: var(--ink-soft);">
+            <section class="tryon-pairing" aria-label="گوشی ضبط عکس">
+                <h4>گوشی ضبط عکس</h4>
+                {% if pairing %}
+                    <p class="muted">
+                        با دوربین گوشی این کد را اسکن کنید — صفحه جفت‌سازی روی خود گوشی باز می‌شود و کلید را نگه می‌دارد.
+                    </p>
+                    <div style="text-align:center; margin-bottom: 0.8rem;">
+                        <img src="{{ pairing.qr }}" alt="QR جفت‌سازی گوشی ضبط عکس"
+                             style="width: 200px; height: 200px; border-radius: 12px; border: 2px solid var(--rule);">
+                    </div>
+                    <div class="alert alert-error" style="font-size: 0.85rem;">
+                        ⚠️ این کد فقط همین یک‌بار نمایش داده می‌شود و فقط تا اسکن اعتبار دارد. دوباره جفت‌سازی کنید تا کلید قبلی گوشی باطل شود.
+                    </div>
+                {% elif capture_paired %}
+                    <p class="muted">
+                        ✅ گوشی جفت‌شده است و عکس می‌فرستد. جفت‌سازی دوباره، کلید فعلی را باطل می‌کند — برای گم‌شدن گوشی همین کار را بکنید.
+                    </p>
+                {% else %}
+                    <p class="muted">
+                        گوشی‌ای که عکس کودک را می‌گیرد، با اسکن یک QR به این فروشگاه وصل می‌شود — نه با تایپ آدرس و توکن.
+                    </p>
+                {% endif %}
+                <div style="display:flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <form method="post" action="/admin/try-on/pair-capture"
+                          onsubmit="return confirm('{% if capture_paired %}جفت‌سازی دوباره، کلید گوشی فعلی را باطل می‌کند. ادامه؟{% else %}QR جفت‌سازی ساخته شود؟{% endif %}');">
+                        <button type="submit" class="btn btn-primary btn-sm">🔗 ساخت QR جفت‌سازی</button>
+                    </form>
+                    {% if capture_paired %}
+                    <form method="post" action="/admin/try-on/unpair-capture"
+                          onsubmit="return confirm('اتصال گوشی قطع شود؟ عکس دیگر ارسال نمی‌شود تا دوباره جفت شود.');">
+                        <button type="submit" class="btn btn-ghost btn-sm">✂️ قطع اتصال</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </section>
+            <div class="muted" style="margin-top: 0.8rem; font-size: 0.85rem;">
                 📱 از گوشی: <code>POST /api/image-gen/upload-kid-photo</code> (multipart, field: <code>file</code>)
             </div>
         </div>
 
-        {# ── Capture-phone pairing ── #}
+        {# ── Step 2, part 1: products ── #}
         <div class="card">
-            <h3>گوشی ضبط عکس</h3>
-            {% if pairing %}
-                <p style="font-size: 0.9rem; color: var(--ink); margin-bottom: 0.6rem;">
-                    با دوربین گوشی این کد را اسکن کنید — صفحه جفت‌سازی روی خود گوشی باز می‌شود و کلید را نگه می‌دارد.
-                </p>
-                <div style="text-align:center; margin-bottom: 0.8rem;">
-                    <img src="{{ pairing.qr }}" alt="QR جفت‌سازی گوشی ضبط عکس"
-                         style="width: 200px; height: 200px; border-radius: 12px; border: 2px solid var(--rule);">
-                </div>
-                <div class="alert alert-error" style="font-size: 0.85rem;">
-                    ⚠️ این کد فقط همین یک‌بار نمایش داده می‌شود و فقط تا اسکن اعتبار دارد. دوباره جفت‌سازی کنید تا کلید قبلی گوشی باطل شود.
-                </div>
-            {% elif capture_paired %}
-                <p style="font-size: 0.9rem; color: var(--ink-soft); margin-bottom: 0.8rem;">
-                    ✅ گوشی جفت‌شده است و عکس می‌فرستد. جفت‌سازی دوباره، کلید فعلی را باطل می‌کند — برای گم‌شدن گوشی همین کار را بکنید.
-                </p>
-            {% else %}
-                <p style="font-size: 0.9rem; color: var(--ink-soft); margin-bottom: 0.8rem;">
-                    گوشی‌ای که عکس کودک را می‌گیرد، با اسکن یک QR به این فروشگاه وصل می‌شود — نه با تایپ آدرس و توکن.
-                </p>
-            {% endif %}
-            <div style="display:flex; gap: 0.5rem; flex-wrap: wrap;">
-                <form method="post" action="/admin/try-on/pair-capture"
-                      onsubmit="return confirm('{% if capture_paired %}جفت‌سازی دوباره، کلید گوشی فعلی را باطل می‌کند. ادامه؟{% else %}QR جفت‌سازی ساخته شود؟{% endif %}');">
-                    <button type="submit" class="btn btn-primary btn-sm">🔗 ساخت QR جفت‌سازی</button>
-                </form>
-                {% if capture_paired %}
-                <form method="post" action="/admin/try-on/unpair-capture"
-                      onsubmit="return confirm('اتصال گوشی قطع شود؟ عکس دیگر ارسال نمی‌شود تا دوباره جفت شود.');">
-                    <button type="submit" class="btn btn-ghost btn-sm">✂️ قطع اتصال</button>
-                </form>
-                {% endif %}
-            </div>
-        </div>
+            <h3>۲ · اسکن بارکد محصولات</h3>
+            <p class="muted" style="margin-bottom: 0.8rem;">
+                بارکدها را با گوشی اسکن کنید یا دستی وارد کنید
+            </p>
 
-        {# ── Barcode scanning ── #}
-        <div class="card">
-            <h3>اسکن بارکد محصولات</h3>
-            <div style="font-size: 0.85rem; color: var(--ink-soft); margin-bottom: 0.8rem;">
-                📱 بارکدها را با گوشی اسکن کنید یا دستی وارد کنید
-            </div>
-
-            <form method="post" action="/admin/try-on/add-product" style="display: flex; gap: 0.5rem; margin-bottom: 0.8rem;">
-                <input type="text" name="barcode_input" placeholder="🔲 بارکد را اسکن یا وارد کنید..."
-                       style="flex:1; padding:0.6rem 0.8rem; border:2px solid var(--rule); border-radius:8px; font-family:inherit; font-size:1rem; direction:ltr;"
-                       autofocus>
+            <form method="post" action="/admin/try-on/add-product" class="tryon-scan-form">
+                <input type="text" name="barcode_input" placeholder="بارکد را اسکن یا وارد کنید..."
+                       dir="ltr" autofocus aria-label="بارکد محصول">
                 <button type="submit" class="btn btn-primary btn-sm">➕ افزودن</button>
             </form>
 
@@ -114,7 +115,7 @@
                     </div>
                     {% endfor %}
                 </div>
-                <div style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--ink-soft);">
+                <div class="muted" style="margin-top: 0.5rem; font-size: 0.8rem;">
                     🧵 تصویر این محصول‌ها + عکس کودک به‌عنوان مرجع به هوش مصنوعی ارسال می‌شود
                 </div>
             </div>
@@ -126,16 +127,16 @@
         </div>
     </div>
 
-    {# ─── RIGHT COLUMN ─── #}
+    {# ─── STEP 2, part 2 (right column): generation options ─── #}
     <div class="checkout-right">
 
         {# ── Generate ── #}
-        <div class="card" style="background: var(--surface-soft);">
-            <h3>تولید تصویر هوش مصنوعی</h3>
+        <div class="card">
+            <h3>تنظیمات تولید تصویر</h3>
             <form id="gen-form" method="post" action="/admin/try-on/generate">
                 <div class="form-group">
                     <label for="mode">👗 نوع پرو</label>
-                    <select id="mode" name="mode" style="font-family:inherit; padding:0.6rem 0.8rem; border:2px solid var(--rule); border-radius:8px; width:100%;">
+                    <select id="mode" name="mode">
                         <option value="product_only" selected>👕 فقط محصول (بقیه لباس‌ها دست‌نخورده بماند)</option>
                         <option value="head_to_toe">👗 استایل کامل سر تا پا (هماهنگ با محصول)</option>
                     </select>
@@ -144,7 +145,7 @@
 
                 <div class="form-group" id="category-group" style="margin-top: 0.8rem;">
                     <label for="category">🧵 نوع محصول (برای تنظیم قانون لباس)</label>
-                    <select id="category" name="category" style="font-family:inherit; padding:0.6rem 0.8rem; border:2px solid var(--rule); border-radius:8px; width:100%;">
+                    <select id="category" name="category">
                         <option value="upper" selected>👕 بالاتنه (تیشرت، سویشرت، هودی، پولیور)</option>
                         <option value="lower">👖 پایین‌تنه (جین، شلوار، شلوارک، دامن)</option>
                         <option value="set">👚👖 ست دو تکه (تیشرت+شلوارک، سویشرت+شلوار)</option>
@@ -156,7 +157,7 @@
 
                 <div class="form-group" style="margin-top: 0.8rem;">
                     <label for="pose">🧍 ژست کودک</label>
-                    <select id="pose" name="pose" style="font-family:inherit; padding:0.6rem 0.8rem; border:2px solid var(--rule); border-radius:8px; width:100%;">
+                    <select id="pose" name="pose">
                         {% for mode in pose_modes %}
                         <option value="{{ mode.key }}">{{ mode.label_fa }}</option>
                         {% endfor %}
@@ -165,7 +166,7 @@
 
                 <div class="form-group" style="margin-top: 0.8rem;">
                     <label for="face">🧑‍🎨 حالت چهره</label>
-                    <select id="face" name="face" style="font-family:inherit; padding:0.6rem 0.8rem; border:2px solid var(--rule); border-radius:8px; width:100%;">
+                    <select id="face" name="face">
                         {% for mode in face_modes %}
                         <option value="{{ mode.key }}">{{ mode.label_fa }}</option>
                         {% endfor %}
@@ -175,7 +176,7 @@
 
                 <div class="form-group" style="margin-top: 0.8rem;">
                     <label for="background">🖼️ پس‌زمینه</label>
-                    <select id="background" name="background" style="font-family:inherit; padding:0.6rem 0.8rem; border:2px solid var(--rule); border-radius:8px; width:100%;">
+                    <select id="background" name="background">
                         <option value="random" selected>🎲 پس‌زمینه تصادفی (پیشنهاد می‌شود)</option>
                         <option value="">🚫 پس‌زمینه را تغییر نده</option>
                         {% for group in backgrounds %}
@@ -189,20 +190,20 @@
                     <small>«تصادفی» هر بار یک استودیوی متفاوت انتخاب می‌کند (از بین {{ backgrounds|map(attribute='options')|map('length')|sum }} گزینه).</small>
                 </div>
 
-                <div style="margin-top: 0.8rem; font-size:0.9rem; color:var(--ink-soft);">
+                <div class="muted" style="margin-top: 0.8rem; font-size:0.9rem;">
                     🔧 موتور تولید: <strong>gpt-image-2</strong> (gapgpt)
                 </div>
 
-                <button type="submit" class="btn btn-primary btn-large btn-block" style="font-size:1.1rem; margin-top: 1rem;">
+                <button type="submit" class="btn btn-primary btn-large btn-block btn-generate">
                     ✨ تولید تصویر
                 </button>
             </form>
         </div>
 
-        {# ── Generated result ── #}
+        {# ── Step 3: the generated result ── #}
         {% if last_gen_url %}
         <div class="card" style="text-align: center; border-color: var(--candy);">
-            <h3>تصویر نهایی (با لوگو)</h3>
+            <h3>۳ · تصویر نهایی (با لوگو)</h3>
             {% if last_gen_engine %}
             <div style="font-size:0.85rem; color:var(--ink-soft); margin-bottom:0.5rem; padding:0.3rem 0.6rem; background:var(--surface-soft); border-radius:6px; display:inline-block;">
                 🤖 مدل: {{ last_gen_engine }}
@@ -223,7 +224,7 @@
                 <a href="/admin/try-on/download?logo=yes" class="btn btn-success">⬇️ دانلود با لوگو</a>
                 <a href="/admin/try-on/download?logo=no" class="btn btn-primary">⬇️ دانلود بدون لوگو</a>
                 <form method="post" action="/admin/try-on/save" style="display:inline;">
-                    <button type="submit" class="btn">💾 ذخیره در گالری</button>
+                    <button type="submit" class="btn btn-primary">💾 ذخیره در گالری</button>
                 </form>
                 <form method="post" action="/admin/try-on/clear" style="display:inline;">
                     <button type="submit" class="btn btn-ghost">🔄 پاک کردن و شروع مجدد</button>
@@ -267,11 +268,13 @@
 </div>
 
 {# ─── Lightbox ─── #}
-{# The scrim dismisses on a click as a convenience for the mouse; the keyboard's
-   own ways out are the ✕ button below and Escape. #}
-<div id="lightbox" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:var(--scrim);z-index:9999;align-items:center;justify-content:center;"
+{# One dialog pattern everywhere: role + aria-modal announce it, the fade is
+   [data-dialog] in motion.css, focus returns to the picture that opened it.
+   The scrim dismisses on a click as a convenience for the mouse; the
+   keyboard's own ways out are the ✕ button below and Escape. #}
+<div id="lightbox" data-dialog role="dialog" aria-modal="true" aria-label="نمایش تصویر در اندازه کامل" tabindex="-1" style="display:flex;position:fixed;top:0;left:0;width:100%;height:100%;background:var(--scrim);z-index:9999;align-items:center;justify-content:center;"
      class="lightbox-scrim" onclick="closeLightbox(event)">
-    <div id="lightbox-stage" class="lightbox-stage" style="position:relative;display:inline-block;line-height:0;">
+    <div id="lightbox-stage" class="lightbox-stage t-modal-card" style="position:relative;display:inline-block;line-height:0;">
         <img id="lightbox-img" src="" alt="full"
              style="max-width:95vw;max-height:95vh;object-fit:contain;border-radius:8px;display:block;">
         <img src="/static/logo.png" alt="logo"
@@ -282,19 +285,23 @@
             onclick="closeLightbox()">✕</button>
 </div>
 <script>
+var lightboxOpener = null;
 function openLightbox(src) {
+    lightboxOpener = document.activeElement;
     document.getElementById('lightbox-img').src = src;
-    document.getElementById('lightbox').style.display = 'flex';
+    document.getElementById('lightbox').classList.add('is-open');
     // The keyboard goes where the eye went: Tab lands inside the open lightbox
     // rather than continuing through the page behind it.
     document.getElementById('lightbox-close').focus();
 }
 function closeLightbox(e) {
-    if (!e || e.target === e.currentTarget || e.target.tagName === 'DIV')
-        document.getElementById('lightbox').style.display = 'none';
+    if (!e || e.target === e.currentTarget || e.target.tagName === 'DIV') {
+        document.getElementById('lightbox').classList.remove('is-open');
+        if (lightboxOpener && document.contains(lightboxOpener)) lightboxOpener.focus();
+    }
 }
 document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') document.getElementById('lightbox').style.display = 'none';
+    if (e.key === 'Escape') closeLightbox();
 });
 // Category dropdown always visible — it applies to both outfit modes.
 

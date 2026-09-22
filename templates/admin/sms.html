@@ -154,7 +154,7 @@
                 <div class="form-group">
                     <label for="monthly_digest_phone">خلاصه ماهانه برای مدیر — شماره‌ها</label>
                     <input type="text" id="monthly_digest_phone" name="monthly_digest_phone"
-                           value="{{ digest_phones }}" placeholder="مثلاً ۰۹۱۲۳۴۵۶۷۸۹">
+                           value="{{ digest_phones }}" placeholder="مثال: 09123456789">
                     <small>
                         وقتی ماه فارسی تمام شود، همان روایتی که داشبورد زیر کارت‌های «این ماه»
                         می‌نویسد به این شماره پیامک می‌شود: فروش و سود ماه، شلوغ‌ترین روز، پرفروش‌ترین
@@ -289,7 +289,7 @@
                             <form method="post" action="/admin/sms/templates/{{ template.id }}/delete{% if filter_qs %}?{{ filter_qs }}{% endif %}" class="inline-form"
                                   onsubmit="return confirm('این قالب حذف شود؟');">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                <button type="submit" class="btn btn-sm btn-ghost btn-danger">حذف</button>
+                                <button type="submit" class="btn btn-sm btn-danger">حذف</button>
                             </form>
                             {% endif %}
                         </div>

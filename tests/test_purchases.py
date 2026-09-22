@@ -569,7 +569,7 @@ def test_purchase_filters_and_pagination(client, db_session, authed):
     only_unpaid = client.get("/admin/purchases?status=unpaid")
     assert only_unpaid.status_code == 200
     # A fully settled purchase is excluded, and a draft is not an unpaid invoice.
-    assert 'class="purchase-table"' not in only_unpaid.text
+    assert 'purchase-table' not in only_unpaid.text
     assert "products-empty" in only_unpaid.text
 
     only_paid = client.get("/admin/purchases?status=paid")
@@ -597,7 +597,7 @@ def test_purchase_filters_and_pagination(client, db_session, authed):
     second_page = client.get("/admin/purchases?page=2")
     assert second_page.status_code == 200
     assert "page=1" in second_page.text
-    assert 'class="purchase-table"' in second_page.text
+    assert 'purchase-table' in second_page.text
 
 
 def test_purchase_overview_reports_period_spend_and_arrears(client, db_session, authed):

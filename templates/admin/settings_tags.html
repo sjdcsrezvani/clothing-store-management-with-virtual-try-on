@@ -33,7 +33,7 @@
 {% macro num(input_id, step='', aria='') %}
 {% set key = tag_input_keys[input_id] %}
 {% set rule = tag_numeric_rules.get(key) if key else none %}
-<input type="number" id="{{ input_id }}"
+<input type="text" inputmode="numeric" id="{{ input_id }}"
        {% if rule %}min="{{ rule[0] }}"{% if rule[1] is not none %} max="{{ rule[1] }}"{% endif %}{% else %}data-unbounded="1"{% endif %}
        {% if step %}step="{{ step }}"{% endif %}
        {% if aria %}aria-label="{{ aria }}"{% endif %}>

@@ -565,7 +565,7 @@ def test_a_page_after_the_form_switch_wears_the_new_palette(client, db_session):
     _session_as(client, owner, password)
 
     # Warm the cache with whatever palette the shop starts on, then switch.
-    assert 'data-theme="operations-light"' in client.get("/admin/settings").text
+    assert 'data-theme="kashi-tile"' in client.get("/admin/settings").text
     token = csrf_token(client, "/admin/settings/appearance")
     response = client.post(
         "/admin/settings/appearance",

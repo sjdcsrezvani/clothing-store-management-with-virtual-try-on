@@ -71,7 +71,7 @@
     <div class="card">
         <h3>هزینه‌ها بر اساس دسته</h3>
     {% if pl.expense_cats %}
-    <table>
+    <table class="data-table">
         <thead><tr><th>دسته</th><th>مبلغ</th><th>سهم</th></tr></thead>
         <tbody>
             {% for row in pl.expense_cats %}
@@ -92,7 +92,7 @@
             {% endfor %}
         </tbody>
     </table>
-    {% else %}<p class="empty-state">هزینه‌ای در این بازه ثبت نشده است.</p>{% endif %}
+    {% else %}<div class="empty-state"><h3>هزینه‌ای در این بازه ثبت نشده است</h3><p>بازه دیگری را ببینید یا اولین هزینه را ثبت کنید.</p></div>{% endif %}
 </div>
 
 {# ─── Debt & cash summary ─── #}

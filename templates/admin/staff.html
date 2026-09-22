@@ -66,9 +66,9 @@
         {% from 'partials/numeric_input.html' import num with context %}
         <label>حقوق ماهانه (تومان){{ num('salary_amount', user.salary_amount or 0, input_id='salary_amount_' ~ user.id) }}</label>
         <label>روز پرداخت ماهانه{{ num('salary_payment_day', user.salary_payment_day or '', input_id='salary_payment_day_' ~ user.id) }}</label>
-        <label>تاریخ شروع<input class="persian-date-input" id="hire_date_{{ user.id }}" name="hire_date" data-pdp-pair="#contract_end_date_{{ user.id }}" value="{{ jalali_str(user.hire_date, with_time=False) if user.hire_date else '' }}"></label>
-        <label>پایان قرارداد<input class="persian-date-input" id="contract_end_date_{{ user.id }}" name="contract_end_date" value="{{ jalali_str(user.contract_end_date, with_time=False) if user.contract_end_date else '' }}"></label>
-        <label>تاریخ تولد<input class="persian-date-input" name="birth_date" value="{{ jalali_str(user.birth_date, with_time=False) if user.birth_date else '' }}"></label>
+        <label>تاریخ شروع<input class="persian-date-input" id="hire_date_{{ user.id }}" name="hire_date" data-pdp-pair="#contract_end_date_{{ user.id }}" placeholder="۱۴۰۵/۰۱/۰۱" value="{{ jalali_str(user.hire_date, with_time=False) if user.hire_date else '' }}"></label>
+        <label>پایان قرارداد<input class="persian-date-input" id="contract_end_date_{{ user.id }}" name="contract_end_date" placeholder="۱۴۰۵/۱۲/۲۹" value="{{ jalali_str(user.contract_end_date, with_time=False) if user.contract_end_date else '' }}"></label>
+        <label>تاریخ تولد<input class="persian-date-input" name="birth_date" placeholder="۱۳۷۰/۰۱/۰۱" value="{{ jalali_str(user.birth_date, with_time=False) if user.birth_date else '' }}"></label>
         <label>تحصیلات<input name="education" value="{{ user.education or '' }}"></label>
         <label>برنامه کاری<input name="work_schedule" value="{{ user.work_schedule or '' }}"></label>
         <label>حساب بانکی<input name="bank_account" value="{{ user.bank_account or '' }}"></label>
@@ -97,7 +97,7 @@
         </form>
       </div>
       {% endif %}
-      {% if user.salary_payments %}<div class="table-scroll"><table><thead><tr><th scope="col">ماه</th><th scope="col">ناخالص (تومان)</th><th scope="col">کسورات (تومان)</th><th scope="col">خالص (تومان)</th><th scope="col">تاریخ</th><th scope="col">رسید</th></tr></thead><tbody>{% for payment in user.salary_payments[:12] %}<tr><td>{{ payment.period_key }}</td><td>{{ fmt(payment.gross_amount) }}</td><td>{{ fmt(payment.deductions) }}</td><td>{{ fmt(payment.net_amount) }}</td><td>{{ jalali_str(payment.paid_at) }}</td><td><a class="btn btn-sm btn-ghost" href="/admin/payroll/{{ payment.id }}/receipt" target="_blank">چاپ</a></td></tr>{% endfor %}</tbody></table></div>{% endif %}
+      {% if user.salary_payments %}<div class="table-scroll"><table class="data-table"><thead><tr><th scope="col">ماه</th><th scope="col">ناخالص (تومان)</th><th scope="col">کسورات (تومان)</th><th scope="col">خالص (تومان)</th><th scope="col">تاریخ</th><th scope="col">رسید</th></tr></thead><tbody>{% for payment in user.salary_payments[:12] %}<tr><td>{{ payment.period_key }}</td><td>{{ fmt(payment.gross_amount) }}</td><td>{{ fmt(payment.deductions) }}</td><td>{{ fmt(payment.net_amount) }}</td><td>{{ jalali_str(payment.paid_at) }}</td><td><a class="btn btn-sm btn-ghost" href="/admin/payroll/{{ payment.id }}/receipt" target="_blank">چاپ</a></td></tr>{% endfor %}</tbody></table></div>{% endif %}
     </div>
   </details>
   {% else %}<p class="empty-state">هنوز کارمندی ثبت نشده است.</p>{% endfor %}

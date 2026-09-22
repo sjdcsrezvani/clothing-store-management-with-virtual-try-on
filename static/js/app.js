@@ -1,8 +1,31 @@
+/* One digit language for every money/phone/count field: Persian and Arabic
+   digits are converted to English the moment they are typed, so what the
+   field holds — and what the server parses — is always one script. The
+   mapping is 1:1 per character, so the caret never jumps. Date-picker
+   fields are excluded: Jalali dates live in Persian digits by design. */
+function toEnglishDigits(value) {
+    const fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩';
+    return String(value || '').replace(/[۰-۹]/g, d => fa.indexOf(d)).replace(/[٠-٩]/g, d => ar.indexOf(d));
+}
+
+function unifyFieldDigits(field) {
+    const converted = toEnglishDigits(field.value);
+    if (converted !== field.value) field.value = converted;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('input[type="tel"]').forEach(input => {
         input.addEventListener('input', () => {
+            unifyFieldDigits(input);
             input.value = input.value.replace(/[^0-9]/g, '');
         });
+    });
+
+    // Live conversion for every numeric field, including ones added later.
+    document.addEventListener('input', (event) => {
+        const target = event.target;
+        if (!target.matches || !target.matches('input[inputmode="numeric"]')) return;
+        unifyFieldDigits(target);
     });
 
     document.querySelectorAll('form').forEach(form => {
@@ -25,7 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const isCash = selected && selected.value === 'cash';
         if (cashCalculator) cashCalculator.hidden = !isCash;
         if (cashReceived && isCash) {
-            const change = Number(cashReceived.value || 0) - finalAmount;
+            const change = Number(toEnglishDigits(cashReceived.value).replace(/[^0-9]/g, '') || 0) - finalAmount;
             const label = document.getElementById('cash-change');
             if (label) label.textContent = change >= 0 ? 'باقی‌مانده: ' + change.toLocaleString('fa-IR') + ' تومان' : 'مبلغ دریافتی کافی نیست';
         }

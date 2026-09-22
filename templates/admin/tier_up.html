@@ -27,7 +27,7 @@
 
     {% if customers %}
     <form method="post" action="/admin/tier-up/send">
-        <table>
+        <table class="data-table">
             <thead>
                 <tr>
                     <th>ارسال</th>
@@ -62,7 +62,7 @@
         <button type="submit" class="btn btn-primary btn-large" style="margin-top: 1rem;">📲 ارسال پیامک ارتقا</button>
     </form>
     {% else %}
-    <p style="font-size: 1.05rem;">🎉 هیچ مشتری برای ارسال پیامک ارتقا وجود ندارد.</p>
+    <div class="empty-state"><h3>هیچ مشتری برای ارسال پیامک ارتقا وجود ندارد</h3><p>وقتی مشتری‌ای به سطح بالاتر برسد، اینجا برای ارسال پیام ظاهر می‌شود.</p></div>
     {% endif %}
 </div>
 

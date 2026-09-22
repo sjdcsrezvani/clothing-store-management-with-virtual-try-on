@@ -72,8 +72,8 @@
                         <span class="badge badge-success">ثبت شده</span>
                         {% if transaction.reconciliation_note %}<br><small>{{ transaction.reconciliation_note }}</small>{% endif %}
                     {% else %}
-                        <form method="post" action="/admin/pos-reconciliation/{{ transaction.id }}/review">
-                            <select name="resolution_type" required>
+                        <form method="post" action="/admin/pos-reconciliation/{{ transaction.id }}/review" aria-label="ثبت نتیجه بررسی تراکنش">
+                            <select name="resolution_type" required aria-label="نتیجه بررسی">
                                 <option value="">نتیجه بررسی</option>
                                 <option value="confirmed_cancelled">تأیید لغو</option>
                                 <option value="reversed_externally">برگشت خارجی</option>
@@ -81,11 +81,11 @@
                                 <option value="terminal_error">خطای کارت‌خوان</option>
                                 <option value="provider_investigation">بررسی ارائه‌دهنده</option>
                             </select>
-                            <input type="text" name="evidence" placeholder="مدرک بررسی الزامی است" maxlength="2000" required>
-                            <input type="text" name="provider_reference" placeholder="مرجع ارائه‌دهنده" maxlength="100">
-                            <input type="text" name="terminal_transaction_number" placeholder="شماره تراکنش" maxlength="100">
-                            <input type="text" name="retrieval_reference_number" placeholder="شماره پیگیری" maxlength="100">
-                            <input type="text" name="masked_card" placeholder="****1234" maxlength="32">
+                            <input type="text" name="evidence" placeholder="مثال: رسید بانکی 1234" maxlength="2000" required aria-label="مدرک بررسی">
+                            <input type="text" name="provider_reference" placeholder="مثال: REF-4829" maxlength="100" dir="ltr" aria-label="مرجع ارائه‌دهنده">
+                            <input type="text" name="terminal_transaction_number" placeholder="مثال: 009123" maxlength="100" dir="ltr" aria-label="شماره تراکنش">
+                            <input type="text" name="retrieval_reference_number" placeholder="مثال: 140501" maxlength="100" dir="ltr" aria-label="شماره پیگیری">
+                            <input type="text" name="masked_card" placeholder="مثال: ****1234" maxlength="32" dir="ltr" aria-label="کارت">
                             <button type="submit" class="btn btn-sm btn-primary">✓ ثبت نتیجه</button>
                         </form>
                     {% endif %}

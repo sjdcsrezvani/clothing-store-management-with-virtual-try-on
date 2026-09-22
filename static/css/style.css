@@ -214,24 +214,41 @@ a:hover { text-decoration: underline; }
 .quick-sale:hover, .topbar-admin:hover, .menu-toggle:hover { background: color-mix(in srgb, var(--topbar-text) 28%, transparent); text-decoration: none; }
 .topbar-admin { width: auto; min-width: 104px; }
 .topbar-admin .ui-icon, .quick-sale .ui-icon { display: inline-block; }
+/* Icon-only topbar buttons (narrow screens hide the text label) get their name
+   back as a themed tooltip on hover and keyboard focus — never the native
+   title chrome. Delayed on first show, instant once one is open. */
+.topbar-tip { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .topbar-tip { transition: none !important; transform: none !important; }
+}
 
 .menu-toggle { display: none; font-size: 1.25rem; }
 
-/* The brand and the footer stay put; only the list scrolls. With the whole
-   aside scrolling, a 22-item menu pushed the footer's own button below the fold. */
+/* Only the list scrolls; the footer stays put. With the whole
+   aside scrolling, a 22-item menu pushed the footer's own button below the fold.
+   The brand block is gone — the topbar already names the shop — so the menu
+   starts at thumb height. */
 .app-sidebar {
   position: fixed; z-index: 70; top: 72px; right: 0; bottom: 0; width: 260px;
   background: var(--sidebar-bg); color: var(--sidebar-text); border-left: 1px solid var(--rule); box-shadow: var(--shadow);
   display: flex; flex-direction: column; overflow: hidden;
 }
-.sidebar-brand { padding: 1.35rem 1.2rem 1rem; display: flex; align-items: center; gap: 0.65rem; border-bottom: 1px solid var(--rule); }
-.sidebar-brand div { display: flex; flex-direction: column; line-height: 1.25; }
-.sidebar-brand strong { font-size: 0.92rem; color: var(--sidebar-text); }
-.sidebar-brand small { color: color-mix(in srgb, var(--sidebar-text) 68%, transparent); font-size: 0.7rem; margin-top: 0.15rem; }
+/* Only the list scrolls; the footer stays put. With the whole aside
+   scrolling, a 22-item menu pushed the footer's own button below the fold. */
 .sidebar-nav { padding: 0.7rem; flex: 1; overflow-y: auto; }
 .sidebar-section ul { list-style: none; margin: 0; padding: 0; }
 .sidebar-section-label { color: color-mix(in srgb, var(--sidebar-text) 58%, transparent); font-size: 0.68rem; font-weight: 800; margin: 1rem 0.7rem 0.35rem; }
-.sidebar-nav a { display: flex; align-items: center; gap: 0.7rem; padding: 0.68rem 0.75rem; border-radius: var(--radius-sm); color: var(--sidebar-text); font-size: 0.86rem; font-weight: 600; margin: 0.12rem 0; transition: background 0.15s, color 0.15s, transform 0.15s; }
+/* Collapsible sections: the label is a button wearing the label's voice, so
+   the tree reads identically with no JS (everything renders open). */
+button.sidebar-collapse {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+  width: 100%; padding: 0; border: none; background: none; cursor: pointer;
+  font-family: inherit; text-align: start;
+}
+button.sidebar-collapse:focus-visible { outline: 3px solid var(--ring-brand); outline-offset: 2px; border-radius: 4px; }
+.collapse-chevron { font-size: 0.7rem; transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1); }
+.sidebar-section.is-collapsed .collapse-chevron { transform: rotate(90deg); }
+.sidebar-nav a { display: flex; align-items: center; gap: 0.7rem; padding: 0.68rem 0.75rem; border-radius: var(--radius-sm); color: var(--sidebar-text); font-size: 0.86rem; font-weight: 600; margin: 0.12rem 0; transition: background 150ms cubic-bezier(0.22, 1, 0.36, 1), color 150ms cubic-bezier(0.22, 1, 0.36, 1), transform 150ms cubic-bezier(0.22, 1, 0.36, 1); }
 .sidebar-nav a span { width: 1.35rem; text-align: center; font-size: 1.05rem; }
 /* The hovered pill is its own colour, not the one the current page wears: they
    were the same, so a hover said nothing on the nine palettes where the fill was
@@ -255,9 +272,9 @@ html[data-theme-mode="dark"] .card::before, html[data-theme-mode="dark-shell"] .
 html[data-theme-mode="high-contrast"] .card, html[data-theme-mode="high-contrast"] .stat-card, html[data-theme-mode="high-contrast"] .kpi-card { border: 2px solid var(--rule); }
 .page-container { max-width: 1240px; margin: 0 auto; padding: 1.8rem 1.5rem 3rem; }
 @media (min-width: 901px) {
-  .page-container > * { animation: pageRise 0.22s ease-out both; }
-  .page-container > *:nth-child(2) { animation-delay: 0.03s; }
-  .page-container > *:nth-child(3) { animation-delay: 0.06s; }
+  .page-container > * { animation: pageRise 250ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .page-container > *:nth-child(2) { animation-delay: 40ms; }
+  .page-container > *:nth-child(3) { animation-delay: 80ms; }
 }
 @keyframes pageRise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 .app-footer { max-width: 1240px; margin: 0 auto; padding: 1rem 1.5rem 1.4rem; color: var(--ink-soft); font-size: 0.75rem; text-align: center; border-top: 1px solid var(--rule); }
@@ -283,20 +300,6 @@ footer:not(.app-footer) { text-align: center; padding: 1rem 0; color: var(--ink-
 .page-heading p { color: var(--ink-soft); font-size: 0.82rem; margin: 0; }
 .page-heading .page-icon { flex: 0 0 1.6rem; width: 1.6rem; height: 1.6rem; }
 .page-heading .page-icon .ui-icon { width: 1.5rem; height: 1.5rem; }
-/* The shared print action: the last child of the page-heading row, after the
-   page's own actions. Screen-only — paper knows which of the page's buttons
-   travel by the page's own print block, and the shell's block already hides
-   .btn, .admin-nav and this button from the printer. */
-.print-action {
-  display: flex; align-items: center; gap: 0.4rem;
-  flex: 0 0 auto; align-self: flex-start;
-  padding: 0.5rem 0.9rem; border: 1px solid var(--rule); border-radius: var(--radius-sm);
-  background: var(--surface-soft); color: var(--ink); font: inherit; font-size: 0.82rem;
-  cursor: pointer;
-}
-.print-action:hover { background: var(--hover-surface); }
-.print-action:focus-visible { outline: 3px solid var(--ring-brand); outline-offset: 2px; }
-.print-action .ui-icon { width: 1rem; height: 1rem; }
 /* The role badge the dashboard wears next to its name. */
 .page-badge { font-size: 0.7rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 999px; background: color-mix(in srgb, var(--sky) 16%, var(--card)); color: var(--info-ink); }
 .eyebrow { color: var(--link-hover); font-size: 0.72rem; font-weight: 800; letter-spacing: 0.02em; }
@@ -384,6 +387,27 @@ input:focus, select:focus, textarea:focus {
   box-shadow: var(--focus-ring);
 }
 
+/* One placeholder voice everywhere: the browser grey is replaced by the
+   theme's own soft ink, so hints read the same on all ten palettes. Copy
+   itself follows the مثال: … convention (no emoji prefixes). */
+::placeholder {
+  color: var(--ink-soft);
+  opacity: 0.8;
+}
+
+/* No native spinners: money fields take type=text + inputmode=numeric and
+   accept Persian digits (parsed server-side via to_english_digits), so the
+   spinner chrome has no field left to serve. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 button, a, input, select, textarea { min-height: var(--touch-target); }
 /* A disabled control was faded out as a whole, which washed the label with it:
    1.85:1 on the dark palette. It goes quiet instead — a soft surface and a label
@@ -431,11 +455,14 @@ button:disabled {
   font-weight: 700;
   cursor: pointer;
   text-decoration: none;
-  transition: transform 0.1s, box-shadow 0.15s, filter 0.15s;
+  transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 250ms cubic-bezier(0.22, 1, 0.36, 1), filter 250ms cubic-bezier(0.22, 1, 0.36, 1);
   line-height: 1.2;
 }
-.btn:hover { transform: translateY(-2px); box-shadow: var(--shadow-hover); }
-.btn:active { transform: translateY(0); }
+.btn:hover { box-shadow: var(--shadow-hover); }
+@media (hover: hover) and (pointer: fine) {
+  .btn:hover { transform: translateY(-2px); }
+}
+.btn:active { transform: scale(0.97); }
 .btn:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
 
 .btn-primary {
@@ -558,6 +585,35 @@ tbody tr:hover { background: var(--hover-surface); color: var(--ink-on-hover); }
    tint (Kids Boutique's warm grey read 3.70:1 on its candy wash as authored). */
 tbody tr:hover .customer-meta, tbody tr:hover .muted { color: var(--ink-on-hover); }
 tbody tr:last-child td { border-bottom: none; }
+
+/* ===================== Data tables — one system =====================
+   Every ledger list wears .data-table (bespoke classes stay as scoping
+   hooks where a page needs them, but paint nothing of their own): sticky
+   headers that never lose the column names, tabular money columns that
+   read LTR, and sort links whose direction is announced, not just drawn. */
+.data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.data-table th.num, .data-table td.num {
+  text-align: left;
+  direction: ltr;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.data-table .sort-link {
+  color: inherit;
+  font-weight: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  white-space: nowrap;
+}
+.data-table .sort-link:hover { color: var(--link-hover); }
+.data-table th[aria-sort="descending"] .sort-link::after { content: "▼"; font-size: 0.65em; }
+.data-table th[aria-sort="ascending"] .sort-link::after { content: "▲"; font-size: 0.65em; }
+.data-table th[aria-sort="none"] .sort-link::after { content: "◇"; font-size: 0.65em; opacity: 0.45; }
 
 /* ===================== Stats grid ===================== */
 
@@ -714,6 +770,11 @@ tbody tr:last-child td { border-bottom: none; }
   border-color: var(--candy);
   box-shadow: var(--focus-ring);
 }
+/* The error border is the attention colour on its own — motion.css owns the
+   shake tween, this rule owns the visible state, like every other state. */
+.t-input.is-error {
+  border-color: var(--persimmon);
+}
 
 /* Basket */
 .basket-section h3 {
@@ -762,7 +823,7 @@ tbody tr:last-child td { border-bottom: none; }
   cursor: pointer;
   font-weight: 700;
   font-family: inherit;
-  transition: all 0.15s;
+  transition: background 0.15s, border-color 0.15s;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -803,6 +864,30 @@ tbody tr:last-child td { border-bottom: none; }
 }
 
 .payment-section { margin-top: 0.8rem; }
+/* Step 2's card: the amount-approval surface (terminal for card) reads as one
+   grouped step between the method radios and the invoice button. */
+.pay-step {
+  background: var(--surface-soft);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  padding: 0.8rem;
+  margin-top: 0.8rem;
+}
+/* The invoice button: last, largest, and the only success fill on screen. */
+.btn-confirm { font-size: 1.1rem; padding: 1.1rem; margin-top: 0.8rem; }
+/* The wizard's own rhythm (try-on mirrors the till): timeline breathing room,
+   the pairing subsection inside step 1, the scan row, the generate button. */
+.wizard-timeline { margin-bottom: 1.5rem; }
+.tryon-pairing {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+}
+.tryon-pairing h4 { margin-bottom: 0.5rem; font-size: 0.95rem; }
+.tryon-pairing .muted { color: var(--ink-soft); font-size: 0.85rem; margin-bottom: 0.6rem; }
+.tryon-scan-form { display: flex; gap: 0.5rem; margin-bottom: 0.8rem; align-items: center; }
+.tryon-scan-form input[type="text"] { flex: 1; direction: ltr; font-size: 1rem; }
+.btn-generate { font-size: 1.1rem; margin-top: 1rem; }
 .payment-timeline { display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.8rem; color: var(--ink-soft); font-size: 0.72rem; }
 .timeline-step { padding: 0.35rem 0.5rem; border-radius: 999px; border: 1px solid var(--rule); white-space: nowrap; }
 .timeline-step.active { color: var(--link-hover); border-color: var(--candy); background: color-mix(in srgb, var(--card) 82%, var(--candy)); font-weight: 700; }
@@ -825,7 +910,7 @@ tbody tr:last-child td { border-bottom: none; }
   padding: 0.6rem 1rem;
   border: 2px solid var(--rule);
   border-radius: var(--radius-sm);
-  transition: all 0.15s;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
   font-weight: 600;
   font-size: 0.9rem;
 }
@@ -942,7 +1027,7 @@ html[data-theme-mode="high-contrast"] { color-scheme: light; }
 .nav-icon::before, .icon-plus::before, .icon-logout::before, .icon-check::before { position: absolute; inset: 0; display: grid; place-items: center; font-family: system-ui, sans-serif; font-size: 1rem; font-weight: 800; line-height: 1; }
 .ui-icon { display: block; width: 1.18rem; height: 1.18rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .nav-icon .ui-icon, .icon-plus .ui-icon, .icon-logout .ui-icon { position: relative; z-index: 1; }
-.icon-sale::before, .icon-history::before, .icon-box::before, .icon-truck::before, .icon-ledger::before, .icon-users::before, .icon-credit::before, .icon-campaign::before, .icon-sms::before, .icon-dashboard::before, .icon-chart::before, .icon-accounting::before, .icon-cash::before, .icon-expenses::before, .icon-supplier::before, .icon-dress::before, .icon-backup::before, .icon-settings::before, .icon-palette::before, .icon-terminal::before, .icon-logs::before, .icon-staff::before, .icon-plus::before, .icon-logout::before, .icon-check::before { content: ""; }
+.icon-sale::before, .icon-history::before, .icon-box::before, .icon-truck::before, .icon-ledger::before, .icon-users::before, .icon-credit::before, .icon-campaign::before, .icon-sms::before, .icon-dashboard::before, .icon-chart::before, .icon-accounting::before, .icon-cash::before, .icon-expenses::before, .icon-supplier::before, .icon-dress::before, .icon-backup::before, .icon-settings::before, .icon-palette::before, .icon-terminal::before, .icon-logs::before, .icon-calendar::before, .icon-crown::before, .icon-staff::before, .icon-plus::before, .icon-logout::before, .icon-check::before { content: ""; }
 .quick-sale .icon-sale, .topbar-settings-icon { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 1.25rem; height: 1.25rem; flex: 0 0 1.25rem; font-size: 0; }
 .quick-sale .icon-sale .ui-icon, .topbar-settings-icon .ui-icon { position: relative; z-index: 1; width: 1.1rem; height: 1.1rem; }
 .context-mark, .footer-mark { display: inline-block; width: 0.8rem; height: 0.8rem; border-radius: 2px; background: var(--candy); vertical-align: -0.08rem; }
@@ -968,6 +1053,8 @@ html[data-theme="kids-boutique"] .icon-settings::before { content: "⚙️"; }
 html[data-theme="kids-boutique"] .icon-palette::before { content: "🎨"; }
 html[data-theme="kids-boutique"] .icon-terminal::before { content: "📟"; }
 html[data-theme="kids-boutique"] .icon-logs::before { content: "📜"; }
+html[data-theme="kids-boutique"] .icon-calendar::before { content: "📅"; }
+html[data-theme="kids-boutique"] .icon-crown::before { content: "👑"; }
 html[data-theme="kids-boutique"] .icon-staff::before { content: "👥"; }
 html[data-theme="kids-boutique"] .icon-plus::before { content: "+"; }
 html[data-theme="kids-boutique"] .icon-logout::before { content: "↪"; }
@@ -985,7 +1072,8 @@ html[data-theme="kids-boutique"] .context-mark, html[data-theme="kids-boutique"]
    remains is the record and the figures. */
 @media print {
   .app-topbar, .app-sidebar, .app-footer, .sidebar-overlay, .menu-toggle,
-  .breadcrumb, .product-pagination, .admin-nav, .skip-link, .btn, .print-action { display: none !important; }
+  .breadcrumb, .product-pagination, .admin-nav, .skip-link, .btn,
+  .toaster, .toaster-flash { display: none !important; }
   .print-heading { display: block !important; }
   .app-main { margin: 0; }
   html, body { background: var(--paper) !important; color: var(--paper-ink) !important; }
@@ -1218,6 +1306,8 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 }
 .search-form > input,
 .search-form > select { flex: 1; min-width: 180px; }
+/* The custom-range row under the period pills: same rhythm, one breath down. */
+.filter-custom-row { margin-top: 0.7rem; margin-bottom: 0; }
 
 .filter-bar { margin-bottom: 1.25rem; }
 
@@ -1241,7 +1331,7 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
   align-items: center;
 }
 .supplier-payment-form select { min-width: 180px; flex: 1; }
-.supplier-payment-form input[name="amount"] { width: 110px; }
+.supplier-payment-form input[name="amount"] { min-width: 140px; }
 
 /* Login */
 .login-card {
@@ -1381,6 +1471,25 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 
 @media (max-width: 900px) {
   .menu-toggle { display: inline-flex; }
+  /* Icon-only topbar buttons (their text labels hide below) get their name
+     back as a themed tooltip on hover and keyboard focus — never the native
+     title chrome. Delayed on first show, instant once one is open. Lives in
+     this block because the narrow-screen drawer owns this breakpoint. */
+  .quick-sale, .topbar-admin { position: relative; }
+  .topbar-tip {
+    position: absolute; top: calc(100% + 8px); inset-inline-start: 50%;
+    transform: translateX(-50%) translateY(4px); opacity: 0; pointer-events: none;
+    background: var(--card); color: var(--ink); border: 1px solid var(--rule);
+    border-radius: var(--radius-sm); box-shadow: var(--shadow-overlay);
+    font-size: 0.75rem; font-weight: 700; padding: 0.35rem 0.6rem; white-space: nowrap;
+    transition: opacity 150ms cubic-bezier(0.22, 1, 0.36, 1), transform 150ms cubic-bezier(0.22, 1, 0.36, 1);
+    transition-delay: 80ms; z-index: 90;
+  }
+  .quick-sale:hover .topbar-tip, .topbar-admin:hover .topbar-tip,
+  .quick-sale:focus-visible .topbar-tip, .topbar-admin:focus-visible .topbar-tip {
+    display: block; opacity: 1; transform: translateX(-50%) translateY(0); transition-delay: 80ms;
+  }
+  .topbar-tip[data-instant] { transition-delay: 0ms; }
   .action-grid { grid-template-columns: 1fr 1fr; }
   .page-heading { align-items: stretch; flex-direction: column; }
   .page-heading .btn { align-self: flex-start; }
@@ -1391,10 +1500,10 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
      — the card, like the popup and the lightbox stage — not the desktop
      sidebar's panel fill: Midnight's sidebar-bg sat *darker* than the dimmed
      page and the drawer read at 1.05:1, not as a layer at all. */
-  .app-sidebar { transform: translateX(110%); visibility: hidden; transition: transform 0.22s ease, visibility 0.22s ease; width: min(300px, 88vw); box-shadow: var(--shadow-overlay); background: var(--card); color: var(--ink); }
+  .app-sidebar { transform: translateX(110%); visibility: hidden; transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1), visibility 250ms cubic-bezier(0.22, 1, 0.36, 1); width: min(300px, 88vw); box-shadow: var(--shadow-overlay); background: var(--card); color: var(--ink); }
   body.sidebar-open .app-sidebar { transform: translateX(0); visibility: visible; }
-  .sidebar-overlay { position: fixed; inset: 72px 0 0; z-index: 60; background: color-mix(in srgb, var(--paper-ink) 50%, transparent); backdrop-filter: blur(2px); }
-  body.sidebar-open .sidebar-overlay { display: block; }
+  .sidebar-overlay { position: fixed; inset: 72px 0 0; z-index: 60; background: color-mix(in srgb, var(--paper-ink) 50%, transparent); backdrop-filter: blur(2px); display: block; visibility: hidden; opacity: 0; transition: opacity 250ms cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 250ms; }
+  body.sidebar-open .sidebar-overlay { visibility: visible; opacity: 1; transition: opacity 250ms cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 0s; }
   .app-main { margin-right: 0; }
   .quick-sale > span:last-child, .topbar-admin > span:last-child { display: none; }
   .topbar-actions { gap: 0.35rem; }
@@ -1446,7 +1555,7 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
   100% { transform: scale(1); opacity: 1; }
 }
 .alert, .card, .stat-card, .kpi-card {
-  animation: popIn 0.2s ease-out;
+  animation: popIn 250ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* Terminal live indicator on checkout.
@@ -1492,6 +1601,9 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 
 /* Theme signatures: each workspace keeps the same structure while changing its visual rhythm. */
 .card::before { background: var(--card-accent); }
+/* The full rainbow lives only where the shop sells (till, catalog, club);
+   ops pages keep the quiet two-stop. Every palette carries both tokens. */
+.accent-full .card::before { background: var(--card-accent-full); }
 
 /* Keep the original Kids Boutique treatment intact while the professional themes use tokens. */
 html[data-theme="kids-boutique"] .card { border: none; }
@@ -1515,19 +1627,6 @@ html[data-theme="pos-focus"] .topbar-admin { border-width: 2px; }
 html[data-theme="pos-focus"] .btn-primary,
 html[data-theme="pos-focus"] .btn-success { min-height: 48px; }
 
-html[data-theme="premium-navy"] .app-topbar { background: linear-gradient(135deg, var(--topbar-start) 0%, var(--topbar-end) 70%, var(--candy) 160%); }
-html[data-theme="premium-navy"] .card::before { height: 3px; }
-
-html[data-theme="atelier"] .app-topbar { background: var(--sidebar-bg); }
-html[data-theme="atelier"] .btn-primary { background: var(--brand-fill); }
-html[data-theme="atelier"] .card::before { background: var(--candy); }
-
-html[data-theme="ocean-commerce"] .sidebar-nav a.active { box-shadow: inset -3px 0 var(--sidebar-text); }
-html[data-theme="ocean-commerce"] .card::before { background: var(--card-accent); }
-
-html[data-theme="forest-ledger"] .sidebar-nav a.active { box-shadow: inset -3px 0 var(--sidebar-text); }
-html[data-theme="forest-ledger"] .card::before { background: var(--card-accent); }
-
 html[data-theme="midnight-operations"] .card::before { background: var(--card-accent); }
 
 html[data-theme="high-contrast"] .card::before { background: var(--ink); }
@@ -1542,28 +1641,6 @@ html[data-theme="pos-focus"] .card,
 html[data-theme="pos-focus"] .stat-card,
 html[data-theme="pos-focus"] .kpi-card { border-inline-start: 3px solid var(--candy); }
 html[data-theme="pos-focus"] .btn { border-radius: var(--radius-sm); text-transform: none; }
-
-html[data-theme="premium-navy"] .card,
-html[data-theme="premium-navy"] .stat-card,
-html[data-theme="premium-navy"] .kpi-card { box-shadow: var(--shadow-hover); }
-html[data-theme="premium-navy"] .page-heading h1 { letter-spacing: -0.02em; }
-
-html[data-theme="atelier"] .card,
-html[data-theme="atelier"] .stat-card,
-html[data-theme="atelier"] .kpi-card { box-shadow: 0 1px 0 color-mix(in srgb, var(--ink) 12%, transparent), 0 7px 18px color-mix(in srgb, var(--ink) 6%, transparent); }
-html[data-theme="atelier"] .card::before { height: 2px; }
-html[data-theme="atelier"] .btn-primary { box-shadow: 3px 3px 0 color-mix(in srgb, var(--ink) 18%, transparent); }
-
-html[data-theme="ocean-commerce"] .app-topbar { box-shadow: var(--shadow-hover); }
-html[data-theme="ocean-commerce"] .card,
-html[data-theme="ocean-commerce"] .stat-card,
-html[data-theme="ocean-commerce"] .kpi-card { border: 1px solid var(--rule); }
-html[data-theme="ocean-commerce"] .card::before { height: 5px; }
-
-html[data-theme="forest-ledger"] .card,
-html[data-theme="forest-ledger"] .stat-card,
-html[data-theme="forest-ledger"] .kpi-card { border-radius: 5px; box-shadow: var(--shadow); }
-html[data-theme="forest-ledger"] th { letter-spacing: 0.02em; }
 
 html[data-theme="midnight-operations"] .card,
 html[data-theme="midnight-operations"] .stat-card,
@@ -3119,6 +3196,46 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
+}
+/* Sliding pill: the active tab is read from the pill behind it, not from a
+   second button colour — one emphasis per view. Links stay real links
+   (deep-linkable, no-JS safe); the pill is pure position. */
+.tabs-sliding {
+    position: relative;
+    gap: 0;
+    background: var(--surface-soft);
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    padding: 4px;
+    width: fit-content;
+    max-width: 100%;
+}
+.tab-link {
+    position: relative;
+    z-index: 1;
+    padding: 0.5rem 1.1rem;
+    border-radius: 999px;
+    color: var(--ink-soft);
+    font-weight: 700;
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+.tab-link:hover { color: var(--link-hover); text-decoration: none; }
+.tab-link.is-active { color: var(--ink); }
+.tabs-pill {
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    left: 0;
+    width: 0;
+    background: var(--card);
+    border: 1px solid var(--rule);
+    box-shadow: var(--shadow);
+    border-radius: 999px;
+    transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1), width 250ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+    .tabs-pill { transition: none; }
 }
 .tab-card {
     margin-bottom: 1.25rem;

@@ -45,14 +45,14 @@
         </div>
         <div class="form-row">
             {% from 'partials/numeric_input.html' import num with context %}
-            <div class="form-group"><label for="amount_rials">مبلغ (ریال)</label>{{ num('amount_rials', '', required=True, input_id='amount_rials') }}<small>مثال: ۱٬۰۰۰٬۰۰۰٬۰۰۰ ریال</small></div>
+            <div class="form-group"><label for="amount_rials">مبلغ (ریال)</label>{{ num('amount_rials', '', required=True, input_id='amount_rials') }}<small>مثال: 1,000,000,000 ریال</small></div>
             <div class="form-group"><label for="issue_date">تاریخ صدور</label><input id="issue_date" name="issue_date" class="persian-date-input" data-pdp-pair="#due_date" placeholder="۱۴۰۵/۰۶/۲۰"></div>
             <div class="form-group"><label for="due_date">تاریخ سررسید</label><input id="due_date" name="due_date" class="persian-date-input" required placeholder="۱۴۰۵/۰۷/۱۵"></div>
         </div>
         <div class="form-row">
             <div class="form-group"><label for="bank_name">بانک</label><input id="bank_name" name="bank_name" placeholder="نام بانک"></div>
-            <div class="form-group"><label for="account_reference">شناسه حساب / توضیح بانکی</label><input id="account_reference" name="account_reference" placeholder="اختیاری"></div>
-            <div class="form-group"><label for="reminder_days">هشدارها (روز قبل)</label><input id="reminder_days" name="reminder_days" value="{{ default_reminder_days|join(', ') }}" placeholder="۱۴، ۷، ۳"><small>مثال: ۱۴، ۷، ۳ یا ۳۰، ۱۴، ۷، ۳</small></div>
+            <div class="form-group"><label for="account_reference">شناسه حساب / توضیح بانکی</label><input id="account_reference" name="account_reference" placeholder="مثال: حساب 1234"></div>
+            <div class="form-group"><label for="reminder_days">هشدارها (روز قبل)</label><input id="reminder_days" name="reminder_days" value="{{ default_reminder_days|join(', ') }}" placeholder="14, 7, 3"><small>مثال: 14, 7, 3 یا 30, 14, 7, 3</small></div>
         </div>
         <div class="form-group"><label for="note">توضیحات</label><textarea id="note" name="note" rows="2" placeholder="توضیح اختیاری درباره چک"></textarea></div>
         <button type="submit" class="btn btn-primary btn-large">ثبت چک</button>
@@ -66,7 +66,7 @@
     <form method="post" action="/admin/checks/settings" class="filter-bar">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <label for="default_reminder_days">روزهای پیش‌فرض قبل از سررسید</label>
-        <input id="default_reminder_days" name="reminder_days" value="{{ default_reminder_days|join(', ') }}" placeholder="۱۴، ۷، ۳">
+        <input id="default_reminder_days" name="reminder_days" value="{{ default_reminder_days|join(', ') }}" placeholder="14, 7, 3">
         <label class="checkbox-label"><input type="hidden" name="enabled" value="0"><input type="checkbox" name="enabled" value="1"{% if reminders_enabled %} checked{% endif %}> فعال‌سازی هشدارها</label>
         <button type="submit" class="btn btn-ghost">ذخیره تنظیمات هشدار</button>
     </form>
@@ -115,7 +115,7 @@
     </form>
 
     {% if checks %}
-    <div class="table-scroll"><table>
+    <div class="table-scroll"><table class="data-table">
         <thead><tr><th scope="col">وضعیت</th><th scope="col">دریافت‌کننده</th><th scope="col">شماره</th><th scope="col">مبلغ (ریال)</th><th scope="col">صدور</th><th scope="col">سررسید</th><th scope="col">بانک</th><th scope="col">توضیح</th><th scope="col">عملیات</th></tr></thead>
         <tbody>
         {% for check in checks %}

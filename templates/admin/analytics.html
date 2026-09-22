@@ -22,10 +22,10 @@
             <a href="/admin/analytics?period=year" class="btn {% if period == 'year' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">سال</a>
             <a href="/admin/analytics?period=all" class="btn {% if period == 'all' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">همه</a>
         </div>
-        <div class="search-form" style="margin-top: 0.7rem;">
-            <input type="text" id="analytics-start" name="start_date" value="{{ start_date }}" placeholder="از تاریخ" class="persian-date-input" data-pdp-pair="#analytics-end">
+        <div class="search-form filter-custom-row">
+            <input type="text" id="analytics-start" name="start_date" value="{{ start_date }}" placeholder="۱۴۰۵/۰۱/۰۱" class="persian-date-input" data-pdp-pair="#analytics-end">
             <span>تا</span>
-            <input type="text" id="analytics-end" name="end_date" value="{{ end_date }}" placeholder="تا تاریخ" class="persian-date-input">
+            <input type="text" id="analytics-end" name="end_date" value="{{ end_date }}" placeholder="۱۴۰۵/۰۶/۳۱" class="persian-date-input">
             <input type="hidden" name="period" value="custom">
             <input type="hidden" name="category" value="{{ category }}">
             <button type="submit" class="btn btn-primary btn-sm">اعمال</button>
@@ -38,12 +38,33 @@
    server marks the active one; all sections stay in the DOM (hidden ones with
    the `hidden` attribute) so captions, print and the canvas tests see one page. #}
 <div class="card screen-only tab-card">
-    <nav class="tab-bar" aria-label="بخش‌های تحلیل">
+    <nav class="tab-bar tabs-sliding" aria-label="بخش‌های تحلیل">
+        <span class="tabs-pill" aria-hidden="true"></span>
         {% for value, label in tabs.items() %}
-        <a href="/admin/analytics?tab={{ value }}&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}&category={{ category }}" class="btn {% if tab == value %}btn-primary{% else %}btn-ghost{% endif %} btn-sm"{% if tab == value %} aria-current="page"{% endif %}>{{ label }}</a>
+        <a href="/admin/analytics?tab={{ value }}&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}&category={{ category }}" class="tab-link{% if tab == value %} is-active{% endif %}"{% if tab == value %} aria-current="page"{% endif %}>{{ label }}</a>
         {% endfor %}
     </nav>
 </div>
+<script>
+// Sliding pill: measures the active link and glides behind it. First paint
+// and resizes write position with the transition off (then reflow + restore),
+// or the pill would slide in from the corner on every load.
+(function () {
+    var bar = document.querySelector('.tabs-sliding');
+    if (!bar) return;
+    var pill = bar.querySelector('.tabs-pill');
+    var active = bar.querySelector('.tab-link.is-active') || bar.querySelector('.tab-link');
+    function place(animate) {
+        if (!active || !pill) return;
+        if (!animate) pill.style.transition = 'none';
+        pill.style.width = active.offsetWidth + 'px';
+        pill.style.transform = 'translateX(' + active.offsetLeft + 'px)';
+        if (!animate) { void pill.offsetWidth; pill.style.transition = ''; }
+    }
+    place(false);
+    window.addEventListener('resize', function () { place(false); });
+})();
+</script>
 
 <!-- Sales tab -->
 <section class="analytics-tab" data-tab="sales" aria-label="فروش"{% if tab != 'sales' %} hidden{% endif %}>
@@ -87,7 +108,7 @@
             <input type="hidden" name="period" value="{{ period }}">
             <input type="hidden" name="start_date" value="{{ start_date }}">
             <input type="hidden" name="end_date" value="{{ end_date }}">
-            <select name="category" onchange="this.form.submit()" style="padding:0.35rem 0.6rem; border-radius:6px; border:1px solid var(--rule); background:var(--surface-soft); color:inherit; font-family:Vazirmatn;">
+            <select name="category" onchange="this.form.submit()">
                 <option value="">همه محصولات</option>
                 {% for c in all_categories %}
                 <option value="{{ c }}" {% if c == category %}selected{% endif %}>{{ c }}</option>
@@ -149,7 +170,7 @@
             <div class="inv-row">A-Class: <b>{{ abc_products.a_count }} محصول</b></div>
             <div class="inv-row">سهم درآمد: <b>{{ abc_products.a_pct }}٪</b></div>
         </div>
-        <table>
+        <table class="data-table">
             <thead><tr><th>نام</th><th>رده</th><th>فروش</th><th>سهم</th><th>کلاس</th></tr></thead>
             <tbody>
             {% for i in abc_products.products[:15] %}
@@ -160,7 +181,7 @@
     </div>
     <div class="card">
         <h3>پرفروش‌ترین واریانت‌ها <span class="tip-icon" data-tip="پرفروش‌ترین ترکیب‌های مشخص محصول + سایز + رنگ. این‌ها اقلامی هستند که واقعاً از قفسه پرواز می‌کنند — سفارش مجدد آن‌ها اولویت اول است.">?</span></h3>
-        <table>
+        <table class="data-table">
             <thead><tr><th>نام</th><th>سایز</th><th>رنگ</th><th>تعداد</th><th>فروش</th></tr></thead>
             <tbody>
             {% for v in top_variants %}
@@ -173,7 +194,7 @@
         <h3>کالای مرده (بدون فروش در این دوره) <span class="tip-icon" data-tip="اقلامی که در این بازه هیچ فروشی نداشته‌اند ولی هنوز در انبار هستند. سرمایه شما را بی‌استفاده نگه داشته‌اند. راه‌حل: تخفیف ویژه، بسته‌بندی مجدد، یا حذف از مجموعه.">?</span></h3>
         <p style="font-size:0.85rem; color:var(--ink-soft);">ارزش کل: <b>{{ fmt(dead_stock.total_value) }} ت</b> — {{ dead_stock.count }} قلم</p>
         {% if dead_stock.items %}
-        <table>
+        <table class="data-table">
             <thead><tr><th>نام</th><th>سایز</th><th>رنگ</th><th>موجودی</th><th>ارزش</th></tr></thead>
             <tbody>
             {% for d in dead_stock.variants[:10] %}
@@ -215,7 +236,7 @@
 <div class="tables-grid">
     <div class="card">
         <h3>مشتریان برتر <span class="tip-icon" data-tip="پرخرج‌ترین مشتریان در بازه زمانی. سطح وفاداری (نقره‌ای/طلایی/الماس) و تعداد سفارشات هر کدام مشخص است. این مشتریان ستون فقرات کسب‌وکار شما هستند.">?</span></h3>
-        <table>
+        <table class="data-table">
             <thead><tr><th>نام</th><th>تلفن</th><th>سطح</th><th>مجموع خرید</th><th>سفارش</th></tr></thead>
             <tbody>
             {% for c in top_customers %}
@@ -247,7 +268,7 @@
     <div class="card chart-card"><h3>حاشیه سود به تفکیک دسته <span class="tip-icon" data-tip="حاشیه سود ناخالص خالص به ازای هر دسته‌بندی (پس از کسر تخفیف و مرجوعی). رنگ سبز یعنی سودآور، قرمز یعنی زیان‌ده. مهم‌ترین نمودار برای تصمیم‌گیری: کدام دسته را بیشتر تبلیغ کنید و کدام را کمتر سفارش دهید.">?</span></h3><p class="chart-note" data-chart="marginCatChart">{{ notes.marginCatChart }}</p><canvas id="marginCatChart" role="img" aria-label="{{ notes.marginCatChart }}"></canvas></div>
     <div class="card">
         <h3>دسته‌بندی‌ها <span class="tip-icon" data-tip=" مقایسه دسته‌بندی‌ها: کدام بیشتر می‌فروشد، کدام سودآورتر است و کدام حاشیه سود بهتری دارد. حاشیه سود بالاتر مهم‌تر از فروش بالاتر است — یک دسته کم‌فروش با حاشیه بالا بهتر از دسته پرفروش با حاشیه پایین است.">?</span></h3>
-        <table>
+        <table class="data-table">
             <thead><tr><th>دسته</th><th>تعداد</th><th>فروش</th><th>سود</th><th>حاشیه</th></tr></thead>
             <tbody>
             {% for c in categories %}
@@ -259,7 +280,7 @@
     <div class="card">
         <h3>تخفیف‌ها <span class="tip-icon" data-tip="تخفیف‌های اعمال شده در بازه زمانی: کدام نوع تخفیف بیشتر استفاده شده و چه تأثیری روی درآمد داشته. اگر تخفیف خیلی زیاد باشد، ممکن است حاشیه سود را خورده باشد.">?</span></h3>
         {% if discounts %}
-        <table>
+        <table class="data-table">
             <thead><tr><th>نوع</th><th>مبلغ کل</th><th>درصد فروش</th></tr></thead>
             <tbody>
             {% for d in discounts %}

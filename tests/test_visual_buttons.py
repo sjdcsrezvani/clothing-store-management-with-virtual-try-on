@@ -18,7 +18,7 @@ measures what is painted:
 * the **customer-search button** — `.btn-primary` on the till's first screen;
 * the **front-door ghost** — «فروش بدون ثبت مشتری», the anonymous-sale path
   beside the search button;
-* the **payment-area ghost** — «ارسال مبلغ به کارت‌خوان», the payment options'
+* the **payment-area primary** — «ارسال مبلغ به کارت‌خوان», the payment step's
   own control on the money screen (the options themselves are radio labels,
   so this button is what the payment step fills);
 * the **نسیه walks** — a second and third till walk through real customers
@@ -279,7 +279,7 @@ def test_the_till_filled_buttons_read_at_the_pixels(probe_server):
 
         # Screen 2: the money screen — the driver walks the real flow
         # (skip-customer, scan one item) before photographing. The confirm
-        # (success), the payment options' own control (ghost, terminal), and
+        # (success), the payment step's own control (primary, terminal), and
         # the option spans in their default states: کارت selected, نقد
         # unselected — the payment radios, seen rather than assumed.
         second = _shoot_till_scan(probe_server, cookie, f"till-scan-{theme_id}",
@@ -295,7 +295,7 @@ def test_the_till_filled_buttons_read_at_the_pixels(probe_server):
         # Screen 2b: the نسیه walks. The credit radio is clicked inside the
         # browser, so what is photographed is the credit confirmation state:
         # the selected option's candy wash, the confirm button with the
-        # terminal ghost gone, and — for the customer over their سقف اعتبار —
+        # terminal primary gone, and — for the customer over their سقف اعتبار —
         # the refusal warning on the same screen.
         credit_selectors = f"{CONFIRM_SELECTOR},{CREDIT_RADIO_SELECTOR},{CARD_OPTION_SELECTOR}"
         calm = _shoot_till_credit(probe_server, cookie, f"till-credit-{theme_id}",
@@ -304,7 +304,7 @@ def test_the_till_filled_buttons_read_at_the_pixels(probe_server):
         assert calm_state.get("creditRadio") and calm_state.get("creditPanel"), \
             f"{theme_id}: the credit walk never reached the نسیه state ({calm_state})"
         assert calm_state.get("terminalHidden"), \
-            f"{theme_id}: the terminal ghost should hide on a نسیه sale"
+            f"{theme_id}: the terminal step should hide on a نسیه sale"
         assert not calm_state.get("creditWarning"), \
             f"{theme_id}: a customer with room must not see the refusal warning"
         over = _shoot_till_credit(probe_server, cookie, f"till-credit-over-{theme_id}",

@@ -46,6 +46,7 @@ from services.accounting import (
 from services.sms import queue_credit_reminder_sms
 from services.analytics import KNOWN_PERIODS, UnreadableRange, get_date_range, period_range
 from services.security import log_action, require_html_role, role_allows
+from services.sorting import parse_sort
 from services.templating import templates
 from services.inventory import (
     LEGACY_MOVEMENT_TYPES,
@@ -557,6 +558,8 @@ async def admin_accounting_export(
     status: str = "all",
     type: str = "all",
     method: str = "all",
+    sort: str = "",
+    dir: str = "",
     db: Session = Depends(get_db),
 ):
     guard = require_html_role(request, db, "manager")
@@ -627,7 +630,13 @@ async def admin_accounting_export(
             remaining_expr=remaining_expr, now=now,
         )
         rows = [["شماره", "تاریخ", "تأمین‌کننده", "مبلغ کل", "وضعیت", "توضیح"]]
-        for p in export_q.order_by(purchase_effective_column().desc(), Purchase.id.desc()).all():
+        _skey, _sdir = parse_sort(request.query_params, {"date": "desc", "total": "desc"}, "date")
+        if _skey == "total":
+            _porder = Purchase.total_cost.desc() if _sdir == "desc" else Purchase.total_cost.asc()
+        else:
+            _porder = purchase_effective_column().desc() if _sdir == "desc" \
+                else purchase_effective_column().asc()
+        for p in export_q.order_by(_porder, Purchase.id.desc()).all():
             if p.is_draft:
                 purchase_state = "پیش‌نویس"
             elif p.is_reversed:
@@ -667,7 +676,10 @@ async def admin_accounting_export(
         elif status_filter == "reversed":
             query = query.filter(Expense.reversed_at.isnot(None))
         rows = [["شماره", "تاریخ", "وضعیت", "نوع هزینه", "دسته", "مبلغ", "روش پرداخت", "شیفت", "توضیح"]]
-        for e in query.order_by(Expense.created_at.desc(), Expense.id.desc()).all():
+        _ekey, _edir = parse_sort(request.query_params, {"date": "desc", "amount": "desc"}, "date")
+        _ecol = Expense.amount if _ekey == "amount" else Expense.created_at
+        _eorder = _ecol.desc() if _edir == "desc" else _ecol.asc()
+        for e in query.order_by(_eorder, Expense.id.desc()).all():
             rows.append([
                 e.id, jalali_str(e.created_at, with_time=False),
                 "برگشت‌شده" if e.reversed_at is not None else "فعال",
@@ -883,7 +895,7 @@ async def admin_credit_pay(
         return RedirectResponse(url="/admin/credit?err=مشتری یافت نشد.", status_code=303)
 
     try:
-        amount_int = int(amount)
+        amount_int = int(to_english_digits(str(amount or "")).replace(",", "").replace("٬", "").replace(" ", "") or 0)
     except (TypeError, ValueError):
         amount_int = 0
 
@@ -1150,7 +1162,7 @@ async def admin_credit_limit(customer_id: int, request: Request, credit_limit: s
     if not customer:
         return RedirectResponse(url="/admin/credit", status_code=303)
     try:
-        limit = int(credit_limit or 0)
+        limit = int(to_english_digits(str(credit_limit or "")).replace(",", "").replace("٬", "").replace(" ", "") or 0)
     except (TypeError, ValueError):
         limit = 0
     customer.credit_limit = max(0, limit) or None
@@ -1762,7 +1774,18 @@ async def admin_purchases(
     total_count = query.count()
     total_pages = max(1, -(-total_count // PURCHASE_PAGE_SIZE))
     page = min(page, total_pages)
-    rows = query.order_by(purchase_effective_column().desc(), Purchase.id.desc()) \
+    # Ledger sorting: effective date or invoice total. Unknown keys answer the
+    # default newest-first list, never an error.
+    # Ledger sorting: effective date or invoice total. Unknown keys answer the
+    # default newest-first list, never an error.
+    sort_key, sort_dir = parse_sort(request.query_params,
+                                    {"date": "desc", "total": "desc"}, "date")
+    if sort_key == "total":
+        primary = total_expr.desc() if sort_dir == "desc" else total_expr.asc()
+    else:
+        primary = purchase_effective_column().desc() if sort_dir == "desc" \
+            else purchase_effective_column().asc()
+    rows = query.order_by(primary, Purchase.id.desc()) \
         .offset((page - 1) * PURCHASE_PAGE_SIZE).limit(PURCHASE_PAGE_SIZE).all()
 
     item_totals = purchase_item_totals(db, [purchase.id for purchase, _, _ in rows])
@@ -1785,13 +1808,14 @@ async def admin_purchases(
     ).scalar() or 0
 
     from urllib.parse import urlencode
-    filter_qs = urlencode({
+    sort_base_qs = urlencode({
         "status": status,
         "q": search,
         "supplier_id": supplier_id,
         "start_date": start_date,
         "end_date": end_date,
     })
+    filter_qs = f"{sort_base_qs}&sort={sort_key}&dir={sort_dir}" if sort_base_qs else f"sort={sort_key}&dir={sort_dir}"
 
     return templates.TemplateResponse(request, "admin/purchases.html", {
         "products": products,
@@ -1810,6 +1834,9 @@ async def admin_purchases(
         "page": page,
         "total_pages": total_pages,
         "filter_qs": filter_qs,
+        "sort_base_qs": sort_base_qs,
+        "sort_key": sort_key,
+        "sort_dir": sort_dir,
         "total_count": total_count,
         "has_filters": bool(search or supplier_id or start_date or end_date or status != "all"),
         "today_jalali": jalali_str(now, with_time=False),
@@ -1921,6 +1948,10 @@ async def admin_purchase_edit(purchase_id: int, request: Request, db: Session = 
         "page": 1,
         "total_pages": 1,
         "total_count": 0,
+        "filter_qs": "",
+        "sort_base_qs": "",
+        "sort_key": "date",
+        "sort_dir": "desc",
         "has_filters": False,
         "today_jalali": jalali_str(now, with_time=False),
         "msg": request.query_params.get("msg", ""),
@@ -2565,7 +2596,11 @@ async def admin_expenses(
     total_count = query.count()
     total_pages = max(1, -(-total_count // EXPENSE_PAGE_SIZE))
     page = min(page, total_pages)
-    expenses = query.order_by(Expense.created_at.desc(), Expense.id.desc()) \
+    sort_key, sort_dir = parse_sort(request.query_params,
+                                    {"date": "desc", "amount": "desc"}, "date")
+    order_column = Expense.amount if sort_key == "amount" else Expense.created_at
+    order = order_column.desc() if sort_dir == "desc" else order_column.asc()
+    expenses = query.order_by(order, Expense.id.desc()) \
         .offset((page - 1) * EXPENSE_PAGE_SIZE).limit(EXPENSE_PAGE_SIZE).all()
 
     ids = [e.id for e in expenses]
@@ -2596,6 +2631,7 @@ async def admin_expenses(
     from urllib.parse import urlencode
     export_qs = urlencode({
         "kind": "expenses", "period": window.period,
+        "sort": sort_key, "dir": sort_dir,
         **({"start_date": start_date} if start_date else {}),
         **({"end_date": end_date} if end_date else {}),
         **({"q": search} if search else {}),
@@ -2622,6 +2658,8 @@ async def admin_expenses(
         "page": page,
         "total_pages": total_pages,
         "total_count": total_count,
+        "sort_key": sort_key,
+        "sort_dir": sort_dir,
         "has_filters": has_filters,
         "export_qs": export_qs,
         "msg": request.query_params.get("msg", ""),

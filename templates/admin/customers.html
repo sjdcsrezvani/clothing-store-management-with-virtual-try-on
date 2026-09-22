@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{# Storefront accent: the club sells, so it wears the full rainbow. #}
+{% set page_accent_full = True %}
 {% block content %}
 {% set filter_qs = '&tier=' ~ tier ~ '&status=' ~ status ~ '&tag=' ~ tag ~ '&sort=' ~ sort
     ~ '&search=' ~ (search|urlencode) ~ ('&drifted=1' if drifted else '') %}
@@ -152,7 +154,7 @@
 
     {% if rows %}
     <div class="table-scroll">
-        <table class="customer-table">
+        <table class="data-table customer-table">
             <thead>
                 <tr>
                     <th scope="col">مشتری</th>

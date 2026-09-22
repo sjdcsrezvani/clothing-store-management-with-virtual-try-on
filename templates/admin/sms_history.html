@@ -15,8 +15,8 @@
 {# The send, the digest resend and the digest send-now routes all land back here
    with their answer in the query — a redirect that said nothing anywhere would
    leave the owner guessing whether the queue took the message. #}
-{% if err %}<div class="alert alert-error" role="alert">⚠️ {{ err }}</div>{% endif %}
-{% if msg %}<div class="alert alert-info" role="status">{{ msg }}</div>{% endif %}
+{% if err %}<div class="toaster-flash" data-toast data-toast-type="error" role="alert">⚠️ {{ err }}</div>{% endif %}
+{% if msg %}<div class="toaster-flash" data-toast data-toast-type="info" role="status">{{ msg }}</div>{% endif %}
 
 
 <div class="stats-grid sms-kpi" aria-label="خلاصه ارسال‌ها">
@@ -107,7 +107,7 @@
 
     {% if rows %}
     <div class="table-scroll">
-        <table class="sms-table sms-history-table">
+        <table class="data-table sms-table sms-history-table">
             <thead>
                 <tr>
                     <th scope="col">زمان</th>

@@ -47,23 +47,23 @@ TOPBAR_ACTIONS: tuple[dict, ...] = (
 # then the administration. A section whose every item is hidden disappears with
 # them, so nobody is shown a heading over nothing.
 NAV_SECTIONS: tuple[dict, ...] = (
-    {"label": "فروش", "items": (
+    {"key": "sales", "label": "فروش", "items": (
         _item("/sales/", "تاریخچه فروش", "history", "sales-history", "cashier"),
         _item("/admin/try-on", "پرو مجازی", "dress", "tryon"),
     )},
-    {"label": "کالا و انبار", "items": (
+    {"key": "inventory", "label": "کالا و انبار", "items": (
         _item("/admin/products", "محصولات و موجودی", "box", "products"),
         _item("/admin/purchases", "خرید از عمده‌فروش", "truck", "purchases"),
         _item("/admin/suppliers", "تأمین‌کنندگان", "supplier", "suppliers"),
         _item("/admin/inventory-movements", "دفتر انبار", "ledger", "inventory-movements"),
     )},
-    {"label": "مشتریان و باشگاه", "items": (
+    {"key": "club", "label": "مشتریان و باشگاه", "items": (
         _item("/admin/customers", "مشتریان", "users", "customers"),
         _item("/admin/credit", "حساب نسیه", "credit", "credit"),
         _item("/admin/campaigns", "کمپین پیامکی", "campaign", "campaigns"),
         _item("/admin/sms", "پیامک", "sms", "sms"),
     )},
-    {"label": "مالی", "items": (
+    {"key": "finance", "label": "مالی", "items": (
         # The drawer is opened and counted by whoever stands at the counter, so
         # the cashier holds this door; a section that would otherwise be empty
         # for them now reads «مالی ← صندوق» rather than disappearing entirely.
@@ -74,13 +74,13 @@ NAV_SECTIONS: tuple[dict, ...] = (
         _item("/admin/analytics", "تحلیل فروش", "chart", "analytics", "owner"),
         _item("/admin/pos-reconciliation", "تطبیق کارت‌خوان", "terminal", "pos-reconciliation"),
     )},
-    {"label": "مدیریت", "items": (
+    {"key": "admin", "label": "مدیریت", "items": (
         _item("/admin/staff", "کارکنان و حقوق", "staff", "staff", "owner"),
         _item("/admin/settings", "تنظیمات", "settings", "settings", "owner"),
         _item("/admin/backups", "پشتیبان‌ها", "backup", "backups", "owner"),
-        _item("/admin/events", "دفتر رویدادها", "logs", "events", "owner"),
+        _item("/admin/events", "دفتر رویدادها", "calendar", "events", "owner"),
         _item("/admin/logs", "گزارش عملیات", "logs", "logs", "owner"),
-        _item("/admin/owner-profile", "اطلاعات مالک", "users", "owner-profile", "owner"),
+        _item("/admin/owner-profile", "اطلاعات مالک", "crown", "owner-profile", "owner"),
     )},
 )
 
@@ -187,8 +187,14 @@ def navigation_for(role: str | None) -> list[dict]:
     for section in NAV_SECTIONS:
         items = [item for item in section["items"] if role_allows(role, item["min_role"])]
         if items:
-            sections.append({"label": section["label"], "items": items})
+            sections.append({"key": section["key"], "label": section["label"], "items": items})
     return sections
+
+
+# Sections that start collapsed: administration is a place the till visits
+# rarely. The browser remembers each section afterwards (localStorage), and
+# with no JS everything renders open, so nothing is ever unreachable.
+COLLAPSED_BY_DEFAULT: tuple[str, ...] = ("admin",)
 
 
 def topbar_for(role: str | None) -> list[dict]:
