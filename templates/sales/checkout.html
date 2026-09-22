@@ -1,10 +1,12 @@
 {% extends "base.html" %}
+{# Storefront accent: the till sells, so it wears the full rainbow. #}
+{% set page_accent_full = True %}
 {% block title %}{% if step == 'scan' %} فروش — {{ customer.phone if customer else 'ناشناس' }}{% else %} فروش جدید — {{ store.name }}{% endif %}{% endblock %}
 {% block content %}
 
-{% if message %}<div class="alert alert-success">✅ {{ message }}</div>{% endif %}
-{% if error %}<div class="alert alert-error">⚠️ {{ error }}</div>{% endif %}
-{% if success %}<div class="alert alert-success">✅ {{ success }}</div>{% endif %}
+{% if message %}<div class="toaster-flash" data-toast data-toast-type="success" role="status">✅ {{ message }}</div>{% endif %}
+{% if error %}<div class="toaster-flash" data-toast data-toast-type="error" role="alert">⚠️ {{ error }}</div>{% endif %}
+{% if success %}<div class="toaster-flash" data-toast data-toast-type="success" role="status">✅ {{ success }}</div>{% endif %}
 
 {% if step == "customer" %}
 {# ─── STEP 1: Phone entry ─── #}
@@ -13,9 +15,9 @@
     <h1>شماره مشتری</h1>
     <p>شماره موبایل را وارد کنید — مشتری جدید یا قدیم، جستجو می‌کنیم!</p>
     <form method="post" action="/sales/lookup-customer">
-        <div class="form-group">
-            <input type="tel" id="phone" name="phone" class="phone-input"
-                   placeholder="09xxxxxxxxx" required maxlength="11" pattern="09\d{9}" autofocus inputmode="tel" aria-label="شماره تلفن مشتری">
+        <div class="form-group t-input-wrap{% if error and step == 'customer' %} is-error{% endif %}">
+            <input type="tel" id="phone" name="phone" class="phone-input t-input{% if error and step == 'customer' %} is-error{% endif %}"
+                   placeholder="09123456789" required maxlength="11" pattern="09\d{9}" autofocus inputmode="tel" aria-label="شماره تلفن مشتری"{% if error and step == 'customer' %} aria-invalid="true" data-shake-on-load{% endif %}>
 
         </div>
         <button type="submit" class="btn btn-primary btn-block btn-large">🔍 جستجوی مشتری</button>
@@ -123,10 +125,10 @@
                 <input type="hidden" name="use_referrer_discount" value="{{ '1' if use_referrer_discount == '1' else '0' }}">
                 <input type="hidden" name="custom_discount_amount" value="{{ custom_discount_amount|default(0) }}">
                 <input type="hidden" name="custom_discount_percent" value="{{ custom_discount_percent|default(0) }}">
-                <div class="form-group" style="margin-bottom: 0;">
-                    <input type="text" id="barcode-input" name="barcode" class="barcode-input"
+                <div class="form-group t-input-wrap{% if error and step == 'scan' %} is-error{% endif %}" style="margin-bottom: 0;">
+                    <input type="text" id="barcode-input" name="barcode" class="barcode-input t-input{% if error and step == 'scan' %} is-error{% endif %}"
                            placeholder="بارکد را اسکن کنید..." autofocus autocomplete="off"
-                           inputmode="numeric" aria-label="بارکد محصول">
+                           inputmode="numeric" aria-label="بارکد محصول"{% if error and step == 'scan' %} aria-invalid="true" data-shake-on-load{% endif %}>
                 </div>
             </form>
         </div>
@@ -140,13 +142,13 @@
                     <label for="ref-code-input">🔑 کد معرفی</label>
                     <input type="text" id="ref-code-input" value="{{ referrer_code|default('') }}"
                            oninput="setAll('referrer_code', this.value)"
-                           placeholder="کد ۶ رقمی">
+                           placeholder="مثال: 482913">
                 </div>
                 <div class="form-group" style="margin-bottom: 0;">
                     <label for="ref-phone-input">📱 شماره معرف</label>
                     <input type="tel" id="ref-phone-input" value="{{ referrer_phone|default('') }}"
                            oninput="setAll('referrer_phone', this.value)"
-                           placeholder="09xxxxxxxxx">
+                           placeholder="09123456789">
                 </div>
             </div>
         </div>
@@ -205,16 +207,20 @@
             <h4>تخفیف ویژه</h4>
             <div class="form-row">
                 <div class="form-group">
-                    <label>مبلغ (تومان)</label>
-                    {# Bounds painted from CUSTOM_DISCOUNT_RULES via the route's
-                       numeric_rules — this input is a setAll mirror with no name,
-                       so the shared macro's name attribute does not apply. #}
-                    <input type="number" min="{{ numeric_rules['custom_discount_amount'][0] }}" value="{{ custom_discount_amount|default(0) }}"
+                    <label for="custom-amount-input">مبلغ (تومان)</label>
+                    {# Named mirrors bound to the apply form: the discount rides
+                       the POST itself, and setAll keeps the hidden twins (read
+                       by the scan/add/remove forms) in sync while typing. #}
+                    <input type="text" inputmode="numeric" id="custom-amount-input" name="custom_discount_amount" form="apply-discount-form"
+                           min="{{ numeric_rules['custom_discount_amount'][0] }}" value="{{ custom_discount_amount|default(0) }}"
+                           placeholder="مثال: 50000"
                            oninput="setAll('custom_discount_amount', this.value)">
                 </div>
                 <div class="form-group">
-                    <label>درصد</label>
-                    <input type="number" min="{{ numeric_rules['custom_discount_percent'][0] }}" max="{{ numeric_rules['custom_discount_percent'][1] }}" value="{{ custom_discount_percent|default(0) }}"
+                    <label for="custom-percent-input">درصد</label>
+                    <input type="text" inputmode="numeric" id="custom-percent-input" name="custom_discount_percent" form="apply-discount-form"
+                           min="{{ numeric_rules['custom_discount_percent'][0] }}" max="{{ numeric_rules['custom_discount_percent'][1] }}" value="{{ custom_discount_percent|default(0) }}"
+                           placeholder="مثال: 10"
                            oninput="setAll('custom_discount_percent', this.value)">
                 </div>
             </div>
@@ -228,8 +234,8 @@
             <input type="hidden" name="referrer_phone" value="{{ referrer_phone|default('') }}">
                 <input type="hidden" name="campaign_code" value="{{ campaign_code|default('') }}">
             <input type="hidden" name="use_referrer_discount" value="{{ '1' if use_referrer_discount == '1' else '0' }}">
-            <input type="hidden" name="custom_discount_amount" value="{{ custom_discount_amount|default(0) }}">
-            <input type="hidden" name="custom_discount_percent" value="{{ custom_discount_percent|default(0) }}">
+            {# custom_discount_* ride on the named mirrors above (form-bound),
+               not on hidden twins — one source per key. #}
             <button type="submit" class="btn btn-primary btn-block">🧮 اعمال تخفیف</button>
         </form>
     </div>
@@ -270,7 +276,7 @@
                 <div class="summary-row discount"><span>{{ line }}</span></div>
                 {% endfor %}
                 {% set final = (total_amount - discounts.total_discount) if total_amount >= discounts.total_discount else 0 %}
-                <div class="summary-row total"><span>💰 مبلغ نهایی</span><span class="tnum" data-amount="{{ final }}">{{ fmt(final) }} تومان</span></div>
+                <div class="summary-row total"><span>💰 مبلغ نهایی</span><span class="tnum" data-amount="{{ final }}"><span class="t-digit-group" data-digit-pop>{{ fmt(final) }}</span> تومان</span></div>
                 {% if discounts.total_discount > 0 %}
                 <div class="summary-row discount"><span>جمع تخفیف</span><span class="tnum">-{{ fmt(discounts.total_discount) }} تومان</span></div>
                 {% endif %}
@@ -278,8 +284,9 @@
 
             <div class="payment-section" aria-label="پرداخت">
                 <div class="payment-timeline" aria-label="وضعیت پرداخت">
-                    <span class="timeline-step active">۱ انتخاب روش</span><span class="timeline-line"></span><span class="timeline-step">۲ پرداخت</span><span class="timeline-line"></span><span class="timeline-step">۳ صدور فاکتور</span>
+                    <span class="timeline-step active">۱ روش پرداخت</span><span class="timeline-line"></span><span class="timeline-step">۲ تأیید مبلغ</span><span class="timeline-line"></span><span class="timeline-step">۳ صدور فاکتور</span>
                 </div>
+                {# Step 1 — the method. Everything below follows from it. #}
                 <div class="payment-options" role="radiogroup" aria-label="روش پرداخت">
                     <label class="payment-option">
                         <input type="radio" name="payment_method" value="card" checked>
@@ -297,7 +304,7 @@
                     {% endif %}
                 </div>
                 {% if customer %}
-                <div style="font-size: 0.8rem; color: var(--ink-soft); margin-top: 0.4rem;">
+                <div id="credit-note" style="font-size: 0.8rem; color: var(--ink-soft); margin-top: 0.4rem;" hidden>
                     📒 نسیه: مبلغ به حساب بدهی مشتری اضافه می‌شود و در «حساب نسیه» قابل دریافت است.
                     {% if credit_limit_info and credit_limit_info.due_date %}
                     <br>📅 سررسید این فاکتور: <strong class="tnum">{{ jalali_str(credit_limit_info.due_date, false) }}</strong>
@@ -318,21 +325,27 @@
                 </div>
                 {% endif %}
 
-                <div id="terminal-indicator" class="terminal-indicator" style="margin-bottom:0.4rem;" dir="ltr">
-                    <span class="terminal-dot" id="terminal-dot">⚪</span>
-                    <span id="terminal-indicator-text">📟 کارت‌خوان: در حال بررسی…</span>
+                {# Step 2 — approve the amount: terminal for card, cash count for
+                   cash, nothing for credit (the note above is its step 2). #}
+                <div class="pay-step" id="pay-step-terminal">
+                    <div id="terminal-indicator" class="terminal-indicator" style="margin-bottom:0.4rem;" dir="ltr">
+                        <span class="terminal-dot" id="terminal-dot">⚪</span>
+                        <span id="terminal-indicator-text">📟 کارت‌خوان: در حال بررسی…</span>
+                    </div>
+                    <form method="post" action="/sales/send-to-terminal" id="terminal-form" onsubmit="sendToTerminal(event)">
+                        <input type="hidden" name="checkout_nonce" value="{{ checkout_nonce }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <button type="submit" id="terminal-submit" class="btn btn-primary btn-block">📟 ارسال مبلغ به کارت‌خوان</button>
+                    </form>
+                    <div id="terminal-status" class="alert" style="display:none; margin-top:0.6rem;" role="status" aria-live="polite"></div>
                 </div>
-                <form method="post" action="/sales/send-to-terminal" id="terminal-form" onsubmit="sendToTerminal(event)">
-                    <input type="hidden" name="checkout_nonce" value="{{ checkout_nonce }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                    <button type="submit" id="terminal-submit" class="btn btn-ghost btn-block" style="margin-bottom:0.6rem;">📟 ارسال مبلغ به کارت‌خوان</button>
-                </form>
-                <div id="terminal-status" class="alert" style="display:none; margin-bottom:0.6rem;" role="status" aria-live="polite"></div>
                 <div id="cash-calculator" class="cash-calculator" hidden>
                     <label for="cash-received">وجه دریافتی (تومان)</label>
-                    <input id="cash-received" type="number" min="0" inputmode="numeric" placeholder="مبلغ دریافتی">
+                    <input id="cash-received" type="text" inputmode="numeric" placeholder="مثال: 500000">
                     <strong id="cash-change" aria-live="polite">باقی‌مانده: —</strong>
                 </div>
+                {# Step 3 — the invoice. Last, largest, and the only success fill
+                   on the screen, so there is never a doubt which button sells. #}
                 <form method="post" action="/sales/confirm-sale" id="confirm-form">
                     <input type="hidden" name="customer_id" value="{{ customer_id }}">
                     <input type="hidden" name="basket_json" value="{{ basket_json }}">
@@ -345,8 +358,7 @@
                     <input type="hidden" name="use_referrer_discount" value="{{ '1' if use_referrer_discount == '1' else '0' }}">
                     <input type="hidden" name="custom_discount_amount" value="{{ custom_discount_amount|default(0) }}">
                     <input type="hidden" name="custom_discount_percent" value="{{ custom_discount_percent|default(0) }}">
-                    <button type="submit" id="confirm-submit" class="btn btn-success btn-large btn-block"
-                            style="font-size: 1.1rem; padding: 1.1rem;">
+                    <button type="submit" id="confirm-submit" class="btn btn-success btn-large btn-block btn-confirm">
                         ✅ تأیید پرداخت و صدور فاکتور
                     </button>
                 </form>
@@ -355,7 +367,7 @@
             <div class="empty-basket">
                 <div style="font-size: 3rem; margin-bottom: 0.5rem;">🛒</div>
                 <p style="font-size: 1.1rem;">سبد خرید خالی است</p>
-                <small>🔲 بارکد محصول را اسکن کنید تا به سبد اضافه شود</small>
+                <small>بارکد محصول را اسکن کنید تا به سبد اضافه شود</small>
             </div>
             {% endif %}
         </div>
@@ -372,12 +384,17 @@ function updatePaymentUi() {
     var selected = document.querySelector('input[name="payment_method"]:checked');
     var method = selected ? selected.value : 'card';
     var isCard = method === 'card';
+    var isCredit = method === 'credit';
     var approvalToken = document.getElementById('pos-approval-token');
     var terminalForm = document.getElementById('terminal-form');
+    var terminalStep = document.getElementById('pay-step-terminal');
+    var creditNote = document.getElementById('credit-note');
     var confirmButton = document.getElementById('confirm-submit');
     var paymentHidden = document.getElementById('payment_method_hidden');
     if (paymentHidden) paymentHidden.value = method;
     if (terminalForm) terminalForm.style.display = isCard ? 'block' : 'none';
+    if (terminalStep) terminalStep.hidden = !isCard;
+    if (creditNote) creditNote.hidden = !isCredit;
     if (confirmButton) {
         var needsApproval = isCard && posRequiresApproval && !(approvalToken && approvalToken.value);
         confirmButton.disabled = needsApproval;
@@ -473,6 +490,31 @@ async function sendToTerminal(event) {
 updatePaymentUi();
 refreshTerminalStatus();
 setInterval(refreshTerminalStatus, 20000);
+
+// ── Final-total pop + server-error shake (Phase D). Both replay from a
+// clean baseline so a re-rendered page always animates exactly once.
+(function () {
+    document.querySelectorAll('[data-digit-pop]').forEach(function (node) {
+        var text = node.textContent;
+        node.replaceChildren();
+        node.classList.add('t-digit-group');
+        Array.prototype.forEach.call(text, function (ch, i, arr) {
+            var span = document.createElement('span');
+            span.className = 't-digit';
+            span.textContent = ch;
+            if (i === arr.length - 2) span.setAttribute('data-stagger', '1');
+            else if (i === arr.length - 1) span.setAttribute('data-stagger', '2');
+            node.appendChild(span);
+        });
+        void node.offsetWidth;
+        node.classList.add('is-animating');
+    });
+    document.querySelectorAll('[data-shake-on-load]').forEach(function (node) {
+        node.classList.remove('is-shaking');
+        void node.offsetWidth;
+        node.classList.add('is-shaking');
+    });
+})();
 </script>
 
 {# ── Owner-only profit meter — kept tiny/low-contrast in the corner so a passerby won't read it ── #}

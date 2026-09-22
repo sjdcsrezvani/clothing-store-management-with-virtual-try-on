@@ -7,10 +7,21 @@ from typing import Any
 
 from models import Settings
 
-DEFAULT_THEME_ID = "operations-light"
+DEFAULT_THEME_ID = "kashi-tile"
 THEME_SETTING_KEY = "ui_theme"
 CUSTOM_PRIMARY_KEY = "theme_custom_primary"
 CUSTOM_SECONDARY_KEY = "theme_custom_secondary"
+
+# Retired palettes and the home their shops move to — shown as a notice on the
+# appearance page, never a silent swap. Phase 5 removed premium-navy, atelier,
+# ocean-commerce and forest-ledger; Kashi Tile carries the warm shops, the Till
+# the cold-blue one.
+RETIRED_THEME_MAP = {
+    "premium-navy": "kashi-tile",
+    "atelier": "kashi-tile",
+    "ocean-commerce": "pos-focus",
+    "forest-ledger": "kashi-tile",
+}
 
 # The shell theme changes only through the appearance form, so the value every
 # page render reads is cached briefly and invalidated at that one writer —
@@ -55,6 +66,10 @@ _BASE = {
     "--field-bg": "#FFFFFF",
     "--table-header": "#F3F6F8",
     "--card-accent": "linear-gradient(90deg, var(--candy), var(--sky))",
+    # The full rainbow some palettes keep for their storefronts. Every palette
+    # carries it (defaulting to the quiet two-stop above); Kids Boutique is the
+    # one that paints four stops, and only where the shop sells.
+    "--card-accent-full": "linear-gradient(90deg, var(--candy), var(--sky))",
     "--radius": "8px",
     "--radius-sm": "6px",
     "--sidebar-bg": "#17232B",
@@ -96,6 +111,18 @@ _BASE = {
 }
 
 THEMES: dict[str, dict[str, Any]] = {
+    "kashi-tile": {
+        "name": "Kashi Tile",
+        "description": "Warm sand paper, terracotta actions and turquoise trust — the Persian tile shop.",
+        "mode": "light",
+        "tokens": {**_BASE, "--candy": "#C65D3A", "--candy-dark": "#9E4428", "--sky": "#0E7C8C", "--sky-dark": "#0B5F6B", "--sunshine": "#C99A2E", "--persimmon": "#A93200", "--mint": "#2E7D4F", "--mint-dark": "#1F5E3B", "--bg": "#FAF6EF", "--card": "#FFFFFF", "--ink": "#22292E", "--rule": "#E6DDCC", "--surface-soft": "#F4EEE1", "--field-bg": "#FFFDF8", "--table-header": "#F3ECE0", "--sidebar-bg": "#123B3F", "--sidebar-active": "#1E5A60", "--topbar-start": "#123B3F", "--topbar-end": "#1E6B74", "--card-accent": "linear-gradient(90deg, #C65D3A, #0E7C8C)"},
+    },
+    "kids-boutique": {
+        "name": "Kids Boutique",
+        "description": "The colorful, playful RaiKids identity with emoji accents.",
+        "mode": "light",
+        "tokens": {**_BASE, "--candy": "#E85D75", "--candy-dark": "#C84660", "--sky": "#2A9DB5", "--sky-dark": "#217D91", "--sunshine": "#E7A932", "--mint": "#35A853", "--mint-dark": "#278640", "--lavender": "#805AD5", "--bg": "#FFF7F2", "--card": "#FFFFFF", "--ink": "#2D2D2D", "--ink-soft": "#756F6A", "--rule": "#F0E4D8", "--surface-soft": "#FFFBF8", "--field-bg": "#FFFFFF", "--table-header": "#FFFAF5", "--card-accent": "linear-gradient(90deg, #E85D75, #2A9DB5)", "--card-accent-full": "linear-gradient(90deg, #E85D75, #E7A932, #35A853, #2A9DB5)", "--sidebar-bg": "#FFFFFF", "--sidebar-text": "#5B5551", "--sidebar-active": "#FFF0F4", "--topbar-start": "#E85D75", "--topbar-end": "#2A9DB5", "--success-bg": "#E8F8EC", "--warning-bg": "#FFF3D6", "--danger-bg": "#FFE8E8", "--radius": "14px", "--radius-sm": "8px"},
+    },
     "operations-light": {
         "name": "Operations Light",
         "description": "Clear merchant workspace for everyday store operations.",
@@ -103,46 +130,34 @@ THEMES: dict[str, dict[str, Any]] = {
         "tokens": dict(_BASE),
     },
     "pos-focus": {
-        "name": "POS Focus",
-        "description": "High-contrast checkout-oriented interface for fast sales.",
+        "name": "Till",
+        "description": "High-contrast checkout till for fast sales — the counter's own theme.",
         "mode": "dark-shell",
         "tokens": {**_BASE, "--candy": "#0F766E", "--candy-dark": "#0B5E58", "--sky": "#0891B2", "--sky-dark": "#0E7490", "--mint": "#16A34A", "--mint-dark": "#15803D", "--sidebar-bg": "#111827", "--sidebar-active": "#1F4B51", "--topbar-start": "#111827", "--topbar-end": "#164E63", "--radius": "6px", "--radius-sm": "4px", "--field-bg": "#F8FAFC", "--table-header": "#E8F2F4", "--card-accent": "linear-gradient(90deg, #0F766E, #0891B2)"},
     },
-    "premium-navy": {
-        "name": "Premium Navy",
-        "description": "Polished boutique styling with navy and terracotta accents.",
+    "blush-maternal": {
+        "name": "Blush Maternal",
+        "description": "Soft rose and calm plum for the mother who decides.",
         "mode": "light",
-        "tokens": {**_BASE, "--candy": "#B65345", "--candy-dark": "#8F3D33", "--sky": "#284B63", "--sky-dark": "#1D374A", "--sunshine": "#B88932", "--bg": "#F7F5F1", "--surface-soft": "#FCFAF7", "--rule": "#E3DED6", "--sidebar-bg": "#172A3A", "--sidebar-active": "#2C485E", "--topbar-start": "#172A3A", "--topbar-end": "#35566B", "--radius": "6px", "--field-bg": "#FFFDF9", "--table-header": "#F0ECE5", "--card-accent": "linear-gradient(90deg, #B65345, #284B63)"},
+        "tokens": {**_BASE, "--candy": "#D94F70", "--candy-dark": "#B23A57", "--sky": "#6B5B95", "--sky-dark": "#544873", "--sunshine": "#D9A62E", "--bg": "#FFF8F6", "--card": "#FFFFFF", "--ink": "#2E2A2E", "--rule": "#F0E2E0", "--surface-soft": "#FDF2F4", "--field-bg": "#FFFFFF", "--table-header": "#FAF0F3", "--sidebar-bg": "#2D2430", "--sidebar-active": "#4A3D52", "--topbar-start": "#B23A57", "--topbar-end": "#6B5B95", "--radius": "12px", "--radius-sm": "8px", "--card-accent": "linear-gradient(90deg, #D94F70, #6B5B95)"},
     },
-    "atelier": {
-        "name": "Atelier",
-        "description": "Quiet paper surfaces, charcoal type, and burgundy actions.",
+    "amber-till": {
+        "name": "Amber Till",
+        "description": "Warm-white daytime checkout with high-legibility prices.",
         "mode": "light",
-        "tokens": {**_BASE, "--candy": "#8D354A", "--candy-dark": "#6E293A", "--sky": "#52606D", "--sky-dark": "#3D4A55", "--sunshine": "#A17C35", "--bg": "#F3F1ED", "--card": "#FFFDF9", "--surface-soft": "#F9F7F2", "--rule": "#DED9CF", "--sidebar-bg": "#292826", "--sidebar-active": "#4A3A3B", "--topbar-start": "#292826", "--topbar-end": "#514043", "--radius": "4px", "--radius-sm": "4px", "--field-bg": "#FFFDF9", "--table-header": "#EEEAE2", "--card-accent": "linear-gradient(90deg, #8D354A, #A17C35)"},
-    },
-    "kids-boutique": {
-        "name": "Kids Boutique",
-        "description": "The colorful, playful RaiKids identity with emoji accents.",
-        "mode": "light",
-        "tokens": {**_BASE, "--candy": "#E85D75", "--candy-dark": "#C84660", "--sky": "#2A9DB5", "--sky-dark": "#217D91", "--sunshine": "#E7A932", "--mint": "#35A853", "--mint-dark": "#278640", "--lavender": "#805AD5", "--bg": "#FFF7F2", "--card": "#FFFFFF", "--ink": "#2D2D2D", "--ink-soft": "#756F6A", "--rule": "#F0E4D8", "--surface-soft": "#FFFBF8", "--field-bg": "#FFFFFF", "--table-header": "#FFFAF5", "--card-accent": "linear-gradient(90deg, #E85D75, #E7A932, #35A853, #2A9DB5)", "--sidebar-bg": "#FFFFFF", "--sidebar-text": "#5B5551", "--sidebar-active": "#FFF0F4", "--topbar-start": "#E85D75", "--topbar-end": "#2A9DB5", "--success-bg": "#E8F8EC", "--warning-bg": "#FFF3D6", "--danger-bg": "#FFE8E8", "--radius": "14px", "--radius-sm": "8px"},
-    },
-    "ocean-commerce": {
-        "name": "Ocean Commerce",
-        "description": "Cool white surfaces with calm blue and cyan navigation.",
-        "mode": "light",
-        "tokens": {**_BASE, "--candy": "#0E7490", "--candy-dark": "#155E75", "--sky": "#2563EB", "--sky-dark": "#1D4ED8", "--mint": "#16805A", "--mint-dark": "#126548", "--bg": "#F2F7FA", "--surface-soft": "#F7FBFD", "--rule": "#D4E2EA", "--sidebar-bg": "#123047", "--sidebar-active": "#1D506B", "--topbar-start": "#123047", "--topbar-end": "#1B6078", "--field-bg": "#F8FCFE", "--table-header": "#EAF5F8", "--card-accent": "linear-gradient(90deg, #0E7490, #2563EB)"},
-    },
-    "forest-ledger": {
-        "name": "Forest Ledger",
-        "description": "Grounded operational palette suited to inventory and accounting.",
-        "mode": "light",
-        "tokens": {**_BASE, "--candy": "#2F6B4F", "--candy-dark": "#24523D", "--sky": "#386A73", "--sky-dark": "#2B5158", "--sunshine": "#B37A20", "--mint": "#26734D", "--mint-dark": "#1B5A3A", "--bg": "#F4F7F3", "--surface-soft": "#F8FBF7", "--rule": "#D8E2D8", "--sidebar-bg": "#193A31", "--sidebar-active": "#2D5A4A", "--topbar-start": "#193A31", "--topbar-end": "#2E5B50", "--field-bg": "#FAFCF9", "--table-header": "#EDF5EF", "--card-accent": "linear-gradient(90deg, #2F6B4F, #B37A20)"},
+        "tokens": {**_BASE, "--candy": "#B45309", "--candy-dark": "#92400E", "--sky": "#0E7490", "--sky-dark": "#155E75", "--sunshine": "#B45309", "--persimmon": "#9A3412", "--mint": "#15803D", "--mint-dark": "#166534", "--bg": "#FFFBEB", "--card": "#FFFFFF", "--ink": "#1C1917", "--rule": "#E7DCC3", "--surface-soft": "#FDF6E7", "--field-bg": "#FFFFFF", "--table-header": "#FAF3E3", "--sidebar-bg": "#1C1917", "--sidebar-active": "#3F2E1D", "--topbar-start": "#1C1917", "--topbar-end": "#78350F", "--radius": "8px", "--card-accent": "linear-gradient(90deg, #B45309, #0E7490)"},
     },
     "midnight-operations": {
         "name": "Midnight Operations",
         "description": "Full dark workspace for low-light retail operations.",
         "mode": "dark",
         "tokens": {**_BASE, "--candy": "#F07A91", "--candy-dark": "#D95B75", "--sky": "#56C2D9", "--sky-dark": "#36A8C0", "--sunshine": "#E8B94C", "--persimmon": "#FF9770", "--mint": "#55C878", "--mint-dark": "#39A85B", "--bg": "#111820", "--card": "#1C2731", "--ink": "#F4F7F8", "--ink-soft": "#B5C0C6", "--rule": "#34434D", "--surface-soft": "#17232B", "--sidebar-bg": "#0B1116", "--sidebar-text": "#EAF0F2", "--sidebar-active": "#263C48", "--topbar-start": "#0B1116", "--topbar-end": "#18323D", "--success-bg": "#173522", "--warning-bg": "#3B3018", "--danger-bg": "#3A2026", "--field-bg": "#1E2B35", "--table-header": "#22323D", "--card-accent": "linear-gradient(90deg, #F07A91, #56C2D9)"},
+    },
+    "night-bazaar": {
+        "name": "Night Bazaar",
+        "description": "Warm plum-charcoal dark for evening shifts and try-on photos.",
+        "mode": "dark",
+        "tokens": {**_BASE, "--candy": "#F2A3B3", "--candy-dark": "#D97A8E", "--sky": "#7AC7D4", "--sky-dark": "#4AA3B5", "--sunshine": "#EAC25E", "--persimmon": "#FF9A72", "--mint": "#6BC48A", "--mint-dark": "#3FA463", "--bg": "#17141A", "--card": "#2A2430", "--ink": "#F5F0F2", "--ink-soft": "#C4B8C2", "--rule": "#3D3542", "--surface-soft": "#241F29", "--sidebar-bg": "#100D13", "--sidebar-text": "#EFE7EC", "--sidebar-active": "#3A2A3D", "--topbar-start": "#100D13", "--topbar-end": "#3A2A3D", "--success-bg": "#1C3325", "--warning-bg": "#3B2F16", "--danger-bg": "#3D222B", "--field-bg": "#262029", "--table-header": "#2C2530", "--card-accent": "linear-gradient(90deg, #F2A3B3, #7AC7D4)"},
     },
     "high-contrast": {
         "name": "High Contrast",
@@ -538,6 +553,18 @@ def theme_json(theme: dict[str, Any]) -> str:
     return json.dumps(theme, ensure_ascii=False, separators=(",", ":"))
 
 
+def migrate_retired_theme(theme_id: str | None) -> tuple[str, str | None]:
+    """Map a retired palette to its heir, naming the move.
+
+    Returns (effective id, retired id or None). Unknown and empty values fall
+    through to the default with no notice — only a shop that chose a removed
+    palette is told its home moved.
+    """
+    if theme_id in RETIRED_THEME_MAP:
+        return RETIRED_THEME_MAP[theme_id], theme_id
+    return theme_id or DEFAULT_THEME_ID, None
+
+
 def get_theme(db=None) -> dict[str, Any]:
     # The shell asks for the theme on every page render, but it changes only
     # through the appearance form — the same shape the store profile keeps: a
@@ -559,7 +586,8 @@ def get_theme(db=None) -> dict[str, Any]:
         chosen = {s.key: s.value for s in db.query(Settings).filter(
             Settings.key.in_([THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY])).all()}
         theme_id = chosen.get(THEME_SETTING_KEY)
-        if not theme_id or theme_id not in THEMES:
+        theme_id, _migrated = migrate_retired_theme(theme_id)
+        if theme_id not in THEMES:
             theme_id = DEFAULT_THEME_ID
         custom = {
             "primary": chosen.get(CUSTOM_PRIMARY_KEY) or DEFAULT_CUSTOM_PRIMARY,

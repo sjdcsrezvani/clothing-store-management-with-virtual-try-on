@@ -96,7 +96,7 @@
         <form method="post" action="/sales/{{ sale.id }}/refund"
               onsubmit="return confirm('⚠️ آیا مطمئن هستید؟ این فاکتور ابطال می‌شود و موجودی بازمی‌گردد.')"
               style="display: flex; gap: 0.4rem; align-items: center;">
-            <input type="text" name="refund_reason" placeholder="📝 دلیل ابطال"
+            <input type="text" name="refund_reason" placeholder="مثال: اشتباه صندوقدار"
                    style="padding: 0.5rem 0.7rem; border: 2px solid var(--rule); border-radius: 8px; max-width: 180px; font-family: inherit;">
             <button type="submit" class="btn btn-danger">⛔ ابطال فاکتور</button>
         </form>

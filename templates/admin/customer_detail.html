@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{# Storefront accent: a customer's file sells, so it wears the full rainbow. #}
+{% set page_accent_full = True %}
 {% block content %}
 
 {% set page_description %}
@@ -99,7 +101,7 @@
 
             {% if profile.sales %}
             <div class="table-scroll">
-                <table class="history-table">
+                <table class="data-table history-table">
                     <thead>
                         <tr>
                             <th scope="col">تاریخ</th>

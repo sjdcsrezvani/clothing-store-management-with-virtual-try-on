@@ -3,10 +3,10 @@
 {% block content %}
 
 {% if message %}
-<div class="alert alert-success">✅ {{ message }}</div>
+<div class="toaster-flash" data-toast data-toast-type="success" role="status">✅ {{ message }}</div>
 {% endif %}
 {% if error %}
-<div class="alert alert-error">⚠️ {{ error }}</div>
+<div class="toaster-flash" data-toast data-toast-type="error" role="alert">⚠️ {{ error }}</div>
 {% endif %}
 
 {# ─── Customer Profile Card ─── #}

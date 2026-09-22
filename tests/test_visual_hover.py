@@ -75,9 +75,9 @@ CHROME_CANDIDATES = (
 CHROME = next((c for c in CHROME_CANDIDATES if Path(c).exists()), None)
 
 THEME_IDS = [
-    "operations-light", "pos-focus", "premium-navy", "atelier", "kids-boutique",
-    "ocean-commerce", "forest-ledger", "midnight-operations", "high-contrast",
-    "custom-brand",
+    "kashi-tile", "kids-boutique", "operations-light", "pos-focus",
+    "blush-maternal", "amber-till", "midnight-operations", "night-bazaar",
+    "high-contrast", "custom-brand",
 ]
 
 ROW_SELECTOR = "tbody tr"

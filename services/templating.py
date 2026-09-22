@@ -20,6 +20,7 @@ from services._common import (
 )
 from services.customers import customer_context_processor
 from services.navigation import (
+    COLLAPSED_BY_DEFAULT,
     active_key_for,
     home_for,
     home_label_for,
@@ -87,6 +88,7 @@ def navigation_context_processor(request) -> dict:
     path = request.url.path
     return {
         "nav_sections": navigation_for(role),
+        "collapsed_sections": list(COLLAPSED_BY_DEFAULT),
         "topbar_actions": topbar_for(role),
         "nav_home": home_for(role),
         "nav_home_label": home_label_for(role),

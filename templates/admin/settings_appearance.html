@@ -9,6 +9,10 @@
 {% endset %}
 {% include 'partials/page_header.html' %}
 
+{% if retired_theme_id %}
+<div class="alert alert-info" role="status">🎨 تم «{{ retired_theme_id }}» بازنشسته شد و فروشگاه شما به «{{ retired_theme_home }}» منتقل شد — اگر ظاهر دیگری می‌خواهید، از گالری زیر انتخاب و ذخیره کنید.</div>
+{% endif %}
+
 
 <div class="card appearance-card">
     <form method="post" action="/admin/settings/appearance">

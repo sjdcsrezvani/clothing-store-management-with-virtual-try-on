@@ -1,0 +1,452 @@
+/* ============================================================
+   Raykid Store — motion foundation (Phase A)
+   Portable t-* transitions adapted from transitions.dev for a
+   FastAPI + Jinja + vanilla + RTL + 10-palette shop.
+   Rules this file obeys:
+   - No colour literals, no colour in var() fallbacks: motion only.
+     Every colour stays in services/themes.py + style.css :root.
+   - transform + opacity (+ blur where the snippet needs it) only.
+   - Exact-property transitions, never `transition: all`.
+   - Asymmetric open/close: opens invite (250/350/400ms), closes
+     leave fast (150/250/350ms). Symmetric only where the motion is
+     one reversible gesture (page, tabs, accordion, icon/text swap).
+   - Every snippet keeps its prefers-reduced-motion guard.
+   ============================================================ */
+
+:root {
+  /* ── Motion tokens (shared scale) ── */
+  --duration-stagger: 40ms;
+  --duration-micro: 80ms;
+  --duration-quick: 150ms;
+  --duration-fast: 250ms;
+  --duration-medium: 350ms;
+  --duration-slow: 400ms;
+  --duration-very-slow: 500ms;
+  --ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: ease-in-out;
+  --ease-out: ease-out;
+  --ease-linear: linear;
+  --ease-bounce: cubic-bezier(0.34, 1.36, 0.64, 1);
+  --ease-bounce-strong: cubic-bezier(0.34, 3.85, 0.64, 1);
+  --distance-micro: 4px;
+  --distance-small: 6px;
+  --distance-base: 8px;
+  --distance-medium: 12px;
+  --distance-large: 30px;
+  --scale-large: 0.96;
+  --scale-medium: 0.97;
+  --scale-small: 0.98;
+  --scale-tiny: 0.99;
+  --blur-small: 2px;
+  --blur-medium: 3px;
+  --blur-large: 8px;
+
+  /* ── Semantic per-transition defaults (literals so JS timing
+     reads via getComputedStyle keep working) ── */
+  --modal-open-dur: 250ms;
+  --modal-close-dur: 150ms;
+  --modal-scale: 0.96;
+  --modal-scale-close: 0.96;
+  --modal-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --toast-open: 350ms;
+  --toast-close: 250ms;
+  --toast-distance: 16px;
+  --toast-blur: 2px;
+  --toast-scale: 0.97;
+  --toast-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --dropdown-open-dur: 250ms;
+  --dropdown-close-dur: 150ms;
+  --dropdown-pre-scale: 0.97;
+  --dropdown-closing-scale: 0.99;
+  --dropdown-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --panel-open-dur: 400ms;
+  --panel-close-dur: 350ms;
+  --panel-translate-y: 100px;
+  --panel-blur: 2px;
+  --panel-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --shake-distance: 6px;
+  --shake-overshoot: 4px;
+  --shake-dur-a: 80ms;
+  --shake-dur-b: 60ms;
+  --shake-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --revert-hold: 3000ms;
+  --revert-dur: 280ms;
+  --pulse-dur: 1000ms;
+  --pulse-count: 1;
+  --pulse-min: 0.5;
+  --reveal-dur: 400ms;
+  --reveal-blur: 2px;
+  --reveal-ease: ease-in-out;
+  --acc-expand: 250ms;
+  --acc-collapse: 250ms;
+  --acc-chevron: 250ms;
+  --acc-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --stack-open: 350ms;
+  --stack-close: 250ms;
+  --stack-rise: 60px;
+  --stack-blur: 2px;
+  --stack-scale: 0.97;
+  --stack-peek: 12px;
+  --stack-spread-gap: 8px;
+  --stack-depth-scale: 0.06;
+  --stack-depth-fade: 0.4;
+  --stack-depth1-blur: 1px;
+  --stack-depth2-blur: 2px;
+  --stack-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --digit-dur: 500ms;
+  --digit-distance: 8px;
+  --digit-stagger: 70ms;
+  --digit-blur: 2px;
+  --digit-ease: cubic-bezier(0.34, 1.45, 0.64, 1);
+  --digit-dir-x: 0;
+  --digit-dir-y: 1;
+  --press-scale: 0.97;
+  --press-dur: 160ms;
+}
+
+/* ── Component press rules live with the components in style.css
+   (single source); this file owns tokens + t-* transitions only. ── */
+
+/* ── Modal: centered surfaces, never from a trigger ── */
+.t-modal {
+  transform-origin: center;
+  transform: scale(var(--modal-scale));
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--modal-open-dur) var(--modal-ease),
+    opacity var(--modal-open-dur) var(--modal-ease);
+  will-change: transform, opacity;
+}
+.t-modal.is-open { transform: scale(1); opacity: 1; pointer-events: auto; }
+.t-modal.is-closing {
+  transform: scale(var(--modal-scale-close));
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--modal-close-dur) var(--modal-ease),
+    opacity var(--modal-close-dur) var(--modal-ease);
+}
+
+/* ── Toast: rise from below, slow in / snappy out ── */
+.t-toast {
+  opacity: 0;
+  transform: translateY(var(--toast-distance)) scale(var(--toast-scale));
+  filter: blur(var(--toast-blur));
+  will-change: transform, opacity, filter;
+  transition:
+    opacity var(--toast-close) var(--toast-ease),
+    transform var(--toast-close) var(--toast-ease),
+    filter var(--toast-close) var(--toast-ease);
+}
+.t-toast.is-open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  filter: blur(0);
+  transition:
+    opacity var(--toast-open) var(--toast-ease),
+    transform var(--toast-open) var(--toast-ease),
+    filter var(--toast-open) var(--toast-ease);
+}
+
+/* ── Dropdown: origin-aware, grows from its trigger ── */
+.t-dropdown {
+  transform-origin: top left;
+  transform: scale(var(--dropdown-pre-scale));
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--dropdown-open-dur) var(--dropdown-ease),
+    opacity var(--dropdown-open-dur) var(--dropdown-ease);
+  will-change: transform, opacity;
+}
+.t-dropdown[data-origin="top-right"] { transform-origin: top right; }
+.t-dropdown[data-origin="top-center"] { transform-origin: top center; }
+.t-dropdown[data-origin="bottom-left"] { transform-origin: bottom left; }
+.t-dropdown[data-origin="bottom-center"] { transform-origin: bottom center; }
+.t-dropdown[data-origin="bottom-right"] { transform-origin: bottom right; }
+.t-dropdown.is-open { transform: scale(1); opacity: 1; pointer-events: auto; }
+.t-dropdown.is-closing {
+  transform: scale(var(--dropdown-closing-scale));
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--dropdown-close-dur) var(--dropdown-ease),
+    opacity var(--dropdown-close-dur) var(--dropdown-ease);
+}
+
+/* ── Panel: slides on Y inside its container + cross-blur ── */
+.t-panel-slide {
+  transform: translateY(var(--panel-translate-y));
+  opacity: 0;
+  filter: blur(var(--panel-blur));
+  pointer-events: none;
+  transition:
+    transform var(--panel-close-dur) var(--panel-ease),
+    opacity var(--panel-close-dur) var(--panel-ease),
+    filter var(--panel-close-dur) var(--panel-ease);
+  will-change: transform, opacity, filter;
+}
+.t-panel-slide[data-open="true"] {
+  transform: translateY(0);
+  opacity: 1;
+  filter: blur(0);
+  pointer-events: auto;
+  transition:
+    transform var(--panel-open-dur) var(--panel-ease),
+    opacity var(--panel-open-dur) var(--panel-ease),
+    filter var(--panel-open-dur) var(--panel-ease);
+}
+
+/* ── Error shake: border tween only here; the visible error colour
+   stays in the app's own CSS (theme tokens). Shake replays via
+   .is-shaking remove → reflow → add; never merge with .is-error. ── */
+.t-input { transition: border-color var(--duration-fast) var(--ease-out); will-change: transform; }
+.t-input.is-error { transition: border-color var(--revert-dur) var(--ease-out); }
+.t-error-msg {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--revert-dur) var(--ease-out),
+    visibility 0s linear var(--revert-dur);
+}
+.t-input-wrap.is-error .t-error-msg {
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity var(--revert-dur) var(--ease-out),
+    visibility 0s linear 0s;
+}
+.t-input.is-shaking { animation: t-input-shake calc(var(--shake-dur-a) * 2 + var(--shake-dur-b) * 2) linear; }
+@keyframes t-input-shake {
+  0% { transform: translateX(0); animation-timing-function: var(--shake-ease); }
+  28.57% { transform: translateX(var(--shake-distance)); animation-timing-function: var(--shake-ease); }
+  57.14% { transform: translateX(calc(var(--shake-distance) * -1)); animation-timing-function: var(--shake-ease); }
+  78.57% { transform: translateX(var(--shake-overshoot)); animation-timing-function: var(--shake-ease); }
+  100% { transform: translateX(0); }
+}
+
+/* ── Skeleton: pulse on children so the wrap stays free for the
+   cross-fade; bring your own bars (theme tokens), no colours here. ── */
+.t-skel { position: relative; }
+.t-skel-skeleton, .t-skel-content { position: absolute; inset: 0; }
+.t-skel-skeleton {
+  z-index: 1; opacity: 1; filter: blur(0);
+  transition: opacity var(--reveal-dur) var(--reveal-ease), filter var(--reveal-dur) var(--reveal-ease);
+}
+.t-skel-content {
+  z-index: 2; opacity: 0; filter: blur(var(--reveal-blur));
+  transition: opacity var(--reveal-dur) var(--reveal-ease), filter var(--reveal-dur) var(--reveal-ease);
+}
+.t-skel.is-revealed .t-skel-skeleton { opacity: 0; filter: blur(var(--reveal-blur)); }
+.t-skel.is-revealed .t-skel-content { opacity: 1; filter: blur(0); }
+.t-skel.is-resetting .t-skel-skeleton, .t-skel.is-resetting .t-skel-content { transition: none !important; }
+.t-skel-skeleton.is-pulsing > * { animation: t-skel-pulse var(--pulse-dur) var(--ease-in-out) var(--pulse-count); }
+@keyframes t-skel-pulse { 0%, 100% { opacity: 1; } 50% { opacity: var(--pulse-min); } }
+
+/* ── Accordion: grid-rows height, padding lives on the inner ── */
+.t-acc-panel { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--acc-collapse) var(--acc-ease); }
+.t-acc[data-open="true"] .t-acc-panel { grid-template-rows: 1fr; transition: grid-template-rows var(--acc-expand) var(--acc-ease); }
+.t-acc-panel-inner {
+  overflow: hidden; opacity: 0; filter: blur(var(--blur-small));
+  transition: opacity var(--acc-collapse) var(--acc-ease), filter var(--acc-collapse) var(--acc-ease);
+}
+.t-acc[data-open="true"] .t-acc-panel-inner {
+  opacity: 1; filter: blur(0);
+  transition: opacity var(--acc-expand) var(--acc-ease), filter var(--acc-expand) var(--acc-ease);
+}
+.t-acc-chevron { display: inline-flex; transform: scaleY(1); transform-origin: center; transition: transform var(--acc-chevron) var(--acc-ease); }
+.t-acc-chevron path { vector-effect: non-scaling-stroke; }
+.t-acc[data-open="true"] .t-acc-chevron { transform: scaleY(-1); }
+
+/* ── Banner stack (Sonner-style depths; geometry driven by JS) ── */
+.t-stack { position: relative; }
+.t-stack-banner {
+  position: absolute; left: 0; bottom: 0;
+  transform-origin: 50% 50%;
+  filter: blur(0);
+  will-change: transform, opacity, filter;
+  transition: transform var(--stack-open) var(--stack-ease), opacity var(--stack-open) var(--stack-ease), filter var(--stack-open) var(--stack-ease);
+}
+.t-stack-banner[data-depth="0"] { z-index: 3; transform: translateY(0) scale(1); opacity: 1; }
+.t-stack-banner[data-depth="1"] {
+  z-index: 2; transform-origin: 50% 100%;
+  transform: translateY(calc(var(--stack-peek) * -1)) scale(calc(1 - var(--stack-depth-scale)));
+  opacity: calc(1 - var(--stack-depth-fade)); filter: blur(var(--stack-depth1-blur));
+}
+.t-stack-banner[data-depth="2"] {
+  z-index: 1; transform-origin: 50% 100%;
+  transform: translateY(calc(var(--stack-peek) * -2)) scale(calc(1 - var(--stack-depth-scale) * 2));
+  opacity: calc(1 - var(--stack-depth-fade) * 1.6); filter: blur(var(--stack-depth2-blur));
+}
+.t-stack.is-spread .t-stack-banner[data-depth="1"], .t-stack.is-spread .t-stack-banner[data-depth="2"] { opacity: 1; filter: blur(0); }
+.t-stack.is-spread .t-stack-banner[data-depth="1"] { transform: translateY(calc((100% + var(--stack-spread-gap)) * -1)) scale(1); }
+.t-stack.is-spread .t-stack-banner[data-depth="2"] { transform: translateY(calc((100% + var(--stack-spread-gap)) * -2)) scale(1); }
+.t-stack-banner.is-enter { transition: none; transform: translateY(var(--stack-rise)) scale(var(--stack-scale)); opacity: 0; filter: blur(var(--stack-blur)); }
+.t-stack-banner.is-leaving {
+  z-index: 0; transform-origin: 50% 100%;
+  transform: translateY(calc(var(--stack-peek) * -3)) scale(calc(1 - var(--stack-depth-scale) * 3));
+  opacity: 0; filter: blur(var(--stack-blur));
+  transition: transform var(--stack-close) var(--stack-ease), opacity var(--stack-close) var(--stack-ease), filter var(--stack-close) var(--stack-ease);
+}
+
+/* ── Toaster stack (Phase B): one fixed container, bottom-center so it
+   is direction-neutral in RTL. Item motion is `.t-toast` above; this
+   block owns layout + the theme-token shell only. ── */
+.toaster {
+  position: fixed;
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: min(26rem, calc(100vw - 2rem));
+  pointer-events: none;
+}
+.toast-item {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  background: var(--card);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-inline-start: 4px solid var(--info-ink);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-overlay);
+  padding: 0.7rem 0.8rem;
+  font-size: 0.85rem;
+  line-height: 1.7;
+}
+.toast-success { border-inline-start-color: var(--success-ink); }
+.toast-error { border-inline-start-color: var(--persimmon); }
+.toast-info { border-inline-start-color: var(--info-ink); }
+.toast-loading { border-inline-start-color: var(--info-ink); }
+.toast-icon { flex: 0 0 auto; line-height: 1.7; }
+.toast-body { flex: 1 1 auto; min-width: 0; }
+.toast-title { font-weight: 700; overflow-wrap: break-word; }
+.toast-desc { color: var(--ink-soft); font-size: 0.78rem; overflow-wrap: break-word; }
+.toast-action {
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--link);
+  font-weight: 800;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.toast-close {
+  flex: 0 0 auto;
+  border: none;
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.85rem;
+  padding: 0.15rem 0.3rem;
+  min-height: 0;
+}
+/* Server flash with no JS: the same card, in flow instead of fixed. */
+.toaster-flash {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  background: var(--card);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-inline-start: 4px solid var(--info-ink);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-overlay);
+  padding: 0.7rem 0.8rem;
+  font-size: 0.85rem;
+  line-height: 1.7;
+  margin-bottom: 1rem;
+  overflow-wrap: break-word;
+}
+.toaster-flash[data-toast-type="success"] { border-inline-start-color: var(--success-ink); }
+.toaster-flash[data-toast-type="error"] { border-inline-start-color: var(--persimmon); }
+
+/* ── Number pop-in (Phase D): the one figure the cashier reads re-enters
+   digit by digit with blur; the last two ride in staggered. Only ever on
+   the final total — per-keystroke figures stay still (frequency gate). ── */
+@keyframes t-digit-pop-in {
+  0% {
+    transform: translate(
+      calc(var(--digit-distance) * var(--digit-dir-x)),
+      calc(var(--digit-distance) * var(--digit-dir-y))
+    );
+    opacity: 0;
+    filter: blur(var(--digit-blur));
+  }
+  100% { transform: translate(0, 0); opacity: 1; filter: blur(0); }
+}
+.t-digit-group { display: inline-flex; align-items: baseline; }
+.t-digit { display: inline-block; will-change: transform, opacity, filter; }
+.t-digit-group.is-animating .t-digit { animation: t-digit-pop-in var(--digit-dur) var(--digit-ease) both; }
+.t-digit-group.is-animating .t-digit[data-stagger="1"] { animation-delay: var(--digit-stagger); }
+.t-digit-group.is-animating .t-digit[data-stagger="2"] { animation-delay: calc(var(--digit-stagger) * 2); }
+
+/* ── Dialog scrim fade (Phase C): any [data-dialog] surface fades its
+   own veil instead of blinking. The veil colour stays the surface's own
+   business (theme tokens in markup/CSS) — this rule owns the tween. ── */
+[data-dialog] {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--modal-close-dur) var(--modal-ease),
+    visibility 0s linear var(--modal-close-dur);
+}
+[data-dialog].is-open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    opacity var(--modal-open-dur) var(--modal-ease),
+    visibility 0s linear 0s;
+}
+[data-dialog] .t-modal-card {
+  transform-origin: center;
+  transform: scale(var(--modal-scale));
+  transition: transform var(--modal-close-dur) var(--modal-ease);
+  will-change: transform;
+}
+[data-dialog].is-open .t-modal-card {
+  transform: scale(1);
+  transition: transform var(--modal-open-dur) var(--modal-ease);
+}
+
+/* ── Bottom-sheet (Phase C): mobile-anchored panel rising from the edge.
+   Behaviour is RaykidDialog; geometry here. Currently opt-in only. ── */
+.t-sheet {
+  transform: translateY(var(--panel-translate-y));
+  opacity: 0;
+  filter: blur(var(--panel-blur));
+  transition:
+    transform var(--panel-close-dur) var(--panel-ease),
+    opacity var(--panel-close-dur) var(--panel-ease),
+    filter var(--panel-close-dur) var(--panel-ease);
+  will-change: transform, opacity, filter;
+}
+[data-dialog].is-open .t-sheet {
+  transform: translateY(0);
+  opacity: 1;
+  filter: blur(0);
+  transition:
+    transform var(--panel-open-dur) var(--panel-ease),
+    opacity var(--panel-open-dur) var(--panel-ease),
+    filter var(--panel-open-dur) var(--panel-ease);
+}
+
+/* ── Reduced motion: keep opacity comprehension, drop movement ── */
+@media (prefers-reduced-motion: reduce) {
+  .t-modal, .t-toast, .t-dropdown, .t-panel-slide,
+  .t-acc-panel, .t-acc-panel-inner, .t-acc-chevron,
+  .t-skel-skeleton, .t-skel-content,
+  .t-stack-banner, .t-sheet, .t-modal-card,
+  [data-dialog] { transition: none !important; transform: none !important; filter: none !important; }
+  .t-input { animation: none !important; transform: none !important; }
+  .t-skel-skeleton.is-pulsing > * { animation: none !important; }
+  .t-digit-group .t-digit { animation: none !important; }
+}

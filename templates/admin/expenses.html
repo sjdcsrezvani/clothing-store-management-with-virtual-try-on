@@ -47,7 +47,7 @@
         <div class="form-row">
             <div class="form-group">
                 <label for="expense-amount">مبلغ (تومان) <span class="required-mark">*</span></label>
-                <input id="expense-amount" name="amount" type="text" inputmode="numeric" required placeholder="مثلاً ۱۵۰۰۰۰۰">
+                <input id="expense-amount" name="amount" type="text" inputmode="numeric" required placeholder="مثال: 1500000">
                 <small class="field-help">ارقام فارسی هم پذیرفته می‌شود.</small>
             </div>
             <div class="form-group">
@@ -136,14 +136,14 @@
 
     {% if expenses %}
     <div class="table-scroll">
-        <table>
+        <table class="data-table">
             <thead>
                 <tr>
-                    <th scope="col">تاریخ</th>
+                    <th scope="col" aria-sort="{{ 'descending' if sort_key == 'date' and sort_dir == 'desc' else 'ascending' if sort_key == 'date' else 'none' }}"><a class="sort-link" href="/admin/expenses?page=1&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}&q={{ search }}&type={{ type_filter }}&method={{ method_filter }}&status={{ status_filter }}&sort=date&dir={{ 'asc' if sort_key == 'date' and sort_dir == 'desc' else 'desc' }}">تاریخ</a></th>
                     <th scope="col">وضعیت</th>
                     <th scope="col">نوع</th>
                     <th scope="col">دسته</th>
-                    <th scope="col">مبلغ</th>
+                    <th scope="col" class="num" aria-sort="{{ 'descending' if sort_key == 'amount' and sort_dir == 'desc' else 'ascending' if sort_key == 'amount' else 'none' }}"><a class="sort-link" href="/admin/expenses?page=1&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}&q={{ search }}&type={{ type_filter }}&method={{ method_filter }}&status={{ status_filter }}&sort=amount&dir={{ 'asc' if sort_key == 'amount' and sort_dir == 'desc' else 'desc' }}">مبلغ</a></th>
                     <th scope="col">روش</th>
                     <th scope="col">شیفت</th>
                     <th scope="col">توضیح</th>
@@ -163,7 +163,7 @@
                     </td>
                     <td><span class="badge {% if e.expense_type == 'monthly' %}badge-info{% else %}badge-used{% endif %}">{{ expense_type_labels.get(e.expense_type, expense_type_labels['one_time']) }}</span></td>
                     <td>{{ e.category or 'بدون دسته' }}</td>
-                    <td class="tnum"><strong>{{ fmt(e.amount) }} تومان</strong></td>
+                    <td class="tnum num"><strong>{{ fmt(e.amount) }} تومان</strong></td>
                     <td>{{ expense_payment_labels.get(e.payment_method, e.payment_method or '—') }}</td>
                     <td class="tnum">{% if e.cash_session_id %}<a class="text-link" href="/admin/cashbox/sessions/{{ e.cash_session_id }}">#{{ e.cash_session_id }}</a>{% else %}—{% endif %}</td>
                     <td>
@@ -199,11 +199,11 @@
     {% if total_pages > 1 %}
     <nav class="product-pagination" aria-label="صفحه‌بندی هزینه‌ها">
         {% if page > 1 %}
-        <a class="btn btn-sm btn-ghost" href="/admin/expenses?page={{ page - 1 }}&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}&q={{ search }}&type={{ type_filter }}&method={{ method_filter }}&status={{ status_filter }}">صفحه قبل</a>
+        <a class="btn btn-sm btn-ghost" href="/admin/expenses?page={{ page - 1 }}&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}&q={{ search }}&type={{ type_filter }}&method={{ method_filter }}&status={{ status_filter }}&sort={{ sort_key }}&dir={{ sort_dir }}">صفحه قبل</a>
         {% endif %}
         <span>صفحه {{ page }} از {{ total_pages }}</span>
         {% if page < total_pages %}
-        <a class="btn btn-sm btn-ghost" href="/admin/expenses?page={{ page + 1 }}&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}&q={{ search }}&type={{ type_filter }}&method={{ method_filter }}&status={{ status_filter }}">صفحه بعد</a>
+        <a class="btn btn-sm btn-ghost" href="/admin/expenses?page={{ page + 1 }}&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}&q={{ search }}&type={{ type_filter }}&method={{ method_filter }}&status={{ status_filter }}&sort={{ sort_key }}&dir={{ sort_dir }}">صفحه بعد</a>
         {% endif %}
     </nav>
     {% endif %}

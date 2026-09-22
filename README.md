@@ -124,6 +124,18 @@ viewer holds, and a way back to a page that role can use — instead of FastAPI'
 raw `{"detail": …}`. The `/api/*` routes keep their JSON contract, so the phone
 app and any script are unaffected.
 
+The shell moves like one app. `static/css/motion.css` owns the motion vocabulary
+— duration and ease tokens plus a family of `.t-*` transitions re-authored from
+transitions.dev's patterns under house rules (transform and opacity only, exact
+properties, asymmetric open/close, a `prefers-reduced-motion` guard per
+snippet) — and `static/js/toast.js` upgrades the server flash into a stacked
+toast queue adapted from sonner's contract: one live region per shell, timers
+that pause while the tab is hidden, and colours taken only from the theme
+tokens. `static/js/dialog.js` gives every overlay the same focus, Escape and
+Tab-cycle behaviour. Ten palettes ship in the box — «کاشی» (Kashi Tile) leads
+them as the default — and a retired palette is never silently swapped: the
+appearance page names where its shop's colours moved.
+
 ## Accounting features (admin panel)
 
 - **📒 حساب نسیه** (`/admin/credit`) — sell on credit at checkout and collect

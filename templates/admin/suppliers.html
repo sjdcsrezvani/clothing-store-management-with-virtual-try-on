@@ -33,16 +33,16 @@
     <h3>افزودن تأمین‌کننده</h3>
     <form method="post" action="/admin/suppliers/add" class="supplier-add-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <input type="text" name="name" placeholder="نام تأمین‌کننده / عمده‌فروش *" required>
-        <input type="tel" name="phone" placeholder="تلفن">
-        <input type="text" name="note" placeholder="توضیح">
+        <input type="text" name="name" placeholder="مثال: عمده‌فروش تهران *" required aria-label="نام تأمین‌کننده">
+        <input type="tel" name="phone" placeholder="09123456789" aria-label="تلفن تأمین‌کننده">
+        <input type="text" name="note" placeholder="مثال: تسویه آخر ماه" aria-label="توضیح">
         <button type="submit" class="btn btn-primary">افزودن</button>
     </form>
 </div>
 
 <div class="card">
     {% if suppliers %}
-    <table>
+    <table class="data-table">
         <thead>
             <tr>
                 <th>نام</th>
@@ -98,10 +98,10 @@
                             {% endfor %}
                         </select>
                         {% endif %}
-                        <input type="number" name="amount" min="1" max="{{ owed }}"
+                        <input type="text" inputmode="numeric" name="amount" min="1" max="{{ owed }}"
                                data-owed="{{ owed }}" required
                                aria-label="مبلغ پرداخت به {{ s.name }}"
-                               placeholder="مبلغ">
+                               placeholder="مثال: 2,000,000">
                         <button type="submit" class="btn btn-sm btn-primary">ثبت</button>
                     </form>
                     {% else %}
@@ -120,7 +120,7 @@
         </tbody>
     </table>
     {% else %}
-    <p class="empty-state">هنوز تأمین‌کننده‌ای ثبت نشده است. اولین تأمین‌کننده را از فرم بالا اضافه کنید؛ بعد می‌توانید در صفحه «خرید» از او خرید ثبت کنید.</p>
+    <div class="empty-state"><h3>هنوز تأمین‌کننده‌ای ثبت نشده است</h3><p>اولین تأمین‌کننده را از فرم بالا اضافه کنید؛ بعد می‌توانید در صفحه «خرید» از او خرید ثبت کنید.</p></div>
     {% endif %}
 </div>
 
@@ -134,12 +134,18 @@
     var input = select.closest('form').querySelector('input[name="amount"]');
     if (!input) return;
     var supplierMax = parseInt(input.getAttribute('data-owed'), 10) || 0;
+    function faNum(value) {
+      var fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩';
+      return String(value == null ? '' : value)
+        .replace(/[۰-۹]/g, function (d) { return fa.indexOf(d); })
+        .replace(/[٠-٩]/g, function (d) { return ar.indexOf(d); });
+    }
     function applyClamp() {
       var option = select.selectedOptions[0];
       var remaining = option ? parseInt(option.getAttribute('data-remaining'), 10) : NaN;
       if (!isNaN(remaining)) {
         input.max = Math.min(supplierMax, remaining);
-        if (parseInt(input.value, 10) > input.max) input.value = input.max;
+        if (parseInt(faNum(input.value), 10) > input.max) input.value = input.max;
       } else {
         input.max = supplierMax;
       }

@@ -101,7 +101,7 @@ from services.tier import (
 )
 from services.events import EVENT_LIMIT_RULES, event_history, event_payload, append_event
 from services.payroll import create_salary_payment, current_period_key, normalize_period_key
-from services.themes import THEMES, DEFAULT_THEME_ID, THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY, DEFAULT_CUSTOM_PRIMARY, DEFAULT_CUSTOM_SECONDARY, all_theme_previews, validate_hex, contrast_ratio, get_theme, invalidate_theme_cache
+from services.themes import THEMES, DEFAULT_THEME_ID, THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY, DEFAULT_CUSTOM_PRIMARY, DEFAULT_CUSTOM_SECONDARY, all_theme_previews, validate_hex, contrast_ratio, get_theme, invalidate_theme_cache, migrate_retired_theme
 
 router = APIRouter(prefix="/admin")
 
@@ -968,7 +968,8 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
 
 def get_theme_id(db: Session) -> str:
     row = db.query(Settings).filter(Settings.key == THEME_SETTING_KEY).first()
-    return row.value if row and row.value in THEMES else DEFAULT_THEME_ID
+    effective, _retired = migrate_retired_theme(row.value if row else None)
+    return effective if effective in THEMES else DEFAULT_THEME_ID
 
 
 @router.get("/settings/appearance", response_class=HTMLResponse)
@@ -978,6 +979,10 @@ async def admin_settings_appearance(request: Request, db: Session = Depends(get_
         return guard
 
     settings = {s.key: s.value for s in db.query(Settings).all()}
+    # A shop that chose a retired palette is told where it moved — the shell
+    # already wears the heir (see migrate_retired_theme), so the notice names
+    # the move instead of asking.
+    _effective, retired = migrate_retired_theme(settings.get(THEME_SETTING_KEY))
     # The theme cards each carry a live sample chart painted by the same
     # renderer the analytics pages use, so the owner judges real shading.
     return templates.TemplateResponse(request, "admin/settings_appearance.html", {
@@ -985,6 +990,8 @@ async def admin_settings_appearance(request: Request, db: Session = Depends(get_
         "settings": settings,
         "store": get_store(db),
         "themes": all_theme_previews(db),
+        "retired_theme_id": retired,
+        "retired_theme_home": THEMES[_effective]["name"] if retired else "",
         "default_custom_primary": DEFAULT_CUSTOM_PRIMARY,
         "default_custom_secondary": DEFAULT_CUSTOM_SECONDARY,
         "active_theme_id": get_theme_id(db),

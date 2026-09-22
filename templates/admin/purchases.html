@@ -146,8 +146,8 @@
         <div class="form-row product-form-grid-wide">
             <div class="form-group">
                 <label for="purchase-extra-cost">هزینه حمل / سایر</label>
-                <input type="number" id="purchase-extra-cost" name="extra_cost" min="0" inputmode="numeric"
-                       value="{{ edit_purchase.extra_cost if editing and edit_purchase.extra_cost else 0 }}">
+                <input type="text" id="purchase-extra-cost" name="extra_cost" min="0" inputmode="numeric"
+                       value="{{ edit_purchase.extra_cost if editing and edit_purchase.extra_cost else 0 }}" placeholder="مثال: 150000">
                 <small class="field-help">مبلغی که عمده‌فروش یا باربری جدا از اقلام می‌گیرد.</small>
             </div>
             <div class="form-group">
@@ -217,11 +217,11 @@
         </div>
         <div class="form-group">
             <label class="sr-only" for="filter-start">از تاریخ</label>
-            <input type="text" id="filter-start" name="start_date" class="persian-date-input" data-pdp-pair="#filter-end" value="{{ start_date_filter }}" placeholder="از: ۱۴۰۵/۰۱/۰۱">
+            <input type="text" id="filter-start" name="start_date" class="persian-date-input" data-pdp-pair="#filter-end" value="{{ start_date_filter }}" placeholder="۱۴۰۵/۰۱/۰۱">
         </div>
         <div class="form-group">
             <label class="sr-only" for="filter-end">تا تاریخ</label>
-            <input type="text" id="filter-end" name="end_date" class="persian-date-input" value="{{ end_date_filter }}" placeholder="تا: ۱۴۰۵/۰۶/۳۱">
+            <input type="text" id="filter-end" name="end_date" class="persian-date-input" value="{{ end_date_filter }}" placeholder="۱۴۰۵/۰۶/۳۱">
         </div>
         <button type="submit" class="btn btn-primary">اعمال فیلتر</button>
         {% if has_filters %}<a href="/admin/purchases" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
@@ -229,15 +229,15 @@
 
     {% if purchases %}
     <div class="table-scroll">
-        <table class="purchase-table">
+            <table class="purchase-table data-table">
             <thead>
                 <tr>
-                    <th scope="col">خرید</th>
+                    <th scope="col" aria-sort="{{ 'descending' if sort_key == 'date' and sort_dir == 'desc' else 'ascending' if sort_key == 'date' else 'none' }}"><a class="sort-link" href="/admin/purchases?{{ sort_base_qs }}&sort=date&dir={{ 'asc' if sort_key == 'date' and sort_dir == 'desc' else 'desc' }}">خرید</a></th>
                     <th scope="col">تأمین‌کننده</th>
-                    <th scope="col">اقلام</th>
-                    <th scope="col">مبلغ کل</th>
-                    <th scope="col">پرداخت‌شده</th>
-                    <th scope="col">مانده</th>
+                    <th scope="col" class="num">اقلام</th>
+                    <th scope="col" class="num" aria-sort="{{ 'descending' if sort_key == 'total' and sort_dir == 'desc' else 'ascending' if sort_key == 'total' else 'none' }}"><a class="sort-link" href="/admin/purchases?{{ sort_base_qs }}&sort=total&dir={{ 'asc' if sort_key == 'total' and sort_dir == 'desc' else 'desc' }}">مبلغ کل</a></th>
+                    <th scope="col" class="num">پرداخت‌شده</th>
+                    <th scope="col" class="num">مانده</th>
                     <th scope="col">سررسید</th>
                     <th scope="col">وضعیت</th>
                     <th scope="col">عملیات</th>
@@ -258,9 +258,9 @@
                         <strong class="tnum">{{ row.units }} عدد</strong>
                         <small>{{ row.lines }} ردیف</small>
                     </td>
-                    <td class="tnum">{{ fmt(s.total) }} ت</td>
-                    <td class="tnum">{% if p.is_draft %}—{% else %}{{ fmt(s.paid) }} ت{% endif %}</td>
-                    <td class="tnum">{% if p.is_draft %}<span class="muted">—</span>{% else %}<strong>{{ fmt(s.remaining) }} ت</strong>{% endif %}</td>
+                    <td class="tnum num">{{ fmt(s.total) }} ت</td>
+                    <td class="tnum num">{% if p.is_draft %}—{% else %}{{ fmt(s.paid) }} ت{% endif %}</td>
+                    <td class="tnum num">{% if p.is_draft %}<span class="muted">—</span>{% else %}<strong>{{ fmt(s.remaining) }} ت</strong>{% endif %}</td>
                     <td class="tnum">{{ jalali_str(s.due_date, with_time=False) if s.due_date else '—' }}</td>
                     <td>
                         {% if s.status == 'draft' %}
@@ -404,6 +404,16 @@
 
     function money(value) {
         return Number(value || 0).toLocaleString('en-US');
+    }
+
+    // Money fields accept Persian digits (type=text + inputmode=numeric);
+    // live totals normalize before arithmetic, the server via to_english_digits.
+    function num(value) {
+        var fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩';
+        var s = String(value == null ? '' : value)
+            .replace(/[۰-۹]/g, function (d) { return fa.indexOf(d); })
+            .replace(/[٠-٩]/g, function (d) { return ar.indexOf(d); });
+        return Number(s.replace(/[^0-9.\-]/g, '') || 0);
     }
 
     function currentSupplierId() {
@@ -610,15 +620,15 @@
         var subtotal = 0;
         rowsHost.querySelectorAll('.purchase-item-row').forEach(function (row) {
             var variant = rowVariant(row);
-            var qty = Number((rowQty(row) || {}).value || 1);
+            var qty = num((rowQty(row) || {}).value || 1);
             // No typed price means the product's own cost basis.
             var typedCost = rowCost(row) ? rowCost(row).value : '';
-            var cost = typedCost === '' ? Number((variant && variant.cost) || 0) : Number(typedCost || 0);
+            var cost = typedCost === '' ? num((variant && variant.cost) || 0) : num(typedCost || 0);
             var line = variant ? qty * cost : 0;
             subtotal += line;
             row.querySelector('[data-role="line-total"]').textContent = line ? money(line) : '—';
         });
-        var extra = Number(extraInput.value || 0);
+        var extra = num(extraInput.value || 0);
         var total = subtotal + extra;
         document.getElementById('purchase-total-items').textContent = money(subtotal) + ' ت';
         document.getElementById('purchase-total-extra').textContent = money(extra) + ' ت';
