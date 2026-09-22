@@ -1960,10 +1960,6 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .demand-counter-value { min-width: 2.5rem; text-align: center; padding: 0.3rem 0.6rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); font-weight: 700; }
 .demand-counter-form { display: inline; margin: 0; }
 .required-mark { color: var(--link-hover); }
-/* Merged tag entry: one destination with its settings beside it, not two
-   buttons competing for the same shelf. */
-.tag-entry { display: inline-flex; align-items: center; gap: 0.55rem; }
-.tag-settings-link { font-size: 0.82rem; }
 /* Colour fields: a swatch the eye can read, presets one tap away, the native
    palette kept for custom colours. Preset hexes are garment data, not theme
    paint, so they stay literal. */

@@ -1,3 +1,18 @@
+## 2.6.4 — 1405/07/01 (2026-09-23)
+
+### فهرست محصولات: the toolbar names where each button leads
+
+- **The tag destinations are two plainly named ghost buttons.** The 2.6.2 merge
+  of the pair into «one entry» had left the settings side as bare undersized
+  text glued beside its neighbour — a word, «تنظیمات», that neither named tag
+  nor settings and read as stray text rather than a control. Both entries are
+  real `btn-ghost` buttons now: «🏷️ تگ‌ها» and «تنظیمات تگ», matching every
+  other toolbar in the shop. The wrapper span that existed only to glue the
+  pair together is gone with its two style rules, and the products-list guard
+  pins the new shape — the settings entry must be a button, not text.
+
+**No schema change.** The database stays on revision 20.
+
 ## 2.6.3 — 1405/07/01 (2026-09-23)
 
 ### افزودن محصول: fast entry that explains itself, weighed per variant
