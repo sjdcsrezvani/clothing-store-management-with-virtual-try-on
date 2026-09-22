@@ -55,6 +55,18 @@ _MOVEMENT_EVENT_TYPES = {
 LOW_STOCK_THRESHOLD = 2
 
 
+def sellable_expression():
+    """Sellable units per variant as a SQL expression: stock minus reservations.
+
+    The one definition of «how many can be sold». :func:`stock_alerts` counts
+    with it and the products list filters and sorts with it — a page that
+    re-derives the arithmetic beside this helper is a second definition, and
+    the suite fails it.
+    """
+    return (ProductVariant.stock_quantity
+            - func.coalesce(ProductVariant.reserved_quantity, 0))
+
+
 def stock_alerts(db) -> dict:
     """How much of the catalogue needs reordering, and how much has run out.
 
@@ -67,7 +79,7 @@ def stock_alerts(db) -> dict:
     dashboard count that disagrees with the page it links to is worse than no
     count at all.
     """
-    sellable = (ProductVariant.stock_quantity - func.coalesce(ProductVariant.reserved_quantity, 0))
+    sellable = sellable_expression()
     scope = (db.query(ProductVariant)
              .join(Product)
              .filter(Product.is_active == True, ProductVariant.is_active == True))  # noqa: E712

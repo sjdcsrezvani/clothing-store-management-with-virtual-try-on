@@ -73,8 +73,8 @@
 </div>
 {% endif %}
 
-<div class="card" id="checks-list">
-    <div class="section-heading"><div><span class="eyebrow">چک‌های صادره</span><h3>فهرست چک‌ها</h3></div><span class="appearance-active">صفحه {{ page }} از {{ total_pages }} · {{ total_count }} مورد</span></div>
+<div class="card" id="checks-list" data-list-region="checks">
+    <div class="section-heading"><div><span class="eyebrow">چک‌های صادره</span><h3 data-list-heading tabindex="-1">فهرست چک‌ها</h3></div><span class="appearance-active">صفحه {{ page }} از {{ total_pages }} · {{ total_count }} مورد</span></div>
 
     <form method="get" action="/admin/checks" class="search-form purchase-filter-form">
         <div class="form-group">

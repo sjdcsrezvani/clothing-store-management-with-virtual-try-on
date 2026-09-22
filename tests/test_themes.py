@@ -667,6 +667,7 @@ ROLES = ("cashier", "manager", "owner")
 NOT_A_PAGE: dict[str, str] = {
     "/admin/accounting/export": "the سود و زیان export is a CSV for the shop's books program",
     "/admin/analytics/export": "the تحلیل فروش export is a CSV of one tab's figures",
+    "/admin/products/export": "the فهرست محصولات export is a CSV of the filtered list",
     "/admin/backups/download": "the download is the backup file itself",
     "/admin/try-on/download": "the try-on engine answers with its own response",
     "/admin/collections": "a shortcut that redirects to the invoices it collects",
@@ -1092,7 +1093,8 @@ def test_every_page_the_shell_serves_reads_only_colours_its_theme_defines(client
 # names stop matching its sibling joins the sample, so the reduction cannot
 # quietly stop checking a whole family of palettes.
 STATE_THEMES = ["operations-light", "midnight-operations", "pos-focus",
-                "high-contrast", "custom-brand"]
+                "high-contrast", "custom-brand",
+                "kashi-tile", "blush-maternal", "amber-till", "night-bazaar"]
 
 
 def test_the_state_sample_still_covers_what_differs_between_palettes():

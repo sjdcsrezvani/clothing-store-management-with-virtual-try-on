@@ -8,8 +8,10 @@
 {% set heading_class = 'page-heading product-page-heading' %}
 {% set page_actions %}
 <a href="/admin/products/add" class="btn btn-primary">افزودن محصول</a>
-        <a href="/admin/barcodes/print" class="btn btn-ghost">چاپ تگ</a>
-        <a href="/admin/settings/tags" class="btn btn-ghost">تنظیمات تگ</a>
+        <span class="tag-entry">
+            <a href="/admin/barcodes/print" class="btn btn-ghost">🏷️ تگ‌ها</a>
+            <a href="/admin/settings/tags" class="text-link tag-settings-link">تنظیمات</a>
+        </span>
 {% endset %}
 {% include 'partials/page_header.html' %}
 
@@ -39,6 +41,9 @@
         </div>
     </div>
     <form method="get" action="/admin/products" class="search-form product-search-form">
+        <input type="hidden" name="sort" value="{{ sort_key }}">
+        <input type="hidden" name="dir" value="{{ sort_dir }}">
+        <input type="hidden" name="stock" value="{{ stock_filter }}">
         <label class="sr-only" for="barcode-scanner">بارکد یا نام محصول</label>
         <input type="text" id="barcode-scanner" name="search" value="{{ search }}" placeholder="بارکد، SKU، نام یا دسته‌بندی" autofocus autocomplete="off">
         <label class="sr-only" for="product-category">دسته‌بندی</label>
@@ -49,28 +54,52 @@
             {% endfor %}
         </select>
         <button type="submit" class="btn btn-primary">جست‌وجو</button>
-        {% if search or category_filter %}<a href="/admin/products" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
+        {% if search or category_filter or stock_filter != 'all' or sort_key != 'newest' or sort_dir != 'desc' or per_page != 10 %}<a href="/admin/products" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
     </form>
+    <nav class="stock-chips" aria-label="پالایش موجودی">
+        <a class="stock-chip {% if stock_filter == 'all' %}is-active{% endif %}" href="/admin/products?search={{ search }}&category={{ category_filter }}&per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}&stock=all" {% if stock_filter == 'all' %}aria-current="true"{% endif %}>همه</a>
+        <a class="stock-chip {% if stock_filter == 'low' %}is-active{% endif %}" href="/admin/products?search={{ search }}&category={{ category_filter }}&per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}&stock=low" {% if stock_filter == 'low' %}aria-current="true"{% endif %}>کم‌موجود ({{ low_stock_count }})</a>
+        <a class="stock-chip {% if stock_filter == 'out' %}is-active{% endif %}" href="/admin/products?search={{ search }}&category={{ category_filter }}&per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}&stock=out" {% if stock_filter == 'out' %}aria-current="true"{% endif %}>ناموجود ({{ out_stock_count }})</a>
+    </nav>
 </section>
 
-<section class="card product-list-card">
+<section class="card product-list-card" data-list-region="products">
     <div class="section-heading-row product-list-heading">
         <div>
-            <h3>فهرست محصولات</h3>
+            <h3 data-list-heading tabindex="-1">فهرست محصولات</h3>
             <p class="muted">صفحه {{ page }} از {{ total_pages }} · {{ total_products }} محصول</p>
         </div>
-        <a href="/admin/barcodes/print" class="text-link">مدیریت چاپ تگ‌ها</a>
+        <a href="/admin/products/export?search={{ search }}&category={{ category_filter }}&stock={{ stock_filter }}&sort={{ sort_key }}&dir={{ sort_dir }}" class="text-link">⬇ خروجی CSV</a>
+        <form method="get" action="/admin/products" class="per-page-form">
+            <input type="hidden" name="search" value="{{ search }}">
+            <input type="hidden" name="category" value="{{ category_filter }}">
+            <input type="hidden" name="stock" value="{{ stock_filter }}">
+            <input type="hidden" name="sort" value="{{ sort_key }}">
+            <input type="hidden" name="dir" value="{{ sort_dir }}">
+            <label class="sr-only" for="product-per-page">تعداد در صفحه</label>
+            <select name="per_page" id="product-per-page" onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}" aria-label="تعداد در صفحه">
+                {% for option in per_page_options %}
+                <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }} در صفحه</option>
+                {% endfor %}
+            </select>
+        </form>
     </div>
     {% if products %}
+    <form id="bulk-archive-form" method="post" action="/admin/products/bulk-archive" class="bulk-bar" hidden onsubmit="return confirm('محصولات انتخاب‌شده و تنوع‌هایشان بایگانی شود؟')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <strong><span id="bulk-count">۰</span> انتخاب شده</strong>
+        <button type="submit" class="btn btn-sm btn-danger">بایگانی انتخاب‌شده‌ها</button>
+    </form>
     <div class="table-scroll">
         <table class="product-list-table">
             <thead>
                 <tr>
-                    <th scope="col">محصول</th>
-                    <th scope="col">دسته‌بندی</th>
+                    <th scope="col" class="bulk-cell"><label class="sr-only" for="bulk-check-all">انتخاب همه</label><input type="checkbox" id="bulk-check-all"></th>
+                    <th scope="col" aria-sort="{{ 'descending' if sort_key == 'name' and sort_dir == 'desc' else 'ascending' if sort_key == 'name' else 'none' }}"><a class="sort-link" href="/admin/products?search={{ search }}&category={{ category_filter }}&stock={{ stock_filter }}&per_page={{ per_page }}&sort=name&dir={{ 'asc' if sort_key == 'name' and sort_dir == 'desc' else 'desc' }}">محصول</a></th>
+                    <th scope="col" aria-sort="{{ 'descending' if sort_key == 'category' and sort_dir == 'desc' else 'ascending' if sort_key == 'category' else 'none' }}"><a class="sort-link" href="/admin/products?search={{ search }}&category={{ category_filter }}&stock={{ stock_filter }}&per_page={{ per_page }}&sort=category&dir={{ 'asc' if sort_key == 'category' and sort_dir == 'desc' else 'desc' }}">دسته‌بندی</a></th>
                     <th scope="col">تنوع‌ها</th>
-                    <th scope="col">قیمت</th>
-                    <th scope="col">قابل فروش</th>
+                    <th scope="col" aria-sort="{{ 'descending' if sort_key == 'price' and sort_dir == 'desc' else 'ascending' if sort_key == 'price' else 'none' }}"><a class="sort-link" href="/admin/products?search={{ search }}&category={{ category_filter }}&stock={{ stock_filter }}&per_page={{ per_page }}&sort=price&dir={{ 'asc' if sort_key == 'price' and sort_dir == 'desc' else 'desc' }}">قیمت</a></th>
+                    <th scope="col" aria-sort="{{ 'descending' if sort_key == 'stock' and sort_dir == 'desc' else 'ascending' if sort_key == 'stock' else 'none' }}"><a class="sort-link" href="/admin/products?search={{ search }}&category={{ category_filter }}&stock={{ stock_filter }}&per_page={{ per_page }}&sort=stock&dir={{ 'asc' if sort_key == 'stock' and sort_dir == 'desc' else 'desc' }}">قابل فروش</a></th>
                     <th scope="col">رزرو</th>
                     <th scope="col">عملیات</th>
                 </tr>
@@ -78,7 +107,8 @@
             <tbody>
                 {% for product in products %}
                 {% set active_variants = product.variants|selectattr('is_active')|list %}
-                <tr>
+                <tr class="product-row" style="--i:{{ loop.index0 if loop.index0 < 10 else 9 }}">
+                    <td class="bulk-cell"><label class="sr-only" for="bulk-{{ product.id }}">انتخاب {{ product.name }}</label><input type="checkbox" class="bulk-check" id="bulk-{{ product.id }}" name="ids" value="{{ product.id }}" form="bulk-archive-form"></td>
                     <td>
                         <div class="product-identity">
                             {% set ns = namespace(img_path=None) %}
@@ -95,17 +125,17 @@
                                 <span class="product-thumb product-thumb-empty" aria-hidden="true">—</span>
                             {% endif %}
                             <span>
-                                <strong>{{ product.name }}</strong>
-                                {% if product.brand %}<small>{{ product.brand }}</small>{% endif %}
+                                <strong>{{ product.name|highlight(search) }}</strong>
+                                {% if product.brand %}<small>{{ product.brand|highlight(search) }}</small>{% endif %}
                                 <small class="product-template-badge">{{ product.tag_template.name if product.tag_template and product.tag_template.is_active else 'قالب پیش‌فرض فروشگاه' }}</small>
                             </span>
                         </div>
                     </td>
-                    <td>{{ product.category or '—' }}</td>
+                    <td>{{ product.category|highlight(search) if product.category else '—' }}</td>
                     <td>
                         {% if active_variants %}
                             <div class="variant-summary">
-                                <span class="badge badge-info">{{ active_variants|length }} تنوع</span>
+                                <button type="button" class="badge badge-info variant-toggle" aria-expanded="false" aria-controls="variants-{{ product.id }}">{{ active_variants|length }} تنوع · جزئیات</button>
                                 {% set sizes = active_variants|map(attribute='size')|unique|reject('none')|list %}
                                 {% set colors = active_variants|map(attribute='color')|unique|reject('none')|list %}
                                 {% if sizes %}<small>سایز: {{ sizes|join('، ') }}</small>{% endif %}
@@ -128,13 +158,35 @@
                     <td>
                         <div class="table-actions">
                             <a href="/admin/products/{{ product.id }}" class="btn btn-sm btn-ghost">ویرایش</a>
-                            <form method="post" action="/admin/products/{{ product.id }}/delete" onsubmit="return confirm('این محصول غیرفعال شود؟')">
+                            <form method="post" action="/admin/products/{{ product.id }}/delete" onsubmit="return confirm('این محصول و تنوع‌هایش بایگانی شود؟')">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                <button type="submit" class="btn btn-sm btn-danger">غیرفعال‌کردن</button>
+                                <button type="submit" class="btn btn-sm btn-danger">بایگانی</button>
                             </form>
                         </div>
                     </td>
                 </tr>
+                {% if active_variants %}
+                <tr class="variant-detail-row" id="variants-{{ product.id }}" hidden>
+                    <td></td>
+                    <td colspan="7">
+                        <ul class="variant-detail-list">
+                            {% for variant in active_variants %}
+                            <li>
+                                <strong>{{ variant.size or '—' }}{% if variant.color %} · {{ variant.color }}{% endif %}</strong>
+                                <span class="tnum" dir="ltr">{{ variant.sku or variant.barcode }}</span>
+                                <span class="tnum">{{ variant.price }} تومان</span>
+                                {% if variant.available_quantity > 0 %}
+                                    <span class="badge badge-available">{{ variant.available_quantity }} عدد</span>
+                                {% else %}
+                                    <span class="badge badge-none">ناموجود</span>
+                                {% endif %}
+                                <a href="/admin/variants/{{ variant.id }}/edit" class="text-link">ویرایش تنوع</a>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </td>
+                </tr>
+                {% endif %}
                 {% endfor %}
             </tbody>
         </table>
@@ -142,15 +194,15 @@
     {% else %}
     <div class="empty-state products-empty">
         <h3>محصولی پیدا نشد</h3>
-        <p>{% if search or category_filter %}فیلترها را تغییر دهید یا یک محصول جدید اضافه کنید.{% else %}هنوز محصولی ثبت نشده است.{% endif %}</p>
+        <p>{% if search or category_filter or stock_filter != 'all' %}فیلترها را تغییر دهید یا یک محصول جدید اضافه کنید.{% else %}هنوز محصولی ثبت نشده است.{% endif %}</p>
         <a href="/admin/products/add" class="btn btn-primary">افزودن محصول</a>
     </div>
     {% endif %}
     {% if total_pages > 1 %}
     <nav class="product-pagination" aria-label="صفحه‌بندی محصولات">
-        {% if page > 1 %}<a class="btn btn-sm btn-ghost" href="/admin/products?page={{ page - 1 }}&search={{ search }}&category={{ category_filter }}">صفحه قبل</a>{% endif %}
+        {% if page > 1 %}<a class="btn btn-sm btn-ghost" href="/admin/products?page={{ page - 1 }}&search={{ search }}&category={{ category_filter }}&stock={{ stock_filter }}&per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}">صفحه قبل</a>{% endif %}
         <span>صفحه {{ page }} از {{ total_pages }}</span>
-        {% if page < total_pages %}<a class="btn btn-sm btn-ghost" href="/admin/products?page={{ page + 1 }}&search={{ search }}&category={{ category_filter }}">صفحه بعد</a>{% endif %}
+        {% if page < total_pages %}<a class="btn btn-sm btn-ghost" href="/admin/products?page={{ page + 1 }}&search={{ search }}&category={{ category_filter }}&stock={{ stock_filter }}&per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}">صفحه بعد</a>{% endif %}
     </nav>
     {% endif %}
 </section>
@@ -161,5 +213,48 @@ document.getElementById('barcode-scanner').addEventListener('keydown', function 
         this.form.submit();
     }
 });
+// Expandable variant rows and the bulk bar are bound per element, so they are
+// one function the shell re-runs after every in-place swap (and once on load).
+// dataset flags keep a second run over the same nodes a no-op.
+function initProductsRegion(root) {
+    root.querySelectorAll('.variant-toggle').forEach(function (toggle) {
+        if (toggle.dataset.bound) return;
+        toggle.dataset.bound = 'true';
+        toggle.addEventListener('click', function () {
+            var row = document.getElementById(toggle.getAttribute('aria-controls'));
+            if (!row) return;
+            var open = row.hasAttribute('hidden');
+            row.toggleAttribute('hidden');
+            toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        });
+    });
+    var all = root.querySelector('#bulk-check-all');
+    var bar = root.querySelector('#bulk-archive-form');
+    var count = root.querySelector('#bulk-count');
+    if (!all || !bar || !count || bar.dataset.bound) return;
+    bar.dataset.bound = 'true';
+    var boxes = Array.prototype.slice.call(root.querySelectorAll('.bulk-check'));
+    function sync() {
+        var checked = boxes.filter(function (box) { return box.checked; });
+        count.textContent = checked.length;
+        bar.toggleAttribute('hidden', checked.length === 0);
+        all.checked = boxes.length > 0 && checked.length === boxes.length;
+        all.indeterminate = checked.length > 0 && checked.length < boxes.length;
+    }
+    all.addEventListener('change', function () {
+        boxes.forEach(function (box) { box.checked = all.checked; });
+        sync();
+    });
+    boxes.forEach(function (box) { box.addEventListener('change', sync); });
+}
+function initProductsPage() {
+    initProductsRegion(document);
+    if (window.RaykidListNav) window.RaykidListNav.register('products', initProductsRegion);
+}
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initProductsPage);
+} else {
+    initProductsPage();
+}
 </script>
 {% endblock %}

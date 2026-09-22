@@ -12,7 +12,7 @@
 {% if request.query_params.get('msg') %}<div class="alert alert-success" role="status">{{ request.query_params.get('msg') }}</div>{% endif %}
 {% if request.query_params.get('err') %}<div class="alert alert-error" role="alert">{{ request.query_params.get('err') }}</div>{% endif %}
 
-<div class="card tag-print-controls" id="controls">
+<div class="card tag-print-controls" id="controls" data-list-region="tags">
     <div class="tag-print-help">
         <strong>راهنمای سریع</strong>
         <span>هر کارت یک تنوع محصول است. تعداد چاپ را وارد کنید و سپس یکی از عملیات را بزنید. چاپ تگ به موجودی فعلی وابسته نیست و می‌توانید برای کالای در راه هم تگ بسازید.</span>
@@ -152,16 +152,50 @@ function deselectAll() {
     updateCount();
 }
 
-document.querySelectorAll('.barcode-checkbox').forEach(cb => cb.addEventListener('change', updateCount));
-document.querySelectorAll('.tag-quantity').forEach(input => input.addEventListener('input', updateCount));
+function bindTagRegion(root) {
+    root.querySelectorAll('.barcode-checkbox').forEach(function (cb) {
+        if (cb.dataset.bound) return;
+        cb.dataset.bound = 'true';
+        cb.addEventListener('change', updateCount);
+    });
+    root.querySelectorAll('.tag-quantity').forEach(function (input) {
+        if (input.dataset.bound) return;
+        input.dataset.bound = 'true';
+        input.addEventListener('input', updateCount);
+    });
 
-const tagActionForm = document.getElementById('tag-action-form');
-if (tagActionForm) tagActionForm.addEventListener('submit', function (event) {
-    if (!selectedCheckboxes('.barcode-checkbox:checked').length) {
-        event.preventDefault();
-        window.alert('ابتدا حداقل یک تنوع را انتخاب کنید.');
+    const tagActionForm = root.querySelector('#tag-action-form');
+    if (tagActionForm && !tagActionForm.dataset.bound) {
+        tagActionForm.dataset.bound = 'true';
+        tagActionForm.addEventListener('submit', function (event) {
+            if (!selectedCheckboxes('.barcode-checkbox:checked').length) {
+                event.preventDefault();
+                window.alert('ابتدا حداقل یک تنوع را انتخاب کنید.');
+            }
+        });
     }
-});
+    // In-place paging/filtering never reloads the document, so the POST form's
+    // hidden page/category would name the page the owner came from, not the
+    // one they are looking at. Read them back off the address bar instead.
+    if (tagActionForm) {
+        const params = new URLSearchParams(window.location.search);
+        const pageInput = tagActionForm.querySelector('input[name="page"]');
+        const categoryInput = tagActionForm.querySelector('input[name="category"]');
+        if (pageInput) pageInput.value = params.get('page') || '1';
+        if (categoryInput) categoryInput.value = params.get('category') || '';
+    }
+    updateCount();
+}
+
+function initTagPage() {
+    bindTagRegion(document);
+    if (window.RaykidListNav) window.RaykidListNav.register('tags', bindTagRegion);
+}
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initTagPage);
+} else {
+    initTagPage();
+}
 
 function printSelected() {
     const selected = selectedCheckboxes('.barcode-checkbox:checked');
@@ -215,7 +249,7 @@ function printSelected() {
     printStyle.textContent = `
         @media screen {
             #tag-print-output { display: none; }
-            body.tag-printing #tag-print-output { display: block; position: fixed; inset: 0; overflow: auto; background: #fff; z-index: 9999; padding: 1rem; }
+            body.tag-printing #tag-print-output { display: block; position: fixed; inset: 0; overflow: auto; background: var(--card); z-index: 9999; padding: 1rem; }
         }
         @media print {
             @page { size: A4; margin: 0; }
@@ -239,6 +273,6 @@ function printSelected() {
     window.setTimeout(() => window.print(), 50);
 }
 
-updateCount();
+bindTagRegion(document);
 </script>
 {% endblock %}

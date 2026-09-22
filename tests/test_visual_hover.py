@@ -456,7 +456,7 @@ def test_the_printed_invoice_wears_the_theme_paper_in_midnight_and_kids(probe_se
     assert "html, body { background: var(--paper) !important; color: var(--paper-ink) !important; }" in print_css, \
         "the print block's body rule no longer paints paper and paper-ink"
 
-    for theme_id in ("midnight-operations", "kids-boutique"):
+    for theme_id in ("midnight-operations", "kids-boutique", "kashi-tile", "night-bazaar"):
         _switch_theme(probe_server, cookie, theme_id)
         pdf = _print_pdf(probe_server, cookie, f"/sales/invoice/{sale_id}", f"invoice-{theme_id}")
         pages = _pdf_pages_as_png(pdf)

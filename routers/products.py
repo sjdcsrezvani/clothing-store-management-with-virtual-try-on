@@ -1,3 +1,5 @@
+import csv
+import io
 import json
 import os
 import re
@@ -6,7 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode, quote_plus
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, File, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 from database import get_db
 from models import (
@@ -26,11 +29,14 @@ from services._common import fmt, check_admin, jalali_str, page_arg
 from services.barcode import BARCODE_DENSITIES, generate_barcode_image, generate_barcode_number
 from services.templating import templates
 from services.inventory import (
+    LOW_STOCK_THRESHOLD,
     record_opening_stock,
     record_stock_adjustment,
     record_cost_adjustment,
+    sellable_expression,
     stock_alerts,
 )
+from services.sorting import parse_sort
 from services.store import get_store
 from services.events import append_event
 from services.tags import (
@@ -140,20 +146,51 @@ def _selected_quantities(form) -> dict[int, int]:
     return quantities
 
 
-@router.get("/products", response_class=HTMLResponse)
-async def admin_products(
-    request: Request,
-    search: str = "",
-    category: str = "",
-    page: str = "1",
-    db: Session = Depends(get_db),
-):
-    guard = require_html_role(request, db, "manager")
-    if not hasattr(guard, "role"):
-        return guard
+# The columns the products list may sort by, each with its own default
+# direction — names ascend, stock descends to surface the fullest shelf first.
+# Anything the query names outside this map answers the default list.
+PRODUCT_SORTS = {
+    "newest": "desc",
+    "name": "asc",
+    "category": "asc",
+    "price": "asc",
+    "stock": "desc",
+}
+PRODUCT_PER_PAGE_OPTIONS = (10, 25, 50)
+PRODUCT_STOCK_FILTERS = ("all", "low", "out")
 
-    page = page_arg(page)
-    query = db.query(Product).filter(Product.is_active == True)
+
+def _product_list_query(db, search: str = "", category: str = "", stock: str = "all"):
+    """The filtered products query the list, the CSV and the bulk bar share.
+
+    Price and stock are variant aggregates, so the query carries them as
+    outer-joined subqueries: products without variants keep their row (with
+    NULL aggregates) instead of vanishing from their own catalogue.
+    """
+    price_sq = (
+        db.query(
+            ProductVariant.product_id,
+            func.min(ProductVariant.price).label("price_min"),
+        )
+        .filter(ProductVariant.is_active == True)  # noqa: E712
+        .group_by(ProductVariant.product_id)
+        .subquery()
+    )
+    avail_sq = (
+        db.query(
+            ProductVariant.product_id,
+            func.sum(sellable_expression()).label("sellable"),
+        )
+        .filter(ProductVariant.is_active == True)  # noqa: E712
+        .group_by(ProductVariant.product_id)
+        .subquery()
+    )
+    query = (
+        db.query(Product)
+        .filter(Product.is_active == True)  # noqa: E712
+        .outerjoin(price_sq, price_sq.c.product_id == Product.id)
+        .outerjoin(avail_sq, avail_sq.c.product_id == Product.id)
+    )
 
     if search:
         # Search product name or variant barcode
@@ -168,11 +205,92 @@ async def admin_products(
     if category:
         query = query.filter(Product.category == category)
 
-    per_page = 10
+    if stock == "out":
+        query = query.filter(Product.variants.any(and_(
+            ProductVariant.is_active == True,  # noqa: E712
+            sellable_expression() <= 0,
+        )))
+    elif stock == "low":
+        # Low *includes* the run-out shelf, exactly like the KPI above the
+        # table — one definition of «کم‌موجود» everywhere, not two.
+        query = query.filter(Product.variants.any(and_(
+            ProductVariant.is_active == True,  # noqa: E712
+            sellable_expression() <= LOW_STOCK_THRESHOLD,
+        )))
+
+    return query, price_sq, avail_sq
+
+
+def _product_order(sort_key: str, sort_dir: str, price_sq, avail_sq):
+    """ORDER BY for the list and the CSV — the same rows in both, so the file
+    is the view the owner was looking at, not a reshuffled copy."""
+    if sort_key == "name":
+        column = Product.name
+    elif sort_key == "category":
+        column = Product.category
+    elif sort_key == "price":
+        # Variant-less products sort last in both directions: no price is not
+        # the cheapest price, and it is not the dearest either.
+        column = price_sq.c.price_min.nulls_last() if sort_dir == "asc" \
+            else price_sq.c.price_min.desc().nulls_last()
+        return column, Product.id.desc()
+    elif sort_key == "stock":
+        column = func.coalesce(avail_sq.c.sellable, 0)
+    else:
+        column = Product.created_at
+    order = column.desc() if sort_dir == "desc" else column.asc()
+    return order, Product.id.desc()
+
+
+def _product_per_page(raw: str) -> int:
+    try:
+        per_page = int(raw)
+    except (TypeError, ValueError):
+        return PRODUCT_PER_PAGE_OPTIONS[0]
+    if per_page not in PRODUCT_PER_PAGE_OPTIONS:
+        return PRODUCT_PER_PAGE_OPTIONS[0]
+    return per_page
+
+
+def _products_csv_response(filename: str, rows: list[list]) -> Response:
+    buf = io.StringIO()
+    buf.write("\ufeff")  # BOM so Excel opens Persian correctly
+    csv.writer(buf).writerows(rows)
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/products", response_class=HTMLResponse)
+async def admin_products(
+    request: Request,
+    search: str = "",
+    category: str = "",
+    page: str = "1",
+    per_page: str = "10",
+    stock: str = "all",
+    db: Session = Depends(get_db),
+):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+
+    page = page_arg(page)
+    per_page = _product_per_page(per_page)
+    if stock not in PRODUCT_STOCK_FILTERS:
+        stock = "all"
+    # Ledger sorting, same convention as the sales list: an unknown key or
+    # direction answers the default newest-first list, never an error.
+    sort_key, sort_dir = parse_sort(request.query_params, PRODUCT_SORTS, "newest")
+
+    query, price_sq, avail_sq = _product_list_query(db, search, category, stock)
     total = query.count()
     total_pages = max(1, (total + per_page - 1) // per_page)
     page = min(max(page, 1), total_pages)
-    products = query.order_by(Product.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
+    order, tiebreak = _product_order(sort_key, sort_dir, price_sq, avail_sq)
+    products = query.order_by(order, tiebreak).offset((page - 1) * per_page).limit(per_page).all()
 
     categories = db.query(Product.category).distinct().all()
     categories = [c[0] for c in categories if c[0]]
@@ -190,9 +308,75 @@ async def admin_products(
         "total_products": total,
         "low_stock_count": alerts["low_count"],
         "out_stock_count": alerts["out_count"],
+        "sort_key": sort_key,
+        "sort_dir": sort_dir,
+        "per_page": per_page,
+        "per_page_options": PRODUCT_PER_PAGE_OPTIONS,
+        "stock_filter": stock,
         "fmt": fmt,
         "jalali_str": jalali_str,
     })
+
+
+@router.get("/products/export")
+async def admin_products_export(
+    request: Request,
+    search: str = "",
+    category: str = "",
+    stock: str = "all",
+    db: Session = Depends(get_db),
+):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+
+    if stock not in PRODUCT_STOCK_FILTERS:
+        stock = "all"
+    sort_key, sort_dir = parse_sort(request.query_params, PRODUCT_SORTS, "newest")
+    query, price_sq, avail_sq = _product_list_query(db, search, category, stock)
+    order, tiebreak = _product_order(sort_key, sort_dir, price_sq, avail_sq)
+
+    rows = [["نام", "برند", "دسته‌بندی", "SKU پایه", "تنوع فعال",
+             "بازه قیمت", "قابل فروش", "رزرو"]]
+    for product in query.order_by(order, tiebreak).all():
+        active_variants = [v for v in product.variants if v.is_active]
+        rows.append([
+            product.name, product.brand or "", product.category or "",
+            product.base_sku or "", len(active_variants),
+            product.price_range or "—", product.available_stock,
+            product.total_reserved,
+        ])
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return _products_csv_response(f"products_{today}.csv", rows)
+
+
+@router.post("/products/bulk-archive")
+async def admin_products_bulk_archive(request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+
+    form = await request.form()
+    ids = [int(raw) for raw in form.getlist("ids") if str(raw).isdigit()]
+    archived = 0
+    if ids:
+        products = db.query(Product).filter(
+            Product.id.in_(ids),
+            Product.is_active == True,  # noqa: E712
+        ).all()
+        for product in products:
+            product.is_active = False
+            for variant in product.variants:
+                variant.is_active = False
+            archived += 1
+        db.commit()
+
+    if archived:
+        message = f"{archived} محصول بایگانی شد."
+    else:
+        message = "محصولی برای بایگانی انتخاب نشده بود."
+    return RedirectResponse(
+        url="/admin/products?msg=" + quote_plus(message), status_code=303)
 
 
 def _safe_tag_preview(config, sample_item, store) -> str:
