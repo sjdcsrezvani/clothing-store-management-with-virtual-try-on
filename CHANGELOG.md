@@ -1,3 +1,17 @@
+## 2.6.1 — 1405/06/31 (2026-09-22)
+
+### پوسته: the shop moves like one shop
+
+- **Motion is a system, not an afterthought.** A new `static/css/motion.css` declares the shared motion vocabulary — duration tokens (40ms stagger up to 450ms), the ease curves, and a family of `.t-*` transitions re-authored from transitions.dev's patterns under this shop's rules: transform and opacity only, exact-property transitions (never `transition: all`), asymmetric open/close (opens invite, closes leave fast), and a `prefers-reduced-motion` guard on every snippet. Page-in, card entrance, dialog open/close, number pop-in, success check and error shake now share one language instead of twelve ad-hoc keyframes.
+- **Feedback is a toast, not a page reload's leftover.** A vanilla toast queue adapted from sonner's contract — one `#toaster` live region per shell, stacked with a waiting room, timed dismiss that pauses while the tab is hidden, loading-to-result by id, action buttons — upgrades the server flash (`?msg=`/`?err=`) on the pages that opt in, the checkout till first. Colours come only from the theme tokens; the header flash stays as the first-paint receipt.
+- **One dialog pattern.** `static/js/dialog.js` gives every overlay surface the same behaviour: focus moves inside, Escape closes the topmost surface and returns to its opener, Tab cycles within. The lightbox and the mobile capture overlay opt in; the tested sidebar drawer keeps its own script.
+- **The till flows like a wizard.** The checkout terminal walks scan → cart → customer → payment as explicit steps, its flash feedback and error states ride the motion and toast systems, and its forms join the shared field system — `type=text` with `inputmode=numeric` so the Persian keyboard stays up, Persian digits parsed server-side as before, no spinner chrome to fight.
+- **Every ledger sorts by its columns.** One `services/sorting.py` convention — a query param is honoured only when it names a key the page allows; unknown keys fall back to the page's default, never an error — now backs the sales and accounting lists, replacing the ad-hoc `?sort=` handling each page grew on its own.
+- **The sidebar collapses by section.** Each category's label is a real disclosure button with `aria-expanded`, sections stay folded between visits via localStorage, and the section keys are data rather than implicit markup order.
+- **Four new palettes, four retired with named homes.** «کاشی» (Kashi Tile) leads the set as the new default — warm sand paper, terracotta actions, turquoise trust — beside Kids Boutique, Till, Blush Maternal, Amber Till and Night Bazaar. The retired palettes (premium-navy, atelier, ocean-commerce, forest-ledger) are not silently swapped: the appearance page names what happened and where each shop's colours moved.
+
+**No schema change.** The database stays on revision 19.
+
 ## 2.6.0 — 2026-10-03
 
 ### پوسته و صفحات: the app keeps its promises on any input, in every state, on paper
