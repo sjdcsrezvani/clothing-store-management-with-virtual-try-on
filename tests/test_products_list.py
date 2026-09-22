@@ -23,11 +23,10 @@ def _names_in_order(html, first, second):
     return html.index(first) < html.index(second)
 
 
-def test_toolbar_merges_tag_entry_and_lists_csv(client, authed):
+def test_toolbar_names_both_tag_destinations_and_lists_csv(client, authed):
     html = client.get("/admin/products").text
     assert "🏷️ تگ‌ها" in html
-    assert "تنظیمات تگ" not in html  # the second ghost button is gone…
-    assert "tag-settings-link" in html  # …merged into a quiet link beside it
+    assert 'class="btn btn-ghost">تنظیمات تگ</a>' in html  # a real button, not bare text
     assert "/admin/products/export?" in html
 
 
