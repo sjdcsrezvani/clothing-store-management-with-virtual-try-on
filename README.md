@@ -136,6 +136,16 @@ Tab-cycle behaviour. Ten palettes ship in the box — «کاشی» (Kashi Tile) 
 them as the default — and a retired palette is never silently swapped: the
 appearance page names where its shop's colours moved.
 
+Lists never lose the scroll. `static/js/list_nav.js` gives every list zone
+(sort headers, page links, filter chips and in-zone filter forms on eleven
+pages) the same behaviour: fetch the URL, swap only the zone, keep the
+document — and the scroll — exactly where it was, with the address bar, back
+button and focus kept honest and a plain navigation as the fallback. The
+products list manages the catalogue from one page: sortable columns on the
+shared sorting convention, page-size picker, stock chips reading the same
+definition as the KPIs, bulk archive, a filter-honouring CSV export,
+search-term highlighting, and expandable variant rows.
+
 ## Accounting features (admin panel)
 
 - **📒 حساب نسیه** (`/admin/credit`) — sell on credit at checkout and collect
