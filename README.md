@@ -144,7 +144,8 @@ button and focus kept honest and a plain navigation as the fallback. The
 products list manages the catalogue from one page: sortable columns on the
 shared sorting convention, page-size picker, stock chips reading the same
 definition as the KPIs, bulk archive, a filter-honouring CSV export,
-search-term highlighting, and expandable variant rows.
+search-term highlighting, expandable variant rows, and a toolbar whose tag
+and tag-settings entries are plainly named ghost buttons.
 
 Adding a product leads with the basics — name, category, brand, supplier,
 group — and folds codes, fabric details and reorder defaults into an
