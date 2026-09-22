@@ -1,3 +1,40 @@
+## 2.6.5 — 1405/07/01 (2026-09-23)
+
+### فرم محصول: editing happens where you are, and every variant wears its own gallery
+
+- **Edit pages correct in place and remember the way back.** Opening a product
+  or variant from any view — the list, an archived view, a demand chip — now
+  returns to that exact view when saved, cancelled or archived, instead of
+  always dumping back to the default list. A saved edit stays on the same page
+  with its changes shown, and the return target is validated against the
+  shop's own addresses so a crafted `next` cannot send anyone anywhere else.
+- **A gallery per variant.** Each sellable variant can hold ordered image
+  frames now, the first frame acting as its primary shot (schema revision 21,
+  purely additive — existing rows keep their single image and it remains the
+  fallback, so nothing old goes imageless). Frames are promoted, removed and
+  reordered from the variant page itself.
+- **The archive is a place, not a one-way door.** The products list gains a
+  بایگانی view listing archived products, reachable by its own chip and
+  carrying the stock filter through; archived products and individual archived
+  variants can each be restored from where they sit, and the bulk bar only
+  exists where it can act.
+- **Selects wear the theme.** A small opt-in custom dropdown (button + listbox
+  exactly the field's width, type-ahead included) replaces the native popup on
+  the product form's long selects — the popup was the one control the OS drew
+  and no palette could reach. Coarse pointers keep the native control; the
+  native select still holds the data and is what submits.
+- **Digits settle without disturbing words.** Size fields like «۳ تا ۴ سال»
+  now convert their digits to a single convention while keeping their words,
+  with a per-character mapping so the caret never jumps.
+- **The month window can no longer point at the future.** Before 03:30 Tehran
+  time the local calendar ran a day ahead of the shop's own UTC day boundary,
+  which inverted «این ماه» — its start sat after its end and the dashboard's
+  top sellers and today cards matched nothing until the morning. All period
+  boundaries now flip at the same instant the day window does.
+
+**Schema change.** The database moves to revision 21 (variant image gallery,
+additive).
+
 ## 2.6.4 — 1405/07/01 (2026-09-23)
 
 ### فهرست محصولات: the toolbar names where each button leads

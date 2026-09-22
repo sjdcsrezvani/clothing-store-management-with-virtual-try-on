@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import NamedTuple
+
+import jdatetime
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case, and_, or_
 from models import Customer, Sale, SaleItem, Product, ProductVariant, Referral, Expense, Payment, Purchase, Refund, SupplierPayment
@@ -45,6 +47,12 @@ def get_date_range(period: str, start_date: str = None, end_date: str = None):
     """
     now = datetime.now(timezone.utc)
     today = now.date()
+    # The shop's calendar flips at the same instant its day windows do — UTC
+    # midnight — matching period="today" and jalali_month_start(). Reading the
+    # local jdatetime here instead let the local date run a day ahead of the
+    # boundary for the hours before 03:30 Tehran, inverting the window: start
+    # sat after end, and «این ماه» matched nothing until the morning.
+    jnow = jdatetime.date.fromgregorian(date=today)
 
     if period == "today":
         start = datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.utc)
@@ -52,21 +60,15 @@ def get_date_range(period: str, start_date: str = None, end_date: str = None):
     elif period == "week":
         # Persian "week" starts on Saturday (weekday 5 in jdatetime Persian week order).
         # Convert via jdatetime so the boundary lines up with the user's calendar.
-        import jdatetime
-        jnow = jdatetime.date.today()
-        start_greg = jdatetime.date(jnow.year, jnow.month, jnow.day) - jdatetime.timedelta(days=jnow.weekday())
+        start_greg = jnow - jdatetime.timedelta(days=jnow.weekday())
         start = datetime.combine(start_greg.togregorian(), datetime.min.time()).replace(tzinfo=timezone.utc)
         end = now
     elif period == "month":
         # Persian month boundary (current Persian month → its Gregorian start).
-        import jdatetime
-        jnow = jdatetime.datetime.now()
         start_greg = jdatetime.date(jnow.year, jnow.month, 1).togregorian()
         start = datetime.combine(start_greg, datetime.min.time()).replace(tzinfo=timezone.utc)
         end = now
     elif period == "year":
-        import jdatetime
-        jnow = jdatetime.datetime.now()
         start_greg = jdatetime.date(jnow.year, 1, 1).togregorian()
         start = datetime.combine(start_greg, datetime.min.time()).replace(tzinfo=timezone.utc)
         end = now
