@@ -70,10 +70,10 @@
 </section>
 
 {% if reconcile %}
-<section class="card">
+<section class="card" data-list-region="movements">
     <div class="section-heading-row">
         <div>
-            <h3>{{ reconcile_label }}</h3>
+            <h3 data-list-heading tabindex="-1">{{ reconcile_label }}</h3>
             <p class="muted">
                 {% if reconcile == 'missing' %}
                 این تنوع‌ها موجودی دارند اما هیچ ردیفی در دفتر ندارند؛ با «ثبت موجودی اولیه دفتر» سابقه‌دار می‌شوند.
@@ -149,10 +149,10 @@
 </section>
 {% else %}
 
-<section class="card movement-card">
+<section class="card movement-card" data-list-region="movements">
     <div class="section-heading-row">
         <div>
-            <h3>حرکت‌های ثبت‌شده</h3>
+            <h3 data-list-heading tabindex="-1">حرکت‌های ثبت‌شده</h3>
             <p class="muted">ستون «موجودی پس از حرکت» از جمع تغییرات همین دفتر محاسبه می‌شود، نه از موجودی فعلی محصول.</p>
         </div>
         <span class="section-step">۱</span>

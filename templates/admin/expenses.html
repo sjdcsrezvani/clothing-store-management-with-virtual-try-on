@@ -89,10 +89,10 @@
     </form>
 </section>
 
-<section class="card">
+<section class="card" data-list-region="expenses">
     <div class="section-heading-row">
         <div>
-            <h3>فهرست هزینه‌ها</h3>
+            <h3 data-list-heading tabindex="-1">فهرست هزینه‌ها</h3>
             <p class="muted">صفحه {{ page }} از {{ total_pages }} · {{ total_count }} مورد در بازه</p>
         </div>
         <a class="text-link" href="/admin/accounting/export?{{ export_qs }}">خروجی CSV</a>

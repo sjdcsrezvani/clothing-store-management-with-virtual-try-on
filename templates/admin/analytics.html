@@ -130,7 +130,7 @@
                     <tbody>
                     {% for r in color_size_matrix.rows %}
                     <tr><td><b>{{ r.size }}</b></td>
-                        {% for cell in r.cells %}<td style="background: color-mix(in srgb, var(--candy) {{ cell.pct }}%, transparent); text-align:center;" class="tnum">{{ cell.qty }}</td>{% endfor %}
+                        {% for cell in r.cells %}<td style="background: color-mix(in srgb, var(--candy) {{ (cell.pct * 0.4) | round(1) }}%, transparent); text-align:center;{% if cell.qty and color_size_matrix.max and cell.qty == color_size_matrix.max %} font-weight: 800;{% endif %}" class="tnum">{{ cell.qty }}</td>{% endfor %}
                     </tr>
                     {% endfor %}
                     </tbody>
@@ -308,7 +308,7 @@
 </section>
 
 <!-- Global tooltip element (fixed positioning, never clipped) -->
-<div id="globalTip" style="display:none; position:fixed; background:var(--sidebar-bg); color:var(--sidebar-text); padding:0.6rem 0.8rem; border-radius:8px; font-size:0.8rem; line-height:1.6; width:max-content; max-width:340px; white-space:normal; pointer-events:none; z-index:9999; box-shadow:var(--shadow-overlay); text-align:right; direction:rtl; font-family:Vazirmatn,sans-serif;"></div>
+<div id="globalTip" style="display:none; position:fixed; background:var(--card); color:var(--ink); border:1px solid var(--rule); padding:0.6rem 0.8rem; border-radius:8px; font-size:0.8rem; line-height:1.6; width:max-content; max-width:340px; white-space:normal; pointer-events:none; z-index:9999; box-shadow:var(--shadow-overlay); text-align:right; direction:rtl; font-family:Vazirmatn,sans-serif;"></div>
 
 <script>
 if (typeof Chart === 'undefined') {

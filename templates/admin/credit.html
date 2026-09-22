@@ -93,10 +93,10 @@
     {% endif %}
 </section>
 
-<section class="card credit-card">
+<section class="card credit-card" data-list-region="credit">
     <div class="section-heading-row">
         <div>
-            <h3>{% if view == 'invoices' %}فاکتورهای باز{% else %}بدهکاران{% endif %}</h3>
+            <h3 data-list-heading tabindex="-1">{% if view == 'invoices' %}فاکتورهای باز{% else %}بدهکاران{% endif %}</h3>
             <p class="muted">
                 {% if view == 'invoices' %}
                 هر فاکتور جداگانه، از دیرکرددارترین؛ برای دریافت همان فاکتور روی «دریافت» بزنید.

@@ -1,3 +1,13 @@
+## 2.6.2 — 1405/06/31 (2026-09-22)
+
+### فهرست‌ها: sorting never loses the scroll, and every palette holds on every page
+
+- **Sort, page and filter without the jump.** A vanilla `static/js/list_nav.js` in the shell intercepts the list controls — sort headers, page links, stock chips, per-page and in-zone filter forms — on eleven pages (products, sales, purchases, expenses, customers, credit, checks, campaigns, SMS history, inventory movements, tag printing) and swaps only the list zone in place: the document never reloads, so the scroll stays exactly where the owner left it. The address bar still moves (`pushState`, back/forward replay in place), focus lands on the list heading without scrolling, a failed fetch falls back to plain navigation, and no-JS browsers get the same lists through full loads as before. Mutating POSTs — save, delete, archive, mark-printed — keep their redirect-and-toast flow untouched.
+- **The products page manages the catalogue.** Sortable name/category/price/stock columns on the shared sorting convention, a 10/25/50 page-size picker, «همه/کم‌موجود/ناموجود» stock chips reading the same definition as the KPIs, bulk archive with a selection bar, a filter-honouring CSV export, search-term highlighting that escapes first, expandable per-variant rows, «غیرفعال‌کردن» renamed to «بایگانی», and the two tag buttons merged into one entry. «How many can be sold» is now one SQL expression in `services/inventory.py`, counted by the dashboard and filtered by the page alike.
+- **The verification walk grew teeth.** The theme matrix now visits all nine non-custom palettes on the empty shop and first boot; the invoice paper probe covers Kashi Tile and Night Bazaar — which caught the real fault behind the long-red print test, `color-scheme: dark` leaking native chrome onto the paper, fixed by declaring the print block light. Along the way the walk pinned down eight leaks: drawer inks on light cards, the matrix tint cap, the try-on veil's own scrim tokens, the chart tooltip's card, the mobile badges' voice inks and every colour-scheme mode, and the tag overlay's themed card.
+
+**No schema change.** The database stays on revision 19.
+
 ## 2.6.1 — 1405/06/31 (2026-09-22)
 
 ### پوسته: the shop moves like one shop

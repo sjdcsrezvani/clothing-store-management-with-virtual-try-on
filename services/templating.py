@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi.templating import Jinja2Templates
 from jinja2 import Undefined
+from markupsafe import Markup, escape
 
 from services._common import (
     birthday_display,
@@ -71,6 +72,24 @@ def theme_context_processor(request) -> dict:
     return {"theme": get_theme()}
 
 
+def highlight_match(value, needle: str = ""):
+    """Wrap the search term in ``<mark>`` for result highlighting.
+
+    Both sides are escaped first, so a product named ``<b>حراج</b>`` cannot
+    smuggle markup through its own highlight — the match runs on the escaped
+    text, case-insensitively to mirror the ``LIKE`` the list route filters
+    with. No term, no markup: plain escaped text.
+    """
+    import re
+
+    text = "" if value is None else str(value)
+    term = str(needle or "").strip()
+    if not term:
+        return escape(text)
+    pattern = re.compile(re.escape(str(escape(term))), re.IGNORECASE)
+    return Markup(pattern.sub(lambda hit: f"<mark>{hit.group(0)}</mark>", str(escape(text))))
+
+
 def navigation_context_processor(request) -> dict:
     """The shell, already filtered and decided for whoever is looking.
 
@@ -127,6 +146,9 @@ templates = Jinja2Templates(
 # how a page prints a blank where a figure belongs. This keeps the rendering
 # identical and hands the suite the list of names it happened to.
 templates.env.undefined = WatchedUndefined
+
+# Search-term highlighting for filtered lists: `{{ name|highlight(search) }}`.
+templates.env.filters["highlight"] = highlight_match
 
 # Birthday helpers every template can reach without a route passing them along.
 # `birthday_form_value` rebuilds a field value, so a stored MM-DD (with or

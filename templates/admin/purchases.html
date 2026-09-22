@@ -184,10 +184,10 @@
 </section>
 
 {% if not editing %}
-<section class="card purchase-history-card">
+<section class="card purchase-history-card" data-list-region="purchases">
     <div class="section-heading-row purchase-history-head">
         <div>
-            <h3>خریدهای ثبت‌شده</h3>
+            <h3 data-list-heading tabindex="-1">خریدهای ثبت‌شده</h3>
             <p class="muted">صفحه {{ page }} از {{ total_pages }} · {{ total_count }} خرید</p>
         </div>
         <a class="text-link" href="/admin/accounting/export?kind=purchases&{{ filter_qs }}">خروجی CSV</a>

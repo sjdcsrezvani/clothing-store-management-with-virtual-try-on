@@ -250,21 +250,21 @@
 @keyframes gen-shine { to { background-position: -200% 0; } }
 .gen-spinner {
     width: 74px; height: 74px; border-radius: 50%;
-    border: 5px solid color-mix(in srgb, var(--sidebar-text) 15%, transparent);
+    border: 5px solid color-mix(in srgb, var(--scrim-text) 15%, transparent);
     border-top-color: var(--candy); border-right-color: var(--lavender); border-bottom-color: var(--sky);
     animation: gen-spin 1s linear infinite;
     box-shadow: 0 0 30px color-mix(in srgb, var(--lavender) 35%, transparent);
 }
 .gen-float { display:inline-block; animation: gen-float 2.2s ease-in-out infinite; }
 </style>
-<div id="gen-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:color-mix(in srgb, var(--sidebar-bg) 92%, transparent);backdrop-filter:blur(6px);z-index:10001;flex-direction:column;align-items:center;justify-content:center;gap:1.2rem;">
+<div id="gen-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:var(--scrim);backdrop-filter:blur(6px);z-index:10001;flex-direction:column;align-items:center;justify-content:center;gap:1.2rem;">
     <a href="/sales/new" onclick="return openNewSaleWindow();" rel="noopener" class="btn btn-success">➕ باز کردن فروش جدید در پنجره دیگر</a>
     <div class="gen-spinner"></div>
-    <div id="gen-step" style="color:var(--sidebar-text);font-size:1.25rem;font-weight:600;text-align:center;padding:0 1rem;"></div>
-    <div style="width:min(420px,80vw);height:10px;border-radius:6px;background:color-mix(in srgb, var(--sidebar-text) 15%, transparent);overflow:hidden;">
+    <div id="gen-step" style="color:var(--scrim-text);font-size:1.25rem;font-weight:600;text-align:center;padding:0 1rem;"></div>
+    <div style="width:min(420px,80vw);height:10px;border-radius:6px;background:color-mix(in srgb, var(--scrim-text) 15%, transparent);overflow:hidden;">
         <div id="gen-bar" style="width:10%;height:100%;border-radius:6px;background:linear-gradient(90deg,var(--candy),var(--lavender),var(--sky));background-size:200% 100%;animation:gen-shine 1.6s linear infinite;transition:width .8s ease;"></div>
     </div>
-    <div style="color:color-mix(in srgb, var(--sidebar-text) 60%, transparent);font-size:0.85rem;"><span class="gen-float">✨</span> معمولاً ۱ تا ۲ دقیقه — در صف شلوغ ممکن است تا ۴ دقیقه طول بکشد (صفحه را نبندید)</div>
+    <div style="color:color-mix(in srgb, var(--scrim-text) 60%, transparent);font-size:0.85rem;"><span class="gen-float">✨</span> معمولاً ۱ تا ۲ دقیقه — در صف شلوغ ممکن است تا ۴ دقیقه طول بکشد (صفحه را نبندید)</div>
 </div>
 
 {# ─── Lightbox ─── #}
