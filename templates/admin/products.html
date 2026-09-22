@@ -8,10 +8,8 @@
 {% set heading_class = 'page-heading product-page-heading' %}
 {% set page_actions %}
 <a href="/admin/products/add" class="btn btn-primary">افزودن محصول</a>
-        <span class="tag-entry">
-            <a href="/admin/barcodes/print" class="btn btn-ghost">🏷️ تگ‌ها</a>
-            <a href="/admin/settings/tags" class="text-link tag-settings-link">تنظیمات</a>
-        </span>
+        <a href="/admin/barcodes/print" class="btn btn-ghost">🏷️ تگ‌ها</a>
+        <a href="/admin/settings/tags" class="btn btn-ghost">تنظیمات تگ</a>
 {% endset %}
 {% include 'partials/page_header.html' %}
 
@@ -69,6 +67,7 @@
             <h3 data-list-heading tabindex="-1">فهرست محصولات</h3>
             <p class="muted">صفحه {{ page }} از {{ total_pages }} · {{ total_products }} محصول</p>
         </div>
+        <div class="list-heading-actions">
         <a href="/admin/products/export?search={{ search }}&category={{ category_filter }}&stock={{ stock_filter }}&sort={{ sort_key }}&dir={{ sort_dir }}" class="text-link">⬇ خروجی CSV</a>
         <form method="get" action="/admin/products" class="per-page-form">
             <input type="hidden" name="search" value="{{ search }}">
@@ -83,6 +82,7 @@
                 {% endfor %}
             </select>
         </form>
+        </div>
     </div>
     {% if products %}
     <form id="bulk-archive-form" method="post" action="/admin/products/bulk-archive" class="bulk-bar" hidden onsubmit="return confirm('محصولات انتخاب‌شده و تنوع‌هایشان بایگانی شود؟')">
@@ -160,7 +160,7 @@
                             <a href="/admin/products/{{ product.id }}" class="btn btn-sm btn-ghost">ویرایش</a>
                             <form method="post" action="/admin/products/{{ product.id }}/delete" onsubmit="return confirm('این محصول و تنوع‌هایش بایگانی شود؟')">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                <button type="submit" class="btn btn-sm btn-danger">بایگانی</button>
+                                <button type="submit" class="btn btn-sm btn-danger-quiet">بایگانی</button>
                             </form>
                         </div>
                     </td>

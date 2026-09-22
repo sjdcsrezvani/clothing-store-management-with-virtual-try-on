@@ -122,11 +122,18 @@ def navigation_context_processor(request) -> dict:
 
 
 def static_version_context_processor(request) -> dict:
-    """Expose the stylesheet's mtime so the browser never caches stale CSS."""
-    try:
-        version = int(Path("static/css/style.css").stat().st_mtime)
-    except OSError:
-        version = 0
+    """Expose the frontend's mtime so the browser never caches stale CSS/JS.
+
+    The newest file under static/css and static/js wins: a script-only change
+    must bust the versioned script tags exactly like a stylesheet change does.
+    """
+    version = 0
+    for asset in (Path("static/css").glob("*.css"), Path("static/js").glob("*.js")):
+        for path in asset:
+            try:
+                version = max(version, int(path.stat().st_mtime))
+            except OSError:
+                continue
     return {"static_version": version}
 
 

@@ -29,15 +29,15 @@
                    value, reads as a filled-in field, and is written back to the
                    database by the next save. The `if product` guard covered the
                    new-product case and missed this one. #}
-                <input type="text" id="name" name="name" required value="{{ product.name or '' if product else '' }}" placeholder="مثال: پیراهن نخی دخترانه">
+                <input type="text" id="name" name="name" required autofocus value="{{ product.name or '' if product else '' }}" placeholder="مثال: پیراهن نخی دخترانه">
             </div>
             <div class="form-group">
                 <label for="category">دسته‌بندی</label>
-                <input type="text" id="category" name="category" value="{{ product.category or '' if product else '' }}" placeholder="مثال: پیراهن">
+                <input type="text" id="category" name="category" list="category-list" value="{{ product.category or '' if product else '' }}" placeholder="مثال: پیراهن" autocomplete="off">
             </div>
             <div class="form-group">
                 <label for="brand">برند</label>
-                <input type="text" id="brand" name="brand" value="{{ product.brand or '' if product else '' }}" placeholder="مثال: رای کیدز">
+                <input type="text" id="brand" name="brand" list="brand-list" value="{{ product.brand or '' if product else '' }}" placeholder="مثال: رای کیدز" autocomplete="off">
             </div>
             <div class="form-group">
                 <label for="supplier_id">تأمین‌کننده</label>
@@ -50,6 +50,25 @@
                 <small class="field-help">فقط محصولات همین تأمین‌کننده در صفحه <a class="text-link" href="/admin/purchases" target="_blank">خرید</a> قابل انتخاب‌اند. <a class="text-link" href="/admin/suppliers" target="_blank">افزودن تأمین‌کننده</a></small>
             </div>
             <div class="form-group">
+                <label for="gender">گروه</label>
+                <select id="gender" name="gender">
+                    <option value="">انتخاب نشده</option>
+                    {% for value, label in [('girl','دخترانه'),('boy','پسرانه'),('unisex','یونیسکس'),('baby','نوزاد'),('woman','زنانه'),('man','مردانه')] %}
+                    <option value="{{ value }}" {% if product and product.gender == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <datalist id="category-list">
+            {% for cat in categories or [] %}<option value="{{ cat }}">{% endfor %}
+        </datalist>
+        <datalist id="brand-list">
+            {% for brand in brands or [] %}<option value="{{ brand }}">{% endfor %}
+        </datalist>
+        <details class="advanced-fields">
+            <summary>جزئیات بیشتر <small>اختیاری — کدها، مشخصات پارچه و پیش‌فرض‌های سفارش</small></summary>
+            <div class="form-row product-form-grid product-form-grid-wide">
+            <div class="form-group">
                 <label for="base_sku">SKU پایه</label>
                 <input type="text" id="base_sku" name="base_sku" value="{{ product.base_sku or '' if product else '' }}" dir="ltr" placeholder="مثال: RK-SHIRT-01">
             </div>
@@ -57,20 +76,9 @@
                 <label for="base_barcode">بارکد پایه</label>
                 <input type="text" id="base_barcode" name="base_barcode" value="{{ product.base_barcode or '' if product else '' }}" dir="ltr" placeholder="خالی = تولید خودکار">
             </div>
-        </div>
-        <div class="form-row product-form-grid product-form-grid-wide">
             <div class="form-group">
                 <label for="garment_type">نوع پوشاک</label>
                 <input type="text" id="garment_type" name="garment_type" value="{{ product.garment_type or '' if product else '' }}" placeholder="تی‌شرت، شلوار، ست">
-            </div>
-            <div class="form-group">
-                <label for="gender">گروه</label>
-                <select id="gender" name="gender">
-                    <option value="">انتخاب نشده</option>
-                    {% for value, label in [('girl','دخترانه'),('boy','پسرانه'),('unisex','یونیسکس'),('baby','نوزاد')] %}
-                    <option value="{{ value }}" {% if product and product.gender == value %}selected{% endif %}>{{ label }}</option>
-                    {% endfor %}
-                </select>
             </div>
             <div class="form-group">
                 <label for="material">جنس / پارچه</label>
@@ -85,18 +93,16 @@
                 <input type="text" id="collection" name="collection" value="{{ product.collection or '' if product else '' }}" placeholder="کالکشن ۱۴۰۵">
             </div>
             <div class="form-group">
-                <label for="weight_grams">وزن (گرم)</label>
-                <input type="text" inputmode="numeric" id="weight_grams" name="weight_grams" min="0" value="{{ product.weight_grams if product and product.weight_grams is not none else '' }}" placeholder="مثال: 350">
-            </div>
-        </div>
-        <div class="form-row product-form-grid product-form-grid-wide">
-            <div class="form-group">
-                <label for="default_reorder_point">نقطه سفارش پیش‌فرض</label>
-                <input type="text" inputmode="numeric" id="default_reorder_point" name="default_reorder_point" min="0" value="{{ (product.default_reorder_point or 0) if product else 0 }}" placeholder="مثال: 5">
+                <label for="default_reorder_point">نقطه سفارش پیش‌فرض
+                    <span class="hint"><button type="button" class="hint-btn" aria-label="راهنمای نقطه سفارش پیش‌فرض">ⓘ</button><span class="hint-pop" role="tooltip" id="hint-drp">مقدار شروع «نقطه سفارش» برای تنوع‌های تازه. هر تنوع که موجودی قابل‌فروشش به نقطه‌اش برسد کم‌موجود حساب می‌شود. تغییر بعدی این عدد، تنوع‌های ساخته‌شده را عوض نمی‌کند.</span></span>
+                </label>
+                <input type="text" inputmode="numeric" id="default_reorder_point" name="default_reorder_point" min="0" aria-describedby="hint-drp" value="{{ (product.default_reorder_point or 0) if product else 0 }}" placeholder="مثال: 5">
             </div>
             <div class="form-group">
-                <label for="default_reorder_quantity">مقدار سفارش پیش‌فرض</label>
-                <input type="text" inputmode="numeric" id="default_reorder_quantity" name="default_reorder_quantity" min="0" value="{{ (product.default_reorder_quantity or 0) if product else 0 }}" placeholder="مثال: 12">
+                <label for="default_reorder_quantity">مقدار سفارش پیش‌فرض
+                    <span class="hint"><button type="button" class="hint-btn" aria-label="راهنمای مقدار سفارش پیش‌فرض">ⓘ</button><span class="hint-pop" role="tooltip" id="hint-drq">مقدار شروع «مقدار سفارش» برای تنوع‌های تازه؛ فقط یک یادداشت راهنماست و هیچ سفارشی را خودکار ثبت نمی‌کند.</span></span>
+                </label>
+                <input type="text" inputmode="numeric" id="default_reorder_quantity" name="default_reorder_quantity" min="0" aria-describedby="hint-drq" value="{{ (product.default_reorder_quantity or 0) if product else 0 }}" placeholder="مثال: 12">
             </div>
             <div class="form-group form-span-2">
                 <label for="tag_template_id">قالب تگ محصول</label>
@@ -108,7 +114,8 @@
                 </select>
                 <small>این قالب به همه تنوع‌های این محصول اختصاص داده می‌شود.</small>
             </div>
-        </div>
+            </div>
+        </details>
         <div class="form-row product-form-grid">
             <div class="form-group form-span-2">
                 <label for="description">توضیحات داخلی</label>
@@ -158,19 +165,76 @@
         <div class="form-actions-row product-form-actions">
             <button type="submit" class="btn btn-primary btn-large">{% if edit_mode %}ذخیره تغییرات{% else %}ثبت محصول{% endif %}</button>
             <a href="/admin/products" class="btn btn-ghost">لغو</a>
+            <span class="form-stock-total">جمع ارزش موجودی: <strong class="tnum" id="form-stock-total">—</strong></span>
         </div>
     </section>
 </form>
 
 <script>
 let variantIndex = 0;
+const variantsBox = document.getElementById('variants-container');
+
+function variantNum(raw) {
+    const n = parseInt(String(toEnglishDigits(raw)).replace(/[^0-9]/g, ''), 10);
+    return Number.isFinite(n) ? n : 0;
+}
+function fmtMoney(n) { return n.toLocaleString('fa-IR') + ' تومان'; }
+function fieldVal(entry, prefix) {
+    const el = entry.querySelector(`[name^="variant_${prefix}_"]`);
+    return el ? el.value.trim() : '';
+}
+
+function refreshEntry(entry) {
+    const size = fieldVal(entry, 'size') || 'بدون سایز';
+    const color = fieldVal(entry, 'color');
+    const price = variantNum(fieldVal(entry, 'price'));
+    const stock = variantNum(fieldVal(entry, 'stock'));
+    const summary = entry.querySelector('[data-summary]');
+    if (summary) summary.textContent = `${size}${color ? ' · ' + color : ''} · ${price ? fmtMoney(price) : 'قیمت؟'}`;
+    const total = entry.querySelector('[data-row-total]');
+    if (total) total.textContent = (price && stock) ? fmtMoney(price * stock) : '—';
+}
+
+function refreshFormTotal() {
+    let sum = 0, any = false;
+    variantsBox.querySelectorAll('.variant-entry').forEach(entry => {
+        const price = variantNum(fieldVal(entry, 'price'));
+        const stock = variantNum(fieldVal(entry, 'stock'));
+        if (price && stock) { sum += price * stock; any = true; }
+    });
+    document.getElementById('form-stock-total').textContent = any ? fmtMoney(sum) : '—';
+}
+
+function setEntryOpen(entry, open) {
+    entry.dataset.open = open ? 'true' : 'false';
+    const head = entry.querySelector('[data-collapse]');
+    if (head) head.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+function syncSkuRow(entry) {
+    const sku = entry.querySelector('[name^="variant_sku_"]');
+    if (!sku || sku.dataset.touched) return;
+    const base = (document.getElementById('base_sku') || {}).value || '';
+    const clean = base.trim();
+    if (!clean) return;
+    const size = fieldVal(entry, 'size');
+    sku.value = size ? `${clean}-${size}` : clean;
+}
+
 function addVariant() {
-    const container = document.getElementById('variants-container');
     const index = variantIndex++;
-    container.insertAdjacentHTML('beforeend', `
-        <article class="variant-entry">
-            <button type="button" class="variant-remove" onclick="this.closest('.variant-entry').remove()" aria-label="حذف تنوع">×</button>
-            <div class="variant-entry-heading"><strong>تنوع جدید</strong><span>اطلاعات فروش و انبار</span></div>
+    const entryNo = variantsBox.querySelectorAll('.variant-entry').length + 1;
+    // The row being built becomes the open one; finished rows fold away.
+    variantsBox.querySelectorAll('.variant-entry').forEach(entry => setEntryOpen(entry, false));
+    variantsBox.insertAdjacentHTML('beforeend', `
+        <article class="variant-entry" data-open="true">
+            <button type="button" class="variant-remove" onclick="this.closest('.variant-entry').remove(); refreshFormTotal();" aria-label="حذف تنوع">×</button>
+            <button type="button" class="variant-entry-heading" data-collapse aria-expanded="true">
+                <strong>تنوع ${entryNo}</strong>
+                <span class="variant-entry-summary" data-summary></span>
+                <span class="variant-entry-caret" aria-hidden="true">▾</span>
+            </button>
+            <div class="variant-entry-body">
             <div class="form-row variant-entry-grid">
                 <div class="form-group"><label>سایز</label><input type="text" name="variant_size_${index}" placeholder="مثلاً ۳ تا ۴ سال"></div>
                 <div class="form-group"><label>رنگ</label><input type="text" name="variant_color_${index}" placeholder="مثلاً آبی"></div>
@@ -178,18 +242,80 @@ function addVariant() {
                 <div class="form-group"><label>کد رنگ</label><input type="text" name="variant_color_code_${index}" dir="ltr" placeholder="#4AA3DF" data-color-picker></div>
                 <div class="form-group"><label>قیمت فروش <span class="required-mark">*</span></label><input type="text" inputmode="numeric" name="variant_price_${index}" required min="0" placeholder="مثال: 350000"></div>
                 <div class="form-group"><label>قیمت خرید</label><input type="text" inputmode="numeric" name="variant_cost_price_${index}" min="0" placeholder="مثال: 220000"></div>
-                <div class="form-group"><label>موجودی اولیه</label><input type="text" inputmode="numeric" name="variant_stock_${index}" min="0" value="0" placeholder="مثال: 12"></div>
+                <div class="form-group"><label>موجودی اولیه
+                    <span class="hint"><button type="button" class="hint-btn" aria-label="راهنمای موجودی اولیه">ⓘ</button><span class="hint-pop" role="tooltip" id="hint-vs-${index}">موجودی شروع این تنوع؛ یک‌بار در دفتر انبار ثبت می‌شود و بعد از ذخیره، موجودی فقط از مسیر انبار تغییر می‌کند.</span></span>
+                </label><input type="text" inputmode="numeric" name="variant_stock_${index}" min="0" value="0" aria-describedby="hint-vs-${index}" placeholder="مثال: 12"></div>
+                <div class="form-group"><label>وزن تنوع (گرم)</label><input type="text" inputmode="numeric" name="variant_weight_${index}" min="0" placeholder="مثال: 350"></div>
                 <div class="form-group"><label>بارکد</label><input type="text" name="variant_barcode_${index}" dir="ltr" placeholder="خالی = تولید خودکار"></div>
                 <div class="form-group"><label>SKU</label><input type="text" name="variant_sku_${index}" dir="ltr"></div>
-                <div class="form-group"><label>نقطه سفارش</label><input type="text" inputmode="numeric" name="variant_reorder_point_${index}" min="0" value="{{ (product.default_reorder_point or 0) if product else 0 }}" placeholder="مثال: 5"></div>
-                <div class="form-group"><label>مقدار سفارش</label><input type="text" inputmode="numeric" name="variant_reorder_quantity_${index}" min="0" value="{{ (product.default_reorder_quantity or 0) if product else 0 }}" placeholder="مثال: 12"></div>
+                <div class="form-group"><label>نقطه سفارش
+                    <span class="hint"><button type="button" class="hint-btn" aria-label="راهنمای نقطه سفارش">ⓘ</button><span class="hint-pop" role="tooltip" id="hint-vrp-${index}">اگر موجودی قابل‌فروش این تنوع به این عدد برسد یا کمتر شود، تنوع نیازمند سفارش می‌شود.</span></span>
+                </label><input type="text" inputmode="numeric" name="variant_reorder_point_${index}" min="0" data-sync-default="point" aria-describedby="hint-vrp-${index}" value="{{ (product.default_reorder_point or 0) if product else 0 }}" placeholder="مثال: 5"></div>
+                <div class="form-group"><label>مقدار سفارش
+                    <span class="hint"><button type="button" class="hint-btn" aria-label="راهنمای مقدار سفارش">ⓘ</button><span class="hint-pop" role="tooltip" id="hint-vrq-${index}">چند عدد از این تنوع سفارش بدهید؛ فقط راهنماست و سفارش خودکار ثبت نمی‌شود.</span></span>
+                </label><input type="text" inputmode="numeric" name="variant_reorder_quantity_${index}" min="0" data-sync-default="quantity" aria-describedby="hint-vrq-${index}" value="{{ (product.default_reorder_quantity or 0) if product else 0 }}" placeholder="مثال: 12"></div>
                 <div class="form-group"><label>محل انبار</label><input type="text" name="variant_storage_location_${index}" placeholder="قفسه A-2"></div>
             </div>
             <div class="form-group"><label>تصویر تنوع</label><input type="file" name="variant_image_${index}" accept="image/png,image/jpeg,image/webp"></div>
+            <div class="variant-entry-total">ارزش موجودی: <strong class="tnum" data-row-total>—</strong></div>
+            </div>
             <input type="hidden" name="variant_index_${index}" value="${index}">
         </article>`);
-    initColorPickers(container);
+    initColorPickers(variantsBox);
+    const fresh = variantsBox.lastElementChild;
+    syncSkuRow(fresh);
+    refreshEntry(fresh);
+    refreshFormTotal();
 }
-{% if not edit_mode or not product.variants %}addVariant();{% endif %}
+
+variantsBox.addEventListener('click', event => {
+    const head = event.target.closest('[data-collapse]');
+    if (!head) return;
+    const entry = head.closest('.variant-entry');
+    setEntryOpen(entry, entry.dataset.open !== 'true');
+});
+
+variantsBox.addEventListener('input', event => {
+    const target = event.target;
+    // A hand on the field ends the default-sync and the SKU suggestion.
+    if (target.hasAttribute && target.hasAttribute('data-sync-default')) target.dataset.touched = '1';
+    if (target.name && target.name.startsWith('variant_sku_')) target.dataset.touched = '1';
+    const entry = target.closest ? target.closest('.variant-entry') : null;
+    if (!entry) return;
+    if (target.name && target.name.startsWith('variant_size_')) syncSkuRow(entry);
+    refreshEntry(entry);
+    refreshFormTotal();
+});
+
+// Product-level defaults feed untouched variant rows while they are typed.
+function bindDefaultSync(sourceId, kind) {
+    const source = document.getElementById(sourceId);
+    if (!source) return;
+    let prev = toEnglishDigits(source.value);
+    source.addEventListener('input', () => {
+        const next = toEnglishDigits(source.value);
+        variantsBox.querySelectorAll(`[data-sync-default="${kind}"]`).forEach(field => {
+            if (!field.dataset.touched && toEnglishDigits(field.value) === prev) field.value = next;
+        });
+        prev = next;
+    });
+}
+// Deferred scripts (app.js) land after parsing, so everything that touches
+// their globals waits for DOMContentLoaded; the container listeners above
+// only call them on user input, long after load.
+function bootVariantForm() {
+    bindDefaultSync('default_reorder_point', 'point');
+    bindDefaultSync('default_reorder_quantity', 'quantity');
+    const baseSkuField = document.getElementById('base_sku');
+    if (baseSkuField) baseSkuField.addEventListener('input', () => {
+        variantsBox.querySelectorAll('.variant-entry').forEach(syncSkuRow);
+    });
+    {% if not edit_mode or not product.variants %}addVariant();{% endif %}
+}
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootVariantForm);
+} else {
+    bootVariantForm();
+}
 </script>
 {% endblock %}
