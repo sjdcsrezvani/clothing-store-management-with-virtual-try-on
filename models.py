@@ -211,6 +211,22 @@ class ProductImage(Base):
     product = relationship("Product", back_populates="images")
 
 
+class VariantImage(Base):
+    """Gallery frames for one sellable variant. The first frame (lowest
+    sort_order) is the primary; the legacy ``ProductVariant.image_path``
+    stays as the fallback so rows from before the gallery never go imageless."""
+
+    __tablename__ = "variant_images"
+
+    id = Column(Integer, primary_key=True, index=True)
+    variant_id = Column(Integer, ForeignKey("product_variants.id"), nullable=False, index=True)
+    image_path = Column(String(500), nullable=False)
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    variant = relationship("ProductVariant", back_populates="images")
+
+
 class TagTemplate(Base):
     """Reusable product-level tag layout."""
     __tablename__ = "tag_templates"
@@ -347,6 +363,7 @@ class ProductVariant(Base):
     product = relationship("Product", back_populates="variants")
     sale_items = relationship("SaleItem", back_populates="variant")
     stock_movements = relationship("StockMovement", back_populates="variant", order_by="StockMovement.created_at", cascade="all, delete-orphan")
+    images = relationship("VariantImage", back_populates="variant", order_by="VariantImage.sort_order", cascade="all, delete-orphan")
 
     @property
     def available_quantity(self):

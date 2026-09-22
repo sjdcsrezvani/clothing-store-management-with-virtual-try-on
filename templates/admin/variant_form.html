@@ -14,16 +14,23 @@
 <section class="card">
     <form method="post" action="/admin/variants/{{ variant.id }}" enctype="multipart/form-data">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="next" value="{{ return_to or '' }}">
         <div class="section-heading-row"><div><h3>مشخصات فروش</h3><p class="muted">قیمت‌ها و شناسه‌ها را دقیق و قابل جست‌وجو نگه دارید.</p></div><span class="section-step">۱</span></div>
         <div class="form-row product-form-grid-wide">
-            <div class="form-group"><label for="size">سایز</label><input id="size" name="size" value="{{ variant.size or '' }}" placeholder="۳ تا ۴ سال"></div>
+            <div class="form-group"><label for="size">سایز</label><input id="size" name="size" data-unify-digits value="{{ variant.size or '' }}" placeholder="۳ تا ۴ سال"></div>
             <div class="form-group"><label for="size_system">سیستم سایز</label><input id="size_system" name="size_system" value="{{ variant.size_system or '' }}" placeholder="ایران / EU"></div>
             <div class="form-group"><label for="color">رنگ</label><input id="color" name="color" value="{{ variant.color or '' }}" placeholder="آبی"></div>
             <div class="form-group"><label for="color_code">کد رنگ</label><input id="color_code" name="color_code" value="{{ variant.color_code or '' }}" dir="ltr" placeholder="#4AA3DF" data-color-picker></div>
             <div class="form-group"><label for="price">قیمت فروش <span class="required-mark">*</span></label><input type="text" inputmode="numeric" id="price" name="price" required min="0" value="{{ variant.price }}" placeholder="مثال: 350000"></div>
             <div class="form-group"><label for="cost_price">قیمت خرید<span id="cost-key" class="cost-key" aria-hidden="true"></span></label><input type="text" inputmode="numeric" id="cost_price" name="cost_price" min="0" value="{{ variant.fake_cost_price if variant.fake_cost_price is not none else (variant.cost_price if variant.cost_price is not none else '') }}" placeholder="مثال: 220000" data-real="{{ variant.cost_price if variant.cost_price is not none else '' }}"{% if variant.fake_cost_price is not none %} readonly{% endif %}><div id="second-cost-row" class="cost-note-editor" hidden><input type="text" inputmode="numeric" id="fake_cost_price" name="fake_cost_price" min="0" value="{{ variant.fake_cost_price if variant.fake_cost_price is not none else '' }}" placeholder="مثال: 230000"></div></div>
             <div class="form-group"><label for="sku">SKU</label><input id="sku" name="sku" value="{{ variant.sku or '' }}" dir="ltr"></div>
-            <div class="form-group"><label for="barcode">بارکد <span class="required-mark">*</span></label><input id="barcode" name="barcode" required value="{{ variant.barcode }}" dir="ltr"></div>
+            <div class="form-group"><span class="field-label">بارکد</span><span class="barcode-record tnum" dir="ltr">{{ variant.barcode }}</span><small class="field-help">بعد از ساخت قفل است؛ برای لیبل آسیب‌دیده «تولید مجدد» بزنید.</small></div>
+        </div>
+        <div class="form-actions-row">
+            <form method="post" action="/admin/variants/{{ variant.id }}/regenerate-barcode" onsubmit="return confirm('بارکد تازه ساخته می‌شود و بارکد فعلی روی تگ‌های چاپ‌شده بی‌اعتبار می‌گردد. ادامه؟')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-sm btn-ghost">تولید مجدد بارکد</button>
+            </form>
         </div>
 
         <div class="section-heading-row section-heading-spaced"><div><h3>موجودی و سفارش</h3><p class="muted">رزرو فعلی: <strong>{{ variant.reserved_quantity or 0 }}</strong> عدد · قابل فروش: <strong>{{ variant.available_quantity }}</strong> عدد</p></div><span class="section-step">۲</span></div>
@@ -44,9 +51,36 @@
         <div class="form-group"><label for="variant_image">تصویر تنوع</label><input type="file" id="variant_image" name="variant_image" accept="image/png,image/jpeg,image/webp">
             {% if variant.image_path and '/uploads/barcodes/' not in variant.image_path %}<img class="variant-current-image" src="{{ variant.image_path }}" alt="تصویر فعلی تنوع">{% endif %}
         </div>
+        <div class="form-group">
+            <label for="variant_images">گالری تنوع</label>
+            <input type="file" id="variant_images" name="variant_images" accept="image/png,image/jpeg,image/webp" multiple>
+            <small class="field-help">چند عکس هم‌زمان انتخاب کنید؛ اولین قاب، تصویر اصلی است.</small>
+        </div>
+        {% if variant.images %}
+        <ul class="variant-gallery">
+            {% for frame in variant.images|sort(attribute='sort_order') %}
+            <li class="{% if loop.first %}is-primary{% endif %}">
+                <img src="{{ frame.image_path }}" alt="قاب {{ loop.index }} تنوع" loading="lazy">
+                {% if loop.first %}<span class="badge badge-info">اصلی</span>{% endif %}
+                <span class="variant-gallery-actions">
+                    {% if not loop.first %}
+                    <form method="post" action="/admin/variant-images/{{ frame.id }}/primary">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <button type="submit" class="btn btn-sm btn-ghost">اصلی شود</button>
+                    </form>
+                    {% endif %}
+                    <form method="post" action="/admin/variant-images/{{ frame.id }}/delete" onsubmit="return confirm('این قاب حذف شود؟')">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <button type="submit" class="btn btn-sm btn-danger-quiet">حذف</button>
+                    </form>
+                </span>
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
         <div class="form-actions-row product-form-actions">
             <button type="submit" class="btn btn-primary btn-large">ذخیره تغییرات</button>
-            <a href="/admin/products/{{ product.id }}" class="btn btn-ghost">لغو</a>
+            <a href="{{ return_to or '/admin/products/' ~ product.id }}" class="btn btn-ghost">لغو</a>
         </div>
     </form>
 </section>
@@ -73,8 +107,13 @@
         </div>
     </section>
     <section class="card danger-zone">
-        <h3>غیرفعال‌سازی</h3><p class="muted">برای حفظ تاریخچه فروش، تنوع حذف نمی‌شود و فقط غیرفعال خواهد شد.</p>
-        <form method="post" action="/admin/variants/{{ variant.id }}/delete" onsubmit="return confirm('این تنوع غیرفعال شود؟')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit" class="btn btn-danger">غیرفعال‌کردن تنوع</button></form>
+        {% if variant.is_active %}
+        <h3>بایگانی</h3><p class="muted">برای حفظ تاریخچه فروش، تنوع حذف نمی‌شود و فقط بایگانی خواهد شد.</p>
+        <form method="post" action="/admin/variants/{{ variant.id }}/delete" onsubmit="return confirm('این تنوع بایگانی شود؟ از فهرست فروش پنهان می‌شود ولی تاریخچه‌اش می‌ماند.')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit" class="btn btn-danger-quiet">بایگانی تنوع</button></form>
+        {% else %}
+        <h3>بایگانی‌شده</h3><p class="muted">این تنوع در فهرست فروش نیست ولی تاریخچه‌اش مانده است.</p>
+        <form method="post" action="/admin/variants/{{ variant.id }}/restore" onsubmit="return confirm('این تنوع به فهرست برگردد؟')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit" class="btn btn-ghost">بازگردانی تنوع</button></form>
+        {% endif %}
     </section>
 </aside>
 </div>

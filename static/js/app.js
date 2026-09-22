@@ -24,8 +24,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Live conversion for every numeric field, including ones added later.
     document.addEventListener('input', (event) => {
         const target = event.target;
-        if (!target.matches || !target.matches('input[inputmode="numeric"]')) return;
-        unifyFieldDigits(target);
+        if (!target.matches) return;
+        // Money/count fields convert and strip; size fields (marked
+        // data-unify-digits) convert only — «۳ تا ۴ سال» keeps its words
+        // while its digits settle into English. The mapping is 1:1 per
+        // character, so the caret never jumps in either case.
+        if (target.matches('input[inputmode="numeric"]')) unifyFieldDigits(target);
+        else if (target.matches('input[data-unify-digits]')) unifyFieldDigits(target);
     });
 
     document.querySelectorAll('form').forEach(form => {

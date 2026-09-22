@@ -394,6 +394,40 @@ input:focus, select:focus, textarea:focus {
   border-color: var(--candy);
   box-shadow: var(--focus-ring);
 }
+/* Dropdowns draw their own chevron: two ink-soft gradients forming a ▾ at
+   the inline end (physical left in this RTL shell), so the arrow always
+   wears the theme instead of the OS default. Native option lists stay
+   OS-drawn — color-scheme already poles them per palette. */
+select:not([multiple]) {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-inline-end: 2.4rem;
+  cursor: pointer;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--ink-soft) 50%),
+    linear-gradient(135deg, var(--ink-soft) 50%, transparent 50%);
+  background-position: left 1.15rem center, left 0.8rem center;
+  background-size: 0.45rem 0.45rem;
+  background-repeat: no-repeat;
+}
+select:not([multiple]):hover { border-color: var(--candy); }
+/* Custom dropdowns (data-fancy): the button wears the field look, the list
+   wears the card look, and both are exactly the field's width. */
+.fancy-wrap { position: relative; display: block; }
+.fancy-wrap > select { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+.fancy-btn { display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.75rem 1rem; padding-inline-end: 2.4rem; border: 2px solid var(--rule); border-radius: var(--radius-sm); background-color: var(--field-bg); background-image: linear-gradient(45deg, transparent 50%, var(--ink-soft) 50%), linear-gradient(135deg, var(--ink-soft) 50%, transparent 50%); background-position: left 1.15rem center, left 0.8rem center; background-size: 0.45rem 0.45rem; background-repeat: no-repeat; font: inherit; font-size: 1rem; color: var(--ink); cursor: pointer; text-align: start; }
+.fancy-btn:hover { border-color: var(--candy); }
+.fancy-btn:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
+.fancy-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fancy-list { position: absolute; top: calc(100% + 6px); inset-inline: 0; z-index: 70; list-style: none; margin: 0; padding: 0.35rem; max-height: 240px; overflow-y: auto; background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius-sm); box-shadow: var(--shadow-overlay); }
+.fancy-list[hidden] { display: none; }
+.fancy-option { padding: 0.55rem 0.8rem; border-radius: 6px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fancy-option.is-active { background: color-mix(in srgb, var(--sky) 16%, var(--card)); }
+.fancy-option[aria-selected="true"] { font-weight: 800; color: var(--link); }
+.fancy-option[aria-disabled="true"] { opacity: 0.45; cursor: not-allowed; }
+@media (prefers-reduced-motion: reduce) {
+  .fancy-btn, .fancy-option { transition: none; }
+}
 /* A checkbox already shows its state in the tick, so a mouse click must not
    leave the focus glow parked around it — keyboards still get the ring. */
 input[type="checkbox"]:focus { box-shadow: none; }
@@ -1926,6 +1960,14 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .catalog-variants-table { min-width: 760px; }
 .catalog-variants-table td strong, .catalog-variants-table td small { display: block; }
 .catalog-variants-table td small { color: var(--ink-soft); font-size: 0.72rem; margin-top: 0.15rem; }
+/* Archived rows sit quieter: readable, but unmistakably shelved. */
+.catalog-variants-table tr.is-archived { opacity: 0.72; }
+/* The demand badge pops when a silent +1 lands: transform and opacity only. */
+@keyframes demand-pop { 0% { transform: scale(0.6); opacity: 0.4; } 60% { transform: scale(1.12); opacity: 1; } 100% { transform: scale(1); } }
+.demand-updated { display: inline-block; animation: demand-pop 240ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .demand-updated { animation: none; }
+}
 .variant-entry { position: relative; margin-top: 0.8rem; padding: 1rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--surface-soft); }
 .variant-entry-heading { display: flex; align-items: center; gap: 0.7rem; width: 100%; margin: 0 0 0.8rem; padding: 0; padding-inline-end: 2rem; border: 0; background: none; font: inherit; text-align: start; cursor: pointer; color: var(--ink); }
 .variant-entry-heading strong { font-size: 0.92rem; }
@@ -1954,12 +1996,25 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .stock-status-callout { display: flex; align-items: center; gap: 0.4rem; padding: 0.7rem 0.85rem; border-radius: var(--radius-sm); background: var(--success-bg); color: var(--success-ink); font-size: 0.82rem; font-weight: 700; }
 .stock-status-callout.is-warning { background: var(--warning-bg); color: var(--warning-ink); }
 .variant-current-image { display: block; max-width: 150px; max-height: 150px; margin-top: 0.6rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); object-fit: cover; }
+/* Variant gallery: frames in a row, the primary wearing its badge. */
+.variant-gallery { list-style: none; margin: 0.8rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.7rem; }
+.variant-gallery li { position: relative; width: 120px; border: 1px solid var(--rule); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface-soft); }
+.variant-gallery li.is-primary { border-color: var(--candy); }
+.variant-gallery img { display: block; width: 100%; height: 96px; object-fit: cover; }
+.variant-gallery .badge { position: absolute; top: 0.3rem; inset-inline-start: 0.3rem; }
+.variant-gallery-actions { display: flex; gap: 0.3rem; padding: 0.35rem; flex-wrap: wrap; }
+.variant-gallery-actions form { display: inline; }
+.variant-gallery-actions .btn { min-height: 0; padding: 0.25rem 0.5rem; font-size: 0.75rem; }
 .demand-counter-group { margin-top: 0.9rem; padding-top: 0.75rem; border-top: 1px solid var(--rule); display: grid; gap: 0.55rem; }
 .demand-counter-heading { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
 .demand-counter-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .demand-counter-value { min-width: 2.5rem; text-align: center; padding: 0.3rem 0.6rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); font-weight: 700; }
 .demand-counter-form { display: inline; margin: 0; }
 .required-mark { color: var(--link-hover); }
+/* Locked record fields: a label voice with a value that reads as data, not
+   as an input waiting for typing. */
+.field-label { display: block; font-weight: 700; font-size: 0.85rem; margin-bottom: 0.3rem; }
+.barcode-record { display: inline-block; font-size: 1rem; letter-spacing: 0.04em; padding: 0.55rem 0.8rem; background: var(--surface-soft); border: 1px dashed var(--rule); border-radius: var(--radius-sm); }
 /* Colour fields: a swatch the eye can read, presets one tap away, the native
    palette kept for custom colours. Preset hexes are garment data, not theme
    paint, so they stay literal. */

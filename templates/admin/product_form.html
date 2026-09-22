@@ -16,6 +16,7 @@
 
 <form id="product-form" method="post" action="{% if edit_mode %}/admin/products/{{ product.id }}{% else %}/admin/products/add{% endif %}" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if edit_mode %}<input type="hidden" name="next" value="{{ return_to or '' }}">{% endif %}
     <section class="card catalog-section">
         <div class="section-heading-row">
             <div><h3>اطلاعات پایه</h3><p class="muted">این اطلاعات بین همه تنوع‌های محصول مشترک است.</p></div>
@@ -41,7 +42,7 @@
             </div>
             <div class="form-group">
                 <label for="supplier_id">تأمین‌کننده</label>
-                <select id="supplier_id" name="supplier_id">
+                <select id="supplier_id" name="supplier_id" data-fancy>
                     <option value="">بدون تأمین‌کننده</option>
                     {% for supplier in suppliers or [] %}
                     <option value="{{ supplier.id }}" {% if product and product.supplier_id == supplier.id %}selected{% endif %}>{{ supplier.name }}</option>
@@ -51,7 +52,7 @@
             </div>
             <div class="form-group">
                 <label for="gender">گروه</label>
-                <select id="gender" name="gender">
+                <select id="gender" name="gender" data-fancy>
                     <option value="">انتخاب نشده</option>
                     {% for value, label in [('girl','دخترانه'),('boy','پسرانه'),('unisex','یونیسکس'),('baby','نوزاد'),('woman','زنانه'),('man','مردانه')] %}
                     <option value="{{ value }}" {% if product and product.gender == value %}selected{% endif %}>{{ label }}</option>
@@ -106,7 +107,7 @@
             </div>
             <div class="form-group form-span-2">
                 <label for="tag_template_id">قالب تگ محصول</label>
-                <select id="tag_template_id" name="tag_template_id">
+                <select id="tag_template_id" name="tag_template_id" data-fancy>
                     <option value="">قالب پیش‌فرض فروشگاه</option>
                     {% for template in tag_templates or [] %}
                     <option value="{{ template.id }}" {% if product and product.tag_template_id == template.id %}selected{% endif %}>{{ template.name }}</option>
@@ -136,7 +137,7 @@
         </div>
         <div class="table-scroll">
             <table class="catalog-variants-table">
-                <thead><tr><th>تنوع</th><th>SKU / بارکد</th><th>قیمت</th><th>موجودی</th><th>رزرو</th><th>نقطه سفارش</th><th>عملیات</th></tr></thead>
+                <thead><tr><th>تنوع</th><th>SKU / بارکد</th><th>قیمت</th><th>موجودی</th><th>رزرو</th><th>نقطه سفارش</th><th>تقاضا</th><th>عملیات</th></tr></thead>
                 <tbody>
                 {% for variant in product.variants if variant.is_active %}
                 <tr>
@@ -146,7 +147,27 @@
                     <td><span class="badge {% if variant.available_quantity > 0 %}badge-available{% else %}badge-none{% endif %}">{{ variant.available_quantity }} قابل فروش</span></td>
                     <td>{{ variant.reserved_quantity or 0 }}</td>
                     <td>{{ variant.reorder_point or 0 }}</td>
-                    <td><a href="/admin/variants/{{ variant.id }}/edit" class="btn btn-sm btn-ghost">ویرایش تنوع</a></td>
+                    <td data-demand-cell="{{ variant.id }}">{% if variant.demand_count %}<a href="/admin/variants/{{ variant.id }}/edit" class="badge badge-info">{{ variant.demand_count }} تقاضا</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+                    <td>
+                        <div class="table-actions">
+                        <button type="submit" form="demand-form-{{ variant.id }}" data-demand-btn="{{ variant.id }}" class="btn btn-sm btn-ghost" title="ثبت تقاضای مشتری برای این تنوع">+ ثبت تقاضا</button>
+                        <a href="/admin/variants/{{ variant.id }}/edit{% if return_to %}?next={{ return_to|urlencode }}{% endif %}" class="btn btn-sm btn-ghost">ویرایش تنوع</a>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% for variant in product.variants if not variant.is_active %}
+                <tr class="is-archived">
+                    <td><strong>{{ variant.size or 'بدون سایز' }}</strong>{% if variant.color %}<small>{{ variant.color }}</small>{% endif %}<small class="muted">بایگانی‌شده</small></td>
+                    <td><code>{{ variant.sku or '—' }}</code><small dir="ltr">{{ variant.barcode }}</small></td>
+                    <td class="tnum">{{ fmt(variant.price) }} ت</td>
+                    <td><span class="badge badge-none">بایگانی‌شده</span></td>
+                    <td>{{ variant.reserved_quantity or 0 }}</td>
+                    <td>{{ variant.reorder_point or 0 }}</td>
+                    <td>{% if variant.demand_count %}<span class="badge badge-info">{{ variant.demand_count }} تقاضا</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+                    <td>
+                        <button type="submit" form="restore-form-{{ variant.id }}" class="btn btn-sm btn-ghost" onclick="return confirm('این تنوع به فهرست برگردد؟')">بازگردانی</button>
+                    </td>
                 </tr>
                 {% endfor %}
                 </tbody>
@@ -164,11 +185,30 @@
         <button type="button" class="btn btn-ghost" onclick="addVariant()">افزودن تنوع</button>
         <div class="form-actions-row product-form-actions">
             <button type="submit" class="btn btn-primary btn-large">{% if edit_mode %}ذخیره تغییرات{% else %}ثبت محصول{% endif %}</button>
-            <a href="/admin/products" class="btn btn-ghost">لغو</a>
+            <a href="{{ return_to or '/admin/products' }}" class="btn btn-ghost">لغو</a>
             <span class="form-stock-total">جمع ارزش موجودی: <strong class="tnum" id="form-stock-total">—</strong></span>
         </div>
     </section>
 </form>
+
+{# Row actions live here, outside the product form: a form nested inside a
+   form is not a form — the browser would submit the outer one instead, so
+   each table button points at its own form by id. #}
+{% if edit_mode and product.variants %}
+<div hidden>
+    {% for variant in product.variants %}
+    {% if variant.is_active %}
+    <form id="demand-form-{{ variant.id }}" method="post" action="/admin/variants/{{ variant.id }}/demand?next={{ (return_to or '/admin/products/' ~ product.id)|urlencode }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    </form>
+    {% else %}
+    <form id="restore-form-{{ variant.id }}" method="post" action="/admin/variants/{{ variant.id }}/restore">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    </form>
+    {% endif %}
+    {% endfor %}
+</div>
+{% endif %}
 
 <script>
 let variantIndex = 0;
@@ -236,7 +276,7 @@ function addVariant() {
             </button>
             <div class="variant-entry-body">
             <div class="form-row variant-entry-grid">
-                <div class="form-group"><label>سایز</label><input type="text" name="variant_size_${index}" placeholder="مثلاً ۳ تا ۴ سال"></div>
+                <div class="form-group"><label>سایز</label><input type="text" name="variant_size_${index}" data-unify-digits placeholder="مثلاً ۳ تا ۴ سال"></div>
                 <div class="form-group"><label>رنگ</label><input type="text" name="variant_color_${index}" placeholder="مثلاً آبی"></div>
                 <div class="form-group"><label>سیستم سایز</label><input type="text" name="variant_size_system_${index}" placeholder="ایران / EU"></div>
                 <div class="form-group"><label>کد رنگ</label><input type="text" name="variant_color_code_${index}" dir="ltr" placeholder="#4AA3DF" data-color-picker></div>
@@ -317,5 +357,39 @@ if (document.readyState === 'loading') {
 } else {
     bootVariantForm();
 }
+
+// Silent demand +1: the count ticks in place, the page never reloads. A
+// failed fetch falls back to the plain form submit, never a dead click.
+document.querySelectorAll('[data-demand-btn]').forEach(function (btn) {
+    btn.addEventListener('click', async function (event) {
+        event.preventDefault();
+        if (btn.disabled) return;
+        const form = btn.form;
+        if (!form || typeof fetch !== 'function') { form.submit(); return; }
+        btn.disabled = true;
+        try {
+            const response = await fetch(form.action, {
+                method: 'POST',
+                body: new FormData(form),
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            });
+            if (!response.ok) throw new Error('bad status');
+            const data = await response.json();
+            const cell = document.querySelector(`[data-demand-cell="${btn.dataset.demandBtn}"]`);
+            if (cell) {
+                cell.innerHTML = '';
+                const badge = document.createElement('a');
+                badge.href = `/admin/variants/${btn.dataset.demandBtn}/edit`;
+                badge.className = 'badge badge-info demand-updated';
+                badge.textContent = `${data.demand_count} تقاضا`;
+                cell.appendChild(badge);
+            }
+        } catch (err) {
+            form.submit();
+            return;
+        }
+        btn.disabled = false;
+    });
+});
 </script>
 {% endblock %}
