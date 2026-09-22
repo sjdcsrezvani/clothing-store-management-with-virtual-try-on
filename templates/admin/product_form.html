@@ -172,7 +172,7 @@
 
 <script>
 let variantIndex = 0;
-const variantsBox = document.getElementById('variants-container');
+const container = document.getElementById('variants-container');
 
 function variantNum(raw) {
     const n = parseInt(String(toEnglishDigits(raw)).replace(/[^0-9]/g, ''), 10);
@@ -197,7 +197,7 @@ function refreshEntry(entry) {
 
 function refreshFormTotal() {
     let sum = 0, any = false;
-    variantsBox.querySelectorAll('.variant-entry').forEach(entry => {
+    container.querySelectorAll('.variant-entry').forEach(entry => {
         const price = variantNum(fieldVal(entry, 'price'));
         const stock = variantNum(fieldVal(entry, 'stock'));
         if (price && stock) { sum += price * stock; any = true; }
@@ -223,10 +223,10 @@ function syncSkuRow(entry) {
 
 function addVariant() {
     const index = variantIndex++;
-    const entryNo = variantsBox.querySelectorAll('.variant-entry').length + 1;
+    const entryNo = container.querySelectorAll('.variant-entry').length + 1;
     // The row being built becomes the open one; finished rows fold away.
-    variantsBox.querySelectorAll('.variant-entry').forEach(entry => setEntryOpen(entry, false));
-    variantsBox.insertAdjacentHTML('beforeend', `
+    container.querySelectorAll('.variant-entry').forEach(entry => setEntryOpen(entry, false));
+    container.insertAdjacentHTML('beforeend', `
         <article class="variant-entry" data-open="true">
             <button type="button" class="variant-remove" onclick="this.closest('.variant-entry').remove(); refreshFormTotal();" aria-label="حذف تنوع">×</button>
             <button type="button" class="variant-entry-heading" data-collapse aria-expanded="true">
@@ -261,21 +261,21 @@ function addVariant() {
             </div>
             <input type="hidden" name="variant_index_${index}" value="${index}">
         </article>`);
-    initColorPickers(variantsBox);
-    const fresh = variantsBox.lastElementChild;
+    initColorPickers(container);
+    const fresh = container.lastElementChild;
     syncSkuRow(fresh);
     refreshEntry(fresh);
     refreshFormTotal();
 }
 
-variantsBox.addEventListener('click', event => {
+container.addEventListener('click', event => {
     const head = event.target.closest('[data-collapse]');
     if (!head) return;
     const entry = head.closest('.variant-entry');
     setEntryOpen(entry, entry.dataset.open !== 'true');
 });
 
-variantsBox.addEventListener('input', event => {
+container.addEventListener('input', event => {
     const target = event.target;
     // A hand on the field ends the default-sync and the SKU suggestion.
     if (target.hasAttribute && target.hasAttribute('data-sync-default')) target.dataset.touched = '1';
@@ -294,7 +294,7 @@ function bindDefaultSync(sourceId, kind) {
     let prev = toEnglishDigits(source.value);
     source.addEventListener('input', () => {
         const next = toEnglishDigits(source.value);
-        variantsBox.querySelectorAll(`[data-sync-default="${kind}"]`).forEach(field => {
+        container.querySelectorAll(`[data-sync-default="${kind}"]`).forEach(field => {
             if (!field.dataset.touched && toEnglishDigits(field.value) === prev) field.value = next;
         });
         prev = next;
@@ -308,7 +308,7 @@ function bootVariantForm() {
     bindDefaultSync('default_reorder_quantity', 'quantity');
     const baseSkuField = document.getElementById('base_sku');
     if (baseSkuField) baseSkuField.addEventListener('input', () => {
-        variantsBox.querySelectorAll('.variant-entry').forEach(syncSkuRow);
+        container.querySelectorAll('.variant-entry').forEach(syncSkuRow);
     });
     {% if not edit_mode or not product.variants %}addVariant();{% endif %}
 }

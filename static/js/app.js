@@ -89,6 +89,7 @@ const COLOR_PRESETS = [
 ];
 
 function initColorPickers(scope) {
+    // Short #abc codes expand to aabbcc, the only form a colour input accepts.
     const hexCode = /^#?(?:([0-9a-f]{6})|([0-9a-f])([0-9a-f])([0-9a-f]))$/i;
     (scope || document).querySelectorAll('input[data-color-picker]').forEach(field => {
         if (field.dataset.colorPickerReady) return;
