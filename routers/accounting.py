@@ -57,9 +57,7 @@ from services.inventory import (
     ledger_snapshot,
     movement_direction,
     movement_type_label,
-    record_cost_adjustment,
     record_ledger_opening,
-    restore_cost_after_purchase_reversal,
 )
 from services.reporting import canonical_report, reconciliation_checks
 from services.checks import (
@@ -1598,9 +1596,11 @@ def _record_purchase_payment(db, purchase, amount: int, note: str, guard, reques
 def _purchase_items_from_form(form, db, supplier_pk: int | None):
     """Read an invoice's product lines out of a posted form.
 
-    Quantity and unit cost are deliberately optional: the chosen product already
-    knows both, so a line with no numbers means "one unit at its current cost
-    basis". Returns ``(items, error)`` where each item is a
+    The receipt only chooses variants: quantity and unit cost always come
+    from the variant itself (its recorded stock and cost basis), never from
+    posted fields — a crafted row cannot smuggle in new numbers. A variant
+    already received by another invoice refuses loudly, naming its row.
+    Returns ``(items, error)`` where each item is a
     ``(variant, quantity, unit_cost)`` triple.
     """
     indices = set()
@@ -1613,7 +1613,7 @@ def _purchase_items_from_form(form, db, supplier_pk: int | None):
 
     items = []
     merged = {}
-    for idx in sorted(indices):
+    for position, idx in enumerate(sorted(indices), start=1):
         try:
             variant_id = int(str(form.get(f"purchase_variant_{idx}", "") or ""))
         except (TypeError, ValueError):
@@ -1621,11 +1621,8 @@ def _purchase_items_from_form(form, db, supplier_pk: int | None):
         if variant_id <= 0:
             continue
         if variant_id in merged:
-            # The same product on two rows is one line: the quantities add up.
-            # The same tolerant reader as the first row — Persian digits and
-            # separators included — so one quantity cannot be read two ways.
-            extra = str(form.get(f"purchase_qty_{idx}", "") or "").strip() or "1"
-            merged[variant_id][1] += max(1, _purchase_money(extra))
+            # The same product on two rows is one line: the picker excludes
+            # picked variants, so this only answers stale double posts.
             continue
         variant = db.query(ProductVariant).filter(
             ProductVariant.id == variant_id,
@@ -1633,17 +1630,15 @@ def _purchase_items_from_form(form, db, supplier_pk: int | None):
         ).first()
         if not variant:
             continue
+        if variant.received_purchase_id:
+            return None, f"«{variant.display_name}» در ردیف {position} قبلاً رسید شده است."
         # One invoice covers one supplier's goods. Products with no supplier
         # keep working so pre-existing catalogue data is not blocked.
         product = variant.product
         if product is not None and supplier_pk and product.supplier_id \
                 and product.supplier_id != supplier_pk:
             return None, f"کالای {product.name} به تأمین‌کننده دیگری تعلق دارد."
-        raw_qty = str(form.get(f"purchase_qty_{idx}", "") or "").strip()
-        raw_cost = str(form.get(f"purchase_cost_{idx}", "") or "").strip()
-        quantity = (_purchase_money(raw_qty) or 1) if raw_qty else 1
-        unit_cost = _purchase_money(raw_cost) if raw_cost else (variant.cost_price or 0)
-        entry = [variant, max(1, quantity), max(0, unit_cost)]
+        entry = [variant, variant.stock_quantity or 0, variant.cost_price or 0]
         merged[variant_id] = entry
         items.append(entry)
     return [(variant, quantity, unit_cost) for variant, quantity, unit_cost in items], None
@@ -2024,14 +2019,13 @@ async def admin_purchase_update(purchase_id: int, request: Request, db: Session 
 async def admin_purchase_finalize(
     purchase_id: int,
     request: Request,
-    payment_amount: str = Form("0"),
-    payment_note: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """Turn a draft into a real invoice.
 
-    The only place a purchase touches the ledger: the lines' cost basis, the
-    payable to the supplier and — optionally — the first payment.
+    The receipt files what arrived and books the supplier debt — full credit,
+    always. It never rewrites a variant's cost or stock; arrival is stamped
+    on each line's variant so it cannot be received twice.
     """
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
@@ -2062,23 +2056,29 @@ async def admin_purchase_finalize(
             status_code=303,
         )
 
+    # One arrival, one receipt: a line already stamped by another invoice
+    # refuses here, naming itself, instead of being bought twice.
+    for item in items:
+        variant = item.variant
+        if variant is not None and variant.received_purchase_id \
+                and variant.received_purchase_id != purchase.id:
+            return RedirectResponse(
+                url=f"/admin/purchases/{purchase_id}?err=«{variant.display_name}» قبلاً با فاکتور دیگری رسید شده است.",
+                status_code=303,
+            )
+
     total_cost = sum((item.unit_cost or 0) * (item.quantity or 0) for item in items) \
         + (purchase.extra_cost or 0)
-    value = _purchase_money(payment_amount)
-    if value > total_cost:
-        return RedirectResponse(
-            url=f"/admin/purchases/{purchase_id}?err=مبلغ پرداختی از مبلغ کل خرید بیشتر است.",
-            status_code=303,
-        )
 
     purchase.total_cost = total_cost
     purchase.is_draft = False
+    for item in items:
+        if item.variant is not None:
+            item.variant.received_purchase_id = purchase.id
     db.flush()
     applied_lines = apply_purchase_cost_basis(
         db, purchase, actor_user_id=guard.id, request_id=request.headers.get("X-Request-ID"),
     )
-    if value > 0:
-        _record_purchase_payment(db, purchase, value, payment_note, guard, request)
 
     append_event(
         db,
@@ -2102,9 +2102,7 @@ async def admin_purchase_finalize(
         target_type="purchase", target_id=purchase.id,
         after={"total_cost": total_cost, "applied_lines": applied_lines},
     )
-    message = "فاکتور نهایی شد و بهای تمام‌شده به‌روز شد."
-    if value > 0:
-        message += f" {value:,} ت پرداخت ثبت شد."
+    message = "فاکتور نهایی شد و کامل نسیه ثبت گردید."
     return RedirectResponse(url=f"/admin/purchases/{purchase.id}?msg={message}", status_code=303)
 
 
@@ -2364,9 +2362,9 @@ async def admin_inventory_movements_reconcile(request: Request, db: Session = De
 async def admin_purchase_delete(purchase_id: int, request: Request, db: Session = Depends(get_db)):
     """Reverse a purchase without deleting its historical record.
 
-    A purchase only ever recorded money and cost — it never moved stock — so
-    reversing it unlinks its payments and puts the cost basis back, and needs no
-    stock lock.
+    A purchase only ever recorded money and evidence — it never moved stock
+    and never rewrote a cost — so reversing it unlinks its payments and
+    unstamps its variants, and needs no stock lock and no cost restore.
     """
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
@@ -2411,19 +2409,9 @@ async def admin_purchase_delete(purchase_id: int, request: Request, db: Session 
         variant = db.query(ProductVariant).filter(ProductVariant.id == item.variant_id).first()
         if not variant:
             continue
-        # Stock is untouched by design; only the cost basis goes back.
-        previous_cost = variant.cost_price or 0
-        restore_cost_after_purchase_reversal(db, variant, item.prev_cost_price)
-        record_cost_adjustment(
-            db,
-            variant,
-            previous_cost,
-            variant.cost_price or 0,
-            note=f"بازگردانی بهای تمام‌شده پس از برگشت خرید #{purchase.id}",
-            actor_user_id=guard.id,
-            request_id=request.headers.get("X-Request-ID"),
-            purchase_id=purchase.id,
-        )
+        # The arrival is undone: this variant may be received again.
+        if variant.received_purchase_id == purchase.id:
+            variant.received_purchase_id = None
 
     append_event(
         db,
@@ -2438,7 +2426,7 @@ async def admin_purchase_delete(purchase_id: int, request: Request, db: Session 
     )
     db.commit()
     log_action(db, "purchase_reverse", f"برگشت خرید #{purchase_id}", request=request, target_type="purchase", target_id=purchase_id, after={"reversed": True})
-    message = "خرید برگشت داده شد و بهای تمام‌شده بازگردانی شد."
+    message = "خرید برگشت داده شد و تنوع‌ها برای رسید دوباره آزاد شدند."
     if unlinked_payments:
         message += f" {unlinked_payments} پرداخت مرتبط آزاد شد و به عنوان بدهی تأمین‌کننده باقی ماند."
     return RedirectResponse(url=f"/admin/purchases?msg={message}", status_code=303)

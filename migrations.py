@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 21
+MIGRATION_VERSION = 22
 
 
 def migration_status(engine) -> int:
@@ -238,6 +238,13 @@ def _rebuild_sms_messages(conn) -> None:
 
 
 def _apply_revision(conn, version: int) -> None:
+    if version == 22:
+        # One arrival, one receipt: the purchase that took a variant in is
+        # stamped on the variant itself. Purely additive — every existing row
+        # starts unreceived and pickable.
+        _add_column_if_missing(conn, "product_variants", "received_purchase_id", "INTEGER")
+        return
+
     if version == 21:
         # A gallery per sellable variant: frames ordered first-is-primary.
         # Purely additive — existing rows keep their single image_path.

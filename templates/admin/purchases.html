@@ -8,7 +8,7 @@
 {% set page_title %}ویرایش پیش‌نویس فاکتور #{{ edit_purchase.id }}{% endset %}
 {% set page_description %}محصولات این فاکتور را کامل کنید و سپس آن را نهایی کنید تا هزینه‌ها ثبت شوند.{% endset %}
 {% else %}
-{% set page_description %}تأمین‌کننده را انتخاب کنید و محصولات همان تأمین‌کننده را به فاکتور اضافه کنید. فاکتور ابتدا پیش‌نویس است و با نهایی‌سازی، بهای تمام‌شده و بدهی تأمین‌کننده ثبت می‌شود.{% endset %}
+{% set page_description %}تأمین‌کننده را انتخاب کنید و تنوع‌های رسیده را به فاکتور اضافه کنید. فاکتور ابتدا پیش‌نویس است و با نهایی‌سازی، تنوع‌ها «رسید شده» می‌شوند و بدهی تأمین‌کننده ثبت می‌گردد.{% endset %}
 {% endif %}
 {% set heading_class = 'page-heading product-form-heading' %}
 {% set page_actions %}
@@ -20,7 +20,7 @@
 
 {% if editing %}
 <div class="alert alert-info purchase-draft-banner" role="status">
-    این فاکتور پیش‌نویس است: تا نهایی‌سازی نه بهای تمام‌شده تغییر می‌کند، نه بدهی تأمین‌کننده و نه صندوق.
+    این فاکتور پیش‌نویس است: تا نهایی‌سازی نه تنوعی رسید شده، نه بدهی تأمین‌کننده و نه صندوق.
 </div>
 {% else %}
 <div class="stats-grid purchase-kpi" aria-label="خلاصه خریدهای این ماه">
@@ -95,7 +95,7 @@
             <div>
                 <h3>محصولات این فاکتور</h3>
                 <p class="muted">نام محصول، تنوع یا بارکد را بنویسید و از فهرست انتخاب کنید؛ بارکدخوان هم مثل صفحه‌کلید کار می‌کند.</p>
-                <p class="muted">تعداد و قیمت واحد اختیاری‌اند: هر محصول موجودی و بهای تمام‌شده خودش را دارد و اینجا فقط به تأمین‌کننده و فاکتور وصل می‌شود.</p>
+                <p class="muted">تعداد و بهای هر ردیف از خود تنوع می‌آید و اینجا فقط انتخاب می‌شود؛ تنوع انتخاب‌شده از فهرست محو می‌شود تا دوباره خریده نشود.</p>
             </div>
             <span class="section-step">۲</span>
         </div>
@@ -104,7 +104,6 @@
             <label class="sr-only" for="purchase-scan-input">افزودن با بارکد یا کد</label>
             <input type="text" id="purchase-scan-input" name="purchase_scan" autocomplete="off"
                    placeholder="بارکد یا کد تنوع را اسکن کنید و Enter بزنید">
-            <button type="button" class="btn btn-sm btn-ghost" id="purchase-suggest">پیشنهاد سفارش از کم‌موجودها</button>
         </div>
         <p class="purchase-scan-msg" id="purchase-scan-message" role="status"></p>
         <p class="purchase-scope-note" id="purchase-scope-note" role="status"></p>
@@ -139,7 +138,7 @@
         <div class="section-heading-row section-heading-spaced">
             <div>
                 <h3>هزینه‌های تکمیلی</h3>
-                <p class="muted">هزینه حمل روی مبلغ فاکتور می‌نشیند و بین ردیف‌ها پخش می‌شود تا بهای تمام‌شده واقعی باشد.</p>
+                <p class="muted">هزینه حمل روی مبلغ فاکتور می‌نشیند و بین ردیف‌ها پخش می‌شود تا سوابق بهای تمام‌شده واقعی باشد.</p>
             </div>
             <span class="section-step">۳</span>
         </div>
@@ -166,7 +165,7 @@
                 {# The hidden field follows the checkbox so an unchecked box still
                    posts a value, and the server reads the first one. #}
                 <input type="hidden" name="extra_cost_in_landed" value="0">
-                <small class="field-help">اگر تیک را بردارید، هزینه حمل فقط روی مبلغ فاکتور می‌ماند و بهای تمام‌شده تغییر نمی‌کند.</small>
+                <small class="field-help">اگر تیک را بردارید، هزینه حمل فقط روی مبلغ فاکتور می‌ماند و در سوابق ردیف‌ها لحاظ نمی‌شود.</small>
             </div>
         </div>
 
@@ -179,7 +178,8 @@
             <a href="/admin/purchases" class="btn btn-ghost">پاک‌کردن فرم</a>
             {% endif %}
         </div>
-        <p class="muted">پرداخت به تأمین‌کننده هنگام نهایی‌سازی فاکتور ثبت می‌شود.</p>
+        <p class="form-error" id="purchase-form-error" role="alert" hidden></p>
+        <p class="muted">پرداخت به تأمین‌کننده پس از نهایی‌سازی، از صفحه همین فاکتور ثبت می‌شود.</p>
     </form>
 </section>
 
@@ -292,7 +292,7 @@
                             </form>
                             {% elif not p.is_reversed %}
                             <form method="post" action="/admin/purchases/{{ p.id }}/delete"
-                                  onsubmit="return confirm('این خرید برگشت داده می‌شود و بهای تمام‌شده بازگردانی می‌شود. ادامه؟')">
+                                  onsubmit="return confirm('این خرید برگشت داده می‌شود و تنوع‌هایش برای رسید دوباره آزاد می‌شوند. ادامه؟')">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="btn btn-sm btn-danger">برگشت</button>
                             </form>
@@ -307,7 +307,7 @@
     {% else %}
     <div class="empty-state products-empty">
         <h3>{% if has_filters %}خریدی با این فیلترها پیدا نشد{% else %}هنوز فاکتوری ثبت نشده است{% endif %}</h3>
-        <p>{% if has_filters %}فیلترها را تغییر دهید تا خریدهای دیگر را ببینید.{% else %}اولین فاکتور را از فرم بالا بسازید؛ با نهایی‌سازی، بهای تمام‌شده و بدهی تأمین‌کننده ثبت می‌شود.{% endif %}</p>
+        <p>{% if has_filters %}فیلترها را تغییر دهید تا خریدهای دیگر را ببینید.{% else %}اولین فاکتور را از فرم بالا بسازید؛ با نهایی‌سازی، تنوع‌ها رسید می‌شوند و بدهی تأمین‌کننده ثبت می‌شود.{% endif %}</p>
         {% if has_filters %}<a href="/admin/purchases" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
     </div>
     {% endif %}
@@ -333,7 +333,7 @@
   "name": {{ p.name|tojson }},
   "supplier_id": {{ p.supplier_id or 0 }},
   "variants": [
-    {% for v in p.variants if v.is_active %}
+    {% for v in p.variants if v.is_active and v.received_purchase_id is none %}
     {"id": {{ v.id }}, "label": {{ v.display_name|tojson }}, "barcode": {{ (v.barcode or '')|tojson }},
      "price": {{ v.price or 0 }}, "cost": {{ v.cost_price or 0 }}, "stock": {{ v.stock_quantity or 0 }},
      "reorder_point": {{ v.reorder_point or 0 }}, "reorder_quantity": {{ v.reorder_quantity or 0 }}}{% if not loop.last %},{% endif %}
@@ -420,14 +420,27 @@
         return supplierSelect && supplierSelect.value ? String(supplierSelect.value) : '';
     }
 
-    // Only the chosen supplier's products may be picked: one invoice, one supplier.
+    // Only the chosen supplier's products may be picked: one invoice, one
+    // supplier. Picked rows and received variants never show again — one
+    // arrival cannot be bought twice.
+    function pickedIds() {
+        var ids = {};
+        rowsHost.querySelectorAll('.purchase-item-row').forEach(function (row) {
+            var variant = rowVariant(row);
+            if (variant) ids[String(variant.id)] = true;
+        });
+        return ids;
+    }
     function scopedVariants() {
         var supplier = currentSupplierId();
         if (!supplier) return [];
+        var picked = pickedIds();
         var list = [];
         catalog.forEach(function (product) {
             if (String(product.supplier_id || '') !== supplier) return;
-            product.variants.forEach(function (variant) { list.push(variant); });
+            product.variants.forEach(function (variant) {
+                if (!picked[String(variant.id)]) list.push(variant);
+            });
         });
         return list;
     }
@@ -468,8 +481,6 @@
         return { wrapper: wrapper, input: input };
     }
 
-    function rowQty(row) { return row.querySelector('input[name^="purchase_qty_"]'); }
-    function rowCost(row) { return row.querySelector('input[name^="purchase_cost_"]'); }
     // The row keeps its picker state object: the widget needs its list and
     // hidden input, not just the wrapper element.
     function rowPicker(row) { return row._picker || null; }
@@ -580,19 +591,32 @@
     }
 
     function afterSelectionChange(row, variant) {
-        var cost = rowCost(row);
-        var qty = rowQty(row);
-        // Amounts follow the product: the row may be left untouched entirely.
-        if (variant) {
-            if (cost) cost.placeholder = variant.cost ? String(variant.cost) : 'قیمت واحد';
-            if (!cost.value) cost.value = variant.cost || '';
-            if (qty && !qty.value) qty.value = 1;
-        } else {
-            if (cost) cost.value = '';
-        }
+        // The row mirrors the variant: stock and cost are read, never typed.
+        paintMirror(row);
         paintContext(row);
-        markDuplicates();
         updateTotals();
+    }
+
+    function paintMirror(row) {
+        var mirror = row.querySelector('[data-role="mirror"]');
+        var variant = rowVariant(row);
+        if (!mirror) return;
+        if (!variant) { mirror.innerHTML = '<span class="muted">—</span>'; return; }
+        var qty = num(variant.stock || 0);
+        var cost = num(variant.cost || 0);
+        mirror.innerHTML = '';
+        var q = document.createElement('strong');
+        q.className = 'tnum';
+        q.textContent = qty + ' عدد';
+        var x = document.createElement('span');
+        x.className = 'muted';
+        x.textContent = '×';
+        var c = document.createElement('span');
+        c.className = 'tnum';
+        c.textContent = money(cost) + ' ت';
+        mirror.appendChild(q);
+        mirror.appendChild(x);
+        mirror.appendChild(c);
     }
 
     function paintContext(row) {
@@ -603,28 +627,15 @@
         if (variant.cost) parts.push('بهای تمام‌شده فعلی: ' + money(variant.cost) + ' ت');
         if (variant.reorder_point) parts.push('نقطه سفارش: ' + variant.reorder_point);
         if (variant.barcode) parts.push('بارکد: ' + variant.barcode);
+        if (!num(variant.stock || 0)) parts.push('موجودی صفر — دریافت خالی ثبت می‌شود');
         context.textContent = parts.join(' · ');
-    }
-
-    function markDuplicates() {
-        var seen = {};
-        rowsHost.querySelectorAll('.purchase-item-row').forEach(function (row) {
-            var variant = rowVariant(row);
-            var key = variant ? String(variant.id) : '';
-            row.classList.toggle('is-duplicate', !!(key && seen[key]));
-            if (key) seen[key] = true;
-        });
     }
 
     function updateTotals() {
         var subtotal = 0;
         rowsHost.querySelectorAll('.purchase-item-row').forEach(function (row) {
             var variant = rowVariant(row);
-            var qty = num((rowQty(row) || {}).value || 1);
-            // No typed price means the product's own cost basis.
-            var typedCost = rowCost(row) ? rowCost(row).value : '';
-            var cost = typedCost === '' ? num((variant && variant.cost) || 0) : num(typedCost || 0);
-            var line = variant ? qty * cost : 0;
+            var line = variant ? num(variant.stock || 0) * num(variant.cost || 0) : 0;
             subtotal += line;
             row.querySelector('[data-role="line-total"]').textContent = line ? money(line) : '—';
         });
@@ -663,12 +674,12 @@
         main.appendChild(pickerLabel);
         main.appendChild(picker.host);
 
-        var qty = labelledField('purchase_qty_' + idx, 'تعداد', 'number');
-        qty.input.className = 'purchase-amount-input';
-        qty.input.min = '1';
-        var cost = labelledField('purchase_cost_' + idx, 'قیمت واحد', 'number');
-        cost.input.className = 'purchase-amount-input';
-        cost.input.min = '0';
+        // The row mirrors the variant: quantities and costs live on the
+        // product and are only confirmed here, never typed.
+        var mirror = document.createElement('div');
+        mirror.className = 'purchase-item-mirror';
+        mirror.dataset.role = 'mirror';
+        mirror.innerHTML = '<span class="muted">—</span>';
 
         var totalCell = document.createElement('div');
         totalCell.className = 'purchase-item-total';
@@ -682,7 +693,6 @@
         remove.addEventListener('click', function () {
             row.remove();
             if (!rowsHost.children.length) addRow();
-            markDuplicates();
             updateTotals();
         });
 
@@ -690,8 +700,7 @@
         context.className = 'purchase-item-context';
 
         row.appendChild(main);
-        row.appendChild(qty.wrapper);
-        row.appendChild(cost.wrapper);
+        row.appendChild(mirror);
         row.appendChild(totalCell);
         row.appendChild(remove);
         row.appendChild(context);
@@ -739,25 +748,11 @@
             addRowIfLast(row);
         });
 
-        qty.input.addEventListener('input', updateTotals);
-        cost.input.addEventListener('input', updateTotals);
-        cost.input.addEventListener('keydown', function (event) {
-            if (event.key === 'Enter') {
-                event.preventDefault();
-                addRow();
-                var last = rowsHost.lastElementChild;
-                if (last) last.querySelector('.purchase-picker-input').focus();
-            }
-        });
-
         var seed = prefill.variantId ? byId[String(prefill.variantId)] : null;
         if (seed) {
             picker.input.value = seed.label;
-            qty.input.value = prefill.quantity || 1;
-            cost.input.value = prefill.hasOwnProperty('unitCost') ? prefill.unitCost : (seed.cost || '');
             setSelection(picker, seed);
         } else {
-            qty.input.value = 1;
             updateTotals();
         }
         return row;
@@ -767,34 +762,37 @@
         if (row === rowsHost.lastElementChild) addRow();
     }
 
-    function selectRow(row, variant, quantity) {
+    function selectRow(row, variant) {
         var picker = rowPicker(row);
         if (!picker) return row;
         picker.input.value = variant.label;
-        var qty = rowQty(row);
-        if (quantity && !qty.value) qty.value = quantity;
         setSelection(picker, variant);
         return row;
     }
 
-    function addOrFill(variant, quantity) {
+    function flashRow(row) {
+        row.classList.remove('is-flash');
+        void row.offsetWidth;
+        row.classList.add('is-flash');
+    }
+
+    function addOrFill(variant) {
         var existing = null;
         rowsHost.querySelectorAll('.purchase-item-row').forEach(function (row) {
             if (!existing && rowVariant(row) && String(rowVariant(row).id) === String(variant.id)) existing = row;
         });
+        // One arrival, one row: scanning a picked variant flashes its row
+        // instead of duplicating it.
         if (existing) {
-            var qty = rowQty(existing);
-            qty.value = Number(qty.value || 0) + Number(quantity || 1);
-            updateTotals();
-            return 'incremented';
+            flashRow(existing);
+            return 'exists';
         }
         var empty = firstEmptyRow();
         if (empty) {
-            selectRow(empty, variant, quantity);
+            selectRow(empty, variant);
         } else {
-            addRow({ variantId: variant.id, quantity: quantity });
+            addRow({ variantId: variant.id });
         }
-        markDuplicates();
         updateTotals();
         return 'added';
     }
@@ -826,45 +824,10 @@
             scanInput.select();
             return;
         }
-        addOrFill(variant, 1);
+        addOrFill(variant);
         // The variant label already starts with the product name.
         setScanMessage('افزوده شد: ' + variant.label, false);
         scanInput.value = '';
-    }
-
-    function suggestFromLowStock() {
-        var suggestions = [];
-        catalog.forEach(function (product) {
-            if (String(product.supplier_id || '') !== currentSupplierId()) return;
-            product.variants.forEach(function (variant) {
-                if (variant.reorder_point > 0 && variant.stock <= variant.reorder_point) suggestions.push(variant);
-            });
-        });
-        if (!currentSupplierId()) {
-            setScanMessage('ابتدا تأمین‌کننده را انتخاب کنید.', true);
-            return;
-        }
-        suggestions.sort(function (a, b) {
-            return (a.stock - a.reorder_point) - (b.stock - b.reorder_point);
-        });
-        var added = 0;
-        suggestions.forEach(function (variant) {
-            var already = false;
-            rowsHost.querySelectorAll('.purchase-item-row').forEach(function (row) {
-                var picked = rowVariant(row);
-                if (picked && String(picked.id) === String(variant.id)) already = true;
-            });
-            if (already) return;
-            var quantity = variant.reorder_quantity > 0
-                ? variant.reorder_quantity
-                : Math.max(1, variant.reorder_point - variant.stock);
-            addOrFill(variant, quantity);
-            added += 1;
-        });
-        setScanMessage(
-            added ? added + ' تنوع کم‌موجود به ردیف‌ها اضافه شد.' : 'تنوعی زیر نقطه سفارش نیست.',
-            false
-        );
     }
 
     // Changing the supplier re-scopes every row, dropping picks that no longer fit.
@@ -890,7 +853,6 @@
     document.getElementById('purchase-add-row').addEventListener('click', function () {
         addRow();
     });
-    document.getElementById('purchase-suggest').addEventListener('click', suggestFromLowStock);
     scanInput.addEventListener('keydown', function (event) {
         if (event.key === 'Enter') {
             event.preventDefault();
@@ -898,19 +860,66 @@
         }
     });
     extraInput.addEventListener('input', updateTotals);
-    if (supplierSelect) supplierSelect.addEventListener('change', resyncScope);
+    // Changing the supplier drops picked rows, so a stocked form confirms
+    // first — the wipe itself still lives in resyncScope, after the answer.
+    let prevSupplier = supplierSelect ? supplierSelect.value : '';
+    if (supplierSelect) {
+        supplierSelect.addEventListener('focus', function () {
+            prevSupplier = supplierSelect.value;
+        });
+        supplierSelect.addEventListener('change', function () {
+            var stocked = false;
+            rowsHost.querySelectorAll('.purchase-item-row').forEach(function (row) {
+                if (rowVariant(row)) stocked = true;
+            });
+            if (stocked && supplierSelect.value !== prevSupplier
+                    && !window.confirm('تغییر تأمین‌کننده ردیف‌های انتخاب‌شده را حذف می‌کند. ادامه می‌دهید؟')) {
+                supplierSelect.value = prevSupplier;
+                paintScopeNote();
+                return;
+            }
+            prevSupplier = supplierSelect.value;
+            resyncScope();
+        });
+    }
 
     if (draftLines.length) {
         draftLines.forEach(function (line) {
-            addRow({
-                variantId: line.variant_id,
-                quantity: line.quantity,
-                unitCost: line.unit_cost,
-            });
+            addRow({ variantId: line.variant_id });
         });
     } else {
         addRow();
     }
+    // Unpicked typing never reaches the server (it drops such rows), so the
+    // form refuses it here instead — naming the row, before anything posts.
+    document.getElementById('purchase-form').addEventListener('submit', function (event) {
+        var errBox = document.getElementById('purchase-form-error');
+        function refuse(message, row) {
+            event.preventDefault();
+            errBox.textContent = message;
+            errBox.hidden = false;
+            var target = row ? row.querySelector('.purchase-picker-input') : null;
+            if (target) target.focus();
+            else document.getElementById('purchase-scan-input').focus();
+        }
+        var rows = Array.prototype.slice.call(rowsHost.querySelectorAll('.purchase-item-row'));
+        var valid = 0, badRow = null, badIndex = 0;
+        rows.forEach(function (row, i) {
+            if (rowVariant(row)) { valid += 1; return; }
+            var picker = rowPicker(row);
+            var typed = picker && picker.input.value.trim();
+            if (typed && badRow === null) { badRow = row; badIndex = i + 1; }
+        });
+        if (badRow !== null) {
+            refuse('ردیف ' + badIndex + ' به محصول وصل نیست — از فهرست انتخاب کنید، بعد ثبت کنید.', badRow);
+            return;
+        }
+        if (!valid) {
+            refuse('فاکتور بدون ردیف ثبت نمی‌شود — دست‌کم یک تنوع انتخاب کنید.', null);
+            return;
+        }
+        errBox.hidden = true;
+    });
     paintScopeNote();
     // Scanner-ready without yanking the page down to the items section.
     if (typeof scanInput.focus === 'function') {

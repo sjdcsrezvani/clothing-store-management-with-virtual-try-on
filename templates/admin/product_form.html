@@ -141,7 +141,7 @@
                 <tbody>
                 {% for variant in product.variants if variant.is_active %}
                 <tr>
-                    <td><strong>{{ variant.size or 'بدون سایز' }}</strong>{% if variant.color %}<small>{{ variant.color }}</small>{% endif %}</td>
+                    <td><strong>{{ variant.size or 'بدون سایز' }}</strong>{% if variant.color %}<small>{{ variant.color }}</small>{% endif %}{% if variant.received_purchase_id %}<small><a href="/admin/purchases/{{ variant.received_purchase_id }}" class="badge badge-info">رسید شد ✓</a></small>{% endif %}</td>
                     <td><code>{{ variant.sku or '—' }}</code><small dir="ltr">{{ variant.barcode }}</small></td>
                     <td class="tnum">{{ fmt(variant.price) }} ت</td>
                     <td><span class="badge {% if variant.available_quantity > 0 %}badge-available{% else %}badge-none{% endif %}">{{ variant.available_quantity }} قابل فروش</span></td>

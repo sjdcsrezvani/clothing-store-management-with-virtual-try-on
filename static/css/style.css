@@ -2274,6 +2274,18 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
   background: var(--surface-soft);
 }
 .purchase-item-row.is-duplicate { border-color: var(--candy); }
+/* The row mirrors its variant: read-only stock × cost, no typing here. */
+.purchase-item-mirror { display: flex; align-items: center; gap: 0.45rem; min-height: var(--touch-target); font-size: 0.88rem; }
+.purchase-item-mirror strong { font-size: 0.95rem; }
+/* A scanned duplicate flashes its row instead of duplicating it. */
+@keyframes row-flash { 0%, 100% { box-shadow: none; } 30% { box-shadow: 0 0 0 3px var(--candy); } }
+.purchase-item-row.is-flash { animation: row-flash 600ms ease-out; border-radius: var(--radius-sm); }
+/* Form-level refusal: names the problem above the note, never a popup. */
+.form-error { padding: 0.6rem 0.85rem; background: var(--danger-bg); color: var(--link-hover); border-radius: var(--radius-sm); font-size: 0.86rem; font-weight: 700; }
+.form-error[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .purchase-item-row.is-flash { animation: none; }
+}
 .purchase-item-total { display: flex; align-items: center; justify-content: flex-end; min-height: var(--touch-target); font-weight: 800; }
 .purchase-item-context { grid-column: 1 / -1; margin: 0; font-size: 0.74rem; color: var(--ink-soft); }
 .purchase-item-row.is-duplicate .purchase-item-context::after { content: " · همین تنوع در ردیف دیگری هم آمده است"; color: var(--link-hover); font-weight: 700; }

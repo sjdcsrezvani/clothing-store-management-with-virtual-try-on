@@ -886,10 +886,13 @@ def purchase_landed_unit_cost(
 
 
 def apply_purchase_cost_basis(db, purchase, actor_user_id: int | None = None, request_id: str | None = None) -> int:
-    """Move a purchase's landed unit costs into the variants' cost basis.
+    """Record a purchase's landed unit costs as evidence, without moving them.
 
-    Runs when a draft invoice is finalised, so an invoice still being assembled
-    cannot move a single cost. Returns how many lines actually changed.
+    Runs when a draft invoice is finalised. The receipt never rewrites a
+    variant's cost basis — what the shop paid per unit is stored on the line
+    (prev/landed) and in a zero-quantity ledger row, so the invoice stays
+    explainable while the catalogue stays untouched. Returns how many lines
+    were recorded.
     """
     from services.inventory import record_cost_adjustment
 
@@ -902,14 +905,13 @@ def apply_purchase_cost_basis(db, purchase, actor_user_id: int | None = None, re
         variant = item.variant
         if variant is None:
             continue
-        # Shipping is spread across the lines, so the stored cost basis is the
-        # landed cost the shop actually paid per unit.
+        # Shipping is spread across the lines, so the stored landed cost is
+        # what the shop actually paid per unit — recorded, never adopted.
         landed_unit = purchase_landed_unit_cost(
             item.unit_cost or 0, item.quantity or 0, items_subtotal,
             purchase.extra_cost or 0, purchase.extra_cost_in_landed,
         )
-        # Cost basis before this line, restored if the purchase is reversed,
-        # plus the value this line actually applied.
+        # Cost basis before this line, kept so the invoice explains itself.
         item.prev_cost_price = variant.cost_price if item.unit_cost else None
         item.landed_unit_cost = landed_unit if landed_unit > 0 else None
         if landed_unit > 0:
@@ -918,14 +920,12 @@ def apply_purchase_cost_basis(db, purchase, actor_user_id: int | None = None, re
                 variant,
                 variant.cost_price or 0,
                 landed_unit,
-                note=f"به‌روزرسانی بهای تمام‌شده از خرید #{purchase.id}",
+                note=f"ثبت بهای خرید #{purchase.id} (فقط سابقه — بهای محصول دست نخورد)",
                 actor_user_id=actor_user_id,
                 request_id=request_id,
                 purchase_id=purchase.id,
             )
-            if (variant.cost_price or 0) != landed_unit:
-                variant.cost_price = landed_unit
-                applied += 1
+            applied += 1
     return applied
 
 

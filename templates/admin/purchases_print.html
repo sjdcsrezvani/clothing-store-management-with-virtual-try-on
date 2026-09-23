@@ -54,6 +54,8 @@
                 <th scope="col">تعداد</th>
                 <th scope="col">قیمت خرید</th>
                 <th scope="col">جمع</th>
+                <th scope="col">بهای تمام‌شده</th>
+                <th scope="col">جمع با حمل</th>
             </tr>
         </thead>
         <tbody>
@@ -67,30 +69,32 @@
                 <td class="tnum">{{ line.item.quantity }}</td>
                 <td class="tnum">{{ fmt(line.unit_cost) }}</td>
                 <td class="tnum">{{ fmt(line.line_total) }}</td>
+                <td class="tnum">{{ fmt(line.landed_unit_cost) }}</td>
+                <td class="tnum">{{ fmt(line.landed_line_total) }}</td>
             </tr>
             {% endfor %}
         </tbody>
         <tfoot>
             <tr>
-                <th scope="row" colspan="4">جمع اقلام</th>
+                <th scope="row" colspan="6">جمع اقلام</th>
                 <td class="tnum">{{ fmt(items_subtotal) }} تومان</td>
             </tr>
             {% if purchase.extra_cost %}
             <tr>
-                <th scope="row" colspan="4">هزینه حمل و سایر</th>
+                <th scope="row" colspan="6">هزینه حمل و سایر</th>
                 <td class="tnum">{{ fmt(purchase.extra_cost) }} تومان</td>
             </tr>
             {% endif %}
             <tr>
-                <th scope="row" colspan="4">مبلغ کل فاکتور</th>
+                <th scope="row" colspan="6">مبلغ کل فاکتور</th>
                 <td class="tnum"><strong>{{ fmt(settlement.total) }} تومان</strong></td>
             </tr>
             <tr>
-                <th scope="row" colspan="4">پرداخت‌شده</th>
+                <th scope="row" colspan="6">پرداخت‌شده</th>
                 <td class="tnum">{{ fmt(settlement.paid) }} تومان</td>
             </tr>
             <tr>
-                <th scope="row" colspan="4">مانده</th>
+                <th scope="row" colspan="6">مانده</th>
                 <td class="tnum">{{ fmt(settlement.remaining) }} تومان</td>
             </tr>
         </tfoot>
