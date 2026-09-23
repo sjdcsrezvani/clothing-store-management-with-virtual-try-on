@@ -1916,10 +1916,33 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .tag-print-secondary-actions { justify-content: flex-start; margin-top: 0.8rem; padding-top: 0.8rem; border-top: 1px solid var(--rule); }
 .tag-print-secondary-actions form { display: inline; }
 .tag-selected-count { color: var(--link-hover); font-weight: 800; white-space: nowrap; }
+/* Screen-only receipt atop the print overlay: what it holds, in one line. */
+.tag-print-summary { margin-bottom: 0.8rem; font-weight: 800; }
+/* The page's own voice for mid-flow news: empty trays, unreadable pages,
+   the afterprint offer. A bar, never a popup. */
+.tag-notice { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.8rem; padding: 0.65rem 0.9rem; background: color-mix(in srgb, var(--sunshine) 14%, var(--card)); border: 1px solid color-mix(in srgb, var(--sunshine) 45%, var(--rule)); border-radius: var(--radius-sm); font-size: 0.86rem; font-weight: 700; }
+.tag-notice[hidden] { display: none; }
+.tag-notice .btn { min-height: 0; padding: 0.35rem 0.8rem; font-size: 0.82rem; }
 .tag-selection-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(248px, 1fr)); gap: 0.8rem; }
 .tag-selection-item { position: relative; display: flex; flex-direction: column; min-width: 0; border: 2px solid var(--rule); border-radius: var(--radius-sm); background: var(--surface-soft); overflow: hidden; transition: border-color 0.15s, box-shadow 0.15s; }
 .tag-selection-item.is-selected { border-color: var(--candy); box-shadow: 0 0 0 3px color-mix(in srgb, var(--candy) 13%, transparent); }
 .tag-selection-item.is-printed { opacity: 0.7; }
+/* Shelved but printable: out-of-stock cards dim without disappearing. */
+.tag-selection-item.is-out { opacity: 0.62; }
+.tag-selection-item.is-out .tag-stock-loud strong { color: var(--ink-soft); }
+/* The sellable figure, promoted from the meta row to a headline number. */
+.tag-stock-loud { display: flex; align-items: baseline; gap: 0.45rem; padding: 0.1rem 0.65rem 0.5rem; }
+.tag-stock-loud strong { font-size: 1.5rem; line-height: 1; }
+.tag-stock-loud span { color: var(--ink-soft); font-size: 0.76rem; }
+/* Quantity steppers: two quiet buttons around the type-in field. */
+.tag-stepper { display: inline-flex; align-items: stretch; gap: 0.25rem; }
+.tag-stepper button { min-height: 0; padding: 0.2rem 0.6rem; border: 2px solid var(--rule); border-radius: 8px; background: var(--card); color: var(--ink); font-size: 1rem; line-height: 1; cursor: pointer; transition: transform 150ms ease-out, border-color 150ms ease; }
+.tag-stepper button:hover { border-color: var(--candy); }
+.tag-stepper button:active { transform: scale(0.92); }
+.tag-stepper .tag-quantity { width: 4.2rem; text-align: center; }
+@media (prefers-reduced-motion: reduce) {
+  .tag-stepper button { transition: none; }
+}
 .tag-selection-head { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.6rem 0.65rem 0.5rem; }
 .tag-selection-label { display: flex; align-items: flex-start; gap: 0.5rem; min-height: 0; padding: 0; cursor: pointer; }
 .tag-selection-label input { position: static; flex: 0 0 auto; width: 20px; height: 20px; min-height: 0; margin-top: 0.1rem; z-index: auto; }

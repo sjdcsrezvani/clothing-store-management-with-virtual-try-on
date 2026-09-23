@@ -193,6 +193,13 @@ applies the landed cost, books the payable and (optionally) records the first
 payment. Buying stock never changes stock quantities — inventory is counted on
 the product and variant screens — and reversing a purchase puts the cost basis
 back and frees its payments.
+- **🏷️ چاپ تگ** (`/admin/barcodes/print`) — the tag shelf: search by name,
+barcode, SKU or category, stage exact quantities per variant beside a live
+tag preview and its sellable stock, and print. The printed-copies counter
+only counts fresh prints (reprints stay honest), an out-of-stock variant
+dims but stays printable, and the page speaks in one inline notice bar —
+empty tray, unreadable page and the after-print offer all land in the same
+place.
 - **📚 دفتر انبار** (`/admin/inventory-movements`) — the append-only inventory
 ledger: every stock change (opening stock, sale, refund, manual adjustment, cost
 adjustment) with what the balance *became* at that moment, who recorded it, and

@@ -1,3 +1,27 @@
+## 2.6.6 — 1405/07/01 (2026-09-23)
+
+### قفسه چاپ تگ: a shelf that stages deliberately, prints honestly and speaks inline
+
+- **The print page works like a shelf, not a checkbox list.** Each variant card
+  carries a live preview of its own tag at the size it will actually print, a
+  loud «قابل فروش» figure promoted out of the meta row, and a quantity stepper
+  (− / type-in / +) clamped to the print ceiling. Out-of-stock variants stay on
+  the shelf dimmed rather than vanishing, so a shop can still print tags for
+  goods it expects back in stock.
+- **Search reaches the shelf.** Name, barcode, SKU and category all filter the
+  selection grid, the filter travels through pagination and the print action,
+  and a پاک‌کردن فیلتر button appears only when a filter is active.
+- **An honest print count.** The printed-copies counter only moves for fresh
+  prints — a reprint does not silently inflate the number the shop reads — and
+  صفر کردن شمارش چاپ is disabled until there is something to reset.
+- **The page speaks in one inline bar** (a notice strip, never a popup): empty
+  tray, unreadable page, and the after-print offer all arrive in the same place,
+  with the tray count announced politely to assistive tech.
+- **The gate caught a broken print action before it shipped.** The rewrite had
+  deleted the print route's batch initialiser, so every print request crashed —
+  restored, plus the search term the route now echoes back.
+- Schema stays on revision 21.
+
 ## 2.6.5 — 1405/07/01 (2026-09-23)
 
 ### فرم محصول: editing happens where you are, and every variant wears its own gallery

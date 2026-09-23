@@ -818,11 +818,14 @@ def test_expense_share_bars_state_their_share(client, db_session, authed):
     from datetime import datetime, timedelta, timezone
 
     from models import Expense
+    from services._common import jalali_month_start
 
-    db_session.add(Expense(category="اجاره", amount=300_000,
-                           created_at=datetime.now(timezone.utc) - timedelta(days=1)))
-    db_session.add(Expense(category="تبلیغات", amount=100_000,
-                           created_at=datetime.now(timezone.utc) - timedelta(days=1)))
+    # A few hours into the current Persian month: inside «این ماه» no matter
+    # what day or hour the suite runs on, without ever crossing its boundary.
+    in_month = jalali_month_start() + timedelta(hours=6)
+
+    db_session.add(Expense(category="اجاره", amount=300_000, created_at=in_month))
+    db_session.add(Expense(category="تبلیغات", amount=100_000, created_at=in_month))
     db_session.commit()
 
     html = authed.get("/admin/accounting").text
