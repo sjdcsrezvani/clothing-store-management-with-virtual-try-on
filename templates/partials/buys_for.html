@@ -1,0 +1,59 @@
+{# ─── Who is this customer buying for? ───────────────────────────────────────
+   One decision per customer, asked at signup and editable afterwards — not a
+   store setting. A parent buying for a child and an adult buying for themselves
+   are two different records, so the choice decides which birthday fields the
+   form asks for; the server writes only the side that was chosen, which is what
+   makes hiding these panels presentation rather than the rule. A store with no
+   child module has only one possible answer, so it is never asked.
+
+   Callers may set: selected_buys_for, self_birthday_value, child_name_value,
+   child_birthday_value. Everything has a safe default, so an empty signup form
+   can include this as-is. #}
+{% set selected_buys_for = selected_buys_for|default(default_buys_for|default('self')) %}
+{% set self_birthday_value = self_birthday_value|default('') %}
+{% set child_name_value = child_name_value|default('') %}
+{% set child_birthday_value = child_birthday_value|default('') %}
+<div data-buys-for-scope>
+    {% if child_profile %}
+    <fieldset class="form-group buys-for-fieldset">
+        <legend class="buys-for-legend">🛍️ این مشتری برای چه کسی خرید می‌کند؟</legend>
+        <div class="buys-for-choice">
+            {% for choice in buys_for_choices %}
+            <label class="choice-card" for="buys-for-{{ choice }}">
+                <input type="radio" id="buys-for-{{ choice }}" name="buys_for" value="{{ choice }}"
+                       {% if choice == selected_buys_for %}checked{% endif %}>
+                <strong>{% if choice == 'self' %}👤{% else %}🧒{% endif %} {{ buys_for_labels[choice] }}</strong>
+                <small>{% if choice == 'self' %}تولد خودش ثبت و تبریک گفته می‌شود{% else %}نام و تولد فرزندش ثبت می‌شود{% endif %}</small>
+            </label>
+            {% endfor %}
+        </div>
+    </fieldset>
+    {% endif %}
+
+    <div data-buys-for-panel="self"{% if child_profile and selected_buys_for != 'self' %} class="is-hidden" hidden{% endif %}>
+        <div class="form-group">
+            <label for="birth_date">🎂 تاریخ تولد مشتری</label>
+            <input type="text" id="birth_date" name="birth_date" value="{{ self_birthday_value }}"
+                   placeholder="۱۳۶۰/۰۱/۰۱" class="persian-date-input" data-pdp-max="today">
+            <small>تاریخ شمسی — با ثبت آن، تخفیف و پیامک تولد فعال می‌شود 🎁</small>
+        </div>
+    </div>
+
+    {% if child_profile %}
+    <div data-buys-for-panel="child"{% if selected_buys_for != 'child' %} class="is-hidden" hidden{% endif %}>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="child_name">🧒 نام فرزند</label>
+                <input type="text" id="child_name" name="child_name" value="{{ child_name_value }}"
+                       placeholder="مثال: سارا">
+            </div>
+            <div class="form-group">
+                <label for="child_birthday">🎂 تولد فرزند</label>
+                <input type="text" id="child_birthday" name="child_birthday" value="{{ child_birthday_value }}"
+                       placeholder="۱۴۰۳/۰۳/۱۵" class="persian-date-input" data-pdp-max="today">
+                <small>تاریخ شمسی — تخفیف و پیامک تولد برای فرزند 🎁</small>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>

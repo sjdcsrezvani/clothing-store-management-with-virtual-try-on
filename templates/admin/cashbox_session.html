@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% set page_description %}
+هر حرکت نقدی این شیفت و چیزی که از آن‌ها به دست آمده — تا هر عددی قابل برگشت به فاکتور، هزینه،
+دریافت یا برداشتی باشد که ساخته است.
+{% endset %}
+{% set page_title %}شیفت صندوق #{{ session.id }}{% endset %}
+{% set page_actions %}
+<a href="/admin/cashbox" class="btn btn-ghost">صندوق</a>
+{% if row.session.status == 'open' %}
+<a href="/admin/cashbox" class="btn btn-ghost">بازگشت به شیفت جاری</a>
+{% endif %}
+{% endset %}
+{% include 'partials/page_header.html' %}
+
+
+{% if session.status == 'abandoned' %}
+<div class="alert alert-warning" role="status">
+    این شیفت بدون شمارش بسته شده است: در نسخهٔ پیشین دو صندوق هم‌زمان باز مانده بود و هنگام به‌روزرسانی،
+    همه به‌جز تازه‌ترین‌شان بسته شدند. عدد مورد انتظار برای این شیفت ثبت نشده و اختلافی هم ندارد.
+</div>
+{% elif session.status == 'open' %}
+<div class="alert alert-info" role="status">
+    این شیفت هنوز باز است؛ عددهای زیر تا همین لحظه حساب شده‌اند و با هر فروش نقدی تغییر می‌کنند.
+    با بستن صندوق، عدد مورد انتظار و اختلاف، ثابت و ثبت می‌شوند.
+</div>
+{% endif %}
+
+<section class="card">
+    <div class="section-heading-row">
+        <div>
+            <h3>
+                <span class="status-badge is-{{ session.status }}">{{ row.status_label }}</span>
+                شیفت #{{ session.id }}
+            </h3>
+            <p class="muted">
+                باز شده {{ jalali_str(session.opened_at) }} توسط {{ row.opener }}
+                {% if session.closed_at %} · بسته شده {{ jalali_str(session.closed_at) }} توسط {{ row.closer or 'کاربر حذف‌شده' }}{% endif %}
+            </p>
+        </div>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card accent-pine">
+            <div class="stat-label">موجودی ابتدای شیفت</div>
+            <div class="stat-value tnum">{{ fmt(session.opening_balance) }} ت</div>
+            <div class="stat-sub">شمرده و ثبت‌شده در شروع شیفت</div>
+        </div>
+        <div class="stat-card accent-persimmon">
+            <div class="stat-label">{{ 'عدد مورد انتظار (تا این لحظه)' if row.session.status == 'open' else 'عدد مورد انتظار' }}</div>
+            <div class="stat-value tnum">{{ fmt(expected) }} ت</div>
+            <div class="stat-sub">
+                ورودی {{ fmt(register.cash_in) }} ت · خروجی {{ fmt(register.cash_out) }} ت
+            </div>
+        </div>
+        <div class="stat-card accent-ink">
+            <div class="stat-label">شمارش‌شده</div>
+            <div class="stat-value tnum">
+                {{ fmt(session.counted_closing_balance) ~ ' ت' if session.counted_closing_balance is not none else '—' }}
+            </div>
+            <div class="stat-sub">
+                {% if session.counted_closing_balance is not none %}پولی که شمرده شد
+                {% elif session.status == 'open' %}هنوز شمرده نشده
+                {% else %}شمارشی ثبت نشده{% endif %}
+            </div>
+        </div>
+        <div class="stat-card accent-{{ 'candy' if not row.variance_tone else ('ink' if row.variance_tone == 'balanced' else 'persimmon') }}">
+            <div class="stat-label">اختلاف</div>
+            <div class="stat-value tnum">
+                {% if session.variance is not none %}{{ fmt(session.variance) }} ت{% else %}—{% endif %}
+            </div>
+            <div class="stat-sub">
+                {% if row.variance_tone %}<span class="status-badge is-{{ row.variance_tone }}">{{ row.variance_label }}</span>
+                {% else %}{{ row.variance_label }}{% endif %}
+            </div>
+        </div>
+    </div>
+</section>
+
+{# ─── What makes up the expected figure, one row per record ───────────────── #}
+<section class="card">
+    <div class="section-heading-row">
+        <div>
+            <h3>حرکت‌های این شیفت</h3>
+            <p class="muted">
+                {{ movements|length }} حرکت — {{ fmt(register.cash_in) }} ت ورود و {{ fmt(register.cash_out) }} ت خروج
+            </p>
+        </div>
+    </div>
+
+    {% if movements %}
+    <div class="table-scroll">
+        <table class="data-table cash-movements">
+            <thead>
+                <tr>
+                    <th scope="col">زمان</th>
+                    <th scope="col">نوع</th>
+                    <th scope="col">توضیح</th>
+                    <th scope="col">مبلغ</th>
+                    <th scope="col"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row_movement in movements %}
+                <tr>
+                    <td class="tnum">{{ jalali_str(row_movement.when) }}</td>
+                    <td>
+                        {% if row_movement.direction == 'in' %}
+                        <span class="status-badge is-balanced">ورود</span>
+                        {% else %}
+                        <span class="status-badge is-over">خروج</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if row_movement.href and row_movement.kind != 'withdrawal' %}
+                        <a href="{{ row_movement.href }}">{{ row_movement.label }}</a>
+                        {% else %}{{ row_movement.label }}{% endif %}
+                        {% if row_movement.note %}<small class="cash-note-line">{{ row_movement.note }}</small>{% endif %}
+                    </td>
+                    {# Left-to-right and an ASCII sign: the number is one run, so
+                       the sign cannot drift to the far side of the digits. #}
+                    <td class="tnum" dir="ltr">
+                        {{ '+' if row_movement.direction == 'in' else '-' }}{{ fmt(row_movement.amount) }} ت
+                    </td>
+                    <td>
+                        {% if row_movement.kind == 'withdrawal' and verify and session.status == 'open'
+                              and not row_movement.reversed %}
+                        <form method="post" action="/admin/cashbox/withdrawals/{{ row_movement.entry_id }}/reverse"
+                              onsubmit="return confirm('این برداشت برگشت بخورد؟ مبلغش به عدد مورد انتظار برمی‌گردد.')">
+                            <button type="submit" class="btn btn-sm btn-ghost">برگشت برداشت</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <h3>هیچ حرکت نقدی در این شیفت ثبت نشده است</h3>
+        <p>شیفت با شمارش باز شده و بدون هیچ فروش نقدی، دریافت، هزینه یا برداشتی بسته شده است.</p>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

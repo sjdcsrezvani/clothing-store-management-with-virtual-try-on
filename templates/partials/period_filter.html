@@ -1,0 +1,48 @@
+{# One period filter, for the pages that ask the same question of a range.
+
+   «سود و زیان» and «صندوق» were drawing this block twice — the same four
+   options, the same Jalali pair, and a hard-coded inline border copied into each
+   file, which also meant the filter ignored dark mode while every field around
+   it followed the theme. Called with variables rather than
+   arguments, so a page hands over only what it has:
+
+       {% set filter_action = '/admin/cashbox' %}
+       {% set filter_id = 'cash' %}
+       {% include 'partials/period_filter.html' %}
+
+   `filter_id` keeps the start/end ids unique per page: the picker pairs a start
+   with an end by id, and two filters on one page would otherwise pair across
+   each other. `filter_note` is optional and says what the resulting numbers
+   mean, when that is not obvious from the page. #}
+<div class="card filter-card">
+    {# `range_notice` is set by the route when the range that was asked for could
+       not be read. The page then shows the default range and says which, because
+       a filter that quietly answers a different question than the one typed is
+       the same defect as a figure that quietly prints a plausible wrong number. #}
+    {% if range_notice %}<p class="filter-problem" role="status">⚠️ {{ range_notice }}</p>{% endif %}
+    <form method="get" action="{{ filter_action }}" class="filter-bar is-inline">
+        <label class="filter-field">
+            <span>بازه</span>
+            <select name="period">
+                <option value="today" {% if period == 'today' %}selected{% endif %}>امروز</option>
+                <option value="week" {% if period == 'week' %}selected{% endif %}>این هفته</option>
+                <option value="month" {% if period == 'month' %}selected{% endif %}>این ماه</option>
+                <option value="year" {% if period == 'year' %}selected{% endif %}>امسال</option>
+                <option value="all" {% if period == 'all' %}selected{% endif %}>همه</option>
+                <option value="custom" {% if period == 'custom' %}selected{% endif %}>دلخواه</option>
+            </select>
+        </label>
+        <label class="filter-field">
+            <span>از تاریخ</span>
+            <input type="text" id="{{ filter_id }}-start" name="start_date" class="persian-date-input"
+                   data-pdp-pair="#{{ filter_id }}-end" placeholder="۱۴۰۵/۰۱/۰۱" value="{{ start_date }}">
+        </label>
+        <label class="filter-field">
+            <span>تا تاریخ</span>
+            <input type="text" id="{{ filter_id }}-end" name="end_date" class="persian-date-input"
+                   placeholder="۱۴۰۵/۰۶/۳۱" value="{{ end_date }}">
+        </label>
+        <button type="submit" class="btn btn-primary">نمایش</button>
+        {% if filter_note %}<p class="filter-note muted">{{ filter_note }}</p>{% endif %}
+    </form>
+</div>

@@ -1,0 +1,401 @@
+{% extends "base.html" %}
+{# Storefront accent: a customer's file sells, so it wears the full rainbow. #}
+{% set page_accent_full = True %}
+{% block content %}
+
+{% set page_description %}
+<span class="customer-phone tnum">{{ customer.phone }}</span> {% if customer.is_archived %}<span class="status-badge is-archived">بایگانی‌شده</span>{% endif %}
+{% endset %}
+{% set page_title %}
+{{ customer.full_name }}
+{% endset %}
+{% set heading_class = 'page-heading product-page-heading' %}
+{% set page_actions %}
+<a href="/admin/customers" class="btn btn-ghost">فهرست مشتریان</a>
+        <a href="/admin/credit/{{ customer.id }}" class="btn btn-ghost">حساب نسیه</a>
+        <a href="/customers/lookup?phone={{ customer.phone }}" class="btn btn-ghost">پنل مشتری</a>
+{% endset %}
+{% include 'partials/page_header.html' %}
+
+
+{% if profile.spent_mismatch or profile.count_mismatch or profile.points_mismatch %}
+<div class="alert alert-warning drift-banner" role="alert">
+    <div>
+        <strong>شمارنده‌های این پرونده با فاکتورها نمی‌خوانند.</strong>
+        <span class="tnum">
+            {% if profile.spent_mismatch %}مجموع خرید: ثبت‌شده {{ fmt(profile.stored_spent) }} ت، از فاکتورها {{ fmt(profile.computed_spent) }} ت.{% endif %}
+            {% if profile.count_mismatch %}تعداد خرید: ثبت‌شده {{ profile.stored_count }}، از فاکتورها {{ profile.computed_count }}.{% endif %}
+            {% if profile.points_mismatch %}امتیاز: ثبت‌شده {{ figure(profile.stored_points) }}، از فاکتورها {{ figure(profile.computed_points) }}.{% endif %}
+        </span>
+    </div>
+    {% if is_owner %}
+    <form method="post" action="/admin/customers/{{ customer.id }}/reconcile">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn btn-sm btn-primary">هم‌سازی با فاکتورها</button>
+    </form>
+    {% endif %}
+</div>
+{% endif %}
+
+<div class="stats-grid customer-kpi" aria-label="خلاصه پرونده مشتری">
+    <div class="stat-card accent-sky">
+        <div class="stat-label">مجموع خرید</div>
+        <div class="stat-value tnum">{{ fmt(profile.computed_spent) }} ت</div>
+        {% if profile.spent_mismatch %}
+        <div class="stat-sub">
+            <span class="drift-flag">نامطابق</span>
+            شمارنده ثبت‌شده: {{ fmt(profile.stored_spent) }} ت
+        </div>
+        {% else %}
+        <div class="stat-sub">از {{ profile.computed_count }} فروش تأییدشده</div>
+        {% endif %}
+    </div>
+    <div class="stat-card accent-pine">
+        <div class="stat-label">تعداد خرید</div>
+        <div class="stat-value tnum">{{ profile.computed_count }}</div>
+        <div class="stat-sub">
+            {% if profile.count_mismatch %}شمارنده ثبت‌شده: {{ profile.stored_count }}{% else %}کل فروش‌های ثبت‌شده{% endif %}
+        </div>
+    </div>
+    <div class="stat-card accent-saffron">
+        <div class="stat-label">امتیاز</div>
+        <div class="stat-value tnum">{{ figure(profile.computed_points) }}</div>
+        <div class="stat-sub">
+            {% if profile.points_mismatch %}
+            <span class="drift-flag">نامطابق</span>
+            شمارنده ثبت‌شده: {{ figure(profile.stored_points) }} ·
+            {% endif %}
+            سطح
+            {% if customer.tier == 'diamond' %}الماس
+            {% elif customer.tier == 'gold' %}طلایی
+            {% else %}نقره‌ای{% endif %}
+            {%- if profile.tier_percent %} · {{ profile.tier_percent }}٪ تخفیف دائمی{% endif %}
+        </div>
+    </div>
+    <div class="stat-card accent-persimmon">
+        <div class="stat-label">بدهی جاری (نسیه)</div>
+        <div class="stat-value tnum">{{ figure(customer.total_debt) }} ت</div>
+        <div class="stat-sub">
+            {% if profile.unpaid_credit %}
+            {{ profile.unpaid_credit|length }} فاکتور تسویه‌نشده · <a class="text-link" href="/admin/credit/{{ customer.id }}">ثبت دریافت</a>
+            {% else %}تسویه است{% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="profile-layout">
+    <div class="profile-main">
+        <section class="card profile-card">
+            <div class="section-heading-row">
+                <div>
+                    <h3>سابقه خرید</h3>
+                    <p class="muted">
+                        {{ profile.sale_count }} فروش ثبت شده؛
+                        {% if profile.sale_count > profile.history_limit %}
+                        {{ profile.history_limit }} مورد آخر نمایش داده می‌شود.
+                        {% else %}همه موارد نمایش داده می‌شود.{% endif %}
+                    </p>
+                </div>
+                <span class="section-step">۱</span>
+            </div>
+
+            {% if profile.sales %}
+            <div class="table-scroll">
+                <table class="data-table history-table">
+                    <thead>
+                        <tr>
+                            <th scope="col">تاریخ</th>
+                            <th scope="col">فاکتور</th>
+                            <th scope="col">مبلغ</th>
+                            <th scope="col">پرداخت</th>
+                            <th scope="col">امتیاز</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for sale in profile.sales %}
+                        <tr>
+                            <td class="tnum">{{ jalali_str(sale.created_at, false) }}</td>
+                            <td>
+                                <a class="text-link" href="/sales/invoice/{{ sale.id }}">#{{ sale.id }}</a>
+                                {% if sale.is_refunded %}<span class="badge badge-used">مرجوعی</span>{% endif %}
+                                {% if sale.payment_method == 'credit' and not sale.credit_settled %}
+                                <span class="badge badge-available">نسیه باز</span>
+                                {% endif %}
+                            </td>
+                            <td class="tnum history-amount">{{ fmt(sale.final_amount) }} ت</td>
+                            <td>
+                                {% if sale.payment_method == 'cash' %}نقد
+                                {% elif sale.payment_method == 'credit' %}نسیه
+                                {% else %}کارت{% endif %}
+                            </td>
+                            <td class="tnum">{{ sale.points_earned or 0 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <h3>هنوز خریدی ثبت نشده</h3>
+                <p>این مشتری هنوز چیزی نخریده است؛ پس از اولین فروش، سابقه همین‌جا نمایش داده می‌شود.</p>
+                <a href="/sales/new" class="btn btn-ghost">فروش جدید</a>
+            </div>
+            {% endif %}
+        </section>
+
+        <section class="card profile-card">
+            <div class="section-heading-row">
+                <div>
+                    <h3>تخفیف‌ها و معرفی‌ها</h3>
+                    <p class="muted">تخفیف‌های معرفی فقط یک‌بار قابل استفاده‌اند؛ تخفیف سطح روی هر خرید اعمال می‌شود.</p>
+                </div>
+                <span class="section-step">۲</span>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card accent-sky">
+                    <div class="stat-label">تخفیف معرفی‌شده</div>
+                    <div class="stat-value tnum">{{ fmt(customer.referred_discount or 0) }} ت</div>
+                    <div class="stat-sub">
+                        {% if customer.has_used_referred_discount %}
+                        <span class="badge badge-used">استفاده شده</span>
+                        {% elif customer.referred_discount and customer.referred_discount > 0 %}
+                        <span class="badge badge-available">قابل استفاده</span>
+                        {% else %}—{% endif %}
+                    </div>
+                    {% if customer.referred_discount and customer.referred_discount > 0 and not customer.has_used_referred_discount %}
+                    <form method="post" action="/customers/{{ customer.id }}/use-referred-discount">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <input type="hidden" name="next" value="/admin/customers/{{ customer.id }}">
+                        <button type="submit" class="btn btn-sm btn-primary">اعمال تخفیف</button>
+                    </form>
+                    {% endif %}
+                </div>
+                <div class="stat-card accent-pine">
+                    <div class="stat-label">تخفیف معرفی دیگران</div>
+                    <div class="stat-value tnum">{{ fmt(customer.referrer_discount or 0) }} ت</div>
+                    <div class="stat-sub">سقف ماهانه: {{ monthly_limit }} نفر · این ماه: {{ customer.monthly_referral_count or 0 }}</div>
+                    {% if customer.referrer_discount and customer.referrer_discount > 0 %}
+                    <form method="post" action="/customers/{{ customer.id }}/use-referrer-discount">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <input type="hidden" name="next" value="/admin/customers/{{ customer.id }}">
+                        <button type="submit" class="btn btn-sm btn-primary">اعمال تخفیف</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+
+            <h4>افرادی که این مشتری معرفی کرده</h4>
+            {% if profile.referrals %}
+            <ul class="referral-list">
+                {% for referral in profile.referrals %}
+                <li>
+                    <span>
+                        <a class="text-link" href="/admin/customers/{{ referral.referred.id }}">{{ referral.referred.full_name }}</a>
+                        <small class="customer-phone tnum">{{ referral.referred.phone }}</small>
+                    </span>
+                    <span class="tnum">
+                        {{ jalali_str(referral.created_at, false) }}
+                        · تخفیف معرف {{ fmt(referral.referrer_discount or 0) }} ت
+                    </span>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="muted">هنوز کسی را معرفی نکرده است. کد معرفی: <strong class="tnum">{{ customer.referral_code }}</strong></p>
+            {% endif %}
+        </section>
+
+        <section class="card profile-card campaign-history-card">
+            <div class="section-heading-row">
+                <div>
+                    <h3>کمپین‌ها</h3>
+                    <p class="muted">کمپینی که این مشتری دارد، در صندوق خودکار اعمال می‌شود — نیازی به واردکردن کد نیست.</p>
+                </div>
+            </div>
+
+            {% if campaign_history %}
+            <ul class="campaign-history">
+                {% for row in campaign_history %}
+                <li class="campaign-history-row{% if not row.live %} is-inactive{% endif %}">
+                    <div class="campaign-history-main">
+                        <a class="text-link" href="/admin/campaigns/{{ row.campaign.id }}">{{ row.campaign.name }}</a>
+                        <span class="campaign-chip tnum">{{ row.campaign.discount_percent }}٪</span>
+                        <span class="status-badge is-assignment-{{ row.status }}">{{ row.status_label }}</span>
+                        {% if not row.live %}
+                        <span class="status-badge is-inactive">{{ row.campaign_status_label }}</span>
+                        {% endif %}
+                    </div>
+                    <small class="customer-meta">
+                        {{ row.source_label }}
+                        {%- if row.invite_sent_at %} · پیامک {{ jalali_str(row.invite_sent_at, false) }}{% endif %}
+                        {%- if row.used_count %} · {{ row.used_count }} بار استفاده{% endif %}
+                    </small>
+                    <form method="post" action="/admin/campaigns/{{ row.campaign.id }}/unassign">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <input type="hidden" name="customer_id" value="{{ customer.id }}">
+                        <input type="hidden" name="next" value="/admin/customers/{{ customer.id }}">
+                        <button type="submit" class="btn btn-sm btn-ghost"
+                                {% if row.status == 'removed' %}disabled{% endif %}>برداشتن</button>
+                    </form>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="muted">این مشتری در هیچ کمپینی نیست.</p>
+            {% endif %}
+
+            {% if assignable_campaigns %}
+            <form method="post" action="/admin/campaigns/assign" class="campaign-assign-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="customer_id" value="{{ customer.id }}">
+                <input type="hidden" name="next" value="/admin/customers/{{ customer.id }}">
+                <div class="form-group">
+                    <label class="sr-only" for="assign-campaign">افزودن به کمپین</label>
+                    <select id="assign-campaign" name="campaign_id">
+                        {% for option in assignable_campaigns %}
+                        <option value="{{ option.campaign.id }}">{{ option.campaign.name }} — {{ option.campaign.discount_percent }}٪{% if not option.live %} ({{ option.campaign_status_label }}){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-ghost">افزودن به کمپین</button>
+            </form>
+            {% endif %}
+        </section>
+    </div>
+
+    <div class="profile-side">
+        <section class="card profile-card">
+            <div class="profile-head">
+                <div class="profile-avatar" aria-hidden="true">م</div>
+                <div>
+                    <h3>{{ customer.full_name }}</h3>
+                    <span class="tier-badge tier-{{ customer.tier }}">
+                        {% if customer.tier == 'diamond' %}الماس
+                        {% elif customer.tier == 'gold' %}طلایی
+                        {% else %}نقره‌ای{% endif %}
+                    </span>
+                </div>
+            </div>
+            <ul class="profile-facts">
+                <li><span class="label">تلفن</span><span class="value tnum customer-phone">{{ customer.phone }}</span></li>
+                <li><span class="label">کد معرفی</span><span class="value tnum customer-phone">{{ customer.referral_code }}</span></li>
+                {% if profile.referred_by %}
+                <li>
+                    <span class="label">معرف</span>
+                    <span class="value"><a class="text-link" href="/admin/customers/{{ profile.referred_by.id }}">{{ profile.referred_by.full_name }}</a></span>
+                </li>
+                {% endif %}
+                <li><span class="label">عضویت</span><span class="value tnum">{{ jalali_str(customer.created_at, false) }}</span></li>
+                <li>
+                    <span class="label">آخرین خرید</span>
+                    <span class="value tnum">
+                        {% if customer.last_purchase_date %}{{ jalali_str(customer.last_purchase_date, false) }}{% else %}—{% endif %}
+                    </span>
+                </li>
+                <li>
+                    <span class="label">پیامک تبلیغاتی</span>
+                    <span class="value">
+                        {% if customer.sms_opt_in is none or customer.sms_opt_in %}
+                        <span class="status-badge">دارد</span>
+                        {% else %}
+                        <span class="status-badge is-archived">انصراف داده</span>
+                        {% endif %}
+                    </span>
+                </li>
+            </ul>
+
+            {% for entry in profile.birthdays %}
+            <p class="birthday-line">
+                <span class="customer-meta">{{ entry.label }}:</span>
+                <strong>{{ entry.text }}</strong>
+                {% if entry.age is not none %}<span class="birthday-age">({{ entry.age }} ساله)</span>{% endif %}
+                {% if entry.days_until is not none and entry.days_until <= tier_config.birthday_sms_days_before %}
+                <span class="birthday-soon">{{ entry.days_until }} روز دیگر</span>
+                {% endif %}
+            </p>
+            {% else %}
+            <p class="muted">تاریخ تولدی ثبت نشده است؛ با ثبت آن، تخفیف و پیامک تولد فعال می‌شود.</p>
+            {% endfor %}
+
+            {% if customer.notes %}
+            <p class="profile-note">{{ customer.notes }}</p>
+            {% endif %}
+        </section>
+
+        <section class="card profile-card">
+            <h3>ویرایش پرونده</h3>
+            <p class="muted">
+                تخفیف و پیامک تولد بر پایه انتخاب خود مشتری است: کسی که برای خودش خرید می‌کند
+                روی تولد خودش و کسی که برای فرزندش خرید می‌کند روی تولد فرزند.
+                {% if not child_profile %}این فروشگاه پرونده فرزند ندارد.{% endif %}
+            </p>
+            <form method="post" action="/admin/customers/{{ customer.id }}/meta">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+                {% set selected_buys_for = birthday_fields.buys_for %}
+                {% set self_birthday_value = birthday_fields.birth_date %}
+                {% set child_name_value = birthday_fields.child_name %}
+                {% set child_birthday_value = birthday_fields.child_birthday %}
+                {% include "partials/buys_for.html" %}
+
+                <fieldset class="form-group profile-tag-fieldset">
+                    <legend>برچسب‌ها</legend>
+                    {% for key, label in tag_palette %}
+                    <label class="checkbox-row" for="tag-{{ key }}">
+                        <input type="checkbox" id="tag-{{ key }}" name="tags" value="{{ key }}" {% if key in profile.tags %}checked{% endif %}>
+                        <span>{{ label }}</span>
+                    </label>
+                    {% endfor %}
+                </fieldset>
+
+                <div class="form-group">
+                    <label for="notes">یادداشت داخلی</label>
+                    <textarea id="notes" name="notes" rows="3" placeholder="مثلاً: فقط سایز ۳ می‌خرد">{{ customer.notes or '' }}</textarea>
+                    <small class="field-help">این یادداشت فقط برای کارکنان است و به مشتری نمایش داده نمی‌شود.</small>
+                </div>
+
+                <div class="form-group">
+                    {# No hidden companion here: the route reads the key's presence, so
+                       an unticked box must simply not post the field. #}
+                    <label class="checkbox-row" for="sms_opt_in">
+                        <input type="checkbox" id="sms_opt_in" name="sms_opt_in" value="1"
+                               {% if customer.sms_opt_in is none or customer.sms_opt_in %}checked{% endif %}>
+                        <span>اجازه پیامک تبلیغاتی و تبریک تولد دارد</span>
+                    </label>
+                    <small class="field-help">برداشتن تیک یعنی انصراف؛ این مشتری از کمپین‌ها و پیامک تولد حذف می‌شود.</small>
+                </div>
+
+                <button type="submit" class="btn btn-primary">ذخیره پرونده</button>
+            </form>
+        </section>
+
+        <section class="card profile-card">
+            <h3>بایگانی و حذف</h3>
+            {% if customer.is_archived %}
+            <p class="muted">این مشتری بایگانی شده است: در فهرست و شمارش‌ها نمی‌آید و پیامک تبلیغاتی نمی‌گیرد.</p>
+            {% else %}
+            <p class="muted">بایگانی، مشتری را از فهرست و شمارش‌ها بیرون می‌آورد اما سابقه خریدش دست‌نخورده می‌ماند.</p>
+            {% endif %}
+            <form method="post" action="/admin/customers/{{ customer.id }}/archive">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-ghost">
+                    {% if customer.is_archived %}بازگردانی از بایگانی{% else %}بایگانی مشتری{% endif %}
+                </button>
+            </form>
+
+            {% if may_delete %}
+            <form method="post" action="/admin/customers/{{ customer.id }}/delete"
+                  onsubmit="return confirm('این مشتری هیچ خریدی ندارد و برای همیشه حذف می‌شود. مطمئن هستید؟')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-sm btn-danger">حذف کامل مشتری</button>
+            </form>
+            {% else %}
+            <p class="muted">
+                حذف ممکن نیست: این مشتری {{ sale_count }} فروش ثبت‌شده دارد و حذف، سابقه خرید را از گزارش‌ها جدا می‌کند.
+            </p>
+            {% endif %}
+        </section>
+    </div>
+</div>
+{% endblock %}

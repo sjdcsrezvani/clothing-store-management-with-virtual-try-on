@@ -1,318 +1,518 @@
 {% extends "base.html" %}
-{% block title %}چاپ بارکد — رای کیدز{% endblock %}
 {% block content %}
-<h2>چاپ بارکد محصولات</h2>
+{% set page_description %}
+تعداد تگ را برای هر تنوع مشخص کنید؛ بعد از چاپ، وضعیت چاپ را ثبت کنید.
+{% endset %}
+{% set page_actions %}
+<a href="/admin/settings/tags" class="btn btn-ghost">تنظیمات تگ</a>
+        <a href="/admin/products" class="btn btn-ghost">محصولات</a>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
-<div class="filter-bar" id="controls">
+{% if request.query_params.get('msg') %}<div class="alert alert-success" role="status">{{ request.query_params.get('msg') }}</div>{% endif %}
+{% if request.query_params.get('err') %}<div class="alert alert-error" role="alert">{{ request.query_params.get('err') }}</div>{% endif %}
+
+<div class="card tag-print-controls" id="controls" data-list-region="tags">
+    <div class="tag-print-help">
+        <strong>راهنمای سریع</strong>
+        <span>هر کارت یک تنوع محصول است. تعداد چاپ را وارد کنید و سپس یکی از عملیات را بزنید. چاپ تگ به موجودی فعلی وابسته نیست و می‌توانید برای کالای در راه هم تگ بسازید.</span>
+    </div>
     <form method="get" action="/admin/barcodes/print" class="search-form">
-        <select name="category">
+        <label class="sr-only" for="tag-search">جست‌وجوی محصول</label>
+        <input type="text" id="tag-search" name="q" value="{{ search }}" placeholder="نام، بارکد یا SKU" autocomplete="off">
+        <label class="sr-only" for="tag-category">دسته‌بندی</label>
+        <select name="category" id="tag-category">
             <option value="">همه دسته‌ها</option>
             {% for cat in categories %}
             <option value="{{ cat }}" {% if category_filter == cat %}selected{% endif %}>{{ cat }}</option>
             {% endfor %}
         </select>
         <button type="submit" class="btn btn-primary">اعمال فیلتر</button>
+        {% if search or category_filter %}<a href="/admin/barcodes/print" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
     </form>
-    <div class="print-controls" style="margin-top: 1rem;">
-        <button type="button" onclick="selectAll()" class="btn btn-secondary">انتخاب همه</button>
-        <button type="button" onclick="deselectAll()" class="btn btn-secondary">لغو انتخاب</button>
-        <button type="button" onclick="printSelected()" class="btn btn-primary">چاپ انتخاب شده</button>
-        <span id="selected-count" style="margin-right: 1rem;">0 بارکد انتخاب شده</span>
-    </div>
-    <div style="margin-top: 0.5rem;">
-        <form method="post" action="/admin/barcodes/mark-printed" id="mark-printed-form" style="display: inline;">
-            <input type="hidden" name="selected_ids" id="selected_ids_input" value="">
-            <button type="submit" class="btn btn-secondary">ثبت چاپ شده</button>
-        </form>
-        <form method="post" action="/admin/barcodes/reset" style="display: inline;" 
-              onsubmit="return confirm('آیا مطمئن هستید؟ تمام شمارش‌های چاپ ریست می‌شود.')">
-            <button type="submit" class="btn btn-danger">ریست شمارش چاپ</button>
-        </form>
-    </div>
-</div>
 
-<div class="card barcode-print-sheet" id="barcode-sheet">
-    {% if barcode_items %}
-    <div class="barcode-grid">
-        {% for item in barcode_items %}
-        <label class="barcode-cell {% if item.already_printed %}printed{% endif %}" for="sel-{{ item.product_id }}-{{ loop.index0 }}">
-            <input type="checkbox" class="barcode-checkbox" 
-                   id="sel-{{ item.product_id }}-{{ loop.index0 }}"
-                   name="selected_products" value="{{ item.product_id }}"
-                   data-product-id="{{ item.product_id }}"
-                   data-product-name="{{ item.name }}"
-                   data-product-price="{{ item.price }}"
-                   {% if item.already_printed %}disabled{% else %}checked{% endif %}>
-            <div class="barcode-label">
-                <div class="label-shop-name">
-                    <span class="shop-fa">رای کیدز</span>
-                    <span class="shop-en">Ray Kids</span>
-                </div>
-                <div class="label-social">
-                    <span class="social-item">
-                        <svg class="social-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
-                        <span>@raykids</span>
-                    </span>
-                    <span class="social-item">
-                        <svg class="social-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-                        <span>raykids.ir</span>
-                    </span>
-                </div>
-                <div class="label-barcode">
-                    <img src="/static/uploads/barcodes/barcode_{{ item.barcode }}.png" 
-                         alt="{{ item.barcode }}" class="barcode-img">
-                </div>
-                <div class="label-product-name">{{ item.name }}</div>
-                <div class="label-price">{{ fmt(item.price) }} تومان</div>
+    <form method="post" action="/admin/barcodes/mark-printed" id="tag-action-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="category" value="{{ category_filter }}">
+        <input type="hidden" name="q" value="{{ search }}">
+        <input type="hidden" name="page" value="{{ page }}">
+        <div class="tag-print-toolbar">
+            <div class="tag-print-selection-actions">
+                <button type="button" onclick="selectAll()" class="btn btn-ghost">انتخاب همین صفحه</button>
+                <button type="button" onclick="deselectAll()" class="btn btn-ghost">لغو انتخاب</button>
+                <button type="button" onclick="clearTray()" class="btn btn-ghost">خالی کردن سینی</button>
+                <button type="button" onclick="printSelected()" id="print-selected-btn" class="btn btn-primary">چاپ تگ‌های انتخاب‌شده</button>
             </div>
-        </label>
-        {% endfor %}
-    </div>
-    {% else %}
-    <p>محصولی یافت نشد.</p>
-    {% endif %}
+            <span id="selected-count" class="tag-selected-count" aria-live="polite">۰ تگ انتخاب شده</span>
+            <span id="tray-count" class="tag-selected-count" aria-live="polite"></span>
+        </div>
+        <div id="tag-notice" class="tag-notice" hidden></div>
+        <div class="tag-print-toolbar tag-print-secondary-actions">
+            <button type="submit" formmethod="post" formaction="/admin/barcodes/mark-printed" name="operation" value="mark" formnovalidate class="btn btn-sm btn-ghost" id="mark-printed-btn">ثبت به‌عنوان چاپ‌شده</button>
+            <button type="submit" formnovalidate class="btn btn-sm btn-ghost" id="reprint-btn" name="reprint" value="1" formaction="/admin/barcodes/mark-printed" disabled>ثبت چاپ مجدد</button>
+            <button type="submit" formnovalidate class="btn btn-sm btn-danger" id="reset-printed-btn" formaction="/admin/barcodes/reset" disabled>صفر کردن شمارش چاپ</button>
+            <span class="muted">{{ all_items_count }} تنوع در این فیلتر · {{ tag_fit.columns }} ستون × {{ tag_fit.rows }} ردیف در هر صفحه A4</span>
+        </div>
+
+        <div class="card barcode-print-sheet" id="barcode-sheet">
+            {% if barcode_items %}
+            <div class="tag-selection-grid" aria-label="انتخاب تگ‌ها" data-total-pages="{{ total_pages }}">
+                {% for item in barcode_items %}
+                {% set max_quantity = item.printable_quantity %}
+                {% set default_quantity = [item.unprinted_quantity, 1]|max %}
+                {% set default_quantity = [default_quantity, max_quantity]|min %}
+                <article class="tag-selection-item {% if item.printed_count > 0 %}has-printed-tags{% endif %}{% if item.is_out_of_stock %} is-out{% endif %}">
+                    <div class="tag-selection-head">
+                        <label class="tag-selection-label" for="tag-select-{{ item.variant_id }}-{{ loop.index0 }}">
+                            <input type="checkbox"
+                                   class="barcode-checkbox {% if item.printed_count > 0 %}has-printed{% endif %}"
+                                   id="tag-select-{{ item.variant_id }}-{{ loop.index0 }}"
+                                   name="selected_products"
+                                   value="{{ item.variant_id }}"
+                                    data-variant-id="{{ item.variant_id }}"
+                                    data-printed-quantity="{{ item.printed_count }}">
+                            <span class="tag-selection-check" aria-hidden="true"></span>
+                            <span class="tag-selection-title">{{ item.name }}</span>
+                        </label>
+                        <span class="tag-quantity-row">
+                            <label for="tag-quantity-{{ item.variant_id }}-{{ loop.index0 }}">تعداد چاپ</label>
+                            <span class="tag-stepper">
+                                <button type="button" data-step="-1" aria-label="کم کردن تعداد {{ item.name }}">−</button>
+                                <input type="text" inputmode="numeric"
+                                    id="tag-quantity-{{ item.variant_id }}-{{ loop.index0 }}"
+                                    name="selected_quantity_{{ item.variant_id }}"
+                                    class="tag-quantity"
+                                    min="1"
+                                    max="{{ max_quantity }}"
+                                    value="{{ default_quantity }}"
+                                    aria-label="تعداد چاپ {{ item.name }}">
+                                <button type="button" data-step="1" aria-label="زیاد کردن تعداد {{ item.name }}">+</button>
+                            </span>
+                        </span>
+                    </div>
+                    <div class="tag-stock-loud" aria-label="موجودی قابل فروش">
+                        <strong class="tnum">{{ item.available_quantity }}</strong>
+                        <span>قابل فروش{% if item.is_out_of_stock %} · ناموجود{% endif %}</span>
+                    </div>
+                    <div class="tag-stock-meta" aria-label="اطلاعات موجودی و چاپ">
+                        <span>قابل فروش: <strong>{{ item.available_quantity }}</strong></span>
+                        <span>رزرو فعال: <strong>{{ item.reserved_quantity }}</strong></span>
+                        <span>چاپ‌شده: <strong>{{ item.printed_count }}</strong></span>
+                    </div>
+                    {% if item.printed_count > 0 %}<span class="printed-badge">چاپ‌شده: {{ item.printed_count }}</span>{% endif %}
+                    <div class="tag-template-label">{{ item.tag_template_name }}</div>
+                    <div class="tag-selection-preview" data-variant-id="{{ item.variant_id }}" data-template-key="{{ item.tag_template_key }}" style="--tag-scale: {{ item.tag_preview_scale }}; --tag-w-mm: {{ item.tag_config.tag_width_mm }}; --tag-h-mm: {{ item.tag_config.tag_height_mm }}; --frame-w: {{ item.tag_preview_width_px }}px; --frame-h: {{ item.tag_preview_height_px }}px;" role="img" aria-label="پیش‌نمایش تگ {{ item.tag_config.tag_width_mm }}×{{ item.tag_config.tag_height_mm }} میلی‌متر">{{ item.tag_html|safe }}</div>
+                </article>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <h3>تگی برای نمایش وجود ندارد</h3>
+                <p>{% if search or category_filter %}فیلترها را تغییر دهید تا تنوع‌های دیگر را ببینید.{% else %}برای چاپ، ابتدا یک محصول فعال و یک تنوع ثبت کنید.{% endif %}</p>
+                <a href="/admin/products" class="btn btn-primary">مدیریت محصولات</a>
+            </div>
+            {% endif %}
+        </div>
+        {% if total_pages > 1 %}
+        <nav class="tag-pagination tag-pagination-bottom" aria-label="صفحه‌بندی تگ‌ها">
+            {% if page > 1 %}<a href="?page={{ page - 1 }}&category={{ category_filter }}&q={{ search }}" class="tag-page-btn">صفحه قبل</a>{% endif %}
+            <span class="tag-page-number active" aria-current="page">صفحه {{ page }} از {{ total_pages }}</span>
+            {% if page < total_pages %}<a href="?page={{ page + 1 }}&category={{ category_filter }}&q={{ search }}" class="tag-page-btn">صفحه بعد</a>{% endif %}
+        </nav>
+        {% endif %}
+    </form>
 </div>
-
-<nav class="admin-nav" id="nav-controls">
-    <a href="/admin/products"><button type="button" class="btn btn-secondary">بازگشت به مدیریت محصولات</button></a>
-    <a href="/admin"><button type="button" class="btn btn-secondary">بازگشت به داشبورد</button></a>
-</nav>
-
-<style>
-    .barcode-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 3mm;
-        padding: 5mm;
-    }
-    .barcode-cell {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        border: 1px solid #ddd;
-        border-radius: 6px;
-        padding: 2mm;
-        cursor: pointer;
-        transition: all 0.15s;
-        position: relative;
-    }
-    .barcode-cell:hover {
-        border-color: #c44dff;
-        background: #faf5ff;
-    }
-    .barcode-cell.printed {
-        opacity: 0.5;
-        background: #f0f0f0;
-    }
-    .barcode-checkbox {
-        position: absolute;
-        top: 2mm;
-        right: 2mm;
-        width: 12px;
-        height: 12px;
-    }
-    .barcode-label {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        width: 100%;
-        padding: 1mm;
-    }
-    .label-shop-name {
-        text-align: center;
-        margin-bottom: 1mm;
-    }
-    .shop-fa {
-        display: block;
-        font-size: 11pt;
-        font-weight: 800;
-        color: #c44dff;
-        font-family: 'Vazirmatn', sans-serif;
-    }
-    .shop-en {
-        display: block;
-        font-size: 8pt;
-        color: #666;
-        font-weight: 600;
-    }
-    .label-social {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.5mm;
-        margin-bottom: 1mm;
-    }
-    .social-item {
-        display: flex;
-        align-items: center;
-        gap: 1mm;
-        font-size: 7pt;
-        color: #555;
-        direction: ltr;
-    }
-    .social-icon {
-        width: 10px;
-        height: 10px;
-        flex-shrink: 0;
-    }
-    .label-barcode {
-        margin: 1mm 0;
-    }
-    .barcode-img {
-        width: 100%;
-        max-width: 40mm;
-        height: auto;
-    }
-    .label-product-name {
-        font-size: 8pt;
-        font-weight: 600;
-        text-align: center;
-        color: #333;
-        margin-top: 1mm;
-    }
-    .label-price {
-        font-size: 9pt;
-        font-weight: 700;
-        color: #c44dff;
-        text-align: center;
-    }
-    .printed-badge {
-        position: absolute;
-        top: 2px;
-        left: 2px;
-        background: #ff6b6b;
-        color: #fff;
-        font-size: 6pt;
-        padding: 1px 4px;
-        border-radius: 3px;
-    }
-    .print-controls {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        flex-wrap: wrap;
-    }
-    #selected-count {
-        font-weight: 600;
-        color: #c44dff;
-    }
-
-    @media print {
-        * { margin: 0 !important; padding: 0 !important; box-sizing: border-box !important; }
-        body * { visibility: hidden !important; }
-        #barcode-sheet, #barcode-sheet * { visibility: visible !important; }
-        
-        #barcode-sheet {
-            position: fixed !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 210mm !important;
-            height: 297mm !important;
-            border: none !important;
-            box-shadow: none !important;
-            background: white !important;
-            direction: ltr !important;
-            overflow: hidden !important;
-        }
-        
-        .barcode-grid {
-            display: block !important;
-            width: 198mm !important;
-            margin-left: 4mm !important;
-            margin-right: 4mm !important;
-            padding: 2mm 0 !important;
-            direction: ltr !important;
-            text-align: center !important;
-        }
-        
-        .barcode-cell {
-            display: inline-block !important;
-            width: 41mm !important;
-            vertical-align: top !important;
-            border: 0.5px solid #999 !important;
-            padding: 0.5mm !important;
-            border-radius: 0 !important;
-            margin: 0.7mm !important;
-            direction: ltr !important;
-            text-align: center !important;
-            page-break-inside: avoid !important;
-        }
-        
-        .barcode-checkbox { display: none !important; }
-        .printed-badge { display: none !important; }
-        .barcode-cell.unchecked { display: none !important; }
-        .barcode-cell.printed { display: none !important; }
-        
-        .barcode-img { max-width: 42mm !important; height: auto !important; }
-        .shop-fa { font-size: 15pt !important; }
-        .shop-en { font-size: 12pt !important; }
-        .social-icon { width: 15px !important; height: 15px !important; }
-        .social-item { font-size: 10pt !important; }
-        .label-product-name { font-size: 10pt !important; }
-        .label-price { font-size: 10pt !important; }
-    }
-</style>
-
 <script>
-function selectAll() {
-    document.querySelectorAll('.barcode-checkbox:not(:disabled)').forEach(cb => {
-        cb.checked = true;
-        cb.closest('.barcode-cell').classList.remove('unchecked');
+// One inline bar for everything the page needs to say mid-flow — empty
+// trays, unreadable pages, the afterprint offer. It never steals focus and
+// never touches window.alert.
+function selectedCheckboxes(selector) {
+    return Array.from(document.querySelectorAll(selector || '.barcode-checkbox:checked'));
+}
+function showTagNotice(html, actions) {
+    const bar = document.getElementById('tag-notice');
+    if (!bar) return;
+    bar.innerHTML = '';
+    const text = document.createElement('span');
+    text.innerHTML = html;
+    bar.appendChild(text);
+    (actions || []).forEach(([label, kind, onClick]) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `btn btn-sm ${kind || 'btn-ghost'}`;
+        btn.textContent = label;
+        btn.addEventListener('click', onClick);
+        bar.appendChild(btn);
     });
+    const dismiss = document.createElement('button');
+    dismiss.type = 'button';
+    dismiss.className = 'btn btn-sm btn-ghost';
+    dismiss.textContent = 'بستن';
+    dismiss.setAttribute('aria-label', 'بستن پیام');
+    dismiss.addEventListener('click', hideTagNotice);
+    bar.appendChild(dismiss);
+    bar.hidden = false;
+}
+function hideTagNotice() {
+    const bar = document.getElementById('tag-notice');
+    if (bar) { bar.hidden = true; bar.innerHTML = ''; }
+}
+
+function mergeTrayIntoForm(form) {
+    // Idempotent: a previous merge (the afterprint offer, then the submit it
+    // triggers) is swept first, or rows would post twice and count twice.
+    form.querySelectorAll('[data-tray-merged]').forEach(el => el.remove());
+    const tray = readTray();
+    const onPage = new Set(selectedCheckboxes('.barcode-checkbox:checked').map(checkboxKey));
+    Object.entries(tray).forEach(([id, qty]) => {
+        if (onPage.has(String(id))) return;
+        const idInput = document.createElement('input');
+        idInput.type = 'hidden';
+        idInput.name = 'selected_products';
+        idInput.value = id;
+        idInput.dataset.trayMerged = 'true';
+        form.appendChild(idInput);
+        const qtyInput = document.createElement('input');
+        qtyInput.type = 'hidden';
+        qtyInput.name = `selected_quantity_${id}`;
+        qtyInput.value = String(qty);
+        qtyInput.dataset.trayMerged = 'true';
+        form.appendChild(qtyInput);
+    });
+    return Object.keys(tray).length > 0;
+}
+
+// The staging tray: checks survive page turns, filter changes and full
+// reloads. The server stays stateless — the tray lives in this browser,
+// and every POST merges it in alongside the page's own boxes.
+const TRAY_KEY = 'raykid-tag-tray-v1';
+
+function readTray() {
+    try { return JSON.parse(localStorage.getItem(TRAY_KEY)) || {}; }
+    catch (e) { return {}; }
+}
+function writeTray(tray) {
+    try { localStorage.setItem(TRAY_KEY, JSON.stringify(tray)); }
+    catch (e) { /* private mode: the page still works, the tray just forgets */ }
+}
+function trayTotals() {
+    let items = 0, tags = 0;
+    Object.values(readTray()).forEach(qty => {
+        const n = Math.max(1, Math.min(1000, parseInt(qty, 10) || 0));
+        if (n > 0) { items += 1; tags += n; }
+    });
+    return { items, tags };
+}
+
+function checkboxKey(checkbox) { return String(checkbox.dataset.variantId); }
+
+function syncTrayFromCheckbox(checkbox) {
+    const tray = readTray();
+    const id = checkboxKey(checkbox);
+    if (checkbox.checked) tray[id] = quantityFor(checkbox);
+    else delete tray[id];
+    writeTray(tray);
+}
+
+function applyTray(root) {
+    const tray = readTray();
+    root.querySelectorAll('.barcode-checkbox').forEach(checkbox => {
+        const staged = tray[checkboxKey(checkbox)];
+        if (staged !== undefined) {
+            checkbox.checked = true;
+            const input = checkbox.closest('.tag-selection-item')?.querySelector('.tag-quantity');
+            if (input) input.value = String(staged);
+        } else {
+            checkbox.checked = false;
+        }
+    });
+}
+
+function renderTrayCount() {
+    const el = document.getElementById('tray-count');
+    if (!el) return;
+    const { items, tags } = trayTotals();
+    el.textContent = items ? `سینی: ${items} تنوع · ${tags} تگ` : 'سینی خالی است';
+}
+
+function clearTray() {
+    writeTray({});
+    applyTray(document);
     updateCount();
 }
-function deselectAll() {
-    document.querySelectorAll('.barcode-checkbox:not(:disabled)').forEach(cb => {
-        cb.checked = false;
-        cb.closest('.barcode-cell').classList.add('unchecked');
-    });
-    updateCount();
+
+function quantityFor(checkbox) {
+    const input = checkbox.closest('.tag-selection-item')?.querySelector('.tag-quantity');
+    const digits = (typeof toEnglishDigits === 'function') ? toEnglishDigits : (v => v);
+    const max = input ? Math.max(1, Number.parseInt(digits(input.max || '1'), 10) || 1) : 1;
+    let quantity = input ? Number.parseInt(String(digits(input.value || '1')).replace(/[^0-9]/g, '') || '1', 10) : 1;
+    if (!Number.isFinite(quantity)) quantity = 1;
+    quantity = Math.min(max, Math.max(1, quantity));
+    if (input) input.value = String(quantity);
+    return quantity;
 }
+
 function updateCount() {
-    const checked = document.querySelectorAll('.barcode-checkbox:checked:not(:disabled)');
-    document.getElementById('selected-count').textContent = checked.length + ' بارکد انتخاب شده';
-    
-    const counts = {};
-    checked.forEach(cb => {
-        const pid = cb.dataset.productId;
-        counts[pid] = (counts[pid] || 0) + 1;
+    const selected = selectedCheckboxes('.barcode-checkbox:checked');
+    const total = selected.reduce((sum, checkbox) => sum + quantityFor(checkbox), 0);
+    const printedSelected = selected.filter(checkbox => checkbox.classList.contains('has-printed'));
+    document.getElementById('selected-count').textContent = `${total} تگ انتخاب شده`;
+
+    const printButton = document.getElementById('print-selected-btn');
+    const resetButton = document.getElementById('reset-printed-btn');
+    const reprintButton = document.getElementById('reprint-btn');
+    const staged = trayTotals();
+    if (printButton) printButton.disabled = selected.length === 0 && staged.items === 0;
+    if (resetButton) resetButton.disabled = printedSelected.length === 0;
+    if (reprintButton) reprintButton.disabled = printedSelected.length === 0;
+    document.querySelectorAll('.tag-selection-item').forEach(item => {
+        const checkbox = item.querySelector('.barcode-checkbox');
+        item.classList.toggle('is-selected', checkbox.checked);
     });
-    const parts = [];
-    for (const [pid, count] of Object.entries(counts)) {
-        for (let i = 0; i < count; i++) parts.push(pid);
-    }
-    document.getElementById('selected_ids_input').value = parts.join(',');
-    
+    renderTrayCount();
+}
+
+function selectAll() {
+    const tray = readTray();
     document.querySelectorAll('.barcode-checkbox').forEach(cb => {
-        cb.closest('.barcode-cell').classList.toggle('unchecked', !cb.checked && !cb.disabled);
+        cb.checked = true;
+        tray[checkboxKey(cb)] = quantityFor(cb);
     });
-}
-document.querySelectorAll('.barcode-checkbox').forEach(cb => {
-    cb.addEventListener('change', updateCount);
-});
-updateCount();
-
-function printSelected() {
-    document.querySelectorAll('.barcode-checkbox:not(:checked):not(:disabled)').forEach(cb => {
-        cb.closest('.barcode-cell').classList.add('unchecked');
-    });
-    window.print();
+    writeTray(tray);
+    updateCount();
 }
 
-document.getElementById('mark-printed-form').addEventListener('submit', function(e) {
-    e.preventDefault();
-    const form = this;
-    const idsStr = document.getElementById('selected_ids_input').value;
-    const oldInput = form.querySelector('input[name="selected_ids"]');
-    if (oldInput) oldInput.remove();
-    idsStr.split(',').filter(Boolean).forEach(pid => {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = 'selected_products';
-        input.value = pid;
-        form.appendChild(input);
+function deselectAll() {
+    const tray = readTray();
+    document.querySelectorAll('.barcode-checkbox').forEach(cb => {
+        cb.checked = false;
+        delete tray[checkboxKey(cb)];
     });
-    form.submit();
-});
+    writeTray(tray);
+    updateCount();
+}
+
+function bindTagRegion(root) {
+    root.querySelectorAll('.barcode-checkbox').forEach(function (cb) {
+        if (cb.dataset.bound) return;
+        cb.dataset.bound = 'true';
+        cb.addEventListener('change', function () { syncTrayFromCheckbox(cb); updateCount(); });
+    });
+    root.querySelectorAll('.tag-quantity').forEach(function (input) {
+        if (input.dataset.bound) return;
+        input.dataset.bound = 'true';
+        input.addEventListener('input', function () {
+            const item = input.closest('.tag-selection-item');
+            const box = item ? item.querySelector('.barcode-checkbox') : null;
+            if (box && box.checked) syncTrayFromCheckbox(box);
+            updateCount();
+        });
+    });
+
+    const tagActionForm = root.querySelector('#tag-action-form');
+    if (tagActionForm && !tagActionForm.dataset.bound) {
+        tagActionForm.dataset.bound = 'true';
+        tagActionForm.addEventListener('submit', function (event) {
+            mergeTrayIntoForm(tagActionForm);
+            if (!selectedCheckboxes('.barcode-checkbox:checked').length && !Object.keys(readTray()).length) {
+                event.preventDefault();
+                showTagNotice('سینی خالی است — اول چند تنوع را تیک بزنید.');
+            } else {
+                hideTagNotice();
+            }
+        });
+    }
+    // In-place paging/filtering never reloads the document, so the POST form's
+    // hidden page/category/search would name the view the owner came from, not
+    // the one they are looking at. Read them back off the address bar instead.
+    if (tagActionForm) {
+        const params = new URLSearchParams(window.location.search);
+        const pageInput = tagActionForm.querySelector('input[name="page"]');
+        const categoryInput = tagActionForm.querySelector('input[name="category"]');
+        const searchInput = tagActionForm.querySelector('input[name="q"]');
+        if (pageInput) pageInput.value = params.get('page') || '1';
+        if (categoryInput) categoryInput.value = params.get('category') || '';
+        if (searchInput) searchInput.value = params.get('q') || '';
+    }
+    applyTray(root);
+    updateCount();
+    // Steppers ride on the region itself (it survives swaps; its contents do
+    // not), so one binding covers every render. A module flag, not root
+    // state: the first bind passes `document`, which has no dataset.
+    if (!window.__tagSteppersBound) {
+        window.__tagSteppersBound = true;
+        const region = document.querySelector('[data-list-region="tags"]') || document;
+        region.addEventListener('click', function (event) {
+            const step = event.target.closest ? event.target.closest('[data-step]') : null;
+            if (!step) return;
+            const item = step.closest('.tag-selection-item');
+            const input = item ? item.querySelector('.tag-quantity') : null;
+            if (!input) return;
+            const max = Math.max(1, parseInt(input.max || '1000', 10) || 1000);
+            const digits = (typeof toEnglishDigits === 'function') ? toEnglishDigits : (v => v);
+            const current = parseInt(String(digits(input.value || '1')).replace(/[^0-9]/g, '') || '1', 10) || 1;
+            input.value = String(Math.min(max, Math.max(1, current + parseInt(step.dataset.step, 10))));
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+    }
+}
+
+function initTagPage() {
+    // A ?msg= on arrival means the last POST landed (mark or reset rewrote
+    // the counts): the tray staged the old numbers, so it retires.
+    try {
+        if (new URLSearchParams(window.location.search).has('msg')) writeTray({});
+    } catch (e) { /* without a URL there is no receipt to read */ }
+    bindTagRegion(document);
+    if (window.RaykidListNav) window.RaykidListNav.register('tags', bindTagRegion);
+}
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initTagPage);
+} else {
+    initTagPage();
+}
+
+async function printSelected() {
+    // The tray is the print order, not the page: sync this page's boxes in
+    // first (a typed quantity without a change event must not be lost), then
+    // gather previews — here for staged rows, fetched for the rest.
+    document.querySelectorAll('.barcode-checkbox:checked').forEach(syncTrayFromCheckbox);
+    const tray = readTray();
+    const ids = Object.keys(tray);
+    if (!ids.length) {
+        showTagNotice('سینی خالی است — اول چند تنوع را تیک بزنید.');
+        return;
+    }
+    hideTagNotice();
+
+    const templateConfigs = {{ tag_template_configs|tojson }};
+    const groups = new Map();
+    function collect(preview, copies) {
+        const key = preview.dataset.templateKey || 'default';
+        if (!groups.has(key)) groups.set(key, { config: templateConfigs[key] || templateConfigs.default, tags: [] });
+        const n = Math.max(1, Math.min(1000, parseInt(copies, 10) || 1));
+        for (let copy = 0; copy < n; copy += 1) groups.get(key).tags.push(preview.innerHTML);
+    }
+    const missing = [];
+    ids.forEach(id => {
+        const preview = document.querySelector(`.tag-selection-preview[data-variant-id="${id}"]`);
+        if (preview) collect(preview, tray[id]);
+        else missing.push(id);
+    });
+    if (missing.length) {
+        const grid = document.querySelector('.tag-selection-grid');
+        const totalPages = Math.max(1, parseInt(grid?.dataset.totalPages || '1', 10));
+        for (let page = 1; page <= totalPages && missing.length; page += 1) {
+            try {
+                const url = new URL(window.location.href);
+                url.searchParams.set('page', String(page));
+                const response = await fetch(url.toString(), { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+                if (!response.ok) continue;
+                const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
+                for (let i = missing.length - 1; i >= 0; i -= 1) {
+                    const preview = doc.querySelector(`.tag-selection-preview[data-variant-id="${missing[i]}"]`);
+                    if (preview) { collect(preview, tray[missing[i]]); missing.splice(i, 1); }
+                }
+            } catch (e) { /* a page that will not load prints without its rows */ }
+        }
+    }
+    if (missing.length) {
+        showTagNotice(`${missing.length} تنوع روی صفحه‌های دیگر خوانده نشد و بدون آن‌ها چاپ می‌شود.`);
+    }
+    if (!groups.size) {
+        showTagNotice('هیچ برگی برای چاپ پیدا نشد.');
+        return;
+    }
+
+    const groupMarkup = [];
+    groups.forEach(group => {
+        const config = group.config;
+        const width = Number(config.tag_width_mm);
+        const height = Number(config.tag_height_mm);
+        const marginTop = Number(config.margin_top_mm);
+        const marginRight = Number(config.margin_right_mm);
+        const marginBottom = Number(config.margin_bottom_mm);
+        const marginLeft = Number(config.margin_left_mm);
+        const gapX = Number(config.gap_horizontal_mm);
+        const gapY = Number(config.gap_vertical_mm);
+        const columns = Number(config.columns);
+        const rows = Number(config.rows);
+        // An unreadable fit must never eat tags: fall back to one page.
+        const fit = columns * rows;
+        const perPage = (Number.isFinite(fit) && fit > 0) ? Math.floor(fit) : group.tags.length;
+        for (let index = 0; index < group.tags.length; index += perPage) {
+            const pageTags = group.tags.slice(index, index + perPage);
+            groupMarkup.push(`<section class="tag-print-page" style="padding:${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm"><div class="tag-print-grid" style="grid-template-columns:repeat(${columns}, ${width}mm);grid-template-rows:repeat(${rows}, ${height}mm);gap:${gapY}mm ${gapX}mm">${pageTags.join('')}</div></section>`);
+        }
+    });
+    const pageMarkup = groupMarkup.join('');
+    const totalTags = Array.from(groups.values()).reduce((sum, group) => sum + group.tags.length, 0);
+    const totalSheets = groupMarkup.length;
+    const style = `
+        @page { size: A4; margin: 0; }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; padding: 0; background: #fff; }
+        body { font-family: Vazirmatn, Arial, sans-serif; direction: rtl; }
+        .tag-print-page { width: 210mm; height: 297mm; page-break-after: always; overflow: hidden; }
+        .tag-print-page:last-child { page-break-after: auto; }
+        .tag-print-grid { display: grid; align-content: start; }
+        .tag-render { page-break-inside: avoid; }
+        .tag-render img { max-width: 100%; }
+    `;
+    const printStyle = document.createElement('style');
+    printStyle.id = 'tag-print-style';
+    printStyle.textContent = `
+        @media screen {
+            #tag-print-output { display: none; }
+            body.tag-printing #tag-print-output { display: block; position: fixed; inset: 0; overflow: auto; background: var(--card); z-index: 9999; padding: 1rem; }
+        }
+        @media print {
+            @page { size: A4; margin: 0; }
+            body.tag-printing > *:not(#tag-print-output) { display: none !important; }
+            body.tag-printing #tag-print-output { display: block !important; position: static; overflow: visible; padding: 0; background: #fff; }
+            body.tag-printing #tag-print-output .tag-print-summary { display: none !important; }
+        }
+        ${style}
+    `;
+    const printOutput = document.createElement('div');
+    printOutput.id = 'tag-print-output';
+    // Screen-only receipt: what the overlay holds, so a short print is
+    // diagnosable instead of mysterious. Hidden on paper by the print CSS.
+    const summary = document.createElement('div');
+    summary.className = 'tag-print-summary';
+    summary.textContent = `${totalTags} تگ در ${totalSheets} برگه`;
+    printOutput.appendChild(summary);
+    printOutput.insertAdjacentHTML('beforeend', pageMarkup);
+    document.head.appendChild(printStyle);
+    document.body.appendChild(printOutput);
+    document.body.classList.add('tag-printing');
+    const cleanup = () => {
+        document.body.classList.remove('tag-printing');
+        printOutput.remove();
+        printStyle.remove();
+    };
+    // The browser cannot say whether ink met paper, so closing the dialog
+    // offers the record instead of writing it: ثبت posts the staged tray
+    // through the mark action, بعداً just tidies up.
+    window.addEventListener('afterprint', function onAfterPrint() {
+        cleanup();
+        const { items, tags } = trayTotals();
+        if (!items) return;
+        showTagNotice(`پنجره چاپ بسته شد — اگر چاپ گرفتید ثبت کنید: ${items} تنوع · ${tags} تگ.`, [
+            ['ثبت شود', 'btn-primary', function () {
+                hideTagNotice();
+                const form = document.getElementById('tag-action-form');
+                const markBtn = document.getElementById('mark-printed-btn');
+                if (!form || !markBtn) return;
+                mergeTrayIntoForm(form);
+                if (typeof form.requestSubmit === 'function') form.requestSubmit(markBtn);
+                else { markBtn.click(); }
+            }],
+        ]);
+    }, { once: true });
+    window.setTimeout(() => window.print(), 50);
+}
+
+bindTagRegion(document);
 </script>
 {% endblock %}

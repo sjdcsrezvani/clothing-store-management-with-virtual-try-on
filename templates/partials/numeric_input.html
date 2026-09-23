@@ -1,0 +1,16 @@
+{# The one numeric input. Every admin form paints its min/max from its route's
+   rules table through this macro — the same table the POST validates against —
+   so the browser's attributes stay a kindness, not the rule. A field with no
+   rule in the table is marked data-unbounded so it stays findable. Import with
+   context — the rules table comes from the route's render context:
+   {% from 'partials/numeric_input.html' import num with context %}
+   type=text + inputmode=numeric (not type=number): the fa keyboard stays up,
+   Persian digits are accepted and parsed server-side via to_english_digits,
+   and there is no spinner chrome to remove. #}
+{% macro num(field, value, required=False, input_id='') %}
+{% set rule = numeric_rules.get(field) %}
+<input type="text" inputmode="numeric" id="{{ input_id or field }}" name="{{ field }}"
+       {% if rule %}min="{{ rule[0] }}"{% if rule[1] is not none %} max="{{ rule[1] }}"{% endif %}{% else %}data-unbounded="1"{% endif %}
+       {% if required %}required{% endif %}
+       value="{{ value }}">
+{% endmacro %}

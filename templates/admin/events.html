@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+{% set page_description %}
+تاریخچه ثبت‌شده فروش، پرداخت، موجودی و عملیات مالی.
+{% endset %}
+{% include 'partials/page_header.html' %}
+
+<form method="get" action="/admin/events" class="card form-row">
+    <label>نوع موجودیت
+        <input name="aggregate_type" value="{{ aggregate_type }}" maxlength="50" placeholder="sale">
+    </label>
+    <label>نوع رویداد
+        <input name="event_type" value="{{ event_type }}" maxlength="60" placeholder="SaleCompleted">
+    </label>
+    <label>تعداد
+        {% from 'partials/numeric_input.html' import num with context %}
+        {{ num('limit', limit, input_id='events-limit') }}
+    </label>
+    <button class="btn btn-primary" type="submit">فیلتر</button>
+</form>
+
+<div class="card">
+    {% if events %}
+    <div class="table-scroll">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>زمان</th>
+                    <th>رویداد</th>
+                    <th>موجودیت</th>
+                    <th>کاربر</th>
+                    <th>جزئیات</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for event in events %}
+                <tr>
+                    <td class="tnum">{{ event.occurred_at }}</td>
+                    <td><code>{{ event.event_type }}</code></td>
+                    <td><code>{{ event.aggregate_type }}{% if event.aggregate_id %} #{{ event.aggregate_id }}{% endif %}</code></td>
+                    <td>{{ event.actor_user.username if event.actor_user else 'سیستم' }}</td>
+                    <td><code dir="ltr">{{ event_payload(event) }}</code></td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="empty-state">رویدادی برای نمایش وجود ندارد.</p>
+    {% endif %}
+</div>
+{% endblock %}

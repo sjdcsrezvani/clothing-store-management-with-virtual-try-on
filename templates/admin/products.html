@@ -1,101 +1,276 @@
 {% extends "base.html" %}
-{% block title %}مدیریت محصولات — رای کیدز{% endblock %}
+{# Storefront accent: the catalog sells, so it wears the full rainbow. #}
+{% set page_accent_full = True %}
 {% block content %}
-<h2>مدیریت محصولات</h2>
+{% set page_description %}
+محصولات، تنوع‌ها، قیمت و موجودی را از یک صفحه مدیریت کنید.
+{% endset %}
+{% set heading_class = 'page-heading product-page-heading' %}
+{% set page_actions %}
+<a href="/admin/products/add" class="btn btn-primary">افزودن محصول</a>
+<a href="/admin/barcodes/print" class="btn btn-ghost">🏷️ تگ‌ها</a>
+<a href="/admin/settings/tags" class="btn btn-ghost">تنظیمات تگ</a>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
-<div class="card">
-    <h3>اسکن بارکد محصول</h3>
-    <form method="get" action="/admin/products" class="search-form">
-        <input type="text" id="barcode-scanner" name="search" placeholder="بارکد را اسکن کنید..." autofocus autocomplete="off">
-        <button type="submit" class="btn btn-primary">جستجو</button>
-    </form>
+<div class="stats-grid products-kpi" aria-label="خلاصه محصولات">
+    <div class="stat-card accent-sky">
+        <div class="stat-label">محصولات فعال</div>
+        <div class="stat-value">{{ total_products }}</div>
+        <div class="stat-sub">در فهرست فعلی</div>
+    </div>
+    <div class="stat-card accent-saffron">
+        <div class="stat-label">تنوع کم‌موجودی</div>
+        <div class="stat-value">{{ low_stock_count }}</div>
+        <div class="stat-sub">۲ عدد یا کمتر</div>
+    </div>
+    <div class="stat-card accent-persimmon">
+        <div class="stat-label">تنوع ناموجود</div>
+        <div class="stat-value">{{ out_stock_count }}</div>
+        <div class="stat-sub">نیازمند بررسی</div>
+    </div>
 </div>
 
-<div class="filter-bar">
-    <form method="get" action="/admin/products" class="search-form">
-        <input type="text" name="search" placeholder="جستجو بر اساس نام، بارکد یا SKU" value="{{ search }}">
-        <select name="category">
+<section class="card product-search-card">
+    <div class="section-heading-row">
+        <div>
+            <h3>جست‌وجوی سریع</h3>
+            <p class="muted">بارکدخوان مانند صفحه‌کلید عمل می‌کند؛ کافی است کد را اسکن کنید.</p>
+        </div>
+    </div>
+    <form method="get" action="/admin/products" class="search-form product-search-form">
+        <input type="hidden" name="sort" value="{{ sort_key }}">
+        <input type="hidden" name="dir" value="{{ sort_dir }}">
+        <input type="hidden" name="stock" value="{{ stock_filter }}">
+        <input type="hidden" name="state" value="{{ state }}">
+        <label class="sr-only" for="barcode-scanner">بارکد یا نام محصول</label>
+        <input type="text" id="barcode-scanner" name="search" value="{{ search }}" placeholder="بارکد، SKU، نام یا دسته‌بندی" autofocus autocomplete="off">
+        <label class="sr-only" for="product-category">دسته‌بندی</label>
+        <select name="category" id="product-category">
             <option value="">همه دسته‌ها</option>
             {% for cat in categories %}
             <option value="{{ cat }}" {% if category_filter == cat %}selected{% endif %}>{{ cat }}</option>
             {% endfor %}
         </select>
-        <button type="submit" class="btn btn-primary">اعمال فیلتر</button>
+        <button type="submit" class="btn btn-primary">جست‌وجو</button>
+        {% if search or category_filter or stock_filter != 'all' or state != 'active' or sort_key != 'newest' or sort_dir != 'desc' or per_page != 10 %}<a href="/admin/products" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
     </form>
-</div>
+    <nav class="stock-chips" aria-label="پالایش موجودی">
+        <a class="stock-chip {% if stock_filter == 'all' %}is-active{% endif %}" href="/admin/products?search={{ search }}&category={{ category_filter }}&per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}&state={{ state }}&stock=all" {% if stock_filter == 'all' %}aria-current="true"{% endif %}>همه</a>
+        <a class="stock-chip {% if stock_filter == 'low' %}is-active{% endif %}" href="/admin/products?search={{ search }}&category={{ category_filter }}&per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}&state={{ state }}&stock=low" {% if stock_filter == 'low' %}aria-current="true"{% endif %}>کم‌موجود ({{ low_stock_count }})</a>
+        <a class="stock-chip {% if stock_filter == 'out' %}is-active{% endif %}" href="/admin/products?search={{ search }}&category={{ category_filter }}&per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}&state={{ state }}&stock=out" {% if stock_filter == 'out' %}aria-current="true"{% endif %}>ناموجود ({{ out_stock_count }})</a>
+    </nav>
+</section>
 
-<div class="admin-nav" style="margin-bottom: 1.5rem;">
-    <a href="/admin/products/add"><button type="button" class="btn btn-primary">افزودن محصول جدید</button></a>
-    <a href="/admin/barcodes/print"><button type="button" class="btn btn-secondary">چاپ بارکد</button></a>
-</div>
-
-<div class="card">
+<section class="card product-list-card" data-list-region="products">
+    <div class="section-heading-row product-list-heading">
+        <div>
+            <h3 data-list-heading tabindex="-1">{% if state == 'archived' %}بایگانی محصولات{% else %}فهرست محصولات{% endif %}</h3>
+            <p class="muted">صفحه {{ page }} از {{ total_pages }} · {{ total_products }} محصول</p>
+        </div>
+        <div class="list-heading-actions">
+        {% if state == 'archived' %}
+        <a href="/admin/products?search={{ search }}&category={{ category_filter }}&stock={{ stock_filter }}&state={{ state }}&per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}" class="btn btn-sm btn-ghost">بازگشت به فعال‌ها</a>
+        {% else %}
+        {% if archived_count %}<a href="/admin/products?state=archived" class="btn btn-sm btn-ghost">بایگانی‌شده‌ها ({{ archived_count }})</a>{% endif %}
+        <a href="/admin/products/export?search={{ search }}&category={{ category_filter }}&stock={{ stock_filter }}&sort={{ sort_key }}&dir={{ sort_dir }}" class="btn btn-sm btn-ghost"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-backup"/></svg>خروجی CSV</a>
+        {% endif %}
+        <form method="get" action="/admin/products" class="per-page-form">
+            <input type="hidden" name="search" value="{{ search }}">
+            <input type="hidden" name="category" value="{{ category_filter }}">
+            <input type="hidden" name="stock" value="{{ stock_filter }}">
+            <input type="hidden" name="state" value="{{ state }}">
+            <input type="hidden" name="sort" value="{{ sort_key }}">
+            <input type="hidden" name="dir" value="{{ sort_dir }}">
+            <label class="sr-only" for="product-per-page">تعداد در صفحه</label>
+            <select name="per_page" id="product-per-page" onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}" aria-label="تعداد در صفحه">
+                {% for option in per_page_options %}
+                <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }} در صفحه</option>
+                {% endfor %}
+            </select>
+        </form>
+        </div>
+    </div>
     {% if products %}
-    <table>
-        <thead>
-            <tr>
-                <th>تصویر</th>
-                <th>نام</th>
-                <th>بارکد</th>
-                <th>قیمت فروش</th>
-                <th>قیمت خرید</th>
-                <th>موجودی</th>
-                <th>سایز</th>
-                <th>رنگ</th>
-                <th>دسته</th>
-                <th>عملیات</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for product in products %}
-            <tr>
-                <td>
-                    {% if product.image_path %}
-                        <img src="{{ product.image_path }}" alt="{{ product.name }}" style="width: 50px; height: 50px; object-fit: cover; border-radius: 8px;">
-                    {% else %}
-                        <span class="no-image">بدون تصویر</span>
-                    {% endif %}
-                </td>
-                <td>{{ product.name }}</td>
-                <td><span class="barcode">{{ product.barcode }}</span></td>
-                <td>{{ fmt(product.price) }} تومان</td>
-                <td>{{ fmt(product.cost_price) }} تومان</td>
-                <td>
-                    {% if product.stock_quantity > 0 %}
-                        <span class="stock-available">{{ product.stock_quantity }}</span>
-                    {% else %}
-                        <span class="stock-empty">ناموجود</span>
-                    {% endif %}
-                </td>
-                <td>{{ product.size or '—' }}</td>
-                <td>{{ product.color or '—' }}</td>
-                <td>{{ product.category or '—' }}</td>
-                <td>
-                    <a href="/admin/products/{{ product.id }}"><button type="button" class="btn btn-secondary btn-sm">ویرایش</button></a>
-                    <form method="post" action="/admin/products/{{ product.id }}/delete" style="display:inline;" 
-                          onsubmit="return confirm('آیا مطمئن هستید؟ این محصول حذف خواهد شد.')">
-                        <button type="submit" class="btn btn-danger btn-sm">حذف</button>
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% else %}
-    <p>محصولی یافت نشد.</p>
+    {% if state == 'active' %}
+    <form id="bulk-archive-form" method="post" action="/admin/products/bulk-archive" class="bulk-bar" hidden onsubmit="return confirm('محصولات انتخاب‌شده و تنوع‌هایشان بایگانی شود؟')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <strong><span id="bulk-count">۰</span> انتخاب شده</strong>
+        <button type="submit" class="btn btn-sm btn-danger">بایگانی انتخاب‌شده‌ها</button>
+    </form>
     {% endif %}
-</div>
-
-<nav class="admin-nav">
-    <a href="/admin"><button type="button" class="btn btn-secondary">بازگشت به داشبورد</button></a>
-</nav>
-
+    <div class="table-scroll">
+        <table class="product-list-table">
+            <thead>
+                <tr>
+                    <th scope="col" class="bulk-cell">{% if state == 'active' %}<label class="sr-only" for="bulk-check-all">انتخاب همه</label><input type="checkbox" id="bulk-check-all">{% endif %}</th>
+                    <th scope="col" aria-sort="{{ 'descending' if sort_key == 'name' and sort_dir == 'desc' else 'ascending' if sort_key == 'name' else 'none' }}"><a class="sort-link" href="/admin/products?search={{ search }}&category={{ category_filter }}&stock={{ stock_filter }}&state={{ state }}&per_page={{ per_page }}&sort=name&dir={{ 'asc' if sort_key == 'name' and sort_dir == 'desc' else 'desc' }}">محصول</a></th>
+                    <th scope="col" aria-sort="{{ 'descending' if sort_key == 'category' and sort_dir == 'desc' else 'ascending' if sort_key == 'category' else 'none' }}"><a class="sort-link" href="/admin/products?search={{ search }}&category={{ category_filter }}&stock={{ stock_filter }}&state={{ state }}&per_page={{ per_page }}&sort=category&dir={{ 'asc' if sort_key == 'category' and sort_dir == 'desc' else 'desc' }}">دسته‌بندی</a></th>
+                    <th scope="col">تنوع‌ها</th>
+                    <th scope="col" aria-sort="{{ 'descending' if sort_key == 'price' and sort_dir == 'desc' else 'ascending' if sort_key == 'price' else 'none' }}"><a class="sort-link" href="/admin/products?search={{ search }}&category={{ category_filter }}&stock={{ stock_filter }}&state={{ state }}&per_page={{ per_page }}&sort=price&dir={{ 'asc' if sort_key == 'price' and sort_dir == 'desc' else 'desc' }}">قیمت</a></th>
+                    <th scope="col" aria-sort="{{ 'descending' if sort_key == 'stock' and sort_dir == 'desc' else 'ascending' if sort_key == 'stock' else 'none' }}"><a class="sort-link" href="/admin/products?search={{ search }}&category={{ category_filter }}&stock={{ stock_filter }}&state={{ state }}&per_page={{ per_page }}&sort=stock&dir={{ 'asc' if sort_key == 'stock' and sort_dir == 'desc' else 'desc' }}">قابل فروش</a></th>
+                    <th scope="col">رزرو</th>
+                    <th scope="col">عملیات</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for product in products %}
+                {% set active_variants = product.variants|selectattr('is_active')|list %}
+                <tr class="product-row" style="--i:{{ loop.index0 if loop.index0 < 10 else 9 }}">
+                    <td class="bulk-cell">{% if state == 'active' %}<label class="sr-only" for="bulk-{{ product.id }}">انتخاب {{ product.name }}</label><input type="checkbox" class="bulk-check" id="bulk-{{ product.id }}" name="ids" value="{{ product.id }}" form="bulk-archive-form">{% endif %}</td>
+                    <td>
+                        <div class="product-identity">
+                            {% set ns = namespace(img_path=None) %}
+                            {% for v in active_variants %}
+                                {% if not ns.img_path and v.image_path and '/uploads/barcodes/' not in v.image_path %}
+                                    {% set ns.img_path = v.image_path %}
+                                {% endif %}
+                            {% endfor %}
+                            {% if ns.img_path %}
+                                <img class="product-thumb" src="{{ ns.img_path }}" alt="تصویر {{ product.name }}" loading="lazy">
+                            {% elif product.image_path %}
+                                <img class="product-thumb" src="{{ product.image_path }}" alt="تصویر {{ product.name }}" loading="lazy">
+                            {% else %}
+                                <span class="product-thumb product-thumb-empty" aria-hidden="true">—</span>
+                            {% endif %}
+                            <span>
+                                <strong>{{ product.name|highlight(search) }}</strong>
+                                {% if product.brand %}<small>{{ product.brand|highlight(search) }}</small>{% endif %}
+                                <small class="product-template-badge">{{ product.tag_template.name if product.tag_template and product.tag_template.is_active else 'قالب پیش‌فرض فروشگاه' }}</small>
+                            </span>
+                        </div>
+                    </td>
+                    <td>{{ product.category|highlight(search) if product.category else '—' }}</td>
+                    <td>
+                        {% if active_variants %}
+                            <div class="variant-summary">
+                                <button type="button" class="badge badge-info variant-toggle" aria-expanded="false" aria-controls="variants-{{ product.id }}">{{ active_variants|length }} تنوع · جزئیات</button>
+                                {% set sizes = active_variants|map(attribute='size')|unique|reject('none')|list %}
+                                {% set colors = active_variants|map(attribute='color')|unique|reject('none')|list %}
+                                {% if sizes %}<small>سایز: {{ sizes|join('، ') }}</small>{% endif %}
+                                {% if colors %}<small>رنگ: {{ colors|join('، ') }}</small>{% endif %}
+                            </div>
+                        {% else %}
+                            <span class="muted">بدون تنوع فعال</span>
+                        {% endif %}
+                    </td>
+                    <td class="tnum">{{ product.price_range or '—' }}</td>
+                    <td>
+                        {% set total_stock = product.available_stock %}
+                        {% if total_stock > 0 %}
+                            <span class="badge badge-available">{{ total_stock }} عدد</span>
+                        {% else %}
+                            <span class="badge badge-none">ناموجود</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ product.total_reserved }} عدد</td>
+                    <td>
+                        <div class="table-actions">
+                            <a href="/admin/products/{{ product.id }}?next={{ list_qs|urlencode }}" class="btn btn-sm btn-ghost">ویرایش</a>
+                            {% if state == 'archived' %}
+                            <form method="post" action="/admin/products/{{ product.id }}/restore" onsubmit="return confirm('«{{ product.name }}» و تنوع‌هایش به فهرست برگردد؟')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <button type="submit" class="btn btn-sm btn-ghost">بازگردانی</button>
+                            </form>
+                            {% else %}
+                            <form method="post" action="/admin/products/{{ product.id }}/delete" onsubmit="return confirm('این محصول و تنوع‌هایش بایگانی شود؟')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <button type="submit" class="btn btn-sm btn-danger-quiet">بایگانی</button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% if active_variants %}
+                <tr class="variant-detail-row" id="variants-{{ product.id }}" hidden>
+                    <td></td>
+                    <td colspan="7">
+                        <ul class="variant-detail-list">
+                            {% for variant in active_variants %}
+                            <li>
+                                <strong>{{ variant.size or '—' }}{% if variant.color %} · {{ variant.color }}{% endif %}</strong>
+                                <span class="tnum" dir="ltr">{{ variant.sku or variant.barcode }}</span>
+                                <span class="tnum">{{ variant.price }} تومان</span>
+                                {% if variant.available_quantity > 0 %}
+                                    <span class="badge badge-available">{{ variant.available_quantity }} عدد</span>
+                                {% else %}
+                                    <span class="badge badge-none">ناموجود</span>
+                                {% endif %}
+                                <a href="/admin/variants/{{ variant.id }}/edit?next={{ list_qs|urlencode }}" class="text-link">ویرایش تنوع</a>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state products-empty">
+        <h3>محصولی پیدا نشد</h3>
+        <p>{% if state == 'archived' %}بایگانی خالی است — چیزی برای برگرداندن نیست.{% elif search or category_filter or stock_filter != 'all' %}فیلترها را تغییر دهید یا یک محصول جدید اضافه کنید.{% else %}هنوز محصولی ثبت نشده است.{% endif %}</p>
+        {% if state != 'archived' %}<a href="/admin/products/add" class="btn btn-primary">افزودن محصول</a>{% endif %}
+    </div>
+    {% endif %}
+    {% if total_pages > 1 %}
+    <nav class="product-pagination" aria-label="صفحه‌بندی محصولات">
+        {% if page > 1 %}<a class="btn btn-sm btn-ghost" href="/admin/products?page={{ page - 1 }}&search={{ search }}&category={{ category_filter }}&stock={{ stock_filter }}&state={{ state }}&per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}">صفحه قبل</a>{% endif %}
+        <span>صفحه {{ page }} از {{ total_pages }}</span>
+        {% if page < total_pages %}<a class="btn btn-sm btn-ghost" href="/admin/products?page={{ page + 1 }}&search={{ search }}&category={{ category_filter }}&stock={{ stock_filter }}&state={{ state }}&per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}">صفحه بعد</a>{% endif %}
+    </nav>
+    {% endif %}
+</section>
 <script>
-document.getElementById('barcode-scanner').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') {
-        e.preventDefault();
+document.getElementById('barcode-scanner').addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') {
+        event.preventDefault();
         this.form.submit();
     }
 });
+// Expandable variant rows and the bulk bar are bound per element, so they are
+// one function the shell re-runs after every in-place swap (and once on load).
+// dataset flags keep a second run over the same nodes a no-op.
+function initProductsRegion(root) {
+    root.querySelectorAll('.variant-toggle').forEach(function (toggle) {
+        if (toggle.dataset.bound) return;
+        toggle.dataset.bound = 'true';
+        toggle.addEventListener('click', function () {
+            var row = document.getElementById(toggle.getAttribute('aria-controls'));
+            if (!row) return;
+            var open = row.hasAttribute('hidden');
+            row.toggleAttribute('hidden');
+            toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        });
+    });
+    var all = root.querySelector('#bulk-check-all');
+    var bar = root.querySelector('#bulk-archive-form');
+    var count = root.querySelector('#bulk-count');
+    if (!all || !bar || !count || bar.dataset.bound) return;
+    bar.dataset.bound = 'true';
+    var boxes = Array.prototype.slice.call(root.querySelectorAll('.bulk-check'));
+    function sync() {
+        var checked = boxes.filter(function (box) { return box.checked; });
+        count.textContent = checked.length;
+        bar.toggleAttribute('hidden', checked.length === 0);
+        all.checked = boxes.length > 0 && checked.length === boxes.length;
+        all.indeterminate = checked.length > 0 && checked.length < boxes.length;
+    }
+    all.addEventListener('change', function () {
+        boxes.forEach(function (box) { box.checked = all.checked; });
+        sync();
+    });
+    boxes.forEach(function (box) { box.addEventListener('change', sync); });
+}
+function initProductsPage() {
+    initProductsRegion(document);
+    if (window.RaykidListNav) window.RaykidListNav.register('products', initProductsRegion);
+}
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initProductsPage);
+} else {
+    initProductsPage();
+}
 </script>
 {% endblock %}

@@ -11,6 +11,8 @@
      --mint:       #51CF66   success
      --mint-dark:  #42B855   hover
      --lavender:   #A66CFF   diamond / special
+     --persimmon:  #AD3100   attention (debt, overdue, failed, over limit) —
+                             not an alarm, and never a button
      --bg:         #FFF5F0   warm peachy bg
      --card:       #FFFFFF
      --ink:        #2D2D2D
@@ -19,11 +21,16 @@
 */
 
 :root {
+  /* The browser's own chrome follows the palette's pole: which side its native
+     widget ink, scrollbars and date-field indicator paint at. `light dark`
+     here means "either" for the unthemed fallback; each theme-mode pins it. */
+  color-scheme: light dark;
   --candy: #FF6B8A;
   --candy-dark: #E85878;
   --sky: #45B7D1;
   --sky-dark: #389BB0;
   --sunshine: #FFC857;
+  --persimmon: #AD3100;
   --mint: #51CF66;
   --mint-dark: #42B855;
   --lavender: #A66CFF;
@@ -32,10 +39,60 @@
   --ink: #2D2D2D;
   --ink-soft: #999;
   --rule: #F0E4D8;
-  --shadow: 0 4px 16px rgba(0,0,0,0.06);
-  --shadow-hover: 0 8px 24px rgba(0,0,0,0.10);
+  /* The elevation pair is the active theme's own — derived per palette in
+     services/themes.py and applied with the rest of the tokens. These root
+     values are a bare marker: a page that loads the stylesheet before its
+     palette must cast no shadow at all, never a light-tuned blur inherited
+     onto a dark workspace. */
+  --shadow: 0 0 0 transparent;
+  --shadow-hover: 0 0 0 transparent;
+  --shadow-overlay: 0 0 0 transparent;
   --radius: 14px;
   --radius-sm: 8px;
+  --surface-soft: #fffaf7;
+  --sidebar-width: 260px;
+  --touch-target: 44px;
+  /* The state colours. Every theme computes its own from the palette it is given
+     (services/themes.py), because a focus ring or a hover fill that is *inherited*
+     still paints — it just paints a colour chosen for another background. These
+     are the default palette's values, for the first paint before a theme applies;
+     tests/test_keyboard_shell.py measures every pair in all ten palettes. */
+  --ring: #187485;
+  --ring-brand: #5EA2AE;
+  --focus-ring: 0 0 0 3px var(--ring);
+  --hover-surface: #F3D7DE;
+  --sidebar-hover: #2C383F;
+  --disabled-surface: var(--surface-soft);
+  --disabled-ink: #54606B;
+  --danger: #CC3946;
+  /* …and the colours *text* is written in: the brand hue as a link, a figure or a
+     chip label, the other three voices (positive, note, warning), and the fills a
+     label sits on — each fill with its own derived label, candy and mint
+     separately, because no single label colour reads on both in all ten palettes.
+     `--candy` stays the hue — borders, tints, bars — because it was never chosen
+     to be read. */
+  --link: #AB4058;
+  --link-hover: #A03750;
+  --brand-fill: #BF4763;
+  --brand-fill-dark: #A83A54;
+  --brand-label: #FFFFFF;
+  --success-fill: #21864B;
+  --success-fill-dark: #176A3A;
+  --success-label: #FFFFFF;
+  --success-ink: #166537;
+  --info-ink: #115664;
+  --warning-ink: #8B6413;
+  --sidebar-bg: #17232B;
+  --sidebar-text: #EAF0F2;
+  --sidebar-active: #2C414C;
+  --topbar-start: #17232B;
+  --topbar-end: #334C59;
+  --topbar-text: #FFFFFF;
+  --success-bg: #E8F5ED;
+  --warning-bg: #FFF5D9;
+  --danger-bg: #FDEBEC;
+  --density-scale: 1;
+  --button-text: #FFFFFF;
 }
 
 * {
@@ -59,12 +116,58 @@ body, input, table, .num {
   font-feature-settings: "tnum" 1, "lnum" 1;
 }
 
-a { color: var(--candy); text-decoration: none; font-weight: 600; }
+a { color: var(--link); text-decoration: none; font-weight: 600; }
 a:hover { text-decoration: underline; }
 
-::selection { background: var(--candy); color: #fff; }
+/* Keyboard-only escape from the menu: without it the first Tab lands on the menu
+   button and a reader walks the whole sidebar — up to 22 entries — before
+   reaching the page. Hidden until it is focused, and drawn in the ring colour so
+   it cannot be missed on the way in. */
+.skip-link {
+  position: absolute;
+  top: -4rem;
+  inset-inline-start: 0.75rem;
+  z-index: 200;
+  padding: 0.6rem 1rem;
+  background: var(--card);
+  color: var(--ink);
+  border: 2px solid var(--ring);
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  transition: top 0.15s ease;
+}
+.skip-link:focus { top: 0.75rem; text-decoration: none; }
 
-/* ===================== Layout ===================== */
+/* A picture that opens full size is a button, not an image with a click handler:
+   an <img> is not in the tab order, so the only way into the lightbox was a mouse
+   — and the ✕ that closes it was a <div>. Both are real buttons now; the chrome
+   around the picture is stripped rather than restyled. */
+.lightbox-open { display: block; width: 100%; padding: 0; border: none; background: none; cursor: zoom-in; min-height: 0; }
+.lightbox-open img { display: block; }
+.lightbox-open:focus-visible { outline: 3px solid var(--ring-brand); outline-offset: 2px; }
+.lightbox-stage { box-shadow: var(--shadow-overlay); }
+.lightbox-close {
+  position: absolute;
+  top: 1rem;
+  inset-inline-start: 1rem;
+  width: 2.6rem;
+  height: 2.6rem;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--scrim-text) 45%, transparent);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--scrim-text) 12%, transparent);
+  color: var(--scrim-text);
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.lightbox-close:focus-visible { outline: 3px solid var(--ring-brand); outline-offset: 2px; }
+
+::selection { background: var(--brand-fill); color: var(--brand-label); }
+
+/* ===================== App shell ===================== */
 
 .container {
   max-width: 1080px;
@@ -72,73 +175,153 @@ a:hover { text-decoration: underline; }
   padding: 0 1rem;
 }
 
-/* Colorful gradient header — like a striped candy wrapper */
-header {
-  background: linear-gradient(135deg, var(--candy) 0%, var(--sky) 100%);
-  padding: 0.7rem 0;
+.app-shell { min-height: 100vh; }
+.app-topbar {
   position: sticky;
   top: 0;
-  z-index: 50;
-  box-shadow: 0 2px 12px rgba(255, 107, 138, 0.25);
+  z-index: 80;
+  height: 72px;
+  background: linear-gradient(135deg, var(--topbar-start) 0%, var(--topbar-end) 100%);
+  box-shadow: var(--shadow-hover);
 }
-
-header .container {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.8rem;
-}
-
-header h1 a {
-  color: #fff;
-  font-size: 1.3rem;
-  font-weight: 800;
-  text-shadow: 0 1px 3px rgba(0,0,0,0.12);
+.topbar-inner {
+  position: relative;
+  direction: rtl;
+  max-width: 1440px;
+  height: 100%;
+  margin: 0 auto;
+  padding: 0 1.25rem;
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 1rem;
 }
-header h1 a:hover { text-decoration: none; }
-
-header nav {
-  display: flex;
-  gap: 0.4rem;
-  align-items: center;
+.brand { color: var(--topbar-text); display: flex; align-items: center; gap: 0.6rem; min-width: 210px; }
+.brand:hover { text-decoration: none; }
+.brand-mark { font-size: 1.8rem; }
+.brand-copy { display: flex; flex-direction: column; line-height: 1.2; }
+.brand-copy strong { font-size: 1.1rem; font-weight: 800; }
+.brand-copy small { opacity: 0.82; font-size: 0.7rem; margin-top: 0.2rem; }
+.topbar-actions { position: absolute; left: 1.25rem; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 0.6rem; direction: rtl; white-space: nowrap; }
+/* The veil over the topbar's own buttons is the bar's text colour, not white: a
+   palette with a light bar needs the buttons to read against *it*, and a 28%
+   white veil was this app's pink-to-blue topbar written into the stylesheet. */
+.quick-sale, .topbar-admin, .menu-toggle {
+  color: var(--topbar-text); border: 1px solid color-mix(in srgb, var(--topbar-text) 35%, transparent); background: color-mix(in srgb, var(--topbar-text) 16%, transparent);
+  border-radius: 12px; min-height: 40px; padding: 0.55rem 0.8rem; display: inline-flex;
+  align-items: center; justify-content: center; gap: 0.35rem; font-family: inherit; font-weight: 700; cursor: pointer;
+  white-space: nowrap;
 }
-
-.nav-btn {
-  background: rgba(255,255,255,0.2);
-  color: #fff;
-  border: 1.5px solid rgba(255,255,255,0.4);
-  padding: 0.3rem 0.8rem;
-  border-radius: 999px;
-  font-family: inherit;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-}
-.nav-btn:hover {
-  background: rgba(255,255,255,0.35);
-  border-color: #fff;
-}
-
-main {
-  padding: 1.5rem 0 3rem;
-  min-height: calc(100vh - 160px);
+.quick-sale:hover, .topbar-admin:hover, .menu-toggle:hover { background: color-mix(in srgb, var(--topbar-text) 28%, transparent); text-decoration: none; }
+.topbar-admin { width: auto; min-width: 104px; }
+.topbar-admin .ui-icon, .quick-sale .ui-icon { display: inline-block; }
+/* Icon-only topbar buttons (narrow screens hide the text label) get their name
+   back as a themed tooltip on hover and keyboard focus — never the native
+   title chrome. Delayed on first show, instant once one is open. */
+.topbar-tip { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .topbar-tip { transition: none !important; transform: none !important; }
 }
 
-footer {
-  text-align: center;
-  padding: 1rem 0;
-  color: var(--ink-soft);
-  font-size: 0.8rem;
-  border-top: 2px solid var(--rule);
-  margin-top: 2rem;
+.menu-toggle { display: none; font-size: 1.25rem; }
+
+/* Only the list scrolls; the footer stays put. With the whole
+   aside scrolling, a 22-item menu pushed the footer's own button below the fold.
+   The brand block is gone — the topbar already names the shop — so the menu
+   starts at thumb height. */
+.app-sidebar {
+  position: fixed; z-index: 70; top: 72px; right: 0; bottom: 0; width: 260px;
+  background: var(--sidebar-bg); color: var(--sidebar-text); border-left: 1px solid var(--rule); box-shadow: var(--shadow);
+  display: flex; flex-direction: column; overflow: hidden;
 }
+/* Only the list scrolls; the footer stays put. With the whole aside
+   scrolling, a 22-item menu pushed the footer's own button below the fold. */
+.sidebar-nav { padding: 0.7rem; flex: 1; overflow-y: auto; }
+.sidebar-section ul { list-style: none; margin: 0; padding: 0; }
+.sidebar-section-label { color: color-mix(in srgb, var(--sidebar-text) 58%, transparent); font-size: 0.68rem; font-weight: 800; margin: 1rem 0.7rem 0.35rem; }
+/* Collapsible sections: the label is a button wearing the label's voice, so
+   the tree reads identically with no JS (everything renders open). */
+button.sidebar-collapse {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+  width: 100%; padding: 0; border: none; background: none; cursor: pointer;
+  font-family: inherit; text-align: start;
+}
+button.sidebar-collapse:focus-visible { outline: 3px solid var(--ring-brand); outline-offset: 2px; border-radius: 4px; }
+.collapse-chevron { font-size: 0.7rem; transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1); }
+.sidebar-section.is-collapsed .collapse-chevron { transform: rotate(90deg); }
+.sidebar-nav a { display: flex; align-items: center; gap: 0.7rem; padding: 0.68rem 0.75rem; border-radius: var(--radius-sm); color: var(--sidebar-text); font-size: 0.86rem; font-weight: 600; margin: 0.12rem 0; transition: background 150ms cubic-bezier(0.22, 1, 0.36, 1), color 150ms cubic-bezier(0.22, 1, 0.36, 1), transform 150ms cubic-bezier(0.22, 1, 0.36, 1); }
+.sidebar-nav a span { width: 1.35rem; text-align: center; font-size: 1.05rem; }
+/* The hovered pill is its own colour, not the one the current page wears: they
+   were the same, so a hover said nothing on the nine palettes where the fill was
+   all but invisible against the sidebar — 1.10:1 in Kids Boutique. */
+.sidebar-nav a:hover { background: var(--sidebar-hover); color: var(--sidebar-text); text-decoration: none; transform: translateX(-2px); }
+.sidebar-nav a.active, .sidebar-nav a.active:hover { background: var(--sidebar-active); color: var(--sidebar-text); box-shadow: inset -3px 0 var(--candy); font-weight: 800; }
+.sidebar-footer { padding: 0.8rem; border-top: 1px solid var(--rule); }
+.sidebar-logout { width: 100%; border-radius: 10px; padding: 0.7rem; border: none; font-family: inherit; font-weight: 700; cursor: pointer; display: flex; justify-content: center; gap: 0.35rem; }
+/* The label was `--candy` on a 12% tint of itself, which is the same hue as the
+   sidebar it sits in on every dark palette: 1.09:1 in Forest Ledger. It reads in
+   the shell's own text colour now, and the brand stays in the fill. */
+.sidebar-logout { color: var(--sidebar-text); background: color-mix(in srgb, var(--candy) 12%, var(--sidebar-bg)); }
+.sidebar-logout:hover { background: var(--sidebar-hover); }
+.sidebar-overlay { display: none; }
+.app-main { margin-right: var(--sidebar-width); min-height: calc(100vh - 72px); scroll-margin-top: 5.5rem; }
+html[data-theme-mode="dark"] body, html[data-theme-mode="dark-shell"] body, html[data-theme-mode="high-contrast"] body { background: var(--bg); color: var(--ink); }
+html[data-theme-mode="dark"] th, html[data-theme-mode="dark-shell"] th { background: var(--surface-soft); color: var(--ink-soft); }
+html[data-theme-mode="dark"] input, html[data-theme-mode="dark"] select, html[data-theme-mode="dark"] textarea, html[data-theme-mode="dark-shell"] input, html[data-theme-mode="dark-shell"] select, html[data-theme-mode="dark-shell"] textarea { background: var(--surface-soft); color: var(--ink); border-color: var(--rule); }
+html[data-theme-mode="dark"] .info-item, html[data-theme-mode="dark-shell"] .info-item, html[data-theme-mode="dark"] .referral-section, html[data-theme-mode="dark-shell"] .referral-section { background: var(--surface-soft); }
+html[data-theme-mode="dark"] .card::before, html[data-theme-mode="dark-shell"] .card::before, html[data-theme-mode="high-contrast"] .card::before { background: var(--candy); }
+html[data-theme-mode="high-contrast"] .card, html[data-theme-mode="high-contrast"] .stat-card, html[data-theme-mode="high-contrast"] .kpi-card { border: 2px solid var(--rule); }
+.page-container { max-width: 1240px; margin: 0 auto; padding: 1.8rem 1.5rem 3rem; }
+@media (min-width: 901px) {
+  .page-container > * { animation: pageRise 250ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .page-container > *:nth-child(2) { animation-delay: 40ms; }
+  .page-container > *:nth-child(3) { animation-delay: 80ms; }
+}
+@keyframes pageRise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.app-footer { max-width: 1240px; margin: 0 auto; padding: 1rem 1.5rem 1.4rem; color: var(--ink-soft); font-size: 0.75rem; text-align: center; border-top: 1px solid var(--rule); }
+.app-footer p + p { margin-top: 0.25rem; }
+
+/* The old `header:not(.app-topbar)` shell-compat rule is gone: no template uses
+   that shell any more, and it painted the topbar gradient onto any other
+   <header> — which is exactly what it did to the statement's own header. */
+main:not(.app-main) { padding: 1.5rem 0 3rem; min-height: calc(100vh - 160px); }
+footer:not(.app-footer) { text-align: center; padding: 1rem 0; color: var(--ink-soft); font-size: 0.8rem; border-top: 2px solid var(--rule); margin-top: 2rem; }
+
+/* ===================== Page headings ===================== */
+.page-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 1.5rem; }
+/* A long description must wrap, not squeeze the nav: the nav is sized to its
+   own buttons and keeps them on one row, and the text block gives up the width.
+   Without this the heading's paragraph could starve the nav until its buttons
+   broke 2 + 1 — which is what the credit page's three did. */
+.page-heading > div { min-width: 0; }
+.page-heading .admin-nav { flex: 0 0 auto; }
+/* The page's own name, and the only <h1> on the page: the shell had no h1 at
+   all before, so the outline started at h2 and nothing said what the page was. */
+.page-heading h1 { margin: 0.2rem 0 0.25rem; font-size: clamp(1.45rem, 2.5vw, 2rem); display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.page-heading p { color: var(--ink-soft); font-size: 0.82rem; margin: 0; }
+.page-heading .page-icon { flex: 0 0 1.6rem; width: 1.6rem; height: 1.6rem; }
+.page-heading .page-icon .ui-icon { width: 1.5rem; height: 1.5rem; }
+/* The role badge the dashboard wears next to its name. */
+.page-badge { font-size: 0.7rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 999px; background: color-mix(in srgb, var(--sky) 16%, var(--card)); color: var(--info-ink); }
+.eyebrow { color: var(--link-hover); font-size: 0.72rem; font-weight: 800; letter-spacing: 0.02em; }
+
+/* ===================== Breadcrumb =====================
+   One trail, built from the same registry that draws the sidebar and names the
+   page, so the last crumb is the heading above it. The section has no URL — it
+   is printed as context rather than given a link that would go nowhere. */
+.breadcrumb { display: flex; align-items: center; flex-wrap: nowrap; gap: 0.35rem; overflow-x: auto; max-width: 100%; padding-bottom: 0.15rem; font-size: 0.72rem; font-weight: 700; margin-bottom: 0.3rem; }
+.breadcrumb a, .breadcrumb span { white-space: nowrap; flex-shrink: 0; line-height: 1.6; }
+/* Inline trail links are text, not touch controls: the shell's 44px touch
+   minimum would make the linked crumb's box taller than its span siblings,
+   floating its text above the line. */
+.breadcrumb a { min-height: 0; }
+/* Same story inside variant detail rows: the quiet edit link sits in a flex
+   row of text-height siblings, so it opts out of the touch minimum too. */
+.variant-detail-list .text-link { min-height: 0; }
+.breadcrumb a { color: var(--ink-soft); }
+.breadcrumb a:hover { color: var(--link-hover); text-decoration: underline; }
+.breadcrumb .current { color: var(--link-hover); font-weight: 800; }
+.breadcrumb-sep { color: var(--rule); font-weight: 400; }
+.invoice-trail, .document-trail { margin-bottom: 0.75rem; }
 
 /* ===================== Cards ===================== */
 
@@ -148,9 +331,9 @@ footer {
   padding: 1.4rem;
   margin-bottom: 1.2rem;
   box-shadow: var(--shadow);
-  border: none;
+  border: 1px solid color-mix(in srgb, var(--rule) 72%, transparent);
   position: relative;
-  transition: box-shadow 0.2s;
+  transition: box-shadow 0.2s, border-color 0.2s;
 }
 .card:hover { box-shadow: var(--shadow-hover); }
 
@@ -197,9 +380,9 @@ select,
 textarea {
   width: 100%;
   padding: 0.75rem 1rem;
-  border: 2px solid #E8DDD5;
+  border: 2px solid var(--rule);
   border-radius: var(--radius-sm);
-  background: #fff;
+  background: var(--field-bg);
   font-family: inherit;
   font-size: 1rem;
   color: var(--ink);
@@ -209,13 +392,95 @@ textarea {
 input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: var(--candy);
-  box-shadow: 0 0 0 4px rgba(255, 107, 138, 0.15);
+  box-shadow: var(--focus-ring);
 }
+/* Dropdowns draw their own chevron: two ink-soft gradients forming a ▾ at
+   the inline end (physical left in this RTL shell), so the arrow always
+   wears the theme instead of the OS default. Native option lists stay
+   OS-drawn — color-scheme already poles them per palette. */
+select:not([multiple]) {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-inline-end: 2.4rem;
+  cursor: pointer;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--ink-soft) 50%),
+    linear-gradient(135deg, var(--ink-soft) 50%, transparent 50%);
+  background-position: left 1.15rem center, left 0.8rem center;
+  background-size: 0.45rem 0.45rem;
+  background-repeat: no-repeat;
+}
+select:not([multiple]):hover { border-color: var(--candy); }
+/* Custom dropdowns (data-fancy): the button wears the field look, the list
+   wears the card look, and both are exactly the field's width. */
+.fancy-wrap { position: relative; display: block; }
+.fancy-wrap > select { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+.fancy-btn { display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.75rem 1rem; padding-inline-end: 2.4rem; border: 2px solid var(--rule); border-radius: var(--radius-sm); background-color: var(--field-bg); background-image: linear-gradient(45deg, transparent 50%, var(--ink-soft) 50%), linear-gradient(135deg, var(--ink-soft) 50%, transparent 50%); background-position: left 1.15rem center, left 0.8rem center; background-size: 0.45rem 0.45rem; background-repeat: no-repeat; font: inherit; font-size: 1rem; color: var(--ink); cursor: pointer; text-align: start; }
+.fancy-btn:hover { border-color: var(--candy); }
+.fancy-btn:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
+.fancy-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fancy-list { position: absolute; top: calc(100% + 6px); inset-inline: 0; z-index: 70; list-style: none; margin: 0; padding: 0.35rem; max-height: 240px; overflow-y: auto; background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius-sm); box-shadow: var(--shadow-overlay); }
+.fancy-list[hidden] { display: none; }
+.fancy-option { padding: 0.55rem 0.8rem; border-radius: 6px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fancy-option.is-active { background: color-mix(in srgb, var(--sky) 16%, var(--card)); }
+.fancy-option[aria-selected="true"] { font-weight: 800; color: var(--link); }
+.fancy-option[aria-disabled="true"] { opacity: 0.45; cursor: not-allowed; }
+@media (prefers-reduced-motion: reduce) {
+  .fancy-btn, .fancy-option { transition: none; }
+}
+/* A checkbox already shows its state in the tick, so a mouse click must not
+   leave the focus glow parked around it — keyboards still get the ring. */
+input[type="checkbox"]:focus { box-shadow: none; }
+input[type="checkbox"]:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
+
+/* One placeholder voice everywhere: the browser grey is replaced by the
+   theme's own soft ink, so hints read the same on all ten palettes. Copy
+   itself follows the مثال: … convention (no emoji prefixes). */
+::placeholder {
+  color: var(--ink-soft);
+  opacity: 0.8;
+}
+
+/* No native spinners: money fields take type=text + inputmode=numeric and
+   accept Persian digits (parsed server-side via to_english_digits), so the
+   spinner chrome has no field left to serve. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+button, a, input, select, textarea { min-height: var(--touch-target); }
+/* A disabled control was faded out as a whole, which washed the label with it:
+   1.85:1 on the dark palette. It goes quiet instead — a soft surface and a label
+   that still reads — and the cursor says why nothing happens rather than showing
+   a spinner that never stops. */
+button:disabled {
+  cursor: not-allowed;
+  opacity: 1;
+  transform: none !important;
+  background: var(--disabled-surface);
+  background-image: none;
+  color: var(--disabled-ink);
+  border-color: var(--rule);
+  box-shadow: none;
+}
+.btn.is-loading::after { content: ""; width: 0.9rem; height: 0.9rem; border: 2px solid currentColor; border-left-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; }
+.status-dot { display: inline-block; width: 0.65rem; height: 0.65rem; border-radius: 50%; margin-inline-end: 0.35rem; background: currentColor; }
+.alert-warning { background: var(--warning-bg); color: var(--warning-ink); }
+.loading-state, .empty-state { padding: 1.5rem; text-align: center; color: var(--ink-soft); }
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1rem;
+  /* column-gap only: each .form-group already carries its own bottom margin,
+     so a row gap here doubled the space between stacked fields to 2rem. */
+  column-gap: 1rem;
 }
 
 /* ===================== Buttons — iconic ===================== */
@@ -226,44 +491,66 @@ input:focus, select:focus, textarea:focus {
   justify-content: center;
   gap: 0.4rem;
   padding: 0.75rem 1.4rem;
-  border: none;
+  /* A transparent border, not `none`: `.btn-ghost` draws a 2px border, so every
+     other button reserved 4px less height and a row mixing the two — a primary
+     next to a ghost, a <button> next to a link — sat 4px out of line. */
+  border: 2px solid transparent;
   border-radius: var(--radius-sm);
   font-family: inherit;
   font-size: 0.95rem;
   font-weight: 700;
   cursor: pointer;
   text-decoration: none;
-  transition: transform 0.1s, box-shadow 0.15s, filter 0.15s;
+  transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 250ms cubic-bezier(0.22, 1, 0.36, 1), filter 250ms cubic-bezier(0.22, 1, 0.36, 1);
   line-height: 1.2;
 }
-.btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
-.btn:active { transform: translateY(0); }
-.btn:focus-visible { outline: 3px solid var(--sky); outline-offset: 2px; }
+.btn:hover { box-shadow: var(--shadow-hover); }
+@media (hover: hover) and (pointer: fine) {
+  .btn:hover { transform: translateY(-2px); }
+}
+.btn:active { transform: scale(0.97); }
+.btn:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--candy), var(--candy-dark));
-  color: #fff;
+  background: linear-gradient(135deg, var(--brand-fill), var(--brand-fill-dark));
+  color: var(--brand-label);
 }
-.btn-primary:hover { filter: brightness(1.08); }
+/* A filled button's hover is the lift `.btn:hover` already draws — it moves the
+   control and shadows it rather than repainting the fill under its label. Both
+   directions of the filter were wrong for a label: brightening took the white
+   label to 2.32:1 on Midnight, and darkening took it to 4.31:1 where it had been
+   4.48:1, because `brightness` multiplies the label too. */
 
 .btn-success {
-  background: linear-gradient(135deg, var(--mint), var(--mint-dark));
-  color: #fff;
+  background: linear-gradient(135deg, var(--success-fill), var(--success-fill-dark));
+  color: var(--success-label);
 }
-.btn-success:hover { filter: brightness(1.08); }
+
 
 .btn-danger {
-  background: #FF4757;
-  color: #fff;
+  background: var(--danger);
+  color: var(--button-text);
 }
-.btn-danger:hover { filter: brightness(1.1); }
+/* Quiet danger: the same warning in a lower voice — transparent fill, danger
+   text and a hairline danger border. Row-level destructive actions wear this
+   so a list of twenty rows is not twenty red buttons; the solid fill stays
+   for the point of no return (bulk bars, confirm dialogs). */
+.btn-danger-quiet {
+  background: transparent;
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 38%, transparent);
+}
+.btn-danger-quiet:hover { background: color-mix(in srgb, var(--danger) 10%, var(--card)); }
+
 
 .btn-ghost {
-  background: #fff;
+  background: var(--field-bg);
   color: var(--ink);
-  border: 2px solid var(--rule);
+  border-color: var(--rule);
 }
-.btn-ghost:hover { border-color: var(--candy); color: var(--candy); box-shadow: none; }
+/* The hover is shown by the border, and the label stays in the ink the field was
+   already legible against: the brand colour as small text on a field was 3.36:1. */
+.btn-ghost:hover { border-color: var(--candy); color: var(--ink); box-shadow: none; }
 
 .btn-sm { padding: 0.4rem 0.8rem; font-size: 0.85rem; }
 .btn-large { padding: 1rem 2rem; font-size: 1.1rem; }
@@ -280,8 +567,12 @@ input:focus, select:focus, textarea:focus {
   align-items: center;
   gap: 0.5rem;
 }
-.alert-success { background: #E8F8EC; color: #1a7a2e; }
-.alert-error   { background: #FFE8E8; color: #c0392b; }
+.alert-success { background: var(--success-bg); color: var(--success-ink); }
+.alert-error   { background: var(--danger-bg); color: var(--link-hover); }
+.alert-warning { background: var(--warning-bg); color: var(--warning-ink); }
+/* Neither a success nor a failure: «اين پيامک خودکار هم مى‌رود» explains the
+   machine, so it takes the palette's secondary blue. */
+.alert-info    { background: color-mix(in srgb, var(--sky) 14%, var(--card)); color: var(--info-ink); }
 
 /* ===================== Tier badges ===================== */
 
@@ -293,11 +584,14 @@ input:focus, select:focus, textarea:focus {
   border-radius: 999px;
   font-size: 0.8rem;
   font-weight: 700;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  box-shadow: var(--shadow);
 }
-.tier-silver  { background: linear-gradient(135deg, #E8E8E8, #D0D0D0); color: #444; }
-.tier-gold    { background: linear-gradient(135deg, #FFE082, #FFC857); color: #5a4300; }
-.tier-diamond { background: linear-gradient(135deg, #D4B0FF, #A66CFF); color: #fff; }
+/* The metals are derived fill+label pairs like the buttons: white on the
+   diamond's frozen end read 3.3:1, so the label is the palette's choice and the
+   fill moves only where that label needs it (services/themes.py, `tier_pair`). */
+.tier-silver  { background: linear-gradient(135deg, var(--tier-silver-fill), var(--tier-silver-fill-dark)); color: var(--tier-silver-label); }
+.tier-gold    { background: linear-gradient(135deg, var(--tier-gold-fill), var(--tier-gold-fill-dark)); color: var(--tier-gold-label); }
+.tier-diamond { background: linear-gradient(135deg, var(--tier-diamond-fill), var(--tier-diamond-fill-dark)); color: var(--tier-diamond-label); }
 
 .badge {
   display: inline-flex;
@@ -308,9 +602,11 @@ input:focus, select:focus, textarea:focus {
   font-size: 0.72rem;
   font-weight: 700;
 }
-.badge-available { background: #E8F8EC; color: #1a7a2e; }
-.badge-used      { background: #FFF3D6; color: #8a6a18; }
-.badge-none      { background: #f2f2f2; color: #999; }
+.badge-available { background: var(--success-bg); color: var(--success-ink); }
+.badge-used      { background: var(--warning-bg); color: var(--warning-ink); }
+.badge-none      { background: var(--surface-soft); color: var(--ink-soft); }
+.badge-warning   { background: var(--warning-bg); color: var(--warning-ink); }
+.badge-success   { background: var(--success-bg); color: var(--success-ink); }
 
 /* ===================== Tables ===================== */
 
@@ -331,14 +627,49 @@ th {
   font-size: 0.75rem;
   color: var(--ink-soft);
   font-weight: 700;
-  background: #FFFAF5;
+  background: var(--table-header);
   border-bottom: 2px solid var(--rule);
 }
 th:first-child { border-radius: 0 var(--radius-sm) 0 0; }
 th:last-child  { border-radius: var(--radius-sm) 0 0 0; }
 
-tbody tr:hover { background: rgba(255, 107, 138, 0.04); }
+tbody tr:hover { background: var(--hover-surface); color: var(--ink-on-hover); }
+/* Every ink inside a hovered row is derived against the tint it lands on — the
+   link included — so the row may keep its own derived colours under the cursor.
+   The quiet meta text is the one authored colour on the row: it takes the
+   derived hover ink, which is its own lightness walked until it reads on the
+   tint (Kids Boutique's warm grey read 3.70:1 on its candy wash as authored). */
+tbody tr:hover .customer-meta, tbody tr:hover .muted { color: var(--ink-on-hover); }
 tbody tr:last-child td { border-bottom: none; }
+
+/* ===================== Data tables — one system =====================
+   Every ledger list wears .data-table (bespoke classes stay as scoping
+   hooks where a page needs them, but paint nothing of their own): sticky
+   headers that never lose the column names, tabular money columns that
+   read LTR, and sort links whose direction is announced, not just drawn. */
+.data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.data-table th.num, .data-table td.num {
+  text-align: left;
+  direction: ltr;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.data-table .sort-link, .product-list-table .sort-link {
+  color: inherit;
+  font-weight: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  white-space: nowrap;
+}
+.data-table .sort-link:hover, .product-list-table .sort-link:hover { color: var(--link-hover); }
+.data-table th[aria-sort="descending"] .sort-link::after, .product-list-table th[aria-sort="descending"] .sort-link::after { content: "▼"; font-size: 0.65em; }
+.data-table th[aria-sort="ascending"] .sort-link::after, .product-list-table th[aria-sort="ascending"] .sort-link::after { content: "▲"; font-size: 0.65em; }
+.data-table th[aria-sort="none"] .sort-link::after, .product-list-table th[aria-sort="none"] .sort-link::after { content: "◇"; font-size: 0.65em; opacity: 0.45; }
 
 /* ===================== Stats grid ===================== */
 
@@ -360,7 +691,11 @@ tbody tr:last-child td { border-bottom: none; }
 }
 .stat-card:hover { box-shadow: var(--shadow-hover); }
 
-/* Colored left accent for stat cards */
+/* Colored left accent for stat cards. The variant names are palette slots, not
+   meanings: `accent-persimmon` is the first card on a page and takes the brand
+   colour, while the `--persimmon` token below is the attention hue for debt,
+   overdue and failed states. Renaming one to match the other would repaint
+   eighteen cards, so the two are kept apart on purpose. */
 .stat-card::before {
   content: "";
   position: absolute;
@@ -372,6 +707,8 @@ tbody tr:last-child td { border-bottom: none; }
 .stat-card.accent-pine::before      { background: var(--mint); }
 .stat-card.accent-saffron::before   { background: var(--sunshine); }
 .stat-card.accent-ink::before       { background: var(--sky); }
+.stat-card.accent-sky::before       { background: var(--sky); }
+.stat-card.accent-danger::before    { background: var(--danger); }
 
 .stat-card .stat-label {
   font-size: 0.78rem;
@@ -426,7 +763,7 @@ tbody tr:last-child td { border-bottom: none; }
   padding: 1rem;
   font-weight: 700;
   direction: ltr;
-  border: 2px solid #E8DDD5;
+  border: 2px solid var(--rule);
   border-radius: var(--radius-sm);
 }
 
@@ -453,7 +790,7 @@ tbody tr:last-child td { border-bottom: none; }
 
 .info-item {
   padding: 0.6rem 0.8rem;
-  background: #FFFAF5;
+  background: var(--surface-soft);
   border-radius: var(--radius-sm);
 }
 .info-item .label {
@@ -470,7 +807,7 @@ tbody tr:last-child td { border-bottom: none; }
 .info-item .value.code {
   font-family: 'Vazirmatn', monospace;
   letter-spacing: 0.2em;
-  color: var(--candy);
+  color: var(--link);
 }
 
 /* Scan section */
@@ -481,13 +818,18 @@ tbody tr:last-child td { border-bottom: none; }
   padding: 1rem;
   font-weight: 700;
   direction: ltr;
-  border: 2px solid #E8DDD5;
+  border: 2px solid var(--rule);
   border-radius: var(--radius-sm);
   transition: border-color 0.2s;
 }
 .scan-section .barcode-input:focus {
   border-color: var(--candy);
-  box-shadow: 0 0 0 4px rgba(255, 107, 138, 0.12);
+  box-shadow: var(--focus-ring);
+}
+/* The error border is the attention colour on its own — motion.css owns the
+   shake tween, this rule owns the visible state, like every other state. */
+.t-input.is-error {
+  border-color: var(--persimmon);
 }
 
 /* Basket */
@@ -523,21 +865,26 @@ tbody tr:last-child td { border-bottom: none; }
 .basket-item-qty   { color: var(--ink-soft); font-size: 0.9rem; }
 .basket-item-total { font-weight: 800; min-width: 90px; text-align: left; direction: ltr; }
 
+/* The basket's remove button was the alarm red on a pale pink of its own choosing
+   — 2.85:1, and 3.34:1 with the white label its hover swapped in. It wears the
+   attention colour on its own tint, which is the pair the palette guard already
+   measures, and hovering makes the disc paler and rings it instead of
+   swapping the label. */
 .btn-remove {
-  background: #FFE8E8;
-  color: #FF4757;
-  border: none;
+  background: color-mix(in srgb, var(--persimmon) 20%, var(--card));
+  color: var(--persimmon);
+  border: 1px solid transparent;
   border-radius: 50%;
   width: 30px; height: 30px;
   cursor: pointer;
   font-weight: 700;
   font-family: inherit;
-  transition: all 0.15s;
+  transition: background 0.15s, border-color 0.15s;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.btn-remove:hover { background: #FF4757; color: #fff; }
+.btn-remove:hover { background: color-mix(in srgb, var(--persimmon) 8%, var(--card)); border-color: var(--persimmon); }
 
 .basket-summary { padding-top: 0.8rem; }
 
@@ -549,7 +896,13 @@ tbody tr:last-child td { border-bottom: none; }
   direction: ltr;
 }
 .summary-row span:first-child { direction: rtl; }
-.summary-row.discount { color: var(--mint-dark); }
+.summary-row.discount { color: var(--success-ink); }
+/* The debt row is the attention colour (money owed); the points row is the
+   brand's voice. Classes rather than inline styles, so the print state below
+   can own what the paper shows — inline styles are outside its reach. */
+.summary-row.attention { color: var(--persimmon); font-weight: 700; }
+.summary-row.points { color: var(--link); font-weight: 700; }
+.discount-details { padding: 0.3rem 0.5rem; font-size: 0.8rem; background: var(--surface-soft); border-radius: 6px; margin: 0.3rem 0; }
 .summary-row.total {
   font-size: 1.15rem;
   font-weight: 800;
@@ -567,6 +920,37 @@ tbody tr:last-child td { border-bottom: none; }
 }
 
 .payment-section { margin-top: 0.8rem; }
+/* Step 2's card: the amount-approval surface (terminal for card) reads as one
+   grouped step between the method radios and the invoice button. */
+.pay-step {
+  background: var(--surface-soft);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  padding: 0.8rem;
+  margin-top: 0.8rem;
+}
+/* The invoice button: last, largest, and the only success fill on screen. */
+.btn-confirm { font-size: 1.1rem; padding: 1.1rem; margin-top: 0.8rem; }
+/* The wizard's own rhythm (try-on mirrors the till): timeline breathing room,
+   the pairing subsection inside step 1, the scan row, the generate button. */
+.wizard-timeline { margin-bottom: 1.5rem; }
+.tryon-pairing {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+}
+.tryon-pairing h4 { margin-bottom: 0.5rem; font-size: 0.95rem; }
+.tryon-pairing .muted { color: var(--ink-soft); font-size: 0.85rem; margin-bottom: 0.6rem; }
+.tryon-scan-form { display: flex; gap: 0.5rem; margin-bottom: 0.8rem; align-items: center; }
+.tryon-scan-form input[type="text"] { flex: 1; direction: ltr; font-size: 1rem; }
+.btn-generate { font-size: 1.1rem; margin-top: 1rem; }
+.payment-timeline { display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.8rem; color: var(--ink-soft); font-size: 0.72rem; }
+.timeline-step { padding: 0.35rem 0.5rem; border-radius: 999px; border: 1px solid var(--rule); white-space: nowrap; }
+.timeline-step.active { color: var(--link-hover); border-color: var(--candy); background: color-mix(in srgb, var(--card) 82%, var(--candy)); font-weight: 700; }
+.timeline-line { flex: 1; height: 1px; background: var(--rule); }
+.cash-calculator { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; align-items: end; margin: 0.8rem 0; padding: 0.8rem; background: var(--surface-soft); border-radius: var(--radius-sm); }
+.cash-calculator label { font-size: 0.8rem; font-weight: 700; grid-column: 1 / -1; }
+.cash-calculator strong { padding: 0.7rem; color: var(--success-ink); }
 
 .payment-options {
   display: flex;
@@ -582,18 +966,37 @@ tbody tr:last-child td { border-bottom: none; }
   padding: 0.6rem 1rem;
   border: 2px solid var(--rule);
   border-radius: var(--radius-sm);
-  transition: all 0.15s;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
   font-weight: 600;
   font-size: 0.9rem;
 }
 .payment-option:has(input:checked) {
   border-color: var(--candy);
-  background: linear-gradient(135deg, rgba(255,107,138,0.08), rgba(255,107,138,0.02));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--candy) 10%, var(--card)), color-mix(in srgb, var(--candy) 4%, var(--card)));
 }
-.payment-option input { width: auto; }
+/* Native controls the browser paints with its own idea of colour: the radio's
+   accent (the defect the credit walk photographed), the checkbox's tick and
+   fill, the range's thumb, the progress/meter bars. One accent for every one
+   of them, from the theme — previously eight per-family rules hardcoded
+   `--candy` per family while the orphan checkboxes in table rows (bulk sends,
+   follow-ups, settings, tag designer) kept Chrome blue. The family rules
+   below keep their sizing half (width/min-height) and now inherit this rule's
+   colour. `color-scheme` tells the browser which pole its own chrome —
+   scrollbars, widget ink, the date input's indicator — should paint at, so a
+   dark palette's native widgets do not render light-on-light or vice versa. */
+input[type="checkbox"],
+input[type="radio"],
+input[type="range"],
+progress,
+meter {
+  accent-color: var(--candy);
+}
+html[data-theme-mode="dark"],
+html[data-theme-mode="dark-shell"] { color-scheme: dark; }
+html[data-theme-mode="light"],
+html[data-theme-mode="high-contrast"] { color-scheme: light; }
 
-/* Referral section */
-.referral-section { background: #FFFAF5; }
+.referral-section { background: var(--surface-soft); }
 
 /* ===================== Invoice ===================== */
 
@@ -674,12 +1077,180 @@ tbody tr:last-child td { border-bottom: none; }
   margin-top: 1.5rem;
 }
 
+/* Local icons keep operational navigation consistent without a network dependency. */
+.icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+.nav-icon, .icon-plus, .icon-logout, .icon-check { position: relative; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 1.35rem; width: 1.35rem; height: 1.35rem; }
+.nav-icon::before, .icon-plus::before, .icon-logout::before, .icon-check::before { position: absolute; inset: 0; display: grid; place-items: center; font-family: system-ui, sans-serif; font-size: 1rem; font-weight: 800; line-height: 1; }
+.ui-icon { display: block; width: 1.18rem; height: 1.18rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.nav-icon .ui-icon, .icon-plus .ui-icon, .icon-logout .ui-icon { position: relative; z-index: 1; }
+.icon-sale::before, .icon-history::before, .icon-box::before, .icon-truck::before, .icon-ledger::before, .icon-users::before, .icon-credit::before, .icon-campaign::before, .icon-sms::before, .icon-dashboard::before, .icon-chart::before, .icon-accounting::before, .icon-cash::before, .icon-expenses::before, .icon-supplier::before, .icon-dress::before, .icon-backup::before, .icon-settings::before, .icon-palette::before, .icon-terminal::before, .icon-logs::before, .icon-calendar::before, .icon-crown::before, .icon-staff::before, .icon-plus::before, .icon-logout::before, .icon-check::before { content: ""; }
+.quick-sale .icon-sale, .topbar-settings-icon { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 1.25rem; height: 1.25rem; flex: 0 0 1.25rem; font-size: 0; }
+.quick-sale .icon-sale .ui-icon, .topbar-settings-icon .ui-icon { position: relative; z-index: 1; width: 1.1rem; height: 1.1rem; }
+.context-mark, .footer-mark { display: inline-block; width: 0.8rem; height: 0.8rem; border-radius: 2px; background: var(--candy); vertical-align: -0.08rem; }
+html[data-theme="kids-boutique"] .nav-icon .ui-icon, html[data-theme="kids-boutique"] .icon-plus .ui-icon, html[data-theme="kids-boutique"] .icon-logout .ui-icon, html[data-theme="kids-boutique"] .quick-sale .icon-sale .ui-icon, html[data-theme="kids-boutique"] .topbar-settings-icon .ui-icon { display: none; }
+html[data-theme="kids-boutique"] .icon-sale::before { content: "🛒"; }
+html[data-theme="kids-boutique"] .icon-history::before { content: "🧾"; }
+html[data-theme="kids-boutique"] .icon-box::before { content: "📦"; }
+html[data-theme="kids-boutique"] .icon-truck::before { content: "🚚"; }
+html[data-theme="kids-boutique"] .icon-ledger::before { content: "📚"; }
+html[data-theme="kids-boutique"] .icon-users::before { content: "👥"; }
+html[data-theme="kids-boutique"] .icon-credit::before { content: "📒"; }
+html[data-theme="kids-boutique"] .icon-campaign::before { content: "📢"; }
+html[data-theme="kids-boutique"] .icon-sms::before { content: "💬"; }
+html[data-theme="kids-boutique"] .icon-dashboard::before { content: "📊"; }
+html[data-theme="kids-boutique"] .icon-chart::before { content: "📈"; }
+html[data-theme="kids-boutique"] .icon-accounting::before { content: "🧮"; }
+html[data-theme="kids-boutique"] .icon-cash::before { content: "🧾"; }
+html[data-theme="kids-boutique"] .icon-expenses::before { content: "💸"; }
+html[data-theme="kids-boutique"] .icon-supplier::before { content: "🏭"; }
+html[data-theme="kids-boutique"] .icon-dress::before { content: "👗"; }
+html[data-theme="kids-boutique"] .icon-backup::before { content: "💾"; }
+html[data-theme="kids-boutique"] .icon-settings::before { content: "⚙️"; }
+html[data-theme="kids-boutique"] .icon-palette::before { content: "🎨"; }
+html[data-theme="kids-boutique"] .icon-terminal::before { content: "📟"; }
+html[data-theme="kids-boutique"] .icon-logs::before { content: "📜"; }
+html[data-theme="kids-boutique"] .icon-calendar::before { content: "📅"; }
+html[data-theme="kids-boutique"] .icon-crown::before { content: "👑"; }
+html[data-theme="kids-boutique"] .icon-staff::before { content: "👥"; }
+html[data-theme="kids-boutique"] .icon-plus::before { content: "+"; }
+html[data-theme="kids-boutique"] .icon-logout::before { content: "↪"; }
+html[data-theme="kids-boutique"] .icon-check::before { content: "✓"; }
+html[data-theme="kids-boutique"] .quick-sale .icon-sale::before { content: "🛒"; }
+html[data-theme="kids-boutique"] .topbar-settings-icon::before { content: "⚙"; }
+html[data-theme="kids-boutique"] .context-mark, html[data-theme="kids-boutique"] .footer-mark { border-radius: 50%; background: linear-gradient(135deg, var(--candy), var(--sky)); }
+
+/* ── Paper: the shell's own print state ────────────────────────────────
+   Every page carries its own print block for the parts only it owns; this is
+   the state of the shell itself, so a page that never thought about paper
+   still prints as a document. The topbar, sidebar, footer, breadcrumb and
+   pagination are the screen's furniture; the page-heading's own buttons
+   («چاپ», «مشتری جدید») are the screen's reply to being on a screen. What
+   remains is the record and the figures. */
 @media print {
-  header, footer, .invoice-actions, .alert, nav, .btn { display: none !important; }
+  .app-topbar, .app-sidebar, .app-footer, .sidebar-overlay, .menu-toggle,
+  .breadcrumb, .product-pagination, .admin-nav, .skip-link, .btn,
+  .toaster, .toaster-flash { display: none !important; }
+  .print-heading { display: block !important; }
+  .app-main { margin: 0; }
+  html, body { background: var(--paper) !important; color: var(--paper-ink) !important; color-scheme: light !important; }
+  .card { background: var(--paper) !important; border: 0 !important; box-shadow: none !important; break-inside: avoid; }
+  /* The figures a page shows in stat cards — سود و زیان's P&L, the history
+     KPIs — are the record, not the screen's furniture, so they repaint as
+     paper too. A page block (the dashboard's) may add to this; it may not
+     need to, because the shell already says it. */
+  .stat-card { background: var(--paper) !important; border: 0 !important; box-shadow: none !important; break-inside: avoid; }
+  .stat-label, .stat-value, .stat-sub, .stat-delta { color: var(--paper-ink) !important; }
+  table { display: table; width: 100%; white-space: normal; }
+  th, td { color: var(--paper-ink) !important; background: var(--paper) !important; border-color: var(--paper-mid) !important; }
+  tr { break-inside: avoid; }
+  /* A link inside the record («مشاهده فهرست», a customer's name) is a
+     reference to a screen; on paper it is plain text — and a dark palette's
+     link hue on white would read faintly. Scoped to the main area because the
+     screen's own link rule is pinned elsewhere and chrome links never print. */
+  .app-main a { color: var(--paper-ink) !important; text-decoration: none; }
+  .badge, .drift-flag { background: var(--paper) !important; color: var(--paper-ink) !important; border: 1px solid var(--paper-mid) !important; }
+  /* Every pill the app states a status with — plus the quick-filter chips and
+     the soft-ink sentence classes. In a dark palette these carry dark tints
+     and soft greys chosen against a dark card; on paper they are ink, a
+     hairline border, and nothing the printer renders as a grey box. */
+  .status-badge, .source-chip, .sms-fire-badge, .sms-unused-badge,
+  .digest-month-chip, .tier-badge { background: var(--paper) !important; color: var(--paper-ink) !important; border: 1px solid var(--paper-mid) !important; }
+  .text-link, .muted, .eyebrow, .field-help, .sms-meta, .sms-results,
+  .filter-note, .stat-sub, .sms-trigger-preview-note, .sms-fireline,
+  .sms-fireline small, .chart-note { color: var(--paper-ink) !important; }
+  /* The accent bars the stat cards wear are screen decoration; on paper the
+     card's own label already names the figure. The card's top gradient strip
+     (`--candy` → `--sky`) goes the same way — on paper it is a two-pixel
+     rainbow across every card, decoration the record does not carry. */
+  .stat-card::before { background: var(--paper-mid) !important; }
+  .card::before { display: none !important; }
+  /* Wide tables must not stop at the screen's edge, and a min-width set for
+     the screen would clip them again; the record is allowed to reflow. */
+  .table-scroll { overflow: visible !important; }
+  table { min-width: 0 !important; }
+  /* Whatever form still prints: its buttons are the screen's reply, and its
+     fields read as text — the value is the fact, not the box around it. */
+  .form-actions, .inline-form { display: none !important; }
+  input:not([type="hidden"]), select, textarea { background: transparent !important; border: 0 !important; color: var(--paper-ink) !important; box-shadow: none !important; }
+  /* A success banner is the screen's reply («ذخیره شد») and dies with it; an
+     error states something true of the record and is worth the staple, as is
+     the page's own warning (the drift banner, a skipped campaign upload) —
+     and so does the info notice, which explains the machine, not the screen. */
+  .alert-success { display: none !important; }
+  .alert-error, .alert-warning, .alert-info { background: var(--paper) !important; color: var(--paper-ink) !important; border: 1px solid var(--paper-mid) !important; }
+  /* The soft boxes a page builds from `--surface-soft` and the accent pills —
+     the reconcile checks, the ageing buckets, the direction pills, the salary
+     box, the error page itself, the delta chip. In a dark palette each is a
+     dark rectangle chosen against the dark screen; on paper the box is the
+     paper, the hairline is its edge, and the label carries what the tint did. */
+  .reconcile-stat, .bucket-card, .error-page, .salary-box, .profile-note,
+  .info-item, .referral-section, .cash-calculator, .discount-details,
+  .badge-none, .stat-delta, .page-badge, .section-step, .campaign-chip,
+  .tag-chip, .campaign-history-row, .staff-record > summary,
+  .profile-avatar, .choice-card, .danger-details,
+  .movement-type, .movement-delta, .movement-flag, .badge-legacy {
+    background: var(--paper) !important;
+    color: var(--paper-ink) !important;
+    border: 1px solid var(--paper-mid) !important;
+    box-shadow: none !important;
+  }
+  /* And the state voices that live in *text*: a dark palette's success,
+     attention and link inks are light hues that fade off white paper. The
+     emphasis is already in the weight; the colour was the screen's echo. */
+  .credit-amount, .credit-over-limit, .summary-row.attention, .summary-row.discount,
+  .summary-row.points, .reconcile-ok, .reconcile-label, .reconcile-sub,
+  .customer-stale, .birthday-soon, .birthday-age, .empty-state, .loading-state,
+  .tag-custom-warning { color: var(--paper-ink) !important; }
+  tr:target { outline: none !important; background: var(--paper) !important; }
+}
+
+@media print {
+  /* Chrome is the shell block's business now; this block owns the invoice's
+     own parts. Its success banner is the just-paid confirmation — the payment
+     state is in the invoice's own meta line — so it stays screen-only. */
+  .invoice-actions { display: none !important; }
   .invoice { border: none; box-shadow: none; max-width: 100%; }
   .invoice::before { display: none; }
-  body { background: white; }
+  /* Paper is a palette of its own, so it has tokens: even the printer is owned
+     by the theme, and the discount line keeps its emphasis in weight rather
+     than a green chosen for one palette. */
+  html, body { background: var(--paper) !important; color: var(--paper-ink) !important; }
+  .invoice, .invoice .invoice-header, .invoice-items, .invoice-customer { background: var(--paper) !important; color: var(--paper-ink) !important; }
+  .invoice .summary-row.discount { color: var(--paper-ink) !important; font-weight: 800; }
+  .invoice .summary-row.attention, .invoice .summary-row.points { color: var(--paper-ink) !important; }
+  .invoice .discount-details { background: transparent !important; }
+  .invoice table th, .invoice table td { color: var(--paper-ink) !important; background: var(--paper) !important; border-color: color-mix(in srgb, var(--paper) 75%, var(--paper-ink)) !important; }
 }
+
+.settings-appearance-link { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.2rem 0 0.4rem; }
+.settings-appearance-link h3 { margin: 0.15rem 0 0.25rem; }
+.settings-appearance-link p { margin: 0; color: var(--ink-soft); font-size: 0.86rem; }
+@media (max-width: 700px) { .settings-appearance-link { align-items: stretch; flex-direction: column; } .settings-appearance-link .btn { align-self: flex-start; } }
+
+/* ===================== Theme gallery ===================== */
+.appearance-section { --gallery-gap: 0.85rem; }
+.appearance-intro { color: var(--ink-soft); margin: -0.35rem 0 1rem; font-size: 0.88rem; }
+.appearance-active { padding: 0.35rem 0.65rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); color: var(--link); font-family: ui-monospace, monospace; font-size: 0.72rem; direction: ltr; }
+.theme-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gallery-gap); }
+.theme-option { display: grid; grid-template-columns: 150px 1fr; grid-template-rows: 1fr auto; gap: 0.7rem; align-items: center; min-height: 126px; padding: 0.7rem; text-align: right; color: var(--ink); background: var(--card); border: 2px solid var(--rule); border-radius: var(--radius-sm); font-family: inherit; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s; }
+.theme-option:hover { border-color: var(--candy); transform: translateY(-1px); }
+.theme-option.is-selected { border-color: var(--candy); box-shadow: 0 0 0 3px color-mix(in srgb, var(--candy) 20%, transparent); }
+.theme-option-copy { display: flex; flex-direction: column; gap: 0.25rem; align-self: end; }
+.theme-option-copy strong { font-size: 0.9rem; }
+.theme-option-copy small { color: var(--ink-soft); font-size: 0.72rem; line-height: 1.5; }
+.theme-swatch-row { grid-column: 2; display: flex; gap: 0.3rem; direction: ltr; }
+.theme-swatch-row i { display: block; width: 1.1rem; height: 1.1rem; border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent); border-radius: 50%; }
+.theme-preview { display: block; grid-row: 1 / 3; width: 150px; height: 96px; overflow: hidden; border: 1px solid var(--rule); border-radius: 4px; background: var(--bg); box-shadow: var(--shadow); direction: ltr; }
+.theme-preview-top { display: block; height: 18px; background: linear-gradient(90deg, var(--topbar-start), var(--topbar-end)); }
+.theme-preview-body { display: grid; grid-template-columns: 30% 1fr; gap: 4px; height: 48px; padding: 5px; background: var(--bg); }
+.theme-preview-body span, .theme-preview-body i, .theme-preview-body b { display: block; border-radius: 2px; background: var(--card); border: 1px solid var(--rule); }
+.theme-preview-body span { grid-row: 1 / 3; background: var(--sidebar-bg); border-color: var(--sidebar-active); }
+.theme-preview-body i { background: var(--candy); border: 0; }
+.theme-preview-body b { background: var(--sky); border: 0; }
+.theme-preview-table { display: flex; gap: 3px; height: 30px; padding: 5px; background: var(--card); }
+.theme-preview-table canvas { width: 62%; height: 18px; }
+.theme-preview-table i { width: 6px; height: 18px; border-radius: 2px; }
+@media (max-width: 700px) { .theme-gallery { grid-template-columns: 1fr; } .theme-option { grid-template-columns: 120px 1fr; } .theme-preview { width: 120px; } }
 
 /* ===================== Admin ===================== */
 
@@ -689,6 +1260,99 @@ tbody tr:last-child td { border-bottom: none; }
   flex-wrap: wrap;
   margin-top: 1.2rem;
 }
+/* One width for the short labels, so a row of nav buttons reads as a set
+   instead of four pills of four different sizes. Longer labels still grow. */
+.admin-nav > .btn { min-width: 7.5rem; }
+
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.action-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; }
+.action-item { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.9rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); color: var(--ink); background: var(--surface-soft); }
+.action-item:hover { text-decoration: none; transform: translateY(-2px); box-shadow: var(--shadow); }
+/* The number leads, because the whole point of this row is "how much is
+   waiting". A card at zero keeps the same shape instead of disappearing: an
+   empty «نیازمند توجه» is good news, and good news is worth being able to read.
+   `is-clear` therefore means «nothing here needs you», and the accent stripe is
+   stood down with the text — a calm card that still shouts in orange is only
+   half clear. Nothing outside this row may use the class: a day with no sales is
+   a zero, and a zero is not good news. */
+.action-count { font-size: 1.45rem; font-weight: 800; line-height: 1.1; color: var(--ink); }
+.action-item .action-sub { color: var(--ink-soft); font-size: 0.78rem; }
+.action-item.is-clear .action-count { color: var(--success-ink); }
+.action-item.is-clear strong { color: var(--ink-soft); font-weight: 600; }
+.action-item.is-clear { border-inline-start-color: var(--rule); }
+.action-warning { border-inline-start: 4px solid var(--sunshine); }
+.action-danger { border-inline-start: 4px solid var(--candy-dark); }
+.action-info { border-inline-start: 4px solid var(--sky); }
+.action-success { border-inline-start: 4px solid var(--mint); }
+
+/* Dashboard: a stat card that goes somewhere is a card with a destination, not
+   a sentence with a link in it, so it keeps the body colour and drops the
+   underline on hover. */
+a.stat-card { display: block; color: var(--ink); }
+a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
+
+/* The role this view was built for, next to the title: two people sharing a
+   screen need to know whose numbers they are looking at. */
+/* the role badge is `.page-badge`, styled beside the page heading */
+
+/* How a figure moved, sitting beside it rather than under it, because it is a
+   property of the number and not a second fact. The verdict is supplied per card
+   — spending less is good news too — so colour never comes from the direction of
+   the arrow. */
+.stat-delta { display: inline-block; margin-inline-start: 0.4rem; font-size: 0.68rem; font-weight: 700; vertical-align: middle; padding: 0.1rem 0.4rem; border-radius: 999px; background: var(--surface-soft); color: var(--ink-soft); }
+.stat-delta.is-good { background: color-mix(in srgb, var(--mint) 16%, var(--card)); color: var(--success-ink); }
+.stat-delta.is-bad { background: color-mix(in srgb, var(--candy) 16%, var(--card)); color: var(--link-hover); }
+
+/* «برترین‌ها» as a ranked list: a five-column table is the heaviest thing on the
+   page for its least glanceable information. No bars — a bar needs a width per
+   row, and a width per row needs an inline style this page does without. */
+.ranked-list { list-style: none; margin: 0; padding: 0; }
+.ranked-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0; border-bottom: 1px solid var(--rule); }
+.ranked-row:last-child { border-bottom: none; }
+.ranked-rank { flex: 0 0 auto; width: 1.6rem; height: 1.6rem; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--surface-soft); color: var(--ink-soft); font-weight: 800; font-size: 0.78rem; }
+.ranked-name { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.ranked-name strong { font-weight: 700; }
+.ranked-name small { color: var(--ink-soft); font-size: 0.75rem; }
+.ranked-figures { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; text-align: end; }
+.ranked-units { color: var(--ink-soft); font-size: 0.75rem; }
+.ranked-money { font-weight: 800; }
+.ranked-profit { color: var(--success-ink); font-size: 0.78rem; }
+
+/* The month in prose — the dashboard's reading strip. Prose lines like the
+   ranked rows', but no ranks and no figures to align: it is a paragraph list. */
+.reading-list { list-style: none; margin: 0; padding: 0; }
+.reading-list li { padding: 0.55rem 0; border-bottom: 1px solid var(--rule); line-height: 1.9; }
+.reading-list li:last-child { border-bottom: none; }
+
+@media print {
+  /* The dashboard on paper is the day's own brief: the action row is the page's
+     navigation and dies with the screen, while the figures and the month's
+     reading — the parts worth a staple — come out as ink on the theme's paper,
+     one column, in reading order. */
+  /* Chrome is the shell block's business; this block owns the dashboard's own
+     parts: the action tiles are the screen's navigation and die with it. */
+  .screen-only { display: none !important; }
+  .print-heading { display: block !important; }
+  .stats-grid { grid-template-columns: 1fr 1fr; }
+  .action-grid { display: none !important; }
+  .card, .stat-card { background: var(--paper) !important; border: 0 !important; box-shadow: none !important; break-inside: avoid; }
+  .stat-card, .stat-label, .stat-value, .stat-sub, .stat-delta, .ranked-list,
+  .ranked-row, .ranked-name, .ranked-figures, .reading-list li,
+  .section-heading h3, .eyebrow { color: var(--paper-ink) !important; }
+  .ranked-row, .reading-list li { border-bottom-color: var(--paper-mid) !important; }
+  body { background: var(--paper) !important; color: var(--paper-ink) !important; }
+}
+
+/* Settings: the standing of the downgrade rule, under the one field that sets it. */
+.settings-downgrade-note { margin: 0 0 1.5rem; font-size: 0.85rem; line-height: 1.9; }
+.settings-section { margin-top: 2rem; }
+.settings-submit { margin-top: 1.5rem; }
+
+.danger-details { border: 1px dashed var(--candy) !important; padding: 0.9rem 1.1rem; color: var(--link-hover); background: var(--danger-bg); }
+.danger-details::before { display: none; }
+.danger-details summary { cursor: pointer; font-weight: 700; }
+.danger-details > div { padding-top: 0.8rem; }
+.danger-details p { color: var(--ink-soft); margin-bottom: 0.8rem; font-size: 0.85rem; }
 
 .search-form {
   display: flex;
@@ -698,8 +1362,32 @@ tbody tr:last-child td { border-bottom: none; }
 }
 .search-form > input,
 .search-form > select { flex: 1; min-width: 180px; }
+/* The custom-range row under the period pills: same rhythm, one breath down. */
+.filter-custom-row { margin-top: 0.7rem; margin-bottom: 0; }
 
 .filter-bar { margin-bottom: 1.25rem; }
+
+/* The suppliers page's two forms: the add row and the per-row payment cell.
+   The payment form lives inside a table cell, so it wraps instead of
+   overflowing on a narrow screen — the select gets the room, the amount a
+   fixed hand-width, like every money input. */
+.supplier-add-form {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0;
+}
+.supplier-add-form input[name="name"] { flex: 2; min-width: 220px; }
+.supplier-add-form input[name="phone"] { flex: 1; min-width: 150px; }
+.supplier-add-form input[name="note"] { flex: 2; min-width: 220px; }
+.supplier-payment-form {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.supplier-payment-form select { min-width: 180px; flex: 1; }
+.supplier-payment-form input[name="amount"] { min-width: 140px; }
 
 /* Login */
 .login-card {
@@ -722,12 +1410,46 @@ tbody tr:last-child td { border-bottom: none; }
 }
 .login-card h2 { margin-bottom: 1.2rem; }
 
+/* Error page (403 / 404). A refusal and a wrong address are pages now, so they
+   get a card like the login's instead of a raw JSON payload with no way back.
+   The code is data, not decoration, so it keeps the number face. */
+.error-page {
+  max-width: 560px;
+  margin: 3rem auto;
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 2rem;
+  text-align: center;
+  box-shadow: var(--shadow-hover);
+  border-inline-start: 4px solid var(--candy);
+}
+.error-page .error-code {
+  font-size: 3rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--link-hover);
+}
+.error-page h2 { margin: 0.6rem 0 0.8rem; }
+.error-page .error-message { color: var(--ink); line-height: 1.9; }
+.error-page .error-role { color: var(--ink-soft); font-size: 0.9rem; }
+.error-page .error-detail { font-size: 0.85rem; }
+.error-page .error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-top: 1.4rem;
+}
+
 /* Danger zone */
+/* The danger voice is the palette's `--danger` (derived against its label), not
+   a red chosen once for every theme; the bar fades to the brand hue the way the
+   rest of the shell's accents do. */
 .danger-zone {
-  border: 2px dashed #FF4757 !important;
+  border: 2px dashed var(--danger) !important;
 }
 .danger-zone::before {
-  background: linear-gradient(90deg, #FF4757, #FF6B6B) !important;
+  background: linear-gradient(90deg, var(--danger), var(--candy)) !important;
 }
 
 /* ===================== KPIs (analytics) ===================== */
@@ -749,8 +1471,8 @@ tbody tr:last-child td { border-bottom: none; }
 .kpi-card:hover { box-shadow: var(--shadow-hover); }
 .kpi-card h4 { font-size: 0.78rem; color: var(--ink-soft); margin-bottom: 0.3rem; font-weight: 600; }
 .kpi-value { font-size: 1.15rem; font-weight: 800; }
-.kpi-card.profit .kpi-value  { color: var(--mint-dark); }
-.kpi-card.margin .kpi-value  { color: var(--candy); }
+.kpi-card.profit .kpi-value  { color: var(--success-ink); }
+.kpi-card.margin .kpi-value  { color: var(--link); }
 
 .charts-grid {
   display: grid;
@@ -760,17 +1482,104 @@ tbody tr:last-child td { border-bottom: none; }
 }
 .chart-card { min-height: 280px; overflow: hidden; }
 .chart-card canvas { max-width: 100% !important; max-height: 260px !important; }
+.print-heading { display: none; }
+
+/* On paper the report is one column: every chart full width, in reading order,
+   with the range it describes under the title — a report carries its own
+   context, because a staple never travels with a URL. */
+@media print {
+  .filter-bar, .search-form, .tip-icon, .screen-only { display: none !important; }
+  .print-heading { display: block !important; }
+  .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+  .charts-grid, .tables-grid { grid-template-columns: 1fr; }
+  .chart-card { min-height: 0; overflow: visible; border: 1px solid var(--paper-mid); break-inside: avoid; }
+  .chart-card canvas { max-height: none !important; }
+  .kpi-card, .card { border: 0; box-shadow: none; break-inside: avoid; }
+  .kpi-card h4, .card h3 { color: var(--paper-ink) !important; }
+  .kpi-value, .kpi-card.profit .kpi-value, .kpi-card.margin .kpi-value { color: var(--paper-ink) !important; }
+  .card { background: var(--paper) !important; }
+  .matrix td { color: var(--paper-ink) !important; }
+  .chart-note { color: var(--paper-ink) !important; }
+}
+/* A range that was asked for and could not be read: the page shows its default
+   range and says so here. It is an attention colour, not an error colour —
+   nothing failed, the shop just asked for something the app could not read. */
+.filter-problem {
+  margin: 0 0 0.7rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--persimmon);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--persimmon) 10%, transparent);
+  color: var(--persimmon);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+/* The sentence beside a chart: what its marks show, for a reader who cannot tell
+   the accents apart, for a phone in sunlight, and for a printed page that has
+   lost every colour it had. Its numbers are on the marks and in the tables as
+   well, so nothing here is the only place a figure can be read. */
+.chart-note { margin: -0.15rem 0 0.6rem; color: var(--ink-soft); font-size: 0.84rem; line-height: 1.65; }
 
 .tables-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 
 /* ===================== Responsive ===================== */
 
-@media (max-width: 800px) {
+@media (max-width: 900px) {
+  .menu-toggle { display: inline-flex; }
+  /* Icon-only topbar buttons (their text labels hide below) get their name
+     back as a themed tooltip on hover and keyboard focus — never the native
+     title chrome. Delayed on first show, instant once one is open. Lives in
+     this block because the narrow-screen drawer owns this breakpoint. */
+  .quick-sale, .topbar-admin { position: relative; }
+  .topbar-tip {
+    position: absolute; top: calc(100% + 8px); inset-inline-start: 50%;
+    transform: translateX(-50%) translateY(4px); opacity: 0; pointer-events: none;
+    background: var(--card); color: var(--ink); border: 1px solid var(--rule);
+    border-radius: var(--radius-sm); box-shadow: var(--shadow-overlay);
+    font-size: 0.75rem; font-weight: 700; padding: 0.35rem 0.6rem; white-space: nowrap;
+    transition: opacity 150ms cubic-bezier(0.22, 1, 0.36, 1), transform 150ms cubic-bezier(0.22, 1, 0.36, 1);
+    transition-delay: 80ms; z-index: 90;
+  }
+  .quick-sale:hover .topbar-tip, .topbar-admin:hover .topbar-tip,
+  .quick-sale:focus-visible .topbar-tip, .topbar-admin:focus-visible .topbar-tip {
+    display: block; opacity: 1; transform: translateX(-50%) translateY(0); transition-delay: 80ms;
+  }
+  .topbar-tip[data-instant] { transition-delay: 0ms; }
+  .action-grid { grid-template-columns: 1fr 1fr; }
+  .page-heading { align-items: stretch; flex-direction: column; }
+  .page-heading .btn { align-self: flex-start; }
+  /* `visibility: hidden` as well as the slide: a translated panel is still in the
+     tab order, so a reader on a narrow window tabbed straight into the closed menu
+     and through every entry of a menu nobody could see. */
+  /* The drawer is a floating layer, so it paints the floating-layer surface
+     — the card, like the popup and the lightbox stage — not the desktop
+     sidebar's panel fill: Midnight's sidebar-bg sat *darker* than the dimmed
+     page and the drawer read at 1.05:1, not as a layer at all. */
+  .app-sidebar { transform: translateX(110%); visibility: hidden; transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1), visibility 250ms cubic-bezier(0.22, 1, 0.36, 1); width: min(300px, 88vw); box-shadow: var(--shadow-overlay); background: var(--card); color: var(--ink); }
+  body.sidebar-open .app-sidebar { transform: translateX(0); visibility: visible; }
+  /* The drawer paints the card, so its voices must be the card's — the links
+     kept the sidebar's own ink and vanished on light cards (white on white in
+     high-contrast). Hover and current stay apart from each other, as on desktop. */
+  .app-sidebar .sidebar-nav a { color: var(--ink); }
+  .app-sidebar .sidebar-nav a:hover { background: var(--hover-surface); color: var(--ink-on-hover); }
+  .app-sidebar .sidebar-nav a.active, .app-sidebar .sidebar-nav a.active:hover { background: color-mix(in srgb, var(--candy) 14%, var(--card)); color: var(--ink); box-shadow: inset -3px 0 var(--candy); font-weight: 800; }
+  .app-sidebar .sidebar-section-label { color: var(--ink-soft); }
+  .app-sidebar .sidebar-logout { color: var(--ink); background: color-mix(in srgb, var(--candy) 12%, var(--card)); }
+  .app-sidebar .sidebar-logout:hover { background: var(--hover-surface); }
+  .app-sidebar :focus-visible { outline-color: var(--ring); }
+  .sidebar-overlay { position: fixed; inset: 72px 0 0; z-index: 60; background: color-mix(in srgb, var(--paper-ink) 50%, transparent); backdrop-filter: blur(2px); display: block; visibility: hidden; opacity: 0; transition: opacity 250ms cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 250ms; }
+  body.sidebar-open .sidebar-overlay { visibility: visible; opacity: 1; transition: opacity 250ms cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 0s; }
+  .app-main { margin-right: 0; }
+  .quick-sale > span:last-child, .topbar-admin > span:last-child { display: none; }
+  .topbar-actions { gap: 0.35rem; }
+  .quick-sale, .topbar-admin { min-width: 44px; padding-inline: 0.55rem; }
+  .brand { min-width: 0; }
   .checkout-layout, .stats-grid, .info-grid, .form-row { grid-template-columns: 1fr; }
+  .card { padding: 1.1rem; }
+  table { display: block; overflow-x: auto; white-space: nowrap; }
+  .basket-section { position: sticky; bottom: 0; z-index: 10; box-shadow: 0 -6px 18px color-mix(in srgb, var(--paper-ink) 10%, transparent); }
   .stats-grid { grid-template-columns: 1fr 1fr; }
-  header .container { flex-direction: column; align-items: stretch; gap: 0.5rem; }
-  header h1 a { font-size: 1.1rem; }
-  header nav { flex-wrap: wrap; justify-content: center; }
   .basket-item { grid-template-columns: 1fr auto auto; }
   .basket-item-total { grid-column: 2 / 4; text-align: right; }
   .kpi-grid, .tables-grid { grid-template-columns: 1fr 1fr; }
@@ -778,23 +1587,1912 @@ tbody tr:last-child td { border-bottom: none; }
 }
 
 @media (max-width: 500px) {
+  .page-container { padding: 1.2rem 0.8rem 2.5rem; }
+  .topbar-inner { padding: 0 0.75rem; gap: 0.5rem; }
+  .brand-copy small { display: none; }
+  .brand-copy strong { font-size: 0.95rem; }
+  .app-topbar { height: 64px; }
+  .app-sidebar { top: 64px; }
+  .sidebar-overlay { inset: 64px 0 0; }
   .stats-grid, .kpi-grid { grid-template-columns: 1fr 1fr; }
   .hero-card { margin: 1.5rem 0.5rem; padding: 1.5rem; }
+  .btn, .payment-option { min-height: 48px; }
+  .action-grid { grid-template-columns: 1fr; }
+  .payment-options { display: grid; grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  * { transition: none !important; }
+  *, .page-container > * { transition: none !important; animation: none !important; }
 }
 
 /* ===================== Focus ===================== */
-:focus-visible { outline: 3px solid var(--sky); outline-offset: 2px; }
+:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
+/* The shell's own bars are dark in the light palettes and light in the dark ones,
+   so what a keyboard reader follows there is a value of its own: one ring cannot
+   read on both a white card and a near-black topbar. */
+.app-topbar :focus-visible, .app-sidebar :focus-visible { outline-color: var(--ring-brand); }
 
 /* ===================== Animations ===================== */
+
+@keyframes spin { to { transform: rotate(360deg); } }
 
 @keyframes popIn {
   0% { transform: scale(0.9); opacity: 0; }
   100% { transform: scale(1); opacity: 1; }
 }
 .alert, .card, .stat-card, .kpi-card {
-  animation: popIn 0.2s ease-out;
+  animation: popIn 250ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Terminal live indicator on checkout.
+   Both of its colours are the theme's, and both are read without a fallback: a
+   literal here is not a default, it is the colour every palette silently gets,
+   which is how this chip kept a light grey face on a dark till for as long as
+   nothing looked at it. */
+.terminal-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  background: var(--surface-soft);
+  border-radius: 8px;
+  padding: 0.35rem 0.6rem;
+}
+.terminal-dot {
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.staff-record { border: 1px solid var(--rule); border-radius: var(--radius-sm); margin: 0.7rem 0; overflow: hidden; }
+.staff-record > summary { cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.9rem 1rem; background: var(--surface-soft); list-style: none; }
+.staff-record > summary::-webkit-details-marker { display: none; }
+.staff-record > summary::before { content: "＋"; color: var(--link); font-weight: 800; }
+.staff-record[open] > summary::before { content: "−"; }
+.staff-record > summary span { color: var(--ink-soft); font-size: 0.8rem; }
+.staff-record-body { padding: 1rem; border-top: 1px solid var(--rule); }
+.form-span-2 { grid-column: 1 / -1; }
+.staff-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.9rem; }
+.salary-box { margin-top: 1rem; padding: 1rem; border: 1px solid color-mix(in srgb, var(--mint) 35%, var(--rule)); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--mint) 5%, var(--card)); }
+.salary-box h4 { margin-bottom: 0.7rem; }
+.print-document { max-width: 820px; margin: 1.5rem auto; background: var(--card); padding: 2rem; box-shadow: var(--shadow-hover); border-radius: var(--radius); }
+.print-document-header { border-bottom: 2px solid var(--rule); padding-bottom: 1rem; margin-bottom: 1.25rem; text-align: center; }
+.print-document-header h1 { margin: 0 0 0.35rem; }
+.print-document-meta { display: flex; justify-content: space-between; gap: 1rem; color: var(--ink-soft); font-size: 0.85rem; }
+.document-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; margin-top: 4rem; text-align: center; }
+.document-signatures div { border-top: 1px solid var(--ink); padding-top: 0.5rem; }
+.document-actions { display: flex; justify-content: center; gap: 0.6rem; margin: 1rem auto; }
+@media (max-width: 700px) { .staff-record > summary { align-items: flex-start; flex-direction: column; } .form-span-2 { grid-column: auto; } .document-signatures { gap: 1.5rem; } }
+@media print { .print-document { max-width: none; margin: 0; padding: 0; box-shadow: none; border: none; } .document-actions { display: none !important; } body { background: var(--paper) !important; color: var(--paper-ink) !important; } .print-document, .print-document * { color: var(--paper-ink) !important; background: var(--paper) !important; } }
+
+/* Theme signatures: each workspace keeps the same structure while changing its visual rhythm. */
+.card::before { background: var(--card-accent); }
+/* The full rainbow lives only where the shop sells (till, catalog, club);
+   ops pages keep the quiet two-stop. Every palette carries both tokens. */
+.accent-full .card::before { background: var(--card-accent-full); }
+
+/* Keep the original Kids Boutique treatment intact while the professional themes use tokens. */
+html[data-theme="kids-boutique"] .card { border: none; }
+html[data-theme="kids-boutique"] th { background: var(--table-header); }
+html[data-theme="kids-boutique"] input[type="text"],
+html[data-theme="kids-boutique"] input[type="tel"],
+html[data-theme="kids-boutique"] input[type="number"],
+html[data-theme="kids-boutique"] input[type="email"],
+html[data-theme="kids-boutique"] input[type="password"],
+html[data-theme="kids-boutique"] input[type="date"],
+html[data-theme="kids-boutique"] select,
+html[data-theme="kids-boutique"] textarea { background: var(--field-bg); border-color: var(--rule); }
+html[data-theme="kids-boutique"] .info-item,
+html[data-theme="kids-boutique"] .referral-section { background: var(--surface-soft); }
+
+html[data-theme="operations-light"] .card::before { height: 3px; }
+
+html[data-theme="pos-focus"] body { font-size: 17px; }
+html[data-theme="pos-focus"] .quick-sale,
+html[data-theme="pos-focus"] .topbar-admin { border-width: 2px; }
+html[data-theme="pos-focus"] .btn-primary,
+html[data-theme="pos-focus"] .btn-success { min-height: 48px; }
+
+html[data-theme="midnight-operations"] .card::before { background: var(--card-accent); }
+
+html[data-theme="high-contrast"] .card::before { background: var(--ink); }
+
+html[data-theme="operations-light"] .card,
+html[data-theme="operations-light"] .stat-card,
+html[data-theme="operations-light"] .kpi-card { box-shadow: var(--shadow); }
+
+html[data-theme="pos-focus"] .app-topbar,
+html[data-theme="pos-focus"] .app-sidebar { border-color: color-mix(in srgb, var(--sidebar-bg) 60%, var(--sidebar-text)); }
+html[data-theme="pos-focus"] .card,
+html[data-theme="pos-focus"] .stat-card,
+html[data-theme="pos-focus"] .kpi-card { border-inline-start: 3px solid var(--candy); }
+html[data-theme="pos-focus"] .btn { border-radius: var(--radius-sm); text-transform: none; }
+
+html[data-theme="midnight-operations"] .card,
+html[data-theme="midnight-operations"] .stat-card,
+html[data-theme="midnight-operations"] .kpi-card { border: 1px solid var(--rule); box-shadow: var(--shadow-hover); }
+html[data-theme="midnight-operations"] .app-topbar { box-shadow: var(--shadow-hover); }
+html[data-theme="midnight-operations"] .btn-ghost { color: var(--ink); }
+
+html[data-theme="high-contrast"] .quick-sale,
+html[data-theme="high-contrast"] .topbar-admin { border: 2px solid var(--sidebar-text); }
+html[data-theme="high-contrast"] .sidebar-nav a.active { box-shadow: inset -4px 0 var(--sidebar-text); }
+html[data-theme="high-contrast"] .card::before { height: 6px; }
+
+html[data-theme="custom-brand"] .app-topbar { box-shadow: 0 4px 18px color-mix(in srgb, var(--sky) 28%, transparent); }
+html[data-theme="custom-brand"] .card,
+html[data-theme="custom-brand"] .stat-card,
+html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); }
+
+
+/* ===================== Product management and printable tags ===================== */
+
+.sr-only {
+  /* inset: 0, not an auto position: with no inset a screen-reader label sat at
+     its static position — which inside a wide, horizontally-scrolled table is
+     off the page — and that pushed the whole document ~77px wider. */
+  position: absolute;
+  inset: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.section-heading-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.section-heading-row h3,
+.section-heading-row h4 { margin: 0 0 0.25rem; }
+.section-heading-row p { margin: 0; }
+.text-link { color: var(--link-hover); font-weight: 800; white-space: nowrap; }
+.product-page-heading .admin-nav { margin-top: 0; justify-content: flex-start; }
+.products-kpi { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.product-search-card,
+.product-list-card { overflow: hidden; }
+.product-search-form { align-items: end; margin-bottom: 0; }
+.product-search-form input { flex: 2; }
+.product-search-form select { flex: 1; }
+/* Page-size picker beside the CSV link: a quiet select, not a third button. */
+.product-list-heading { gap: 0.8rem; align-items: center; }
+/* The heading's actions dock at the row's end: title right, CSV and page-size
+   left, nothing stranded between them. */
+.list-heading-actions { display: inline-flex; align-items: center; gap: 0.8rem; margin-inline-start: auto; }
+.per-page-form { display: inline-flex; }
+.per-page-form select { font-size: 0.83rem; padding: 0.35rem 0.6rem; }
+.product-list-table { min-width: 760px; }
+.product-identity { display: flex; align-items: center; gap: 0.7rem; min-width: 190px; }
+.product-identity > span:last-child { display: flex; flex-direction: column; gap: 0.1rem; }
+.product-identity small { color: var(--ink-soft); font-size: 0.75rem; }
+.product-thumb { width: 48px; height: 48px; flex: 0 0 48px; object-fit: cover; border-radius: 10px; border: 1px solid var(--rule); background: var(--surface-soft); }
+.product-thumb-empty { display: inline-flex; align-items: center; justify-content: center; color: var(--ink-soft); }
+.variant-summary { display: flex; flex-direction: column; align-items: flex-start; gap: 0.2rem; }
+.variant-summary small { color: var(--ink-soft); font-size: 0.74rem; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.badge-info { background: color-mix(in srgb, var(--sky) 14%, var(--card)); color: var(--info-ink); }
+.table-actions { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+.table-actions form { display: inline; }
+.product-pagination { display: flex; align-items: center; justify-content: center; gap: 1rem; padding-top: 1.2rem; color: var(--ink-soft); }
+.products-empty { min-height: 180px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.4rem; }
+/* Reload-free list regions: while the rows refetch, the region dims instead of
+   flashing away — a veil, not a spinner, for a fetch that takes milliseconds. */
+[data-list-region] { transition: opacity 150ms ease; }
+[data-list-region].is-loading { opacity: 0.55; }
+@media (prefers-reduced-motion: reduce) {
+  [data-list-region] { transition: none; }
+}
+/* Stock chips: the same pill voice as the analytics tabs, without the sliding
+   pill — three links that never move, so no JS measures them. */
+.stock-chips { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.85rem; }
+.stock-chip { padding: 0.42rem 0.95rem; border: 1px solid var(--rule); border-radius: 999px; background: var(--surface-soft); color: var(--ink-soft); font-weight: 700; font-size: 0.83rem; transition: color 150ms ease, border-color 150ms ease, background 150ms ease; }
+.stock-chip:hover { color: var(--link-hover); border-color: var(--candy); text-decoration: none; }
+.stock-chip.is-active { color: var(--ink); background: var(--card); border-color: var(--candy); }
+/* Search-term highlight: a tint of sunshine over the ink, never a new colour. */
+.product-list-table mark { background: color-mix(in srgb, var(--sunshine) 45%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+/* Bulk archive: the bar is a form of its own — rows point at it with
+   form="bulk-archive-form" because a form inside a form is not a form. */
+.bulk-cell { width: 2.2rem; }
+.bulk-cell input[type="checkbox"] { width: 1.1rem; height: 1.1rem; accent-color: var(--candy); cursor: pointer; }
+.bulk-bar { display: flex; align-items: center; gap: 0.8rem; padding: 0.6rem 0.9rem; margin-bottom: 0.9rem; background: var(--surface-soft); border: 1px solid var(--rule); border-radius: var(--radius-sm); }
+.bulk-bar[hidden] { display: none; }
+/* Expandable variants: the toggle is a badge that behaves like a button. */
+.variant-toggle { cursor: pointer; font: inherit; border: 0; transition: transform 150ms ease-out; }
+.variant-toggle:active { transform: scale(0.97); }
+.variant-detail-row > td { background: var(--surface-soft); }
+.variant-detail-list { list-style: none; margin: 0; padding: 0.55rem 0.2rem; display: flex; flex-direction: column; gap: 0.45rem; }
+.variant-detail-list li { display: flex; align-items: center; flex-wrap: wrap; gap: 0.35rem 0.9rem; font-size: 0.85rem; }
+.variant-detail-list li .text-link { font-size: 0.8rem; }
+/* Row entry: a short staggered rise, transform and opacity only, still for
+   reduced motion. Later rows share the last step so a full page never drags. */
+@keyframes product-row-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: no-preference) {
+  .product-row { animation: product-row-in 240ms ease-out backwards; animation-delay: calc(var(--i, 0) * 35ms); }
+}
+@media print {
+  .product-search-card, .bulk-cell, .bulk-bar, .stock-chips { display: none !important; }
+  /* Paper shows every variant in reading order: the sheet travels with the
+     whole shelf, not just the rows someone expanded on screen. */
+  .variant-detail-row { display: table-row !important; }
+  .variant-toggle { pointer-events: none; }
+}
+
+.tag-settings-layout { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(280px, 0.8fr); gap: 1.2rem; align-items: start; }
+.tag-settings-side { min-width: 0; }
+.tag-editor-card { min-width: 0; }
+.tag-editor-workspace { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(220px, 0.8fr); gap: 1rem; align-items: start; margin-bottom: 1.2rem; }
+.tag-editor-canvas-wrap { min-width: 0; overflow: auto; padding: 0.8rem; background: var(--surface-soft); border: 1px solid var(--rule); border-radius: var(--radius-sm); }
+.tag-editor-canvas { position: relative; margin: 0 auto; min-width: 25mm; min-height: 20mm; background: var(--card); border: 1px dashed var(--candy); box-shadow: var(--shadow); transform-origin: top center; }
+.tag-editor-field { position: absolute; z-index: 1; display: flex; align-items: center; justify-content: center; overflow: visible; padding: 0.15rem; border: 1px dashed color-mix(in srgb, var(--candy) 70%, var(--ink)); border-radius: 3px; background: color-mix(in srgb, var(--candy) 8%, transparent); font-family: inherit; line-height: 1.1; cursor: move; min-height: 0; min-width: 0; }
+.tag-editor-field:hover, .tag-editor-field.is-selected { border-style: solid; border-color: var(--candy); box-shadow: var(--focus-ring); }
+.tag-editor-field.is-hidden-field { opacity: 0.4; border-style: dotted; background: color-mix(in srgb, var(--ink-soft) 8%, transparent); }
+.tag-resize-handle { position: absolute; left: -4px; bottom: -4px; width: 10px; height: 10px; border: 2px solid var(--card); border-radius: 50%; background: var(--candy); cursor: nwse-resize; }
+/* The corner is a control now (role=button, tabbable): focused it shows the
+   shell's ring, mid-session it reads as held down. The ring sits inside the
+   handle's own box so the canvas' hidden overflow never clips it. */
+.tag-resize-handle:focus-visible { outline: 3px solid var(--ring); outline-offset: -2px; }
+.tag-resize-handle.is-keyboard-resizing { transform: scale(1.45); box-shadow: var(--focus-ring); }
+.editor-help { margin: 0.7rem 0 0; color: var(--ink-soft); font-size: 0.75rem; }
+.tag-field-controls { padding: 1rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--surface-soft); }
+.tag-field-controls h4 { margin: 0 0 0.6rem; }
+.tag-field-controls label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.78rem; font-weight: 700; }
+.tag-field-controls .check-row { flex-direction: row; align-items: center; gap: 0.4rem; margin: 0.7rem 0; }
+.tag-field-controls .check-row input { width: auto; min-height: 0; }
+.compact-form-row { grid-template-columns: 1fr 1fr; gap: 0.55rem; margin: 0.55rem 0; }
+.compact-form-row input, .compact-form-row select { min-height: 38px; padding: 0.4rem 0.55rem; font-size: 0.85rem; }
+.field-nudge-buttons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.35rem; margin-top: 0.7rem; }
+.field-nudge-buttons .btn { min-height: 36px; padding: 0.3rem; font-size: 0.75rem; }
+.tag-global-controls { border-top: 1px solid var(--rule); padding-top: 1rem; }
+.tag-global-controls h4 { margin-top: 1rem; }
+.tag-global-controls .form-row { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 0.75rem; }
+.tag-global-controls label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.78rem; font-weight: 700; }
+.tag-global-controls input, .tag-global-controls select { min-height: 38px; padding: 0.4rem 0.55rem; font-size: 0.85rem; }
+.tag-barcode-modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6rem; }
+/* ── «for whom» choice ───────────────────────────────────────────────────────
+   One decision per customer, asked the same way on the signup forms, the
+   counter panel and the admin profile. It is the customer's own choice, not the
+   store's, and the fields beneath it follow from it. */
+.buys-for-fieldset { border: 0; padding: 0; margin: 0 0 0.9rem; }
+.buys-for-legend { display: block; font-weight: 700; color: var(--ink); margin-bottom: 0.4rem; }
+.buys-for-choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.6rem; margin: 0;
+    padding: 0; border: 0; }
+/* The side that is not chosen is hidden, and the chosen one is shown — purely
+   from the radio state, so the switch works before (and without) JavaScript.
+   The server still decides what is stored, so this is presentation only. */
+[data-buys-for-panel].is-hidden { display: none; }
+[data-buys-for-scope]:has(input[name="buys_for"][value="self"]:checked) [data-buys-for-panel="self"],
+[data-buys-for-scope]:has(input[name="buys_for"][value="child"]:checked) [data-buys-for-panel="child"] { display: block; }
+[data-buys-for-scope]:has(input[name="buys_for"][value="self"]:checked) [data-buys-for-panel="child"],
+[data-buys-for-scope]:has(input[name="buys_for"][value="child"]:checked) [data-buys-for-panel="self"] { display: none; }
+
+.choice-card { display: flex; flex-direction: column; gap: 0.2rem; padding: 0.8rem; border: 2px solid var(--rule); border-radius: var(--radius-sm); cursor: pointer; background: var(--surface-soft); }
+.choice-card:has(input:checked) { border-color: var(--candy); background: color-mix(in srgb, var(--candy) 8%, var(--card)); }
+.choice-card input { width: auto; min-height: 0; }
+.choice-card strong { font-size: 0.85rem; }
+.choice-card small { color: var(--ink-soft); font-size: 0.7rem; }
+.tag-custom-warning { margin: 0.8rem 0; color: var(--warning-ink); }
+.form-actions-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-top: 1rem; }
+.form-actions-row input[type="file"] { max-width: 100%; min-height: 44px; }
+.tag-image-upload { margin-top: 1.2rem; padding-top: 1rem; border-top: 1px solid var(--rule); }
+.tag-image-upload h4 { margin-bottom: 0.25rem; }
+.tag-image-upload p { margin: 0; }
+.tag-template-manager { margin: 1rem 0 1.25rem; padding: 1rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--surface-soft); }
+.tag-template-manager h4 { margin: 0 0 0.2rem; }
+.tag-template-manager p { margin: 0; }
+.tag-template-form { display: flex; align-items: end; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.8rem; }
+.tag-template-form label { flex: 1 1 260px; font-size: 0.78rem; font-weight: 700; }
+.tag-template-form label span { display: block; margin-bottom: 0.25rem; }
+.tag-template-form input { min-height: 44px; }
+.tag-template-list { display: grid; gap: 0.45rem; margin-top: 0.8rem; }
+.tag-template-row { display: flex; align-items: center; justify-content: space-between; gap: 0.7rem; padding: 0.55rem 0.65rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--card); }
+.tag-template-actions { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.tag-template-actions form { margin: 0; }
+.tag-template-empty { margin-top: 0.8rem !important; font-size: 0.82rem; }
+.tag-template-label { padding: 0.3rem 0.65rem; color: var(--link-hover); font-size: 0.72rem; font-weight: 800; background: color-mix(in srgb, var(--candy) 8%, var(--card)); border-bottom: 1px solid var(--rule); }
+.product-template-badge { color: var(--link-hover); font-size: 0.68rem; }
+@media (max-width: 600px) { .tag-template-row { align-items: stretch; flex-direction: column; } .tag-template-actions { justify-content: flex-start; } }
+.tag-preview-panel { display: grid; place-items: center; min-height: 235px; padding: 1.2rem; overflow: auto; background: repeating-linear-gradient(45deg, var(--surface-soft), var(--surface-soft) 8px, color-mix(in srgb, var(--rule) 45%, var(--surface-soft)) 8px, color-mix(in srgb, var(--rule) 45%, var(--surface-soft)) 16px); border: 1px solid var(--rule); border-radius: var(--radius-sm); }
+.tag-preview-scale { display: block; transform: scale(1.55); transform-origin: center; margin: 2rem; }
+.tag-preview-scale .tag-render { box-shadow: var(--shadow-hover); }
+.tag-preview-meta { display: flex; justify-content: space-between; gap: 0.5rem; margin-top: 0.7rem; color: var(--ink-soft); font-size: 0.75rem; }
+.a4-fit-guide { display: grid; gap: 0.45rem; }
+.a4-fit-guide > div { display: flex; justify-content: space-between; gap: 0.6rem; padding-bottom: 0.45rem; border-bottom: 1px solid var(--rule); font-size: 0.8rem; }
+.a4-fit-guide > div:last-child { border-bottom: 0; }
+.a4-fit-guide span { color: var(--ink-soft); }
+.a4-fit-guide strong { direction: ltr; text-align: left; }
+.fit-note { margin: 0.8rem 0 0; font-size: 0.74rem; }
+.tag-field-list { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.tag-field-list span { padding: 0.35rem 0.55rem; border-radius: 999px; background: var(--surface-soft); border: 1px solid var(--rule); font-size: 0.72rem; }
+
+.tag-print-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 0.7rem; flex-wrap: wrap; }
+.tag-print-selection-actions { display: flex; gap: 0.45rem; flex-wrap: wrap; }
+.tag-print-secondary-actions { justify-content: flex-start; margin-top: 0.8rem; padding-top: 0.8rem; border-top: 1px solid var(--rule); }
+.tag-print-secondary-actions form { display: inline; }
+.tag-selected-count { color: var(--link-hover); font-weight: 800; white-space: nowrap; }
+/* Screen-only receipt atop the print overlay: what it holds, in one line. */
+.tag-print-summary { margin-bottom: 0.8rem; font-weight: 800; }
+/* The page's own voice for mid-flow news: empty trays, unreadable pages,
+   the afterprint offer. A bar, never a popup. */
+.tag-notice { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.8rem; padding: 0.65rem 0.9rem; background: color-mix(in srgb, var(--sunshine) 14%, var(--card)); border: 1px solid color-mix(in srgb, var(--sunshine) 45%, var(--rule)); border-radius: var(--radius-sm); font-size: 0.86rem; font-weight: 700; }
+.tag-notice[hidden] { display: none; }
+.tag-notice .btn { min-height: 0; padding: 0.35rem 0.8rem; font-size: 0.82rem; }
+.tag-selection-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(248px, 1fr)); gap: 0.8rem; }
+.tag-selection-item { position: relative; display: flex; flex-direction: column; min-width: 0; border: 2px solid var(--rule); border-radius: var(--radius-sm); background: var(--surface-soft); overflow: hidden; transition: border-color 0.15s, box-shadow 0.15s; }
+.tag-selection-item.is-selected { border-color: var(--candy); box-shadow: 0 0 0 3px color-mix(in srgb, var(--candy) 13%, transparent); }
+.tag-selection-item.is-printed { opacity: 0.7; }
+/* Shelved but printable: out-of-stock cards dim without disappearing. */
+.tag-selection-item.is-out { opacity: 0.62; }
+.tag-selection-item.is-out .tag-stock-loud strong { color: var(--ink-soft); }
+/* The sellable figure, promoted from the meta row to a headline number. */
+.tag-stock-loud { display: flex; align-items: baseline; gap: 0.45rem; padding: 0.1rem 0.65rem 0.5rem; }
+.tag-stock-loud strong { font-size: 1.5rem; line-height: 1; }
+.tag-stock-loud span { color: var(--ink-soft); font-size: 0.76rem; }
+/* Quantity steppers: two quiet buttons around the type-in field. */
+.tag-stepper { display: inline-flex; align-items: stretch; gap: 0.25rem; }
+.tag-stepper button { min-height: 0; padding: 0.2rem 0.6rem; border: 2px solid var(--rule); border-radius: 8px; background: var(--card); color: var(--ink); font-size: 1rem; line-height: 1; cursor: pointer; transition: transform 150ms ease-out, border-color 150ms ease; }
+.tag-stepper button:hover { border-color: var(--candy); }
+.tag-stepper button:active { transform: scale(0.92); }
+.tag-stepper .tag-quantity { width: 4.2rem; text-align: center; }
+@media (prefers-reduced-motion: reduce) {
+  .tag-stepper button { transition: none; }
+}
+.tag-selection-head { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.6rem 0.65rem 0.5rem; }
+.tag-selection-label { display: flex; align-items: flex-start; gap: 0.5rem; min-height: 0; padding: 0; cursor: pointer; }
+.tag-selection-label input { position: static; flex: 0 0 auto; width: 20px; height: 20px; min-height: 0; margin-top: 0.1rem; z-index: auto; }
+.tag-selection-check { display: none; }
+.tag-selection-title { max-width: 100%; min-width: 0; padding-inline: 0; overflow: hidden; color: var(--ink); font-size: 0.82rem; font-weight: 800; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.tag-stock-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.25rem 0.6rem; padding: 0.45rem 0.65rem; border-top: 1px dashed var(--rule); color: var(--ink-soft); font-size: 0.72rem; }
+.tag-stock-meta strong { color: var(--ink); }
+.tag-selection-preview {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: calc(var(--frame-h, 120px) + 0.9rem);
+  padding: 0.45rem;
+  box-sizing: border-box;
+  border-top: 1px solid var(--rule);
+  background-color: color-mix(in srgb, var(--surface-soft) 55%, var(--card));
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--rule) 60%, transparent) 1px, transparent 1.1px);
+  background-size: 11px 11px;
+}
+.tag-selection-preview .tag-render {
+  zoom: var(--tag-scale, 1);
+  margin: 0;
+  box-shadow: var(--shadow-hover);
+}
+.tag-selection-preview .tag-barcode-image, .tag-selection-preview .tag-custom-image { max-width: 100%; height: auto; }
+.printed-badge { position: absolute; left: 0.6rem; top: 0.6rem; padding: 0.2rem 0.5rem; border-radius: 999px; background: var(--brand-fill); color: var(--brand-label); font-size: 0.68rem; font-weight: 800; z-index: 2; }
+.barcode-print-sheet { overflow: hidden; }
+.tag-pagination { display: flex; align-items: center; justify-content: center; gap: 0.8rem; margin-bottom: 1rem; }
+.tag-page-btn, .tag-page-number { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 0.45rem 0.8rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--card); color: var(--ink); font-size: 0.8rem; font-weight: 800; }
+.tag-page-number.active { border-color: var(--candy); background: color-mix(in srgb, var(--candy) 12%, var(--card)); color: var(--link-hover); }
+
+.catalog-section { overflow: visible; }
+.product-form-heading .admin-nav { margin-top: 0; }
+.section-step { display: inline-grid; place-items: center; width: 1.8rem; height: 1.8rem; flex: 0 0 1.8rem; border-radius: 50%; background: color-mix(in srgb, var(--candy) 12%, var(--card)); color: var(--link-hover); font-weight: 800; }
+.section-heading-spaced { margin-top: 1.5rem; padding-top: 1.2rem; border-top: 1px solid var(--rule); }
+.product-form-grid-wide { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.product-form-grid { align-items: start; }
+.catalog-variants-table { min-width: 760px; }
+.catalog-variants-table td strong, .catalog-variants-table td small { display: block; }
+.catalog-variants-table td small { color: var(--ink-soft); font-size: 0.72rem; margin-top: 0.15rem; }
+/* Archived rows sit quieter: readable, but unmistakably shelved. */
+.catalog-variants-table tr.is-archived { opacity: 0.72; }
+/* The demand badge pops when a silent +1 lands: transform and opacity only. */
+@keyframes demand-pop { 0% { transform: scale(0.6); opacity: 0.4; } 60% { transform: scale(1.12); opacity: 1; } 100% { transform: scale(1); } }
+.demand-updated { display: inline-block; animation: demand-pop 240ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .demand-updated { animation: none; }
+}
+.variant-entry { position: relative; margin-top: 0.8rem; padding: 1rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--surface-soft); }
+.variant-entry-heading { display: flex; align-items: center; gap: 0.7rem; width: 100%; margin: 0 0 0.8rem; padding: 0; padding-inline-end: 2rem; border: 0; background: none; font: inherit; text-align: start; cursor: pointer; color: var(--ink); }
+.variant-entry-heading strong { font-size: 0.92rem; }
+.variant-entry-summary { color: var(--ink-soft); font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.variant-entry-caret { margin-inline-start: auto; color: var(--ink-soft); transition: transform 150ms ease; }
+.variant-entry[data-open="false"] .variant-entry-body { display: none; }
+.variant-entry[data-open="false"] .variant-entry-heading { margin-bottom: 0; }
+.variant-entry[data-open="false"] .variant-entry-caret { transform: rotate(90deg); }
+.variant-entry-total { margin-top: 0.7rem; font-size: 0.85rem; color: var(--ink-soft); }
+.variant-entry-total strong { color: var(--ink); }
+.form-stock-total { margin-inline-start: auto; font-size: 0.88rem; color: var(--ink-soft); }
+.form-stock-total strong { color: var(--ink); }
+@media (prefers-reduced-motion: reduce) {
+  .variant-entry-caret { transition: none; }
+}
+.variant-entry-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.variant-remove { position: absolute; top: 0.7rem; left: 0.7rem; width: 2rem; min-height: 2rem; border: 1px solid var(--rule); border-radius: 50%; background: var(--card); color: var(--link-hover); font-size: 1.2rem; cursor: pointer; }
+.variant-edit-layout { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(250px, 0.65fr); gap: 1.2rem; align-items: start; }
+/* The whole side column sticks, not just the summary card: a single sticky
+   card would slide down over the danger card below it. */
+.variant-edit-side { position: sticky; top: 92px; align-self: start; min-width: 0; }
+.detail-list { display: grid; gap: 0.6rem; margin: 0; }
+.detail-list > div { display: flex; justify-content: space-between; gap: 0.75rem; padding-bottom: 0.45rem; border-bottom: 1px solid var(--rule); }
+.detail-list dt { color: var(--ink-soft); font-size: 0.8rem; }
+.detail-list dd { margin: 0; font-weight: 800; text-align: left; }
+.stock-status-callout { display: flex; align-items: center; gap: 0.4rem; padding: 0.7rem 0.85rem; border-radius: var(--radius-sm); background: var(--success-bg); color: var(--success-ink); font-size: 0.82rem; font-weight: 700; }
+.stock-status-callout.is-warning { background: var(--warning-bg); color: var(--warning-ink); }
+.variant-current-image { display: block; max-width: 150px; max-height: 150px; margin-top: 0.6rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); object-fit: cover; }
+/* Variant gallery: frames in a row, the primary wearing its badge. */
+.variant-gallery { list-style: none; margin: 0.8rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.7rem; }
+.variant-gallery li { position: relative; width: 120px; border: 1px solid var(--rule); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface-soft); }
+.variant-gallery li.is-primary { border-color: var(--candy); }
+.variant-gallery img { display: block; width: 100%; height: 96px; object-fit: cover; }
+.variant-gallery .badge { position: absolute; top: 0.3rem; inset-inline-start: 0.3rem; }
+.variant-gallery-actions { display: flex; gap: 0.3rem; padding: 0.35rem; flex-wrap: wrap; }
+.variant-gallery-actions form { display: inline; }
+.variant-gallery-actions .btn { min-height: 0; padding: 0.25rem 0.5rem; font-size: 0.75rem; }
+.demand-counter-group { margin-top: 0.9rem; padding-top: 0.75rem; border-top: 1px solid var(--rule); display: grid; gap: 0.55rem; }
+.demand-counter-heading { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.demand-counter-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.demand-counter-value { min-width: 2.5rem; text-align: center; padding: 0.3rem 0.6rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); font-weight: 700; }
+.demand-counter-form { display: inline; margin: 0; }
+.required-mark { color: var(--link-hover); }
+/* Locked record fields: a label voice with a value that reads as data, not
+   as an input waiting for typing. */
+.field-label { display: block; font-weight: 700; font-size: 0.85rem; margin-bottom: 0.3rem; }
+.barcode-record { display: inline-block; font-size: 1rem; letter-spacing: 0.04em; padding: 0.55rem 0.8rem; background: var(--surface-soft); border: 1px dashed var(--rule); border-radius: var(--radius-sm); }
+/* Colour fields: a swatch the eye can read, presets one tap away, the native
+   palette kept for custom colours. Preset hexes are garment data, not theme
+   paint, so they stay literal. */
+.color-pick { position: relative; display: flex; align-items: center; gap: 0.5rem; }
+.color-pick input[data-color-picker] { flex: 1; min-width: 0; }
+.color-swatch { flex: 0 0 2.1rem; width: 2.1rem; height: 2.1rem; min-height: 0; padding: 0; border: 2px solid var(--rule); border-radius: 10px; background: transparent; cursor: pointer; transition: transform 150ms ease-out, border-color 150ms ease; }
+.color-swatch:hover { border-color: var(--candy); }
+.color-swatch:active { transform: scale(0.92); }
+.color-swatch.is-empty { background-image: linear-gradient(45deg, transparent 44%, var(--ink-soft) 44%, var(--ink-soft) 56%, transparent 56%); }
+.color-presets { position: absolute; top: calc(100% + 6px); inset-inline-start: 0; z-index: 60; display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; max-width: min(280px, 80vw); padding: 0.6rem; background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius-sm); box-shadow: var(--shadow-overlay); }
+.color-presets[hidden] { display: none; }
+.color-preset { width: 1.7rem; height: 1.7rem; min-height: 0; padding: 0; border: 2px solid var(--rule); border-radius: 50%; cursor: pointer; transition: transform 150ms ease-out; }
+.color-preset:hover { transform: scale(1.12); }
+.color-preset.is-active { border-color: var(--ink); box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--link); }
+.color-preset.is-clear { display: inline-flex; align-items: center; justify-content: center; background: transparent; color: var(--ink-soft); font-size: 1rem; line-height: 1; }
+.color-custom { border: 0; background: none; padding: 0.3rem 0.4rem; min-height: 0; color: var(--link); font: inherit; font-size: 0.8rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.color-custom:hover { color: var(--link-hover); }
+@media (prefers-reduced-motion: reduce) {
+  .color-swatch, .color-preset { transition: none; }
+}
+/* The form's send row pins to the viewport bottom: a page this long must not
+   make the owner hunt for ثبت after every variant. */
+.product-form-actions { position: sticky; bottom: 0; z-index: 30; background: var(--card); border-top: 1px solid var(--rule); border-radius: 0 0 var(--radius-sm) var(--radius-sm); margin: 1.2rem -1.4rem -1.4rem; padding: 0.75rem 1.4rem; }
+/* Advanced fields: the rarely-touched shelf folds away behind one summary,
+   so the fast path — name, category, brand, supplier, group — owns the page. */
+.advanced-fields { margin-top: 1rem; border-top: 1px solid var(--rule); padding-top: 0.7rem; }
+.advanced-fields > summary { cursor: pointer; font-weight: 800; color: var(--link); width: fit-content; }
+.advanced-fields > summary small { color: var(--ink-soft); font-weight: 400; }
+.advanced-fields .form-row { margin-top: 0.9rem; }
+/* Field hints: a ⓘ button whose popup rises from the label. Shown on hover
+   and on keyboard focus alike; a tap focuses the button, so touch gets it
+   with no script. Transform and opacity only; still without motion. */
+.hint { position: relative; display: inline-block; }
+.hint-btn { border: 0; background: none; padding: 0 0.15rem; margin: 0; min-height: 0; color: var(--link); font-size: 0.9em; line-height: 1; cursor: help; }
+.hint-btn:hover { color: var(--link-hover); }
+.hint-pop { position: absolute; bottom: calc(100% + 8px); inset-inline-start: -0.6rem; width: max-content; max-width: min(240px, 70vw); padding: 0.55rem 0.75rem; background: var(--card); color: var(--ink); border: 1px solid var(--rule); border-radius: var(--radius-sm); box-shadow: var(--shadow-overlay); font-size: 0.78rem; font-weight: 400; line-height: 1.7; z-index: 50; opacity: 0; visibility: hidden; transform: translateY(4px); transition: opacity 150ms ease, transform 150ms ease, visibility 150ms; pointer-events: none; }
+.hint:hover .hint-pop, .hint:focus-within .hint-pop { opacity: 1; visibility: visible; transform: translateY(0); }
+@media (prefers-reduced-motion: reduce) {
+  .hint-pop { transition: opacity 150ms ease, visibility 150ms; transform: none; }
+}
+.tag-quantity-row { display: flex; align-items: center; justify-content: space-between; gap: 0.35rem; width: 100%; color: var(--ink-soft); font-size: 0.68rem; }
+.tag-quantity { width: 4.8rem !important; min-height: 32px !important; padding: 0.25rem 0.35rem !important; text-align: center; font-size: 0.78rem !important; }
+
+@media (max-width: 900px) {
+  .product-form-grid-wide, .variant-entry-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .variant-edit-layout { grid-template-columns: 1fr; }
+  .variant-edit-side { position: static; }
+  .tag-settings-layout { grid-template-columns: 1fr; }
+  .tag-editor-workspace { grid-template-columns: 1fr; }
+  .tag-settings-side { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .tag-settings-side .card:last-child { grid-column: 1 / -1; }
+}
+@media (max-width: 600px) {
+  .product-form-grid-wide, .variant-entry-grid { grid-template-columns: 1fr; }
+  .products-kpi { grid-template-columns: 1fr; }
+  .section-heading-row, .product-list-heading { align-items: stretch; flex-direction: column; }
+  /* The buttons share each row and grow to fill it: three of them fit one row
+     instead of the third being stranded at half width under the first two, and
+     a lone leftover takes the whole row. */
+  .product-page-heading .admin-nav { align-items: stretch; }
+  .product-page-heading .admin-nav > * { flex: 1 1 140px; }
+  .product-search-form { align-items: stretch; }
+  .product-search-form input, .product-search-form select, .product-search-form .btn { min-width: 100%; }
+  .tag-settings-side { display: block; }
+  .tag-global-controls .form-row, .compact-form-row { grid-template-columns: 1fr; }
+  .tag-barcode-modes { grid-template-columns: 1fr; }
+  .tag-preview-panel { min-height: 200px; }
+  .tag-preview-scale { transform: scale(1.15); margin: 1rem; }
+  .tag-print-selection-actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+  .tag-print-selection-actions .btn:last-child { grid-column: 1 / -1; }
+  .tag-print-secondary-actions { align-items: stretch; }
+  .tag-print-secondary-actions form, .tag-print-secondary-actions form .btn { width: 100%; }
+}
+
+/* ===================== Tag editor improvements ===================== */
+.tag-editor-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.6rem; flex-wrap: wrap; }
+/* overflow:hidden here clipped the global focus ring off the segment's end
+   buttons — the keyboard-shell guard's own family of defect. The separators
+   between buttons carry the edge instead, so nothing is clipped. */
+.tag-zoom-seg { display: inline-flex; border: 1px solid var(--rule); border-radius: var(--radius-sm); }
+.tag-zoom-seg .zoom-btn { min-height: 34px; padding: 0.25rem 0.7rem; border: 0; border-inline-start: 1px solid var(--rule); border-radius: 0; background: var(--card); color: var(--ink); font-weight: 800; font-size: 0.78rem; cursor: pointer; }
+.tag-zoom-seg .zoom-btn:first-child { border-inline-start: 0; }
+.tag-zoom-seg .zoom-btn.active { background: var(--brand-fill); color: var(--brand-label); }
+.tag-editor-canvas { touch-action: none; }
+.tag-editor-field { touch-action: none; color: var(--ink); }
+.tag-editor-field-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.field-color-dot { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 2px; margin-inline-end: 0.25rem; display: inline-block; border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent); }
+.tag-editor-field.is-hidden-field { opacity: 0.45; }
+.field-layer-buttons { display: flex; gap: 0.4rem; margin-top: 0.35rem; }
+.field-layer-buttons .btn { flex: 1; min-height: 34px; font-size: 0.75rem; }
+.field-layer-help { margin: 0.4rem 0 0; }
+#undo-btn:disabled { opacity: 1; cursor: not-allowed; color: var(--disabled-ink); }
+.fit-bad { color: var(--persimmon); }
+@media (max-width: 1180px) {
+  .tag-settings-layout { grid-template-columns: 1fr; }
+  .tag-editor-workspace { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ===================== Tag settings redesign ===================== */
+.tag-settings-layout { align-items: start; }
+.tag-settings-side { position: sticky; top: 92px; display: flex; flex-direction: column; gap: 1rem; min-width: 0; align-self: start; }
+.tag-settings-side > .card:first-child { position: static; }
+
+.tag-editor-head { align-items: flex-start; }
+.tag-head-actions { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; }
+.unsaved-chip { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.7rem; border-radius: 999px; background: color-mix(in srgb, var(--sunshine) 22%, var(--card)); border: 1px solid color-mix(in srgb, var(--sunshine) 55%, var(--card)); color: var(--warning-ink); font-size: 0.74rem; font-weight: 800; }
+.unsaved-chip::before { content: "●"; font-size: 0.6rem; }
+.unsaved-chip[hidden] { display: none; }
+
+.tag-fields-strip-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem; margin: 1rem 0 0.5rem; flex-wrap: wrap; }
+.tag-fields-strip-head h4 { margin: 0; }
+.tag-strip-tip { margin: 0; font-size: 0.72rem; }
+.tag-fields-strip { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1rem; }
+.tag-field-chip { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.35rem 0.65rem; border: 1.5px solid var(--rule); border-radius: 999px; background: var(--card); color: var(--ink); font-size: 0.76rem; font-weight: 700; cursor: pointer; font-family: inherit; transition: border-color 0.15s, background 0.15s, opacity 0.15s; }
+.tag-field-chip:hover { border-color: var(--candy); }
+.tag-field-chip.is-off { opacity: 0.55; border-style: dashed; }
+.tag-field-chip .chip-dot { width: 9px; height: 9px; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent); flex: 0 0 auto; }
+.tag-field-chip[aria-pressed="false"] { background: var(--surface-soft); }
+
+/* The history page's source quick-filter: the select's vocabulary as pills,
+   one click to «خلاصه ماهانه» and friends. Same vocabulary, so a chip and
+   the select can never disagree about what senders exist. */
+.source-chip { display: inline-flex; align-items: center; padding: 0.3rem 0.7rem; border: 1.5px solid var(--rule); border-radius: 999px; background: var(--card); color: var(--ink); font-size: 0.76rem; font-weight: 700; text-decoration: none; transition: border-color 0.15s, background 0.15s; }
+.source-chip:hover { border-color: var(--candy); }
+.source-chip.is-active { background: var(--brand-fill); border-color: var(--brand-fill); color: var(--brand-label); }
+.customer-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.8rem; }
+
+.tag-editor-workspace { grid-template-columns: minmax(0, 1.65fr) minmax(250px, 0.85fr); }
+.tag-editor-toolbar-left, .tag-editor-toolbar-right { display: flex; align-items: center; gap: 0.6rem; }
+.dims-chip { padding: 0.3rem 0.7rem; border-radius: var(--radius-sm); background: var(--surface-soft); border: 1px solid var(--rule); font-size: 0.78rem; font-weight: 800; white-space: nowrap; }
+
+.tag-field-controls { padding: 1rem 1.1rem; border: 2px solid var(--rule); border-radius: var(--radius-sm); background: var(--card); min-width: 0; }
+.tag-controls-head h4 { margin: 0; }
+.tag-controls-empty { margin: 0.5rem 0 0; font-size: 0.8rem; }
+.selected-field-title { display: flex; align-items: center; gap: 0.5rem; margin: 0.7rem 0 0.6rem; }
+.selected-field-title strong { font-size: 0.92rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.switch-inline { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.76rem; font-weight: 700; color: var(--ink-soft); cursor: pointer; }
+.switch-inline input { width: auto; min-height: 0; }
+.tag-prop-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; }
+.tag-prop-grid label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.72rem; font-weight: 700; color: var(--ink-soft); }
+.tag-prop-grid input, .tag-prop-grid select { min-height: 38px; font-size: 0.85rem; }
+.tag-prop-grid input[type="color"] { padding: 0.2rem; cursor: pointer; }
+.tag-prop-grid .check-row { flex-direction: row; align-items: center; gap: 0.35rem; align-self: end; padding-bottom: 0.4rem; }
+.field-action-row { display: flex; flex-direction: column; gap: 0.45rem; margin-top: 0.7rem; }
+.field-nudge-buttons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.3rem; }
+.field-nudge-buttons .btn { min-height: 36px; }
+.field-layer-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 0.3rem; }
+.kbd-hint { display: inline-block; padding: 0.1rem 0.4rem; border: 1px solid var(--rule); border-radius: 6px; background: var(--card); font-size: 0.72rem; font-weight: 700; color: var(--ink-soft); }
+.editor-help { display: flex; flex-wrap: wrap; gap: 0.3rem 0.6rem; align-items: center; }
+.editor-diagnostics { margin-top: 0.65rem; padding: 0.55rem 0.7rem; border-radius: var(--radius-sm); font-size: 0.74rem; line-height: 1.7; }
+.editor-diagnostics.is-ok { background: var(--success-bg); color: var(--success-ink); }
+.editor-diagnostics.is-warning { background: var(--warning-bg); color: var(--warning-ink); }
+.editor-diagnostics strong { margin-inline-end: 0.35rem; }
+.editor-diagnostics span + span::before { content: " · "; color: currentColor; opacity: 0.65; }
+/* A refused number rings its own field in the danger voice… */
+.tag-editor-card input.is-invalid, .tag-field-controls input.is-invalid { border-color: var(--danger); }
+/* …and every warning answers a click by selecting its offender. */
+.diag-issue { border: 0; background: none; padding: 0; margin: 0; font: inherit; color: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.diag-issue:hover { font-weight: 800; }
+
+.tag-ctl-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-top: 1.2rem; }
+.tag-ctl-card { border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--card); padding: 1rem 1.1rem 1.2rem; min-width: 0; }
+.tag-ctl-card-wide { grid-column: 1 / -1; }
+.tag-ctl-title { display: flex; gap: 0.7rem; align-items: flex-start; }
+.tag-ctl-title h4 { margin: 0; }
+.tag-ctl-title p { margin: 0.2rem 0 0.9rem; }
+.ctl-step { flex: 0 0 auto; width: 1.7rem; height: 1.7rem; display: inline-grid; place-items: center; border-radius: 50%; background: color-mix(in srgb, var(--candy) 14%, var(--card)); color: var(--link-hover); font-weight: 800; font-size: 0.85rem; }
+.tag-ctl-card .form-row { margin: 0 0 0.7rem; }
+.ctl-row-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ctl-row-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.ctl-row-last { margin-bottom: 0 !important; }
+.tag-ctl-card label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.74rem; font-weight: 700; }
+.tag-ctl-card label em { font-style: normal; color: var(--ink-soft); font-weight: 600; font-size: 0.68rem; }
+.tag-ctl-card input, .tag-ctl-card select { min-height: 40px; }
+.tag-ctl-card input[type="color"] { padding: 0.2rem; cursor: pointer; }
+.fit-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 0.3rem 0.8rem; align-content: start; padding: 0.55rem 0.7rem; border: 1px dashed var(--rule); border-radius: var(--radius-sm); background: var(--surface-soft); font-size: 0.72rem; color: var(--ink-soft); }
+.fit-summary span { display: flex; justify-content: space-between; gap: 0.5rem; }
+.fit-summary strong { color: var(--ink); }
+.tag-save-row { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; margin-top: 1.1rem; padding-top: 1rem; border-top: 1px solid var(--rule); }
+.tag-image-upload { margin-top: 1rem; }
+.tag-image-upload .tag-ctl-title p { margin-bottom: 0.6rem; }
+.upload-row input[type="file"] { flex: 1; min-width: 220px; }
+.upload-current { font-size: 0.72rem; }
+.upload-current code { direction: ltr; unicode-bidi: embed; }
+.tag-preview-card { min-width: 0; }
+.tag-preview-card .tag-ctl-title p { margin-bottom: 0.6rem; }
+.barcode-density-control { display: grid; grid-template-columns: minmax(180px, 0.7fr) minmax(0, 1.3fr); gap: 0.8rem; align-items: end; margin-top: 0.8rem; padding-top: 0.8rem; border-top: 1px dashed var(--rule); }
+.barcode-density-control label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.74rem; font-weight: 700; }
+.barcode-density-control select { min-height: 40px; }
+.barcode-density-control p { margin: 0; padding: 0.65rem 0.75rem; border-radius: var(--radius-sm); background: var(--surface-soft); font-size: 0.76rem; }
+
+@media (max-width: 1180px) {
+  .tag-settings-side { position: static; }
+  .tag-settings-side > .card:first-child { position: static; }
+  .tag-ctl-grid { grid-template-columns: 1fr; }
+  .ctl-row-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tag-ctl-card-wide { grid-column: auto; }
+  .tag-editor-workspace { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+  .ctl-row-2 { grid-template-columns: 1fr; }
+  .tag-editor-toolbar { justify-content: flex-start; }
+  .barcode-density-control { grid-template-columns: 1fr; }
+}
+
+/* ===================== Purchases ===================== */
+
+/* Shared helpers the catalog pages already referenced but never had. */
+.muted { color: var(--ink-soft); }
+.field-help { display: block; margin-top: 0.3rem; color: var(--ink-soft); font-size: 0.78rem; }
+
+.form-group label.checkbox-row { display: flex; align-items: flex-start; gap: 0.55rem; font-weight: 700; cursor: pointer; }
+.form-group label.checkbox-row input[type="checkbox"] { width: auto; min-height: auto; margin-top: 0.2rem; }
+
+.purchase-kpi { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.purchase-form-card,
+.purchase-history-card { overflow: hidden; }
+.purchase-items-head { align-items: center; }
+.purchase-items-tools { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.purchase-scan { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
+.purchase-scan input { flex: 1; min-width: 200px; }
+.purchase-scan-msg { margin: 0; font-size: 0.78rem; color: var(--ink-soft); }
+.purchase-scan-msg.is-error { color: var(--link-hover); font-weight: 700; }
+
+.purchase-item-row {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) 92px minmax(0, 1.5fr) minmax(0, 1.1fr) auto;
+  gap: 0.5rem;
+  align-items: start;
+  margin-bottom: 0.5rem;
+  padding: 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+.purchase-item-row.is-duplicate { border-color: var(--candy); }
+/* The row mirrors its variant: read-only stock × cost, no typing here. */
+.purchase-item-mirror { display: flex; align-items: center; gap: 0.45rem; min-height: var(--touch-target); font-size: 0.88rem; }
+.purchase-item-mirror strong { font-size: 0.95rem; }
+/* A scanned duplicate flashes its row instead of duplicating it. */
+@keyframes row-flash { 0%, 100% { box-shadow: none; } 30% { box-shadow: 0 0 0 3px var(--candy); } }
+.purchase-item-row.is-flash { animation: row-flash 600ms ease-out; border-radius: var(--radius-sm); }
+/* Form-level refusal: names the problem above the note, never a popup. */
+.form-error { padding: 0.6rem 0.85rem; background: var(--danger-bg); color: var(--link-hover); border-radius: var(--radius-sm); font-size: 0.86rem; font-weight: 700; }
+.form-error[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .purchase-item-row.is-flash { animation: none; }
+}
+.purchase-item-total { display: flex; align-items: center; justify-content: flex-end; min-height: var(--touch-target); font-weight: 800; }
+.purchase-item-context { grid-column: 1 / -1; margin: 0; font-size: 0.74rem; color: var(--ink-soft); }
+.purchase-item-row.is-duplicate .purchase-item-context::after { content: " · همین تنوع در ردیف دیگری هم آمده است"; color: var(--link-hover); font-weight: 700; }
+.purchase-item-remove { min-width: 2.4rem; }
+
+/* Supplier-scoped product picker: type, see the supplier's own products. */
+.purchase-picker { position: relative; }
+.purchase-picker-input { width: 100%; min-height: var(--touch-target); }
+.purchase-picker.is-selected .purchase-picker-input { font-weight: 800; }
+.purchase-picker.is-open .purchase-picker-input { border-color: var(--candy); }
+.purchase-picker-list {
+  position: absolute;
+  inset-inline: 0;
+  top: calc(100% + 2px);
+  z-index: 30;
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-hover);
+}
+.purchase-picker-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+.purchase-picker-option small { color: var(--ink-soft); font-size: 0.72rem; }
+.purchase-picker-option.is-active { background: var(--surface-soft); }
+.purchase-picker-empty { padding: 0.5rem; font-size: 0.8rem; color: var(--ink-soft); }
+
+/* Quantity and unit price are optional: the product already knows both. */
+.purchase-amount-input { border-style: dashed; font-size: 0.85rem; background: transparent; }
+.purchase-scope-note { margin: 0 0 0.7rem; font-size: 0.78rem; color: var(--ink-soft); }
+.purchase-scope-note.is-warning { color: var(--link-hover); font-weight: 700; }
+.purchase-draft-banner { margin-bottom: 1rem; }
+
+.purchase-totals { display: grid; gap: 0.4rem; margin: 1rem 0; padding: 0.9rem 1rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--surface-soft); }
+.purchase-totals-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; font-size: 0.86rem; color: var(--ink-soft); }
+.purchase-totals-row strong { color: var(--ink); }
+.purchase-totals-row.is-grand { padding-top: 0.5rem; border-top: 1px solid var(--rule); font-size: 1rem; }
+.purchase-totals-row.is-grand strong { font-size: 1.15rem; }
+
+.purchase-filter-form { align-items: end; margin-bottom: 1rem; }
+.purchase-filter-form .form-group { margin-bottom: 0; }
+.purchase-table { min-width: 960px; }
+.purchase-table td small,
+.purchase-table td strong { display: block; }
+.purchase-table td small { color: var(--ink-soft); font-size: 0.72rem; }
+.purchase-link { font-weight: 800; color: var(--link-hover); white-space: nowrap; }
+.purchase-table .purchase-note { color: var(--ink-soft); font-size: 0.72rem; max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge-danger { background: color-mix(in srgb, var(--candy) 16%, var(--card)); color: var(--link-hover); }
+
+.purchase-detail-layout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.72fr); gap: 1.2rem; align-items: start; }
+.purchase-detail-side { position: sticky; top: 92px; align-self: start; min-width: 0; }
+.purchase-detail-side .card:last-child { margin-bottom: 0; }
+.purchase-payment-form { display: grid; gap: 0.7rem; }
+.purchase-payment-form .form-group { margin-bottom: 0; }
+.purchase-lines-table { min-width: 700px; }
+.purchase-amount-list { display: grid; gap: 0.5rem; margin: 0; }
+.purchase-amount-list > div { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.purchase-amount-list dt { color: var(--ink-soft); font-size: 0.82rem; }
+.purchase-amount-list dd { margin: 0; font-weight: 800; }
+.purchase-amount-list .is-total { padding-top: 0.5rem; border-top: 1px solid var(--rule); }
+.purchase-amount-list .is-total dd { font-size: 1.1rem; }
+
+@media (max-width: 1020px) {
+  .purchase-kpi { grid-template-columns: 1fr 1fr; }
+  .purchase-detail-layout { grid-template-columns: 1fr; }
+  .purchase-detail-side { position: static; }
+}
+@media (max-width: 700px) {
+  .purchase-item-row { grid-template-columns: 1fr auto; }
+  .purchase-item-row > .purchase-item-main { grid-column: 1 / -1; }
+  .purchase-item-total { justify-content: flex-start; }
+  .purchase-item-remove { justify-self: end; }
+  .purchase-filter-form { grid-template-columns: 1fr; }
+}
+
+@media print {
+  /* The purchase detail on paper is the record of the buy: the KPIs, the
+     lines, the payments, the cost history, the financial summary. Its
+     finalise and payment forms and the danger zone are the screen's reply —
+     the document the supplier signs is the /print view — so they die with
+     the screen; the grid closes to one column and the summary closes the
+     page. The summary's soft labels and the total's hairline are palette
+     choices made against a dark screen: on paper they are ink and the
+     paper's own mid. */
+  .purchase-action-card, .purchase-detail-side .danger-zone { display: none !important; }
+  .purchase-detail-layout { display: block; }
+  .purchase-detail-side { position: static; }
+  .purchase-amount-list dt { color: var(--paper-ink) !important; }
+  .purchase-amount-list .is-total { border-top-color: var(--paper-mid) !important; }
+}
+
+/* ===================== Inventory ledger (دفتر انبار) ===================== */
+
+.movement-legacy-note { font-size: 0.78rem; margin: -0.6rem 0 1.1rem; }
+
+.movement-reconcile-card { margin-bottom: 1.2rem; }
+.reconcile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.9rem; margin-bottom: 1rem; }
+.reconcile-stat {
+  padding: 0.9rem 1rem;
+  border: 1px dashed var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  display: grid;
+  gap: 0.25rem;
+  align-content: start;
+}
+.reconcile-stat.is-warn { border-color: color-mix(in srgb, var(--sunshine) 60%, var(--rule)); }
+.reconcile-stat.is-danger { border-color: color-mix(in srgb, var(--candy) 55%, var(--rule)); }
+.reconcile-label { font-size: 0.78rem; color: var(--ink-soft); font-weight: 700; }
+.reconcile-value { font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
+.reconcile-sub { font-size: 0.75rem; color: var(--ink-soft); }
+.reconcile-ok { font-size: 0.75rem; color: var(--success-ink); font-weight: 700; }
+.reconcile-action { margin: 0 0 0.4rem; }
+.reconcile-action .btn { align-self: flex-start; }
+
+.movement-results { margin: 0 0 0.7rem; font-size: 0.78rem; color: var(--ink-soft); }
+.movement-filter-form { align-items: end; margin-bottom: 1rem; }
+.movement-filter-form .form-group { margin-bottom: 0; flex: 1 1 190px; min-width: 170px; }
+/* The search field carries a long hint, so give it more room than the selects. */
+.movement-filter-form .form-group:first-child { flex: 1 1 330px; }
+
+.movement-table { min-width: 1080px; }
+.movement-table td small,
+.movement-table td strong { display: block; }
+.movement-id { color: var(--ink-soft); }
+.movement-time { white-space: nowrap; }
+.movement-meta { color: var(--ink-soft); font-size: 0.72rem; }
+.movement-cost { direction: ltr; unicode-bidi: isolate; white-space: nowrap; }
+.movement-ref { white-space: nowrap; }
+.movement-table .movement-note {
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  max-width: 230px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.movement-reconcile-table { min-width: 860px; }
+
+.movement-type {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--sky) 14%, var(--card));
+  color: var(--info-ink);
+}
+.movement-type.is-in { background: color-mix(in srgb, var(--mint) 16%, var(--card)); color: var(--success-ink); }
+.movement-type.is-out { background: color-mix(in srgb, var(--candy) 14%, var(--card)); color: var(--link-hover); }
+.movement-type.is-zero { background: color-mix(in srgb, var(--sunshine) 22%, var(--card)); color: var(--ink); }
+
+.movement-delta {
+  display: inline-block;
+  min-width: 2.4rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  font-weight: 800;
+  text-align: center;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+.movement-delta.is-in { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--success-ink); }
+.movement-delta.is-out { background: color-mix(in srgb, var(--candy) 16%, var(--card)); color: var(--link-hover); }
+.movement-delta.is-zero { background: color-mix(in srgb, var(--sky) 12%, var(--card)); color: var(--ink-soft); }
+
+.movement-balance strong { font-size: 1rem; }
+.movement-flag {
+  display: inline-block;
+  margin-top: 0.15rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--sunshine) 26%, var(--card));
+  color: var(--ink);
+}
+.badge-legacy {
+  background: color-mix(in srgb, var(--ink-soft) 18%, var(--card));
+  color: var(--ink-soft);
+  margin-inline-start: 0.25rem;
+}
+
+@media (max-width: 1020px) {
+  .reconcile-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 700px) {
+  .movement-filter-form .form-group { flex: 1 1 100%; min-width: 0; }
+}
+
+/* ===================== Persian date picker ===================== */
+/* Every value here is a theme token, so the popup follows the active theme
+   (light, dark, high-contrast) instead of hardcoding its own palette. */
+
+.pdp-popup {
+  position: fixed;
+  z-index: 120;
+  min-width: 17rem;
+  padding: 0.7rem;
+  background: var(--card);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  /* A floating picker is the page's third depth: it must clear the cards it
+     hovers over by more than a hover does, so it takes the overlay rung of
+     the palette's elevation ladder, not the hover shadow reused. */
+  box-shadow: var(--shadow-overlay);
+  direction: rtl;
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.pdp-head { display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.5rem; }
+.pdp-selects { display: flex; flex: 1; gap: 0.35rem; min-width: 0; }
+.pdp-nav {
+  flex: 0 0 auto;
+  width: 2.1rem;
+  min-height: 2.1rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  color: var(--ink-soft);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.pdp-nav:hover:not(:disabled) { border-color: var(--candy); color: var(--link-hover); }
+.pdp-nav:disabled { cursor: not-allowed; opacity: 0.5; }
+.pdp-selects select {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  min-height: 2.1rem;
+  padding: 0.25rem 0.45rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--field-bg);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 0.82rem;
+}
+
+.pdp-weekdays,
+.pdp-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.15rem; text-align: center; }
+.pdp-weekdays { margin-bottom: 0.2rem; }
+.pdp-weekdays span { padding: 0.15rem 0; color: var(--ink-soft); font-size: 0.7rem; font-weight: 700; }
+
+.pdp-day {
+  min-height: 2.1rem;
+  padding: 0.3rem 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.pdp-day:hover:not(:disabled) { background: color-mix(in srgb, var(--candy) 12%, var(--card)); }
+.pdp-day.is-outside { color: var(--ink-soft); opacity: 0.7; }
+.pdp-day.is-today { border-color: var(--candy); font-weight: 800; }
+.pdp-day.is-selected { background: var(--brand-fill); border-color: var(--candy); color: var(--brand-label); font-weight: 800; }
+.pdp-day:disabled { cursor: not-allowed; color: var(--disabled-ink); opacity: 1; text-decoration: line-through; }
+.pdp-day:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+.pdp-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--rule);
+}
+.pdp-btn {
+  min-height: 2.1rem;
+  padding: 0.3rem 0.9rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.pdp-today { background: var(--brand-fill); color: var(--brand-label); }
+.pdp-today:hover { background: var(--candy-dark); }
+.pdp-clear { background: transparent; border-color: var(--rule); color: var(--ink-soft); }
+.pdp-clear:hover { border-color: var(--candy); color: var(--link-hover); }
+
+/* Type-ahead hint: how to jump to a year, and the digits typed so far. */
+.pdp-hint {
+  margin: 0.45rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  text-align: center;
+}
+
+/* A field that doesn't parse says so without blocking the server's verdict. */
+.persian-date-input.is-invalid { border-color: var(--candy); box-shadow: 0 0 0 3px color-mix(in srgb, var(--candy) 18%, transparent); }
+
+/* Narrow screens: a full-width bottom sheet with comfortable tap targets. */
+.pdp-popup.is-sheet {
+  left: 0 !important;
+  right: 0;
+  top: auto !important;
+  bottom: 0;
+  width: 100%;
+  min-width: 0;
+  padding: 0.9rem 0.9rem calc(0.9rem + env(safe-area-inset-bottom, 0px));
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.pdp-popup.is-sheet .pdp-day { min-height: var(--touch-target); font-size: 0.95rem; }
+@media (hover: none) {
+  .pdp-day { min-height: var(--touch-target); }
+}
+
+/* ===================== Customer club (مشتریان) ===================== */
+
+.customer-filter-form { align-items: end; margin-bottom: 1rem; }
+.customer-filter-form .form-group { margin-bottom: 0; flex: 1 1 175px; min-width: 160px; }
+/* The search field carries a long hint, so it gets more room than the selects. */
+.customer-filter-form .form-group:first-child { flex: 1 1 320px; }
+
+.customer-results { margin: 0 0 0.7rem; font-size: 0.78rem; color: var(--ink-soft); }
+/* The KPI cards are links to the matching filter, so they need block layout. */
+.customer-kpi a.stat-card { display: block; text-decoration: none; color: inherit; }
+.customer-kpi a.stat-card:hover { text-decoration: none; }
+.profile-tag-fieldset { border: 0; padding: 0; margin: 0 0 1rem; }
+.profile-tag-fieldset legend { padding: 0; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.3rem; }
+.customer-table { min-width: 1060px; }
+.customer-table td small,
+.customer-table td strong { display: block; }
+
+.customer-name a { font-weight: 700; text-decoration: none; color: inherit; }
+.customer-name a:hover { color: var(--link-hover); text-decoration: underline; }
+.customer-phone { direction: ltr; unicode-bidi: isolate; color: var(--ink-soft); font-size: 0.78rem; }
+.customer-meta { color: var(--ink-soft); font-size: 0.72rem; }
+.customer-stale { color: var(--link-hover); font-weight: 700; }
+.customer-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; white-space: nowrap; }
+.customer-actions .btn { min-height: 1.9rem; padding: 0.25rem 0.6rem; font-size: 0.74rem; }
+
+/* Status and tags are text, not colour alone. */
+.status-badge {
+  display: inline-block;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--mint) 16%, var(--card));
+  color: var(--success-ink);
+}
+.status-badge.is-inactive { background: color-mix(in srgb, var(--sunshine) 26%, var(--card)); color: var(--ink); }
+.status-badge.is-archived { background: color-mix(in srgb, var(--ink-soft) 20%, var(--card)); color: var(--ink-soft); }
+
+.tag-chip {
+  display: inline-block;
+  margin: 0 0 0.15rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--sky) 14%, var(--card));
+  color: var(--info-ink);
+}
+.tag-chip.is-vip { background: color-mix(in srgb, var(--sunshine) 30%, var(--card)); color: var(--ink); }
+.tag-chip.is-blocked { background: color-mix(in srgb, var(--candy) 16%, var(--card)); color: var(--link-hover); }
+.tag-chip.is-wholesale { background: color-mix(in srgb, var(--mint) 16%, var(--card)); color: var(--success-ink); }
+
+.birthday-line { display: block; white-space: nowrap; }
+.birthday-line .birthday-age { color: var(--ink-soft); font-size: 0.72rem; }
+.birthday-soon { color: var(--link-hover); font-weight: 800; font-size: 0.72rem; }
+
+.drift-flag {
+  display: inline-block;
+  margin-top: 0.15rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--sunshine) 26%, var(--card));
+  color: var(--ink);
+}
+
+/* ── customer profile ── */
+.profile-layout { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(280px, 0.85fr); gap: 1.2rem; align-items: start; }
+/* minmax(0, …) + min-width: 0 on the cards themselves, not just the columns: a
+   card holding a wide table sized its track to the table's min-width, so the
+   table stretched the page instead of scrolling inside its own container. */
+.profile-main, .profile-side { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.2rem; min-width: 0; }
+.profile-main > *, .profile-side > * { min-width: 0; }
+.profile-card h3 { margin-bottom: 0.2rem; }
+.profile-card .muted { margin-top: 0; }
+.profile-head { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; }
+.profile-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  border: 1px solid var(--rule);
+  font-size: 1.4rem;
+}
+.profile-facts { display: grid; gap: 0.55rem; margin: 0; padding: 0; list-style: none; }
+.profile-facts li { display: flex; justify-content: space-between; gap: 0.8rem; font-size: 0.84rem; }
+.profile-facts .label { color: var(--ink-soft); }
+.profile-facts .value { font-weight: 700; }
+.profile-note {
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  border: 1px dashed var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  font-size: 0.84rem;
+  white-space: pre-wrap;
+}
+.profile-tag-list { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.history-table { min-width: 620px; }
+.history-table td small { display: block; color: var(--ink-soft); font-size: 0.72rem; }
+.history-amount { font-weight: 700; white-space: nowrap; }
+.referral-list { display: grid; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
+.referral-list li { display: flex; justify-content: space-between; gap: 0.6rem; font-size: 0.82rem; border-bottom: 1px solid var(--rule); padding-bottom: 0.4rem; }
+.referral-list li:last-child { border-bottom: 0; padding-bottom: 0; }
+
+@media (max-width: 1020px) {
+  .profile-layout { grid-template-columns: 1fr; }
+}
+@media (max-width: 700px) {
+  .customer-filter-form .form-group { flex: 1 1 100%; min-width: 0; }
+}
+
+/* High-contrast: state must not depend on colour alone. */
+html[data-theme-mode="high-contrast"] .status-badge,
+html[data-theme-mode="high-contrast"] .tag-chip,
+html[data-theme-mode="high-contrast"] .drift-flag { border: 1px solid var(--ink); }
+
+/* ===================== نسیه (credit) ===================== */
+/* One page now: debtors, ageing, invoices and collection. Every colour here is
+   a theme token, so dark and high-contrast follow along. */
+
+.credit-kpi a.stat-card { display: block; text-decoration: none; color: inherit; }
+.credit-filter-form { align-items: end; margin-bottom: 1rem; }
+.credit-filter-form .form-group { margin-bottom: 0; flex: 1 1 170px; min-width: 150px; }
+.credit-filter-form .form-group:first-of-type { flex: 1 1 260px; }
+.credit-results { margin: 0 0 0.7rem; font-size: 0.78rem; color: var(--ink-soft); }
+.view-toggle { display: flex; gap: 0.35rem; }
+
+.credit-table { min-width: 1020px; }
+.credit-table td small,
+.credit-table td strong { display: block; }
+.credit-amount { color: var(--persimmon); }
+.credit-over-limit { color: var(--persimmon); font-weight: 700; font-size: 0.72rem; }
+.credit-drift-note { margin: 0.6rem 0 0; font-size: 0.78rem; color: var(--ink-soft); }
+
+/* Ageing buckets: the label carries the meaning, the tint only reinforces it. */
+.credit-buckets { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.7rem; }
+.bucket-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--rule);
+  border-top: 3px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  color: inherit;
+  text-decoration: none;
+}
+.bucket-card:hover { border-color: var(--candy); text-decoration: none; }
+.bucket-card.is-active { border-color: var(--candy-dark); border-top-color: var(--candy-dark); background: color-mix(in srgb, var(--candy) 10%, var(--card)); }
+.bucket-card.is-current { border-top-color: var(--mint); }
+.bucket-card.is-1_30 { border-top-color: var(--sunshine); }
+.bucket-card.is-31_60 { border-top-color: var(--sunshine); }
+.bucket-card.is-61_90 { border-top-color: var(--persimmon); }
+.bucket-card.is-over_90 { border-top-color: var(--ink); }
+.bucket-label { font-size: 0.74rem; font-weight: 700; color: var(--ink-soft); }
+.bucket-amount { font-size: 1.15rem; }
+.bucket-count { color: var(--ink-soft); font-size: 0.72rem; }
+
+.credit-maintenance { margin-top: 0.9rem; padding-top: 0.9rem; border-top: 1px dashed var(--rule); }
+.credit-maintenance p { margin: 0 0 0.6rem; font-size: 0.8rem; color: var(--ink-soft); }
+
+.status-badge.is-overdue { background: color-mix(in srgb, var(--persimmon) 20%, var(--card)); color: var(--persimmon); }
+.status-badge.is-due-soon { background: color-mix(in srgb, var(--sunshine) 30%, var(--card)); color: var(--ink); }
+
+/* Per-invoice receipt and reversal: compact enough to live in a table cell. */
+.invoice-receive, .reversal-form { display: flex; gap: 0.3rem; align-items: center; flex-wrap: wrap; }
+.invoice-receive input, .reversal-form input { width: 115px; min-height: 2rem; padding: 0.25rem 0.45rem; font-size: 0.78rem; }
+.invoice-receive select { min-height: 2rem; padding: 0.2rem 0.4rem; font-size: 0.78rem; }
+.invoice-receive .btn, .reversal-form .btn { min-height: 2rem; padding: 0.25rem 0.6rem; font-size: 0.75rem; }
+
+table tbody tr:target { background: color-mix(in srgb, var(--candy) 12%, var(--card)); outline: 2px solid var(--candy); outline-offset: -2px; }
+
+.credit-side-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.9rem; }
+.credit-reminder-note { margin: 0.5rem 0 0; font-size: 0.74rem; }
+
+/* ── صورت‌حساب (statement) ── */
+.statement-range { align-items: end; margin-bottom: 1rem; }
+.statement-range .form-group { margin-bottom: 0; flex: 1 1 170px; min-width: 150px; }
+.credit-statement { display: grid; gap: 1rem; }
+.statement-head { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; border-bottom: 1px solid var(--rule); padding-bottom: 0.8rem; }
+.statement-head h2, .statement-head h3 { margin: 0 0 0.2rem; }
+.statement-head p { margin: 0; font-size: 0.8rem; color: var(--ink-soft); }
+.statement-meta { text-align: left; }
+.statement-table { min-width: 760px; }
+.statement-opening { color: var(--ink-soft); }
+.statement-reversal td { color: var(--ink-soft); }
+.statement-summary { border-top: 1px solid var(--rule); padding-top: 0.7rem; font-size: 0.82rem; }
+.statement-summary p { margin: 0 0 0.3rem; }
+.statement-foot { color: var(--ink-soft); font-size: 0.74rem; }
+
+/* High-contrast: the ageing strip must not rely on its tint. */
+html[data-theme-mode="high-contrast"] .bucket-card { border-width: 2px; }
+html[data-theme-mode="high-contrast"] .bucket-card.is-active { border-color: var(--ink); }
+
+@media (max-width: 700px) {
+  .credit-filter-form .form-group { flex: 1 1 100%; min-width: 0; }
+  .statement-range .form-group { flex: 1 1 100%; min-width: 0; }
+}
+
+@media print {
+  /* A statement is a document: no chrome, no colour work, just the figures —
+     and it is the theme's paper it prints on, like every printed page, so a
+     dark palette's card surfaces never reach the printer as grey rectangles. */
+  .screen-only, .search-form { display: none !important; }
+  .credit-statement { border: 0; box-shadow: none; padding: 0; background: var(--paper) !important; }
+  .credit-statement .table-scroll { overflow: visible; }
+  .statement-table { min-width: 0; width: 100%; font-size: 0.8rem; }
+  .statement-table th, .statement-table td {
+    border-bottom: 1px solid var(--paper-mid);
+    color: var(--paper-ink) !important;
+    background: var(--paper) !important;
+  }
+  .statement-head h2, .statement-head h3, .statement-head p,
+  .statement-summary p { color: var(--paper-ink) !important; }
+  .statement-summary { color: var(--paper-ink) !important; }
+  .credit-table thead th { border-bottom: 2px solid color-mix(in srgb, var(--paper) 70%, var(--paper-ink)) !important; }
+  .statement-table tfoot th, .statement-table tfoot td {
+    border-top: 2px solid color-mix(in srgb, var(--paper) 70%, var(--paper-ink)) !important;
+    color: var(--paper-ink) !important; background: var(--paper) !important;
+  }
+  body { background: var(--paper) !important; color: var(--paper-ink) !important; }
+}
+
+/* High-contrast: state must not depend on colour alone. */
+html[data-theme-mode="high-contrast"] .pdp-popup { border-width: 2px; }
+html[data-theme-mode="high-contrast"] .pdp-day.is-selected { outline: 2px solid var(--ink); outline-offset: -2px; }
+html[data-theme-mode="high-contrast"] .pdp-day.is-today { outline: 2px dashed var(--ink); outline-offset: -2px; }
+
+/* ── کمپین‌ها (campaigns) ──
+   Everything here reads theme tokens only, so dark and high-contrast keep
+   working. State is always text next to the colour, never colour alone. */
+
+.campaign-kpi a.stat-card { display: block; text-decoration: none; color: inherit; }
+.campaign-kpi a.stat-card:hover { text-decoration: none; }
+.campaign-status-value { font-size: 1.05rem; }
+
+.campaign-filter-form .form-group { margin-bottom: 0; flex: 1 1 175px; min-width: 160px; }
+.campaign-filter-form .form-group:first-child { flex: 1 1 300px; }
+.campaign-results { margin: 0 0 0.7rem; font-size: 0.78rem; color: var(--ink-soft); }
+
+.campaign-table { min-width: 1120px; }
+.campaign-table td small, .campaign-table td strong { display: block; }
+.campaign-name a { font-weight: 700; text-decoration: none; color: inherit; }
+.campaign-name a:hover { color: var(--link-hover); text-decoration: underline; }
+.campaign-code { direction: ltr; unicode-bidi: isolate; color: var(--ink-soft); font-size: 0.78rem; letter-spacing: 0.08em; }
+.campaign-meta { color: var(--ink-soft); font-size: 0.72rem; }
+.campaign-window { font-size: 0.78rem; color: var(--ink-soft); white-space: nowrap; }
+.campaign-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; white-space: nowrap; }
+.campaign-actions .btn { min-height: 1.9rem; padding: 0.25rem 0.6rem; font-size: 0.74rem; }
+
+/* Status badges: live / scheduled / expired / inactive, plus assignment states. */
+.status-badge.is-live { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--success-ink); }
+.status-badge.is-scheduled { background: color-mix(in srgb, var(--sky) 20%, var(--card)); color: var(--info-ink); }
+.status-badge.is-expired { background: color-mix(in srgb, var(--persimmon) 20%, var(--card)); color: var(--persimmon); }
+.status-badge.is-assignment-invited { background: color-mix(in srgb, var(--sunshine) 30%, var(--card)); color: var(--ink); }
+.status-badge.is-assignment-used { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--success-ink); }
+.status-badge.is-assignment-removed { background: color-mix(in srgb, var(--ink-soft) 20%, var(--card)); color: var(--ink-soft); }
+
+/* The badge a customer carries: same chip on the list, the profile and checkout. */
+.campaign-chip {
+  display: inline-block;
+  margin: 0 0 0.15rem;
+  padding: 0.12rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--lavender) 40%, var(--rule));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--lavender) 12%, var(--card));
+  color: var(--ink);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.campaign-chip small { display: inline; margin-inline-start: 0.25rem; color: var(--ink-soft); font-weight: 600; }
+.campaign-chip:hover { text-decoration: none; border-color: var(--lavender); }
+.campaign-chip.is-used { border-color: var(--rule); background: var(--surface-soft); color: var(--ink-soft); font-weight: 600; }
+.customer-campaign { white-space: nowrap; }
+.customer-campaign-note { margin: 0 0 1rem; font-size: 0.82rem; color: var(--ink-soft); }
+
+/* Checkout: what the customer holds, plus the code field for anyone else. */
+.campaign-section .campaign-line { margin: 0 0 0.6rem; font-size: 0.88rem; }
+.campaign-section .badge-available { margin-inline-start: 0.35rem; }
+
+/* The send panel: each audience shows the number it would actually reach. */
+.campaign-send-form { display: grid; gap: 0.8rem; justify-items: start; }
+.audience-choices { border: 1px solid var(--rule); border-radius: var(--radius-sm); padding: 0.7rem 0.9rem; margin: 0; display: grid; gap: 0.45rem; }
+.audience-choices legend { padding: 0 0.35rem; font-size: 0.82rem; font-weight: 700; }
+.audience-choice {
+  display: flex; align-items: center; gap: 0.6rem;
+  min-height: var(--touch-target);
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.audience-choice:hover { background: var(--hover-surface); }
+.audience-choice.is-empty { cursor: not-allowed; color: var(--ink-soft); }
+.audience-choice input { width: auto; min-height: 0; }
+.audience-label { font-weight: 600; font-size: 0.86rem; }
+.audience-count { margin-inline-start: auto; font-size: 0.78rem; color: var(--ink-soft); font-weight: 700; }
+
+.campaign-assign-form { display: flex; gap: 0.5rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: 1rem; }
+.campaign-assign-form .form-group { margin-bottom: 0; min-width: 220px; }
+
+.campaign-holders-table { min-width: 760px; }
+.campaign-holders-table td .btn { min-height: 1.9rem; padding: 0.25rem 0.6rem; font-size: 0.74rem; }
+.campaign-redemptions-table { min-width: 620px; }
+.campaign-danger .section-heading-row { align-items: center; }
+
+/* Add / edit form: one column of sections, one summary card beside it. */
+.campaign-form-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.9fr); gap: 1.2rem; align-items: start; }
+.campaign-form-layout > * { min-width: 0; }
+.form-section { padding-bottom: 1rem; margin-bottom: 1rem; border-bottom: 1px solid var(--rule); }
+.form-section:last-of-type { border-bottom: 0; }
+.form-section h3 { margin-bottom: 0.6rem; }
+.switch-row { display: flex; gap: 0.6rem; align-items: flex-start; min-height: var(--touch-target); cursor: pointer; }
+.switch-row input { width: auto; min-height: 0; margin-top: 0.35rem; }
+.switch-row small { display: block; color: var(--ink-soft); font-size: 0.76rem; }
+.form-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-top: 1rem; }
+
+.campaign-preview-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
+.campaign-preview-list li { display: flex; justify-content: space-between; gap: 0.8rem; font-size: 0.84rem; }
+.campaign-preview-list li > span { color: var(--ink-soft); }
+.campaign-preview-list strong { text-align: end; }
+.campaign-preview-list strong small { display: block; color: var(--ink-soft); font-weight: 600; font-size: 0.74rem; }
+
+/* The customer's campaign card: one row per campaign, with its own action. */
+.campaign-history { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: 0.5rem; }
+.campaign-history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.3rem 0.8rem;
+  align-items: center;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+.campaign-history-row.is-inactive { background: var(--card); }
+.campaign-history-main { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; min-width: 0; }
+.campaign-history-row .customer-meta { grid-column: 1; }
+.campaign-history-row form { grid-row: 1 / span 2; grid-column: 2; }
+.campaign-history-row .btn { min-height: 1.9rem; padding: 0.25rem 0.6rem; font-size: 0.74rem; }
+
+@media (max-width: 900px) {
+  .campaign-form-layout { grid-template-columns: 1fr; }
+}
+@media (max-width: 700px) {
+  .campaign-filter-form .form-group { flex: 1 1 100%; min-width: 0; }
+  .campaign-assign-form .form-group { min-width: 0; flex: 1 1 100%; }
+  .campaign-history-row { grid-template-columns: minmax(0, 1fr); }
+  .campaign-history-row form { grid-row: auto; grid-column: 1; }
+}
+
+/* High-contrast: the campaign chip and audience rows must not rely on tint. */
+html[data-theme-mode="high-contrast"] .campaign-chip { border-width: 2px; }
+html[data-theme-mode="high-contrast"] .audience-choices { border-width: 2px; }
+html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px; }
+
+@media print {
+  /* A campaign report is a document: the send panel and filters are screen-only. */
+  .campaign-send, .campaign-filter-form, .campaign-danger, .audience-choices { display: none !important; }
+  .campaign-card, .campaign-holders, .campaign-redemptions { border: 0; box-shadow: none; padding: 0; }
+  .campaign-table, .campaign-holders-table, .campaign-redemptions-table { min-width: 0; width: 100%; font-size: 0.8rem; }
+  .campaign-card .table-scroll, .campaign-holders .table-scroll, .campaign-redemptions .table-scroll { overflow: visible; }
+}
+
+/* ── پیامک ───────────────────────────────────────────────────────────────────
+   The templates manager, the editor with its live preview, the manual sender
+   and the log. Theme tokens only, and every state is written as text beside
+   its colour so dark and high-contrast themes lose nothing. */
+
+.sms-kpi a.stat-card { display: block; text-decoration: none; color: inherit; }
+.sms-kpi a.stat-card:hover { text-decoration: none; }
+
+.sms-gateway-card .form-group { flex: 1 1 190px; min-width: 170px; }
+.sms-gateway-card .form-actions { margin-top: 0.5rem; }
+
+/* The درگاه card: pairing QR on one side, the queue's numbers and the ceiling
+   on the other. The QR is a real <img> from a data URI — no canvas, no JS. */
+.sms-gateway-grid { display: grid; grid-template-columns: minmax(200px, 0.9fr) minmax(0, 1.4fr); gap: 1.2rem; align-items: start; }
+.sms-gateway-grid > * { min-width: 0; }
+.sms-gateway-pairing { display: grid; gap: 0.6rem; justify-items: center; text-align: center; }
+.sms-qr {
+  display: block; width: 180px; height: 180px;
+  padding: 0.45rem; background: var(--card);
+  border: 1px solid var(--rule); border-radius: var(--radius);
+}
+.sms-pairing-help { max-width: 24rem; font-size: 0.78rem; }
+.sms-gateway-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
+.sms-gateway-status { display: grid; gap: 0.8rem; }
+.sms-gateway-facts {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 0.5rem; margin: 0;
+}
+.sms-gateway-facts > div {
+  border: 1px solid var(--rule); border-radius: var(--radius-sm);
+  background: var(--surface-soft); padding: 0.55rem 0.7rem;
+}
+.sms-gateway-facts dt { font-size: 0.72rem; color: var(--ink-soft); }
+.sms-gateway-facts dd { margin: 0.15rem 0 0; font-size: 1.15rem; font-weight: 800; }
+.sms-journey { display: block; color: var(--ink-soft); font-size: 0.72rem; }
+.sms-gateway-note { font-size: 0.78rem; color: var(--ink-soft); }
+
+/* Both SMS tables fit any width: the text, its metrics and the source live
+   under the name, so the state and the actions are never scrolled out of view. */
+.sms-table { min-width: 0; }
+.sms-history-table { min-width: 0; }
+.sms-history-table .sms-name { min-width: 14rem; }
+.sms-empty-body { display: block; font-size: 0.78rem; color: var(--ink-soft); }
+.sms-table td small, .sms-table td strong { display: block; }
+.sms-table td { vertical-align: top; }
+.sms-name a { font-weight: 700; text-decoration: none; color: inherit; }
+.sms-name a:hover { color: var(--link-hover); text-decoration: underline; }
+.sms-meta { color: var(--ink-soft); font-size: 0.72rem; }
+/* «آخرین ارسال» و تعداد کل، تا یک قالب بی‌استفاده همین‌جا دیده شود. The badge
+   is dashed on purpose: it is the absence of a state, not another state. */
+.sms-usage { margin-top: 0.1rem; }
+.sms-unused-badge {
+  display: inline-block; vertical-align: middle;
+  margin-inline-start: 0.45rem; padding: 0.04rem 0.5rem;
+  border: 1px dashed color-mix(in srgb, var(--sunshine) 70%, var(--rule));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sunshine) 20%, var(--card));
+  font-size: 0.66rem; font-weight: 800; color: var(--ink);
+}
+.sms-body-cell { max-width: 22rem; }
+.sms-body { display: block; font-size: 0.82rem; line-height: 1.6; overflow-wrap: anywhere; }
+.sms-body-cell small { color: var(--ink-soft); font-size: 0.72rem; }
+/* What an automatic template would actually write, shown on its manager row
+   before «فعال‌کردن» is pressed — same bubble the owner reads elsewhere. */
+.sms-trigger-preview { margin-top: 0.45rem; display: grid; gap: 0.25rem; max-width: 26rem; }
+.sms-trigger-preview .sms-bubble { font-size: 0.8rem; }
+.sms-trigger-preview-note { color: var(--ink-soft); font-size: 0.72rem; }
+/* Which values the frozen text was built out of, and whether a replay through
+   the current template still reproduces it. Kept quiet until asked for: the
+   body is what the reader came for, the audit is what they check next. */
+.sms-values { margin-top: 0.25rem; font-size: 0.72rem; }
+.sms-values summary { cursor: pointer; color: var(--info-ink); }
+.sms-values summary::marker { color: var(--ink-soft); }
+.sms-values-list {
+  list-style: none; margin: 0.3rem 0 0; padding: 0.35rem 0.5rem;
+  display: grid; gap: 0.2rem;
+  background: var(--surface-soft); border-radius: var(--radius-sm);
+}
+.sms-values-list li { display: flex; gap: 0.45rem; flex-wrap: wrap; align-items: baseline; }
+.sms-values-label { min-width: 7rem; color: var(--ink-soft); }
+.sms-values-name { color: var(--ink-soft); font-size: 0.68rem; direction: ltr; }
+.sms-values-value { font-weight: 600; overflow-wrap: anywhere; }
+.sms-values-value em { color: var(--persimmon); font-style: normal; }
+.sms-replay { margin: 0.3rem 0 0; color: var(--ink-soft); }
+.sms-replay.is-match { color: var(--success-ink); }
+.sms-replay.is-differs, .sms-replay.is-gone { color: var(--persimmon); }
+.sms-replay-body {
+  margin: 0.2rem 0 0; padding: 0.3rem 0.5rem;
+  background: var(--surface-soft); border-radius: var(--radius-sm);
+  overflow-wrap: anywhere;
+}
+.sms-values-none { display: block; margin-top: 0.2rem; }
+/* پیگیری: one section per template, because a shop may point several texts at
+   the same moment and each keeps its own wait and its own guard. */
+.follow-up-group { margin-top: 1.2rem; }
+.follow-up-group:first-of-type { margin-top: 0.4rem; }
+.follow-up-group h4 {
+  display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap;
+  margin: 0 0 0.15rem; font-size: 1rem;
+}
+.follow-up-group > p.muted { margin: 0 0 0.5rem; font-size: 0.8rem; }
+.follow-up-table .sms-body-cell { max-width: 24rem; }
+.follow-up-table .sms-name small { display: block; }
+.sms-failed { color: var(--persimmon); font-size: 0.72rem; }
+.sms-error { display: block; max-width: 12rem; color: var(--persimmon); font-size: 0.72rem; }
+.sms-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; align-items: center; }
+.sms-actions .btn { min-height: 1.9rem; padding: 0.25rem 0.6rem; font-size: 0.74rem; }
+.inline-form { display: inline-flex; margin: 0; }
+
+.sms-help-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+.sms-help-list li { display: flex; gap: 0.6rem; flex-wrap: wrap; font-size: 0.84rem; }
+.sms-help-list li > span { color: var(--ink-soft); }
+
+/* «خودکار» یا «دستی»: the manager table, the help card and the editor all answer
+   the same question in the same shape, so a template's trigger is never a guess. */
+.sms-fireline { display: flex; gap: 0.45rem; align-items: baseline; flex-wrap: wrap;
+  margin: 0.2rem 0 0.1rem; font-size: 0.76rem; line-height: 1.7; color: var(--ink-soft); }
+.sms-fireline > span:not(.sms-fire-badge) { flex: 1 1 12rem; min-width: 0; }
+.sms-fireline a, .sms-help-list a { color: var(--link-hover); font-weight: 700; text-decoration: none; white-space: nowrap; }
+.sms-fireline a:hover, .sms-help-list a:hover { text-decoration: underline; }
+.sms-fire-badge { display: inline-block; flex: 0 0 auto; padding: 0.05rem 0.45rem;
+  border-radius: 999px; font-size: 0.68rem; font-weight: 800; }
+.sms-fire-badge.is-auto { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--success-ink); }
+.sms-fire-badge.is-manual { background: color-mix(in srgb, var(--sky) 20%, var(--card)); color: var(--info-ink); }
+.sms-help-row { display: flex; gap: 0.45rem; align-items: center; flex-wrap: wrap;
+  margin: 0.9rem 0 0.45rem; font-size: 0.82rem; color: var(--ink-soft); }
+.sms-help-row:first-of-type { margin-top: 0.4rem; }
+.sms-fire-card .sms-fireline { margin: 0 0 0.6rem; font-size: 0.84rem; }
+
+/* Editor: the form on one side, the phone preview on the other. */
+.sms-editor-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.9fr); gap: 1.2rem; align-items: start; }
+.sms-editor-layout > * { min-width: 0; }
+.sms-editor-side, .sms-send-side { display: grid; gap: 1rem; min-width: 0; }
+.sms-variable-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.6rem; }
+.sms-chip {
+  display: inline-flex; align-items: baseline; gap: 0.35rem;
+  min-height: 2rem; padding: 0.25rem 0.6rem;
+  border: 1px dashed color-mix(in srgb, var(--lavender) 55%, var(--rule));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--lavender) 10%, var(--card));
+  color: var(--ink); font: inherit; font-size: 0.76rem; cursor: pointer;
+}
+.sms-chip:hover { border-style: solid; border-color: var(--lavender); }
+.sms-chip small { color: var(--ink-soft); font-size: 0.72rem; }
+/* Ready-made sentences: the chip shows the whole wording, clipped when it runs
+   past the row, because the sentence is the point of the chip. */
+.sms-sentence-chip { align-items: center; }
+.sms-sentence-chip small { color: var(--ink); font-weight: 800; }
+.sms-chip-text {
+  max-width: 22rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ink-soft); font-size: 0.72rem;
+}
+.sms-sentence-note { margin: -0.15rem 0 0.6rem; font-size: 0.76rem; }
+.sms-counter { display: block; margin-top: 0.35rem; color: var(--ink-soft); font-size: 0.76rem; }
+.sms-counter.is-over { color: var(--persimmon); font-weight: 700; }
+.sms-variable-editor { margin-top: 0.6rem; border-top: 1px dashed var(--rule); padding-top: 0.6rem; }
+
+/* One editable slot: what it reads, what it is called, what the preview shows. */
+.sms-slot { display: grid; gap: 0.35rem; padding: 0.5rem 0; border-bottom: 1px dashed var(--rule); }
+.sms-slot:last-child { border-bottom: 0; }
+.sms-slot .form-row { margin: 0; }
+.sms-slot-source { width: 100%; }
+
+/* The preview bubble: a plain phone bubble, no theme colour of its own. */
+.sms-preview-card .sms-phone {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  padding: 0.9rem;
+  min-height: 5rem;
+}
+.sms-bubble {
+  display: inline-block; max-width: 100%;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.9rem 0.9rem 0.9rem 0.25rem;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  font-size: 0.86rem; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.sms-preview-note { margin: 0.6rem 0 0; font-size: 0.78rem; }
+.sms-warning {
+  margin: 0.6rem 0 0; padding: 0.5rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--sunshine) 45%, var(--rule));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--sunshine) 14%, var(--card));
+  color: var(--ink); font-size: 0.8rem;
+}
+.sms-test-form { display: grid; gap: 0.6rem; justify-items: start; }
+
+/* Sender: audience choices with their counts, then the picker. */
+.sms-send-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.9fr); gap: 1.2rem; align-items: start; }
+.sms-send-layout > * { min-width: 0; }
+.sms-audience-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.4rem; margin-bottom: 0.8rem; }
+.sms-audience-option {
+  display: flex; align-items: center; gap: 0.55rem;
+  min-height: var(--touch-target);
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.sms-audience-option:hover { background: var(--surface-soft); }
+.sms-audience-option input { width: auto; min-height: 0; }
+.sms-audience-option span { display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; font-size: 0.84rem; }
+.sms-audience-option small { color: var(--ink-soft); font-size: 0.74rem; font-weight: 700; }
+.sms-picked-block { border-top: 1px dashed var(--rule); padding-top: 0.7rem; }
+.sms-picker-search { margin-bottom: 0.4rem; }
+.sms-picker {
+  max-height: 15rem; overflow-y: auto;
+  border: 1px solid var(--rule); border-radius: var(--radius-sm);
+  background: var(--card);
+}
+.sms-pick-row {
+  display: flex; align-items: center; gap: 0.5rem;
+  min-height: 2.2rem; padding: 0.25rem 0.55rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--rule) 55%, transparent);
+  cursor: pointer; font-size: 0.82rem;
+}
+.sms-pick-row:last-child { border-bottom: 0; }
+.sms-pick-row:hover { background: var(--hover-surface); }
+.sms-pick-row input { width: auto; min-height: 0; }
+.sms-pick-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sms-pick-row small { margin-inline-start: auto; color: var(--ink-soft); font-size: 0.74rem; }
+.sms-summary { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+.sms-summary li { display: flex; justify-content: space-between; gap: 0.8rem; font-size: 0.84rem; }
+.sms-summary li > span { color: var(--ink-soft); }
+.sms-skipped { margin: 0.7rem 0 0; font-size: 0.78rem; }
+.sms-recipients { margin-top: 0.7rem; font-size: 0.82rem; }
+.sms-recipients summary { cursor: pointer; font-weight: 700; }
+.sms-recipients ul { list-style: none; margin: 0.5rem 0 0; padding: 0; display: grid; gap: 0.3rem; max-height: 14rem; overflow-y: auto; }
+.sms-recipients li { display: flex; justify-content: space-between; gap: 0.6rem; }
+.sms-recipients li small { color: var(--ink-soft); }
+
+/* Birthdays review: a row already wished this year is visible but untickable. */
+.birthdays-table tr.is-done { opacity: 0.55; }
+.birthdays-table tr.is-done .sms-name a { text-decoration: line-through; }
+
+/* History. */
+.sms-filter-form .form-group { margin-bottom: 0; flex: 1 1 160px; min-width: 150px; }
+.sms-filter-form .form-group:first-child { flex: 1 1 260px; }
+.sms-results { margin: 0 0 0.7rem; font-size: 0.78rem; color: var(--ink-soft); }
+.sms-time { font-size: 0.78rem; color: var(--ink-soft); white-space: nowrap; }
+
+/* Queue states: the worker's own verdict, always with its label. */
+.status-badge.is-queued { background: color-mix(in srgb, var(--sunshine) 30%, var(--card)); color: var(--ink); }
+.status-badge.is-sent { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--success-ink); }
+.status-badge.is-failed { background: color-mix(in srgb, var(--persimmon) 20%, var(--card)); color: var(--persimmon); }
+
+@media (max-width: 900px) {
+  .sms-editor-layout, .sms-send-layout { grid-template-columns: 1fr; }
+  .sms-gateway-grid { grid-template-columns: 1fr; }
+  /* The app-wide mobile rule turns every table into a horizontal scroller. These
+     two carry their detail inside a single cell, so they wrap instead and
+     nothing important ever needs a swipe to be read. */
+  .sms-table { white-space: normal; }
+}
+@media (max-width: 700px) {
+  .sms-filter-form .form-group { flex: 1 1 100%; min-width: 0; }
+  .sms-audience-grid { grid-template-columns: 1fr; }
+  .sms-gateway-card .form-group { min-width: 0; flex: 1 1 100%; }
+}
+
+/* High-contrast: chips, options and the picker must not rely on a tint. */
+html[data-theme-mode="high-contrast"] .sms-chip { border-width: 2px; }
+html[data-theme-mode="high-contrast"] .sms-audience-option { border-width: 2px; }
+html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
+
+@media print {
+  /* The log and the manager are documents; forms and pickers are screen-only. */
+  .sms-gateway-form, .sms-filter-form, .sms-test-form, .sms-variable-chips,
+  .sms-editor-layout form, .sms-send-layout form, .sms-actions { display: none !important; }
+  .sms-history-card, .sms-group-card, .sms-gateway-card { border: 0; box-shadow: none; padding: 0; }
+  .sms-table, .sms-history-table { min-width: 0; width: 100%; font-size: 0.78rem; }
+  .sms-history-card .table-scroll, .sms-group-card .table-scroll { overflow: visible; }
+}
+
+/* ===================== صندوق: the cash drawer ===================== */
+
+/* The accent two cards have referenced since they were written and never had:
+   `.stat-card.accent-candy::before` was undefined, so the closing balance on
+   صندوق and the net result on سود و زیان rendered without the accent bar every
+   sibling card carries. */
+.stat-card.accent-candy::before { background: var(--candy); }
+
+/* The shift's states, and the three ways a count can land. Text, not colour
+   alone — the words are in the badge. */
+.status-badge.is-open      { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--success-ink); }
+.status-badge.is-closed    { background: color-mix(in srgb, var(--ink-soft) 20%, var(--card)); color: var(--ink-soft); }
+.status-badge.is-abandoned { background: color-mix(in srgb, var(--sunshine) 30%, var(--card)); color: var(--ink); }
+.status-badge.is-balanced  { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--success-ink); }
+/* A drawer short is the alarming one, so it takes the danger pair the rest of
+   the panel uses for one (`.badge-danger`, `.alert-error`). `--persimmon` is the
+   quieter register — money owed, a payment past its date, a message that failed
+   — and every theme defines it (see services/themes.py). */
+.status-badge.is-short     { background: color-mix(in srgb, var(--candy) 18%, var(--card)); color: var(--link-hover); }
+.status-badge.is-over      { background: color-mix(in srgb, var(--sunshine) 30%, var(--card)); color: var(--ink); }
+
+/* A filter is a row of small controls, not a stack of full-width fields: the
+   global field rule makes every select 100% wide (right inside a form, wrong in
+   a filter bar), so the filter needs saying out loud. Scoped to `.is-inline`
+   rather than applied to `.filter-bar` itself, because four other pages use that
+   class as a plain block today and are not part of this change. */
+.filter-bar.is-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: flex-end;
+  margin-bottom: 0;
+}
+.filter-field { display: flex; flex-direction: column; gap: 0.3rem; flex: 0 1 auto; }
+.filter-field > span { font-size: 0.8rem; color: var(--ink-soft); font-weight: 600; }
+.filter-field > select,
+.filter-field > input { width: auto; min-width: 12rem; }
+.filter-note { flex: 1 1 100%; margin: 0; font-size: 0.82rem; }
+.filter-card { padding: 1rem 1.1rem; }
+
+@media (max-width: 700px) {
+  .filter-field { flex: 1 1 100%; }
+  .filter-field > select,
+  .filter-field > input { min-width: 0; width: 100%; }
+}
+
+.cash-drawer-card .stats-grid { margin-bottom: 0.2rem; }
+.cash-subsection { margin-top: 1.4rem; padding-top: 1rem; border-top: 1px solid var(--rule); }
+.cash-subsection h4 { margin: 0 0 0.35rem; }
+.cash-movements { width: 100%; }
+.cash-note-line { display: block; color: var(--ink-soft); font-size: 0.78rem; }
+.cash-note { margin-top: 1rem; font-size: 0.85rem; line-height: 1.9; }
+.cash-default summary { cursor: pointer; font-weight: 700; }
+.cash-default > p { margin: 0.6rem 0 0.8rem; font-size: 0.85rem; }
+
+/* One card alone in the grid would take half a row and leave a gap: the
+   cashier's shift shows the float and nothing else. */
+.stats-grid.is-single { grid-template-columns: 1fr; }
+
+/* ===================== Share meter (سود و زیان) ===================== */
+
+/* A row's share of its total: the figure written beside the bar, because a
+   length alone is a value the page cannot read. The bar starts from the right
+   edge like every other bar on an RTL page. */
+.share-meter { background: var(--rule); border-radius: 999px; height: 10px; width: 100%; max-width: 200px; overflow: hidden; }
+.share-meter-fill { background: var(--persimmon); height: 10px; border-radius: 999px; }
+.share-figure { font-size: 0.75rem; color: var(--ink-soft); margin-left: 0.4rem; }
+
+/* The total debt stat wears the attention colour, like the aging rows below. */
+.debt-figure { color: var(--persimmon); }
+
+/* The digest preview: what opting in puts on the owner's phone, rendered from
+   last month's own figures before any phone is saved. */
+.digest-preview { display: grid; gap: 0.4rem; margin-top: 0.6rem; }
+.digest-preview-label {
+  font-size: 0.78rem; color: var(--ink-soft); font-weight: 600;
+}
+.digest-preview-bubble { max-width: 100%; }
+/* The hand-send action under the preview: its own form, so it never posts the
+   settings form's fields along with it. */
+.digest-preview-actions { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.2rem; }
+.digest-preview-actions small { color: var(--ink-soft); }
+
+/* A digest row's month, named where the owner scans senders and dates. */
+.digest-month-chip {
+  display: inline-block; margin-inline-start: 0.35rem;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid color-mix(in srgb, var(--lavender) 45%, var(--rule));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--lavender) 14%, var(--card));
+  color: var(--ink); font-weight: 600;
+}
+/* One form to send a past month's summary again, on the digests' own view. */
+.digest-resend {
+  display: grid; gap: 0.4rem; margin-top: 0.9rem;
+  padding-top: 0.9rem; border-top: 1px solid var(--rule);
+}
+.digest-resend label { font-weight: 600; font-size: 0.85rem; }
+.digest-resend-row { display: flex; gap: 0.5rem; align-items: center; }
+.digest-resend-row select { min-width: 12rem; }
+
+/* The profile's drift banner: a warning the width of the page, so a counter
+   that disagrees with the invoices is read before the KPIs under it. */
+.drift-banner {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.drift-banner .tnum {
+  font-weight: 400;
+  margin-inline-start: 0.5rem;
+}
+
+/* ===================== Analytics extras =====================
+   Moved out of the analytics page so the rules live with the rest of the
+   theme (and its print/high-contrast overrides) instead of in a page-local
+   <style> block. `.kpi-grid` itself already lives above; only what the page
+   adds beyond it is kept here. */
+@media (max-width: 900px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .charts-grid, .tables-grid { grid-template-columns: 1fr; }
+}
+.matrix { border-collapse: collapse; font-size: 0.85rem; }
+.matrix th, .matrix td { border: 1px solid var(--rule); padding: 0.35rem 0.6rem; min-width: 2.8rem; white-space: nowrap; }
+.inv-row { display: flex; justify-content: space-between; padding: 0.25rem 0; }
+
+/* Question mark icon */
+.tip-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--rule);
+    color: var(--ink-soft);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: help;
+    vertical-align: middle;
+    margin-inline-start: 4px;
+    transition: background 0.15s, color 0.15s;
+    font-family: sans-serif;
+}
+.tip-icon:hover {
+    background: var(--brand-fill);
+    color: var(--brand-label);
+}
+
+/* Tab bar: one link per analytics section, carrying the current filters. */
+.tab-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+/* Sliding pill: the active tab is read from the pill behind it, not from a
+   second button colour — one emphasis per view. Links stay real links
+   (deep-linkable, no-JS safe); the pill is pure position. */
+.tabs-sliding {
+    position: relative;
+    gap: 0;
+    background: var(--surface-soft);
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    padding: 4px;
+    width: fit-content;
+    max-width: 100%;
+}
+.tab-link {
+    position: relative;
+    z-index: 1;
+    padding: 0.5rem 1.1rem;
+    border-radius: 999px;
+    color: var(--ink-soft);
+    font-weight: 700;
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+.tab-link:hover { color: var(--link-hover); text-decoration: none; }
+.tab-link.is-active { color: var(--ink); }
+.tabs-pill {
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    left: 0;
+    width: 0;
+    background: var(--card);
+    border: 1px solid var(--rule);
+    box-shadow: var(--shadow);
+    border-radius: 999px;
+    transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1), width 250ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+    .tabs-pill { transition: none; }
+}
+.tab-card {
+    margin-bottom: 1.25rem;
+}
+@media print {
+    .tab-card { display: none; }
+    /* Paper shows every tab in reading order: a staple travels with all of
+       the report, not just the tab that happened to be open on screen. */
+    .analytics-tab[hidden] { display: block; }
+}
+
+/* ===================== طرح تگ: paper ===================== */
+
+/* The tag designer is a worksheet: on paper it is the layout's own figures and
+   the A4 guide, not an editor. Every control that drives the screen — the
+   editor's canvas, its side panel, the zoom segment, the field chips, the
+   forms and their save row — stays with the screen; the settings' labels and
+   figures are what a printed sheet is for. The interactive surfaces themselves
+   (color wells, spinner arrows, a live preview wired to the script) draw
+   nothing meaningful on paper, so the guide and the heading carry the page. */
+@media print {
+  .tag-editor-workspace,
+  .tag-fields-strip-head,
+  .tag-fields-strip,
+  .tag-template-form,
+  .tag-template-actions,
+  .tag-save-row,
+  .tag-image-upload,
+  .tag-zoom-seg { display: none !important; }
+  .tag-ctl-card { border: 0 !important; box-shadow: none !important; }
+  .tag-ctl-card input,
+  .tag-ctl-card select { border: 0 !important; padding: 0 !important; background: transparent !important; }
+  .tag-preview-panel { overflow: visible !important; }
 }

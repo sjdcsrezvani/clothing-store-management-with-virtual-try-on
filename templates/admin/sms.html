@@ -1,0 +1,369 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% set page_description %}
+هر پیامکی که این فروشگاه می‌فرستد یک قالب دارد. متن هر قالب را همین‌جا می‌نویسید، متغیرها را می‌بینید و پیش‌نمایش می‌گیرید — و هر پیامکی که فرستاده شود در <strong>تاریخچه</strong> ثبت می‌شود. زیر نام هر قالب نوشته شده که <strong>خودکار</strong> فرستاده می‌شود یا <strong>دستی</strong>، و اگر دستی است از کدام صفحه.
+{% endset %}
+{% set heading_class = 'page-heading product-page-heading' %}
+{% set page_actions %}
+<a href="/admin/sms/send" class="btn btn-primary">ارسال پیامک</a>
+        <a href="/admin/sms/history" class="btn btn-ghost">تاریخچه ارسال</a>
+        <a href="/admin/sms/templates/new" class="btn btn-ghost">قالب جدید</a>
+{% endset %}
+{% include 'partials/page_header.html' %}
+
+
+<div class="stats-grid sms-kpi" aria-label="خلاصه پیامک‌ها">
+    <a class="stat-card accent-sky" href="/admin/sms/history">
+        <div class="stat-label">کل پیامک‌ها</div>
+        <div class="stat-value tnum">{{ overview.total }}</div>
+        <div class="stat-sub">{{ overview.marketing }} تبلیغاتی · {{ overview.total - overview.marketing }} تراکنشی</div>
+    </a>
+    <a class="stat-card accent-pine" href="/admin/sms/history?status=sent">
+        <div class="stat-label">ارسال‌شده</div>
+        <div class="stat-value tnum">{{ overview.sent }}</div>
+        <div class="stat-sub">امروز: {{ overview.today }}</div>
+    </a>
+    <a class="stat-card accent-saffron" href="/admin/sms/history?status=queued">
+        <div class="stat-label">در صف</div>
+        <div class="stat-value tnum">{{ overview.queued }}</div>
+        <div class="stat-sub">در انتظار ارسال توسط درگاه</div>
+    </a>
+    <a class="stat-card accent-persimmon" href="/admin/sms/history?status=failed">
+        <div class="stat-label">ناموفق</div>
+        <div class="stat-value tnum">{{ overview.failed }}</div>
+        <div class="stat-sub">پس از چند تلاش رد شده</div>
+    </a>
+</div>
+
+<form method="get" action="/admin/sms" class="search-form sms-filter-form">
+    <div class="form-group">
+        <label class="sr-only" for="filter-usage">نمایش</label>
+        <select id="filter-usage" name="usage">
+            {% for value, label in usage_filters.items() %}
+            <option value="{{ value }}" {% if view.usage == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="form-group">
+        <label class="sr-only" for="filter-sort">ترتیب</label>
+        <select id="filter-sort" name="sort">
+            {% for value, label in template_sorts.items() %}
+            <option value="{{ value }}" {% if view.sort == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn btn-primary">اعمال فیلتر</button>
+    {% if view.filters_active %}
+    <a href="/admin/sms" class="btn btn-ghost">پاک‌کردن فیلتر</a>
+    {% endif %}
+</form>
+
+<p class="sms-results">
+    {{ view.total }} قالب ·
+    {% if view.never %}
+    <a href="/admin/sms?usage=never">{{ view.never }} هرگز فرستاده‌نشده</a> ·
+    {% else %}
+    همه حداقل یک‌بار فرستاده‌اند ·
+    {% endif %}
+    {{ view.active }} فعال
+    {%- if view.filters_active %}
+    · نمایش: {{ view.usage_label }}{% if view.sort != 'default' %}، {{ view.sort_label }}{% endif %}
+    — {{ view.shown }} قالب
+    {%- endif %}
+</p>
+
+<section class="card sms-gateway-card" id="gateway">
+    <div class="section-heading-row">
+        <div>
+            <h3>درگاه پیامک</h3>
+            <p class="muted">
+                {% if device %}
+                وضعیت گوشی: <strong>{{ device_status }}</strong>.
+                {% if device.last_seen_at %}آخرین ارتباط: {{ jalali_str(device.last_seen_at) }}.{% endif %}
+                {% if device.battery_level is not none %} · باتری {{ device.battery_level }}٪{% endif %}
+                {% else %}
+                گوشی هنوز جفت نشده است — با اسکن QR زیر، پیامک‌ها از همان گوشی فروشگاه فرستاده می‌شوند.
+                {% endif %}
+            </p>
+        </div>
+        <div class="admin-nav">
+            <span class="status-badge is-{{ 'live' if device and device.status == 'online' else 'inactive' }}">
+                {{ device_status if device else 'بدون گوشی' }}
+            </span>
+        </div>
+    </div>
+
+    <div class="sms-gateway-grid">
+        <div class="sms-gateway-pairing">
+            {% if pairing_key %}
+            <img src="{{ pairing_qr }}" alt="QR جفت‌کردن گوشی" class="sms-qr" width="180" height="180">
+            <p class="muted sms-pairing-help">
+                یک‌بار اسکن کنید: اپ «SMS Gateway» روی گوشی، همین نشانی و کلید را ذخیره می‌کند.
+                کلید فقط همین‌جا دیده می‌شود — بعد از بستن صفحه هرگز.
+                {% if device %}جفت‌کردن دوباره، کلید قبلی را باطل می‌کند.{% endif %}
+            </p>
+            {% else %}
+            <p class="muted">
+                برای وصل‌کردن گوشی، «جفت‌کردن گوشی» را بزنید و QR نمایش‌داده‌شده را با اپ اسکن کنید.
+            </p>
+            {% endif %}
+            <div class="sms-gateway-actions">
+                <form method="post" action="/admin/sms/gateway/pair" class="inline-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="btn btn-primary">{{ 'جفت‌کردن دوباره گوشی' if device else 'جفت‌کردن گوشی' }}</button>
+                </form>
+                {% if device %}
+                <form method="post" action="/admin/sms/gateway/unpair" class="inline-form"
+                      onsubmit="return confirm('جفت‌شدن گوشی برداشته شود؟ پیامک‌های در صف می‌مانند تا گوشی دوباره وصل شود.');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="btn btn-ghost">قطع اتصال گوشی</button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="sms-gateway-status">
+            <dl class="sms-gateway-facts">
+                <div><dt>در صف</dt><dd class="tnum">{{ gateway_queue.queued }}</dd></div>
+                <div><dt>دست گوشی</dt><dd class="tnum">{{ gateway_queue.claimed }}</dd></div>
+                <div><dt>تحویل‌شده</dt><dd class="tnum">{{ gateway_queue.delivered }}</dd></div>
+                <div><dt>سقف هر ارسال</dt><dd class="tnum">{{ config.get('campaign_sms_limit', '100') }}</dd></div>
+            </dl>
+            {% if can_configure %}
+            <form method="post" action="/admin/sms/config" class="sms-gateway-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <div class="form-group">
+                    <label for="campaign_sms_limit">سقف هر ارسال گروهی</label>
+                    {% from 'partials/numeric_input.html' import num with context %}
+                    {{ num('campaign_sms_limit', config.get('campaign_sms_limit', '100')) }}
+                    <small>هر پیامک هزینه دارد؛ ارسال گروهی به همین تعداد محدود می‌شود.</small>
+                </div>
+                <div class="form-group">
+                    <label for="trigger_sms_limit">سقف ارسال خودکار در هر بررسی</label>
+                    {{ num('trigger_sms_limit', config.get('trigger_sms_limit', '50')) }}
+                    <small>
+                        قالب‌هایی که برایشان «پیگیری» انتخاب کرده‌اید هر چند دقیقه یک‌بار بررسی
+                        می‌شوند؛ در هر بررسی حداکثر همین تعداد پیامک فرستاده می‌شود تا هزینه یک‌جا
+                        بالا نرود. بقیه در نوبت بعد می‌روند — هیچ‌کس جا نمی‌ماند.
+                        می‌خواهید زودتر تصمیم بگیرید؟ در <a href="/admin/follow-ups">صفحه پیگیری</a>
+                        فهرست موعددارها را می‌بینید و هر کدام را خواستید همان‌جا می‌فرستید —
+                        مستقل از این سقف.
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label for="monthly_digest_phone">خلاصه ماهانه برای مدیر — شماره‌ها</label>
+                    <input type="text" id="monthly_digest_phone" name="monthly_digest_phone"
+                           value="{{ digest_phones }}" placeholder="مثال: 09123456789">
+                    <small>
+                        وقتی ماه فارسی تمام شود، همان روایتی که داشبورد زیر کارت‌های «این ماه»
+                        می‌نویسد به این شماره پیامک می‌شود: فروش و سود ماه، شلوغ‌ترین روز، پرفروش‌ترین
+                        دسته و سطح مشتری. خالی بماند ارسال نمی‌شود — خودِ این شماره روشن‌کردن خلاصه است.
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label for="monthly_digest_day">روز ارسال خلاصه از ماه جدید</label>
+                    {{ num('monthly_digest_day', digest_day) }}
+                    <small>
+                        مثلاً با عدد ۳، سومِ هر ماه، گزارش ماه قبلی فرستاده می‌شود — همیشه یک ماه کامل،
+                        نه نیمه‌کاره. {% if digest_next_month %}خلاصه بعدی درباره‌ «{{ digest_next_month }}» است.{% endif %}
+                    </small>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-sm btn-primary">ذخیره سقف</button>
+                </div>
+            </form>
+            {% if digest_preview is defined %}
+            {# Outside the settings form on purpose: the send-now button posts to
+               its own route, and a form inside a form would be folded into the
+               settings save by the HTML parser. #}
+            <div class="digest-preview">
+                <span class="digest-preview-label">پیش‌نمایش خلاصه بعدی — از فروش واقعی «{{ digest_next_month }}»</span>
+                {% if digest_preview.state == 'ready' %}
+                <div class="sms-bubble digest-preview-bubble" dir="auto">{{ digest_preview.body }}</div>
+                {% else %}
+                <p class="muted">پیش‌نمایش اکنون ساخته نشد؛ بعداً دوباره این صفحه را باز کنید.</p>
+                {% endif %}
+                <form method="post" action="/admin/sms/digest/send-now" class="digest-preview-actions">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="btn btn-sm btn-ghost">ارسال همین حالا</button>
+                    <small>همین متن برای شماره‌های بالا در صف قرار می‌گیرد؛ اگر ارسال خودکار این ماه انجام شده باشد، دوباره فرستاده نمی‌شود.</small>
+                </form>
+            </div>
+            {% endif %}
+            {% else %}
+            <p class="muted">سقف ارسال فقط توسط مالک فروشگاه قابل تغییر است.</p>
+            {% endif %}
+        </div>
+    </div>
+</section>
+
+{% for group in groups %}
+<section class="card sms-group-card">
+    <div class="section-heading-row">
+        <div>
+            <h3>{{ group.label }}</h3>
+            <p class="muted">
+                {{ group.templates|length }} قالب · {{ group.active }} فعال
+            </p>
+        </div>
+    </div>
+    <div class="table-scroll">
+        <table class="sms-table">
+            <thead>
+                <tr>
+                    <th scope="col">قالب، متن و نحوه ارسال</th>
+                    <th scope="col">وضعیت</th>
+                    <th scope="col">عملیات</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for template in group.templates %}
+                {% set card = cards.get(template.id) %}
+                {% set info = send_info(template) %}
+                <tr>
+                    <td class="sms-name">
+                        <strong>
+                            <a href="/admin/sms/templates/{{ template.id }}/edit">{{ template.name }}</a>
+                            {# «هرگز فرستاده نشده» is one fact on this page: nothing has
+                               been sent through this template. A message that is still
+                               waiting on the phone or was refused is not a send, and the
+                               line under it says so — the filter, the badge and the date
+                               order all read the same answer. #}
+                            {% if not card.last_sent_at %}<span class="sms-unused-badge">هنوز ارسال نشده</span>{% endif %}
+                        </strong>
+                        <span class="sms-fireline is-{{ info.mode }}">
+                            <span class="sms-fire-badge is-{{ info.mode }}">{{ info.label }}</span>
+                            <span>{{ info.text }}</span>
+                            {% if info.url %}
+                            <a href="{{ info.url }}">{{ info.action }} ←</a>
+                            {% endif %}
+                        </span>
+                        <small class="sms-meta tnum sms-usage"
+                               {% if card.last_sent_at %}title="آخرین ارسال: {{ jalali_str(card.last_sent_at) }}"{% endif %}>
+                            {% if not card.total %}
+                                هنوز پیامکی از این قالب فرستاده نشده
+                            {% elif card.last_sent_at %}
+                                {{ card.total }} پیامک{% if card.failed %} · {{ card.failed }} ناموفق{% endif %} · آخرین ارسال {{ jalali_str(card.last_sent_at, false) }}
+                            {% else %}
+                                {{ card.total }} پیامک{% if card.failed %} · {{ card.failed }} ناموفق{% endif %} · هنوز فرستاده نشده (آخرین تلاش {{ jalali_str(card.last_activity_at, false) }})
+                            {% endif %}
+                        </small>
+                        {% if template.body %}
+                        <span class="sms-body" dir="auto">{{ template.body|truncate(90, true) }}</span>
+                        <small class="sms-meta tnum">{{ card.metrics.length }} نویسه · {{ card.metrics.segments }} پیامک</small>
+                        {% else %}
+                        <span class="sms-empty-body">متنی نوشته نشده — تا نوشتن متن، ارسالی ندارد.</span>
+                        {% endif %}
+                        {# The automatic sends are shown the message they would
+                           write before «فعال‌کردن» is pressed — a real customer's
+                           message for a due follow-up, the message's own shape
+                           with sample values when nobody is due yet. #}
+                        {% if card.trigger_preview %}
+                        <div class="sms-trigger-preview">
+                            <div class="sms-bubble" dir="auto">{{ card.trigger_preview.body }}</div>
+                            <small class="sms-trigger-preview-note">{{ card.trigger_preview.note }}</small>
+                        </div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="status-badge is-{{ 'live' if template.is_active else 'inactive' }}">
+                            {{ 'فعال' if template.is_active else 'غیرفعال' }}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="sms-actions">
+                            <a href="/admin/sms/templates/{{ template.id }}/edit" class="btn btn-sm btn-ghost">ویرایش</a>
+                            <a href="/admin/sms/send?template_id={{ template.id }}" class="btn btn-sm btn-primary">ارسال</a>
+                            <form method="post" action="/admin/sms/templates/{{ template.id }}/toggle{% if filter_qs %}?{{ filter_qs }}{% endif %}" class="inline-form">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <button type="submit" class="btn btn-sm btn-ghost">
+                                    {{ 'خاموش‌کردن' if template.is_active else 'فعال‌کردن' }}
+                                </button>
+                            </form>
+                            <form method="post" action="/admin/sms/templates/{{ template.id }}/duplicate" class="inline-form">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <button type="submit" class="btn btn-sm btn-ghost">کپی</button>
+                            </form>
+                            {% if not template.is_builtin %}
+                            <form method="post" action="/admin/sms/templates/{{ template.id }}/delete{% if filter_qs %}?{{ filter_qs }}{% endif %}" class="inline-form"
+                                  onsubmit="return confirm('این قالب حذف شود؟');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <button type="submit" class="btn btn-sm btn-danger">حذف</button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endfor %}
+
+{% if not groups and view.filters_active %}
+<div class="empty-state">
+    <h3>قالبی با «{{ view.usage_label }}» پیدا نشد</h3>
+    <p>
+        {% if view.usage == 'never' %}
+        همه قالب‌ها حداقل یک‌بار پیام فرستاده‌اند — قالب بی‌استفاده‌ای نمانده است.
+        {% else %}
+        فیلتر را عوض کنید یا همه قالب‌ها را ببینید.
+        {% endif %}
+    </p>
+    <a href="/admin/sms" class="btn btn-ghost">پاک‌کردن فیلتر</a>
+</div>
+{% elif not groups %}
+<div class="empty-state">
+    <h3>هنوز قالبی وجود ندارد</h3>
+    <p>یک قالب بسازید تا بتوانید متن پیامک را بنویسید و برای مشتریان بفرستید.</p>
+    <a href="/admin/sms/templates/new" class="btn btn-primary">قالب جدید</a>
+</div>
+{% endif %}
+
+<section class="card sms-help-card">
+    <h3>هر قالب چگونه فرستاده می‌شود؟</h3>
+
+    {% if fire.auto %}
+    <p class="sms-help-row">
+        <span class="sms-fire-badge is-auto">خودکار</span>
+        بدون کار شما فرستاده می‌شود
+    </p>
+    <ul class="sms-help-list">
+        {% for template in fire.auto %}
+        <!-- An automatic trigger can still have a page of its own: «پیگیری» keeps
+             sending by itself, and its page is where the owner can see who is
+             waiting and get there first. -->
+        {% set info = send_info(template) %}
+        <li>
+            <strong>{{ template.name }}</strong>
+            <span>{{ info.text }}</span>
+            {% if info.also %}<span class="muted">{{ info.also }}</span>{% endif %}
+            {% if info.url %}
+            <a href="{{ info.url }}">{{ info.action }} ←</a>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+
+    {% if fire.manual %}
+    <p class="sms-help-row">
+        <span class="sms-fire-badge is-manual">دستی</span>
+        خودتان می‌فرستید — از صفحه‌ای که هر قالب نامش نوشته شده
+    </p>
+    <ul class="sms-help-list">
+        {% for template in fire.manual %}
+        <li>
+            <strong>{{ template.name }}</strong>
+            <span>{{ send_info(template).text }}</span>
+            {% if send_info(template).url %}
+            <a href="{{ send_info(template).url }}">{{ send_info(template).action }} ←</a>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+</section>
+{% endblock %}

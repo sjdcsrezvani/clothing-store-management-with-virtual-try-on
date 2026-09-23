@@ -1,161 +1,175 @@
 {% extends "base.html" %}
-{% block title %}پنل مشتری — رای کیدز{% endblock %}
+{% block title %}👤 پنل مشتری — {{ store.name }}{% endblock %}
 {% block content %}
 
 {% if message %}
-<div class="alert alert-success">{{ message }}</div>
+<div class="toaster-flash" data-toast data-toast-type="success" role="status">✅ {{ message }}</div>
 {% endif %}
 {% if error %}
-<div class="alert alert-error">{{ error }}</div>
+<div class="toaster-flash" data-toast data-toast-type="error" role="alert">⚠️ {{ error }}</div>
 {% endif %}
 
-<section class="customer-info">
-    <h2>اطلاعات مشتری</h2>
-    <div class="card">
-        <div class="info-grid">
-            <div class="info-item">
-                <span class="label">نام:</span>
-                <span class="value">{{ customer.full_name }}</span>
-            </div>
-            <div class="info-item">
-                <span class="label">شماره موبایل:</span>
-                <span class="value">{{ customer.phone }}</span>
-            </div>
-            <div class="info-item">
-                <span class="label">کد معرفی:</span>
-                <span class="value code">{{ customer.referral_code }}</span>
-            </div>
-            <div class="info-item">
-                <span class="label">سطح:</span>
-                <span class="value">
-                    <span class="tier-badge tier-{{ customer.tier }}">
-                        {% if customer.tier == 'diamond' %}💎 الماس
-                        {% elif customer.tier == 'gold' %}🥇 طلایی
-                        {% else %}🥈 نقره‌ای{% endif %}
-                    </span>
+{# ─── Customer Profile Card ─── #}
+<div class="card" style="overflow: visible;">
+    <div style="display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1rem;">
+        <div style="font-size: 2.5rem; background: var(--surface-soft); width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; border-radius: 999px;">
+            👤
+        </div>
+        <div>
+            <h3 style="margin-bottom: 0.2rem;">{{ customer.full_name }}</h3>
+            <div style="font-size: 0.85rem; color: var(--ink-soft);">
+                <span class="tier-badge tier-{{ customer.tier }}" style="font-size: 0.75rem;">
+                    {% if customer.tier == 'diamond' %}💎 الماس
+                    {% elif customer.tier == 'gold' %}⭐ طلایی
+                    {% else %}🥈 نقره‌ای{% endif %}
                 </span>
             </div>
-            <div class="info-item">
-                <span class="label">امتیاز:</span>
-                <span class="value points">{{ customer.total_points|default(0) }}</span>
-            </div>
-            <div class="info-item">
-                <span class="label">تعداد خرید:</span>
-                <span class="value">{{ customer.total_purchases|default(0) }}</span>
-            </div>
-            <div class="info-item">
-                <span class="label">مجموع خرید:</span>
-                <span class="value">{{ fmt(customer.total_spent|default(0)) }} تومان</span>
-            </div>
-            <div class="info-item">
-                <span class="label">تعداد معرفی این ماه:</span>
-                <span class="value">{{ customer.monthly_referral_count }} / {{ monthly_limit }}</span>
-            </div>
-            {% if customer.last_purchase_date %}
-            <div class="info-item">
-                <span class="label">آخرین خرید:</span>
-                <span class="value">{{ customer.last_purchase_date.strftime('%Y/%m/%d') }}</span>
-            </div>
-            {% endif %}
         </div>
     </div>
-</section>
 
-<section class="child-info">
-    <h2>اطلاعات فرزند</h2>
-    <div class="card">
-        <form method="post" action="/customers/{{ customer.id }}/update-child">
-            <div class="form-group">
-                <label for="child_name">نام فرزند</label>
-                <input type="text" id="child_name" name="child_name" 
-                       value="{{ customer.child_name or '' }}" placeholder="نام فرزند">
-            </div>
-            <div class="form-group">
-                <label for="child_birthday">تولد فرزند</label>
-                <input type="date" id="child_birthday" name="child_birthday"
-                       value="{{ '2024-' + customer.child_birthday if customer.child_birthday else '' }}">
-                <small>برای اطلاع‌رسانی تولد و تخفیف ویژه</small>
-            </div>
-            <button type="submit" class="btn btn-secondary">ذخیره اطلاعات فرزند</button>
-        </form>
-    </div>
-</section>
-
-<section class="discounts">
-    <h2>تخفیف‌ها</h2>
-    <div class="discount-cards">
-        <div class="card">
-            <h3>تخفیف معرفی شده (برای اولین خرید)</h3>
-            <p class="discount-amount">{{ fmt(customer.referred_discount) }} تومان</p>
-            {% if customer.has_used_referred_discount %}
-                <span class="badge badge-used">استفاده شده</span>
-            {% elif customer.referred_discount > 0 %}
-                <span class="badge badge-available">قابل استفاده</span>
-                <p class="hint">حداقل مبلغ خرید: {{ fmt(min_purchase) }} تومان</p>
-                <form method="post" action="/customers/{{ customer.id }}/use-referred-discount" style="margin-top: 1rem;">
-                    <button type="submit" class="btn btn-primary">استفاده از تخفیف</button>
-                </form>
-            {% else %}
-                <span class="badge badge-none">بدون تخفیف</span>
-            {% endif %}
+    <div class="info-grid">
+        <div class="info-item">
+            <span class="label">📱 تلفن</span>
+            <span class="value tnum">{{ customer.phone }}</span>
         </div>
-        <div class="card">
-            <h3>تخفیف معرفی (از معرفی دیگران)</h3>
-            <p class="discount-amount">{{ fmt(customer.referrer_discount) }} تومان</p>
-            <p class="hint">سقف معرفی ماهانه: {{ monthly_limit }} نفر</p>
-            {% if customer.referrer_discount > 0 %}
-                <form method="post" action="/customers/{{ customer.id }}/use-referrer-discount" style="margin-top: 1rem;">
-                    <button type="submit" class="btn btn-primary">استفاده و ریست</button>
-                </form>
-                <p class="hint">پس از استفاده، تخفیف به صفر باز می‌گردد و می‌توانید دوباره معرفی کنید.</p>
-            {% else %}
-                <p class="hint">با معرفی هر نفر، تخفیف شما افزایش می‌یابد.</p>
-            {% endif %}
+        <div class="info-item">
+            <span class="label">🔑 کد معرفی</span>
+            <span class="value code" style="direction: ltr; text-align: right;">{{ customer.referral_code }}</span>
         </div>
-        {% if customer.tier != 'silver' %}
-        <div class="card tier-card">
-            <h3>تخفیف دائمی سطح</h3>
-            <p class="discount-amount">
-                {% if customer.tier == 'diamond' %}{{ tier_config.diamond_discount_percent }}%
-                {% elif customer.tier == 'gold' %}{{ tier_config.gold_discount_percent }}%{% endif %}
-            </p>
-            <p class="hint">این تخفیف بر تمام خریدهای شما اعمال می‌شود.</p>
+        <div class="info-item">
+            <span class="label">🌟 امتیاز</span>
+            <span class="value tnum points" style="color: var(--link);">{{ figure(customer.total_points) }}</span>
+        </div>
+        <div class="info-item">
+            <span class="label">🛒 تعداد خرید</span>
+            <span class="value tnum">{{ figure(customer.total_purchases) }}</span>
+        </div>
+        <div class="info-item">
+            <span class="label">💰 مجموع خرید</span>
+            <span class="value tnum">{{ figure(customer.total_spent) }} تومان</span>
+        </div>
+        <div class="info-item">
+            <span class="label">🤝 معرفی این ماه</span>
+            <span class="value tnum">{{ customer.monthly_referral_count }} / {{ monthly_limit }}</span>
+        </div>
+        {% if customer.last_purchase_date %}
+        <div class="info-item">
+            <span class="label">🕐 آخرین خرید</span>
+            <span class="value tnum">{{ jalali_str(customer.last_purchase_date, false) }}</span>
+        </div>
+        {% endif %}
+        {% for entry in birthdays %}
+        <div class="info-item">
+            <span class="label">🎂 تولد {{ entry.label }}</span>
+            <span class="value tnum">
+                {{ entry.text }}{% if entry.age is not none %} ({{ entry.age }} ساله){% endif %}
+            </span>
+        </div>
+        {% endfor %}
+        {% if campaign %}
+        <div class="info-item">
+            <span class="label">📢 کمپین فعال</span>
+            <span class="value">
+                <span class="campaign-chip">
+                    {{ campaign.name }} <small class="tnum">{{ campaign.discount_percent }}٪</small>
+                </span>
+            </span>
         </div>
         {% endif %}
     </div>
-</section>
+</div>
 
-{% if referrals is defined and referrals %}
-<section class="referrals">
-    <h2>افراد معرفی‌شده</h2>
-    <div class="card">
-        <table>
-            <thead>
-                <tr>
-                    <th>نام</th>
-                    <th>شماره موبایل</th>
-                    <th>تخفیف معرف</th>
-                    <th>تخفیف معرفی شده</th>
-                    <th>تاریخ</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in referrals %}
-                <tr>
-                    <td>{{ item.customer.full_name }}</td>
-                    <td>{{ item.customer.phone }}</td>
-                    <td>{{ fmt(item.referral.referrer_discount) }} تومان</td>
-                    <td>{{ fmt(item.referral.referred_discount) }} تومان</td>
-                    <td>{{ item.referral.created_at.strftime('%Y/%m/%d') }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+{# ─── Who this customer buys for, and that side's birthday ─── #}
+<div class="card">
+    <h3>🎂 تولد و پرونده</h3>
+    <form method="post" action="/customers/{{ customer.id }}/update-details">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        {% set selected_buys_for = birthday_fields.buys_for %}
+        {% set self_birthday_value = birthday_fields.birth_date %}
+        {% set child_name_value = birthday_fields.child_name %}
+        {% set child_birthday_value = birthday_fields.child_birthday %}
+        {% include "partials/buys_for.html" %}
+        <button type="submit" class="btn btn-primary">💾 ذخیره پرونده</button>
+    </form>
+</div>
+
+{# ─── Discounts Section ─── #}
+<div class="card">
+    <h3>🏷️ تخفیف‌های من</h3>
+    <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
+        <div class="stat-card">
+            <div class="stat-label">🤝 تخفیف معرفی‌شده</div>
+            <div class="stat-value tnum">{{ fmt(customer.referred_discount) }} تومان</div>
+            <div class="stat-sub">
+                {% if customer.has_used_referred_discount %}
+                <span class="badge badge-used">✅ استفاده شده</span>
+                {% elif customer.referred_discount > 0 %}
+                <span class="badge badge-available">✨ قابل استفاده</span>
+                {% else %}
+                <span class="badge badge-none">—</span>
+                {% endif %}
+            </div>
+            {% if customer.referred_discount > 0 and not customer.has_used_referred_discount %}
+            <form method="post" action="/customers/{{ customer.id }}/use-referred-discount" style="margin-top: 0.5rem;">
+                <button type="submit" class="btn btn-sm btn-primary">✨ استفاده</button>
+            </form>
+            {% endif %}
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-label">🎉 تخفیف معرفی دیگران</div>
+            <div class="stat-value tnum">{{ fmt(customer.referrer_discount) }} تومان</div>
+            <div class="stat-sub">سقف ماهانه: {{ monthly_limit }} نفر</div>
+            {% if customer.referrer_discount > 0 %}
+            <form method="post" action="/customers/{{ customer.id }}/use-referrer-discount" style="margin-top: 0.5rem;">
+                <button type="submit" class="btn btn-sm btn-primary">💰 استفاده</button>
+            </form>
+            {% endif %}
+        </div>
+
+        {% if customer.tier != 'silver' %}
+        <div class="stat-card accent-persimmon">
+            <div class="stat-label">🏷️ تخفیف دائمی سطح {{ customer.tier }}</div>
+            <div class="stat-value tnum">
+                {% if customer.tier == 'diamond' %}{{ tier_config.diamond_discount_percent }}٪
+                {% elif customer.tier == 'gold' %}{{ tier_config.gold_discount_percent }}٪{% endif %}
+            </div>
+            <div class="stat-sub">✨ روی تمام خریدها</div>
+        </div>
+        {% endif %}
     </div>
-</section>
+</div>
+
+{# ─── Referrals ─── #}
+{% if referrals is defined and referrals %}
+<div class="card">
+    <h3>🤝 افرادی که معرفی کرده‌اید</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>👤 نام</th>
+                <th>📱 تلفن</th>
+                <th>💰 تخفیف شما</th>
+                <th>🏷️ تخفیف آنها</th>
+                <th>📅 تاریخ</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in referrals %}
+            <tr>
+                <td>{{ item.customer.full_name }}</td>
+                <td class="tnum">{{ item.customer.phone }}</td>
+                <td class="tnum">{{ fmt(item.referral.referrer_discount) }} تومان</td>
+                <td class="tnum">{{ fmt(item.referral.referred_discount) }} تومان</td>
+                <td class="tnum">{{ jalali_str(item.referral.created_at, false) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
 {% endif %}
 
-<div style="margin-top: 2rem;">
-    <a href="/" class="btn btn-secondary">بازگشت</a>
+<div style="margin-top: 1.5rem; display: flex; gap: 0.5rem;">
+    <a href="/" class="btn btn-ghost">🔙 بازگشت</a>
 </div>
 {% endblock %}

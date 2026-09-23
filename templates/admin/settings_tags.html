@@ -1,0 +1,1069 @@
+{% extends "base.html" %}
+{% block content %}
+{% set page_description %}
+طرح تگ را در ویرایشگر بسازید و همان طرح را در پیش‌نمایش و چاپ ببینید.
+{% endset %}
+{% set page_actions %}
+<a href="/admin/barcodes/print" class="btn btn-primary">برو به چاپ تگ</a>
+        <a href="/admin/products" class="btn btn-ghost">محصولات</a>
+{% endset %}
+{# This page reads well on paper — the designer is a worksheet the owner may
+   pin to the wall. The chrome (toolbar, action chips, save row) is the
+   screen's; the guide, the preview and the settings themselves travel. #}
+{% set print_heading = 'طرح تگ و بارکد' %}
+{% include 'partials/page_header.html' %}
+
+{# Numeric bounds come from the same table the server validates
+   (TAG_NUMERIC_RULES in services/tags.py) — the page and the rules cannot
+   drift, and the table is the one place a bound is ever written. The inputs
+   are keyed by id (the designer's script packs them by id), so this map
+   translates each id to its config key; an input whose id is missing here is
+   marked data-unbounded so it stays findable. #}
+{% set tag_input_keys = {
+    'field-x': 'x', 'field-y': 'y', 'field-width': 'width', 'field-height': 'height',
+    'field-font-size': 'font_size',
+    'tag-width': 'tag_width_mm', 'tag-height': 'tag_height_mm',
+    'margin-top': 'margin_top_mm', 'margin-bottom': 'margin_bottom_mm',
+    'margin-right': 'margin_right_mm', 'margin-left': 'margin_left_mm',
+    'gap-horizontal': 'gap_horizontal_mm', 'gap-vertical': 'gap_vertical_mm',
+    'tag-columns': 'columns', 'tag-rows': 'rows',
+    'tag-border-width': 'border_width_mm', 'tag-radius': 'corner_radius_mm',
+    'tag-padding': 'padding_mm',
+} %}
+{% macro num(input_id, step='', aria='') %}
+{% set key = tag_input_keys[input_id] %}
+{% set rule = tag_numeric_rules.get(key) if key else none %}
+<input type="text" inputmode="numeric" id="{{ input_id }}"
+       {% if rule %}min="{{ rule[0] }}"{% if rule[1] is not none %} max="{{ rule[1] }}"{% endif %}{% else %}data-unbounded="1"{% endif %}
+       {% if step %}step="{{ step }}"{% endif %}
+       {% if aria %}aria-label="{{ aria }}"{% endif %}>
+{% endmacro %}
+
+<div class="tag-settings-layout">
+<section class="card tag-editor-card">
+    <div class="section-heading-row tag-editor-head">
+        <div>
+            <h3>ویرایشگر تگ</h3>
+            <p class="muted">فیلدها را روی بوم جابه‌جا کنید؛ نتیجه همان لحظه در پیش‌نمایش کنار صفحه دیده می‌شود.</p>
+        </div>
+        <div class="tag-head-actions">
+            <span id="tag-unsaved" class="unsaved-chip" hidden>تغییرات ذخیره نشده است</span>
+            <button type="button" id="use-default-tag" class="btn btn-sm btn-ghost" title="بوم را به قالب پیش‌فرض برمی‌گرداند">شروع دوباره</button>
+            <label class="compact-control"><span>قالب آماده</span><select id="tag-preset">
+                <option value="">— انتخاب قالب —</option>
+                <option value="kids_boutique">Kids Boutique — پیش‌فرض</option>
+                <option value="compact">تگ کوچک</option>
+                <option value="large">تگ بزرگ</option>
+            </select></label>
+        </div>
+    </div>
+
+    <div class="tag-template-manager">
+        <div>
+            <h4>قالب‌های اختصاصی محصولات</h4>
+            <p class="muted">قالب فعلی را با یک نام ذخیره کنید؛ بعداً در فرم محصول به هر محصول اختصاص دهید.</p>
+        </div>
+        <form method="post" action="/admin/settings/tags/template" id="tag-template-form" class="tag-template-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="tag_config" id="tag-template-config-json">
+            <input type="hidden" name="template_id" id="tag-template-id">
+            <label><span>نام قالب</span><input type="text" name="template_name" id="tag-template-name" maxlength="100" required placeholder="مثلاً تگ محصولات لوکس"></label>
+            <button type="submit" class="btn btn-primary" id="tag-template-save-new">ذخیره قالب جدید</button>
+            <button type="submit" class="btn btn-ghost" id="tag-template-overwrite" hidden>بازنویسی قالب بازشده</button>
+        </form>
+        <p class="muted" id="loaded-template-note" hidden>در حال ویرایش قالب «<strong id="loaded-template-name"></strong>» — «بازنویسی» همان را عوض می‌کند، «جدید» یک قالب جدا می‌سازد.</p>
+        {% if tag_templates %}
+        <div class="tag-template-list" aria-label="قالب‌های ذخیره‌شده">
+            {% for template in tag_templates %}
+            {% set usage = tag_template_usage.get(template.id, 0) %}
+            <div class="tag-template-row">
+                <strong>{{ template.name }}</strong>
+                {% if usage %}<small class="muted">{{ usage }} محصول</small>{% endif %}
+                <div class="tag-template-actions">
+                    <button type="button" class="btn btn-sm btn-ghost tag-template-load" data-template-id="{{ template.id }}">ویرایش در بوم</button>
+                    {% if usage %}
+                    <button type="button" class="btn btn-sm btn-ghost" disabled title="این قالب روی {{ usage }} محصول فعال است؛ اول آن‌ها را به قالب دیگری بدهید.">حذف</button>
+                    {% else %}
+                    <form method="post" action="/admin/settings/tags/template/{{ template.id }}/delete" onsubmit="return confirm('این قالب حذف شود؟')">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <button type="submit" class="btn btn-sm btn-danger" aria-label="حذف قالب {{ template.name }}">حذف</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}<p class="muted tag-template-empty">هنوز قالب اختصاصی‌ای ذخیره نشده است.</p>{% endif %}
+    </div>
+
+    <div class="tag-fields-strip-head">
+        <div><h4>فیلدهای تگ</h4><span class="muted" id="fields-hint"></span></div>
+        <p class="muted tag-strip-tip">برای نمایش/مخفی‌کردن هر فیلد روی آن بزنید.</p>
+    </div>
+    <div class="tag-fields-strip" id="tag-fields-strip" aria-label="تغییر نمایش فیلدهای تگ">
+        {% for field in tag_field_options %}
+        <button type="button" class="tag-field-chip{% if not field.visible %} is-off{% endif %}" data-field="{{ field.name }}" aria-pressed="{{ 'true' if field.visible else 'false' }}" title="{{ 'فعال — برای مخفی‌کردن کلیک کنید' if field.visible else 'مخفی — برای افزودن به تگ کلیک کنید' }} — {{ field.label }}">
+            <i class="chip-dot" aria-hidden="true" style="background: {{ field.color }}"></i>
+            <span>{{ field.label }}</span>
+            <small class="chip-state">{{ 'فعال' if field.visible else 'افزودن' }}</small>
+        </button>
+        {% endfor %}
+    </div>
+
+    <div class="tag-editor-workspace">
+        <div class="tag-editor-canvas-wrap">
+            <div class="tag-editor-toolbar">
+                <div class="tag-editor-toolbar-left">
+                    <span class="dims-chip" id="dims-chip" dir="ltr"></span>
+                    <div class="tag-zoom-seg" role="group" aria-label="بزرگ‌نمایی بوم">
+                        <button type="button" data-zoom="1" class="zoom-btn">۱×</button>
+                        <button type="button" data-zoom="1.6" class="zoom-btn">۱٫۶×</button>
+                        <button type="button" data-zoom="2.2" class="zoom-btn">۲٫۲×</button>
+                        <button type="button" data-zoom="3" class="zoom-btn">۳×</button>
+                    </div>
+                </div>
+                <div class="tag-editor-toolbar-right">
+                    <button type="button" id="undo-btn" class="btn btn-sm btn-ghost" disabled title="Ctrl/⌘ + Z">↩ بازگردانی</button>
+                </div>
+            </div>
+            <div id="tag-editor-canvas" class="tag-editor-canvas" aria-label="بوم ویرایش طرح تگ" tabindex="0"></div>
+            <div id="editor-diagnostics" class="editor-diagnostics" aria-live="polite"></div>
+            <p class="editor-help">
+                <span class="kbd-hint">🖱 بکشید</span> جابه‌جایی و تغییر اندازه ·
+                <span class="kbd-hint">جهت‌ها</span> جابه‌جایی ۱ میلی‌متری ·
+                <span class="kbd-hint">Ctrl/⌘ + Z</span> بازگردانی
+            </p>
+        </div>
+        <aside class="tag-field-controls" id="tag-field-controls" aria-label="تنظیمات فیلد انتخاب‌شده">
+            <div class="tag-controls-head"><h4>فیلد انتخاب‌شده</h4></div>
+            <p id="selected-field-empty" class="muted tag-controls-empty">اول یک فیلد را از نوار بالا روشن کنید، بعد روی بوم کلیک کنید تا انتخاب شود.</p>
+            <div id="selected-field-form" hidden>
+                <div class="selected-field-title">
+                    <i class="field-color-dot" id="selected-color-dot" aria-hidden="true"></i>
+                    <strong id="selected-field-label"></strong>
+                    <label class="switch-inline" title="نمایش فیلد"><input type="checkbox" id="field-visible"> نمایش</label>
+                </div>
+                <div class="tag-prop-grid">
+                    <label>موقعیت افقی <em>mm</em>{{ num('field-x', step='0.1', aria='موقعیت افقی فیلد') }}</label>
+                    <label>موقعیت عمودی <em>mm</em>{{ num('field-y', step='0.1', aria='موقعیت عمودی فیلد') }}</label>
+                    <label>عرض <em>mm</em>{{ num('field-width', step='0.1', aria='عرض فیلد') }}</label>
+                    <label>ارتفاع <em>mm</em>{{ num('field-height', step='0.1', aria='ارتفاع فیلد') }}</label>
+                    <label>اندازه متن <em>pt</em>{{ num('field-font-size', step='1', aria='اندازه متن فیلد') }}</label>
+                    {# The options come from the validator's own allow-list, so
+                       an alignment the server would refuse cannot be offered. #}
+                    <label>تراز<select id="field-align" aria-label="تراز متن فیلد">
+                        {% for alignment in allow_list_sources.alignments %}
+                        <option value="{{ alignment }}">{{ {'right': 'راست', 'center': 'وسط', 'left': 'چپ'}[alignment] }}</option>
+                        {% endfor %}</select></label>
+                    <label>رنگ<input type="color" id="field-color"></label>
+                    <label class="check-row"><input type="checkbox" id="field-bold"> ضخیم</label>
+                </div>
+                <div class="field-action-row">
+                    <div class="field-nudge-buttons" aria-label="جابه‌جایی دقیق">
+                        <button type="button" class="btn btn-sm btn-ghost" data-nudge="up">▲</button>
+                        <button type="button" class="btn btn-sm btn-ghost" data-nudge="left">◀</button>
+                        <button type="button" class="btn btn-sm btn-ghost" data-nudge="down">▼</button>
+                        <button type="button" class="btn btn-sm btn-ghost" data-nudge="right">▶</button>
+                    </div>
+                    <div class="field-layer-buttons" aria-label="لایه فیلد">
+                        <button type="button" class="btn btn-sm btn-ghost" data-layer="back" title="فرستادن به لایه پایین‌تر">عقب ➡</button>
+                        <button type="button" class="btn btn-sm btn-ghost" data-layer="front" title="آوردن به لایه بالاتر">⬅ جلو</button>
+                    </div>
+                </div>
+                <p class="muted field-layer-help">فیلد جلو، روی فیلدهای هم‌پوشان دیده می‌شود.</p>
+            </div>
+        </aside>
+    </div>
+
+    <form method="post" action="/admin/settings/tags" id="tag-config-form" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="tag_config" id="tag-config-json" value='{{ tag_config|tojson|forceescape }}'>
+        <div class="tag-ctl-grid">
+            <div class="tag-ctl-card">
+                <div class="tag-ctl-title">
+                    <span class="ctl-step">۱</span><div><h4>اندازه و چاپ روی A4</h4><p class="muted">ابعاد تگ، حاشیهٔ صفحه و تعداد در هر برگه.</p></div>
+                </div>
+                <div class="form-row ctl-row-2">
+                    <label>عرض تگ <em>mm</em>{{ num('tag-width', step='0.1') }}</label>
+                    <label>ارتفاع تگ <em>mm</em>{{ num('tag-height', step='0.1') }}</label>
+                </div>
+                <div class="form-row ctl-row-4">
+                    <label>حاشیه بالا{{ num('margin-top', step='0.1') }}</label>
+                    <label>حاشیه پایین{{ num('margin-bottom', step='0.1') }}</label>
+                    <label>حاشیه راست{{ num('margin-right', step='0.1') }}</label>
+                    <label>حاشیه چپ{{ num('margin-left', step='0.1') }}</label>
+                </div>
+                <div class="form-row ctl-row-4">
+                    <label>فاصله افقی{{ num('gap-horizontal', step='0.1') }}</label>
+                    <label>فاصله عمودی{{ num('gap-vertical', step='0.1') }}</label>
+                    <label>ستون‌ها{{ num('tag-columns') }}</label>
+                    <label>سطرها{{ num('tag-rows') }}</label>
+                </div>
+                <div class="form-row ctl-row-4 ctl-row-last">
+                    <label>حالت چیدمان<select id="layout-mode"><option value="fixed">ثابت</option><option value="auto">بیشترین تعداد قابل‌جای‌گیری</option></select><small class="field-help">خودکار ستون و سطر را از چیدمان بهینه بازنویسی می‌کند.</small></label>
+                    <div class="fit-summary" aria-live="polite">
+                        <span>چیدمان: <strong id="fit-grid">—</strong></span>
+                        <span>تگ در صفحه: <strong id="fit-count">—</strong></span>
+                        <span>ناحیه چاپ: <strong id="fit-area" dir="ltr">—</strong></span>
+                        <span>فضای خالی: <strong id="fit-unused" dir="ltr">—</strong></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tag-ctl-card">
+                <div class="tag-ctl-title">
+                    <span class="ctl-step">۲</span><div><h4>ظاهر تگ</h4><p class="muted">پس‌زمینه، حاشیه و متن دلخواه.</p></div>
+                </div>
+                <div class="form-row ctl-row-2">
+                    <label>پس‌زمینه<input type="color" id="tag-background"></label>
+                    <label>رنگ حاشیه<input type="color" id="tag-border-color"></label>
+                </div>
+                <div class="form-row ctl-row-2">
+                    <label>ضخامت حاشیه <em>mm</em>{{ num('tag-border-width', step='0.1') }}</label>
+                    <label>گردی گوشه <em>mm</em>{{ num('tag-radius', step='0.1') }}</label>
+                </div>
+                <div class="form-row ctl-row-2">
+                    <label>فاصله داخلی <em>mm</em>{{ num('tag-padding', step='0.1') }}</label>
+                    <label>متن سفارشی<input type="text" id="tag-custom-text" maxlength="120" placeholder="مثلاً: تعویض تا ۷ روز"></label>
+                </div>
+            </div>
+
+            <div class="tag-ctl-card tag-ctl-card-wide">
+                <div class="tag-ctl-title">
+                    <span class="ctl-step">۳</span><div><h4>ناحیهٔ بارکد</h4><p class="muted">انتخاب کنید چه چیزی جای بارکد چاپ شود.</p></div>
+                </div>
+                <div class="tag-barcode-modes">
+                    <label class="choice-card"><input type="radio" name="barcode-mode" value="real_barcode"> <strong>بارکد واقعی</strong><small>Code 128 قابل اسکن</small></label>
+                    <label class="choice-card"><input type="radio" name="barcode-mode" value="custom_image"> <strong>تصویر سفارشی</strong><small>تزئینی است و تضمین اسکن ندارد</small></label>
+                    <label class="choice-card"><input type="radio" name="barcode-mode" value="hidden"> <strong>مخفی</strong><small>این ناحیه چاپ نمی‌شود</small></label>
+                </div>
+                <div class="barcode-density-control">
+                    <label>تراکم بارکد
+                        <select id="barcode-density">
+                            <option value="compact">فشرده — مناسب کدهای ۱۰ تا ۱۲ رقمی</option>
+                            <option value="standard">استاندارد — خوانایی بیشتر</option>
+                        </select>
+                    </label>
+                    <p class="muted" id="barcode-scan-status" aria-live="polite">بارکد واقعی از کد دقیق تنوع ساخته می‌شود و عدد زیر آن جداست.</p>
+                    <p class="muted" id="barcode-width-readout" aria-live="polite"></p>
+                </div>
+                <div class="alert alert-warning tag-custom-warning" id="custom-image-warning" hidden>تصویر سفارشی فقط یک تصویر است و لزوماً توسط بارکدخوان قابل اسکن نیست.</div>
+            </div>
+        </div>
+        <div class="tag-ctl-card tag-image-upload">
+            <div class="tag-ctl-title">
+                <span class="ctl-step">۴</span><div><h4>تصویر سفارشی بارکد</h4><p class="muted">با همین ذخیره ثبت می‌شود و حالت را به «تصویر سفارشی» می‌برد.</p></div>
+            </div>
+            <div class="form-actions-row upload-row">
+                <input type="file" name="image" accept="image/png,image/jpeg,image/webp">
+                {% if tag_config.custom_image_path %}<span class="muted upload-current">تصویر فعلی: <code dir="ltr">{{ tag_config.custom_image_path }}</code></span>{% endif %}
+            </div>
+        </div>
+        <div class="tag-save-row">
+            <button type="submit" class="btn btn-primary btn-large">ذخیره تنظیمات تگ</button>
+            <span class="muted">بعد از ذخیره، از «چاپ تگ» برای چاپ استفاده کنید.</span>
+        </div>
+    </form>
+</section>
+
+<aside class="tag-settings-side">
+    <section class="card tag-preview-card">
+        <div class="tag-ctl-title"><div><h3>پیش‌نمایش واقعی</h3><p class="muted">با همان رندر چاپ ساخته شده است.</p></div></div>
+        <div class="tag-preview-panel"><div class="tag-preview-scale" id="tag-live-preview">{{ preview_html|safe }}</div></div>
+        <div class="tag-preview-meta"><span>نمونه: {{ sample_item.name }}</span><span dir="ltr">{{ sample_item.barcode }}</span></div>
+    </section>
+    <section class="card">
+        <div class="tag-ctl-title"><div><h3>راهنمای صفحه A4</h3><p class="muted">بر اساس ابعاد و حاشیهٔ تگ محاسبه می‌شود.</p></div></div>
+        <div class="a4-fit-guide">
+            <div><span>اندازه کاغذ</span><strong>۲۱۰ × ۲۹۷ mm</strong></div>
+            <div><span>ناحیه قابل چاپ</span><strong id="side-fit-area">{{ tag_fit.available_width_mm }} × {{ tag_fit.available_height_mm }} mm</strong></div>
+            <div><span>چیدمان</span><strong id="side-fit-grid">{{ tag_fit.columns }} × {{ tag_fit.rows }}</strong></div>
+            <div><span>تگ در هر صفحه</span><strong id="side-fit-count">{{ tag_fit.tags_per_page }}</strong></div>
+            <div><span>فضای خالی</span><strong id="side-fit-unused">{{ tag_fit.unused_width_mm }} × {{ tag_fit.unused_height_mm }} mm</strong></div>
+        </div>
+        <p class="muted fit-note">حاشیهٔ چاپگر را نیز بررسی کنید.</p>
+    </section>
+</aside>
+</div>
+
+<script>
+const initialTagConfig = {{ tag_config|tojson }};
+const tagPresets = {{ tag_presets|tojson }};
+const savedTagTemplates = {{ tag_templates|tojson }};
+// The field names come from the service's own map (FIELD_LABELS) — the page
+// used to hard-code a second copy that could silently drift from the editor's
+// labels and the chips'.
+const fieldLabels = {{ field_labels|tojson }};
+const allowLists = {{ allow_list_sources|tojson }};
+const tagSample = {{ {'product_name': sample_item.product_name, 'name': sample_item.name, 'barcode': sample_item.barcode, 'price': sample_item.price_display, 'size': sample_item.size, 'color': sample_item.color, 'sku': sample_item.sku, 'brand': sample_item.brand, 'category': sample_item.category, 'care_instructions': (sample_item.care_instructions or ''), 'instagram': (store.instagram or ''), 'store_name': store.name, 'image_path': sample_item.image_path}|tojson }};
+const barcodePreviewSources = {{ barcode_preview_sources|tojson }};
+
+const chipOrder = ['product_name','price','size','color','barcode','barcode_text','sku','brand','category','store_name','instagram','product_image','custom_text'];
+const A4 = { width: 210, height: 297 };
+
+let workingConfig = JSON.parse(JSON.stringify(initialTagConfig));
+let selectedField = null;
+let dragging = null;
+let resizing = null;
+let dirty = false;
+let canvasZoom = 2.2;
+const undoStack = [];
+let undoGuardUntil = 0;
+
+const $ = id => document.getElementById(id);
+const canvasEl = () => $('tag-editor-canvas');
+
+const globalInputs = {tag_width_mm:'tag-width',tag_height_mm:'tag-height',margin_top_mm:'margin-top',margin_bottom_mm:'margin-bottom',margin_right_mm:'margin-right',margin_left_mm:'margin-left',gap_horizontal_mm:'gap-horizontal',gap_vertical_mm:'gap-vertical',columns:'tag-columns',rows:'tag-rows',layout_mode:'layout-mode',background:'tag-background',border_color:'tag-border-color',border_width_mm:'tag-border-width',padding_mm:'tag-padding',corner_radius_mm:'tag-radius',custom_text:'tag-custom-text',barcode_density:'barcode-density'};
+// The bounds come from the server's own table (TAG_NUMERIC_RULES), injected as
+// tagNumericRules — the third copy this page used to carry is gone, so a bound
+// edited on the server reaches the clamps here in the same build.
+const tagNumericRules = {{ tag_numeric_rules|tojson }};
+const numberLimits = {};
+Object.entries(tagNumericRules).forEach(([key, rule]) => { numberLimits[key] = [rule[0], rule[1] === null ? Infinity : rule[1]]; });
+const IMG_FIT_STYLE = 'max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block;margin:0 auto;';
+
+function copy(v){ return JSON.parse(JSON.stringify(v)); }
+function clamp(v,min,max){ return Math.max(min,Math.min(max,v)); }
+function numberValue(v){ const n = Number(v); return Number.isFinite(n) ? n : 0; }
+
+// Refused numbers live here, keyed by input id, until a valid keystroke
+// clears them. The config keeps its last good value — a bad field rings and
+// names its range instead of silently rewriting itself.
+const inputErrors = {};
+
+function checkNumber(raw, key, label){
+  const rule = numberLimits[key];
+  const text = String(raw ?? '').trim();
+  // Clearing a field to retype is not an error — the last good value holds
+  // until valid digits arrive. The server still refuses empties on save.
+  if (text === '') return { ok: false, empty: true };
+  const n = Number(text);
+  if (!Number.isFinite(n)) return { ok: false, message: `${label} عدد نیست.` };
+  const lo = rule ? rule[0] : -Infinity, hi = rule ? rule[1] : Infinity;
+  if (n < lo || n > hi) {
+    const span = !rule ? '' : (hi === Infinity ? `کمتر از ${lo} نباشد` : `بین ${lo} تا ${hi} باشد`);
+    return { ok: false, message: `${label} باید ${span}.` };
+  }
+  if ((key === 'columns' || key === 'rows') && !Number.isInteger(n)) {
+    return { ok: false, message: `${label} باید عدد صحیح باشد.` };
+  }
+  return { ok: true, value: n };
+}
+
+function flagInput(input, message){
+  const bad = !!message;
+  input.classList.toggle('is-invalid', bad);
+  if (bad) { input.setAttribute('aria-invalid', 'true'); inputErrors[input.id] = message; }
+  else { input.removeAttribute('aria-invalid'); delete inputErrors[input.id]; }
+}
+
+function refreshDirty(){
+  dirty = JSON.stringify(workingConfig) !== JSON.stringify(initialTagConfig);
+  $('tag-unsaved').hidden = !dirty;
+  syncFieldChips();
+}
+function markUnsaved(){ refreshDirty(); }
+
+function pushUndo(){ undoStack.push(JSON.stringify(workingConfig)); if (undoStack.length > 50) undoStack.shift(); updateUndoBtn(); }
+function guardedUndo(){ const now = Date.now(); if (now >= undoGuardUntil) pushUndo(); undoGuardUntil = now + 400; }
+function updateUndoBtn(){ $('undo-btn').disabled = undoStack.length === 0; }
+function undo(){
+  if (!undoStack.length) return;
+  workingConfig = JSON.parse(undoStack.pop());
+  syncInputsFromConfig();
+  renderEditor();
+  applyLivePreview();
+  refreshDirty();
+  updateUndoBtn();
+}
+$('undo-btn').addEventListener('click', undo);
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+    const active = document.activeElement;
+    const tag = (active && active.tagName) || '';
+    // Text fields undo their own keystrokes natively; the canvas follows the
+    // reverted text a tick later. Controls without text undo (selects,
+    // colours, checkboxes) spend the keystroke on the canvas stack instead.
+    if (tag === 'INPUT' && active.type !== 'color' && active.type !== 'checkbox' && active.type !== 'radio' || tag === 'TEXTAREA') {
+      window.setTimeout(() => {
+        if (active.closest && active.closest('#tag-field-controls')) updateSelectedField();
+        else syncConfigFromInputs();
+      }, 0);
+      return;
+    }
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') { e.preventDefault(); undo(); return; }
+    e.preventDefault();
+    undo();
+  }
+});
+document.addEventListener('change', e => { if (isEditable(e.target)) guardedUndo(); }, true);
+document.addEventListener('input', e => { if (isEditable(e.target)) guardedUndo(); }, true);
+function isEditable(el){
+  if (!el || !el.id) return false;
+  return el.closest && (el.closest('#tag-field-controls') || el.closest('.tag-global-controls') || el.closest('.tag-ctl-card') || (el.name === 'barcode-mode'));
+}
+
+function keepFieldsInsideTag(){
+  const w = numberValue(workingConfig.tag_width_mm), h = numberValue(workingConfig.tag_height_mm);
+  if (w < 2 || h < 2) return;
+  Object.values(workingConfig.fields).forEach(f => {
+    f.width = clamp(numberValue(f.width), 2, w);
+    f.height = clamp(numberValue(f.height), 2, h);
+    f.x = clamp(numberValue(f.x), 0, Math.max(0, w - f.width));
+    f.y = clamp(numberValue(f.y), 0, Math.max(0, h - f.height));
+  });
+}
+
+function syncInputsFromConfig(){
+  Object.entries(globalInputs).forEach(([key, id]) => { $(id).value = workingConfig[key]; });
+  document.querySelectorAll('input[name="barcode-mode"]').forEach(i => { i.checked = (i.value === workingConfig.barcode_mode); });
+  // Restored values are valid by construction: rings retire with the undo.
+  Object.keys(inputErrors).forEach(id => { const el = $(id); if (el) flagInput(el, null); });
+  $('barcode-density').value = workingConfig.barcode_density || 'compact';
+  $('custom-image-warning').hidden = workingConfig.barcode_mode !== 'custom_image';
+  updateBarcodeStatus();
+  updateFitGuide();
+}
+function syncConfigFromInputs(){
+  Object.entries(globalInputs).forEach(([key, id]) => {
+    const input = $(id);
+    if (input.type === 'number' || input.getAttribute('inputmode') === 'numeric') {
+      const label = input.getAttribute('aria-label') || input.closest('label')?.innerText?.split('\n')[0] || id;
+      const check = checkNumber(input.value, key, label.trim());
+      if (check.empty) { flagInput(input, null); }
+      else { flagInput(input, check.ok ? null : check.message); }
+      if (check.ok) workingConfig[key] = check.value;
+    } else {
+      workingConfig[key] = input.value;
+    }
+  });
+  workingConfig.preset = 'custom';
+  keepFieldsInsideTag();
+  updateFitGuide();
+  renderEditor();
+  applyLivePreview();
+  updateDiagnostics();
+  markUnsaved();
+}
+
+function updateDiagnostics(){
+  const box = $('editor-diagnostics');
+  if (!box) return;
+  const visible = Object.entries(workingConfig.fields).filter(([, f]) => f.visible);
+  // Every issue carries its target: a field to select on the canvas, or an
+  // input to focus. Warnings you cannot click are decorations.
+  const issues = [];
+  Object.entries(inputErrors).forEach(([id, message]) => {
+    issues.push({ text: message, input: id });
+  });
+  const labels = name => fieldLabels[name] || name;
+  visible.forEach(([name, f]) => {
+    if (f.x < 0 || f.y < 0 || f.x + f.width > workingConfig.tag_width_mm || f.y + f.height > workingConfig.tag_height_mm) {
+      issues.push({ text: labels(name) + ' خارج از محدوده است', field: name });
+    }
+  });
+  for (let i = 0; i < visible.length; i += 1) {
+    const [nameA, a] = visible[i];
+    for (let j = i + 1; j < visible.length; j += 1) {
+      const [nameB, b] = visible[j];
+      const overlapWidth = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+      const overlapHeight = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+      if (overlapWidth > 0.25 && overlapHeight > 0.25) {
+        issues.push({ text: labels(nameA) + ' و ' + labels(nameB) + ' هم‌پوشانی دارند', field: nameA });
+      }
+    }
+  }
+  if (workingConfig.barcode_mode === 'real_barcode' && workingConfig.fields.barcode && workingConfig.fields.barcode.visible) {
+    const codeLength = String(tagSample.barcode || '').length;
+    const minimumWidth = 5 + (codeLength * 1.2);
+    if (workingConfig.fields.barcode.width < minimumWidth) {
+      issues.push({ text: 'عرض تصویر بارکد برای این کد کم است؛ فشرده‌سازی یا عرض فیلد را افزایش دهید', field: 'barcode' });
+    }
+    if (workingConfig.fields.barcode.height < 4) {
+      issues.push({ text: 'ارتفاع تصویر بارکد برای اسکن مطمئن کم است', field: 'barcode' });
+    }
+  }
+  if (!issues.length) {
+    box.className = 'editor-diagnostics is-ok';
+    box.textContent = 'چیدمان آماده است؛ فیلدهای فعال داخل تگ قرار دارند.';
+    return;
+  }
+  const esc = s => String(s).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+  box.className = 'editor-diagnostics is-warning';
+  box.innerHTML = '<strong>پیش از چاپ بررسی کنید:</strong> ' + issues.slice(0, 4).map(item => {
+    const attrs = item.field ? `data-diag-field="${esc(item.field)}"` : `data-diag-input="${esc(item.input)}"`;
+    return `<span><button type="button" class="diag-issue" ${attrs}>${esc(item.text)}</button></span>`;
+  }).join('');
+}
+document.querySelector('#editor-diagnostics').addEventListener('click', event => {
+  const btn = event.target.closest ? event.target.closest('[data-diag-field],[data-diag-input]') : null;
+  if (!btn) return;
+  if (btn.dataset.diagField) {
+    selectField(btn.dataset.diagField);
+    canvasEl().focus({ preventScroll: true });
+  } else {
+    const el = document.getElementById(btn.dataset.diagInput);
+    if (el) { el.focus(); if (typeof el.select === 'function') el.select(); }
+  }
+});
+
+function updateFitGuide(){
+  const w = numberValue(workingConfig.tag_width_mm), h = numberValue(workingConfig.tag_height_mm);
+  const aw = A4.width - numberValue(workingConfig.margin_left_mm) - numberValue(workingConfig.margin_right_mm);
+  const ah = A4.height - numberValue(workingConfig.margin_top_mm) - numberValue(workingConfig.margin_bottom_mm);
+  const gx = numberValue(workingConfig.gap_horizontal_mm), gy = numberValue(workingConfig.gap_vertical_mm);
+  const mc = Math.floor((aw + gx) / (w + gx)), mr = Math.floor((ah + gy) / (h + gy));
+  const ok = w >= 2 && h >= 2 && aw > 0 && ah > 0 && mc >= 1 && mr >= 1;
+  const c = workingConfig.layout_mode === 'auto' ? mc : numberValue(workingConfig.columns);
+  const r = workingConfig.layout_mode === 'auto' ? mr : numberValue(workingConfig.rows);
+  const fits = ok && c >= 1 && r >= 1 && c <= mc && r <= mr;
+  const gridTxt = fits ? c + ' × ' + r : 'جا نمی‌شود';
+  const countTxt = fits ? c * r : '—';
+  const areaTxt = (aw > 0 ? aw.toFixed(1) : '0') + ' × ' + (ah > 0 ? ah.toFixed(1) : '0') + ' mm';
+  const unusedTxt = fits ? (aw - (c * w + Math.max(0, c - 1) * gx)).toFixed(1) + ' × ' + (ah - (r * h + Math.max(0, r - 1) * gy)).toFixed(1) + ' mm' : '—';
+  const set = (id, txt, bad) => {
+    const el = $(id); if (!el) return;
+    el.textContent = txt;
+    el.classList.toggle('fit-bad', !!bad);
+  };
+  set('fit-grid', gridTxt, !fits); set('fit-count', countTxt, !fits);
+  set('fit-area', areaTxt, false); set('fit-unused', unusedTxt, false);
+  set('side-fit-grid', gridTxt, !fits); set('side-fit-count', countTxt, !fits);
+  set('side-fit-area', areaTxt, false); set('side-fit-unused', unusedTxt, false);
+  const chip = $('dims-chip');
+  if (chip) chip.textContent = w.toFixed(1) + ' × ' + h.toFixed(1) + ' mm';
+  const hint = $('fields-hint');
+  if (hint) {
+    const all = Object.values(workingConfig.fields).length;
+    const hidden = Object.values(workingConfig.fields).filter(f => !f.visible).length;
+    hint.textContent = hidden ? (hidden + ' فیلد مخفی') : 'همه فیلدها فعال‌اند';
+  }
+}
+
+function applyZoom(){
+  const canvas = canvasEl();
+  if (canvas) canvas.style.zoom = canvasZoom;
+  document.querySelectorAll('[data-zoom]').forEach(b => b.classList.toggle('active', Number(b.dataset.zoom) === canvasZoom));
+}
+document.querySelectorAll('[data-zoom]').forEach(b => b.addEventListener('click', () => {
+  canvasZoom = Number(b.dataset.zoom);
+  applyZoom();
+}));
+function sensibleZoom(){
+  const w = numberValue(workingConfig.tag_width_mm);
+  return w >= 80 ? 1 : w >= 55 ? 1.6 : 2.2;
+}
+
+// ---- Field chips (show / hide) ----
+const strip = $('tag-fields-strip');
+function toggleField(name){
+  const f = workingConfig.fields[name];
+  if (!f) return;
+  pushUndo();
+  f.visible = !f.visible;
+  if (!f.visible && selectedField === name) selectedField = null;
+  workingConfig.preset = 'custom';
+  renderEditor();
+  applyLivePreview();
+  refreshDirty();
+  syncPanelEmpty();
+}
+// The complete palette is rendered in HTML so it remains visible even when a
+// browser has a JavaScript error. Event delegation keeps all chips live after
+// preset/template changes without creating duplicate buttons.
+strip.addEventListener('click', e => {
+  const button = e.target.closest('.tag-field-chip');
+  if (button && strip.contains(button)) toggleField(button.dataset.field);
+});
+function syncFieldChips(){
+  strip.querySelectorAll('.tag-field-chip').forEach(btn => {
+    const f = workingConfig.fields[btn.dataset.field];
+    const visible = !!(f && f.visible);
+    btn.classList.toggle('is-off', !visible);
+    btn.setAttribute('aria-pressed', visible ? 'true' : 'false');
+    btn.title = (visible ? 'فعال — برای مخفی‌کردن کلیک کنید' : 'مخفی — برای افزودن به تگ کلیک کنید') + ' — ' + (fieldLabels[btn.dataset.field] || btn.dataset.field);
+    const state = btn.querySelector('.chip-state');
+    if (state) state.textContent = visible ? 'فعال' : 'افزودن';
+    const dot = btn.querySelector('.chip-dot');
+    if (dot && f) dot.style.background = f.color || 'var(--ink-soft)';
+  });
+}
+
+// ---- Editor canvas ----
+function fieldBox(name, field){
+  const box = document.createElement('button');
+  box.type = 'button';
+  box.className = 'tag-editor-field' + (field.visible ? '' : ' is-hidden-field') + (selectedField === name ? ' is-selected' : '');
+  box.dataset.field = name;
+  box.style.left = field.x + 'mm';
+  box.style.top = field.y + 'mm';
+  box.style.width = field.width + 'mm';
+  box.style.height = field.height + 'mm';
+  box.style.fontSize = Math.max(7, field.font_size) + 'pt';
+  box.style.fontWeight = field.bold ? '700' : '400';
+  box.style.textAlign = field.align;
+  box.style.color = 'var(--ink)';
+  box.appendChild(fieldColorDot(field.color));
+  const label = document.createElement('span');
+  label.className = 'tag-editor-field-label';
+  label.textContent = fieldLabels[name] || name;
+  box.appendChild(label);
+  box.title = (field.visible ? 'ویرایش ' : 'فیلد مخفی: ') + (fieldLabels[name] || name);
+  box.addEventListener('click', e => { e.stopPropagation(); selectField(name); });
+  box.addEventListener('pointerdown', e => startDrag(e, name));
+  // The corner is a real control, not a pointer-only decoration: a keyboard
+  // user reaches it with Tab (it sits inside the field's own button, which is
+  // in the tab order), presses Enter or Space, and then drags the same
+  // resize the mouse drags — with the arrow keys, ending with Enter. The
+  // label names the field it resizes, so screen-reader text is not just
+  // «تغییر اندازه» ten times over.
+  const handle = document.createElement('span');
+  handle.className = 'tag-resize-handle';
+  handle.setAttribute('role', 'button');
+  handle.tabIndex = 0;
+  handle.setAttribute('aria-label', 'تغییر اندازه ' + (fieldLabels[name] || name));
+  handle.addEventListener('pointerdown', e => startResize(e, name));
+  handle.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    e.stopPropagation();
+    startKeyboardResize(name);
+  });
+  box.appendChild(handle);
+  return box;
+}
+function fieldColorDot(color){
+  const dot = document.createElement('i');
+  dot.className = 'field-color-dot';
+  dot.style.background = color;
+  return dot;
+}
+function syncPanelEmpty(){
+  const f = selectedField ? workingConfig.fields[selectedField] : null;
+  const empty = $('selected-field-empty');
+  const form = $('selected-field-form');
+  if (empty) empty.hidden = !!f;
+  if (form) form.hidden = !f;
+}
+function renderEditor(){
+  const canvas = canvasEl();
+  if (!canvas) return;
+  canvas.innerHTML = '';
+  canvas.style.width = workingConfig.tag_width_mm + 'mm';
+  canvas.style.height = workingConfig.tag_height_mm + 'mm';
+  Object.entries(workingConfig.fields)
+    .filter(([, field]) => field.visible)
+    .sort(([, a], [, b]) => (a.z || 0) - (b.z || 0))
+    .forEach(([name, field]) => canvas.appendChild(fieldBox(name, field)));
+  if (selectedField && workingConfig.fields[selectedField] && workingConfig.fields[selectedField].visible) {
+    populateFieldControls();
+  } else {
+    syncPanelEmpty();
+  }
+  refreshDirty();
+  updateDiagnostics();
+}
+function selectField(name){
+  selectedField = name;
+  renderEditor();
+  populateFieldControls();
+  syncPanelEmpty();
+}
+function populateFieldControls(){
+  const field = workingConfig.fields[selectedField];
+  if (!field) return;
+  $('selected-field-empty').hidden = true;
+  $('selected-field-form').hidden = false;
+  $('selected-field-label').textContent = fieldLabels[selectedField] || selectedField;
+  const dot = $('selected-color-dot');
+  if (dot) dot.style.background = field.color;
+  $('field-visible').checked = field.visible;
+  $('field-x').value = field.x;
+  $('field-y').value = field.y;
+  $('field-width').value = field.width;
+  $('field-height').value = field.height;
+  $('field-font-size').value = field.font_size;
+  $('field-color').value = field.color;
+  $('field-align').value = field.align;
+  $('field-bold').checked = field.bold;
+}
+function updateSelectedField(){
+  if (!selectedField || !workingConfig.fields[selectedField]) return;
+  const field = workingConfig.fields[selectedField];
+  field.visible = $('field-visible').checked;
+  [['x', 'field-x'], ['y', 'field-y'], ['width', 'field-width'], ['height', 'field-height'], ['font_size', 'field-font-size']].forEach(([key, id]) => {
+    const input = $(id);
+    const label = input.getAttribute('aria-label') || id;
+    const check = checkNumber(input.value, key, label);
+    if (check.empty) { flagInput(input, null); return; }
+    flagInput(input, check.ok ? null : check.message);
+    if (check.ok) field[key] = check.value;
+  });
+  field.color = $('field-color').value;
+  field.align = $('field-align').value;
+  field.bold = $('field-bold').checked;
+  const dot = $('selected-color-dot');
+  if (dot) dot.style.background = field.color;
+  workingConfig.preset = 'custom';
+  keepFieldsInsideTag();
+  renderEditor();
+  applyLivePreview();
+  markUnsaved();
+}
+function canvasPoint(e){
+  const c = canvasEl(), r = c.getBoundingClientRect();
+  return { x: (e.clientX - r.left) * workingConfig.tag_width_mm / r.width, y: (e.clientY - r.top) * workingConfig.tag_height_mm / r.height };
+}
+function startDrag(e, name){
+  if (e.target.closest('.tag-resize-handle')) return;
+  e.preventDefault();
+  selectField(name);
+  const field = workingConfig.fields[name], p = canvasPoint(e);
+  pushUndo();
+  dragging = { name, dx: p.x - field.x, dy: p.y - field.y };
+  try { canvasEl().setPointerCapture(e.pointerId); } catch (_) {}
+}
+function startResize(e, name){
+  e.preventDefault();
+  e.stopPropagation();
+  selectField(name);
+  const field = workingConfig.fields[name], p = canvasPoint(e);
+  pushUndo();
+  resizing = { name, startX: p.x, startY: p.y, width: field.width, height: field.height };
+  try { canvasEl().setPointerCapture(e.pointerId); } catch (_) {}
+}
+
+// The same resize from the keyboard: Enter on the corner handle starts a
+// session, the arrows grow or shrink by 1 mm (Shift for 5 mm, the coarse
+// step the nudge buttons use), Escape backs the change out, Enter or Tab
+// ends it. Reuses the pointer path's clamps — width/height can never leave
+// [2, tag size − position] any more than a dragged resize could.
+let keyboardResize = null;
+function startKeyboardResize(name){
+  selectField(name);
+  pushUndo();
+  keyboardResize = { name };
+  const box = canvasEl().querySelector('.tag-editor-field[data-field="' + name + '"] .tag-resize-handle');
+  if (box) box.classList.add('is-keyboard-resizing');
+}
+function endKeyboardResize(){
+  if (!keyboardResize) return;
+  const handle = canvasEl().querySelector('.tag-editor-field[data-field="' + keyboardResize.name + '"] .tag-resize-handle');
+  if (handle) handle.classList.remove('is-keyboard-resizing');
+  keyboardResize = null;
+}
+document.addEventListener('keydown', e => {
+  if (!keyboardResize) return;
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    // Escape restores the state as it was when the session started — the
+    // undo entry pushed at the start is the state before the resize.
+    const snapshot = undoStack[undoStack.length - 1];
+    if (snapshot) { workingConfig = JSON.parse(snapshot); undoStack.pop(); updateUndoBtn(); }
+    endKeyboardResize();
+    renderEditor();
+    populateFieldControls();
+    applyLivePreview();
+    refreshDirty();
+    return;
+  }
+  if (e.key === 'Enter' || e.key === 'Tab') { endKeyboardResize(); return; }
+  const steps = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+  const step = steps[e.key];
+  if (!step) return;
+  e.preventDefault();
+  const f = workingConfig.fields[keyboardResize.name];
+  const mm = e.shiftKey ? 5 : 1;
+  f.width = clamp(f.width + step[0] * mm, 2, workingConfig.tag_width_mm - f.x);
+  f.height = clamp(f.height + step[1] * mm, 2, workingConfig.tag_height_mm - f.y);
+  workingConfig.preset = 'custom';
+  renderEditor();
+  populateFieldControls();
+  applyLivePreview();
+  markUnsaved();
+});
+canvasEl().addEventListener('pointermove', e => {
+  const p = canvasPoint(e);
+  if (dragging) {
+    const f = workingConfig.fields[dragging.name];
+    f.x = clamp(p.x - dragging.dx, 0, workingConfig.tag_width_mm - f.width);
+    f.y = clamp(p.y - dragging.dy, 0, workingConfig.tag_height_mm - f.height);
+    const box = canvasEl().querySelector('.tag-editor-field[data-field="' + dragging.name + '"]');
+    if (box) { box.style.left = f.x + 'mm'; box.style.top = f.y + 'mm'; }
+    applyLivePreview();
+    markUnsaved();
+  } else if (resizing) {
+    const f = workingConfig.fields[resizing.name];
+    f.width = clamp(resizing.width + p.x - resizing.startX, 2, workingConfig.tag_width_mm - f.x);
+    f.height = clamp(resizing.height + p.y - resizing.startY, 2, workingConfig.tag_height_mm - f.y);
+    const box = canvasEl().querySelector('.tag-editor-field[data-field="' + resizing.name + '"]');
+    if (box) { box.style.width = f.width + 'mm'; box.style.height = f.height + 'mm'; }
+    applyLivePreview();
+    markUnsaved();
+  }
+});
+document.addEventListener('pointerup', () => { dragging = null; resizing = null; });
+
+function nudge(dir){
+  if (!selectedField) return;
+  const f = workingConfig.fields[selectedField];
+  pushUndo();
+  if (dir === 'up') f.y = clamp(f.y - 1, 0, workingConfig.tag_height_mm - f.height);
+  if (dir === 'down') f.y = clamp(f.y + 1, 0, workingConfig.tag_height_mm - f.height);
+  if (dir === 'left') f.x = clamp(f.x - 1, 0, workingConfig.tag_width_mm - f.width);
+  if (dir === 'right') f.x = clamp(f.x + 1, 0, workingConfig.tag_width_mm - f.width);
+  renderEditor();
+  populateFieldControls();
+  applyLivePreview();
+  markUnsaved();
+}
+document.querySelectorAll('[data-nudge]').forEach(b => b.addEventListener('click', () => nudge(b.dataset.nudge)));
+document.querySelectorAll('[data-layer]').forEach(b => b.addEventListener('click', () => {
+  if (!selectedField || !workingConfig.fields[selectedField]) return;
+  pushUndo();
+  const zs = Object.values(workingConfig.fields).map(x => x.z || 0);
+  const f = workingConfig.fields[selectedField];
+  f.z = (b.dataset.layer === 'front' ? (Math.max.apply(null, zs) || 0) + 1 : (Math.min.apply(null, zs) || 0) - 1);
+  workingConfig.preset = 'custom';
+  renderEditor();
+  populateFieldControls();
+  applyLivePreview();
+  markUnsaved();
+}));
+$('tag-field-controls').addEventListener('input', updateSelectedField);
+$('tag-field-controls').addEventListener('change', updateSelectedField);
+document.addEventListener('keydown', e => {
+  if (!selectedField || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+    e.preventDefault();
+    nudge({ ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' }[e.key]);
+  }
+});
+
+// ---- Preset switching & reset (never silently wipe work) ----
+function loadBuiltInLayout(key){
+  const next = tagPresets[key] || tagPresets.kids_boutique;
+  pushUndo();
+  workingConfig = copy(next);
+  // Built-in/default layouts are the starting point for a new saved template;
+  // never accidentally overwrite the last custom template.
+  $('tag-template-id').value = '';
+  $('tag-template-name').value = '';
+  syncTemplateSaveButtons();
+  refreshDirty();
+  syncInputsFromConfig();
+  renderEditor();
+  applyLivePreview();
+  applyZoom();
+}
+$('tag-preset').addEventListener('change', function () {
+  const key = this.value;
+  if (!key || !tagPresets[key]) { this.value = ''; return; }
+  if (dirty && !window.confirm('با بارگذاری قالب آماده، تغییرات فعلی از بین می‌رود. ادامه می‌دهید؟')) { this.value = ''; return; }
+  loadBuiltInLayout(key);
+  this.value = '';
+});
+$('use-default-tag').addEventListener('click', () => {
+  if (dirty && !window.confirm('شروع دوباره بوم را به قالب پیش‌فرض برمی‌گرداند و تغییرات فعلی از بین می‌رود. ادامه می‌دهید؟')) return;
+  loadBuiltInLayout('kids_boutique');
+});
+
+// ---- Global inputs ----
+Object.values(globalInputs).forEach(id => $(id).addEventListener('input', syncConfigFromInputs));
+document.querySelectorAll('input[name="barcode-mode"]').forEach(i => i.addEventListener('change', () => {
+  workingConfig.barcode_mode = i.value;
+  workingConfig.preset = 'custom';
+  $('custom-image-warning').hidden = i.value !== 'custom_image';
+  applyLivePreview();
+  markUnsaved();
+}));
+$('tag-config-form').addEventListener('submit', () => { $('tag-config-json').value = JSON.stringify(workingConfig); });
+function syncTemplateSaveButtons(){
+  const loaded = $('tag-template-id').value;
+  $('tag-template-overwrite').hidden = !loaded;
+  const note = $('loaded-template-note');
+  if (note) note.hidden = !loaded;
+}
+$('tag-template-form').addEventListener('submit', () => {
+  $('tag-template-config-json').value = JSON.stringify(workingConfig);
+});
+$('tag-template-save-new').addEventListener('click', () => {
+  // A new template must never inherit the loaded row's id.
+  $('tag-template-id').value = '';
+});
+document.querySelectorAll('.tag-template-load').forEach(button => button.addEventListener('click', () => {
+  const template = savedTagTemplates.find(item => String(item.id) === String(button.dataset.templateId));
+  if (!template) return;
+  if (dirty && !window.confirm('بارگذاری این قالب تغییرات فعلی را جایگزین می‌کند. ادامه می‌دهید؟')) return;
+  pushUndo();
+  workingConfig = copy(template.config);
+  workingConfig.preset = 'custom';
+  $('tag-template-id').value = template.id;
+  $('tag-template-name').value = template.name;
+  $('loaded-template-name').textContent = template.name;
+  syncTemplateSaveButtons();
+  syncInputsFromConfig();
+  renderEditor();
+  applyLivePreview();
+  applyZoom();
+}));
+
+// ---- Live preview ----
+const baseDisplay = {};
+const alignMap = { left: 'flex-start', center: 'center', right: 'flex-end' };
+let realBarcodeSrc = null;
+
+function liveRoot(){ return ($('tag-live-preview') || document).querySelector('.tag-render'); }
+function fieldInPreview(name){
+  const root = liveRoot();
+  return root ? root.querySelector('.tag-field[data-field="' + name + '"]') : null;
+}
+function sampleValueFor(name){
+  const map = {
+    product_name: tagSample.product_name, price: tagSample.price, size: tagSample.size,
+    color: tagSample.color, sku: tagSample.sku, brand: tagSample.brand,
+    category: tagSample.category, store_name: tagSample.store_name,
+    instagram: tagSample.instagram, barcode_text: tagSample.barcode || '',
+    custom_text: workingConfig.custom_text || '',
+    care_instructions: tagSample.care_instructions || ''
+  };
+  return map[name] || '';
+}
+function applyFieldStyle(el, name, f){
+  if (!(name in baseDisplay)) baseDisplay[name] = el.style.display || getComputedStyle(el).display;
+  el.style.display = f.visible ? baseDisplay[name] : 'none';
+  if (!f.visible) return;
+  el.style.left = f.x + 'mm';
+  el.style.top = f.y + 'mm';
+  el.style.width = f.width + 'mm';
+  el.style.height = f.height + 'mm';
+  el.style.fontSize = f.font_size + 'pt';
+  el.style.color = f.color;
+  el.style.fontWeight = f.bold ? '700' : '400';
+  el.style.textAlign = f.align;
+  el.style.justifyContent = alignMap[f.align];
+}
+function ensureFieldElement(name, f){
+  const root = liveRoot();
+  let el = fieldInPreview(name);
+  if (el) return el;
+  if (!root) return null;
+  el = document.createElement('div');
+  el.className = 'tag-field';
+  el.dataset.field = name;
+  el.style.position = 'absolute';
+  el.style.boxSizing = 'border-box';
+  el.style.overflow = 'hidden';
+  el.style.display = 'flex';
+  el.style.alignItems = 'center';
+  el.style.lineHeight = '1.2';
+  if (name === 'product_image') {
+    const path = tagSample.image_path;
+    if (path) {
+      const img = document.createElement('img');
+      img.className = 'tag-product-image';
+      img.style.cssText = IMG_FIT_STYLE;
+      img.src = path;
+      img.alt = '';
+      el.appendChild(img);
+    } else {
+      el.textContent = '—';
+    }
+  } else {
+    const value = sampleValueFor(name);
+    el.textContent = value || '—';
+    if (!value) el.style.opacity = '0.5';
+  }
+  root.appendChild(el);
+  return el;
+}
+function syncBarcodeField(){
+  const root = liveRoot();
+  const f = workingConfig.fields.barcode;
+  const el = ensureFieldElement('barcode', f);
+  if (!el) return;
+  const mode = workingConfig.barcode_mode;
+  const visible = Boolean(f && f.visible && mode !== 'hidden' && !(mode === 'custom_image' && !workingConfig.custom_image_path));
+  if (!(el.dataset.field in baseDisplay)) baseDisplay[el.dataset.field] = el.style.display || getComputedStyle(el).display;
+  applyFieldStyle(el, 'barcode', f || {visible: false});
+  el.style.display = visible ? baseDisplay[el.dataset.field] : 'none';
+  if (!visible) return;
+  let img = el.querySelector('img');
+  const wantCls = mode === 'custom_image' ? 'tag-custom-image' : 'tag-barcode-image';
+  if (!img) { img = document.createElement('img'); img.style.cssText = IMG_FIT_STYLE; el.appendChild(img); }
+  if (img.getAttribute('class') !== wantCls) img.setAttribute('class', wantCls);
+  if (mode === 'real_barcode') {
+    if (realBarcodeSrc) img.src = realBarcodeSrc;
+  } else if (workingConfig.custom_image_path) {
+    img.src = workingConfig.custom_image_path;
+  }
+}
+function updateBarcodeStatus(){
+  const status = $('barcode-scan-status');
+  if (!status) return;
+  const density = workingConfig.barcode_density || 'compact';
+  const source = barcodePreviewSources[density];
+  status.textContent = workingConfig.barcode_mode === 'real_barcode'
+    ? (density === 'compact' ? 'فشرده و قابل اسکن؛ مناسب کدهای طولانی‌تر.' : 'استاندارد و قابل اسکن؛ فضای بیشتری لازم دارد.')
+    : 'در حالت تصویر سفارشی، اسکن شدن تصویر تضمین نمی‌شود.';
+  if (source) realBarcodeSrc = source;
+  updateBarcodeWidth();
+}
+// Approximate print width for the sample code at the chosen density: quiet
+// zones plus a per-character module share scaled from the compact baseline
+// the diagnostics enforce. An estimate for fitting, not a promise of ink.
+function updateBarcodeWidth(){
+  const readout = $('barcode-width-readout');
+  if (!readout) return;
+  const density = workingConfig.barcode_density || 'compact';
+  const params = { compact: { module: 0.2, quiet: 2.5 }, standard: { module: 0.3, quiet: 3 } }[density]
+    || { module: 0.2, quiet: 2.5 };
+  const codeLength = String(tagSample.barcode || '').length;
+  const width = (2 * params.quiet + codeLength * 1.2 * (params.module / 0.2)).toFixed(1);
+  readout.textContent = `عرض تقریبی برای کد نمونه (${codeLength} رقم): ${width} mm — عرض فیلد بارکد باید بیشتر باشد.`;
+}
+function applyLivePreview(){
+  const root = liveRoot();
+  if (!root) return;
+  const c = workingConfig;
+  root.style.width = c.tag_width_mm + 'mm';
+  root.style.height = c.tag_height_mm + 'mm';
+  root.style.background = c.background;
+  root.style.borderColor = c.border_color;
+  root.style.borderWidth = c.border_width_mm + 'mm';
+  root.style.borderRadius = c.corner_radius_mm + 'mm';
+  root.style.padding = c.padding_mm + 'mm';
+  Object.entries(c.fields).forEach(([name, f]) => {
+    if (name === 'barcode') return;
+    const el = ensureFieldElement(name, f);
+    if (el) applyFieldStyle(el, name, f);
+  });
+  updateBarcodeStatus();
+  syncBarcodeField();
+}
+
+// ---- Init ----
+const initBarcodeImg = fieldInPreview('barcode') ? fieldInPreview('barcode').querySelector('img') : null;
+if (initBarcodeImg) realBarcodeSrc = initBarcodeImg.src;
+canvasZoom = sensibleZoom();
+syncInputsFromConfig();
+renderEditor();
+applyLivePreview();
+applyZoom();
+refreshDirty();
+updateUndoBtn();
+syncTemplateSaveButtons();
+updateBarcodeWidth();
+
+// Leaving with unsaved work warns — saving disarms it first, so the guard
+// never nags on the way out it was asked for.
+let savingDesign = false;
+['tag-config-form', 'tag-template-form'].forEach(id => {
+  const form = $(id);
+  if (form) form.addEventListener('submit', () => { savingDesign = true; });
+});
+window.addEventListener('beforeunload', event => {
+  if (dirty && !savingDesign) { event.preventDefault(); event.returnValue = ''; }
+});
+</script>
+{% endblock %}

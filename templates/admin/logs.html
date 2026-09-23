@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include 'partials/page_header.html' %}
+
+<div class="card">
+    {% if logs %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>🕐 زمان</th>
+                <th>🔧 عملیات</th>
+                <th>📝 جزئیات</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for log in logs %}
+            <tr>
+                <td class="tnum">{{ jalali_str(log.created_at) }}</td>
+                <td><code>{{ log.action }}</code></td>
+                <td>{{ log.detail or '—' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="text-align: center; color: var(--ink-soft); padding: 2rem;">هنوز عملیاتی ثبت نشده است.</p>
+    {% endif %}
+</div>{% endblock %}

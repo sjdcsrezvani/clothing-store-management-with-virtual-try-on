@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block content %}
+{% set page_description %}
+{{ variant.display_name }} · تغییرات موجودی در دفتر انبار ثبت می‌شود.
+{% endset %}
+{% set heading_class = 'page-heading product-form-heading' %}
+{% set page_actions %}
+<a href="/admin/barcodes/print" class="btn btn-ghost">چاپ تگ</a>
+{% endset %}
+{% include 'partials/page_header.html' %}
+{% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
+
+<div class="variant-edit-layout">
+<section class="card">
+    <form method="post" action="/admin/variants/{{ variant.id }}" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="next" value="{{ return_to or '' }}">
+        <div class="section-heading-row"><div><h3>مشخصات فروش</h3><p class="muted">قیمت‌ها و شناسه‌ها را دقیق و قابل جست‌وجو نگه دارید.</p></div><span class="section-step">۱</span></div>
+        <div class="form-row product-form-grid-wide">
+            <div class="form-group"><label for="size">سایز</label><input id="size" name="size" data-unify-digits value="{{ variant.size or '' }}" placeholder="۳ تا ۴ سال"></div>
+            <div class="form-group"><label for="size_system">سیستم سایز</label><input id="size_system" name="size_system" value="{{ variant.size_system or '' }}" placeholder="ایران / EU"></div>
+            <div class="form-group"><label for="color">رنگ</label><input id="color" name="color" value="{{ variant.color or '' }}" placeholder="آبی"></div>
+            <div class="form-group"><label for="color_code">کد رنگ</label><input id="color_code" name="color_code" value="{{ variant.color_code or '' }}" dir="ltr" placeholder="#4AA3DF" data-color-picker></div>
+            <div class="form-group"><label for="price">قیمت فروش <span class="required-mark">*</span></label><input type="text" inputmode="numeric" id="price" name="price" required min="0" value="{{ variant.price }}" placeholder="مثال: 350000"></div>
+            <div class="form-group"><label for="cost_price">قیمت خرید<span id="cost-key" class="cost-key" aria-hidden="true"></span></label><input type="text" inputmode="numeric" id="cost_price" name="cost_price" min="0" value="{{ variant.fake_cost_price if variant.fake_cost_price is not none else (variant.cost_price if variant.cost_price is not none else '') }}" placeholder="مثال: 220000" data-real="{{ variant.cost_price if variant.cost_price is not none else '' }}"{% if variant.fake_cost_price is not none %} readonly{% endif %}><div id="second-cost-row" class="cost-note-editor" hidden><input type="text" inputmode="numeric" id="fake_cost_price" name="fake_cost_price" min="0" value="{{ variant.fake_cost_price if variant.fake_cost_price is not none else '' }}" placeholder="مثال: 230000"></div></div>
+            <div class="form-group"><label for="sku">SKU</label><input id="sku" name="sku" value="{{ variant.sku or '' }}" dir="ltr"></div>
+            <div class="form-group"><span class="field-label">بارکد</span><span class="barcode-record tnum" dir="ltr">{{ variant.barcode }}</span><small class="field-help">بعد از ساخت قفل است؛ برای لیبل آسیب‌دیده «تولید مجدد» بزنید.</small></div>
+        </div>
+        <div class="form-actions-row">
+            <form method="post" action="/admin/variants/{{ variant.id }}/regenerate-barcode" onsubmit="return confirm('بارکد تازه ساخته می‌شود و بارکد فعلی روی تگ‌های چاپ‌شده بی‌اعتبار می‌گردد. ادامه؟')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-sm btn-ghost">تولید مجدد بارکد</button>
+            </form>
+        </div>
+
+        <div class="section-heading-row section-heading-spaced"><div><h3>موجودی و سفارش</h3><p class="muted">رزرو فعلی: <strong>{{ variant.reserved_quantity or 0 }}</strong> عدد · قابل فروش: <strong>{{ variant.available_quantity }}</strong> عدد</p></div><span class="section-step">۲</span></div>
+        <div class="form-row product-form-grid-wide">
+            <div class="form-group"><label for="stock_quantity">موجودی کل</label><input type="text" inputmode="numeric" id="stock_quantity" name="stock_quantity" min="{{ variant.reserved_quantity or 0 }}" value="{{ variant.stock_quantity or 0 }}" placeholder="مثال: 12"><small class="field-help">کل کالای انبار. «رزرو» کالاهایی است که مشتری در صندوق نگه داشته؛ پس کمتر از آن را نمی‌توان ثبت کرد.</small></div>
+            <div class="form-group"><label for="reorder_point">نقطه سفارش</label><input type="text" inputmode="numeric" id="reorder_point" name="reorder_point" min="0" value="{{ variant.reorder_point or 0 }}" placeholder="مثال: 3"><small class="field-help">وقتی موجودی به این عدد برسد، در داشبورد هشدار «کم‌موجودی» می‌گیرید.</small></div>
+            <div class="form-group"><label for="reorder_quantity">مقدار سفارش</label><input type="text" inputmode="numeric" id="reorder_quantity" name="reorder_quantity" min="0" value="{{ variant.reorder_quantity or 0 }}" placeholder="مثال: 12"><small class="field-help">تعداد پیشنهادی که هنگام سفارش به تأمین‌کننده می‌خرید (راهنما برای سفارش).</small></div>
+            <div class="form-group"><label for="weight_grams">وزن تنوع (گرم)</label><input type="text" inputmode="numeric" id="weight_grams" name="weight_grams" min="0" value="{{ variant.weight_grams if variant.weight_grams is not none else '' }}" placeholder="مثال: 350"></div>
+            <div class="form-group"><label for="storage_location">محل انبار</label><input id="storage_location" name="storage_location" value="{{ variant.storage_location or '' }}" placeholder="قفسه A-2"></div>
+        </div>
+        <div class="stock-status-callout {% if variant.needs_reorder %}is-warning{% endif %}">
+            <span class="status-dot" aria-hidden="true"></span>
+            {% if variant.needs_reorder %}این تنوع به نقطه سفارش رسیده است.{% else %}موجودی بالاتر از نقطه سفارش است.{% endif %}
+        </div>
+
+        <div class="section-heading-row section-heading-spaced"><div><h3>تصویر و توضیحات</h3><p class="muted">اطلاعات تکمیلی فقط برای تیم فروش و پرو مجازی استفاده می‌شود.</p></div><span class="section-step">۳</span></div>
+        <div class="form-group"><label for="tryon_details">جزئیات تکمیلی</label><textarea id="tryon_details" name="tryon_details" rows="3" placeholder="مثلاً دو تکه است؛ آستین کوتاه">{{ variant.tryon_details or '' }}</textarea></div>
+        <div class="form-group"><label for="variant_image">تصویر تنوع</label><input type="file" id="variant_image" name="variant_image" accept="image/png,image/jpeg,image/webp">
+            {% if variant.image_path and '/uploads/barcodes/' not in variant.image_path %}<img class="variant-current-image" src="{{ variant.image_path }}" alt="تصویر فعلی تنوع">{% endif %}
+        </div>
+        <div class="form-group">
+            <label for="variant_images">گالری تنوع</label>
+            <input type="file" id="variant_images" name="variant_images" accept="image/png,image/jpeg,image/webp" multiple>
+            <small class="field-help">چند عکس هم‌زمان انتخاب کنید؛ اولین قاب، تصویر اصلی است.</small>
+        </div>
+        {% if variant.images %}
+        <ul class="variant-gallery">
+            {% for frame in variant.images|sort(attribute='sort_order') %}
+            <li class="{% if loop.first %}is-primary{% endif %}">
+                <img src="{{ frame.image_path }}" alt="قاب {{ loop.index }} تنوع" loading="lazy">
+                {% if loop.first %}<span class="badge badge-info">اصلی</span>{% endif %}
+                <span class="variant-gallery-actions">
+                    {% if not loop.first %}
+                    <form method="post" action="/admin/variant-images/{{ frame.id }}/primary">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <button type="submit" class="btn btn-sm btn-ghost">اصلی شود</button>
+                    </form>
+                    {% endif %}
+                    <form method="post" action="/admin/variant-images/{{ frame.id }}/delete" onsubmit="return confirm('این قاب حذف شود؟')">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <button type="submit" class="btn btn-sm btn-danger-quiet">حذف</button>
+                    </form>
+                </span>
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        <div class="form-actions-row product-form-actions">
+            <button type="submit" class="btn btn-primary btn-large">ذخیره تغییرات</button>
+            <a href="{{ return_to or '/admin/products/' ~ product.id }}" class="btn btn-ghost">لغو</a>
+        </div>
+    </form>
+</section>
+
+<aside class="variant-edit-side">
+    <section class="card variant-summary-card">
+        <h3>خلاصه تنوع</h3>
+        <dl class="detail-list"><div><dt>محصول</dt><dd>{{ product.name }}</dd></div><div><dt>بارکد</dt><dd dir="ltr">{{ variant.barcode }}</dd></div><div><dt>موجودی کل</dt><dd>{{ variant.stock_quantity }}</dd></div><div><dt>رزرو</dt><dd>{{ variant.reserved_quantity or 0 }}</dd></div><div><dt>قابل فروش</dt><dd>{{ variant.available_quantity }}</dd></div><div><dt>وضعیت رسید</dt><dd>{% if variant.received_purchase_id %}<a href="/admin/purchases/{{ variant.received_purchase_id }}">رسید شده ✓</a>{% else %}رسید نشده{% endif %}</dd></div></dl>
+        <div class="demand-counter-group">
+            <div class="demand-counter-heading"><span>تقاضای ثبت‌شده</span><strong class="demand-counter-value" aria-live="polite">{{ variant.demand_count or 0 }}</strong></div>
+            <div class="demand-counter-row">
+                <form method="post" action="/admin/variants/{{ variant.id }}/demand" class="demand-counter-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="btn btn-sm btn-primary">+ ثبت تقاضا</button>
+                </form>
+                {% if variant.demand_count %}
+                <form method="post" action="/admin/variants/{{ variant.id }}/demand/reset" class="demand-counter-form" onsubmit="return confirm('تقاضای ثبت‌شده صفر شود؟')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="btn btn-sm btn-ghost">صفر کردن</button>
+                </form>
+                {% endif %}
+            </div>
+            <small class="field-help">هر بار مشتری کالای ناموجود را پرسید، یک بار ثبت کنید تا در گزارش سفارش دیده شود.</small>
+        </div>
+    </section>
+    <section class="card danger-zone">
+        {% if variant.is_active %}
+        <h3>بایگانی</h3><p class="muted">برای حفظ تاریخچه فروش، تنوع حذف نمی‌شود و فقط بایگانی خواهد شد.</p>
+        <form method="post" action="/admin/variants/{{ variant.id }}/delete" onsubmit="return confirm('این تنوع بایگانی شود؟ از فهرست فروش پنهان می‌شود ولی تاریخچه‌اش می‌ماند.')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit" class="btn btn-danger-quiet">بایگانی تنوع</button></form>
+        {% else %}
+        <h3>بایگانی‌شده</h3><p class="muted">این تنوع در فهرست فروش نیست ولی تاریخچه‌اش مانده است.</p>
+        <form method="post" action="/admin/variants/{{ variant.id }}/restore" onsubmit="return confirm('این تنوع به فهرست برگردد؟')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit" class="btn btn-ghost">بازگردانی تنوع</button></form>
+        {% endif %}
+    </section>
+</aside>
+</div>
+
+<style>
+    /* The blank spot right after the cost label is the key to the second cost
+       price: nothing drawn, no colours, no hover, no pointer cursor. Deliberately
+       free of any colour or background so every theme keeps its own field look. */
+    .cost-key {
+        display: inline-block;
+        width: 1.6rem;
+        height: 1.1em;
+        margin-inline-start: 0.35rem;
+        vertical-align: middle;
+        cursor: default;
+        background: none;
+        border: 0;
+        -webkit-user-select: none;
+        user-select: none;
+    }
+    .cost-note-editor { margin-top: 0.45rem; }
+    .cost-note-editor[hidden] { display: none; }
+</style>
+<script>
+(function () {
+    const visible = document.getElementById('cost_price');
+    const second = document.getElementById('fake_cost_price');
+    const editor = document.getElementById('second-cost-row');
+    const realCost = visible.dataset.real;
+
+    function sync() {
+        // The visible field mirrors the second cost while one is set, and falls
+        // back to the real (creation) cost when the second one is empty.
+        const hasSecond = second.value.trim() !== '';
+        visible.value = hasSecond ? second.value : realCost;
+        visible.readOnly = hasSecond;
+    }
+
+    document.getElementById('cost-key').addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        editor.hidden = !editor.hidden;
+        if (!editor.hidden) second.focus();
+    });
+
+    second.addEventListener('input', sync);
+})();
+</script>
+{% endblock %}

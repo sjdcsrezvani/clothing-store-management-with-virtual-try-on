@@ -1,0 +1,930 @@
+{% extends "base.html" %}
+{% block content %}
+{# One page, two jobs: the purchase list and the draft editor, which the shop
+   reaches at the same address. The heading follows the job, and so does the
+   crumb, because the trail reads this same `page_title`. #}
+{% set editing = edit_purchase is not none %}
+{% if editing %}
+{% set page_title %}ویرایش پیش‌نویس فاکتور #{{ edit_purchase.id }}{% endset %}
+{% set page_description %}محصولات این فاکتور را کامل کنید و سپس آن را نهایی کنید تا هزینه‌ها ثبت شوند.{% endset %}
+{% else %}
+{% set page_description %}تأمین‌کننده را انتخاب کنید و تنوع‌های رسیده را به فاکتور اضافه کنید. فاکتور ابتدا پیش‌نویس است و با نهایی‌سازی، تنوع‌ها «رسید شده» می‌شوند و بدهی تأمین‌کننده ثبت می‌گردد.{% endset %}
+{% endif %}
+{% set heading_class = 'page-heading product-form-heading' %}
+{% set page_actions %}
+        <a href="/admin/suppliers" class="btn btn-ghost">تأمین‌کنندگان</a>
+        <a href="/admin/inventory-movements" class="btn btn-ghost">تاریخچه انبار</a>
+{% endset %}
+{% include 'partials/page_header.html' %}
+
+
+{% if editing %}
+<div class="alert alert-info purchase-draft-banner" role="status">
+    این فاکتور پیش‌نویس است: تا نهایی‌سازی نه تنوعی رسید شده، نه بدهی تأمین‌کننده و نه صندوق.
+</div>
+{% else %}
+<div class="stats-grid purchase-kpi" aria-label="خلاصه خریدهای این ماه">
+    <div class="stat-card accent-sky">
+        <div class="stat-label">خرید این ماه</div>
+        <div class="stat-value tnum">{{ fmt(overview.period_spend) }} ت</div>
+        <div class="stat-sub">{{ overview.period_count }} فاکتور نهایی‌شده{% if overview.drafts_in_period %} · {{ overview.drafts_in_period }} پیش‌نویس هنوز نهایی‌نشده{% endif %}</div>
+    </div>
+    <div class="stat-card accent-saffron">
+        <div class="stat-label">اقلام خریداری‌شده این ماه</div>
+        <div class="stat-value tnum">{{ overview.period_units }}</div>
+        <div class="stat-sub">مجموع تعداد در همه ردیف‌ها</div>
+    </div>
+    <div class="stat-card accent-persimmon">
+        <div class="stat-label">مانده به تأمین‌کنندگان</div>
+        <div class="stat-value tnum">{{ fmt(overview.supplier_owed) }} ت</div>
+        <div class="stat-sub"><a class="text-link" href="/admin/suppliers">مدیریت پرداخت‌ها</a></div>
+    </div>
+    <a class="stat-card accent-ink" href="/admin/purchases?status=overdue">
+        <div class="stat-label">خرید سررسیدگذشته</div>
+        <div class="stat-value tnum">{{ overview.overdue_count }}</div>
+        <div class="stat-sub">{{ fmt(overview.overdue_amount) }} ت مانده — دیدن فهرست</div>
+    </a>
+</div>
+
+{% if draft_count %}
+<div class="alert alert-info purchase-draft-banner" role="status">
+    {{ draft_count }} پیش‌نویس فاکتور در انتظار نهایی‌سازی است.
+    <a class="text-link" href="/admin/purchases?status=draft">نمایش پیش‌نویس‌ها</a>
+</div>
+{% endif %}
+{% endif %}
+
+<section class="card purchase-form-card">
+    <form method="post" id="purchase-form"
+          action="{% if editing %}/admin/purchases/{{ edit_purchase.id }}/update{% else %}/admin/purchases/add{% endif %}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+        <div class="section-heading-row">
+            <div>
+                <h3>تأمین‌کننده و تاریخ فاکتور</h3>
+                <p class="muted">تاریخ فاکتور، دوره سود و زیان این خرید را تعیین می‌کند.</p>
+            </div>
+            <span class="section-step">۱</span>
+        </div>
+        <div class="form-row product-form-grid-wide">
+            <div class="form-group">
+                <label for="supplier_id">تأمین‌کننده <span class="required-mark">*</span></label>
+                <select id="supplier_id" name="supplier_id" required>
+                    <option value="">— انتخاب تأمین‌کننده —</option>
+                    {% for s in suppliers %}
+                    <option value="{{ s.id }}" {% if editing and edit_purchase.supplier_id == s.id %}selected{% endif %}>{{ s.name }}</option>
+                    {% endfor %}
+                </select>
+                <small class="field-help">فهرست محصولات همین تأمین‌کننده در ردیف‌های پایین نمایش داده می‌شود. <a class="text-link" href="/admin/suppliers" target="_blank">افزودن تأمین‌کننده جدید</a></small>
+            </div>
+            <div class="form-group">
+                <label for="purchase_date">تاریخ فاکتور</label>
+                <input type="text" id="purchase_date" name="purchase_date" class="persian-date-input" data-pdp-pair="#due_date"
+                       value="{% if editing and edit_purchase.purchase_date %}{{ jalali_str(edit_purchase.purchase_date, with_time=False) }}{% else %}{{ today_jalali }}{% endif %}"
+                       placeholder="۱۴۰۵/۰۶/۲۱">
+                <small class="field-help">اگر خالی بماند، تاریخ امروز در نظر گرفته می‌شود.</small>
+            </div>
+            <div class="form-group form-span-2">
+                <label for="note">توضیح / شماره فاکتور</label>
+                <input type="text" id="note" name="note" value="{{ edit_purchase.note if editing and edit_purchase.note else '' }}"
+                       placeholder="مثلاً: فاکتور ۱۴۰۵/۲۳۱ — خرید کالکشن پاییز">
+            </div>
+        </div>
+
+        <div class="section-heading-row section-heading-spaced">
+            <div>
+                <h3>محصولات این فاکتور</h3>
+                <p class="muted">نام محصول، تنوع یا بارکد را بنویسید و از فهرست انتخاب کنید؛ بارکدخوان هم مثل صفحه‌کلید کار می‌کند.</p>
+                <p class="muted">تعداد و بهای هر ردیف از خود تنوع می‌آید و اینجا فقط انتخاب می‌شود؛ تنوع انتخاب‌شده از فهرست محو می‌شود تا دوباره خریده نشود.</p>
+            </div>
+            <span class="section-step">۲</span>
+        </div>
+
+        <div class="purchase-scan">
+            <label class="sr-only" for="purchase-scan-input">افزودن با بارکد یا کد</label>
+            <input type="text" id="purchase-scan-input" name="purchase_scan" autocomplete="off"
+                   placeholder="بارکد یا کد تنوع را اسکن کنید و Enter بزنید">
+        </div>
+        <p class="purchase-scan-msg" id="purchase-scan-message" role="status"></p>
+        <p class="purchase-scope-note" id="purchase-scope-note" role="status"></p>
+
+        <div class="section-heading-row purchase-items-head">
+            <div>
+                <h4>ردیف‌های کالا</h4>
+                <p class="muted">هر ردیف یک محصول از همین تأمین‌کننده است؛ حذف ردیف در انتهای همان خط انجام می‌شود.</p>
+            </div>
+            <div class="purchase-items-tools">
+                <button type="button" class="btn btn-sm btn-ghost" id="purchase-add-row">افزودن ردیف</button>
+            </div>
+        </div>
+
+        <div id="purchase-rows"></div>
+
+        <div class="purchase-totals" aria-live="polite">
+            <div class="purchase-totals-row">
+                <span>جمع اقلام</span>
+                <strong class="tnum" id="purchase-total-items">0 ت</strong>
+            </div>
+            <div class="purchase-totals-row">
+                <span>هزینه حمل و سایر هزینه‌ها</span>
+                <strong class="tnum" id="purchase-total-extra">0 ت</strong>
+            </div>
+            <div class="purchase-totals-row is-grand">
+                <span>مبلغ کل فاکتور</span>
+                <strong class="tnum" id="purchase-total-grand">0 ت</strong>
+            </div>
+        </div>
+
+        <div class="section-heading-row section-heading-spaced">
+            <div>
+                <h3>هزینه‌های تکمیلی</h3>
+                <p class="muted">هزینه حمل روی مبلغ فاکتور می‌نشیند و بین ردیف‌ها پخش می‌شود تا سوابق بهای تمام‌شده واقعی باشد.</p>
+            </div>
+            <span class="section-step">۳</span>
+        </div>
+        <div class="form-row product-form-grid-wide">
+            <div class="form-group">
+                <label for="purchase-extra-cost">هزینه حمل / سایر</label>
+                <input type="text" id="purchase-extra-cost" name="extra_cost" min="0" inputmode="numeric"
+                       value="{{ edit_purchase.extra_cost if editing and edit_purchase.extra_cost else 0 }}" placeholder="مثال: 150000">
+                <small class="field-help">مبلغی که عمده‌فروش یا باربری جدا از اقلام می‌گیرد.</small>
+            </div>
+            <div class="form-group">
+                <label for="due_date">سررسید پرداخت</label>
+                <input type="text" id="due_date" name="due_date" class="persian-date-input"
+                       value="{% if editing and edit_purchase.due_date %}{{ jalali_str(edit_purchase.due_date, with_time=False) }}{% endif %}"
+                       placeholder="۱۴۰۵/۰۷/۱۵">
+                <small class="field-help">برای خرید نسیه؛ خریدهای سررسیدگذشته در فهرست هشدار می‌گیرند.</small>
+            </div>
+            <div class="form-group form-span-2">
+                <label class="checkbox-row" for="extra_cost_in_landed">
+                    <input type="checkbox" id="extra_cost_in_landed" name="extra_cost_in_landed" value="on"
+                           {% if not editing or edit_purchase.extra_cost_in_landed %}checked{% endif %}>
+                    <span>هزینه حمل در بهای تمام‌شده هر کالا لحاظ شود</span>
+                </label>
+                {# The hidden field follows the checkbox so an unchecked box still
+                   posts a value, and the server reads the first one. #}
+                <input type="hidden" name="extra_cost_in_landed" value="0">
+                <small class="field-help">اگر تیک را بردارید، هزینه حمل فقط روی مبلغ فاکتور می‌ماند و در سوابق ردیف‌ها لحاظ نمی‌شود.</small>
+            </div>
+        </div>
+
+        <div class="form-actions-row product-form-actions">
+            {% if editing %}
+            <button type="submit" class="btn btn-primary btn-large">ذخیره پیش‌نویس</button>
+            <a href="/admin/purchases/{{ edit_purchase.id }}" class="btn btn-ghost">انصراف</a>
+            {% else %}
+            <button type="submit" class="btn btn-primary btn-large">ثبت پیش‌نویس فاکتور</button>
+            <a href="/admin/purchases" class="btn btn-ghost">پاک‌کردن فرم</a>
+            {% endif %}
+        </div>
+        <p class="form-error" id="purchase-form-error" role="alert" hidden></p>
+        <p class="muted">پرداخت به تأمین‌کننده پس از نهایی‌سازی، از صفحه همین فاکتور ثبت می‌شود.</p>
+    </form>
+</section>
+
+{% if not editing %}
+<section class="card purchase-history-card" data-list-region="purchases">
+    <div class="section-heading-row purchase-history-head">
+        <div>
+            <h3 data-list-heading tabindex="-1">خریدهای ثبت‌شده</h3>
+            <p class="muted">صفحه {{ page }} از {{ total_pages }} · {{ total_count }} خرید</p>
+        </div>
+        <a class="text-link" href="/admin/accounting/export?kind=purchases&{{ filter_qs }}">خروجی CSV</a>
+    </div>
+
+    <form method="get" action="/admin/purchases" class="search-form purchase-filter-form">
+        <div class="form-group">
+            <label class="sr-only" for="filter-q">جست‌وجو</label>
+            <input type="text" id="filter-q" name="q" value="{{ search }}" placeholder="شماره خرید، توضیح یا نام تأمین‌کننده">
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="filter-supplier">تأمین‌کننده</label>
+            <select id="filter-supplier" name="supplier_id">
+                <option value="">همه تأمین‌کنندگان</option>
+                {% for s in suppliers %}
+                <option value="{{ s.id }}" {% if supplier_filter == s.id|string %}selected{% endif %}>{{ s.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="filter-status">وضعیت</label>
+            <select id="filter-status" name="status">
+                {% for value, label in statuses.items() %}
+                <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="filter-start">از تاریخ</label>
+            <input type="text" id="filter-start" name="start_date" class="persian-date-input" data-pdp-pair="#filter-end" value="{{ start_date_filter }}" placeholder="۱۴۰۵/۰۱/۰۱">
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="filter-end">تا تاریخ</label>
+            <input type="text" id="filter-end" name="end_date" class="persian-date-input" value="{{ end_date_filter }}" placeholder="۱۴۰۵/۰۶/۳۱">
+        </div>
+        <button type="submit" class="btn btn-primary">اعمال فیلتر</button>
+        {% if has_filters %}<a href="/admin/purchases" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
+    </form>
+
+    {% if purchases %}
+    <div class="table-scroll">
+            <table class="purchase-table data-table">
+            <thead>
+                <tr>
+                    <th scope="col" aria-sort="{{ 'descending' if sort_key == 'date' and sort_dir == 'desc' else 'ascending' if sort_key == 'date' else 'none' }}"><a class="sort-link" href="/admin/purchases?{{ sort_base_qs }}&sort=date&dir={{ 'asc' if sort_key == 'date' and sort_dir == 'desc' else 'desc' }}">خرید</a></th>
+                    <th scope="col">تأمین‌کننده</th>
+                    <th scope="col" class="num">اقلام</th>
+                    <th scope="col" class="num" aria-sort="{{ 'descending' if sort_key == 'total' and sort_dir == 'desc' else 'ascending' if sort_key == 'total' else 'none' }}"><a class="sort-link" href="/admin/purchases?{{ sort_base_qs }}&sort=total&dir={{ 'asc' if sort_key == 'total' and sort_dir == 'desc' else 'desc' }}">مبلغ کل</a></th>
+                    <th scope="col" class="num">پرداخت‌شده</th>
+                    <th scope="col" class="num">مانده</th>
+                    <th scope="col">سررسید</th>
+                    <th scope="col">وضعیت</th>
+                    <th scope="col">عملیات</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in purchases %}
+                {% set p = row.purchase %}
+                {% set s = row.settlement %}
+                <tr>
+                    <td>
+                        <a class="purchase-link" href="/admin/purchases/{{ p.id }}">#{{ p.id }}</a>
+                        <small>{{ jalali_str(p.purchase_date or p.created_at) }}</small>
+                        {% if p.note %}<small class="purchase-note" title="{{ p.note }}">{{ p.note }}</small>{% endif %}
+                    </td>
+                    <td>{{ p.supplier.name if p.supplier else '—' }}</td>
+                    <td>
+                        <strong class="tnum">{{ row.units }} عدد</strong>
+                        <small>{{ row.lines }} ردیف</small>
+                    </td>
+                    <td class="tnum num">{{ fmt(s.total) }} ت</td>
+                    <td class="tnum num">{% if p.is_draft %}—{% else %}{{ fmt(s.paid) }} ت{% endif %}</td>
+                    <td class="tnum num">{% if p.is_draft %}<span class="muted">—</span>{% else %}<strong>{{ fmt(s.remaining) }} ت</strong>{% endif %}</td>
+                    <td class="tnum">{{ jalali_str(s.due_date, with_time=False) if s.due_date else '—' }}</td>
+                    <td>
+                        {% if s.status == 'draft' %}
+                        <span class="badge badge-info">پیش‌نویس</span>
+                        {% elif s.status == 'reversed' %}
+                        <span class="badge badge-none">برگشت‌خورده</span>
+                        {% elif s.overdue %}
+                        <span class="badge badge-danger">سررسیدگذشته</span>
+                        {% elif s.status == 'paid' %}
+                        <span class="badge badge-available">تسویه‌شده</span>
+                        {% elif s.status == 'partial' %}
+                        <span class="badge badge-used">پرداخت جزئی</span>
+                        {% else %}
+                        <span class="badge badge-info">پرداخت‌نشده</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="table-actions">
+                            {% if p.is_draft %}
+                            <a href="/admin/purchases/{{ p.id }}/edit" class="btn btn-sm btn-primary">ادامه ویرایش</a>
+                            {% endif %}
+                            <a href="/admin/purchases/{{ p.id }}" class="btn btn-sm btn-ghost">جزئیات</a>
+                            <a href="/admin/purchases/{{ p.id }}/print" class="btn btn-sm btn-ghost" target="_blank">چاپ</a>
+                            {% if p.is_draft %}
+                            <form method="post" action="/admin/purchases/{{ p.id }}/delete"
+                                  onsubmit="return confirm('این پیش‌نویس حذف می‌شود. ادامه؟')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <button type="submit" class="btn btn-sm btn-danger">حذف</button>
+                            </form>
+                            {% elif not p.is_reversed %}
+                            <form method="post" action="/admin/purchases/{{ p.id }}/delete"
+                                  onsubmit="return confirm('این خرید برگشت داده می‌شود و تنوع‌هایش برای رسید دوباره آزاد می‌شوند. ادامه؟')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <button type="submit" class="btn btn-sm btn-danger">برگشت</button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state products-empty">
+        <h3>{% if has_filters %}خریدی با این فیلترها پیدا نشد{% else %}هنوز فاکتوری ثبت نشده است{% endif %}</h3>
+        <p>{% if has_filters %}فیلترها را تغییر دهید تا خریدهای دیگر را ببینید.{% else %}اولین فاکتور را از فرم بالا بسازید؛ با نهایی‌سازی، تنوع‌ها رسید می‌شوند و بدهی تأمین‌کننده ثبت می‌شود.{% endif %}</p>
+        {% if has_filters %}<a href="/admin/purchases" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
+    </div>
+    {% endif %}
+
+    {% if total_pages > 1 %}
+    <nav class="product-pagination" aria-label="صفحه‌بندی خریدها">
+        {% if page > 1 %}
+        <a class="btn btn-sm btn-ghost" href="/admin/purchases?{{ filter_qs }}&page={{ page - 1 }}">صفحه قبل</a>
+        {% endif %}
+        <span>صفحه {{ page }} از {{ total_pages }}</span>
+        {% if page < total_pages %}
+        <a class="btn btn-sm btn-ghost" href="/admin/purchases?{{ filter_qs }}&page={{ page + 1 }}">صفحه بعد</a>
+        {% endif %}
+    </nav>
+    {% endif %}
+</section>
+{% endif %}
+
+<script type="application/json" id="purchase-catalog">
+[
+{% for p in products %}
+{
+  "name": {{ p.name|tojson }},
+  "supplier_id": {{ p.supplier_id or 0 }},
+  "variants": [
+    {% for v in p.variants if v.is_active and v.received_purchase_id is none %}
+    {"id": {{ v.id }}, "label": {{ v.display_name|tojson }}, "barcode": {{ (v.barcode or '')|tojson }},
+     "price": {{ v.price or 0 }}, "cost": {{ v.cost_price or 0 }}, "stock": {{ v.stock_quantity or 0 }},
+     "reorder_point": {{ v.reorder_point or 0 }}, "reorder_quantity": {{ v.reorder_quantity or 0 }}}{% if not loop.last %},{% endif %}
+    {% endfor %}
+  ]
+}{% if not loop.last %},{% endif %}
+{% endfor %}
+]
+</script>
+
+{# A draft reopens with its own lines, so editing shows what is already on it. #}
+<script type="application/json" id="purchase-draft-lines">{{ edit_lines|tojson }}</script>
+
+<script>
+(function () {
+    var catalogNode = document.getElementById('purchase-catalog');
+    var catalog = [];
+    try { catalog = JSON.parse(catalogNode ? catalogNode.textContent : '[]'); } catch (error) { catalog = []; }
+
+    // Persian text is typed inconsistently (نیم‌فاصله، ي/ك عربی، رقم فارسی),
+    // so both sides of a search are folded before comparing.
+    var PERSIAN_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
+    var ARABIC_DIGITS = '٠١٢٣٤٥٦٧٨٩';
+    function fold(value) {
+        var text = String(value || '').toLowerCase();
+        text = text.replace(/[\u200c\u200e\u200f\u064b-\u0652]/g, '');
+        text = text.replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/[أإآ]/g, 'ا');
+        text = text.replace(/[۰-۹]/g, function (digit) { return String(PERSIAN_DIGITS.indexOf(digit)); });
+        text = text.replace(/[٠-٩]/g, function (digit) { return String(ARABIC_DIGITS.indexOf(digit)); });
+        return text.replace(/\s+/g, ' ').trim();
+    }
+
+    var byId = {};
+    var byBarcode = {};
+    catalog.forEach(function (product) {
+        product.variants.forEach(function (variant) {
+            variant.productName = product.name;
+            variant.supplierId = String(product.supplier_id || '');
+            byId[String(variant.id)] = variant;
+            if (variant.barcode) {
+                byBarcode[String(variant.barcode)] = variant;
+                byBarcode[fold(variant.barcode)] = variant;
+            }
+        });
+    });
+
+    var draftLines = [];
+    try { draftLines = JSON.parse(document.getElementById('purchase-draft-lines').textContent || '[]'); } catch (error) { draftLines = []; }
+    // Lines of an inactive product are not in the catalogue any more, but the
+    // draft must still show them until they are removed.
+    draftLines.forEach(function (line) {
+        var id = String(line.variant_id);
+        if (byId[id]) return;
+        byId[id] = {
+            id: line.variant_id, label: line.label, barcode: line.barcode || '',
+            price: 0, cost: line.cost || 0, stock: line.stock || 0, reorder_point: 0,
+            reorder_quantity: 0, productName: line.label, supplierId: String(line.supplier_id || ''),
+        };
+    });
+
+    var rowsHost = document.getElementById('purchase-rows');
+    var scanInput = document.getElementById('purchase-scan-input');
+    var scanMessage = document.getElementById('purchase-scan-message');
+    var scopeNote = document.getElementById('purchase-scope-note');
+    var supplierSelect = document.getElementById('supplier_id');
+    var extraInput = document.getElementById('purchase-extra-cost');
+    var nextIdx = 0;
+
+    function money(value) {
+        return Number(value || 0).toLocaleString('en-US');
+    }
+
+    // Money fields accept Persian digits (type=text + inputmode=numeric);
+    // live totals normalize before arithmetic, the server via to_english_digits.
+    function num(value) {
+        var fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩';
+        var s = String(value == null ? '' : value)
+            .replace(/[۰-۹]/g, function (d) { return fa.indexOf(d); })
+            .replace(/[٠-٩]/g, function (d) { return ar.indexOf(d); });
+        return Number(s.replace(/[^0-9.\-]/g, '') || 0);
+    }
+
+    function currentSupplierId() {
+        return supplierSelect && supplierSelect.value ? String(supplierSelect.value) : '';
+    }
+
+    // Only the chosen supplier's products may be picked: one invoice, one
+    // supplier. Picked rows and received variants never show again — one
+    // arrival cannot be bought twice.
+    function pickedIds() {
+        var ids = {};
+        rowsHost.querySelectorAll('.purchase-item-row').forEach(function (row) {
+            var variant = rowVariant(row);
+            if (variant) ids[String(variant.id)] = true;
+        });
+        return ids;
+    }
+    function scopedVariants() {
+        var supplier = currentSupplierId();
+        if (!supplier) return [];
+        var picked = pickedIds();
+        var list = [];
+        catalog.forEach(function (product) {
+            if (String(product.supplier_id || '') !== supplier) return;
+            product.variants.forEach(function (variant) {
+                if (!picked[String(variant.id)]) list.push(variant);
+            });
+        });
+        return list;
+    }
+
+    function paintScopeNote() {
+        var supplier = currentSupplierId();
+        var picked = supplierSelect && supplierSelect.selectedIndex >= 0
+            ? supplierSelect.options[supplierSelect.selectedIndex].textContent.trim() : '';
+        if (!supplier) {
+            scopeNote.textContent = 'برای دیدن محصولات، ابتدا تأمین‌کننده را انتخاب کنید.';
+            scopeNote.classList.remove('is-warning');
+            return;
+        }
+        var count = scopedVariants().length;
+        if (!count) {
+            scopeNote.textContent = 'به «' + picked + '» هنوز محصولی اختصاص داده نشده است؛ از صفحه محصولات تأمین‌کننده هر محصول را مشخص کنید.';
+            scopeNote.classList.add('is-warning');
+            return;
+        }
+        scopeNote.textContent = 'فقط محصولات ' + picked + ' نمایش داده می‌شوند (' + count + ' تنوع قابل انتخاب).';
+        scopeNote.classList.remove('is-warning');
+    }
+
+    function labelledField(id, placeholder, type) {
+        var wrapper = document.createElement('div');
+        var label = document.createElement('label');
+        label.className = 'sr-only';
+        label.setAttribute('for', id);
+        label.textContent = placeholder;
+        var input = document.createElement('input');
+        input.type = type || 'number';
+        input.id = id;
+        input.name = id;
+        input.inputMode = 'numeric';
+        input.placeholder = placeholder;
+        wrapper.appendChild(label);
+        wrapper.appendChild(input);
+        return { wrapper: wrapper, input: input };
+    }
+
+    // The row keeps its picker state object: the widget needs its list and
+    // hidden input, not just the wrapper element.
+    function rowPicker(row) { return row._picker || null; }
+    function rowVariant(row) {
+        var hidden = row.querySelector('input[name^="purchase_variant_"]');
+        return hidden && hidden.value ? byId[hidden.value] : null;
+    }
+
+    // ── The picker: type a name or scan a barcode instead of hunting a select ──
+    function buildPicker(idx) {
+        var host = document.createElement('div');
+        host.className = 'purchase-picker';
+
+        var input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'purchase-picker-input';
+        input.setAttribute('role', 'combobox');
+        input.setAttribute('aria-autocomplete', 'list');
+        input.setAttribute('aria-expanded', 'false');
+        input.autocomplete = 'off';
+        input.placeholder = 'جست‌وجوی محصول، تنوع یا بارکد…';
+
+        var hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = 'purchase_variant_' + idx;
+        hidden.value = '';
+
+        var list = document.createElement('ul');
+        list.className = 'purchase-picker-list';
+        list.setAttribute('role', 'listbox');
+        list.hidden = true;
+
+        host.appendChild(input);
+        host.appendChild(hidden);
+        host.appendChild(list);
+        return { host: host, input: input, hidden: hidden, list: list, matches: [], active: -1 };
+    }
+
+    function closeList(picker) {
+        picker.list.hidden = true;
+        picker.input.setAttribute('aria-expanded', 'false');
+        picker.host.classList.remove('is-open');
+        picker.active = -1;
+    }
+
+    function renderMatches(picker) {
+        picker.list.innerHTML = '';
+        if (!picker.matches.length) {
+            var empty = document.createElement('li');
+            empty.className = 'purchase-picker-empty';
+            empty.textContent = currentSupplierId()
+                ? 'محصولی با این نام پیدا نشد.'
+                : 'ابتدا تأمین‌کننده را انتخاب کنید.';
+            picker.list.appendChild(empty);
+            return;
+        }
+        picker.matches.forEach(function (variant, index) {
+            var option = document.createElement('li');
+            option.className = 'purchase-picker-option' + (index === picker.active ? ' is-active' : '');
+            option.setAttribute('role', 'option');
+            option.setAttribute('aria-selected', index === picker.active ? 'true' : 'false');
+            option.dataset.variantId = String(variant.id);
+            var name = document.createElement('span');
+            name.textContent = variant.label;
+            var meta = document.createElement('small');
+            var bits = ['موجودی ' + variant.stock];
+            if (variant.cost) bits.push('بهای تمام‌شده ' + money(variant.cost));
+            meta.textContent = bits.join(' · ');
+            option.appendChild(name);
+            option.appendChild(meta);
+            picker.list.appendChild(option);
+        });
+    }
+
+    function searchVariants(query) {
+        var needle = fold(query);
+        var pool = scopedVariants();
+        if (!needle) return pool.slice(0, 30);
+        var exact = [];
+        var partial = [];
+        pool.forEach(function (variant) {
+            var barcode = fold(variant.barcode);
+            var label = fold(variant.label);
+            if (barcode && barcode === needle) exact.push(variant);
+            else if (label.indexOf(needle) !== -1 || barcode.indexOf(needle) !== -1) partial.push(variant);
+        });
+        return exact.concat(partial).slice(0, 30);
+    }
+
+    function openList(picker) {
+        picker.matches = searchVariants(picker.input.value);
+        picker.active = picker.matches.length === 1 ? 0 : -1;
+        // An empty list still renders its reason, so typing something unknown
+        // says so instead of silently closing.
+        renderMatches(picker);
+        picker.list.hidden = false;
+        picker.input.setAttribute('aria-expanded', 'true');
+        picker.host.classList.add('is-open');
+    }
+
+    function setSelection(picker, variant, keepQuery) {
+        picker.hidden.value = variant ? String(variant.id) : '';
+        picker.host.classList.toggle('is-selected', !!variant);
+        if (variant) picker.input.value = keepQuery ? picker.input.value : variant.label;
+        closeList(picker);
+        var row = picker.host.closest('.purchase-item-row');
+        if (row) afterSelectionChange(row, variant);
+    }
+
+    function afterSelectionChange(row, variant) {
+        // The row mirrors the variant: stock and cost are read, never typed.
+        paintMirror(row);
+        paintContext(row);
+        updateTotals();
+    }
+
+    function paintMirror(row) {
+        var mirror = row.querySelector('[data-role="mirror"]');
+        var variant = rowVariant(row);
+        if (!mirror) return;
+        if (!variant) { mirror.innerHTML = '<span class="muted">—</span>'; return; }
+        var qty = num(variant.stock || 0);
+        var cost = num(variant.cost || 0);
+        mirror.innerHTML = '';
+        var q = document.createElement('strong');
+        q.className = 'tnum';
+        q.textContent = qty + ' عدد';
+        var x = document.createElement('span');
+        x.className = 'muted';
+        x.textContent = '×';
+        var c = document.createElement('span');
+        c.className = 'tnum';
+        c.textContent = money(cost) + ' ت';
+        mirror.appendChild(q);
+        mirror.appendChild(x);
+        mirror.appendChild(c);
+    }
+
+    function paintContext(row) {
+        var context = row.querySelector('.purchase-item-context');
+        var variant = rowVariant(row);
+        if (!variant) { context.textContent = ''; return; }
+        var parts = ['موجودی فعلی: ' + variant.stock + ' عدد'];
+        if (variant.cost) parts.push('بهای تمام‌شده فعلی: ' + money(variant.cost) + ' ت');
+        if (variant.reorder_point) parts.push('نقطه سفارش: ' + variant.reorder_point);
+        if (variant.barcode) parts.push('بارکد: ' + variant.barcode);
+        if (!num(variant.stock || 0)) parts.push('موجودی صفر — دریافت خالی ثبت می‌شود');
+        context.textContent = parts.join(' · ');
+    }
+
+    function updateTotals() {
+        var subtotal = 0;
+        rowsHost.querySelectorAll('.purchase-item-row').forEach(function (row) {
+            var variant = rowVariant(row);
+            var line = variant ? num(variant.stock || 0) * num(variant.cost || 0) : 0;
+            subtotal += line;
+            row.querySelector('[data-role="line-total"]').textContent = line ? money(line) : '—';
+        });
+        var extra = num(extraInput.value || 0);
+        var total = subtotal + extra;
+        document.getElementById('purchase-total-items').textContent = money(subtotal) + ' ت';
+        document.getElementById('purchase-total-extra').textContent = money(extra) + ' ت';
+        document.getElementById('purchase-total-grand').textContent = money(total) + ' ت';
+    }
+
+    function firstEmptyRow() {
+        var found = null;
+        rowsHost.querySelectorAll('.purchase-item-row').forEach(function (row) {
+            if (!found && !rowVariant(row)) found = row;
+        });
+        return found;
+    }
+
+    function addRow(prefill) {
+        prefill = prefill || {};
+        var idx = nextIdx;
+        nextIdx += 1;
+        var row = document.createElement('div');
+        row.className = 'purchase-item-row';
+
+        var main = document.createElement('div');
+        main.className = 'purchase-item-main';
+        var picker = buildPicker(idx);
+        row._picker = picker;
+        var pickerLabel = document.createElement('label');
+        pickerLabel.className = 'sr-only';
+        pickerLabel.setAttribute('for', picker.input.id);
+        picker.input.id = 'purchase_picker_' + idx;
+        pickerLabel.setAttribute('for', picker.input.id);
+        pickerLabel.textContent = 'محصول';
+        main.appendChild(pickerLabel);
+        main.appendChild(picker.host);
+
+        // The row mirrors the variant: quantities and costs live on the
+        // product and are only confirmed here, never typed.
+        var mirror = document.createElement('div');
+        mirror.className = 'purchase-item-mirror';
+        mirror.dataset.role = 'mirror';
+        mirror.innerHTML = '<span class="muted">—</span>';
+
+        var totalCell = document.createElement('div');
+        totalCell.className = 'purchase-item-total';
+        totalCell.dataset.role = 'line-total';
+
+        var remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'btn btn-sm btn-danger purchase-item-remove';
+        remove.textContent = '✕';
+        remove.setAttribute('aria-label', 'حذف این ردیف');
+        remove.addEventListener('click', function () {
+            row.remove();
+            if (!rowsHost.children.length) addRow();
+            updateTotals();
+        });
+
+        var context = document.createElement('p');
+        context.className = 'purchase-item-context';
+
+        row.appendChild(main);
+        row.appendChild(mirror);
+        row.appendChild(totalCell);
+        row.appendChild(remove);
+        row.appendChild(context);
+        rowsHost.appendChild(row);
+
+        picker.input.addEventListener('input', function () {
+            if (picker.hidden.value) setSelection(picker, null, true);
+            openList(picker);
+        });
+        picker.input.addEventListener('focus', function () { openList(picker); });
+        picker.input.addEventListener('blur', function () {
+            // Let a click on an option land before the list disappears.
+            setTimeout(function () { closeList(picker); }, 140);
+        });
+        picker.input.addEventListener('keydown', function (event) {
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                if (picker.list.hidden) openList(picker);
+                if (!picker.matches.length) return;
+                event.preventDefault();
+                var step = event.key === 'ArrowDown' ? 1 : -1;
+                picker.active = (picker.active + step + picker.matches.length) % picker.matches.length;
+                renderMatches(picker);
+                return;
+            }
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                if (picker.list.hidden) openList(picker);
+                if (!picker.matches.length) return;
+                var chosen = picker.matches[picker.active >= 0 ? picker.active : 0];
+                setSelection(picker, chosen);
+                addRowIfLast(row);
+                return;
+            }
+            if (event.key === 'Escape') {
+                closeList(picker);
+            }
+        });
+        // mousedown would blur the input before the click fires.
+        picker.list.addEventListener('mousedown', function (event) { event.preventDefault(); });
+        picker.list.addEventListener('click', function (event) {
+            var option = event.target.closest('.purchase-picker-option');
+            if (!option) return;
+            var variant = byId[option.dataset.variantId];
+            if (variant) setSelection(picker, variant);
+            addRowIfLast(row);
+        });
+
+        var seed = prefill.variantId ? byId[String(prefill.variantId)] : null;
+        if (seed) {
+            picker.input.value = seed.label;
+            setSelection(picker, seed);
+        } else {
+            updateTotals();
+        }
+        return row;
+    }
+
+    function addRowIfLast(row) {
+        if (row === rowsHost.lastElementChild) addRow();
+    }
+
+    function selectRow(row, variant) {
+        var picker = rowPicker(row);
+        if (!picker) return row;
+        picker.input.value = variant.label;
+        setSelection(picker, variant);
+        return row;
+    }
+
+    function flashRow(row) {
+        row.classList.remove('is-flash');
+        void row.offsetWidth;
+        row.classList.add('is-flash');
+    }
+
+    function addOrFill(variant) {
+        var existing = null;
+        rowsHost.querySelectorAll('.purchase-item-row').forEach(function (row) {
+            if (!existing && rowVariant(row) && String(rowVariant(row).id) === String(variant.id)) existing = row;
+        });
+        // One arrival, one row: scanning a picked variant flashes its row
+        // instead of duplicating it.
+        if (existing) {
+            flashRow(existing);
+            return 'exists';
+        }
+        var empty = firstEmptyRow();
+        if (empty) {
+            selectRow(empty, variant);
+        } else {
+            addRow({ variantId: variant.id });
+        }
+        updateTotals();
+        return 'added';
+    }
+
+    function setScanMessage(text, isError) {
+        scanMessage.textContent = text;
+        scanMessage.classList.toggle('is-error', !!isError);
+    }
+
+    function handleScan() {
+        var code = (scanInput.value || '').trim();
+        if (!code) return;
+        if (!currentSupplierId()) {
+            setScanMessage('ابتدا تأمین‌کننده را انتخاب کنید.', true);
+            if (supplierSelect) supplierSelect.focus();
+            return;
+        }
+        // A barcode gun may deliver Persian digits, and the catalogue keys are
+        // the stored codes, so both are folded before matching.
+        var variant = byBarcode[code] || byId[code]
+            || byBarcode[fold(code)] || byId[fold(code)];
+        if (!variant) {
+            setScanMessage('با کد «' + code + '» کالایی پیدا نشد.', true);
+            scanInput.select();
+            return;
+        }
+        if (String(variant.supplierId || '') !== currentSupplierId()) {
+            setScanMessage('«' + variant.label + '» به تأمین‌کننده انتخاب‌شده تعلق ندارد.', true);
+            scanInput.select();
+            return;
+        }
+        addOrFill(variant);
+        // The variant label already starts with the product name.
+        setScanMessage('افزوده شد: ' + variant.label, false);
+        scanInput.value = '';
+    }
+
+    // Changing the supplier re-scopes every row, dropping picks that no longer fit.
+    function resyncScope() {
+        paintScopeNote();
+        var dropped = [];
+        rowsHost.querySelectorAll('.purchase-item-row').forEach(function (row) {
+            var variant = rowVariant(row);
+            if (!variant) return;
+            if (String(variant.supplierId || '') !== currentSupplierId()) {
+                var picker = rowPicker(row);
+                if (!picker) return;
+                dropped.push(variant.productName || variant.label);
+                picker.input.value = '';
+                setSelection(picker, null);
+            }
+        });
+        if (dropped.length) {
+            setScanMessage('از این فاکتور حذف شد (تأمین‌کننده دیگری دارد): ' + dropped.join('، '), true);
+        }
+    }
+
+    document.getElementById('purchase-add-row').addEventListener('click', function () {
+        addRow();
+    });
+    scanInput.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            handleScan();
+        }
+    });
+    extraInput.addEventListener('input', updateTotals);
+    // Changing the supplier drops picked rows, so a stocked form confirms
+    // first — the wipe itself still lives in resyncScope, after the answer.
+    let prevSupplier = supplierSelect ? supplierSelect.value : '';
+    if (supplierSelect) {
+        supplierSelect.addEventListener('focus', function () {
+            prevSupplier = supplierSelect.value;
+        });
+        supplierSelect.addEventListener('change', function () {
+            var stocked = false;
+            rowsHost.querySelectorAll('.purchase-item-row').forEach(function (row) {
+                if (rowVariant(row)) stocked = true;
+            });
+            if (stocked && supplierSelect.value !== prevSupplier
+                    && !window.confirm('تغییر تأمین‌کننده ردیف‌های انتخاب‌شده را حذف می‌کند. ادامه می‌دهید؟')) {
+                supplierSelect.value = prevSupplier;
+                paintScopeNote();
+                return;
+            }
+            prevSupplier = supplierSelect.value;
+            resyncScope();
+        });
+    }
+
+    if (draftLines.length) {
+        draftLines.forEach(function (line) {
+            addRow({ variantId: line.variant_id });
+        });
+    } else {
+        addRow();
+    }
+    // Unpicked typing never reaches the server (it drops such rows), so the
+    // form refuses it here instead — naming the row, before anything posts.
+    document.getElementById('purchase-form').addEventListener('submit', function (event) {
+        var errBox = document.getElementById('purchase-form-error');
+        function refuse(message, row) {
+            event.preventDefault();
+            errBox.textContent = message;
+            errBox.hidden = false;
+            var target = row ? row.querySelector('.purchase-picker-input') : null;
+            if (target) target.focus();
+            else document.getElementById('purchase-scan-input').focus();
+        }
+        var rows = Array.prototype.slice.call(rowsHost.querySelectorAll('.purchase-item-row'));
+        var valid = 0, badRow = null, badIndex = 0;
+        rows.forEach(function (row, i) {
+            if (rowVariant(row)) { valid += 1; return; }
+            var picker = rowPicker(row);
+            var typed = picker && picker.input.value.trim();
+            if (typed && badRow === null) { badRow = row; badIndex = i + 1; }
+        });
+        if (badRow !== null) {
+            refuse('ردیف ' + badIndex + ' به محصول وصل نیست — از فهرست انتخاب کنید، بعد ثبت کنید.', badRow);
+            return;
+        }
+        if (!valid) {
+            refuse('فاکتور بدون ردیف ثبت نمی‌شود — دست‌کم یک تنوع انتخاب کنید.', null);
+            return;
+        }
+        errBox.hidden = true;
+    });
+    paintScopeNote();
+    // Scanner-ready without yanking the page down to the items section.
+    if (typeof scanInput.focus === 'function') {
+        try { scanInput.focus({ preventScroll: true }); } catch (error) { scanInput.focus(); }
+    }
+})();
+</script>
+{% endblock %}

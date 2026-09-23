@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}رسید پرداخت حقوق{% endblock %}
+{% block content %}
+<div class="document-actions"><button class="btn btn-primary" onclick="window.print()">چاپ رسید</button><a class="btn btn-ghost" href="/admin/staff">بازگشت</a></div>
+{% if msg %}<div class="screen-only"><div class="toaster-flash" data-toast data-toast-type="success" role="status">{{ msg }}</div></div>{% endif %}
+<div class="print-document">
+  <div class="print-document-header"><h1>{{ owner_settings.get('owner_business_name', store.name) }}</h1><h2>رسید پرداخت حقوق</h2><div class="print-document-meta"><span>شماره رسید: {{ payment.id }}</span><span>تاریخ: {{ jalali_str(payment.paid_at) }}</span></div></div>
+  <p>اینجانب <strong>{{ staff_user.full_name or staff_user.username }}</strong> با کد پرسنلی <strong>{{ staff_user.employee_code or '—' }}</strong>، دریافت حقوق دوره <strong dir="ltr">{{ payment.period_key }}</strong> را تأیید می‌کنم.</p>
+  <table><tbody><tr><th>حقوق ناخالص</th><td>{{ fmt(payment.gross_amount) }} تومان</td></tr><tr><th>کسورات</th><td>{{ fmt(payment.deductions) }} تومان</td></tr><tr><th>مبلغ پرداختی</th><td><strong>{{ fmt(payment.net_amount) }} تومان</strong></td></tr><tr><th>روش پرداخت</th><td>{{ 'نقدی' if payment.payment_method == 'cash' else 'کارت' }}</td></tr></tbody></table>
+  {% if payment.note %}<p>توضیح: {{ payment.note }}</p>{% endif %}
+  <div class="document-signatures"><div>امضای کارمند<br>{{ staff_user.full_name or staff_user.username }}</div><div>امضای {{ owner_settings.get('owner_signatory_title', 'کارفرما') }}<br>{{ owner_settings.get('owner_full_name', '—') }}</div></div>
+</div>
+{% endblock %}

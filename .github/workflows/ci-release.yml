@@ -1,0 +1,90 @@
+name: CI and Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test and compile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          # The commit-message check walks the whole history, so the clone has
+          # to carry it rather than just the tip.
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Compile Python modules
+        run: python -m compileall -q .
+      - name: Run tests
+        env:
+          PYTHONPATH: .
+        run: python -m pytest -q
+      - name: Check for private files
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-files | grep -E '(^|/)(\.env|.*\.db|.*\.log)$'; then
+            echo 'Private environment/database/log files must not be tracked.'
+            exit 1
+          fi
+      - name: Check commit message hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A commit message is public the moment it lands, so every commit
+          # reachable from this push is checked, not only the tip. A message
+          # must be the author's own words: no generated-by stamp and no
+          # co-author trailer aimed at a tool or a bot instead of a person.
+          #
+          # Deliberately written without naming any product - a policy that
+          # lists the tools it bans would itself say what wrote the code.
+          pattern='^[[:space:]]*(generated (with|by)|co-authored-by|🤖)'
+          status=0
+          while IFS= read -r sha; do
+            if hits=$(git log -1 --format='%B' "$sha" | grep -inE "$pattern"); then
+              status=1
+              echo "::error::Commit $sha credits a tool or a bot:"
+              printf '%s\n' "$hits" | sed 's/^/    /'
+            fi
+          done < <(git rev-list HEAD)
+          if [ "$status" -ne 0 ]; then
+            echo 'Rewrite those messages (git commit --amend or git rebase) and push again.'
+            exit 1
+          fi
+          echo 'Commit messages are clean.'
+
+  release:
+    name: Create GitHub Release
+    permissions:
+      contents: write
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release edit "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --verify-tag
+          else
+            gh release create "${GITHUB_REF_NAME}" --generate-notes --verify-tag
+          fi

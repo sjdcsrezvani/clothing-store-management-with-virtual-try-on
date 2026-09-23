@@ -1,99 +1,395 @@
 {% extends "base.html" %}
-{% block title %}{% if edit_mode %}ویرایش محصول{% else %}افزودن محصول{% endif %} — رای کیدز{% endblock %}
 {% block content %}
-<h2>{% if edit_mode %}ویرایش محصول: {{ product.name }}{% else %}افزودن محصول جدید{% endif %}</h2>
+{% set page_description %}
+{% if edit_mode %}مشخصات محصول و تنوع‌های قابل فروش را یکجا مدیریت کنید.{% else %}اطلاعات پایه را وارد کنید و حداقل یک تنوع قابل فروش بسازید.{% endif %}
+{% endset %}
+{% set page_title %}
+{% if edit_mode %}ویرایش محصول{% else %}افزودن محصول جدید{% endif %}
+{% endset %}
+{% set heading_class = 'page-heading product-form-heading' %}
+{% set page_actions %}
+{% if edit_mode %}<a href="/admin/barcodes/print" class="btn btn-ghost">چاپ تگ</a>{% endif %}
+{% endset %}
+{% include 'partials/page_header.html' %}
 
-{% if error %}
-<div class="alert alert-error">{{ error }}</div>
-{% endif %}
+{% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
 
-<div class="card">
-    <form method="post" 
-          action="{% if edit_mode %}/admin/products/{{ product.id }}{% else %}/admin/products/add{% endif %}"
-          enctype="multipart/form-data">
-        
-        <div class="form-row">
-            <div class="form-group">
-                <label for="name">نام محصول *</label>
-                <input type="text" id="name" name="name" required value="{{ product.name if product else '' }}">
-            </div>
-            <div class="form-group">
-                <label for="price">قیمت فروش (تومان) *</label>
-                <input type="number" id="price" name="price" required min="0" value="{{ product.price if product else '' }}">
-            </div>
+<form id="product-form" method="post" action="{% if edit_mode %}/admin/products/{{ product.id }}{% else %}/admin/products/add{% endif %}" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if edit_mode %}<input type="hidden" name="next" value="{{ return_to or '' }}">{% endif %}
+    <section class="card catalog-section">
+        <div class="section-heading-row">
+            <div><h3>اطلاعات پایه</h3><p class="muted">این اطلاعات بین همه تنوع‌های محصول مشترک است.</p></div>
+            <span class="section-step">۱</span>
         </div>
-
-        <div class="form-row">
-            <div class="form-group">
-                <label for="cost_price">قیمت خرید (تومان) *</label>
-                <input type="number" id="cost_price" name="cost_price" required min="0" value="{{ product.cost_price if product else '' }}">
-                <small>قیمت خرید از تأمین‌کننده (فقط برای تحلیل مالی)</small>
+        <div class="form-row product-form-grid product-form-grid-wide">
+            <div class="form-group form-span-2">
+                <label for="name">نام محصول <span class="required-mark">*</span></label>
+                {# `or ''`: the field is drawn for an existing product too, and a
+                   column nobody filled is NULL — which prints as «None» into the
+                   value, reads as a filled-in field, and is written back to the
+                   database by the next save. The `if product` guard covered the
+                   new-product case and missed this one. #}
+                <input type="text" id="name" name="name" required autofocus value="{{ product.name or '' if product else '' }}" placeholder="مثال: پیراهن نخی دخترانه">
             </div>
-            <div class="form-group">
-                <label for="stock_quantity">موجودی انبار</label>
-                <input type="number" id="stock_quantity" name="stock_quantity" min="0" value="{{ product.stock_quantity if product else '0' }}">
-            </div>
-        </div>
-
-        <div class="form-row">
-            <div class="form-group">
-                <label for="barcode">بارکد</label>
-                <input type="text" id="barcode" name="barcode" value="{{ product.barcode if product else '' }}" placeholder="خالی برای تولید خودکار">
-                <small>خالی بگذارید تا بارکد خودکار تولید شود</small>
-            </div>
-            <div class="form-group">
-                <label for="size">سایز</label>
-                <input type="text" id="size" name="size" value="{{ product.size if product else '' }}" placeholder="مثال: 3-4 years, M, 110cm">
-            </div>
-            <div class="form-group">
-                <label for="color">رنگ</label>
-                <input type="text" id="color" name="color" value="{{ product.color if product else '' }}">
-            </div>
-        </div>
-
-        <div class="form-row">
             <div class="form-group">
                 <label for="category">دسته‌بندی</label>
-                <input type="text" id="category" name="category" value="{{ product.category if product else '' }}" placeholder="مثال: پیراهن، شلوار، لباس مجلسی">
+                <input type="text" id="category" name="category" list="category-list" value="{{ product.category or '' if product else '' }}" placeholder="مثال: پیراهن" autocomplete="off">
             </div>
             <div class="form-group">
                 <label for="brand">برند</label>
-                <input type="text" id="brand" name="brand" value="{{ product.brand if product else '' }}">
-            </div>
-        </div>
-
-        <div class="form-row">
-            <div class="form-group">
-                <label for="sku">کد انبارداری (SKU)</label>
-                <input type="text" id="sku" name="sku" value="{{ product.sku if product else '' }}">
+                <input type="text" id="brand" name="brand" list="brand-list" value="{{ product.brand or '' if product else '' }}" placeholder="مثال: رای کیدز" autocomplete="off">
             </div>
             <div class="form-group">
-                <label for="description">توضیحات</label>
-                <textarea id="description" name="description" rows="3">{{ product.description if product else '' }}</textarea>
+                <label for="supplier_id">تأمین‌کننده</label>
+                <select id="supplier_id" name="supplier_id" data-fancy>
+                    <option value="">بدون تأمین‌کننده</option>
+                    {% for supplier in suppliers or [] %}
+                    <option value="{{ supplier.id }}" {% if product and product.supplier_id == supplier.id %}selected{% endif %}>{{ supplier.name }}</option>
+                    {% endfor %}
+                </select>
+                <small class="field-help">فقط محصولات همین تأمین‌کننده در صفحه <a class="text-link" href="/admin/purchases" target="_blank">خرید</a> قابل انتخاب‌اند. <a class="text-link" href="/admin/suppliers" target="_blank">افزودن تأمین‌کننده</a></small>
+            </div>
+            <div class="form-group">
+                <label for="gender">گروه</label>
+                <select id="gender" name="gender" data-fancy>
+                    <option value="">انتخاب نشده</option>
+                    {% for value, label in [('girl','دخترانه'),('boy','پسرانه'),('unisex','یونیسکس'),('baby','نوزاد'),('woman','زنانه'),('man','مردانه')] %}
+                    <option value="{{ value }}" {% if product and product.gender == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
             </div>
         </div>
-
-        <div class="form-group">
-            <label for="image">تصویر محصول</label>
-            <input type="file" id="image" name="image" accept="image/*">
-            {% if product and product.image_path %}
-                <div style="margin-top: 0.5rem;">
-                    <img src="{{ product.image_path }}" alt="تصویر فعلی" style="max-width: 200px; border-radius: 8px;">
-                    <p class="hint">تصویر جدید انتخاب کنید تا تصویر فعلی جایگزین شود</p>
-                </div>
-            {% endif %}
+        <datalist id="category-list">
+            {% for cat in categories or [] %}<option value="{{ cat }}">{% endfor %}
+        </datalist>
+        <datalist id="brand-list">
+            {% for brand in brands or [] %}<option value="{{ brand }}">{% endfor %}
+        </datalist>
+        <details class="advanced-fields">
+            <summary>جزئیات بیشتر <small>اختیاری — کدها، مشخصات پارچه و پیش‌فرض‌های سفارش</small></summary>
+            <div class="form-row product-form-grid product-form-grid-wide">
+            <div class="form-group">
+                <label for="base_sku">SKU پایه</label>
+                <input type="text" id="base_sku" name="base_sku" value="{{ product.base_sku or '' if product else '' }}" dir="ltr" placeholder="مثال: RK-SHIRT-01">
+            </div>
+            <div class="form-group">
+                <label for="base_barcode">بارکد پایه</label>
+                <input type="text" id="base_barcode" name="base_barcode" value="{{ product.base_barcode or '' if product else '' }}" dir="ltr" placeholder="خالی = تولید خودکار">
+            </div>
+            <div class="form-group">
+                <label for="garment_type">نوع پوشاک</label>
+                <input type="text" id="garment_type" name="garment_type" value="{{ product.garment_type or '' if product else '' }}" placeholder="تی‌شرت، شلوار، ست">
+            </div>
+            <div class="form-group">
+                <label for="material">جنس / پارچه</label>
+                <input type="text" id="material" name="material" value="{{ product.material or '' if product else '' }}" placeholder="نخی، جین، دورس">
+            </div>
+            <div class="form-group">
+                <label for="season">فصل</label>
+                <input type="text" id="season" name="season" value="{{ product.season or '' if product else '' }}" placeholder="بهار و تابستان">
+            </div>
+            <div class="form-group">
+                <label for="collection">کالکشن</label>
+                <input type="text" id="collection" name="collection" value="{{ product.collection or '' if product else '' }}" placeholder="کالکشن ۱۴۰۵">
+            </div>
+            <div class="form-group">
+                <label for="default_reorder_point">نقطه سفارش پیش‌فرض
+                    <span class="hint"><button type="button" class="hint-btn" aria-label="راهنمای نقطه سفارش پیش‌فرض">ⓘ</button><span class="hint-pop" role="tooltip" id="hint-drp">مقدار شروع «نقطه سفارش» برای تنوع‌های تازه. هر تنوع که موجودی قابل‌فروشش به نقطه‌اش برسد کم‌موجود حساب می‌شود. تغییر بعدی این عدد، تنوع‌های ساخته‌شده را عوض نمی‌کند.</span></span>
+                </label>
+                <input type="text" inputmode="numeric" id="default_reorder_point" name="default_reorder_point" min="0" aria-describedby="hint-drp" value="{{ (product.default_reorder_point or 0) if product else 0 }}" placeholder="مثال: 5">
+            </div>
+            <div class="form-group">
+                <label for="default_reorder_quantity">مقدار سفارش پیش‌فرض
+                    <span class="hint"><button type="button" class="hint-btn" aria-label="راهنمای مقدار سفارش پیش‌فرض">ⓘ</button><span class="hint-pop" role="tooltip" id="hint-drq">مقدار شروع «مقدار سفارش» برای تنوع‌های تازه؛ فقط یک یادداشت راهنماست و هیچ سفارشی را خودکار ثبت نمی‌کند.</span></span>
+                </label>
+                <input type="text" inputmode="numeric" id="default_reorder_quantity" name="default_reorder_quantity" min="0" aria-describedby="hint-drq" value="{{ (product.default_reorder_quantity or 0) if product else 0 }}" placeholder="مثال: 12">
+            </div>
+            <div class="form-group form-span-2">
+                <label for="tag_template_id">قالب تگ محصول</label>
+                <select id="tag_template_id" name="tag_template_id" data-fancy>
+                    <option value="">قالب پیش‌فرض فروشگاه</option>
+                    {% for template in tag_templates or [] %}
+                    <option value="{{ template.id }}" {% if product and product.tag_template_id == template.id %}selected{% endif %}>{{ template.name }}</option>
+                    {% endfor %}
+                </select>
+                <small>این قالب به همه تنوع‌های این محصول اختصاص داده می‌شود.</small>
+            </div>
+            </div>
+        </details>
+        <div class="form-row product-form-grid">
+            <div class="form-group form-span-2">
+                <label for="description">توضیحات داخلی</label>
+                <textarea id="description" name="description" rows="3" placeholder="توضیحاتی که برای مدیریت محصول لازم است...">{{ product.description or '' if product else '' }}</textarea>
+            </div>
+            <div class="form-group">
+                <label for="care_instructions">راهنمای نگهداری</label>
+                <textarea id="care_instructions" name="care_instructions" rows="3" placeholder="مثلاً شست‌وشو با آب سرد">{{ product.care_instructions or '' if product else '' }}</textarea>
+            </div>
         </div>
+    </section>
 
-        <div class="form-actions">
-            <button type="submit" class="btn btn-primary">
-                {% if edit_mode %}ذخیره تغییرات{% else %}افزودن محصول{% endif %}
-            </button>
-            <a href="/admin/products" class="btn btn-secondary">لغو</a>
+    {% if edit_mode and product.variants %}
+    <section class="card catalog-section">
+        <div class="section-heading-row">
+            <div><h3>تنوع‌های موجود</h3><p class="muted">موجودی قابل فروش، رزروشده و نقطه سفارش را جداگانه ببینید.</p></div>
+            <span class="section-step">۲</span>
         </div>
+        <div class="table-scroll">
+            <table class="catalog-variants-table">
+                <thead><tr><th>تنوع</th><th>SKU / بارکد</th><th>قیمت</th><th>موجودی</th><th>رزرو</th><th>نقطه سفارش</th><th>تقاضا</th><th>عملیات</th></tr></thead>
+                <tbody>
+                {% for variant in product.variants if variant.is_active %}
+                <tr>
+                    <td><strong>{{ variant.size or 'بدون سایز' }}</strong>{% if variant.color %}<small>{{ variant.color }}</small>{% endif %}{% if variant.received_purchase_id %}<small><a href="/admin/purchases/{{ variant.received_purchase_id }}" class="badge badge-info">رسید شد ✓</a></small>{% endif %}</td>
+                    <td><code>{{ variant.sku or '—' }}</code><small dir="ltr">{{ variant.barcode }}</small></td>
+                    <td class="tnum">{{ fmt(variant.price) }} ت</td>
+                    <td><span class="badge {% if variant.available_quantity > 0 %}badge-available{% else %}badge-none{% endif %}">{{ variant.available_quantity }} قابل فروش</span></td>
+                    <td>{{ variant.reserved_quantity or 0 }}</td>
+                    <td>{{ variant.reorder_point or 0 }}</td>
+                    <td data-demand-cell="{{ variant.id }}">{% if variant.demand_count %}<a href="/admin/variants/{{ variant.id }}/edit" class="badge badge-info">{{ variant.demand_count }} تقاضا</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+                    <td>
+                        <div class="table-actions">
+                        <button type="submit" form="demand-form-{{ variant.id }}" data-demand-btn="{{ variant.id }}" class="btn btn-sm btn-ghost" title="ثبت تقاضای مشتری برای این تنوع">+ ثبت تقاضا</button>
+                        <a href="/admin/variants/{{ variant.id }}/edit{% if return_to %}?next={{ return_to|urlencode }}{% endif %}" class="btn btn-sm btn-ghost">ویرایش تنوع</a>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% for variant in product.variants if not variant.is_active %}
+                <tr class="is-archived">
+                    <td><strong>{{ variant.size or 'بدون سایز' }}</strong>{% if variant.color %}<small>{{ variant.color }}</small>{% endif %}<small class="muted">بایگانی‌شده</small></td>
+                    <td><code>{{ variant.sku or '—' }}</code><small dir="ltr">{{ variant.barcode }}</small></td>
+                    <td class="tnum">{{ fmt(variant.price) }} ت</td>
+                    <td><span class="badge badge-none">بایگانی‌شده</span></td>
+                    <td>{{ variant.reserved_quantity or 0 }}</td>
+                    <td>{{ variant.reorder_point or 0 }}</td>
+                    <td>{% if variant.demand_count %}<span class="badge badge-info">{{ variant.demand_count }} تقاضا</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+                    <td>
+                        <button type="submit" form="restore-form-{{ variant.id }}" class="btn btn-sm btn-ghost" onclick="return confirm('این تنوع به فهرست برگردد؟')">بازگردانی</button>
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
+
+    <section class="card catalog-section">
+        <div class="section-heading-row">
+            <div><h3>{% if edit_mode %}افزودن تنوع جدید{% else %}تنوع‌های قابل فروش{% endif %}</h3><p class="muted">هر تنوع می‌تواند بارکد، SKU، قیمت، محل انبار و آستانه سفارش مستقل داشته باشد.</p></div>
+            <span class="section-step">{% if edit_mode %}۳{% else %}۲{% endif %}</span>
+        </div>
+        <div id="variants-container"></div>
+        <button type="button" class="btn btn-ghost" onclick="addVariant()">افزودن تنوع</button>
+        <div class="form-actions-row product-form-actions">
+            <button type="submit" class="btn btn-primary btn-large">{% if edit_mode %}ذخیره تغییرات{% else %}ثبت محصول{% endif %}</button>
+            <a href="{{ return_to or '/admin/products' }}" class="btn btn-ghost">لغو</a>
+            <span class="form-stock-total">جمع ارزش موجودی: <strong class="tnum" id="form-stock-total">—</strong></span>
+        </div>
+    </section>
+</form>
+
+{# Row actions live here, outside the product form: a form nested inside a
+   form is not a form — the browser would submit the outer one instead, so
+   each table button points at its own form by id. #}
+{% if edit_mode and product.variants %}
+<div hidden>
+    {% for variant in product.variants %}
+    {% if variant.is_active %}
+    <form id="demand-form-{{ variant.id }}" method="post" action="/admin/variants/{{ variant.id }}/demand?next={{ (return_to or '/admin/products/' ~ product.id)|urlencode }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     </form>
+    {% else %}
+    <form id="restore-form-{{ variant.id }}" method="post" action="/admin/variants/{{ variant.id }}/restore">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    </form>
+    {% endif %}
+    {% endfor %}
 </div>
+{% endif %}
 
-<nav class="admin-nav">
-    <a href="/admin/products" class="btn btn-secondary">بازگشت به لیست محصولات</a>
-</nav>
+<script>
+let variantIndex = 0;
+const container = document.getElementById('variants-container');
+
+function variantNum(raw) {
+    const n = parseInt(String(toEnglishDigits(raw)).replace(/[^0-9]/g, ''), 10);
+    return Number.isFinite(n) ? n : 0;
+}
+function fmtMoney(n) { return n.toLocaleString('fa-IR') + ' تومان'; }
+function fieldVal(entry, prefix) {
+    const el = entry.querySelector(`[name^="variant_${prefix}_"]`);
+    return el ? el.value.trim() : '';
+}
+
+function refreshEntry(entry) {
+    const size = fieldVal(entry, 'size') || 'بدون سایز';
+    const color = fieldVal(entry, 'color');
+    const price = variantNum(fieldVal(entry, 'price'));
+    const stock = variantNum(fieldVal(entry, 'stock'));
+    const summary = entry.querySelector('[data-summary]');
+    if (summary) summary.textContent = `${size}${color ? ' · ' + color : ''} · ${price ? fmtMoney(price) : 'قیمت؟'}`;
+    const total = entry.querySelector('[data-row-total]');
+    if (total) total.textContent = (price && stock) ? fmtMoney(price * stock) : '—';
+}
+
+function refreshFormTotal() {
+    let sum = 0, any = false;
+    container.querySelectorAll('.variant-entry').forEach(entry => {
+        const price = variantNum(fieldVal(entry, 'price'));
+        const stock = variantNum(fieldVal(entry, 'stock'));
+        if (price && stock) { sum += price * stock; any = true; }
+    });
+    document.getElementById('form-stock-total').textContent = any ? fmtMoney(sum) : '—';
+}
+
+function setEntryOpen(entry, open) {
+    entry.dataset.open = open ? 'true' : 'false';
+    const head = entry.querySelector('[data-collapse]');
+    if (head) head.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+function syncSkuRow(entry) {
+    const sku = entry.querySelector('[name^="variant_sku_"]');
+    if (!sku || sku.dataset.touched) return;
+    const base = (document.getElementById('base_sku') || {}).value || '';
+    const clean = base.trim();
+    if (!clean) return;
+    const size = fieldVal(entry, 'size');
+    sku.value = size ? `${clean}-${size}` : clean;
+}
+
+function addVariant() {
+    const index = variantIndex++;
+    const entryNo = container.querySelectorAll('.variant-entry').length + 1;
+    // The row being built becomes the open one; finished rows fold away.
+    container.querySelectorAll('.variant-entry').forEach(entry => setEntryOpen(entry, false));
+    container.insertAdjacentHTML('beforeend', `
+        <article class="variant-entry" data-open="true">
+            <button type="button" class="variant-remove" onclick="this.closest('.variant-entry').remove(); refreshFormTotal();" aria-label="حذف تنوع">×</button>
+            <button type="button" class="variant-entry-heading" data-collapse aria-expanded="true">
+                <strong>تنوع ${entryNo}</strong>
+                <span class="variant-entry-summary" data-summary></span>
+                <span class="variant-entry-caret" aria-hidden="true">▾</span>
+            </button>
+            <div class="variant-entry-body">
+            <div class="form-row variant-entry-grid">
+                <div class="form-group"><label>سایز</label><input type="text" name="variant_size_${index}" data-unify-digits placeholder="مثلاً ۳ تا ۴ سال"></div>
+                <div class="form-group"><label>رنگ</label><input type="text" name="variant_color_${index}" placeholder="مثلاً آبی"></div>
+                <div class="form-group"><label>سیستم سایز</label><input type="text" name="variant_size_system_${index}" placeholder="ایران / EU"></div>
+                <div class="form-group"><label>کد رنگ</label><input type="text" name="variant_color_code_${index}" dir="ltr" placeholder="#4AA3DF" data-color-picker></div>
+                <div class="form-group"><label>قیمت فروش <span class="required-mark">*</span></label><input type="text" inputmode="numeric" name="variant_price_${index}" required min="0" placeholder="مثال: 350000"></div>
+                <div class="form-group"><label>قیمت خرید</label><input type="text" inputmode="numeric" name="variant_cost_price_${index}" min="0" placeholder="مثال: 220000"></div>
+                <div class="form-group"><label>موجودی اولیه
+                    <span class="hint"><button type="button" class="hint-btn" aria-label="راهنمای موجودی اولیه">ⓘ</button><span class="hint-pop" role="tooltip" id="hint-vs-${index}">موجودی شروع این تنوع؛ یک‌بار در دفتر انبار ثبت می‌شود و بعد از ذخیره، موجودی فقط از مسیر انبار تغییر می‌کند.</span></span>
+                </label><input type="text" inputmode="numeric" name="variant_stock_${index}" min="0" value="0" aria-describedby="hint-vs-${index}" placeholder="مثال: 12"></div>
+                <div class="form-group"><label>وزن تنوع (گرم)</label><input type="text" inputmode="numeric" name="variant_weight_${index}" min="0" placeholder="مثال: 350"></div>
+                <div class="form-group"><label>بارکد</label><input type="text" name="variant_barcode_${index}" dir="ltr" placeholder="خالی = تولید خودکار"></div>
+                <div class="form-group"><label>SKU</label><input type="text" name="variant_sku_${index}" dir="ltr"></div>
+                <div class="form-group"><label>نقطه سفارش
+                    <span class="hint"><button type="button" class="hint-btn" aria-label="راهنمای نقطه سفارش">ⓘ</button><span class="hint-pop" role="tooltip" id="hint-vrp-${index}">اگر موجودی قابل‌فروش این تنوع به این عدد برسد یا کمتر شود، تنوع نیازمند سفارش می‌شود.</span></span>
+                </label><input type="text" inputmode="numeric" name="variant_reorder_point_${index}" min="0" data-sync-default="point" aria-describedby="hint-vrp-${index}" value="{{ (product.default_reorder_point or 0) if product else 0 }}" placeholder="مثال: 5"></div>
+                <div class="form-group"><label>مقدار سفارش
+                    <span class="hint"><button type="button" class="hint-btn" aria-label="راهنمای مقدار سفارش">ⓘ</button><span class="hint-pop" role="tooltip" id="hint-vrq-${index}">چند عدد از این تنوع سفارش بدهید؛ فقط راهنماست و سفارش خودکار ثبت نمی‌شود.</span></span>
+                </label><input type="text" inputmode="numeric" name="variant_reorder_quantity_${index}" min="0" data-sync-default="quantity" aria-describedby="hint-vrq-${index}" value="{{ (product.default_reorder_quantity or 0) if product else 0 }}" placeholder="مثال: 12"></div>
+                <div class="form-group"><label>محل انبار</label><input type="text" name="variant_storage_location_${index}" placeholder="قفسه A-2"></div>
+            </div>
+            <div class="form-group"><label>تصویر تنوع</label><input type="file" name="variant_image_${index}" accept="image/png,image/jpeg,image/webp"></div>
+            <div class="variant-entry-total">ارزش موجودی: <strong class="tnum" data-row-total>—</strong></div>
+            </div>
+            <input type="hidden" name="variant_index_${index}" value="${index}">
+        </article>`);
+    initColorPickers(container);
+    const fresh = container.lastElementChild;
+    syncSkuRow(fresh);
+    refreshEntry(fresh);
+    refreshFormTotal();
+}
+
+container.addEventListener('click', event => {
+    const head = event.target.closest('[data-collapse]');
+    if (!head) return;
+    const entry = head.closest('.variant-entry');
+    setEntryOpen(entry, entry.dataset.open !== 'true');
+});
+
+container.addEventListener('input', event => {
+    const target = event.target;
+    // A hand on the field ends the default-sync and the SKU suggestion.
+    if (target.hasAttribute && target.hasAttribute('data-sync-default')) target.dataset.touched = '1';
+    if (target.name && target.name.startsWith('variant_sku_')) target.dataset.touched = '1';
+    const entry = target.closest ? target.closest('.variant-entry') : null;
+    if (!entry) return;
+    if (target.name && target.name.startsWith('variant_size_')) syncSkuRow(entry);
+    refreshEntry(entry);
+    refreshFormTotal();
+});
+
+// Product-level defaults feed untouched variant rows while they are typed.
+function bindDefaultSync(sourceId, kind) {
+    const source = document.getElementById(sourceId);
+    if (!source) return;
+    let prev = toEnglishDigits(source.value);
+    source.addEventListener('input', () => {
+        const next = toEnglishDigits(source.value);
+        container.querySelectorAll(`[data-sync-default="${kind}"]`).forEach(field => {
+            if (!field.dataset.touched && toEnglishDigits(field.value) === prev) field.value = next;
+        });
+        prev = next;
+    });
+}
+// Deferred scripts (app.js) land after parsing, so everything that touches
+// their globals waits for DOMContentLoaded; the container listeners above
+// only call them on user input, long after load.
+function bootVariantForm() {
+    bindDefaultSync('default_reorder_point', 'point');
+    bindDefaultSync('default_reorder_quantity', 'quantity');
+    const baseSkuField = document.getElementById('base_sku');
+    if (baseSkuField) baseSkuField.addEventListener('input', () => {
+        container.querySelectorAll('.variant-entry').forEach(syncSkuRow);
+    });
+    {% if not edit_mode or not product.variants %}addVariant();{% endif %}
+}
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootVariantForm);
+} else {
+    bootVariantForm();
+}
+
+// Silent demand +1: the count ticks in place, the page never reloads. A
+// failed fetch falls back to the plain form submit, never a dead click.
+document.querySelectorAll('[data-demand-btn]').forEach(function (btn) {
+    btn.addEventListener('click', async function (event) {
+        event.preventDefault();
+        if (btn.disabled) return;
+        const form = btn.form;
+        if (!form || typeof fetch !== 'function') { form.submit(); return; }
+        btn.disabled = true;
+        try {
+            const response = await fetch(form.action, {
+                method: 'POST',
+                body: new FormData(form),
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            });
+            if (!response.ok) throw new Error('bad status');
+            const data = await response.json();
+            const cell = document.querySelector(`[data-demand-cell="${btn.dataset.demandBtn}"]`);
+            if (cell) {
+                cell.innerHTML = '';
+                const badge = document.createElement('a');
+                badge.href = `/admin/variants/${btn.dataset.demandBtn}/edit`;
+                badge.className = 'badge badge-info demand-updated';
+                badge.textContent = `${data.demand_count} تقاضا`;
+                cell.appendChild(badge);
+            }
+        } catch (err) {
+            form.submit();
+            return;
+        }
+        btn.disabled = false;
+    });
+});
+</script>
 {% endblock %}

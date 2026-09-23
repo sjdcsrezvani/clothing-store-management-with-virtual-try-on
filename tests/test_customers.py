@@ -1,0 +1,1600 @@
+"""Customer management: the list, the profile, and the store-agnostic birthdays.
+
+The record belongs to the customer; child details are a module a children's shop
+keeps and an adult clothing shop switches off. These tests pin that the module
+switch really removes the fields everywhere, that each customer's own «for whom»
+choice — not the store's — decides whose birthday the discount uses, and that a
+customer with purchase history can be archived but never silently deleted.
+"""
+import itertools
+import re
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlsplit
+
+import jdatetime
+import pytest
+from sqlalchemy import create_engine, inspect, text
+
+from models import Customer, Sale, Settings, StaffUser
+from services._common import jtoday
+from services.customers import invalidate_customer_cache
+from services.discount import calculate_discounts
+from services.tier import (
+    birthday_occasion_due,
+    check_birthday_eligible,
+    get_customers_for_birthday_check,
+    get_tier_config,
+)
+from tests import ui
+from tests.conftest import csrf_token
+
+ROOT = Path(__file__).resolve().parents[1]
+_counter = itertools.count(1)
+
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+def month_day_in(days: int) -> str:
+    """A Persian MM-DD that is exactly `days` days from today."""
+    day = jtoday() + jdatetime.timedelta(days=days)
+    return f"{day.month:02d}-{day.day:02d}"
+
+
+def make_customer(db, *, tier="silver", **kwargs) -> Customer:
+    index = next(_counter)
+    customer = Customer(
+        phone=kwargs.pop("phone", f"0912000{index:04d}"),
+        first_name=kwargs.pop("first_name", f"مشتری{index}"),
+        last_name=kwargs.pop("last_name", "تستی"),
+        referral_code=f"T{index:05d}",
+        tier=tier,
+        **kwargs,
+    )
+    db.add(customer)
+    db.commit()
+    db.refresh(customer)
+    return customer
+
+
+def make_sale(db, customer, amount=1_000_000, *, days_ago=0, payment_method="card",
+              confirmed=True, **kwargs) -> Sale:
+    created = datetime.now(timezone.utc) - timedelta(days=days_ago)
+    sale = Sale(
+        customer_id=customer.id,
+        total_amount=amount,
+        final_amount=amount,
+        payment_method=payment_method,
+        payment_confirmed=confirmed,
+        created_at=created,
+        **kwargs,
+    )
+    db.add(sale)
+    # A real sale runs `update_customer_after_purchase`, which stamps the
+    # customer's last purchase; the list's active/کم‌فعال filter reads that
+    # column, so the helper has to stamp it too or the sale is invisible to it.
+    customer.last_purchase_date = created
+    db.commit()
+    db.refresh(sale)
+    return sale
+
+
+def set_setting(db, key, value):
+    row = db.query(Settings).filter(Settings.key == key).first()
+    if row:
+        row.value = str(value)
+    else:
+        db.add(Settings(key=key, value=str(value)))
+    db.commit()
+    invalidate_customer_cache()
+
+
+def list_html(client, query=""):
+    response = client.get(f"/admin/customers{query}")
+    assert response.status_code == 200
+    return response.text
+
+
+# ── presentation contract ────────────────────────────────────────────────────
+
+CUSTOMERS_HTML = (ROOT / "templates" / "admin" / "customers.html").read_text()
+PROFILE_HTML = (ROOT / "templates" / "admin" / "customer_detail.html").read_text()
+STYLE_CSS = (ROOT / "static" / "css" / "style.css").read_text()
+
+
+def test_list_uses_the_catalog_design_language():
+    # One shared heading now, so a page states which layout it asks for.
+    assert ui.composes_header(CUSTOMERS_HTML)
+    assert f"{{% set heading_class = '{ui.PAGE_HEADING}' %}}" in CUSTOMERS_HTML
+    # The nav lives in the heading, not at the foot of the page.
+    assert "page_actions" in CUSTOMERS_HTML
+    assert '<nav class="admin-nav"' not in CUSTOMERS_HTML
+    assert "👥" not in CUSTOMERS_HTML  # the old emoji heading
+    # No inline styling survives on the page.
+    assert 'style="' not in CUSTOMERS_HTML
+
+
+def test_list_table_is_scrollable_accessible_and_has_real_empty_states():
+    assert 'class="table-scroll"' in CUSTOMERS_HTML
+    assert CUSTOMERS_HTML.count('scope="col"') >= 10
+    assert 'class="empty-state"' in CUSTOMERS_HTML
+    # An empty store and an over-filtered list are different situations.
+    assert "هنوز مشتری‌ای ثبت نشده است" in CUSTOMERS_HTML
+    assert "مشتری با این فیلترها پیدا نشد" in CUSTOMERS_HTML
+    assert 'class="product-pagination"' in CUSTOMERS_HTML
+    assert "{{ total }} مشتری" in CUSTOMERS_HTML
+
+
+def test_profile_page_design_language_and_sections():
+    assert ui.composes_header(PROFILE_HTML)
+    assert f"{{% set heading_class = '{ui.PAGE_HEADING}' %}}" in PROFILE_HTML
+    assert 'class="table-scroll"' in PROFILE_HTML
+    assert PROFILE_HTML.count('scope="col"') >= 5
+    assert 'class="empty-state"' in PROFILE_HTML
+    assert 'style="' not in PROFILE_HTML
+    for hook in ("سابقه خرید", "تخفیف‌ها و معرفی‌ها", "ویرایش پرونده", "بایگانی و حذف"):
+        assert hook in PROFILE_HTML, hook
+
+
+def test_new_colours_come_from_theme_tokens():
+    section = STYLE_CSS[STYLE_CSS.index("/* ===================== Customer club"):]
+    section = section[:section.index("High-contrast")]
+    assert not re.search(r"#[0-9a-fA-F]{3,8}\b", section), section[:200]
+    # Tiers, points and the attention colours: the hues are the fills and borders,
+    # and the text is the ink derived for each of them.
+    for token in ("var(--card)", "var(--ink-soft)", "var(--link-hover)", "var(--success-ink)",
+                  "var(--sunshine)", "var(--info-ink)", "var(--rule)", "var(--surface-soft)"):
+        assert token in section, token
+    # Status must not rest on colour alone.
+    assert 'html[data-theme-mode="high-contrast"] .status-badge' in STYLE_CSS
+
+
+# ── list: filters ────────────────────────────────────────────────────────────
+
+def test_search_covers_name_phone_referral_code_and_child_name(authed, db_session):
+    target = make_customer(db_session, first_name="زهرا", last_name="کاظمی", child_name="آوا")
+    make_customer(db_session, first_name="دیگر", last_name="کسی", child_name="بهار")
+
+    assert "زهرا" in list_html(authed, "?search=زهرا")
+    assert "آوا" in list_html(authed, f"?search={target.phone}")
+    assert "زهرا" in list_html(authed, "?search=%D8%A2%D9%88%D8%A7")  # «آوا» as a child name
+    assert "دیگر" not in list_html(authed, "?search=زهرا")
+
+
+def test_child_name_is_not_searchable_when_the_module_is_off(authed, db_session):
+    make_customer(db_session, first_name="زهرا", child_name="آوا")
+    set_setting(db_session, "child_profile_enabled", "0")
+
+    assert "زهرا" not in list_html(authed, "?search=%D8%A2%D9%88%D8%A7")
+
+
+def test_status_filters_split_active_inactive_debtor_and_discount(authed, db_session):
+    """Names avoid the KPI labels, which contain words like «فعال» and «بدهکار»."""
+    active = make_customer(db_session, first_name="آرش")
+    make_sale(db_session, active, days_ago=3)
+    stale = make_customer(db_session, first_name="بهرام")
+    make_sale(db_session, stale, days_ago=200)
+    make_customer(db_session, first_name="پرویز", total_debt=500_000)
+    make_customer(db_session, first_name="جمشید", referred_discount=30_000)
+
+    def names(body):
+        return {n for n in ("آرش", "بهرام", "پرویز", "جمشید") if n in body}
+
+    assert names(list_html(authed, "?status=active")) == {"آرش"}
+    # «بدون خرید ۹۰ روز» is literal: a customer who never bought qualifies too,
+    # which is what the row badge and the KPI labels already say.
+    assert names(list_html(authed, "?status=inactive")) == {"بهرام", "پرویز", "جمشید"}
+    assert names(list_html(authed, "?status=debtor")) == {"پرویز"}
+    assert names(list_html(authed, "?status=discount")) == {"جمشید"}
+    assert names(list_html(authed)) == {"آرش", "بهرام", "پرویز", "جمشید"}
+
+
+def test_tag_filter_matches_whole_tags_only(authed, db_session):
+    tagged = make_customer(db_session, first_name="ویژه", tags="vip,wholesale")
+    make_customer(db_session, first_name="عادی", tags="followup")
+
+    body = list_html(authed, "?tag=vip")
+    assert "ویژه" in body and "عادی" not in body
+    # «ویژه (VIP)» is rendered as a chip, not as the raw key.
+    assert "ویژه (VIP)" in body and ">vip<" not in body
+
+
+def test_sorts_put_the_expected_customer_first(authed, db_session):
+    # The stored counters are seeded *against* the invoices on purpose: the list
+    # must order — and print — by what the invoices say, not by the counter.
+    small = make_customer(db_session, first_name="کمخرید", total_spent=9_000_000, total_purchases=9)
+    make_sale(db_session, small, amount=100_000, points_earned=10)
+    big = make_customer(db_session, first_name="پرخرید", total_spent=100_000, total_purchases=1,
+                        total_debt=400_000, total_points=900)
+    make_sale(db_session, big, amount=9_000_000, points_earned=900)
+    make_sale(db_session, big, amount=2_000_000, points_earned=200)
+
+    def first_name_in(body):
+        found = re.search(r'/admin/customers/(\d+)"', body)
+        return found.group(1) if found else None
+
+    assert first_name_in(list_html(authed, "?sort=purchase_desc")) == str(big.id)
+    assert first_name_in(list_html(authed, "?sort=purchase_asc")) == str(small.id)
+    assert first_name_in(list_html(authed, "?sort=count_desc")) == str(big.id)
+    assert first_name_in(list_html(authed, "?sort=points")) == str(big.id)
+    assert first_name_in(list_html(authed, "?sort=debt")) == str(big.id)
+
+
+def test_sort_keys_from_the_old_page_still_work(authed, db_session):
+    """Bookmarks to ?sort=purchase_desc and friends must not 500."""
+    make_customer(db_session)
+    for key in ("date", "tier", "purchase_desc", "purchase_asc", "points", "name",
+                "debt", "last_purchase", "oldest", "count_desc", "nonsense"):
+        assert authed.get(f"/admin/customers?sort={key}").status_code == 200
+
+
+# ── list: paging ─────────────────────────────────────────────────────────────
+
+def test_pagination_pages_at_25_and_reports_the_count(authed, db_session):
+    for index in range(27):
+        make_customer(db_session, first_name=f"مشتری جستجو {index}")
+
+    first = list_html(authed)
+    assert "27 مشتری" in first
+    assert "صفحه 1 از 2" in first
+
+    second = list_html(authed, "?page=2")
+    assert "صفحه 2 از 2" in second
+    # 27 customers → 25 rows on the first page, 2 on the second. Each row links
+    # to its customer twice (name and «پرونده»), so count distinct ids.
+    def row_ids(body):
+        return set(re.findall(r'/admin/customers/(\d+)"', body))
+
+    assert len(row_ids(first)) == 25
+    assert len(row_ids(second)) == 2
+    assert not row_ids(first) & row_ids(second)
+
+
+def test_page_links_keep_a_filter_with_a_space_intact(authed, db_session):
+    """The old links interpolated the search term raw, so a space broke them."""
+    for index in range(27):
+        make_customer(db_session, first_name=f"علی رضایی {index}")
+
+    body = list_html(authed, "?search=" + "علی رضا".replace(" ", "+"))
+    links = re.findall(r'href="(\?page=2[^"]*)"', body)
+    assert links, "the second page should be linked"
+    link = links[0].replace("&amp;", "&")
+    assert " " not in link, link
+    # The filter must survive the round trip, whether the space is written as
+    # `+` or `%20` (Jinja's urlencode uses %20).
+    assert parse_qs(urlsplit(link).query)["search"] == ["علی رضا"], link
+
+    # The page itself must still find the rows.
+    assert authed.get("/admin/customers?search=%D8%B9%D9%84%DB%8C+%D8%B1%D8%B6%D8%A7&page=2").status_code == 200
+
+
+def test_page_number_beyond_the_end_clamps(authed, db_session):
+    for index in range(27):
+        make_customer(db_session, first_name=f"صفحه‌ای {index}")
+    body = list_html(authed, "?page=99")
+    assert "صفحه 2 از 2" in body
+    assert len(set(re.findall(r'/admin/customers/(\d+)"', body))) == 2
+
+
+# ── list: KPIs ───────────────────────────────────────────────────────────────
+
+def test_kpi_cards_count_what_they_claim(authed, db_session):
+    active = make_customer(db_session, first_name="فعال")
+    make_sale(db_session, active, days_ago=5)
+    make_customer(db_session, first_name="بدهکار", total_debt=250_000)
+    make_customer(db_session, first_name="تازه", created_at=datetime.now(timezone.utc))
+    set_setting(db_session, "birthday_target", "customer")
+    make_customer(db_session, first_name="تولدی", birth_month_day=month_day_in(3), birth_year=1360)
+
+    body = list_html(authed)
+    assert "کل مشتریان" in body
+    assert "بدهکاران (نسیه)" in body
+    # Every customer carries their own birthday choice, so the heading never
+    # claims they are all children once the child module is on.
+    assert "تولدها" in body
+    assert "250,000" in body
+
+
+def test_kpi_birthday_label_follows_the_child_module(authed, db_session):
+    make_customer(db_session)
+    assert "تولدها" in list_html(authed)
+    set_setting(db_session, "child_profile_enabled", "0")
+    assert "تولد مشتریان" in list_html(authed)
+
+
+# ── archive & delete ─────────────────────────────────────────────────────────
+
+def test_archived_customers_leave_the_list_until_asked_for(authed, db_session):
+    customer = make_customer(db_session, first_name="بایگانی‌شونده")
+    token = csrf_token(authed, f"/admin/customers/{customer.id}")
+
+    response = authed.post(f"/admin/customers/{customer.id}/archive",
+                           data={"csrf_token": token}, follow_redirects=False)
+    assert response.status_code == 303
+    db_session.refresh(customer)
+    assert customer.is_archived is True
+
+    assert "بایگانی‌شونده" not in list_html(authed)
+    assert "بایگانی‌شونده" in list_html(authed, "?status=archived")
+    # And it is a toggle, not a one-way door.
+    authed.post(f"/admin/customers/{customer.id}/archive",
+                data={"csrf_token": token}, follow_redirects=False)
+    db_session.refresh(customer)
+    assert customer.is_archived is False
+    assert "بایگانی‌شونده" in list_html(authed)
+
+
+def test_delete_is_refused_when_the_customer_has_purchases(authed, db_session):
+    customer = make_customer(db_session, first_name="دارای خرید")
+    make_sale(db_session, customer)
+    token = csrf_token(authed, f"/admin/customers/{customer.id}")
+
+    response = authed.post(f"/admin/customers/{customer.id}/delete",
+                           data={"csrf_token": token}, follow_redirects=False)
+    assert response.status_code == 303
+    assert "err=" in response.headers["location"]
+    # Both the customer and the sale survive: history stays attributable.
+    assert db_session.query(Customer).filter(Customer.id == customer.id).first() is not None
+    assert db_session.query(Sale).filter(Sale.customer_id == customer.id).count() == 1
+
+
+def test_a_customer_without_purchases_can_still_be_deleted(authed, db_session):
+    customer = make_customer(db_session, first_name="بدون خرید")
+    customer_id = customer.id
+    token = csrf_token(authed, f"/admin/customers/{customer_id}")
+
+    response = authed.post(f"/admin/customers/{customer_id}/delete",
+                           data={"csrf_token": token}, follow_redirects=False)
+    assert response.status_code == 303
+    assert db_session.query(Customer).filter(Customer.id == customer_id).first() is None
+
+
+# ── profile ──────────────────────────────────────────────────────────────────
+
+def test_profile_shows_history_totals_and_the_drift_flag(authed, db_session):
+    customer = make_customer(db_session, first_name="پرونده‌دار", total_spent=999_999,
+                             total_purchases=7, total_points=120)
+    make_sale(db_session, customer, amount=1_500_000)
+
+    body = list_html(authed, f"/{customer.id}")
+    assert "سابقه خرید" in body
+    assert "پرونده‌دار" in body
+    assert "1,500,000" in body  # computed from the sales
+    # The stored counters disagree, so the page says so instead of trusting them.
+    assert "نامطابق" in body
+    assert "999,999" in body
+
+
+def test_profile_without_purchases_shows_an_empty_state(authed, db_session):
+    customer = make_customer(db_session, first_name="تازه‌وارد")
+    body = list_html(authed, f"/{customer.id}")
+    assert "هنوز خریدی ثبت نشده" in body
+    assert "نامطابق" not in body
+
+
+def test_profile_404s_for_an_unknown_customer(authed):
+    assert authed.get("/admin/customers/424242").status_code == 404
+
+
+def test_profile_requires_a_manager(client, db_session):
+    from services.security import hash_password
+
+    customer = make_customer(db_session, first_name="محدود")
+    cashier = StaffUser(username="cashier-c", password_hash=hash_password("role-pass"), role="cashier")
+    db_session.add(cashier)
+    db_session.commit()
+
+    token = csrf_token(client)
+    client.post("/admin/login", data={"username": "cashier-c", "password": "role-pass",
+                                      "csrf_token": token}, follow_redirects=False)
+
+    assert client.get("/admin/customers", follow_redirects=False).status_code == 403
+    assert client.get(f"/admin/customers/{customer.id}", follow_redirects=False).status_code == 403
+
+
+def test_profile_never_offers_delete_when_sales_exist(authed, db_session):
+    customer = make_customer(db_session)
+    make_sale(db_session, customer)
+    body = list_html(authed, f"/{customer.id}")
+    assert "حذف کامل مشتری" not in body
+    assert "حذف ممکن نیست" in body
+
+
+def test_profile_date_fields_are_prefilled_in_persian_digits(authed, db_session):
+    """Every other date held in a form field is rendered by `jalali_str`.
+
+    These two were the exception: Latin digits would silently change shape the
+    first time the calendar was used, because the picker writes Persian ones.
+    """
+    customer = make_customer(db_session, birth_month_day="05-12", birth_year=1360,
+                             child_name="آوا", child_birthday="02-03", child_birth_year=1400)
+    body = list_html(authed, f"/{customer.id}")
+
+    assert 'value="۱۳۶۰/۰۵/۱۲"' in body
+    assert 'value="۱۴۰۰/۰۲/۰۳"' in body
+    assert "1360/05/12" not in body
+
+    # With no year on file the value stays month-day, still in Persian digits.
+    yearless = make_customer(db_session, birth_month_day="07-02")
+    body = list_html(authed, f"/{yearless.id}")
+    assert 'value="۰۷-۰۲"' in body
+
+
+def test_the_persian_digits_the_picker_writes_are_saved_back(authed, db_session):
+    """The round trip the digit change depends on."""
+    customer = make_customer(db_session, birth_month_day="05-12", birth_year=1360)
+    token = csrf_token(authed, f"/admin/customers/{customer.id}")
+
+    authed.post(f"/admin/customers/{customer.id}/meta", data={
+        "csrf_token": token,
+        "buys_for": "self",
+        "birth_date": "۱۳۷۰/۰۸/۱۹",
+    }, follow_redirects=False)
+
+    db_session.refresh(customer)
+    assert customer.birth_month_day == "08-19"
+    assert customer.birth_year == 1370
+
+
+# ── profile card save ────────────────────────────────────────────────────────
+
+def test_meta_saves_note_tags_consent_and_the_chosen_side(authed, db_session):
+    """A self-buyer keeps their own birthday; the child side of the form is not written."""
+    customer = make_customer(db_session, child_name="آوا", child_birthday="02-03",
+                             child_birth_year=1400)
+    token = csrf_token(authed, f"/admin/customers/{customer.id}")
+
+    response = authed.post(f"/admin/customers/{customer.id}/meta", data={
+        "csrf_token": token,
+        "buys_for": "self",
+        "birth_date": "۱۳۶۰/۰۵/۱۲",
+        "child_name": "نباید ذخیره شود",
+        "child_birthday": "1401/01/01",
+        "notes": "  فقط سایز ۳ می‌خرد  ",
+        "tags": ["vip", "followup"],
+        "sms_opt_in": "1",
+    }, follow_redirects=False)
+
+    assert response.status_code == 303
+    db_session.refresh(customer)
+    assert customer.buys_for == "self"
+    assert customer.birth_month_day == "05-12"
+    assert customer.birth_year == 1360
+    # Posted, but «برای خودم» means the child's fields are left exactly as they were.
+    assert customer.child_name == "آوا"
+    assert customer.child_birthday == "02-03"
+    assert customer.child_birth_year == 1400
+    assert customer.notes == "فقط سایز ۳ می‌خرد"
+    assert customer.tags == "vip,followup"
+    assert customer.sms_opt_in is True
+
+
+def test_meta_saves_the_child_side_when_that_is_the_choice(authed, db_session):
+    """…and a child-buyer keeps no birthday of their own, whatever was posted."""
+    customer = make_customer(db_session)
+    token = csrf_token(authed, f"/admin/customers/{customer.id}")
+
+    authed.post(f"/admin/customers/{customer.id}/meta", data={
+        "csrf_token": token,
+        "buys_for": "child",
+        "birth_date": "۱۳۶۰/۰۵/۱۲",
+        "child_name": "سارا",
+        "child_birthday": "1400/03/15",
+    }, follow_redirects=False)
+
+    db_session.refresh(customer)
+    assert customer.buys_for == "child"
+    assert customer.birth_month_day is None
+    assert customer.birth_year is None
+    assert customer.child_name == "سارا"
+    assert customer.child_birthday == "03-15"
+    assert customer.child_birth_year == 1400
+
+
+def test_meta_reads_an_iso_birthday_the_same_way_the_rest_of_the_app_does(authed, db_session):
+    customer = make_customer(db_session)
+    token = csrf_token(authed, f"/admin/customers/{customer.id}")
+
+    authed.post(f"/admin/customers/{customer.id}/meta", data={
+        "csrf_token": token,
+        "buys_for": "self",
+        "birth_date": "2026-09-12",  # what a hand-typed ISO value looks like
+    }, follow_redirects=False)
+
+    db_session.refresh(customer)
+    expected = jdatetime.date.fromgregorian(date=datetime(2026, 9, 12).date())
+    assert customer.birth_month_day == f"{expected.month:02d}-{expected.day:02d}"
+    assert customer.birth_year == expected.year
+    assert customer.birth_year != 2026  # never stored as a Jalali year
+
+
+def test_unticking_consent_and_clearing_tags_both_stick(authed, db_session):
+    customer = make_customer(db_session, tags="vip", sms_opt_in=True)
+    token = csrf_token(authed, f"/admin/customers/{customer.id}")
+
+    authed.post(f"/admin/customers/{customer.id}/meta", data={
+        "csrf_token": token,
+        "notes": "",
+    }, follow_redirects=False)
+
+    db_session.refresh(customer)
+    assert customer.tags == ""
+    assert not customer.sms_opt_in
+    assert customer.notes is None
+
+
+def test_meta_ignores_child_fields_when_the_module_is_off(authed, db_session):
+    customer = make_customer(db_session)
+    set_setting(db_session, "child_profile_enabled", "0")
+    token = csrf_token(authed, f"/admin/customers/{customer.id}")
+
+    authed.post(f"/admin/customers/{customer.id}/meta", data={
+        "csrf_token": token,
+        "buys_for": "child",  # refused outright in a shop with no child module
+        "child_name": "نباید ذخیره شود",
+        "child_birthday": "1400/01/01",
+    }, follow_redirects=False)
+
+    db_session.refresh(customer)
+    assert customer.child_name is None
+    assert customer.child_birthday is None
+    assert customer.child_birth_year is None
+
+
+# ── ages ─────────────────────────────────────────────────────────────────────
+
+def test_age_is_correct_before_and_after_this_years_birthday(authed, db_session):
+    """A birthday later this year must not count as another year older."""
+    today = jtoday()
+    later = today + jdatetime.timedelta(days=40)
+    earlier = today - jdatetime.timedelta(days=40)
+
+    older = make_customer(db_session, first_name="تولد گذشته", birth_year=today.year - 30,
+                          buys_for="self",
+                          birth_month_day=f"{earlier.month:02d}-{earlier.day:02d}")
+    younger = make_customer(db_session, first_name="تولد نیامده", birth_year=today.year - 30,
+                            buys_for="self",
+                            birth_month_day=f"{later.month:02d}-{later.day:02d}")
+
+    body = list_html(authed, "?search=%D8%AA%D9%88%D9%84%D8%AF")
+    assert f"{older.id}" in body and f"{younger.id}" in body
+    assert "۳۰ ساله" in body or "30 ساله" in body
+    assert "۲۹ ساله" in body or "29 ساله" in body
+
+
+def test_birthday_without_a_year_shows_the_day_and_no_age(authed, db_session):
+    make_customer(db_session, first_name="بدون‌سال", buys_for="self", birth_month_day="05-12")
+    body = list_html(authed, "?search=%D8%A8%D8%AF%D9%88%D9%86")
+    assert "۱۲ مرداد" in body
+    assert "ساله" not in body
+
+
+# ── birthday target matrix ───────────────────────────────────────────────────
+
+@pytest.mark.parametrize("target,subjects", [
+    ("customer", ("customer",)),
+    ("child", ("child",)),
+    ("both", ("customer", "child")),
+])
+def test_subjects_follow_the_configured_target(target, subjects, db_session):
+    from services._common import birthday_subjects
+
+    set_setting(db_session, "birthday_target", target)
+    assert birthday_subjects(db_session) == subjects
+
+
+def test_child_only_target_with_the_module_off_degrades_to_the_customer(db_session):
+    from services._common import birthday_subjects
+
+    set_setting(db_session, "birthday_target", "child")
+    set_setting(db_session, "child_profile_enabled", "0")
+    assert birthday_subjects(db_session) == ("customer",)
+
+
+def test_birthday_discount_names_the_occasion_that_fired(db_session):
+    config = get_tier_config(db_session)
+
+    set_setting(db_session, "birthday_target", "customer")
+    customer = make_customer(db_session, tier="gold", birth_month_day=month_day_in(2), birth_year=1360)
+    assert birthday_occasion_due(customer, config, ("customer",)) == "customer"
+
+    discounts = calculate_discounts(customer=customer, total_amount=1_000_000, db=db_session)
+    assert discounts["birthday_discount"] > 0
+    assert "تخفیف تولد شما" in " ".join(discounts["details"])
+
+
+def test_a_childs_birthday_is_not_discounted_when_the_store_targets_the_customer(db_session):
+    set_setting(db_session, "birthday_target", "customer")
+    customer = make_customer(db_session, tier="gold", child_birthday=month_day_in(2), child_birth_year=1400)
+
+    discounts = calculate_discounts(customer=customer, total_amount=1_000_000, db=db_session)
+    assert discounts["birthday_discount"] == 0
+    assert "تولد" not in " ".join(discounts["details"])
+
+
+def test_child_birthday_still_discounts_for_a_childrens_shop(db_session):
+    set_setting(db_session, "birthday_target", "child")
+    customer = make_customer(db_session, tier="gold", child_birthday=month_day_in(2), child_birth_year=1400)
+
+    discounts = calculate_discounts(customer=customer, total_amount=1_000_000, db=db_session)
+    assert discounts["birthday_discount"] > 0
+    assert "تخفیف تولد فرزند" in " ".join(discounts["details"])
+
+
+def test_silver_customers_are_not_birthday_eligible(db_session):
+    config = get_tier_config(db_session)
+    customer = make_customer(db_session, tier="silver", birth_month_day=month_day_in(1))
+    assert check_birthday_eligible(customer, config, ("customer",)) is False
+
+
+def test_birthday_check_returns_the_occasion_and_skips_opt_outs(db_session):
+    set_setting(db_session, "birthday_target", "both")
+    set_setting(db_session, "birthday_sms_days_before", "7")
+
+    mine = make_customer(db_session, tier="gold", first_name="خودم",
+                         birth_month_day=month_day_in(3), birth_year=1360)
+    their_child = make_customer(db_session, tier="gold", first_name="فرزندی",
+                                child_birthday=month_day_in(2), child_birth_year=1400)
+    opted_out = make_customer(db_session, tier="gold", first_name="انصراف",
+                              birth_month_day=month_day_in(1), birth_year=1360, sms_opt_in=False)
+    archived = make_customer(db_session, tier="gold", first_name="بایگانی",
+                             birth_month_day=month_day_in(1), birth_year=1360, is_archived=True)
+    not_due = make_customer(db_session, tier="gold", first_name="دور",
+                            birth_month_day=month_day_in(60), birth_year=1360)
+
+    result = get_customers_for_birthday_check(db_session, 7)
+    entries = {customer.id: occasion for customer, _days, occasion in result["eligible"]}
+
+    assert entries[mine.id] == "customer"
+    assert entries[their_child.id] == "child"
+    assert opted_out.id not in entries
+    assert archived.id not in entries
+    assert not_due.id not in entries
+    assert result["blocked"] == 2  # the opt-out and the archived one
+
+
+def test_one_message_per_customer_and_the_closest_birthday_wins(db_session):
+    set_setting(db_session, "birthday_target", "both")
+    child_sooner = make_customer(db_session, tier="gold", first_name="فرزندزودتر",
+                                 birth_month_day=month_day_in(4), birth_year=1360,
+                                 child_birthday=month_day_in(1), child_birth_year=1400)
+    mine_sooner = make_customer(db_session, tier="gold", first_name="خودمزودتر",
+                                birth_month_day=month_day_in(1), birth_year=1360,
+                                child_birthday=month_day_in(4), child_birth_year=1400)
+    tie = make_customer(db_session, tier="gold", first_name="مساوی",
+                        birth_month_day=month_day_in(2), birth_year=1360,
+                        child_birthday=month_day_in(2), child_birth_year=1400)
+
+    result = get_customers_for_birthday_check(db_session, 7)
+    occasions = {customer.id: occasion for customer, _days, occasion in result["eligible"]}
+
+    # One message per customer, whichever birthday is nearest — and on a tie the
+    # customer's own birthday takes priority.
+    assert len([entry for entry in result["eligible"] if entry[0].id == child_sooner.id]) == 1
+    assert occasions[child_sooner.id] == "child"
+    assert occasions[mine_sooner.id] == "customer"
+    assert occasions[tie.id] == "customer"
+
+
+def test_birthday_sms_payload_never_greets_the_wrong_person():
+    from services.sms import birthday_sms_vars
+
+    child = birthday_sms_vars("سجاد", "آوا", "child")
+    assert child["var2"] == "آوا"
+    assert child["var3"] == "فرزند شما"
+
+    own = birthday_sms_vars("سجاد", "آوا", "customer")
+    assert own["var2"] == "سجاد"
+    assert own["var3"] == "شما"
+
+    # A child's birthday with no name on file reads like it always did.
+    assert birthday_sms_vars("سجاد", "", "child")["var2"] == "فرزند شما"
+
+
+def test_birthday_review_page_lists_the_due_and_the_already_sent(authed, db_session):
+    """The dashboard button is now a review page: due birthdays, tickable, with
+    this year's sent wishes shown read-only."""
+    set_setting(db_session, "birthday_target", "customer")
+    set_setting(db_session, "birthday_sms_days_before", "7")
+    set_setting(db_session, "sms_pattern_birthday", "تولدت مبارک {var2}")
+    due = make_customer(db_session, tier="gold", first_name="سارا",
+                        birth_month_day=month_day_in(2), birth_year=1360)
+    sent = make_customer(db_session, tier="gold", first_name="نیلوفر",
+                         birth_month_day=month_day_in(3), birth_year=1365)
+    year = datetime.now(timezone.utc).year
+    db_session.add(Settings(key=f"birthday_sms_{sent.id}_{year}_customer_{sent.birth_month_day}", value="sent"))
+    db_session.commit()
+
+    page = authed.get("/admin/birthdays")
+
+    assert page.status_code == 200
+    assert "سارا" in page.text and "نیلوفر" in page.text
+    assert 'name="customer_ids"' in page.text
+    # The already-wished customer is visible but not tickable this year.
+    assert f'value="{sent.id}"' not in page.text.split("is-done")[1].split("</tr>")[0] if "is-done" in page.text else True
+    assert "ارسال شد" in page.text
+
+
+def test_birthday_send_queues_only_the_ticked_customers(authed, db_session):
+    set_setting(db_session, "birthday_target", "customer")
+    set_setting(db_session, "birthday_sms_days_before", "7")
+    set_setting(db_session, "sms_pattern_birthday", "تولدت مبارک {var2}")
+    due = make_customer(db_session, tier="gold", first_name="سارا",
+                        birth_month_day=month_day_in(2), birth_year=1360)
+    other = make_customer(db_session, tier="gold", first_name="نیلوفر",
+                          birth_month_day=month_day_in(3), birth_year=1365)
+    token = csrf_token(authed, "/admin/birthdays")
+
+    response = authed.post("/admin/birthdays/send", data={
+        "csrf_token": token, "customer_ids": str(due.id),
+    }, follow_redirects=False)
+
+    assert response.status_code == 303
+    assert "msg=" in response.headers["location"]
+    assert db_session.query(Settings).filter(
+        Settings.key.like(f"birthday_sms_{due.id}_%")
+    ).count() == 1
+    # The unticked customer received nothing.
+    assert db_session.query(Settings).filter(
+        Settings.key.like(f"birthday_sms_{other.id}_%")
+    ).count() == 0
+
+
+def test_birthday_send_refuses_a_customer_outside_the_window(authed, db_session):
+    """A stale form cannot wish someone whose birthday has passed."""
+    set_setting(db_session, "birthday_target", "customer")
+    set_setting(db_session, "birthday_sms_days_before", "7")
+    set_setting(db_session, "sms_pattern_birthday", "تولدت مبارک {var2}")
+    outsider = make_customer(db_session, tier="gold", birth_month_day=month_day_in(60), birth_year=1360)
+    token = csrf_token(authed, "/admin/birthdays")
+
+    response = authed.post("/admin/birthdays/send", data={
+        "csrf_token": token, "customer_ids": str(outsider.id),
+    }, follow_redirects=False)
+
+    assert response.status_code == 303
+    # The outsider is refused with a reason, not silently counted as sent.
+    from urllib.parse import unquote
+    location = unquote(response.headers["location"])
+    assert "0 پیامک" in location and "رد شد" in location
+    assert db_session.query(Settings).filter(
+        Settings.key.like(f"birthday_sms_{outsider.id}_%")
+    ).count() == 0
+
+
+def test_birthday_send_reports_a_missing_pattern(authed, db_session):
+    set_setting(db_session, "birthday_target", "customer")
+    make_customer(db_session, tier="gold", birth_month_day=month_day_in(2), birth_year=1360)
+    token = csrf_token(authed, "/admin/birthdays")
+
+    response = authed.post("/admin/birthdays/send", data={"csrf_token": token, "customer_ids": "1"},
+                           follow_redirects=False)
+    assert response.status_code == 303
+    assert "err=" in response.headers["location"]
+
+
+def test_dashboard_birthday_button_opens_the_review_page(authed):
+    dashboard = authed.get("/admin")
+    assert 'href="/admin/birthdays"' in dashboard.text
+    assert "check-birthdays" not in dashboard.text
+
+
+# ── the child module ─────────────────────────────────────────────────────────
+
+def _create_customer_step(client, phone="09129998877"):
+    """The cashier's new-customer form — the one that collects child details."""
+    token = csrf_token(client, "/sales/new")
+    response = client.post("/sales/lookup-customer",
+                           data={"phone": phone, "csrf_token": token})
+    assert response.status_code == 200
+    assert "مشتری جدید" in response.text
+    return response.text
+
+
+def test_child_block_is_absent_from_every_form_when_the_module_is_off(authed, db_session):
+    set_setting(db_session, "child_profile_enabled", "0")
+
+    registration = authed.get("/customers/lookup").text
+    checkout = _create_customer_step(authed)
+    profile_customer = make_customer(db_session, first_name="بدون‌فرزند")
+    profile = list_html(authed, f"/{profile_customer.id}")
+
+    for name, body in (("registration", registration), ("checkout", checkout),
+                       ("profile", profile)):
+        assert "child_birthday" not in body, name
+        assert "نام فرزند" not in body, name
+        # The birthday picker that only exists for the child is gone with it.
+        assert 'id="child_birthday"' not in body, name
+        # ...and with only one possible answer there is no choice to offer.
+        assert 'name="buys_for"' not in body, name
+        # ...while every one of those surfaces asks for a birthday this store
+        # can actually use instead: the customer's own.
+        assert 'id="birth_date"' in body, name
+
+
+def test_child_block_is_present_when_the_module_is_on(authed, db_session):
+    registration = authed.get("/customers/lookup").text
+    assert "child_birthday" in registration
+    assert "نام فرزند" in registration
+    # ...and the customer is asked to choose, because the choice is theirs.
+    assert 'name="buys_for"' in registration
+
+    checkout = _create_customer_step(authed, phone="09129998866")
+    assert 'class="persian-date-input" data-pdp-max="today"' in checkout
+    assert "نام فرزند" in checkout
+
+    customer = make_customer(db_session, first_name="با‌فرزند")
+    profile = list_html(authed, f"/{customer.id}")
+    assert 'id="child_birthday"' in profile
+    assert "تولد فرزند" in profile
+
+
+def test_registration_does_not_store_child_data_when_the_module_is_off(client, authed, db_session):
+    set_setting(db_session, "child_profile_enabled", "0")
+
+    token = csrf_token(client)
+    client.post("/customers", data={
+        "csrf_token": token,
+        "phone": "09121112233",
+        "first_name": "بزرگسال",
+        "last_name": "بدون فرزند",
+        "child_name": "نباید ذخیره شود",
+        "child_birthday": "1400/01/01",
+    }, follow_redirects=False)
+
+    customer = db_session.query(Customer).filter(Customer.phone == "09121112233").first()
+    assert customer is not None
+    assert customer.child_name is None
+    assert customer.child_birthday is None
+
+
+def test_the_panel_refuses_a_child_choice_when_the_module_is_off(authed, db_session):
+    """An adult shop cannot be made to run a child programme by posting the choice."""
+    customer = make_customer(db_session, child_name="قبلی", child_birthday="01-01")
+    set_setting(db_session, "child_profile_enabled", "0")
+
+    token = csrf_token(authed, "/customers/lookup")
+    response = authed.post(f"/customers/{customer.id}/update-details", data={
+        "csrf_token": token,
+        "buys_for": "child",
+        "child_name": "جدید",
+        "child_birthday": "1401/02/02",
+        "birth_date": "1360/05/12",
+    })
+
+    assert response.status_code == 200
+    db_session.refresh(customer)
+    # The child option was refused outright, and the child fields were untouched…
+    assert customer.buys_for is None
+    assert customer.child_name == "قبلی"
+    assert customer.child_birthday == "01-01"
+    # …so the choice that survives is the one this store can honour.
+    assert customer.birth_month_day == "05-12"
+
+
+def test_turning_the_module_off_keeps_the_data_on_file(authed, db_session):
+    customer = make_customer(db_session, child_name="آوا", child_birthday="03-20", child_birth_year=1400)
+    set_setting(db_session, "child_profile_enabled", "0")
+    set_setting(db_session, "child_profile_enabled", "1")
+
+    db_session.refresh(customer)
+    assert customer.child_name == "آوا"
+    assert customer.child_birthday == "03-20"
+
+
+# ── settings ─────────────────────────────────────────────────────────────────
+
+def test_settings_toggles_persist_the_unticked_state(client, authed, db_session):
+    """An unchecked box posts nothing, so the form needs its hidden companion."""
+    token = csrf_token(client, "/admin/settings")
+    client.post("/admin/settings", data={
+        "csrf_token": token,
+        # The hidden companion the form always posts for an unticked box.
+        "child_profile_enabled": "0",
+    }, follow_redirects=False)
+
+    row = db_session.query(Settings).filter(Settings.key == "child_profile_enabled").first()
+    assert row is not None and row.value == "0"
+
+    token = csrf_token(client, "/admin/settings")
+    client.post("/admin/settings", data={
+        "csrf_token": token,
+        # Hidden companion first, then the ticked box — the last value wins.
+        "child_profile_enabled": ["0", "1"],
+    }, follow_redirects=False)
+
+    db_session.expire_all()
+    row = db_session.query(Settings).filter(Settings.key == "child_profile_enabled").first()
+    assert row.value == "1"
+
+
+def test_turning_the_child_module_off_cannot_leave_a_child_only_target(client, authed, db_session):
+    token = csrf_token(client, "/admin/settings")
+    client.post("/admin/settings", data={
+        "csrf_token": token,
+        "birthday_target": "child",
+    }, follow_redirects=False)
+    db_session.expire_all()
+    assert db_session.query(Settings).filter(Settings.key == "birthday_target").first().value == "child"
+
+    token = csrf_token(client, "/admin/settings")
+    client.post("/admin/settings", data={
+        "csrf_token": token,
+        "birthday_target": "child",
+        "child_profile_enabled": "0",
+    }, follow_redirects=False)
+
+    db_session.expire_all()
+    assert db_session.query(Settings).filter(Settings.key == "birthday_target").first().value == "customer"
+
+
+def test_settings_page_exposes_both_toggles(authed):
+    body = authed.get("/admin/settings").text
+    assert 'name="birthday_target"' in body
+    assert 'name="child_profile_enabled"' in body
+    assert 'value="customer"' in body and 'value="child"' in body and 'value="both"' in body
+
+
+def test_defaults_keep_the_childrens_shop_behaviour(client, db_session):
+    """No settings rows: today's behaviour (child birthdays, child profile on)."""
+    assert db_session.query(Settings).filter(Settings.key == "birthday_target").first() is None
+    from services._common import birthday_subjects, child_profile_enabled
+
+    assert child_profile_enabled(db_session) is True
+    assert birthday_subjects(db_session) == ("child",)
+
+
+# ── campaign audience ────────────────────────────────────────────────────────
+
+def test_campaign_send_skips_opted_out_and_archived_customers(authed, db_session):
+    """Consent and archiving still decide who is messaged — but no tier does.
+
+    The send used to be hardcoded to diamond, which reached nobody in a shop
+    whose customers are all silver. The audience is now chosen per send and the
+    only filters left are the ones the customer controls: consent and archiving.
+    """
+    from models import Campaign, CampaignAssignment
+
+    campaign = Campaign(name="کمپین", code="CMP1", discount_percent=10, min_purchase=0)
+    db_session.add(campaign)
+    db_session.commit()
+    db_session.refresh(campaign)
+
+    set_setting(db_session, "sms_pattern_campaign", "کمپین {var2}")
+    willing = make_customer(db_session, tier="silver", first_name="راضی", phone="09121110001")
+    unwilling = make_customer(db_session, tier="silver", first_name="ناراضی", phone="09121110002",
+                              sms_opt_in=False)
+    archived = make_customer(db_session, tier="silver", first_name="بایگانی", phone="09121110003",
+                             is_archived=True)
+
+    token = csrf_token(authed, "/admin/campaigns")
+    response = authed.post(f"/admin/campaigns/{campaign.id}/send",
+                           data={"csrf_token": token, "audience": "all"},
+                           follow_redirects=False)
+
+    # The send redirects to the report with the outcome, rather than rendering
+    # the list: the report is where the counts and the holders live.
+    assert response.status_code == 303
+    assert f"/admin/campaigns/{campaign.id}" in response.headers["location"]
+
+    db_session.expire_all()
+    invited = db_session.query(CampaignAssignment).filter(
+        CampaignAssignment.campaign_id == campaign.id,
+    ).all()
+    assert [row.customer_id for row in invited] == [willing.id]
+    assert invited[0].invite_sent_at is not None
+    assert invited[0].status == "invited"
+
+    # A second send must not message the same person again.
+    response = authed.post(f"/admin/campaigns/{campaign.id}/send",
+                           data={"csrf_token": csrf_token(authed, "/admin/campaigns"),
+                                 "audience": "all"},
+                           follow_redirects=False)
+    assert response.status_code == 303
+    db_session.expire_all()
+    assert db_session.query(CampaignAssignment).filter(
+        CampaignAssignment.campaign_id == campaign.id,
+    ).count() == 1
+    assert unwilling.id not in [row.customer_id for row in invited]
+    assert archived.id not in [row.customer_id for row in invited]
+
+
+# ── migration ────────────────────────────────────────────────────────────────
+
+def test_new_customer_columns_are_added_without_changing_existing_rows(tmp_path):
+    from main import _apply_missing_columns
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'legacy.db'}")
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE customers (id INTEGER PRIMARY KEY, phone VARCHAR(15), "
+            "referral_code VARCHAR(10))"
+        ))
+        conn.execute(text(
+            "INSERT INTO customers (id, phone, referral_code) VALUES (1, '09120000000', 'OLD001')"
+        ))
+
+    _apply_missing_columns(engine)
+
+    columns = {column["name"] for column in inspect(engine).get_columns("customers")}
+    assert {"birth_month_day", "birth_year", "notes", "tags", "sms_opt_in",
+            "is_archived", "child_birth_year"} <= columns
+
+    with engine.connect() as conn:
+        row = conn.execute(text("SELECT sms_opt_in, is_archived FROM customers WHERE id=1")).one()
+    # An existing customer stays opted in and unarchived — not silently dropped
+    # out of the birthday and campaign sends.
+    assert row[0] == 1
+    assert row[1] == 0
+
+
+def test_opt_in_helpers_treat_null_as_consent(db_session):
+    from services.customers import marketing_opt_in
+
+    assert marketing_opt_in(make_customer(db_session, sms_opt_in=None)) is True
+    assert marketing_opt_in(make_customer(db_session, sms_opt_in=True)) is True
+    assert marketing_opt_in(make_customer(db_session, sms_opt_in=False)) is False
+
+
+# ── links from the list and the profile ──────────────────────────────────────
+
+def test_list_and_profile_are_linked_both_ways(authed, db_session):
+    customer = make_customer(db_session, first_name="پیوندی")
+    assert f'/admin/customers/{customer.id}"' in list_html(authed)
+
+    body = list_html(authed, f"/{customer.id}")
+    assert 'href="/admin/customers"' in body
+    assert f'href="/admin/credit/{customer.id}"' in body
+
+
+def test_discount_buttons_redirect_back_to_the_admin_profile(authed, db_session):
+    customer = make_customer(db_session, referred_discount=30_000)
+    token = csrf_token(authed, f"/admin/customers/{customer.id}")
+
+    response = authed.post(f"/customers/{customer.id}/use-referred-discount", data={
+        "csrf_token": token,
+        "next": f"/admin/customers/{customer.id}",
+    }, follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith(f"/admin/customers/{customer.id}?msg=")
+    db_session.refresh(customer)
+    assert customer.has_used_referred_discount is True
+
+
+def test_discount_buttons_refuse_an_external_next(authed, db_session):
+    customer = make_customer(db_session, referred_discount=30_000)
+    token = csrf_token(authed, f"/admin/customers/{customer.id}")
+
+    response = authed.post(f"/customers/{customer.id}/use-referred-discount", data={
+        "csrf_token": token,
+        "next": "https://example.com/steal",
+    }, follow_redirects=False)
+
+    assert response.status_code == 200  # falls back to the customer panel
+    assert "example.com" not in response.text
+
+
+# ── the customer's own birthday at the counter ───────────────────────────────
+# An adult clothing shop signing someone up has nothing to ask about a child, so
+# the birthday a counter form asks for follows the store's target rather than
+# being fixed to the child: a children's shop asks about the child, an adult shop
+# about the customer. The server gates writes on the same rule, so neither shop
+# can be made to store the other's birthday by hand-posting a form.
+
+def adult_shop(db):
+    """The configuration an adult clothing shop runs: no child module."""
+    set_setting(db, "child_profile_enabled", "0")
+    set_setting(db, "birthday_target", "customer")
+
+
+def panel_html(client, customer) -> str:
+    """The cashier-facing customer panel, which is what the counter sees."""
+    return client.get(f"/customers/lookup?phone={customer.phone}").text
+
+
+def test_a_childrens_shop_defaults_the_choice_to_the_child(authed, db_session):
+    """Defaults (target=child, module on) pre-select «برای فرزندم» and open its panel.
+
+    The customer's own panel ships too — the choice is theirs to switch — but it
+    starts hidden, so the form still asks what this shop's customers expect.
+    """
+    registration = authed.get("/customers/lookup").text
+    assert re.search(r'id="buys-for-child"[^>]*checked', registration)
+    assert not re.search(r'id="buys-for-self"[^>]*checked', registration)
+    assert re.search(r'data-buys-for-panel="self"[^>]*is-hidden', registration)
+    assert not re.search(r'data-buys-for-panel="child"[^>]*is-hidden', registration)
+
+    checkout = _create_customer_step(authed, phone="09121110099")
+    assert re.search(r'id="buys-for-child"[^>]*checked', checkout)
+    assert 'id="child_birthday"' in checkout
+
+
+def test_adult_shop_signup_asks_for_the_customers_own_birthday(authed, db_session):
+    adult_shop(db_session)
+
+    registration = authed.get("/customers/lookup").text
+    assert 'id="birth_date"' in registration
+    assert 'id="child_birthday"' not in registration
+    # With only one possible answer there is nothing to ask.
+    assert 'name="buys_for"' not in registration
+
+    checkout = _create_customer_step(authed)
+    assert 'id="birth_date"' in checkout
+    assert "نام فرزند" not in checkout
+
+
+def test_switching_the_child_module_off_still_asks_for_a_birthday(authed, db_session):
+    """The target may still read «فرزند»; with the module off it means the customer.
+
+    Otherwise an adult shop that only unticked the child box would collect no
+    birthday at all and its birthday discount could never fire on anyone.
+    """
+    set_setting(db_session, "child_profile_enabled", "0")
+    assert 'id="birth_date"' in authed.get("/customers/lookup").text
+
+
+def test_registration_stores_the_customers_own_birthday(authed, db_session):
+    adult_shop(db_session)
+
+    token = csrf_token(authed)
+    authed.post("/customers", data={
+        "csrf_token": token,
+        "phone": "09121234567",
+        "first_name": "بزرگسال",
+        "birth_date": "1360/05/12",
+    }, follow_redirects=False)
+
+    customer = db_session.query(Customer).filter(Customer.phone == "09121234567").first()
+    assert customer is not None
+    assert customer.birth_month_day == "05-12"
+    assert customer.birth_year == 1360
+
+
+def test_checkout_creates_the_customer_with_their_own_birthday(authed, db_session):
+    adult_shop(db_session)
+
+    token = csrf_token(authed, "/sales/new")
+    response = authed.post("/sales/create-customer", data={
+        "csrf_token": token,
+        "phone": "09129990011",
+        "first_name": "خریدار",
+        "birth_date": "1355/01/02",
+    }, follow_redirects=False)
+
+    assert response.status_code == 200
+    customer = db_session.query(Customer).filter(Customer.phone == "09129990011").first()
+    assert customer is not None
+    assert customer.birth_month_day == "01-02"
+    assert customer.birth_year == 1355
+
+
+def test_a_childrens_shop_never_stores_a_customer_birthday(authed, db_session):
+    """A hand-posted customer birthday is ignored while the target is the child."""
+    token = csrf_token(authed)
+    authed.post("/customers", data={
+        "csrf_token": token,
+        "phone": "09127654321",
+        "first_name": "والد",
+        "birth_date": "1360/05/12",
+        "child_name": "سارا",
+        "child_birthday": "1400/03/15",
+    }, follow_redirects=False)
+
+    customer = db_session.query(Customer).filter(Customer.phone == "09127654321").first()
+    assert customer.birth_month_day is None
+    assert customer.birth_year is None
+    # The child's birthday is still stored — now with its year, so the age the
+    # size guide needs can finally be worked out.
+    assert customer.child_birthday == "03-15"
+    assert customer.child_birth_year == 1400
+
+
+def test_the_panel_can_record_the_customers_birthday(authed, db_session):
+    adult_shop(db_session)
+    customer = make_customer(db_session, first_name="بدون‌تولد")
+
+    assert "/update-details" in panel_html(authed, customer)
+
+    token = csrf_token(authed, "/customers/lookup")
+    response = authed.post(f"/customers/{customer.id}/update-details", data={
+        "csrf_token": token,
+        "buys_for": "self",
+        "birth_date": "1362/07/08",
+    })
+
+    assert "پرونده مشتری به‌روزرسانی شد" in response.text
+    db_session.refresh(customer)
+    assert customer.buys_for == "self"
+    assert customer.birth_month_day == "07-08"
+    assert customer.birth_year == 1362
+
+
+def test_the_panel_stores_only_the_side_the_customer_chose(authed, db_session):
+    """A child-buyer's hand-posted customer birthday is never written."""
+    customer = make_customer(db_session, first_name="والد")
+
+    token = csrf_token(authed, "/customers/lookup")
+    response = authed.post(f"/customers/{customer.id}/update-details", data={
+        "csrf_token": token,
+        "buys_for": "child",
+        "birth_date": "1362/07/08",
+        "child_name": "سارا",
+        "child_birthday": "1400/03/15",
+    })
+
+    assert response.status_code == 200
+    db_session.refresh(customer)
+    assert customer.buys_for == "child"
+    assert customer.birth_month_day is None
+    assert customer.birth_year is None
+    assert customer.child_name == "سارا"
+    assert customer.child_birthday == "03-15"
+    assert customer.child_birth_year == 1400
+
+
+def test_the_panel_can_switch_the_choice_without_losing_the_other_side(authed, db_session):
+    """Switching writes the new side and keeps the old one, so going back is safe."""
+    customer = make_customer(db_session, first_name="تازه", child_name="آوا",
+                             child_birthday="03-15", child_birth_year=1400)
+
+    token = csrf_token(authed, "/customers/lookup")
+    authed.post(f"/customers/{customer.id}/update-details", data={
+        "csrf_token": token,
+        "buys_for": "self",
+        "birth_date": "1360/05/12",
+    })
+
+    db_session.refresh(customer)
+    assert customer.buys_for == "self"
+    assert customer.birth_month_day == "05-12"
+    assert customer.child_name == "آوا"
+    assert customer.child_birthday == "03-15"
+
+
+def test_one_childrens_shop_wishes_two_customers_differently(db_session):
+    """The choice is per customer, not per store — the money path follows it."""
+    set_setting(db_session, "birthday_target", "child")
+    parent = make_customer(db_session, tier="gold", first_name="والد", buys_for="child",
+                           child_birthday=month_day_in(2), child_birth_year=1400)
+    self_buyer = make_customer(db_session, tier="gold", first_name="خودم", buys_for="self",
+                               birth_month_day=month_day_in(2), birth_year=1360)
+
+    child_discounts = calculate_discounts(customer=parent, total_amount=1_000_000, db=db_session)
+    own_discounts = calculate_discounts(customer=self_buyer, total_amount=1_000_000, db=db_session)
+
+    assert "تخفیف تولد فرزند" in " ".join(child_discounts["details"])
+    # Same shop, same day — but this one asked to be wished on their own birthday.
+    assert "تخفیف تولد شما" in " ".join(own_discounts["details"])
+
+
+def test_a_customer_birthday_round_trips_through_the_form(authed, db_session):
+    """The picker must re-open on the stored date, in Persian digits."""
+    adult_shop(db_session)
+    customer = make_customer(db_session, birth_month_day="07-08", birth_year=1362)
+    assert 'value="۱۳۶۲/۰۷/۰۸"' in panel_html(authed, customer)
+
+    # The same round trip on the child's side of the form.
+    set_setting(db_session, "child_profile_enabled", "1")
+    set_setting(db_session, "birthday_target", "child")
+    child_customer = make_customer(db_session, buys_for="child", child_name="آوا",
+                                   child_birthday="02-03", child_birth_year=1400)
+    assert 'value="۱۴۰۰/۰۲/۰۳"' in panel_html(authed, child_customer)
+
+
+# ── list: figures from the invoices ─────────────────────────────────────────
+
+def test_the_list_prints_what_the_invoices_say_not_the_counter(authed, db_session):
+    """A stale counter must not mislead the shop that reads the list.
+
+    The stored counters are the tier's ledger, but they are maintained by
+    hand at every write site — a refund whose reversal missed, a crash
+    between the sale and the counter, and the list would show a customer
+    spending money the invoices never recorded. The page now prints the
+    invoices' own aggregate, so the drift is visible in the counter columns
+    of the profile instead of being printed as truth here.
+    """
+    drifted = make_customer(db_session, first_name="وامانده", total_spent=9_000_000,
+                            total_purchases=7)
+    make_sale(db_session, drifted, amount=1_200_000)
+
+    body = list_html(authed)
+    assert "1,200,000" in body            # the invoices' sum, printed
+    assert "9,000,000" not in body        # the drifted counter, not printed
+    assert ">1 خرید<" in body             # one counted invoice, not seven
+
+
+def test_the_list_counts_only_confirmed_unrefunded_invoices(authed, db_session):
+    """The same rows the profile counts: confirmed, never refunded.
+
+    A waiting payment is not a purchase and a refunded invoice is not spend,
+    so neither may print as one. The three-way seed states each boundary:
+    the waiting sale, the refunded one, and the one that counts.
+    """
+    customer = make_customer(db_session, first_name="مرزی")
+    make_sale(db_session, customer, amount=500_000, confirmed=False)          # waiting
+    refunded = make_sale(db_session, customer, amount=700_000)
+    refunded.is_refunded = True
+    db_session.commit()
+    make_sale(db_session, customer, amount=300_000)                           # counted
+
+    body = list_html(authed)
+    assert "300,000" in body
+    assert "500,000" not in body
+    assert "700,000" not in body
+
+
+def test_the_counter_sort_orders_by_the_counted_invoices(authed, db_session):
+    """count_desc must order by the invoices' count, not the stored counter."""
+    counter_big = make_customer(db_session, first_name="شمارنده‌بزرگ", total_purchases=9)
+    make_sale(db_session, counter_big, amount=100_000)
+    invoice_big = make_customer(db_session, first_name="فاکتوربزرگ", total_purchases=1)
+    make_sale(db_session, invoice_big, amount=100_000)
+    make_sale(db_session, invoice_big, amount=100_000)
+
+    body = list_html(authed, "?sort=count_desc")
+    first = re.search(r'/admin/customers/(\d+)"', body).group(1)
+    assert first == str(invoice_big.id)
+
+
+# ── settings: the server owns the numbers ────────────────────────────────────
+
+def test_a_negative_surcharge_is_refused_not_saved_as_a_hidden_discount(authed, db_session):
+    """«درصد افزایش نسیه» at −10 would take 100,000 تومان *off* a credit sale.
+
+    The input's min="0" is the browser's kindness, not the server's rule: a
+    typed minus sign posts straight through, and the reader happily computed a
+    negative surcharge. The value is refused with the field's Persian name and
+    nothing is written.
+    """
+    from models import Settings
+
+    token = csrf_token(authed, "/admin/settings")
+    response = authed.post("/admin/settings", data={
+        "csrf_token": token,
+        "credit_surcharge_percent": "-10",
+    }, follow_redirects=False)
+    assert response.status_code == 303 and "err=" in response.headers["location"]
+    assert "درصد افزایش نسیه" in unquote(response.headers["location"])
+    assert db_session.query(Settings).filter(
+        Settings.key == "credit_surcharge_percent").first() is None
+
+
+def test_garbage_in_a_numeric_field_is_refused_with_the_field_named(authed, db_session):
+    """«۵۰۶۴» typed as a price, «abc» typed by a slip — neither is a number the
+    app can act on, and `get_setting_int` answering the default would be the
+    third silent answer. The save is refused and the field is named."""
+    from models import Settings
+
+    token = csrf_token(authed, "/admin/settings")
+    response = authed.post("/admin/settings", data={
+        "csrf_token": token,
+        "tier_points_per_amount": "abc",
+    }, follow_redirects=False)
+    assert response.status_code == 303 and "err=" in response.headers["location"]
+    assert "امتیاز به ازای هر خرید" in unquote(response.headers["location"])
+    assert db_session.query(Settings).filter(
+        Settings.key == "tier_points_per_amount").first() is None
+
+
+def test_persian_digits_are_understood_by_the_settings_form(authed, db_session):
+    """The owner types ۸ for the barcode length; the page must read Persian
+    digits the way every other money and count field in the app does."""
+    from models import Settings
+
+    token = csrf_token(authed, "/admin/settings")
+    response = authed.post("/admin/settings", data={
+        "csrf_token": token,
+        "barcode_code_length": "۸",
+    }, follow_redirects=False)
+    assert response.status_code == 303 and "msg=" in response.headers["location"]
+    row = db_session.query(Settings).filter(Settings.key == "barcode_code_length").one()
+    assert row.value == "8"
+
+
+def test_a_negative_points_rate_cannot_take_points_off_a_purchase(db_session):
+    """Defense in depth: a negative rate that somehow reached Settings (a row
+    written before the rule, or by hand) must not drive a customer's points
+    below zero on their next buy."""
+    from services.tier import calculate_points
+
+    config = {"points_per_toman": 100_000, "points_per_amount": -10}
+    assert calculate_points(500_000, config) == 0
+    assert calculate_points(500_000, {"points_per_toman": 100_000, "points_per_amount": 10}) == 50
+
+
+def test_points_arithmetic_has_one_definition():
+    """``calculate_points`` owns the rate → points conversion; a hand
+    re-derivation anywhere else would silently disagree with the settings page
+    when the rate changes — points awarded at yesterday's rate, tiers moved by
+    a rule the shop no longer set. No source may do the division again.
+
+    Mirrors the credit guard: the canonical definition must keep the two
+    properties that make it the definition — the non-positive-rate refusal
+    (a stray row reads as no points, never a penalty) and floor division
+    (points are whole) — and the award path must go through it, not inline it.
+    """
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    sources = [root / "main.py"]
+    for folder in ("routers", "services", "templates", "static"):
+        sources.extend(p for p in (root / folder).rglob("*")
+                       if p.suffix in (".py", ".js", ".html"))
+    assert len(sources) > 40, "the sweep lost its sources"
+
+    canonical_path = root / "services" / "tier.py"
+    canonical = canonical_path.read_text(encoding="utf-8")
+    assert "def calculate_points" in canonical, "the helper moved — re-point this guard"
+    start = canonical.index("def calculate_points")
+    definition = canonical[start:canonical.index("\ndef ", start)]
+    assert "<= 0" in definition and "return 0" in definition, (
+        "calculate_points must refuse a non-positive rate — a stray row is no points, not a penalty")
+    assert "//" in definition, "points are whole: the conversion must floor, not float"
+    assert "*" in definition and "points_per_amount" in definition, (
+        "the rate multiplication belongs to the definition")
+    # The award path must call the definition — an inlined copy inside tier.py
+    # itself would drift the moment the refusal or the floor changed.
+    assert "calculate_points(" in canonical.split("def update_customer_after_purchase")[1]
+
+    # Anywhere else, the rate tokens may be named (the settings form, the
+    # config reader) but never combined with the derivation operators.
+    offenders = []
+    for path in sources:
+        if not path.is_file():
+            continue
+        src = path.read_text(encoding="utf-8")
+        for line_no, line in enumerate(src.splitlines(), start=1):
+            if "points_per_toman" not in line and "points_per_amount" not in line:
+                # The literal-rate family: a hand copy bakes today's defaults in
+                # (`// 100000) * 10`) and never names the tokens. It must name
+                # points and derive them arithmetically to be one.
+                if ("point" in line.lower()
+                        and re.search(r"//|\*", line)
+                        and re.search(r"\b\d{4,}\b", line)):
+                    offenders.append(f"{path}:{line_no}: literal-rate derivation: {line.strip()[:80]}")
+                continue
+            if not re.search(r"//|\*|[^a-z/]/[^a-z]|%", line.replace("https://", "").replace("http://", "")):
+                continue
+            if path.name == "tier.py":
+                # Byte offset of the line vs the character window of the definition.
+                char_at_line = src.rindex(line)
+                def_start = src.index("def calculate_points")
+                def_end = src.index("\ndef ", def_start)
+                if def_start <= char_at_line <= def_end:
+                    continue
+            offenders.append(f"{path}:{line_no}: {line.strip()[:80]}")
+
+    assert not offenders, (
+        "points arithmetic re-derived by hand outside calculate_points — "
+        "call the helper instead:\n" + "\n".join(offenders))
+
+
+def test_a_negative_surcharge_row_cannot_discount_a_credit_sale(db_session):
+    """The same defence at the نسیه reader: a stored −10 must read as off."""
+    from services.accounting import apply_credit_surcharge
+
+    from tests.test_customers import set_setting
+
+    set_setting(db_session, "credit_surcharge_percent", "-10")
+    surcharge, final = apply_credit_surcharge(db_session, 1_000_000, 0)
+    assert (surcharge, final) == (0, 1_000_000)
+
+
+# ── profile: the drift banner and the reconcile that closes it ───────────────
+
+def test_the_drift_banner_names_both_sides_and_offers_the_fix(authed, db_session):
+    """A mismatched counter is a page-width warning with the figures and, for
+    the owner, the button — not a quiet note under one KPI."""
+    from services.customers import reconcile_customer_counters
+
+    drifted = make_customer(db_session, first_name="ناسازگار", total_spent=9_000_000,
+                            total_purchases=7)
+    make_sale(db_session, drifted, amount=1_200_000)
+    reconcile_customer_counters(db_session, drifted)   # heal it for the role test below
+    drifted.total_spent = 9_000_000                    # re-drift both counters
+    drifted.total_purchases = 7
+    db_session.commit()
+
+    body = list_html(authed, f"/{drifted.id}")
+    assert "شمارنده‌های این پرونده با فاکتورها نمی‌خوانند." in body
+    assert "ثبت‌شده 9,000,000 ت، از فاکتورها 1,200,000 ت." in body
+    assert "تعداد خرید: ثبت‌شده 7، از فاکتورها 1" in body
+    assert "هم‌سازی با فاکتورها" in body
+
+
+def test_a_clean_profile_carries_no_banner_and_no_button(authed, db_session):
+    customer = make_customer(db_session, first_name="هم‌ساز", total_spent=400_000,
+                             total_purchases=1)
+    make_sale(db_session, customer, amount=400_000)
+    body = list_html(authed, f"/{customer.id}")
+    assert "نامطابق" not in body
+    assert "هم‌سازی با فاکتورها" not in body
+
+
+def test_reconcile_writes_the_invoices_sum_and_says_what_moved(authed, db_session):
+    from models import AdminLog
+
+    drifted = make_customer(db_session, first_name="ترمیم", total_spent=9_000_000,
+                            total_purchases=7)
+    make_sale(db_session, drifted, amount=1_200_000)
+    token = csrf_token(authed, f"/admin/customers/{drifted.id}")
+    response = authed.post(f"/admin/customers/{drifted.id}/reconcile",
+                           data={"csrf_token": token}, follow_redirects=False)
+    assert response.status_code == 303
+    db_session.expire(drifted)
+    assert drifted.total_spent == 1_200_000
+    assert drifted.total_purchases == 1
+    log = db_session.query(AdminLog).filter(AdminLog.action == "customer_reconcile").one()
+    import json as _json
+    assert _json.loads(log.before_json)["total_spent"] == 9_000_000
+    assert _json.loads(log.after_json)["total_purchases"] == 1
+    from urllib.parse import unquote
+    assert "هم‌ساز شد" in unquote(response.headers["location"])
+
+
+def test_reconcile_does_not_touch_an_already_clean_counter(authed, db_session):
+    from models import AdminLog
+
+    # Counters already say what the invoice says: reconcile must change nothing.
+    customer = make_customer(db_session, first_name="سالم", total_spent=400_000,
+                             total_purchases=1)
+    make_sale(db_session, customer, amount=400_000)
+    db_session.expire(customer)
+    token = csrf_token(authed, f"/admin/customers/{customer.id}")
+    response = authed.post(f"/admin/customers/{customer.id}/reconcile",
+                           data={"csrf_token": token}, follow_redirects=False)
+    assert response.status_code == 303
+    from urllib.parse import unquote
+    assert "چیزی تغییر نکرد" in unquote(response.headers["location"])
+    log = db_session.query(AdminLog).filter(AdminLog.action == "customer_reconcile").one()
+    import json as _json
+    assert _json.loads(log.before_json) == _json.loads(log.after_json)
+
+
+def test_reconcile_counts_only_confirmed_unrefunded_invoices(authed, db_session):
+    customer = make_customer(db_session, first_name="مرزها", total_purchases=5)
+    make_sale(db_session, customer, amount=500_000, confirmed=False)   # waiting: not a purchase
+    refunded = make_sale(db_session, customer, amount=700_000)
+    refunded.is_refunded = True
+    db_session.commit()
+    make_sale(db_session, customer, amount=300_000)                    # the one that counts
+    token = csrf_token(authed, f"/admin/customers/{customer.id}")
+    authed.post(f"/admin/customers/{customer.id}/reconcile", data={"csrf_token": token},
+                follow_redirects=False)
+    db_session.expire(customer)
+    assert customer.total_spent == 300_000
+    assert customer.total_purchases == 1
+
+
+def test_reconcile_is_owner_only(client, db_session):
+    """A manager POSTing the reconcile is refused and the counter is untouched."""
+    from services.security import hash_password
+
+    manager = StaffUser(username="manager-rec", password_hash=hash_password("role-pass"), role="manager")
+    db_session.add(manager)
+    db_session.commit()
+    drifted = make_customer(db_session, first_name="دسترس", total_spent=9_000_000)
+    make_sale(db_session, drifted, amount=1_200_000)
+    token = csrf_token(client)
+    client.post("/admin/login", data={"username": "manager-rec", "password": "role-pass",
+                                      "csrf_token": token}, follow_redirects=False)
+    assert client.post(f"/admin/customers/{drifted.id}/reconcile",
+                       data={"csrf_token": csrf_token(client, f"/admin/customers/{drifted.id}")},
+                       follow_redirects=False).status_code == 403
+    db_session.expire_all()
+    assert drifted.total_spent == 9_000_000   # untouched
+
+
+def test_the_reconcile_machinery_keeps_its_shape():
+    """One counted-sales definition; the POST route guarded and audited."""
+    service_src = (ROOT / "services" / "customers.py").read_text(encoding="utf-8")
+    assert service_src.count("_counted_sales_query(") >= 3, \
+        "the counted-sales rule must be shared, not restated"
+    admin_src = (ROOT / "routers" / "admin.py").read_text(encoding="utf-8")
+    start = admin_src.index("async def admin_customer_reconcile")
+    route = admin_src[start:admin_src.index("\n@router.", start)]
+    assert 'require_html_role(request, db, "owner")' in route
+    assert "log_action(" in route
+    assert "reconcile_customer_counters(db, customer)" in route

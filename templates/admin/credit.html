@@ -1,0 +1,357 @@
+{% extends "base.html" %}
+{% block content %}
+{% set filter_qs = '&status=' ~ status ~ '&bucket=' ~ bucket ~ '&sort=' ~ sort
+    ~ '&view=' ~ view ~ '&search=' ~ (search|urlencode) %}
+{# The bucket cards carry their own key, so each link is the filter it counts.
+   No `bucket=` in this suffix: two of the same parameter would fight. #}
+{% set bucket_qs = '&status=' ~ status ~ '&sort=' ~ sort ~ '&view=' ~ view
+    ~ '&search=' ~ (search|urlencode) %}
+
+{% set page_description %}
+هر چه مشتریان بدهکارند، از سررسید گذشته تا جاری — با فیلتر، فاکتور به فاکتور و دریافت. سن بدهی از <strong>سررسید</strong> حساب می‌شود و برای فاکتورهای بدون سررسید از تاریخ فاکتور.
+{% endset %}
+{% set heading_class = 'page-heading product-page-heading' %}
+{% set page_actions %}
+<a href="/admin/customers" class="btn btn-ghost">مشتریان</a>
+        <a href="/admin/accounting" class="btn btn-ghost">سود و زیان</a>
+{% endset %}
+{% include 'partials/page_header.html' %}
+
+{% if sent %}<div class="alert alert-success" role="status">{{ sent }} یادآوری ارسال شد.</div>{% endif %}
+
+<div class="stats-grid credit-kpi" aria-label="خلاصه حساب نسیه">
+    <a class="stat-card accent-persimmon" href="/admin/credit">
+        <div class="stat-label">کل بدهی</div>
+        <div class="stat-value tnum">{{ fmt(overview.total_debt) }} ت</div>
+        <div class="stat-sub">{{ overview.debtor_count }} مشتری بدهکار</div>
+    </a>
+    <a class="stat-card accent-ink" href="/admin/credit?status=overdue">
+        <div class="stat-label">سررسید گذشته</div>
+        <div class="stat-value tnum">{{ fmt(overview.overdue_amount) }} ت</div>
+        <div class="stat-sub">{{ overview.overdue_customers }} مشتری · {{ overview.bucket_counts['1_30'] + overview.bucket_counts['31_60'] + overview.bucket_counts['61_90'] + overview.bucket_counts['over_90'] }} فاکتور</div>
+    </a>
+    <a class="stat-card accent-saffron" href="/admin/credit?status=due_soon">
+        <div class="stat-label">سررسید تا {{ overview.due_soon_days }} روز</div>
+        <div class="stat-value tnum">{{ fmt(overview.due_soon_amount) }} ت</div>
+        <div class="stat-sub">{{ overview.due_soon_customers }} مشتری در آستانه سررسید</div>
+    </a>
+    <a class="stat-card accent-sky" href="/admin/credit?status=over_limit">
+        <div class="stat-label">بالای سقف اعتبار</div>
+        <div class="stat-value tnum">{{ overview.over_limit_count }}</div>
+        <div class="stat-sub">
+            {% if overview.over_limit_count %}در مجموع {{ fmt(overview.over_limit_amount) }} ت بیش از سقف{% else %}همه در محدوده سقف{% endif %}
+        </div>
+    </a>
+</div>
+
+<section class="card credit-ageing" aria-label="سن بدهی">
+    <div class="section-heading-row">
+        <div>
+            <h3>سن بدهی</h3>
+            <p class="muted">
+                روی هر کارت بزنید تا همان بازه فیلتر شود؛
+                {% if overview.no_due_date_count %}
+                {{ overview.no_due_date_count }} فاکتور بدون سررسید ({{ fmt(overview.no_due_date_amount) }} ت) از تاریخ فاکتور سن می‌خورد.
+                {% else %}همه فاکتورهای باز سررسید دارند.{% endif %}
+            </p>
+        </div>
+    </div>
+    <div class="credit-buckets">
+        {# Each card links to the filter that reproduces the number on it, and
+           keeps the view and the rest of the filters. #}
+        {% for key, bucket_url in [
+            ('current', '?bucket=current'),
+            ('1_30', '?bucket=1_30'),
+            ('31_60', '?bucket=31_60'),
+            ('61_90', '?bucket=61_90'),
+            ('over_90', '?bucket=over_90'),
+        ] %}
+        <a class="bucket-card is-{{ key }}{% if bucket == key %} is-active{% endif %}"
+           href="/admin/credit{{ bucket_url }}{{ bucket_qs }}"
+           {% if bucket == key %}aria-current="true"{% endif %}>
+            <span class="bucket-label">{{ bucket_labels[key] }}</span>
+            <strong class="bucket-amount tnum">{{ fmt(overview.buckets[key]) }} ت</strong>
+            <small class="bucket-count tnum">{{ overview.bucket_counts[key] }} فاکتور</small>
+        </a>
+        {% endfor %}
+    </div>
+    {% if overview.no_due_date_count and terms_days > 0 %}
+    <form method="post" action="/admin/credit/assign-due-dates" class="credit-maintenance">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <p>
+            {{ overview.no_due_date_count }} فاکتور باز سررسید ندارند و تا امروز از تاریخ خودشان سن می‌خورند.
+            با ثبت سررسید {{ terms_days }} روزه روی آن‌ها، دیرکرد واقعی‌شان مشخص می‌شود.
+        </p>
+        <button type="submit" class="btn btn-sm btn-ghost">ثبت سررسید {{ terms_days }} روزه برای فاکتورهای باز</button>
+    </form>
+    {% endif %}
+    {% if overview.drift_count %}
+    <p class="credit-drift-note">
+        {{ overview.drift_count }} مشتری «نامطابق» هستند: بدهی ثبت‌شده‌شان با جمع فاکتورهای باز نمی‌خواند.
+        در پرونده هر کدام مشخص شده است.
+    </p>
+    {% endif %}
+</section>
+
+<section class="card credit-card" data-list-region="credit">
+    <div class="section-heading-row">
+        <div>
+            <h3 data-list-heading tabindex="-1">{% if view == 'invoices' %}فاکتورهای باز{% else %}بدهکاران{% endif %}</h3>
+            <p class="muted">
+                {% if view == 'invoices' %}
+                هر فاکتور جداگانه، از دیرکرددارترین؛ برای دریافت همان فاکتور روی «دریافت» بزنید.
+                {% else %}
+                یک ردیف برای هر مشتری با مجموع بدهی و بدترین دیرکرد او.
+                {% endif %}
+            </p>
+        </div>
+        <div class="view-toggle" role="group" aria-label="نمایش">
+            <a class="btn btn-sm {% if view == 'customers' %}btn-primary{% else %}btn-ghost{% endif %}"
+               href="?view=customers{{ filter_qs }}">مشتریان</a>
+            <a class="btn btn-sm {% if view == 'invoices' %}btn-primary{% else %}btn-ghost{% endif %}"
+               href="?view=invoices{{ filter_qs }}">فاکتورها</a>
+        </div>
+    </div>
+
+    <form method="get" action="/admin/credit" class="search-form credit-filter-form">
+        <input type="hidden" name="view" value="{{ view }}">
+        <div class="form-group">
+            <label class="sr-only" for="filter-search">جست‌وجو</label>
+            <input type="text" id="filter-search" name="search" value="{{ search }}" placeholder="نام یا شماره مشتری">
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="filter-status">وضعیت</label>
+            <select id="filter-status" name="status">
+                {% for key, label in status_labels.items() %}
+                <option value="{{ key }}" {% if status == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="filter-bucket">سن بدهی</label>
+            <select id="filter-bucket" name="bucket">
+                <option value="">همه بازه‌های سنی</option>
+                {% for key, label in bucket_labels.items() %}
+                <option value="{{ key }}" {% if bucket == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% if view == 'customers' %}
+        <div class="form-group">
+            <label class="sr-only" for="filter-sort">ترتیب</label>
+            <select id="filter-sort" name="sort">
+                {% for key, label in sort_labels.items() %}
+                <option value="{{ key }}" {% if sort == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+        <button type="submit" class="btn btn-primary">اعمال فیلتر</button>
+        {% if has_filters %}<a href="/admin/credit?view={{ view }}" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
+    </form>
+
+    <p class="credit-results">
+        {% if view == 'invoices' %}
+        {{ invoice_page.total }} فاکتور باز
+        {%- if invoice_page.total_pages > 1 %} · صفحه {{ invoice_page.page }} از {{ invoice_page.total_pages }}{% endif %}
+        {% else %}
+        {{ total }} بدهکار
+        {%- if total_pages > 1 %} · صفحه {{ page }} از {{ total_pages }}{% endif %}
+        {% endif %}
+    </p>
+
+    {% if view == 'invoices' %}
+        {% if invoice_page.rows %}
+        <div class="table-scroll">
+            <table class="data-table credit-table">
+                <thead>
+                    <tr>
+                        <th scope="col">فاکتور</th>
+                        <th scope="col">مشتری</th>
+                        <th scope="col">باقی‌مانده</th>
+                        <th scope="col">سررسید</th>
+                        <th scope="col">وضعیت</th>
+                        <th scope="col">عملیات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in invoice_page.rows %}
+                    <tr>
+                        <td><a class="text-link" href="/sales/invoice/{{ entry.sale.id }}">#{{ entry.sale.id }}</a></td>
+                        <td class="customer-name">
+                            <strong><a href="/admin/credit/{{ entry.customer.id }}#invoice-{{ entry.sale.id }}">{{ entry.customer.full_name }}</a></strong>
+                            <small class="customer-phone tnum">{{ entry.customer.phone }}</small>
+                        </td>
+                        <td class="tnum"><strong>{{ fmt(entry.remaining) }} ت</strong></td>
+                        <td class="tnum">
+                            {% if entry.due %}{{ jalali_str(entry.due, false) }}
+                            {% else %}<span class="customer-meta">—</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if entry.bucket == 'current' %}
+                            <span class="status-badge">جاری</span>
+                            {% else %}
+                            <span class="status-badge is-overdue">{{ entry.bucket_label }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a class="btn btn-sm btn-primary" href="/admin/credit/{{ entry.customer.id }}#invoice-{{ entry.sale.id }}">دریافت</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% elif has_filters %}
+        <div class="empty-state">
+            <h3>فاکتوری با این فیلترها پیدا نشد</h3>
+            <p>جست‌وجو یا بازه سنی را تغییر دهید.</p>
+            <a href="/admin/credit?view=invoices" class="btn btn-ghost">پاک‌کردن فیلتر</a>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <h3>هیچ فاکتور نسیه بازی وجود ندارد</h3>
+            <p>وقتی در فروش جدید روش پرداخت «نسیه» را انتخاب کنید، فاکتور همین‌جا فهرست می‌شود.</p>
+            <a href="/sales/new" class="btn btn-primary">فروش جدید</a>
+        </div>
+        {% endif %}
+
+        {% if invoice_page.total_pages > 1 %}
+        <nav class="product-pagination" aria-label="صفحه‌بندی فاکتورها">
+            {% if invoice_page.page > 1 %}<a class="btn btn-sm btn-ghost" href="?page={{ invoice_page.page - 1 }}{{ filter_qs }}">صفحه قبل</a>{% endif %}
+            <span>صفحه {{ invoice_page.page }} از {{ invoice_page.total_pages }}</span>
+            {% if invoice_page.page < invoice_page.total_pages %}<a class="btn btn-sm btn-ghost" href="?page={{ invoice_page.page + 1 }}{{ filter_qs }}">صفحه بعد</a>{% endif %}
+        </nav>
+        {% endif %}
+
+    {% else %}
+        {% if rows %}
+        <div class="table-scroll">
+            <table class="data-table credit-table">
+                <thead>
+                    <tr>
+                        <th scope="col">مشتری</th>
+                        <th scope="col">سطح</th>
+                        <th scope="col">بدهی</th>
+                        <th scope="col">سقف اعتبار</th>
+                        <th scope="col">فاکتور</th>
+                        <th scope="col">قدیمی‌ترین سررسید</th>
+                        <th scope="col">دیرکرد</th>
+                        <th scope="col">آخرین دریافت</th>
+                        <th scope="col">عملیات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                    {% set customer = row.customer %}
+                    <tr>
+                        <td class="customer-name">
+                            <strong><a href="/admin/credit/{{ customer.id }}">{{ customer.full_name }}</a></strong>
+                            <small class="customer-phone tnum">{{ customer.phone }}</small>
+                            {% if row.drift %}<span class="drift-flag">نامطابق</span>{% endif %}
+                        </td>
+                        <td>
+                            <span class="tier-badge tier-{{ customer.tier }}">
+                                {% if customer.tier == 'diamond' %}الماس
+                                {% elif customer.tier == 'gold' %}طلایی
+                                {% else %}نقره‌ای{% endif %}
+                            </span>
+                        </td>
+                        {# The unit lives inside the <strong>: `td strong` is a block,
+                           so a trailing " ت" would drop to its own line. #}
+                        <td class="tnum"><strong class="credit-amount">{{ fmt(row.debt) }} ت</strong></td>
+                        <td class="tnum">
+                            {% if row.limit > 0 %}
+                            <span>{{ fmt(row.limit) }} ت</span>
+                            <small class="{% if row.over_limit %}credit-over-limit{% else %}customer-meta{% endif %}">
+                                {% if row.over_limit %}{{ fmt(row.debt - row.limit) }} ت بیش از سقف
+                                {% else %}{{ fmt(row.headroom) }} ت مانده{% endif %}
+                            </small>
+                            {% else %}
+                            <span class="customer-meta">بدون محدودیت</span>
+                            {% endif %}
+                        </td>
+                        <td class="tnum">
+                            {{ row.invoice_count }}
+                            {% if row.bucket_counts['over_90'] %}<small class="credit-over-limit">{{ row.bucket_counts['over_90'] }} بالای ۹۰ روز</small>{% endif %}
+                        </td>
+                        <td class="tnum">
+                            {% if row.oldest_due %}{{ jalali_str(row.oldest_due, false) }}
+                            {% else %}<span class="customer-meta">—</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if row.overdue_amount > 0 %}
+                            <span class="status-badge is-overdue">{{ row.days_late }} روز</span>
+                            {% elif row.due_soon_amount > 0 %}
+                            <span class="status-badge is-due-soon">نزدیک سررسید</span>
+                            {% else %}
+                            <span class="status-badge">جاری</span>
+                            {% endif %}
+                        </td>
+                        <td class="tnum">
+                            {% if row.last_payment %}
+                            {{ jalali_str(row.last_payment.created_at, false) }}
+                            <small class="customer-meta">{{ fmt(row.last_payment.amount) }} ت</small>
+                            {% else %}<span class="customer-meta">بدون دریافت</span>{% endif %}
+                        </td>
+                        <td>
+                            <div class="customer-actions">
+                                <a href="/admin/credit/{{ customer.id }}" class="btn btn-sm btn-primary">دریافت</a>
+                                <a href="/admin/customers/{{ customer.id }}" class="btn btn-sm btn-ghost">پرونده</a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if total_pages > 1 %}
+        <nav class="product-pagination" aria-label="صفحه‌بندی بدهکاران">
+            {% if page > 1 %}<a class="btn btn-sm btn-ghost" href="?page={{ page - 1 }}{{ filter_qs }}">صفحه قبل</a>{% endif %}
+            <span>صفحه {{ page }} از {{ total_pages }}</span>
+            {% if page < total_pages %}<a class="btn btn-sm btn-ghost" href="?page={{ page + 1 }}{{ filter_qs }}">صفحه بعد</a>{% endif %}
+        </nav>
+        {% endif %}
+
+        {% elif has_filters %}
+        <div class="empty-state">
+            <h3>بدهکاری با این فیلترها پیدا نشد</h3>
+            <p>جست‌وجو یا بازه سنی را تغییر دهید؛ شاید بدهی تسویه شده است.</p>
+            <a href="/admin/credit" class="btn btn-ghost">پاک‌کردن فیلتر</a>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <h3>هیچ بدهی نسیه‌ای وجود ندارد</h3>
+            <p>همه تسویه کرده‌اند. برای ثبت نسیه، در فروش جدید روش پرداخت «📒 نسیه» را انتخاب کنید.</p>
+            <a href="/sales/new" class="btn btn-primary">فروش جدید</a>
+        </div>
+        {% endif %}
+    {% endif %}
+</section>
+
+{% if overview.overdue_customers %}
+<section class="card credit-reminders">
+    <div class="section-heading-row">
+        <div>
+            <h3>یادآوری سررسید گذشته</h3>
+            <p class="muted">
+                {{ overview.overdue_customers }} مشتری بدهی سررسیدگذشته دارند.
+                یادآوری دستی است و برای هر مشتری تا {{ reminder_cooldown }} ساعت دوباره ارسال نمی‌شود.
+            </p>
+        </div>
+    </div>
+    {% if has_reminder_pattern %}
+    <form method="post" action="/admin/credit/remind-overdue">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn btn-ghost">ارسال یادآوری برای سررسیدگذشته‌ها</button>
+    </form>
+    {% else %}
+    <p class="muted">
+        متن پیامک یادآوری هنوز نوشته نشده است.
+        <a class="text-link" href="/admin/settings">در تنظیمات</a> الگوی «متن پیامک یادآوری بدهی» را بنویسید.
+    </p>
+    {% endif %}
+</section>
+{% endif %}
+{% endblock %}

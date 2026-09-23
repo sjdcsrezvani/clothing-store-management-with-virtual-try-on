@@ -1,11 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from config import DEFAULT_REFERRER_DISCOUNT, DEFAULT_REFERRED_DISCOUNT
 from database import get_db
 from models import Customer, Referral, generate_referral_code, to_english_digits
-from services.sms import send_welcome_sms
+from services._common import gregorian_to_jalali
+from services.security import require_api_token
+from services.sms import queue_welcome_sms
 
-router = APIRouter(prefix="/api")
+router = APIRouter(prefix="/api", dependencies=[Depends(require_api_token)])
 
 
 class CustomerCreate(BaseModel):
@@ -72,7 +75,7 @@ async def api_create_customer(body: CustomerCreate, db: Session = Depends(get_db
         db.add(referral)
 
     db.commit()
-    await send_welcome_sms(phone, body.first_name, code, db)
+    await queue_welcome_sms(phone, body.first_name, code, db, customer=customer)
 
     return customer
 
@@ -97,7 +100,7 @@ async def api_lookup_customer(phone: str = "", db: Session = Depends(get_db)):
                 "referred_id": r.referred_id,
                 "referrer_discount": r.referrer_discount,
                 "referred_discount": r.referred_discount,
-                "created_at": r.created_at.isoformat(),
+                "created_at": gregorian_to_jalali(r.created_at),
             }
             for r in referrals
         ],

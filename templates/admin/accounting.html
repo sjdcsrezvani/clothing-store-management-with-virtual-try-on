@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% set page_actions %}
+{% set export_period = 'custom' if start_date and end_date else period %}
+{% set export_window = (('start_date=' ~ (start_date|urlencode)) if start_date else '') %}
+{% set export_window = (export_window ~ ('&' if export_window and end_date else '') ~ ('end_date=' ~ (end_date|urlencode)) if end_date else export_window) %}
+{% set export_window = ('&' ~ export_window) if export_window else '' %}
+<a href="/admin/accounting/export?kind=sales&period={{ export_period }}{{ export_window }}" class="btn btn-sm btn-ghost">📄 خروجی فروش</a>
+        <a href="/admin/accounting/export?kind=customers&period={{ export_period }}{{ export_window }}" class="btn btn-sm btn-ghost">📄 خروجی مشتریان</a>
+        <a href="/admin/accounting/export?kind=purchases&period={{ export_period }}{{ export_window }}" class="btn btn-sm btn-ghost">📄 خروجی خریدها</a>
+        <a href="/admin/accounting/export?kind=expenses&period={{ export_period }}{{ export_window }}" class="btn btn-sm btn-ghost">📄 خروجی هزینه‌ها</a>
+{% endset %}
+{% include 'partials/page_header.html' %}
+
+{# An action that could not be carried out — an export asked for a range nobody
+   could read — says so here rather than in a JSON body the shop cannot read. #}
+
+{# ─── Period filter ─── #}
+{% set filter_action = '/admin/accounting' %}
+{% set filter_id = 'accounting' %}
+{% include 'partials/period_filter.html' %}
+
+{# ─── Net P&L ─── #}
+{# Every delta reads the same window of equal length before this one, and
+   speaks only when a comparison is fair — the same doctrine the dashboard
+   cards follow, so «۲۰۰٪ بیشتر» is never printed against an empty base. #}
+<div class="stats-grid">
+    <div class="stat-card accent-pine">
+        <div class="stat-label">💰 درآمد فروش</div>
+        <div class="stat-value tnum">{{ fmt(pl.revenue) }} ت
+            {% if pl.delta_revenue %}<span class="stat-delta{% if pl.delta_revenue.good is not none %} is-{{ 'good' if pl.delta_revenue.good else 'bad' }}{% endif %}">{{ pl.delta_revenue.text }}</span>{% endif %}
+        </div>
+        <div class="stat-sub">{{ pl.invoice_count }} فاکتور</div>
+    </div>
+    <div class="stat-card accent-persimmon">
+        <div class="stat-label">📦 بهای تمام‌شده کالا</div>
+        <div class="stat-value tnum">{{ fmt(pl.cogs) }} ت</div>
+        <div class="stat-sub">سود ناخالص: {{ fmt(pl.gross) }} ت ({{ percent(pl.gross_margin) }})</div>
+    </div>
+    <div class="stat-card accent-saffron">
+        <div class="stat-label">💸 هزینه‌ها</div>
+        <div class="stat-value tnum">{{ fmt(pl.expenses) }} ت
+            {% if pl.delta_expenses %}<span class="stat-delta{% if pl.delta_expenses.good is not none %} is-{{ 'good' if pl.delta_expenses.good else 'bad' }}{% endif %}">{{ pl.delta_expenses.text }}</span>{% endif %}
+        </div>
+        <div class="stat-sub">{{ pl.expense_cats|length }} دسته هزینه</div>
+    </div>
+    <div class="stat-card {% if pl.net >= 0 %}accent-candy{% else %}accent-ink{% endif %}">
+        <div class="stat-label">🧮 سود خالص</div>
+        <div class="stat-value tnum {% if pl.net < 0 %}">−{% endif %}{{ fmt(pl.net|abs) }} ت
+            {% if pl.delta_net %}<span class="stat-delta{% if pl.delta_net.good is not none %} is-{{ 'good' if pl.delta_net.good else 'bad' }}{% endif %}">{{ pl.delta_net.text }}</span>{% endif %}
+        </div>
+        <div class="stat-sub">حاشیه: {{ percent(pl.net_margin) }}</div>
+    </div>
+</div>
+
+{# ─── Expenses breakdown ─── #}
+    <div class="stats-grid expense-type-summary">
+        <div class="stat-card accent-sky">
+            <div class="stat-label">هزینه‌های یک‌باره</div>
+            <div class="stat-value tnum">{{ fmt(pl.one_time_expenses) }} ت</div>
+            <div class="stat-sub">هزینه‌های غیرتکرارشونده</div>
+        </div>
+        <div class="stat-card accent-pine">
+            <div class="stat-label">هزینه‌های ماهانه</div>
+            <div class="stat-value tnum">{{ fmt(pl.monthly_expenses) }} ت</div>
+            <div class="stat-sub">هزینه‌های ثابت ماهانه</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>هزینه‌ها بر اساس دسته</h3>
+    {% if pl.expense_cats %}
+    <table class="data-table">
+        <thead><tr><th>دسته</th><th>مبلغ</th><th>سهم</th></tr></thead>
+        <tbody>
+            {% for row in pl.expense_cats %}
+            {# The share is written beside the bar: a length alone is a figure the
+               page cannot read, and a fill with no stated value is exactly the
+               silent-wrongness the figure arc exists to stop. #}
+            {% set row_share = pct(row.amount, pl.expenses) %}
+            <tr>
+                <td>{{ row.category }}</td>
+                <td class="tnum">{{ fmt(row.amount) }} تومان</td>
+                <td>
+                    <span class="share-figure tnum">{{ row_share }}</span>
+                    <div class="share-meter" role="img" aria-label="{{ row.category }}: {{ row_share }}">
+                        <div class="share-meter-fill" style="width: {{ (row.amount / pl.expenses * 100) if pl.expenses else 0 }}%;"></div>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}<div class="empty-state"><h3>هزینه‌ای در این بازه ثبت نشده است</h3><p>بازه دیگری را ببینید یا اولین هزینه را ثبت کنید.</p></div>{% endif %}
+</div>
+
+{# ─── Debt & cash summary ─── #}
+<div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
+    <div class="stat-card" style="text-align:center;">
+        <div class="stat-label">📒 بدهی نسیه مشتریان</div>
+        <div class="stat-value tnum debt-figure">{{ fmt(debts.total_debt) }} ت</div>
+        <div class="stat-sub"><a href="/admin/credit">مدیریت نسیه ←</a></div>
+    </div>
+    <div class="stat-card" style="text-align:center;">
+        <div class="stat-label">📦 مجموع خرید از عمده‌فروش</div>
+        <div class="stat-value tnum">{{ fmt(debts.total_purchases) }} ت</div>
+        <div class="stat-sub"><a href="/admin/purchases">ثبت خرید ←</a></div>
+    </div>
+    <div class="stat-card" style="text-align:center;">
+        <div class="stat-label">🧾 صندوق (این بازه)</div>
+        <div class="stat-value tnum">{{ fmt(cashbox.closing) }} ت</div>
+        <div class="stat-sub"><a href="/admin/cashbox">جزئیات صندوق ←</a></div>
+    </div>
+</div>{% endblock %}

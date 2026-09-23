@@ -1,65 +1,147 @@
 {% extends "base.html" %}
-{% block title %}{% if edit_mode %}ویرایش کمپین{% else %}افزودن کمپین{% endif %} — رای کیدز{% endblock %}
 {% block content %}
-<h2>{% if edit_mode %}ویرایش کمپین: {{ campaign.name }}{% else %}افزودن کمپین جدید{% endif %}</h2>
 
-<div class="card">
-    <form method="post"
-          action="{% if edit_mode %}/admin/campaigns/{{ campaign.id }}{% else %}/admin/campaigns/add{% endif %}">
-        
-        <div class="form-row">
-            <div class="form-group">
-                <label for="name">نام کمپین *</label>
-                <input type="text" id="name" name="name" required value="{{ campaign.name if campaign else '' }}" placeholder="مثال: حراج تابستانه">
-            </div>
-            <div class="form-group">
-                <label for="code">کد تخفیف *</label>
-                <input type="text" id="code" name="code" required value="{{ campaign.code if campaign else '' }}" placeholder="مثال: SUMMER2025">
-                <small>کدی که مشتریان الماس برای استفاده از تخفیف وارد می‌کنند</small>
-            </div>
-        </div>
+{% set page_description %}
+کد تخفیف در صندوق اعمال می‌شود؛ مشتریانی که کمپین به آن‌ها اختصاص یافته تخفیف را خودکار می‌گیرند. بازه خالی یعنی این کمپین محدودیت تاریخ ندارد.
+{% endset %}
+{% set page_title %}
+{% if edit_mode %}ویرایش کمپین: {{ campaign.name }}{% else %}کمپین جدید{% endif %}
+{% endset %}
+{% set heading_class = 'page-heading product-page-heading' %}
+{% set page_actions %}
+{% if edit_mode %}<a href="/admin/campaigns/{{ campaign.id }}" class="btn btn-ghost">گزارش کمپین</a>{% endif %}
+        <a href="/admin/campaigns" class="btn btn-ghost">همه کمپین‌ها</a>
+{% endset %}
+{% include 'partials/page_header.html' %}
 
-        <div class="form-row">
-            <div class="form-group">
-                <label for="discount_percent">درصد تخفیف *</label>
-                <input type="number" id="discount_percent" name="discount_percent" required min="1" max="100" value="{{ campaign.discount_percent if campaign else '' }}">
-            </div>
-            <div class="form-group">
-                <label for="min_purchase">حداقل خرید (تومان)</label>
-                <input type="number" id="min_purchase" name="min_purchase" min="0" value="{{ campaign.min_purchase if campaign else '0' }}">
-            </div>
-        </div>
+{% if error %}<div class="alert alert-error" role="alert">⚠️ {{ error }}</div>{% endif %}
 
-        <div class="form-row">
-            <div class="form-group">
-                <label for="start_date">تاریخ شروع</label>
-                <input type="date" id="start_date" name="start_date" value="{{ campaign.start_date.strftime('%Y-%m-%d') if campaign and campaign.start_date else '' }}">
-            </div>
-            <div class="form-group">
-                <label for="end_date">تاریخ پایان</label>
-                <input type="date" id="end_date" name="end_date" value="{{ campaign.end_date.strftime('%Y-%m-%d') if campaign and campaign.end_date else '' }}">
-            </div>
-        </div>
+<div class="campaign-form-layout">
+    <section class="card">
+        <form method="post"
+              action="{% if edit_mode %}/admin/campaigns/{{ campaign.id }}{% else %}/admin/campaigns/add{% endif %}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
-        {% if edit_mode %}
-        <div class="form-group">
-            <label>
-                <input type="checkbox" name="is_active" {% if campaign.is_active %}checked{% endif %}>
-                کمپین فعال باشد
-            </label>
-        </div>
+            <div class="form-section">
+                <h3>هویت کمپین</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="name">نام کمپین *</label>
+                        <input type="text" id="name" name="name" required value="{{ values.name }}"
+                               placeholder="مثال: حراج تابستانه">
+                    </div>
+                    <div class="form-group">
+                        <label for="code">کد تخفیف *</label>
+                        <input type="text" id="code" name="code" required value="{{ values.code }}"
+                               placeholder="مثال: SUMMER2025" dir="ltr" autocomplete="off">
+                        <small>کدی که در صندوق وارد می‌شود؛ حروف بزرگ ذخیره می‌شود و باید یکتا باشد.</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h3>تخفیف</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="discount_percent">درصد تخفیف *</label>
+                        {% from 'partials/numeric_input.html' import num with context %}
+                        {{ num('discount_percent', values.discount_percent, required=True) }}
+                        <small>روی مبلغ سبد حساب می‌شود و با تخفیف‌های دیگر جمع می‌شود (سقف: کل سبد).</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="min_purchase">حداقل خرید (تومان)</label>
+                        {{ num('min_purchase', values.min_purchase) }}
+                        <small>صفر یعنی بدون حداقل خرید.</small>
+                    </div>
+                </div>
+                <label class="switch-row">
+                    <input type="checkbox" name="is_reusable" {% if values.is_reusable %}checked{% endif %}>
+                    <span>
+                        <strong>کمپین چندباره</strong>
+                        <small>هر مشتری می‌تواند در هر خرید از آن استفاده کند. بدون این تیک، تخفیف هر مشتری
+                            فقط یک‌بار اعمال می‌شود.</small>
+                    </span>
+                </label>
+            </div>
+
+            <div class="form-section">
+                <h3>بازه</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="start_date">تاریخ شروع</label>
+                        <input type="text" id="start_date" name="start_date" class="persian-date-input"
+                               data-pdp-pair="#end_date" value="{{ values.start_date }}"
+                               placeholder="۱۴۰۵/۰۱/۰۱">
+                    </div>
+                    <div class="form-group">
+                        <label for="end_date">تاریخ پایان</label>
+                        <input type="text" id="end_date" name="end_date" class="persian-date-input"
+                               value="{{ values.end_date }}" placeholder="۱۴۰۵/۱۲/۲۹">
+                    </div>
+                </div>
+                <small class="muted">خارج از این بازه، کد در صندوق پذیرفته نمی‌شود و تخفیف خودکار اعمال نمی‌گردد.</small>
+            </div>
+
+            {% if edit_mode %}
+            <div class="form-section">
+                <h3>وضعیت</h3>
+                <label class="switch-row">
+                    <input type="checkbox" name="is_active" {% if values.is_active %}checked{% endif %}>
+                    <span>
+                        <strong>کمپین فعال باشد</strong>
+                        <small>غیرفعال‌کردن، کد و تخفیف خودکار را فوراً متوقف می‌کند بدون از دست دادن سابقه.</small>
+                    </span>
+                </label>
+            </div>
+            {% endif %}
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary btn-large">
+                    {% if edit_mode %}ذخیره تغییرات{% else %}ساخت کمپین{% endif %}
+                </button>
+                <a href="{% if edit_mode %}/admin/campaigns/{{ campaign.id }}{% else %}/admin/campaigns{% endif %}"
+                   class="btn btn-ghost">لغو</a>
+            </div>
+        </form>
+    </section>
+
+    <aside class="card campaign-preview" aria-label="این کمپین چه می‌کند">
+        <h3>این کمپین چه می‌کند</h3>
+        <ul class="campaign-preview-list">
+            <li>
+                <span>در صندوق</span>
+                <strong>
+                    {% if values.discount_percent %}{{ values.discount_percent }}٪{% else %}—{% endif %}
+                    {% if values.min_purchase and values.min_purchase|string != '0' %}
+                    <small>برای خرید بالای {{ '{:,}'.format(values.min_purchase|int) }} تومان</small>
+                    {% endif %}
+                </strong>
+            </li>
+            <li>
+                <span>روش اعمال</span>
+                <strong>
+                    {% if values.is_reusable %}هر خرید{% else %}یک‌بار برای هر مشتری{% endif %}
+                </strong>
+            </li>
+            <li>
+                <span>بازه</span>
+                <strong>
+                    {% if values.start_date or values.end_date %}
+                    {{ values.start_date or '—' }} تا {{ values.end_date or '—' }}
+                    {% else %}بدون محدودیت{% endif %}
+                </strong>
+            </li>
+            <li>
+                <span>روی نسیه</span>
+                <strong>اعمال نمی‌شود</strong>
+                <small>مثل بقیه تخفیف‌های فروشگاه</small>
+            </li>
+        </ul>
+        {% if not edit_mode %}
+        <p class="muted">
+            بعد از ساخت، کمپین به صفحه گزارش می‌رود؛ همان‌جا گروه مشتریان را انتخاب می‌کنید و پیامک را می‌فرستید.
+        </p>
         {% endif %}
-
-        <div class="form-actions">
-            <button type="submit" class="btn btn-primary">
-                {% if edit_mode %}ذخیره تغییرات{% else %}افزودن کمپین{% endif %}
-            </button>
-            <a href="/admin/campaigns"><button type="button" class="btn btn-secondary">لغو</button></a>
-        </div>
-    </form>
+    </aside>
 </div>
-
-<nav class="admin-nav">
-    <a href="/admin/campaigns"><button type="button" class="btn btn-secondary">بازگشت به لیست کمپین‌ها</button></a>
-</nav>
 {% endblock %}

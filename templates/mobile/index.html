@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+{# The capture tool the counter opens on a phone: deliberately not a page of the
+   shell — no sidebar, no breadcrumb, and no second request for the stylesheet,
+   because it has to come up on a phone over the shop's own Wi-Fi — but it wears
+   the shop's palette like every other screen. The theme's tokens arrive on the
+   <html> element below, which is where the stylesheet would have put its `:root`
+   block, and every colour in this page is read from them. #}
+<html lang="en" dir="ltr" data-theme="{{ theme.id }}" data-theme-mode="{{ theme.mode }}" style="{{ theme.inline_style }}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+{# The phone's own chrome takes the theme's background, as it does on every other
+   page: an installed shortcut must not stay one colour across ten palettes. #}
+<meta name="theme-color" content="{{ theme.tokens['--bg'] }}">
+<title>{{ store.name }} — Virtual Try-On</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html[data-theme-mode="dark"],html[data-theme-mode="dark-shell"]{color-scheme:dark}
+html[data-theme-mode="light"],html[data-theme-mode="high-contrast"]{color-scheme:light}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh}
+
+/* ─── Header: the shop's own bar, in miniature ─── */
+.header{background:linear-gradient(135deg,var(--topbar-start),var(--topbar-end));color:var(--topbar-text);padding:16px;text-align:center;font-weight:700;font-size:18px;box-shadow:var(--shadow)}
+.header small{display:block;font-weight:400;font-size:13px;opacity:0.9;margin-top:2px}
+
+/* ─── Config bar ─── */
+.config-bar{padding:12px 16px;background:var(--card);display:flex;gap:8px;align-items:center;flex-wrap:wrap;box-shadow:var(--shadow)}
+.config-bar input{flex:1;padding:10px 12px;border:2px solid var(--rule);border-radius:10px;font-size:15px;font-family:monospace;direction:ltr;background:var(--field-bg);color:var(--ink)}
+.config-bar input:focus{outline:none;border-color:var(--candy);box-shadow:var(--focus-ring)}
+.config-bar button{background:var(--brand-fill);color:var(--brand-label);border:none;padding:8px 14px;border-radius:8px;font-weight:700;font-size:13px;font-family:inherit;cursor:pointer}
+.status-dot{width:12px;height:12px;border-radius:50%;background:var(--ink-soft);flex-shrink:0}
+.status-dot.online{background:var(--mint)}
+.status-dot.offline{background:var(--persimmon)}
+.pair-state{flex:1;font-size:13px;font-weight:700;color:var(--ink)}
+.connection-help{padding:0 16px 10px;color:var(--ink-soft);font-size:12px;line-height:1.7}
+.connection-help strong{color:var(--ink)}
+
+/* ─── Main actions ─── */
+.main-actions{padding:16px;display:flex;flex-direction:column;gap:12px}
+.action-btn{display:flex;align-items:center;justify-content:center;gap:10px;padding:22px;border:none;border-radius:var(--radius);font-size:17px;font-weight:700;font-family:inherit;cursor:pointer;transition:transform 0.1s,box-shadow 0.15s;box-shadow:var(--shadow)}
+.action-btn:active{transform:scale(0.97)}
+.action-btn .icon{font-size:28px}
+.action-btn.photo{background:var(--brand-fill);color:var(--brand-label)}
+.action-btn:disabled{opacity:0.5;transform:none}
+
+/* ─── Log ─── */
+.log-section{padding:0 16px 20px}
+.log-section h3{font-size:14px;color:var(--ink-soft);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.log-list{background:var(--card);border-radius:var(--radius);padding:12px;max-height:200px;overflow-y:auto;font-size:13px}
+.log-entry{padding:8px 0;border-bottom:1px solid var(--rule);display:flex;align-items:start;gap:8px;line-height:1.4}
+.log-entry:last-child{border-bottom:none}
+.log-entry .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap;flex-shrink:0;margin-top:1px}
+/* What went right or was merely noted takes the app's ink-on-tint shape — the
+   colour is the information, so the words stay the most legible thing on the
+   row; a failure takes the attention colour, as the SMS history's failed badge
+   and the overdue pills do. */
+.badge-ok{background:color-mix(in srgb,var(--mint) 18%,var(--card));color:var(--success-ink)}
+.badge-info{background:color-mix(in srgb,var(--sky) 20%,var(--card));color:var(--info-ink)}
+.badge-err{background:color-mix(in srgb,var(--persimmon) 20%,var(--card));color:var(--persimmon)}
+
+/* ─── Photo capture overlay ─── */
+.photo-overlay{display:flex;position:fixed;top:0;left:0;width:100%;height:100%;background:var(--scrim);z-index:100;flex-direction:column;align-items:center;justify-content:center;padding:20px;visibility:hidden;opacity:0;pointer-events:none;transition:opacity 0.25s cubic-bezier(0.22,1,0.36,1),visibility 0s linear 0.25s}
+.photo-overlay.active{visibility:visible;opacity:1;pointer-events:auto;transition:opacity 0.25s cubic-bezier(0.22,1,0.36,1),visibility 0s linear 0s}
+@media (prefers-reduced-motion: reduce){.photo-overlay{transition:none}}
+.photo-overlay .photo-card{background:var(--card);color:var(--ink);border-radius:var(--radius);padding:30px 24px;text-align:center;max-width:340px;width:100%}
+.photo-overlay .photo-card .big-icon{font-size:56px;margin-bottom:12px}
+.photo-overlay .photo-card h3{font-size:18px;margin-bottom:6px}
+.photo-overlay .photo-card p{font-size:14px;color:var(--ink-soft);margin-bottom:20px}
+.file-input-wrapper{position:relative;overflow:hidden;margin-bottom:12px}
+.file-input-wrapper input[type=file]{position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.file-input-wrapper .fake-btn{display:block;padding:16px;border:2px dashed var(--candy);border-radius:12px;color:var(--link);font-weight:600;font-size:15px}
+.photo-preview{max-width:100%;max-height:200px;border-radius:12px;margin-bottom:12px;display:none}
+.btn-group{display:flex;gap:8px}
+.btn-group button{flex:1;padding:14px;border:1px solid var(--rule);border-radius:10px;font-weight:700;font-size:15px;font-family:inherit;cursor:pointer}
+.btn-cancel{background:var(--surface-soft);color:var(--ink)}
+.btn-send{background:var(--brand-fill);color:var(--brand-label);border-color:var(--candy)}
+.btn-send:disabled{opacity:0.5}
+.send-status{padding:10px;border-radius:8px;margin-top:10px;font-weight:600;font-size:14px;display:none}
+.send-status.is-ok{background:color-mix(in srgb,var(--mint) 18%,var(--card));color:var(--success-ink)}
+.send-status.is-err{background:color-mix(in srgb,var(--persimmon) 20%,var(--card));color:var(--persimmon)}
+
+/* ─── Empty state ─── */
+.empty-state{text-align:center;padding:30px 16px;color:var(--ink-soft)}
+.empty-state .icon{font-size:48px;margin-bottom:8px}
+
+/* ─── Toasts (stacked queue; same contract as the shell toaster) ─── */
+@keyframes toastIn{from{transform:translateY(16px) scale(0.97);opacity:0}to{transform:translateY(0) scale(1);opacity:1}}
+.toaster{position:fixed;bottom:20px;left:20px;right:20px;display:flex;flex-direction:column;gap:8px;z-index:200;pointer-events:none}
+.toast-item{pointer-events:auto;display:flex;align-items:center;gap:8px;padding:14px 16px;border-radius:12px;font-weight:600;font-size:14px;background:var(--card);color:var(--ink);border:1px solid var(--rule);box-shadow:var(--shadow-overlay);animation:toastIn 0.25s cubic-bezier(0.22,1,0.36,1);cursor:pointer}
+.toast-item.success{border-inline-start:4px solid var(--success-ink)}
+.toast-item.error{border-inline-start:4px solid var(--persimmon)}
+@media (prefers-reduced-motion: reduce){.toast-item{animation:none}}
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+    👗 {{ store.name }} — Virtual Try-On
+    <small>Photo Upload</small>
+</div>
+
+<!-- Server Config -->
+<div class="config-bar">
+    <div class="status-dot" id="status-dot" title="Connection status"></div>
+    <div class="pair-state" id="pair-state">…</div>
+    <button id="btn-connection-test" onclick="testConnection()">بررسی اتصال</button>
+</div>
+<div class="connection-help" id="connection-help">گوشی و کامپیوتر باید به یک Wi‑Fi وصل باشند. جفت‌سازی از صفحه «پروژه تعاملی» در پنل، با QR انجام می‌شود.</div>
+
+<!-- Main Actions -->
+<div class="main-actions">
+    <button class="action-btn photo" id="btn-photo" onclick="showPhotoCapture()">
+        <span class="icon">📸</span> Take Photo
+    </button>
+</div>
+
+<!-- Activity Log -->
+<div class="log-section">
+    <h3>📋 Activity Log</h3>
+    <div class="log-list" id="log-list">
+        <div class="empty-state">
+            <div class="icon">📱</div>
+            <div>Activities will appear here</div>
+        </div>
+    </div>
+</div>
+
+<!-- Photo Capture Overlay: a dialog — Escape closes, focus returns -->
+<div class="photo-overlay" id="photo-overlay" role="dialog" aria-modal="true" aria-label="Take kid's photo" tabindex="-1">
+    <div class="photo-card">
+        <div class="big-icon">📸</div>
+        <h3>Take Kid's Photo</h3>
+        <p>Take a clear photo of the child's face for AI try-on</p>
+        <div class="file-input-wrapper">
+            <input type="file" id="photo-input" accept="image/*" capture="environment" onchange="onPhotoSelected(event)">
+            <div class="fake-btn">📱 Open Camera</div>
+        </div>
+        <img id="photo-preview" class="photo-preview" alt="Preview">
+        <div class="btn-group">
+            <button class="btn-cancel" id="btn-cancel-photo" onclick="hidePhotoCapture()">Cancel</button>
+            <button class="btn-send" id="btn-send-photo" onclick="sendPhoto()" disabled>📤 Send to Server</button>
+        </div>
+        <div class="send-status" id="send-status"></div>
+    </div>
+</div>
+
+<!-- Toasts -->
+<div class="toaster" id="toaster" aria-live="polite"></div>
+
+<script>
+// ─── State ───
+// No typed address and no typed token any more: the phone is set up by scanning
+// the pairing QR on the try-on page. The QR opens the pairing landing on this
+// same origin, which stores the key in localStorage — so the base address is
+// simply where this page was loaded from, and the key is the one thing a
+// re-pair rotates.
+let baseUrl = window.location.origin;
+let captureKey = localStorage.getItem('capture_key') || '';
+let selectedPhotoFile = null;
+
+// ─── Config ───
+function loadConfig() {
+    captureKey = localStorage.getItem('capture_key') || '';
+    updatePairState();
+    testConnection();
+}
+function markUnpaired() {
+    localStorage.removeItem('capture_key');
+    captureKey = '';
+    updatePairState();
+}
+function updatePairState() {
+    document.getElementById('pair-state').textContent = captureKey ? 'جفت‌شده' : 'جفت‌نشده';
+}
+function apiHeaders() {
+    return captureKey ? { 'X-Capture-Key': captureKey } : {};
+}
+
+// ─── Connection test ───
+// The probe is the pairing proof itself: /api/capture/ping sits behind the
+// same gate as the upload, and 401 is how the page learns the key it holds
+// was rotated (or never was one) — it then shows «جفت‌نشده» instead of
+// pretending to be online.
+async function testConnection() {
+    const dot = document.getElementById('status-dot');
+    dot.className = 'status-dot';
+    if (!captureKey) { dot.className = 'status-dot offline'; addLog('info', 'هنوز جفت نشده — QR را از پنل اسکن کنید.'); return; }
+    try {
+        const r = await fetch(baseUrl + '/api/capture/ping', { method: 'GET', headers: apiHeaders(), signal: AbortSignal.timeout(5000) });
+        if (r.ok) {
+            dot.className = 'status-dot online';
+            addLog('ok', 'اتصال برقرار است');
+        } else if (r.status === 401) {
+            dot.className = 'status-dot offline';
+            markUnpaired();
+            addLog('err', 'کلید گوشی معتبر نیست — دوباره QR را اسکن کنید.');
+        } else {
+            dot.className = 'status-dot offline';
+            addLog('err', 'سرور پاسخ ' + r.status + ' داد');
+        }
+    } catch(e) {
+        dot.className = 'status-dot offline';
+        addLog('err', 'سرور در دسترس نیست: ' + e.message);
+    }
+}
+
+// ─── Log ───
+function addLog(type, msg) {
+    const list = document.getElementById('log-list');
+    const empty = list.querySelector('.empty-state');
+    if (empty) empty.remove();
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    const badgeMap = { ok: 'OK', err: 'Error', info: 'Info' };
+    entry.innerHTML = `<span class="badge badge-${type}">${badgeMap[type]||type}</span><span>${msg}</span>`;
+    list.insertBefore(entry, list.firstChild);
+    // Keep max 50 entries
+    while (list.children.length > 50) list.removeChild(list.lastChild);
+}
+
+// ─── Toasts (stacked; errors persist until tapped, notes auto-leave) ───
+function showToast(msg, type, ms) {
+    const box = document.getElementById('toaster');
+    const el = document.createElement('div');
+    el.className = 'toast-item ' + (type || 'success');
+    el.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    el.textContent = msg;
+    const kill = () => { el.remove(); };
+    el.addEventListener('click', kill);
+    box.appendChild(el);
+    while (box.children.length > 3) box.removeChild(box.firstChild);
+    const sticky = type === 'error' && !ms;
+    setTimeout(kill, sticky ? 8000 : (ms || 3000));
+}
+
+// ─── Photo Capture (dialog: focus in on open, back to the opener on close) ───
+let photoOpener = null;
+function showPhotoCapture() {
+    if (!captureKey) { showToast('اول گوشی را جفت کنید', 'error'); return; }
+    photoOpener = document.activeElement;
+    selectedPhotoFile = null;
+    document.getElementById('photo-preview').style.display = 'none';
+    document.getElementById('btn-send-photo').disabled = true;
+    document.getElementById('send-status').style.display = 'none';
+    document.getElementById('photo-input').value = '';
+    document.getElementById('photo-overlay').classList.add('active');
+    document.getElementById('btn-cancel-photo').focus();
+}
+
+function hidePhotoCapture() {
+    document.getElementById('photo-overlay').classList.remove('active');
+    selectedPhotoFile = null;
+    if (photoOpener && document.contains(photoOpener)) photoOpener.focus();
+}
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && document.getElementById('photo-overlay').classList.contains('active')) hidePhotoCapture();
+});
+
+function onPhotoSelected(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    selectedPhotoFile = file;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const preview = document.getElementById('photo-preview');
+        preview.src = e.target.result;
+        preview.style.display = 'block';
+        document.getElementById('btn-send-photo').disabled = false;
+    };
+    reader.readAsDataURL(file);
+    addLog('info', 'Photo selected: ' + file.name);
+}
+
+async function sendPhoto() {
+    if (!selectedPhotoFile) return;
+    const btn = document.getElementById('btn-send-photo');
+    const status = document.getElementById('send-status');
+    btn.disabled = true;
+    status.style.display = 'block';
+    status.className = 'send-status';
+    status.textContent = '⏳ Sending...';
+
+    const formData = new FormData();
+    formData.append('file', selectedPhotoFile);
+
+    try {
+        const r = await fetch(baseUrl + '/api/image-gen/upload-kid-photo', {
+            method: 'POST',
+            headers: apiHeaders(),
+            body: formData,
+            signal: AbortSignal.timeout(30000),
+        });
+        const data = await r.json();
+        if (r.ok) {
+            status.className = 'send-status is-ok';
+            status.textContent = '✅ Photo sent successfully!';
+            addLog('ok', 'Kid photo uploaded');
+            showToast('Photo uploaded ✓', 'success');
+            setTimeout(hidePhotoCapture, 1500);
+        } else {
+            throw new Error(data.detail || 'Upload failed');
+        }
+    } catch(e) {
+        status.className = 'send-status is-err';
+        status.textContent = '❌ ' + e.message;
+        addLog('err', 'Photo upload failed: ' + e.message);
+        showToast('Upload failed: ' + e.message, 'error');
+        btn.disabled = false;
+    }
+}
+
+// ─── Init ───
+loadConfig();
+document.getElementById('btn-connection-test').addEventListener('click', testConnection);
+</script>
+</body>
+</html>

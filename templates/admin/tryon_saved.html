@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include 'partials/page_header.html' %}
+
+{% if saved_images %}
+<div class="card">
+    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:0.8rem;">
+        {% for img in saved_images %}
+        <div style="border-radius:8px; overflow:hidden; box-shadow:var(--shadow); background:var(--card);">
+            <button type="button" class="lightbox-open" style="position:relative;"
+                    onclick="openLightbox('{{ img.image_path }}')"
+                    aria-label="نمایش تصویر در اندازه کامل">
+                <img src="{{ img.image_path }}" alt="saved"
+                     style="width:100%; height:160px; object-fit:cover; display:block;">
+                <img src="/static/logo.png" alt="logo"
+                     style="position:absolute; top:0; left:0; width:80px; height:80px; pointer-events:none; filter:drop-shadow(0 1px 3px color-mix(in srgb, var(--scrim) 40%, transparent));">
+            </button>
+            <div style="padding:0.5rem; font-size:0.7rem; color:var(--ink-soft); text-align:center;">
+                🗓️ {{ jalali_str(img.created_at) }}
+            </div>
+            {% if img.variants %}
+            <div style="padding:0 0.4rem 0.4rem; display:flex; gap:0.3rem; flex-wrap:wrap; justify-content:center;">
+                {% for v in img.variants %}
+                <div style="text-align:center; max-width:70px;" title="{{ v.name }}{% if v.color %} — {{ v.color }}{% endif %}">
+                    {% if v.image_path %}
+                        <img src="{{ v.image_path }}" alt="{{ v.name }}"
+                             style="width:44px; height:44px; object-fit:cover; border-radius:6px; border:1px solid var(--rule);">
+                    {% else %}
+                        <div style="width:44px; height:44px; display:flex; align-items:center; justify-content:center; border-radius:6px; background:var(--surface-soft); border:1px solid var(--rule);">📦</div>
+                    {% endif %}
+                    <div style="font-size:0.6rem; margin-top:2px; line-height:1.1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                        {{ v.color or v.barcode }}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            <div style="display:flex; gap:0.3rem; padding:0 0.4rem 0.5rem; justify-content:center;">
+                <a href="/admin/try-on/saved/{{ img.id }}/download?logo=yes"
+                   class="btn btn-sm btn-success">⬇️ با لوگو</a>
+                <a href="/admin/try-on/saved/{{ img.id }}/download?logo=no"
+                   class="btn btn-sm btn-primary">⬇️ بدون لوگو</a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% else %}
+<div class="card" style="text-align:center; padding:3rem 1rem;">
+    <div style="font-size:3rem;">📭</div>
+    <p style="color:var(--ink-soft);">هنوز تصویری ذخیره نشده است.</p>
+    <a href="/admin/try-on" class="btn btn-primary" style="margin-top:1rem;">👗 رفتن به پرو مجازی</a>
+</div>
+{% endif %}
+
+{# ─── Lightbox ─── #}
+{# One dialog pattern everywhere (see tryon.html): role + aria-modal, the
+   [data-dialog] fade in motion.css, focus back to the opener on close.
+   The scrim dismisses on a click as a convenience for the mouse; the
+   keyboard's own ways out are the ✕ button below and Escape. #}
+<div id="lightbox" data-dialog role="dialog" aria-modal="true" aria-label="نمایش تصویر در اندازه کامل" tabindex="-1" class="lightbox-scrim" style="display:flex;position:fixed;top:0;left:0;width:100%;height:100%;background:var(--scrim);z-index:9999;align-items:center;justify-content:center;"
+     onclick="closeLightbox(event)">
+    <div id="lightbox-stage" class="lightbox-stage t-modal-card" style="position:relative;display:inline-block;line-height:0;">
+        <img id="lightbox-img" src="" alt="full"
+             style="max-width:95vw;max-height:95vh;object-fit:contain;border-radius:8px;display:block;">
+        <img src="/static/logo.png" alt="logo"
+             style="position:absolute;top:0;left:0;width:200px;height:200px;pointer-events:none;filter:drop-shadow(0 2px 6px color-mix(in srgb, var(--scrim) 40%, transparent));">
+    </div>
+    <button type="button" id="lightbox-close" class="lightbox-close" aria-label="بستن تصویر"
+            onclick="closeLightbox()">✕</button>
+</div>
+<script>
+var lightboxOpener = null;
+function openLightbox(src) {
+    lightboxOpener = document.activeElement;
+    document.getElementById('lightbox-img').src = src;
+    document.getElementById('lightbox').classList.add('is-open');
+    document.getElementById('lightbox-close').focus();
+}
+function closeLightbox(e) {
+    if (!e || e.target === e.currentTarget || e.target.tagName === 'DIV') {
+        document.getElementById('lightbox').classList.remove('is-open');
+        if (lightboxOpener && document.contains(lightboxOpener)) lightboxOpener.focus();
+    }
+}
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeLightbox();
+});
+</script>
+{% endblock %}

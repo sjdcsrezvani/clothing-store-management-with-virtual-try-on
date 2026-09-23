@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% set page_description %}
+چک‌های صادرشده برای تأمین‌کنندگان و سایر دریافت‌کنندگان را ثبت و پیگیری کنید.
+{% endset %}
+{% set page_actions %}
+<a href="/admin/suppliers" class="btn btn-ghost">🏭 تأمین‌کنندگان</a>
+{% endset %}
+{% include 'partials/page_header.html' %}
+
+
+<div class="stats-grid checks-summary">
+    <a class="stat-card accent-persimmon" href="/admin/checks?status=overdue">
+        <div class="stat-label">سررسیدگذشته</div>
+        <div class="stat-value tnum">{{ stats.overdue.count }}</div>
+        <div class="stat-sub tnum">{{ fmt(stats.overdue.amount) }} ریال</div>
+    </a>
+    <a class="stat-card accent-saffron" href="/admin/checks?status=upcoming">
+        <div class="stat-label">دو هفته آینده</div>
+        <div class="stat-value tnum">{{ stats.upcoming.count }}</div>
+        <div class="stat-sub tnum">{{ fmt(stats.upcoming.amount) }} ریال</div>
+    </a>
+    <a class="stat-card accent-ink" href="#check-alerts">
+        <div class="stat-label">هشدارهای فعال</div>
+        <div class="stat-value tnum">{{ stats.triggered.count }}</div>
+        <div class="stat-sub">نیازمند بررسی</div>
+    </a>
+    <a class="stat-card accent-pine" href="/admin/checks?status=paid">
+        <div class="stat-label">پرداخت‌شده</div>
+        <div class="stat-value tnum">{{ stats.paid.count }}</div>
+        <div class="stat-sub tnum">{{ fmt(stats.paid.amount) }} ریال</div>
+    </a>
+</div>
+
+<div class="card">
+    <h3>ثبت چک جدید</h3>
+    <p class="appearance-intro">مبلغ را به <strong>ریال</strong> وارد کنید. تاریخ‌ها را به‌صورت شمسی مثل ۱۴۰۵/۰۷/۱۵ بنویسید.</p>
+    <form method="post" action="/admin/checks/add" onsubmit="var b=this.querySelector('button[type=submit]'); if(b) b.disabled=true;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="form-row">
+            <div class="form-group"><label for="provider_name">دریافت‌کننده چک</label><input id="provider_name" name="provider_name" required placeholder="نام شخص یا شرکت"><small class="field-help">شخص یا شرکتی که چک در وجه او صادر شده.</small></div>
+            <div class="form-group"><label for="supplier_id">تأمین‌کننده مرتبط</label><select id="supplier_id" name="supplier_id"><option value="">— بدون ارتباط —</option>{% for supplier in suppliers %}<option value="{{ supplier.id }}">{{ supplier.name }}</option>{% endfor %}</select></div>
+            <div class="form-group"><label for="check_number">شماره چک</label><input id="check_number" name="check_number" dir="ltr" placeholder="شماره چک"></div>
+        </div>
+        <div class="form-row">
+            {% from 'partials/numeric_input.html' import num with context %}
+            <div class="form-group"><label for="amount_rials">مبلغ (ریال)</label>{{ num('amount_rials', '', required=True, input_id='amount_rials') }}<small>مثال: 1,000,000,000 ریال</small></div>
+            <div class="form-group"><label for="issue_date">تاریخ صدور</label><input id="issue_date" name="issue_date" class="persian-date-input" data-pdp-pair="#due_date" placeholder="۱۴۰۵/۰۶/۲۰"></div>
+            <div class="form-group"><label for="due_date">تاریخ سررسید</label><input id="due_date" name="due_date" class="persian-date-input" required placeholder="۱۴۰۵/۰۷/۱۵"></div>
+        </div>
+        <div class="form-row">
+            <div class="form-group"><label for="bank_name">بانک</label><input id="bank_name" name="bank_name" placeholder="نام بانک"></div>
+            <div class="form-group"><label for="account_reference">شناسه حساب / توضیح بانکی</label><input id="account_reference" name="account_reference" placeholder="مثال: حساب 1234"></div>
+            <div class="form-group"><label for="reminder_days">هشدارها (روز قبل)</label><input id="reminder_days" name="reminder_days" value="{{ default_reminder_days|join(', ') }}" placeholder="14, 7, 3"><small>مثال: 14, 7, 3 یا 30, 14, 7, 3</small></div>
+        </div>
+        <div class="form-group"><label for="note">توضیحات</label><textarea id="note" name="note" rows="2" placeholder="توضیح اختیاری درباره چک"></textarea></div>
+        <button type="submit" class="btn btn-primary btn-large">ثبت چک</button>
+    </form>
+</div>
+
+{% if is_owner %}
+<div class="card">
+    <div class="section-heading"><div><span class="eyebrow">تنظیمات یادآوری</span><h3>تنظیمات هشدارها</h3></div><span class="badge {% if reminders_enabled %}badge-available{% else %}badge-none{% endif %}">{{ 'فعال' if reminders_enabled else 'خاموش' }}</span></div>
+    <p class="appearance-intro">این تنظیمات فقط روی چک‌های جدید اعمال می‌شود؛ هشدار هر چک را می‌توانید جداگانه تغییر دهید.</p>
+    <form method="post" action="/admin/checks/settings" class="filter-bar">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label for="default_reminder_days">روزهای پیش‌فرض قبل از سررسید</label>
+        <input id="default_reminder_days" name="reminder_days" value="{{ default_reminder_days|join(', ') }}" placeholder="14, 7, 3">
+        <label class="checkbox-label"><input type="hidden" name="enabled" value="0"><input type="checkbox" name="enabled" value="1"{% if reminders_enabled %} checked{% endif %}> فعال‌سازی هشدارها</label>
+        <button type="submit" class="btn btn-ghost">ذخیره تنظیمات هشدار</button>
+    </form>
+</div>
+{% endif %}
+
+<div class="card" id="checks-list" data-list-region="checks">
+    <div class="section-heading"><div><span class="eyebrow">چک‌های صادره</span><h3 data-list-heading tabindex="-1">فهرست چک‌ها</h3></div><span class="appearance-active">صفحه {{ page }} از {{ total_pages }} · {{ total_count }} مورد</span></div>
+
+    <form method="get" action="/admin/checks" class="search-form purchase-filter-form">
+        <div class="form-group">
+            <label class="sr-only" for="check-q">جست‌وجو</label>
+            <input type="text" id="check-q" name="q" value="{{ search }}" placeholder="شماره (#۱۲)، دریافت‌کننده یا توضیح">
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="check-status">وضعیت</label>
+            <select id="check-status" name="status">
+                {% for value, label in statuses.items() %}
+                <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="check-supplier">تأمین‌کننده</label>
+            <select id="check-supplier" name="supplier_id">
+                <option value="">همه تأمین‌کنندگان</option>
+                {% for s in suppliers %}
+                <option value="{{ s.id }}" {% if supplier_filter == s.id|string %}selected{% endif %}>{{ s.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="check-bank">بانک</label>
+            <input type="text" id="check-bank" name="bank" value="{{ bank_filter }}" placeholder="بانک">
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="check-start">سررسید از</label>
+            <input type="text" id="check-start" name="start_date" class="persian-date-input" data-pdp-pair="#check-end" value="{{ start_date_filter }}" placeholder="سررسید از">
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="check-end">سررسید تا</label>
+            <input type="text" id="check-end" name="end_date" class="persian-date-input" value="{{ end_date_filter }}" placeholder="سررسید تا">
+        </div>
+        <button type="submit" class="btn btn-primary">اعمال فیلتر</button>
+        {% if has_filters %}<a href="/admin/checks" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
+    </form>
+
+    {% if checks %}
+    <div class="table-scroll"><table class="data-table">
+        <thead><tr><th scope="col">وضعیت</th><th scope="col">دریافت‌کننده</th><th scope="col">شماره</th><th scope="col">مبلغ (ریال)</th><th scope="col">صدور</th><th scope="col">سررسید</th><th scope="col">بانک</th><th scope="col">توضیح</th><th scope="col">عملیات</th></tr></thead>
+        <tbody>
+        {% for check in checks %}
+        <tr class="{% if check.id in overdue_ids %}check-overdue{% endif %}">
+            <td>{% if check.status == 'paid' %}<span class="badge badge-available">پرداخت‌شده</span>{% elif check.status == 'cancelled' %}<span class="badge badge-none">لغو‌شده</span>{% elif check.status == 'bounced' %}<span class="badge badge-danger">برگشتی</span>{% elif check.id in overdue_ids %}<span class="badge badge-danger">سررسیدگذشته</span>{% else %}<span class="badge badge-used">صادرشده</span>{% endif %}</td>
+            <td><strong>{{ check.provider_name }}</strong>{% if check.supplier %}<br><small>{{ check.supplier.name }}</small>{% endif %}{% if operator_names.get(check.operator_user_id) %}<br><small class="muted">ثبت: {{ operator_names.get(check.operator_user_id) }}</small>{% endif %}</td>
+            <td class="tnum">{{ check.check_number or '—' }}</td>
+            <td class="tnum"><strong>{{ fmt(check.amount_rials) }}</strong></td>
+            <td class="tnum">{{ jalali_str(check.issue_at, false) }}</td>
+            <td class="tnum">{{ jalali_str(check.due_at, false) }}{% set left = days_left_map.get(check.id) %}{% if left is not none %}<br><small class="muted">{% if left > 0 %}{{ left }} روز مانده{% elif left == 0 %}سررسید امروز{% else %}{{ left|abs }} روز گذشته{% endif %}</small>{% endif %}</td>
+            <td>{{ check.bank_name or '—' }}{% if check.account_reference %}<br><small class="muted">{{ check.account_reference }}</small>{% endif %}</td>
+            <td>{{ check.note or '—' }}</td>
+            <td>
+                {% if check.status == 'issued' %}
+                <div class="check-actions">
+                    <form method="post" action="/admin/checks/{{ check.id }}/status" onsubmit="return confirm('پرداخت این چک ثبت می‌شود. ادامه؟')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="status" value="paid"><button class="btn btn-sm btn-success" type="submit">ثبت پرداخت</button></form>
+                    <form method="post" action="/admin/checks/{{ check.id }}/status" onsubmit="return confirm('این چک لغو می‌شود. ادامه؟')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="status" value="cancelled"><button class="btn btn-sm btn-ghost" type="submit">لغو چک</button></form>
+                    <form method="post" action="/admin/checks/{{ check.id }}/status" onsubmit="return confirm('این چک برگشت خورد و نیازمند پیگیری است. ادامه؟')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="status" value="bounced"><button class="btn btn-sm btn-danger" type="submit">برگشتی</button></form>
+                    <form method="post" action="/admin/checks/{{ check.id }}/reminders" class="check-reminder-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><label class="sr-only" for="rem-{{ check.id }}">هشدارها (روز قبل)</label><input id="rem-{{ check.id }}" name="reminder_days" value="{{ check.reminder_days|replace('[','')|replace(']','')|replace(',','،') }}"><button class="btn btn-sm btn-ghost" type="submit" title="به‌روزرسانی هشدارها" aria-label="به‌روزرسانی هشدارهای چک {{ check.id }}">🔔</button></form>
+                </div>
+                {% else %}—{% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table></div>
+    {% else %}
+    <div class="empty-state">
+        <h3>{% if has_filters %}چکی با این فیلترها پیدا نشد{% else %}هنوز چکی ثبت نشده است{% endif %}</h3>
+        <p>{% if has_filters %}فیلترها را تغییر دهید تا چک‌های دیگر را ببینید.{% else %}اولین چک را از فرم بالا ثبت کنید؛ هشدارهای سررسیدش به‌صورت خودکار ساخته می‌شوند.{% endif %}</p>
+        {% if has_filters %}<a href="/admin/checks" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
+    </div>
+    {% endif %}
+
+    {% if total_pages > 1 %}
+    <nav class="product-pagination" aria-label="صفحه‌بندی چک‌ها">
+        {% if page > 1 %}
+        <a class="btn btn-sm btn-ghost" href="/admin/checks?page={{ page - 1 }}&q={{ search }}&status={{ status_filter }}&supplier_id={{ supplier_filter }}&bank={{ bank_filter }}&start_date={{ start_date_filter }}&end_date={{ end_date_filter }}">صفحه قبل</a>
+        {% endif %}
+        <span>صفحه {{ page }} از {{ total_pages }}</span>
+        {% if page < total_pages %}
+        <a class="btn btn-sm btn-ghost" href="/admin/checks?page={{ page + 1 }}&q={{ search }}&status={{ status_filter }}&supplier_id={{ supplier_filter }}&bank={{ bank_filter }}&start_date={{ start_date_filter }}&end_date={{ end_date_filter }}">صفحه بعد</a>
+        {% endif %}
+    </nav>
+    {% endif %}
+</div>
+
+{% if alert_rows %}
+<div class="card check-alerts" id="check-alerts" role="alert">
+    <h3>هشدارهای فعال</h3>
+    {% for row in alert_rows %}
+    <div class="check-alert-row"><span><strong>{{ row.reminder.check.provider_name }}</strong> — {{ fmt(row.reminder.check.amount_rials) }} ریال — سررسید {{ jalali_str(row.reminder.check.due_at, false) }}{% if row.days_left is not none %} ({% if row.days_left > 0 %}{{ row.days_left }} روز مانده{% elif row.days_left == 0 %}سررسید امروز{% else %}{{ row.days_left|abs }} روز گذشته{% endif %}){% endif %}</span><form method="post" action="/admin/checks/reminders/{{ row.reminder.id }}/dismiss"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-sm btn-ghost" type="submit">بستن هشدار</button></form></div>
+    {% endfor %}
+</div>
+{% endif %}{% endblock %}

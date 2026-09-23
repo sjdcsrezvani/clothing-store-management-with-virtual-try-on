@@ -1,131 +1,122 @@
 {% extends "base.html" %}
-{% block title %}داشبورد مدیریت — رای کیدز{% endblock %}
 {% block content %}
-<h2>داشبورد مدیریت</h2>
 
-{% if action_message %}<div class="alert alert-success">{{ action_message }}</div>{% endif %}
+{% set page_badge = role_label %}
+{% set page_actions %}
+<a href="/sales/new" class="btn btn-success">🛒 ثبت فروش</a>
+{% endset %}
+{# The paper heading names the day and the reader's role — a printed dashboard
+   travels without a URL or a badge, and a manager's printout shows fewer
+   figures than the owner's. #}
+{% set print_heading = 'داشبورد فروشگاه — ' ~ today ~ ((' (' ~ role_label ~ ')') if role_label else '') %}
+{% include 'partials/page_header.html' %}
 
-<h3 style="margin: 1.5rem 0 0.6rem; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(31,27,22,0.6);">تنظیمات کلیدی</h3>
-<div class="stats-grid">
-    <div class="stat-card accent-persimmon">
-        <div class="stat-label">تخفیف معرف</div>
-        <div class="stat-value tnum">{{ fmt(referrer_discount) }} ت</div>
-        <div class="stat-sub">به ازای هر معرفی</div>
-    </div>
-    <div class="stat-card accent-pine">
-        <div class="stat-label">تخفیف معرفی‌شده</div>
-        <div class="stat-value tnum">{{ fmt(referred_discount) }} ت</div>
-        <div class="stat-sub">برای اولین خرید</div>
-    </div>
-    <div class="stat-card accent-saffron">
-        <div class="stat-label">حداقل خرید</div>
-        <div class="stat-value tnum">{{ fmt(min_purchase) }} ت</div>
-        <div class="stat-sub">برای استفاده از تخفیف</div>
-    </div>
-    <div class="stat-card accent-ink">
-        <div class="stat-label">سقف معرفی ماهانه</div>
-        <div class="stat-value tnum">{{ monthly_limit }} <span style="font-size:0.6em;">نفر</span></div>
-    </div>
-</div>
+{# Every section and card here was chosen before the page was drawn: a card this
+   viewer may not see was never built and never counted. Nothing below branches
+   on the role, so a template edit cannot reveal a number to the wrong person.
+   Nothing below changes data either — this page reports and links. #}
+{% for section in sections %}
 
-<h3 style="margin: 1.5rem 0 0.6rem; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(31,27,22,0.6);">آمار</h3>
-<div class="stats-grid">
-    <div class="stat-card">
-        <div class="stat-label">کل مشتریان</div>
-        <div class="stat-value tnum">{{ total_customers }}</div>
+{% if section.kind == 'attention' %}
+{# The action row is the page's navigation: on paper it is a list of links to
+   screens the printout cannot open, so it lives on the screen only. #}
+<section class="card screen-only" aria-labelledby="dash-{{ section.key }}">
+    <div class="section-heading">
+        <div>
+            <span class="eyebrow">{{ section.eyebrow }}</span>
+            <h3 id="dash-{{ section.key }}">{{ section.title }}</h3>
+        </div>
     </div>
-    <div class="stat-card">
-        <div class="stat-label">کل معرفی‌ها</div>
-        <div class="stat-value tnum">{{ total_referrals }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-label">دارای تخفیف فعال</div>
-        <div class="stat-value tnum">{{ customers_with_discount }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-label">موجودی پنل پیامک</div>
-        <div class="stat-value tnum">{{ sms_balance or '—' }}</div>
-    </div>
-</div>
-
-<h3 style="margin: 1.5rem 0 0.6rem; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(31,27,22,0.6);">سطح مشتریان</h3>
-<div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
-    <div class="stat-card">
-        <span class="tier-badge tier-silver">نقره‌ای</span>
-        <div class="stat-value tnum" style="margin-top: 0.5rem;">{{ silver_count }}</div>
-    </div>
-    <div class="stat-card">
-        <span class="tier-badge tier-gold">طلایی</span>
-        <div class="stat-value tnum" style="margin-top: 0.5rem;">{{ gold_count }}</div>
-    </div>
-    <div class="stat-card">
-        <span class="tier-badge tier-diamond">الماس</span>
-        <div class="stat-value tnum" style="margin-top: 0.5rem;">{{ diamond_count }}</div>
-    </div>
-</div>
-
-<div class="card">
-    <h3>برترین معرف‌ها</h3>
-    {% if top_referrers %}
-    <table>
-        <thead><tr><th>نام</th><th>تلفن</th><th>کل</th><th>این ماه</th><th>سطح</th><th>تخفیف</th></tr></thead>
-        <tbody>
-        {% for customer, count in top_referrers %}
-            <tr>
-                <td>{{ customer.full_name }}</td>
-                <td class="tnum">{{ customer.phone }}</td>
-                <td class="tnum">{{ count }}</td>
-                <td class="tnum">{{ customer.monthly_referral_count }}</td>
-                <td><span class="tier-badge tier-{{ customer.tier }}">{{ customer.tier }}</span></td>
-                <td class="tnum">{{ fmt(customer.referrer_discount) }}</td>
-            </tr>
+    <div class="action-grid">
+        {% for card in section.cards %}
+        {# `is-clear` means «nothing here needs you» and only this row may carry
+           it. A money card showing a zero must never look this calm. #}
+        <a class="action-item{% if card.tone %} action-{{ card.tone }}{% endif %}{% if card.clear %} is-clear{% endif %}" href="{{ card.href }}">
+            <span class="action-count tnum">{{ card.value }}</span>
+            <strong>{{ card.label }}</strong>
+            <span class="action-sub">{{ card.sub }}</span>
+        </a>
         {% endfor %}
-        </tbody>
-    </table>
-    {% else %}<p style="color: rgba(31,27,22,0.55);">هنوز معرفی‌ای ثبت نشده.</p>{% endif %}
-</div>
+    </div>
+</section>
 
-<div class="card">
-    <h3>برترین مشتریان (بر اساس خرید)</h3>
-    {% if top_spenders %}
-    <table>
-        <thead><tr><th>نام</th><th>تلفن</th><th>سطح</th><th>امتیاز</th><th>تعداد خرید</th><th>مجموع خرید</th></tr></thead>
-        <tbody>
-        {% for customer in top_spenders %}
-            <tr>
-                <td>{{ customer.full_name }}</td>
-                <td class="tnum">{{ customer.phone }}</td>
-                <td><span class="tier-badge tier-{{ customer.tier }}">{{ customer.tier }}</span></td>
-                <td class="tnum">{{ customer.total_points }}</td>
-                <td class="tnum">{{ customer.total_purchases }}</td>
-                <td class="tnum"><strong>{{ fmt(customer.total_spent) }}</strong></td>
-            </tr>
+{% elif section.kind == 'top' %}
+<section class="card" aria-labelledby="dash-{{ section.key }}">
+    <div class="section-heading">
+        <div>
+            <h3 id="dash-{{ section.key }}">{{ section.title }}</h3>
+        </div>
+    </div>
+    {% if section.rows %}
+    <ol class="ranked-list">
+        {% for row in section.rows %}
+        <li class="ranked-row">
+            <span class="ranked-rank tnum">{{ row.rank }}</span>
+            <span class="ranked-name">
+                <strong>{{ row.name }}</strong>
+                <small>{{ row.category }}</small>
+            </span>
+            <span class="ranked-figures">
+                <span class="ranked-units tnum">{{ row.qty }} عدد</span>
+                <span class="ranked-money tnum">{{ row.revenue }} ت</span>
+                {% if section.show_profit %}
+                <span class="ranked-profit tnum">سود {{ row.profit }} ت</span>
+                {% endif %}
+            </span>
+        </li>
         {% endfor %}
-        </tbody>
-    </table>
-    {% else %}<p style="color: rgba(31,27,22,0.55);">هنوز خریدی ثبت نشده.</p>{% endif %}
-</div>
+    </ol>
+    {% else %}
+    <p class="empty-state">هنوز فروشی در این ماه ثبت نشده است.</p>
+    {% endif %}
+</section>
 
-<div class="admin-nav">
-    <form method="post" action="/admin/check-birthdays"><button type="submit" class="btn btn-ghost">بررسی تولدها</button></form>
-    <form method="post" action="/admin/check-downgrades"><button type="submit" class="btn btn-ghost">بررسی کاهش سطح</button></form>
-</div>
+{% elif section.kind == 'reading' %}
+<section class="card" aria-labelledby="dash-{{ section.key }}">
+    <div class="section-heading">
+        <div>
+            {% if section.eyebrow %}<span class="eyebrow">{{ section.eyebrow }}</span>{% endif %}
+            <h3 id="dash-{{ section.key }}">{{ section.title }}</h3>
+        </div>
+    </div>
+    {# The month said in words — the same sentences سود و زیان writes under its
+       charts and the monthly SMS carries to the owner's phone. #}
+    <ul class="reading-list">
+        {% for sentence in section.sentences %}
+        <li>{{ sentence }}</li>
+        {% endfor %}
+    </ul>
+</section>
 
-<div class="card" style="border-color: var(--pomegranate); border-style: dashed;">
-    <h3 style="color: var(--pomegranate);">منطقه خطر</h3>
-    <p style="color: rgba(31,27,22,0.65); margin-bottom: 1rem;">این عمل تمام اطلاعات مشتریان، معرفی‌ها و تنظیمات را حذف می‌کند.</p>
-    <form method="post" action="/admin/reset-database" onsubmit="return confirm('آیا مطمئن هستید؟ تمام اطلاعات حذف خواهد شد!')">
-        <button type="submit" class="btn btn-danger">ریست دیتابیس</button>
-    </form>
-</div>
+{% else %}
+<section aria-labelledby="dash-{{ section.key }}">
+    <div class="section-heading">
+        <div>
+            {% if section.eyebrow %}<span class="eyebrow">{{ section.eyebrow }}</span>{% endif %}
+            <h3 id="dash-{{ section.key }}">{{ section.title }}</h3>
+        </div>
+    </div>
+    <div class="stats-grid">
+        {% for card in section.cards %}
+        {% if card.href %}
+        <a class="stat-card{% if card.tone %} accent-{{ card.tone }}{% endif %}" href="{{ card.href }}">
+        {% else %}
+        <div class="stat-card{% if card.tone %} accent-{{ card.tone }}{% endif %}">
+        {% endif %}
+            <div class="stat-label">{{ card.label }}</div>
+            <div class="stat-value tnum">
+                {{ card.value }}
+                {% if card.delta %}
+                <span class="stat-delta{% if card.delta.good is not none %} is-{{ 'good' if card.delta.good else 'bad' }}{% endif %}">{{ card.delta.text }}</span>
+                {% endif %}
+            </div>
+            <div class="stat-sub">{{ card.sub }}</div>
+        {% if card.href %}</a>{% else %}</div>{% endif %}
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
 
-<nav class="admin-nav">
-    <a href="/admin/analytics"><button type="button" class="btn btn-primary">تحلیل مالی</button></a>
-    <a href="/admin/campaigns"><button type="button" class="btn btn-primary">کمپین‌ها</button></a>
-    <a href="/admin/customers"><button type="button" class="btn btn-ghost">مدیریت مشتریان</button></a>
-    <a href="/admin/products"><button type="button" class="btn btn-ghost">مدیریت محصولات</button></a>
-    <a href="/sales/"><button type="button" class="btn btn-ghost">تاریخچه فروش</button></a>
-    <a href="/admin/settings"><button type="button" class="btn btn-ghost">تنظیمات</button></a>
-    <a href="/sales/new"><button type="button" class="btn btn-primary">فروش جدید</button></a>
-</nav>
+{% endfor %}
+
 {% endblock %}

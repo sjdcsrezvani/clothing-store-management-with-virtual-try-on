@@ -1,0 +1,32 @@
+{# The one page header. Every page draws this instead of inventing a heading.
+
+   Called with variables rather than arguments so a page can hand over only what
+   it has:
+
+       {% set page_description = '…' %}          (optional)
+       {% set page_actions %}<a …>…</a>{% endset %}   (optional)
+       {% include 'partials/page_header.html' %}
+
+   `page_title` and `page_icon` come from services/navigation.py for the current
+   path, so a destination is named once for the menu, the browser tab, the
+   heading and the last crumb. A page showing a record overrides `page_title`
+   above the include — the crumb follows it.
+
+   `heading_class` stays available because the catalog pages lay their actions
+   out differently; it defaults to the shared one. #}
+{# Flash messages join the toast stack, not the heading: the redirect's
+   ?msg=/?err= renders as a [data-toast] row (readable with no JS) and
+   toast.js adopts it into #toaster on load with timers + dismissal.
+   role=status for confirmations, role=alert for errors. #}
+{% set flash_tone = msg_tone | default('success') %}
+{% if msg %}<div class="toaster-flash" data-toast data-toast-type="{{ flash_tone }}" role="status">{{ msg }}</div>{% endif %}
+{% if err %}<div class="toaster-flash" data-toast data-toast-type="error" role="alert">{{ err }}</div>{% endif %}
+{% if print_heading %}<h2 class="print-heading">{{ print_heading }}</h2>{% endif %}
+<div class="{{ heading_class | default('page-heading') }}">
+    <div class="page-heading-body">
+        {% include 'partials/breadcrumb.html' %}
+        <h1>{% if page_icon %}<span class="nav-icon page-icon icon-{{ page_icon }}" aria-hidden="true"><svg class="ui-icon" focusable="false"><use href="#icon-{{ page_icon }}"></use></svg></span>{% endif %}{{ page_title }}</h1>
+        {% if page_description %}<p>{{ page_description }}</p>{% endif %}
+    </div>
+    {% if page_actions %}<div class="admin-nav">{{ page_actions }}</div>{% endif %}
+</div>

@@ -1,15 +1,29 @@
+from urllib.parse import quote_plus
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Customer, Referral, generate_referral_code, to_english_digits
-from services._common import fmt, get_setting_int as get_discount_setting, current_year_month, parse_persian_birthday
-from services.sms import send_welcome_sms
+from services._common import (
+    current_year_month,
+    fmt,
+    get_setting_int as get_discount_setting,
+    jalali_str,
+)
+from services.customers import (
+    birthday_fields,
+    customer_birthdays,
+    signup_birthday_fields,
+    update_customer_meta,
+)
+from services.sms import queue_welcome_sms
+from services.templating import templates
 from services.tier import get_tier_config
+from services.security import require_html_role, log_action
+from services.security import require_html_role, log_action
 
 router = APIRouter()
-templates = Jinja2Templates(directory="templates")
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -25,47 +39,57 @@ async def create_customer(
     last_name: str = Form(""),
     child_name: str = Form(""),
     child_birthday: str = Form(""),
+    birth_date: str = Form(""),
+    buys_for: str = Form(""),
     db: Session = Depends(get_db),
 ):
+    guard = require_html_role(request, db, "cashier")
+    if not hasattr(guard, "role"):
+        return guard
     phone = to_english_digits(phone.strip())
     if not phone.startswith("09") or len(phone) != 11:
         return templates.TemplateResponse(request, "index.html", {
             "error": "شماره موبایل نامعتبر است. فرمت صحیح: 09xxxxxxxxx",
             "fmt": fmt,
+            "jalali_str": jalali_str,
         })
 
     existing = db.query(Customer).filter(Customer.phone == phone).first()
     if existing:
-        tier_config = get_tier_config(db)
         return templates.TemplateResponse(request, "customer.html", {
             "customer": existing,
             "message": "این شماره قبلاً ثبت شده است.",
             "fmt": fmt,
-            "tier_config": tier_config,
+            "jalali_str": jalali_str,
+            **_panel_context(db, existing),
         })
 
     code = generate_referral_code()
     while db.query(Customer).filter(Customer.referral_code == code).first():
         code = generate_referral_code()
 
+    # Who this customer buys for is their own choice, asked here; the fields
+    # that get stored follow from it, and the server is what enforces that.
     customer = Customer(
         phone=phone,
         first_name=first_name if first_name else None,
         last_name=last_name if last_name else None,
         referral_code=code,
-        child_name=child_name if child_name else None,
-        child_birthday=parse_persian_birthday(child_birthday),
+        **signup_birthday_fields(
+            db, buys_for=buys_for, birth_value=birth_date,
+            child_name=child_name, child_birth_value=child_birthday,
+        ),
     )
     db.add(customer)
     db.commit()
-    await send_welcome_sms(phone, first_name, code, db)
+    await queue_welcome_sms(phone, first_name, code, db, customer=customer)
 
-    tier_config = get_tier_config(db)
     return templates.TemplateResponse(request, "customer.html", {
         "customer": customer,
         "message": "ثبت‌نام با موفقیت انجام شد!",
         "fmt": fmt,
-        "tier_config": tier_config,
+        "jalali_str": jalali_str,
+        **_panel_context(db, customer),
     })
 
 
@@ -84,6 +108,7 @@ async def lookup_customer(request: Request, phone: str = "", db: Session = Depen
             "monthly_limit": monthly_limit,
             "tier_config": tier_config,
             "fmt": fmt,
+            "jalali_str": jalali_str,
         })
 
     phone = to_english_digits(phone.strip())
@@ -97,6 +122,7 @@ async def lookup_customer(request: Request, phone: str = "", db: Session = Depen
             "monthly_limit": get_discount_setting(db, "monthly_referral_limit", 10),
             "tier_config": get_tier_config(db),
             "fmt": fmt,
+            "jalali_str": jalali_str,
         })
 
     referrals = db.query(Referral).filter(Referral.referrer_id == customer.id).all()
@@ -106,119 +132,158 @@ async def lookup_customer(request: Request, phone: str = "", db: Session = Depen
         if referred:
             referred_customers.append({"customer": referred, "referral": r})
 
-    min_purchase = get_discount_setting(db, "min_purchase_for_discount", 500000)
-    monthly_limit = get_discount_setting(db, "monthly_referral_limit", 10)
-    tier_config = get_tier_config(db)
-
     return templates.TemplateResponse(request, "customer.html", {
         "customer": customer,
         "referrals": referred_customers,
         "fmt": fmt,
-        "min_purchase": min_purchase,
-        "monthly_limit": monthly_limit,
-        "tier_config": tier_config,
+        "jalali_str": jalali_str,
+        **_panel_context(db, customer),
     })
 
 
-@router.post("/customers/{customer_id}/update-child", response_class=HTMLResponse)
-async def update_child_info(customer_id: int, request: Request, db: Session = Depends(get_db)):
-    """Update child information for a customer."""
+@router.post("/customers/{customer_id}/update-details", response_class=HTMLResponse)
+async def update_customer_details(customer_id: int, request: Request, db: Session = Depends(get_db)):
+    """Save the counter card: who this customer buys for, and that side's details.
+
+    One route because it is one decision — the choice decides which fields the
+    form asked for, and `update_customer_meta` writes only that side's fields, so
+    a hand-posted child birthday in «برای خودم» mode changes nothing. The other
+    side's stored data is kept rather than cleared, so switching back is safe.
+    """
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(status_code=404, detail="مشتری یافت نشد")
 
     form = await request.form()
-    child_name = form.get("child_name", "")
-    child_birthday = form.get("child_birthday", "")
-
-    customer.child_birthday = parse_persian_birthday(child_birthday)
-    customer.child_name = child_name if child_name else None
+    update_customer_meta(
+        db,
+        customer,
+        buys_for=form.get("buys_for"),
+        birth_value=form.get("birth_date"),
+        child_name=form.get("child_name"),
+        child_birth_value=form.get("child_birthday"),
+    )
     db.commit()
+    return _customer_panel(request, customer, db, message="پرونده مشتری به‌روزرسانی شد.")
 
-    tier_config = get_tier_config(db)
-    min_purchase = get_discount_setting(db, "min_purchase_for_discount", 500000)
-    monthly_limit = get_discount_setting(db, "monthly_referral_limit", 10)
 
-    return templates.TemplateResponse(request, "customer.html", {
+def _admin_next(value) -> str | None:
+    """A posted `next` path is honoured only when it stays inside the admin panel.
+
+    The discount buttons live on both the cashier-facing customer page (which
+    answers with a render) and the admin profile (which wants a redirect back),
+    so the caller chooses by posting `next` — and anything that isn't a plain
+    admin path is ignored rather than trusted.
+    """
+    if not value:
+        return None
+    target = str(value).strip()
+    if not target.startswith("/admin/") or "//" in target or "\\" in target:
+        return None
+    return target
+
+
+def _back_or_panel(request, customer, db, next_url, message: str = "", error: str = ""):
+    """Answer the caller: the admin page that sent us, or the customer panel."""
+    if next_url:
+        param = "msg" if message else "err"
+        value = message or error
+        separator = "&" if "?" in next_url else "?"
+        return RedirectResponse(
+            url=f"{next_url}{separator}{param}={quote_plus(value)}", status_code=303,
+        )
+    return _customer_panel(request, customer, db, message=message, error=error)
+
+
+def _panel_context(db, customer) -> dict:
+    """Everything `customer.html` needs, whatever route rendered it.
+
+    The panel edits the same «for whom» choice the signup form asked, so every
+    render has to prefill those fields and show the birthdays this customer is
+    actually wished on — resolved per customer, not per store.
+    """
+    from services.campaigns import campaign_for_customer
+
+    return {
+        "birthday_fields": birthday_fields(customer, db),
+        "birthdays": customer_birthdays(db, customer),
+        "min_purchase": get_discount_setting(db, "min_purchase_for_discount", 500000),
+        "monthly_limit": get_discount_setting(db, "monthly_referral_limit", 10),
+        "tier_config": get_tier_config(db),
+        # The cashier should see the campaign this customer holds before
+        # totalling the basket, not discover it after the fact.
+        "campaign": campaign_for_customer(db, customer),
+    }
+
+
+def _customer_panel(request, customer, db, message: str = "", error: str = ""):
+    """The cashier-facing customer panel, with the shared context it needs."""
+    context = {
         "customer": customer,
-        "message": "اطلاعات فرزند با موفقیت به‌روزرسانی شد.",
         "fmt": fmt,
-        "min_purchase": min_purchase,
-        "monthly_limit": monthly_limit,
-        "tier_config": tier_config,
-    })
+        "jalali_str": jalali_str,
+        **_panel_context(db, customer),
+    }
+    if message:
+        context["message"] = message
+    if error:
+        context["error"] = error
+    return templates.TemplateResponse(request, "customer.html", context)
 
 
 @router.post("/customers/{customer_id}/use-referred-discount", response_class=HTMLResponse)
 async def use_referred_discount(customer_id: int, request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
+
     if not customer:
         raise HTTPException(status_code=404, detail="مشتری یافت نشد")
 
-    min_purchase = get_discount_setting(db, "min_purchase_for_discount", 500000)
-    monthly_limit = get_discount_setting(db, "monthly_referral_limit", 10)
-    tier_config = get_tier_config(db)
+    form = await request.form()
+    next_url = _admin_next(form.get("next"))
 
     if customer.has_used_referred_discount:
-        return templates.TemplateResponse(request, "customer.html", {
-            "customer": customer,
-            "error": "تخفیف معرفی قبلاً استفاده شده است.",
-            "fmt": fmt,
-            "min_purchase": min_purchase,
-            "monthly_limit": monthly_limit,
-            "tier_config": tier_config,
-        })
+        return _back_or_panel(request, customer, db, next_url, error="تخفیف معرفی قبلاً استفاده شده است.")
     if customer.referred_discount <= 0:
-        return templates.TemplateResponse(request, "customer.html", {
-            "customer": customer,
-            "error": "تخفیفی موجود نیست.",
-            "fmt": fmt,
-            "min_purchase": min_purchase,
-            "monthly_limit": monthly_limit,
-            "tier_config": tier_config,
-        })
+        return _back_or_panel(request, customer, db, next_url, error="تخفیفی موجود نیست.")
 
     customer.has_used_referred_discount = True
     db.commit()
-
-    return templates.TemplateResponse(request, "customer.html", {
-        "customer": customer,
-        "message": f"تخفیف {fmt(customer.referred_discount)} تومان با موفقیت اعمال شد!",
-        "fmt": fmt,
-        "min_purchase": min_purchase,
-        "monthly_limit": monthly_limit,
-        "tier_config": tier_config,
-    })
+    log_action(db, "customer_discount", f"اعمال تخفیف معرفی‌شده برای {customer.phone}",
+               request=request, target_type="customer", target_id=customer.id,
+               after={"amount": customer.referred_discount})
+    return _back_or_panel(
+        request, customer, db, next_url,
+        message=f"تخفیف {fmt(customer.referred_discount)} تومان با موفقیت اعمال شد!",
+    )
 
 
 @router.post("/customers/{customer_id}/use-referrer-discount", response_class=HTMLResponse)
 async def use_referrer_discount(customer_id: int, request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
+
     if not customer:
         raise HTTPException(status_code=404, detail="مشتری یافت نشد")
 
-    min_purchase = get_discount_setting(db, "min_purchase_for_discount", 500000)
-    monthly_limit = get_discount_setting(db, "monthly_referral_limit", 10)
-    tier_config = get_tier_config(db)
+    form = await request.form()
+    next_url = _admin_next(form.get("next"))
 
     if customer.referrer_discount <= 0:
-        return templates.TemplateResponse(request, "customer.html", {
-            "customer": customer,
-            "error": "تخفیف معرفی موجود نیست.",
-            "fmt": fmt,
-            "min_purchase": min_purchase,
-            "monthly_limit": monthly_limit,
-            "tier_config": tier_config,
-        })
+        return _back_or_panel(request, customer, db, next_url, error="تخفیف معرفی موجود نیست.")
 
     customer.referrer_discount = 0
     db.commit()
-
-    return templates.TemplateResponse(request, "customer.html", {
-        "customer": customer,
-        "message": "تخفیف معرفی با موفقیت اعمال شد و به صفر بازگشت. اکنون می‌توانید دوباره معرفی کنید!",
-        "fmt": fmt,
-        "min_purchase": min_purchase,
-        "monthly_limit": monthly_limit,
-        "tier_config": tier_config,
-    })
+    log_action(db, "customer_discount", f"اعمال تخفیف معرف برای {customer.phone}",
+               request=request, target_type="customer", target_id=customer.id)
+    return _back_or_panel(
+        request, customer, db, next_url,
+        message="تخفیف معرفی با موفقیت اعمال شد و به صفر بازگشت. اکنون می‌توانید دوباره معرفی کنید!",
+    )

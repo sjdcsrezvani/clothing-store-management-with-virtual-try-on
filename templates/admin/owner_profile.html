@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+{% set page_description %}
+این اطلاعات در قراردادهای استخدامی و رسیدهای حقوقی استفاده می‌شود.
+{% endset %}
+{% include 'partials/page_header.html' %}
+<div class="card">
+  <form method="post" action="/admin/owner-profile" class="form-row">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>نام و نام خانوادگی مالک<input name="owner_full_name" value="{{ owner_settings.get('owner_full_name', '') }}" required></label>
+    <label>نام کسب‌وکار<input name="owner_business_name" value="{{ owner_settings.get('owner_business_name', store.name) }}"></label>
+    <label>کد ملی / شناسه ملی<input name="owner_national_id" value="{{ owner_settings.get('owner_national_id', '') }}"></label>
+    <label>تلفن<input name="owner_phone" value="{{ owner_settings.get('owner_phone', '') }}"></label>
+    <label>ایمیل<input type="email" name="owner_email" value="{{ owner_settings.get('owner_email', '') }}"></label>
+    <label>شماره ثبت کسب‌وکار<input name="owner_business_registration" value="{{ owner_settings.get('owner_business_registration', '') }}"></label>
+    <label>عنوان امضاکننده<input name="owner_signatory_title" value="{{ owner_settings.get('owner_signatory_title', 'کارفرما') }}"></label>
+    <label class="form-span-2">نشانی مالک / کسب‌وکار<textarea name="owner_address" rows="3">{{ owner_settings.get('owner_address', '') }}</textarea></label>
+    <button class="btn btn-primary" type="submit">ذخیره اطلاعات مالک</button>
+  </form>
+</div>
+{% endblock %}
