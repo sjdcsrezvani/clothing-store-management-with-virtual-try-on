@@ -1624,6 +1624,8 @@ async def admin_barcodes_mark_printed(request: Request, db: Session = Depends(ge
             pass
 
     is_reprint = str(form.get("reprint", "")).lower() in {"1", "true", "yes"}
+    search = str(form.get("q", ""))
+    batch_lines = []
     for variant_id, selected_count in selected_counts.items():
         requested_count = selected_quantities.get(variant_id, selected_count)
         variant = db.query(ProductVariant).filter(

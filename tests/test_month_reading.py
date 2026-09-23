@@ -241,7 +241,11 @@ def test_a_day_outside_the_month_is_refused(client, db_session):
 
 
 def test_the_digest_settings_page_shows_the_next_month(client, db_session):
+    # Day 1: the gate for the default day-3 digest is closed early in every
+    # Persian month. Opting in with day=1 keeps the label rendered wherever
+    # in the calendar the suite runs.
     _owner(client, db_session)
+    _opt_in(db_session, day=1)
     html = client.get("/admin/sms").text
     assert "monthly_digest_phone" in html
     assert "monthly_digest_day" in html
@@ -284,7 +288,10 @@ def test_the_strip_is_never_computed_for_a_manager(client, db_session, monkeypat
 def test_a_broken_reading_never_breaks_the_sweep(db_session, monkeypatch):
     from services import month_reading as module
 
-    _opt_in(db_session)
+    # day=1: the not-due gate (default day 3) would answer before the patched
+    # reading ever runs on the 1st–2nd of a Persian month — the test needs the
+    # call to reach the sabotage wherever in the calendar the suite runs.
+    _opt_in(db_session, day=1)
     monkeypatch.setattr(module, "month_reading",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
     summary = asyncio.run(module.fire_monthly_digest(db_session))
