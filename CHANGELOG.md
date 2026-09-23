@@ -1,3 +1,14 @@
+## 2.6.8 — 1405/07/01 (2026-09-23)
+
+### خریدها: the receipt files arrivals and books the debt, and never rewrites the catalogue
+
+- **One arrival, one receipt.** Arrived variants are stamped with their purchase (`received_purchase_id`, migration revision 22) — a flagged variant never appears in another receipt's picker, and reversal unstamps it. Quantities and costs always come from the variant itself; posted numbers are ignored and stale picks refuse naming their row.
+- **Finalize files and books.** Auto-sum totals, full-credit debt, no cost overwrite, no stock movement, no pay-at-finalize; landed math and zero-quantity ledger rows stay as evidence only. All user-facing copy rewritten to the new truth.
+- **Honest rows.** Mirror cells instead of qty/cost inputs, strict pick-only selection, duplicate scans flash instead of doubling, supplier switches confirm, empty receipts blocked client-side.
+- **Visible everywhere.** Received badges on product and variant pages, landed breakdown on the print invoice.
+
+**Schema change.** The database moves to revision 22 (variant receipt stamp).
+
 ## 2.6.7 — 1405/07/01 (2026-09-23)
 
 ### طراح تگ: a designer that refuses loudly, wipes once, and saves the image with the design
