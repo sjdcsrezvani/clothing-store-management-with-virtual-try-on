@@ -16,7 +16,8 @@ def _post(client, url, data, authed):
 def _post_invoice(client, data, authed):
     """Record a supplier invoice the way the UI does: draft, then finalise.
 
-    Only finalising touches the cost basis, the payable or the cash register.
+    Finalising stamps arrivals and books the payable; the catalogue stays
+    untouched throughout.
     """
     response = _post(client, "/admin/purchases/add", data, authed)
     match = re.search(r"/admin/purchases/(\d+)", response.headers.get("location", ""))
@@ -132,8 +133,8 @@ def test_new_product_initial_stock_creates_opening_movement(client, db_session, 
 
 
 def test_purchase_updates_cost_but_never_stock(client, db_session, authed):
-    """Buying stock records what it cost; where stock is counted is decided on
-    the product screens, so a purchase must leave quantities alone."""
+    """A receipt files what arrived and books the debt; cost and stock live on
+    the product screens, so a purchase must leave both alone."""
     from models import Supplier
     supplier = Supplier(name="عمده‌فروش مرکزی")
     db_session.add(supplier)
@@ -147,26 +148,31 @@ def test_purchase_updates_cost_but_never_stock(client, db_session, authed):
         "purchase_variant_0": str(variant.id),
         "purchase_qty_0": "10",
         "purchase_cost_0": "45000",
+        "extra_cost": "50000",
     }, authed)
 
     db_session.refresh(variant)
     assert variant.stock_quantity == 5
-    assert variant.cost_price == 45_000
+    # Posted numbers are ignored: the variant's own 5 × 50,000 rule.
+    assert variant.cost_price == 50_000
+    assert variant.received_purchase_id is not None
     purchase = db_session.query(Purchase).order_by(Purchase.id.desc()).first()
-    assert purchase.total_cost == 450_000
+    assert purchase.total_cost == 300_000
     assert db_session.query(PurchaseItem).filter(PurchaseItem.purchase_id == purchase.id).count() == 1
-    # The cost change is auditable, and writes no stock movement.
+    # The landed figure is recorded as evidence, and writes no stock movement.
     movements = db_session.query(StockMovement).filter(StockMovement.purchase_id == purchase.id).all()
     assert [m.movement_type for m in movements] == ["cost_adjustment"]
     assert movements[0].quantity_delta == 0
+    assert movements[0].unit_cost == 60_000  # 50,000 + 10,000 shipping evidence
 
-    # Reversing keeps the purchase row, restores the previous cost basis and
-    # leaves stock exactly where it was.
+    # Reversing keeps the purchase row, unstamps the variant, and leaves
+    # stock and cost exactly where they were.
     _post(client, f"/admin/purchases/{purchase.id}/delete", {}, authed)
     db_session.refresh(variant)
     db_session.refresh(purchase)
     assert variant.stock_quantity == 5
     assert variant.cost_price == 50_000
+    assert variant.received_purchase_id is None
     assert purchase.is_reversed is True
     assert db_session.query(Purchase).filter(Purchase.id == purchase.id).count() == 1
     assert db_session.query(StockMovement).filter(
@@ -216,31 +222,63 @@ def test_purchase_reversal_needs_no_stock_lock(client, db_session, authed):
 
 
 def test_multiple_purchase_reversal_keeps_latest_cost_basis(client, db_session, authed):
-    """Reversing an older receipt never overwrites a later receipt cost."""
+    """One arrival, one receipt: the same variant cannot be received twice, so
+    reversing the first simply frees it for a receipt again."""
     from models import Supplier
     supplier = Supplier(name="چند خرید تأمین‌کننده")
     db_session.add(supplier)
     db_session.commit()
     db_session.refresh(supplier)
 
-    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=0, name="چند خرید")
-    for qty, cost in ((10, 45_000), (5, 40_000)):
-        _post_invoice(client, {
-            "supplier_id": str(supplier.id),
-            "note": "خرید کالا",
-            "purchase_variant_0": str(variant.id),
-            "purchase_qty_0": str(qty),
-            "purchase_cost_0": str(cost),
-        }, authed)
+    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=5, name="چند خرید")
+    _post_invoice(client, {
+        "supplier_id": str(supplier.id),
+        "note": "خرید کالا",
+        "purchase_variant_0": str(variant.id),
+    }, authed)
     purchases = db_session.query(Purchase).order_by(Purchase.id.asc()).all()
-    _post(client, f"/admin/purchases/{purchases[0].id}/delete", {}, authed)
+    assert len(purchases) == 1
+    db_session.refresh(variant)
+    assert variant.received_purchase_id == purchases[0].id
 
+    # A second receipt for the same arrival is refused at draft time, naming
+    # the variant — it never even becomes a draft.
+    from urllib.parse import unquote_plus
+    second = _post(client, "/admin/purchases/add", {
+        "supplier_id": str(supplier.id),
+        "note": "خرید تکراری",
+        "purchase_variant_0": str(variant.id),
+    }, authed)
+    assert second.status_code == 303
+    assert "قبلاً رسید شده" in unquote_plus(second.headers.get("location", ""))
+    assert db_session.query(Purchase).count() == 1
+
+    # Reversing the first frees the variant; costs and stock never moved.
+    _post(client, f"/admin/purchases/{purchases[0].id}/delete", {}, authed)
     db_session.refresh(variant)
     db_session.refresh(purchases[0])
     assert purchases[0].is_reversed is True
-    assert variant.stock_quantity == 0
-    assert variant.cost_price == 40_000
-    assert db_session.query(Purchase).count() == 2
+    assert variant.stock_quantity == 5
+    assert variant.cost_price == 50_000
+    assert variant.received_purchase_id is None
+
+    # And the freed variant files a fresh receipt without complaint.
+    retry = _post(client, "/admin/purchases/add", {
+        "supplier_id": str(supplier.id),
+        "note": "خرید دوباره",
+        "purchase_variant_0": str(variant.id),
+    }, authed)
+    assert retry.status_code == 303
+    assert "err=" not in unquote_plus(retry.headers.get("location", ""))
+
+    # Reversing the first frees the variant; costs and stock never moved.
+    _post(client, f"/admin/purchases/{purchases[0].id}/delete", {}, authed)
+    db_session.refresh(variant)
+    db_session.refresh(purchases[0])
+    assert purchases[0].is_reversed is True
+    assert variant.stock_quantity == 5
+    assert variant.cost_price == 50_000
+    assert variant.received_purchase_id is None
 
 
 def test_manual_stock_edit_creates_adjustment_movement(client, db_session, authed):

@@ -102,7 +102,8 @@ def test_draft_invoice_touches_nothing_until_finalized(client, db_session, authe
 
     purchase = _latest_purchase(db_session)
     assert purchase.is_draft is True
-    assert purchase.total_cost == 500_000
+    # The row mirrors its variant: 5 units at 40,000 plus 50,000 shipping.
+    assert purchase.total_cost == 250_000
     assert purchase.amount_paid in (None, 0)
 
     db_session.refresh(variant)
@@ -149,9 +150,12 @@ def test_finalizing_a_draft_applies_cost_and_debt_once(client, db_session, authe
     db_session.refresh(purchase)
     assert purchase.is_draft is False
     db_session.refresh(variant)
-    assert variant.cost_price == 50_000  # 45,000 + 5,000 shipping per unit
-    assert variant.stock_quantity == 5  # purchases never move stock
+    # The receipt files and books, nothing more: the catalogue is byte-identical.
+    assert variant.cost_price == 40_000
+    assert variant.stock_quantity == 5
+    assert variant.received_purchase_id == purchase.id
 
+    # The landed figure is still recorded as evidence: 40,000 + 5,000 shipping.
     movement = db_session.query(StockMovement).filter(
         StockMovement.purchase_id == purchase.id,
         StockMovement.movement_type == "cost_adjustment",
@@ -165,14 +169,15 @@ def test_finalizing_a_draft_applies_cost_and_debt_once(client, db_session, authe
     ).count() == 1
 
     balances = {row["supplier"].id: row for row in get_supplier_balances(db_session)}
-    assert balances[supplier.id]["invoiced"] == 500_000
-    assert balances[supplier.id]["owed"] == 500_000
+    assert balances[supplier.id]["invoiced"] == 250_000
+    assert balances[supplier.id]["owed"] == 250_000
 
     # Finalising twice must not apply anything a second time.
     again = _finalize(client, purchase.id)
     assert "err=" in _redirect_text(again)
     db_session.refresh(variant)
-    assert variant.cost_price == 50_000
+    assert variant.cost_price == 40_000
+    assert variant.received_purchase_id == purchase.id
     assert db_session.query(StockMovement).filter(
         StockMovement.purchase_id == purchase.id,
     ).count() == 1
@@ -190,14 +195,15 @@ def test_purchase_spreads_shipping_into_landed_cost(client, db_session, authed):
     assert response.status_code == 303
 
     purchase = _latest_purchase(db_session)
-    assert purchase.total_cost == 500_000  # 450,000 items + 50,000 shipping
+    assert purchase.total_cost == 250_000  # 200,000 mirrored + 50,000 shipping
     assert purchase.extra_cost == 50_000
     assert purchase.extra_cost_in_landed is True
 
     db_session.refresh(variant)
     assert variant.stock_quantity == 5  # quantities belong to the product screens
-    # Shipping spread by line value: 500k/10 units → 45k + 5k landed cost.
-    assert variant.cost_price == 50_000
+    assert variant.cost_price == 40_000  # recorded, never adopted
+    # Shipping spread by line value: 200k/5 units → 40k + 10k landed evidence.
+    assert variant.received_purchase_id == purchase.id
     movement = db_session.query(StockMovement).filter(
         StockMovement.purchase_id == purchase.id,
         StockMovement.movement_type == "cost_adjustment",
@@ -218,17 +224,20 @@ def test_purchase_can_keep_shipping_out_of_cost_basis(client, db_session, authed
     assert response.status_code == 303
 
     purchase = _latest_purchase(db_session)
-    assert purchase.total_cost == 500_000
+    assert purchase.total_cost == 50_000
     assert purchase.extra_cost_in_landed is False
     db_session.refresh(variant)
-    # Invoiced total includes shipping, but the cost basis does not.
-    assert variant.cost_price == 45_000
+    # Invoiced total includes shipping, but the cost basis does not move.
+    assert variant.cost_price == 50_000
     assert variant.stock_quantity == 0
+    assert variant.received_purchase_id == purchase.id
 
 
-def test_finalizing_can_record_the_first_payment(client, db_session, authed):
+def test_finalizing_books_full_credit_without_touching_the_till(client, db_session, authed):
+    """Finalizing books the whole invoice as supplier credit: no pay-now field
+    exists any more, so nothing may leave the till at finalize time."""
     supplier = _make_supplier(db_session)
-    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=0, name="پرداخت هنگام نهایی‌سازی")
+    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=5, name="نسیه کامل")
 
     response = _add_purchase(
         client, variant, quantity=10, unit_cost=45_000,
@@ -237,39 +246,40 @@ def test_finalizing_can_record_the_first_payment(client, db_session, authed):
     assert response.status_code == 303
 
     purchase = _latest_purchase(db_session)
-    payment = db_session.query(SupplierPayment).one()
-    assert payment.purchase_id == purchase.id
-    assert payment.amount == 200_000
-    assert payment.method == "cash"
+    # Posted quantities and costs are ignored; the variant's own 5 × 50,000 rule.
+    assert purchase.total_cost == 250_000
+    assert db_session.query(SupplierPayment).count() == 0
 
-    assert purchase.amount_paid == 200_000
+    assert purchase.amount_paid in (None, 0)
     settlement = purchase_settlement(db_session, purchase)
-    assert (settlement["paid"], settlement["remaining"], settlement["status"]) == (200_000, 250_000, "partial")
+    assert (settlement["paid"], settlement["remaining"], settlement["status"]) == (0, 250_000, "unpaid")
 
     balances = {row["supplier"].id: row for row in get_supplier_balances(db_session)}
-    assert balances[supplier.id]["invoiced"] == 450_000
+    assert balances[supplier.id]["invoiced"] == 250_000
     assert balances[supplier.id]["owed"] == 250_000
 
     start, end = _range()
     register = get_cashbox(db_session, start, end, 0)
-    # Only the money that actually left the till counts: the invoice itself is
+    # Only money that actually left the till counts: the invoice itself is
     # accrual and must not be counted a second time.
-    assert register["supplier_payments"] == 200_000
-    assert register["purchases"] == 450_000
-    assert register["cash_out"] == 200_000
-    assert register["closing"] == -200_000
+    assert register["supplier_payments"] == 0
+    assert register["purchases"] == 250_000
+    assert register["cash_out"] == 0
+    assert register["closing"] == 0
 
 
 def test_supplier_payment_always_leaves_the_till(client, db_session, authed):
     """Paying a wholesaler is money out however it is handed over: even a client
     that still sends a card method must not drop out of the cash register."""
     supplier = _make_supplier(db_session, name="نقد یا کارت")
-    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=0, name="نقد یا کارت کالا")
+    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=4, name="نقد یا کارت کالا")
     _add_purchase(
-        client, variant, quantity=4, unit_cost=25_000, supplier_id=str(supplier.id),
-        payment_amount="50000", payment_method="card",
+        client, variant, supplier_id=str(supplier.id),
     )
     purchase = _latest_purchase(db_session)
+    response = _post(client, f"/admin/purchases/{purchase.id}/payment",
+                     {"amount": "50000", "method": "card"})
+    assert response.status_code == 303
     payment = db_session.query(SupplierPayment).one()
     assert payment.purchase_id == purchase.id
     assert payment.method == "cash"
@@ -289,9 +299,11 @@ def test_purchase_never_double_counts_stock_entered_on_the_product(client, db_se
     response = _add_purchase(client, variant, quantity=12, unit_cost=45_000, supplier_id=str(supplier.id))
     assert response.status_code == 303
 
+    purchase = _latest_purchase(db_session)
     db_session.refresh(variant)
     assert variant.stock_quantity == 12  # not 24
-    assert variant.cost_price == 45_000  # the invoice still updates the cost basis
+    assert variant.cost_price == 50_000  # the invoice mirrors, never rewrites
+    assert variant.received_purchase_id == purchase.id
     assert db_session.query(StockMovement).filter(
         StockMovement.variant_id == variant.id,
         StockMovement.movement_type.in_(("purchase", "purchase_reversal")),
@@ -377,7 +389,7 @@ def test_draft_can_be_edited_and_discarded(client, db_session, authed):
     assert updated.status_code == 303
 
     db_session.refresh(purchase)
-    assert purchase.total_cost == 65_000  # 3 × 20,000 + 5,000 shipping
+    assert purchase.total_cost == 25_000  # 1 × 20,000 mirrored + 5,000 shipping
     lines = db_session.query(PurchaseItem).filter(PurchaseItem.purchase_id == purchase.id).all()
     assert [line.variant_id for line in lines] == [second_variant.id]
 
@@ -403,12 +415,10 @@ def test_finalized_purchase_can_no_longer_be_edited(client, db_session, authed):
 
 def test_further_payment_settles_the_purchase(client, db_session, authed):
     supplier = _make_supplier(db_session, name="تسویه تدریجی")
-    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=0, name="تسویه تدریجی کالا")
-    _add_purchase(
-        client, variant, quantity=10, unit_cost=45_000,
-        supplier_id=str(supplier.id), payment_amount="200000",
-    )
+    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=5, name="تسویه تدریجی کالا")
+    _add_purchase(client, variant, supplier_id=str(supplier.id))
     purchase = _latest_purchase(db_session)
+    assert purchase.total_cost == 250_000
 
     response = _post(client, f"/admin/purchases/{purchase.id}/payment", {"amount": "1000000"})
     assert response.status_code == 303
@@ -420,47 +430,52 @@ def test_further_payment_settles_the_purchase(client, db_session, authed):
     db_session.refresh(purchase)
     settlement = purchase_settlement(db_session, purchase)
     assert (settlement["remaining"], settlement["status"]) == (0, "paid")
-    assert purchase.amount_paid == 450_000
-    assert db_session.query(SupplierPayment).filter(SupplierPayment.purchase_id == purchase.id).count() == 2
+    assert purchase.amount_paid == 250_000
+    assert db_session.query(SupplierPayment).filter(SupplierPayment.purchase_id == purchase.id).count() == 1
 
 
 def test_backdated_purchase_reports_in_its_invoice_period(client, db_session, authed):
     supplier = _make_supplier(db_session, name="خرید قدیمی")
-    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=0, name="خرید قدیمی")
+    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=4, name="خرید قدیمی")
     today = datetime.now(timezone.utc)
     invoice_day = today - timedelta(days=40)
     period_start = invoice_day.replace(hour=0, minute=0, second=0, microsecond=0)
     period_end = period_start + timedelta(days=2)
 
     response = _add_purchase(
-        client, variant, quantity=4, unit_cost=25_000, supplier_id=str(supplier.id),
+        client, variant, supplier_id=str(supplier.id),
         purchase_date=invoice_day.strftime("%Y-%m-%d"),
     )
     assert response.status_code == 303
 
     purchase = _latest_purchase(db_session)
     assert purchase.purchase_date is not None
-    # The recorded date stamps the cost history even though the invoice is older.
+    assert purchase.total_cost == 200_000
+    # Landed equals the mirrored cost here, so no evidence row is written:
+    # identical figures leave no trace by design.
     assert db_session.query(StockMovement).filter(
         StockMovement.purchase_id == purchase.id,
         StockMovement.movement_type == "cost_adjustment",
-    ).count() == 1
+    ).count() == 0
     db_session.refresh(variant)
-    assert variant.stock_quantity == 0
+    assert variant.stock_quantity == 4
+    assert variant.cost_price == 50_000
 
-    assert get_cashbox(db_session, period_start, period_end, 0)["purchases"] == 100_000
+    assert get_cashbox(db_session, period_start, period_end, 0)["purchases"] == 200_000
     current_start, current_end = _range(days_ago=1, days_ahead=1)
     assert get_cashbox(db_session, current_start, current_end, 0)["purchases"] == 0
 
 
 def test_reversal_unlinks_payments_without_losing_them(client, db_session, authed):
     supplier = _make_supplier(db_session, name="برگشت خرید")
-    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=0, name="برگشت‌پذیر")
-    _add_purchase(
-        client, variant, quantity=10, unit_cost=45_000,
-        supplier_id=str(supplier.id), payment_amount="200000",
-    )
+    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=5, name="برگشت‌پذیر")
+    _add_purchase(client, variant, supplier_id=str(supplier.id))
     purchase = _latest_purchase(db_session)
+    db_session.refresh(variant)
+    assert variant.received_purchase_id == purchase.id
+
+    _post(client, f"/admin/purchases/{purchase.id}/payment", {"amount": "200000"})
+    assert db_session.query(SupplierPayment).count() == 1
 
     response = _post(client, f"/admin/purchases/{purchase.id}/delete", {})
     assert response.status_code == 303
@@ -472,9 +487,12 @@ def test_reversal_unlinks_payments_without_losing_them(client, db_session, authe
     assert payment.purchase_id is None
     assert payment.amount == 200_000
 
+    # The arrival is undone with the invoice: cost and stock never moved, and
+    # the variant may be received again.
     db_session.refresh(variant)
-    assert variant.stock_quantity == 0
-    assert variant.cost_price == 50_000  # the pre-purchase cost basis is back
+    assert variant.stock_quantity == 5
+    assert variant.cost_price == 50_000
+    assert variant.received_purchase_id is None
     balances = {row["supplier"].id: row for row in get_supplier_balances(db_session)}
     assert balances[supplier.id]["invoiced"] == 0
     assert balances[supplier.id]["owed"] == 0
@@ -492,7 +510,6 @@ def test_purchase_pages_render_detail_receipt_and_list(client, db_session, authe
     listing = client.get("/admin/purchases")
     assert listing.status_code == 200
     assert f"#{purchase.id}" in listing.text
-    assert 'id="purchase-suggest"' in listing.text
     assert 'id="purchase-catalog"' in listing.text
     assert "purchase-picker" in listing.text
 
@@ -602,10 +619,10 @@ def test_purchase_filters_and_pagination(client, db_session, authed):
 
 def test_purchase_overview_reports_period_spend_and_arrears(client, db_session, authed):
     supplier = _make_supplier(db_session, name="خلاصه خرید")
-    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=0, name="خلاصه خرید کالا")
+    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=5, name="خلاصه خرید کالا")
     overdue_day = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
     _add_purchase(
-        client, variant, quantity=5, unit_cost=20_000, supplier_id=str(supplier.id),
+        client, variant, supplier_id=str(supplier.id),
         extra_cost="5000", due_date=overdue_day,
     )
     purchase = _latest_purchase(db_session)
@@ -613,11 +630,11 @@ def test_purchase_overview_reports_period_spend_and_arrears(client, db_session, 
 
     start, end = _range(days_ago=1, days_ahead=1)
     overview = purchase_overview(db_session, start, end)
-    assert overview["period_spend"] == 105_000
+    assert overview["period_spend"] == 255_000
     assert overview["period_units"] == 5
-    assert overview["supplier_owed"] == 105_000
+    assert overview["supplier_owed"] == 255_000
     assert overview["overdue_count"] == 1
-    assert overview["overdue_amount"] == 105_000
+    assert overview["overdue_amount"] == 255_000
 
     detail = client.get(f"/admin/purchases/{purchase.id}")
     assert "badge badge-danger" in detail.text

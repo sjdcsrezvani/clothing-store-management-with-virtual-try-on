@@ -66,12 +66,16 @@ def test_frontend_assets_have_accessibility_and_loading_support():
 
 def test_purchase_row_amount_follows_the_selected_variant():
     page = (ROOT / "templates/admin/purchases.html").read_text()
-    # Choosing a product fills the row's amounts from that product.
-    assert "if (!cost.value) cost.value = variant.cost || '';" in page
+    # Choosing a product mirrors its own stock and cost into the row: nothing
+    # is typed, so no field may carry the amounts.
+    assert "function paintMirror(row)" in page
     assert "function afterSelectionChange(row, variant)" in page
-    # Regression: the price was only filled while the field was blank, so
-    # re-selecting a different variant kept the previous variant's amount.
-    assert "if (variant && !Number(cost.input.value || 0))" not in page
+    assert 'input[name^="purchase_qty_"]' not in page
+    assert 'input[name^="purchase_cost_"]' not in page
+    # Regression: amounts were once typed per row and fell back to the
+    # product only when blank — the mirror leaves no blank state.
+    assert "purchase_cost_" not in page
+    assert "purchase_qty_" not in page
 
 
 def test_purchase_picker_is_a_scoped_search_not_a_giant_select():
@@ -98,11 +102,11 @@ def test_purchase_form_is_a_draft_until_finalized():
     assert "ثبت پیش‌نویس فاکتور" in page
     assert "/finalize" in detail
     assert "نهایی‌سازی فاکتور" in detail
-    # The row amounts are optional: the product already knows quantity and cost.
-    assert "تعداد و قیمت واحد اختیاری‌اند" in page
+    # The row mirrors its variant: quantities and costs are read, never typed.
+    assert "purchase-item-mirror" in page
     # Money is recorded when the invoice is finalised, not while drafting it.
     assert 'name="payment_amount"' not in page
-    assert 'name="payment_amount"' in detail
+    assert 'name="payment_amount"' not in detail
 
 
 def test_color_code_fields_open_a_native_colour_palette():
