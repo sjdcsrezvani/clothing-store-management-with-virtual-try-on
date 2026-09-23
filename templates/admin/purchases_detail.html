@@ -15,7 +15,7 @@
 
 {% if purchase.is_draft %}
 <div class="alert alert-info" role="status">
-    این فاکتور پیش‌نویس است. تا نهایی‌سازی نه بهای تمام‌شده تغییر کرده، نه بدهی تأمین‌کننده و نه صندوق — و پرداخت روی آن ثبت نمی‌شود.
+    این فاکتور پیش‌نویس است. تا نهایی‌سازی نه بدهی تأمین‌کننده ثبت شده، نه صندوق — و پرداخت روی آن ثبت نمی‌شود.
 </div>
 {% endif %}
 {% if purchase.is_reversed %}
@@ -68,7 +68,7 @@
             <span class="badge badge-info">پرداخت‌نشده</span>
             {% endif %}
         </div>
-        <div class="stat-sub">{% if purchase.is_draft %}هنوز روی حساب‌ها اثر نگذاشته است{% elif purchase.extra_cost_in_landed %}هزینه حمل در بهای تمام‌شده لحاظ شده{% else %}هزینه حمل فقط روی مبلغ فاکتور است{% endif %}</div>
+        <div class="stat-sub">{% if purchase.is_draft %}هنوز روی حساب‌ها اثر نگذاشته است{% elif purchase.extra_cost_in_landed %}هزینه حمل در سوابق هر قلم لحاظ شده{% else %}هزینه حمل فقط روی مبلغ فاکتور است{% endif %}</div>
     </div>
 </div>
 
@@ -78,7 +78,7 @@
             <div class="section-heading-row">
                 <div>
                     <h3>اقلام خرید</h3>
-                    <p class="muted">{{ lines|length }} ردیف · جمع تعداد {{ units }} عدد{% if purchase.is_draft %} · بهای تمام‌شده زیر هنوز اعمال نشده است{% endif %}</p>
+                    <p class="muted">{{ lines|length }} ردیف · جمع تعداد {{ units }} عدد{% if purchase.is_draft %} · بهای تمام‌شده زیر فقط برای سوابق است{% endif %}</p>
                 </div>
             </div>
             {% if lines %}
@@ -90,7 +90,7 @@
                             <th scope="col">تعداد</th>
                             <th scope="col">قیمت خرید واحد</th>
                             <th scope="col">جمع ردیف</th>
-                            <th scope="col">{% if purchase.is_draft %}بهای تمام‌شده واحد پس از نهایی‌سازی{% else %}بهای تمام‌شده واحد{% endif %}</th>
+                            <th scope="col">{% if purchase.is_draft %}بهای تمام‌شده واحد (سوابق){% else %}بهای تمام‌شده واحد{% endif %}</th>
                             <th scope="col">سهم هزینه حمل</th>
                         </tr>
                     </thead>
@@ -155,11 +155,11 @@
             <div class="section-heading-row">
                 <div>
                     <h3>سابقه بهای تمام‌شده</h3>
-                    <p class="muted">این خرید موجودی انبار را تغییر نمی‌دهد و فقط بهای تمام‌شده را ثبت می‌کند؛ موجودی از صفحه محصولات مدیریت می‌شود.</p>
+                    <p class="muted">این خرید موجودی انبار و بهای تمام‌شده را تغییر نمی‌دهد و فقط سوابق بهای تمام‌شده را ثبت می‌کند؛ موجودی از صفحه محصولات مدیریت می‌شود.</p>
                 </div>
             </div>
             {% if purchase.is_draft %}
-            <p class="muted">هنوز چیزی ثبت نشده است: با نهایی‌سازی، بهای تمام‌شده هر قلم به‌روز می‌شود.</p>
+            <p class="muted">هنوز چیزی ثبت نشده است: با نهایی‌سازی، سوابق بهای هر قلم ثبت می‌شود.</p>
             {% elif movements %}
             <div class="table-scroll">
                 <table>
@@ -209,18 +209,9 @@
         {% if purchase.is_draft %}
         <section class="card purchase-action-card">
             <h3>نهایی‌سازی فاکتور</h3>
-            <p class="muted">با نهایی‌سازی، بهای تمام‌شده اقلام و بدهی تأمین‌کننده ثبت می‌شود. تا آن لحظه هیچ‌چیز روی حساب‌ها اثر ندارد.</p>
+            <p class="muted">با نهایی‌سازی، تنوع‌ها «رسید شده» می‌شوند و مبلغ کامل نسیه ثبت می‌گردد. بهای تمام‌شده و موجودی دست نمی‌خورند.</p>
             <form method="post" action="/admin/purchases/{{ purchase.id }}/finalize" class="purchase-payment-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <div class="form-group">
-                    <label for="finalize-payment">پرداخت همین حالا (اختیاری)</label>
-                    <input type="text" inputmode="numeric" id="finalize-payment" name="payment_amount" min="0" max="{{ settlement.total }}" value="" placeholder="مثال: 0 = کامل نسیه">
-                    <small class="field-help">نقد یا کارت تفاوتی ندارد؛ هر دو از صندوق کسر می‌شوند.</small>
-                </div>
-                <div class="form-group">
-                    <label for="finalize-note">یادداشت پرداخت</label>
-                    <input type="text" id="finalize-note" name="payment_note" placeholder="مثلاً: بیعانه فاکتور">
-                </div>
                 <button type="submit" class="btn btn-success btn-large">نهایی‌سازی فاکتور</button>
             </form>
         </section>
@@ -262,7 +253,7 @@
         {% elif not purchase.is_reversed %}
         <section class="card danger-zone">
             <h3>برگشت خرید</h3>
-            <p class="muted">برای حفظ تاریخچه، خرید حذف نمی‌شود: بهای تمام‌شده به مقدار قبلی بازمی‌گردد و اگر پرداختی ثبت شده باشد، آزاد می‌شود و به عنوان بدهی تأمین‌کننده باقی می‌ماند. موجودی انبار دست‌نخورده می‌ماند.</p>
+            <p class="muted">برای حفظ تاریخچه، خرید حذف نمی‌شود: تنوع‌ها برای رسید دوباره آزاد می‌شوند و اگر پرداختی ثبت شده باشد، آزاد می‌شود و به عنوان بدهی تأمین‌کننده باقی می‌ماند. موجودی انبار و بهای تمام‌شده دست‌نخورده می‌ماند.</p>
             <form method="post" action="/admin/purchases/{{ purchase.id }}/delete"
                   onsubmit="return confirm('این خرید برگشت داده شود؟')">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

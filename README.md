@@ -162,8 +162,12 @@ with the return target validated. The form's long selects draw their popups
 from the theme instead of the OS, and period boundaries («today», «week»,
 «month», «year») all flip at the same instant the day window does — the local
 calendar can no longer run ahead of the shop's day boundary in the early
-hours. Frontend scripts are cache-busted by content age, so a script-only
-change reaches the browser exactly like a stylesheet change does.
+hours. A purchase receipt only ever files arrivals: each received variant is
+stamped with its invoice (revision 22, additive) and can never be bought
+twice, quantities and costs always come from the variant itself, finalizing
+books full-credit debt without touching cost or stock, and reversal unstamps.
+Frontend scripts are cache-busted by content age, so a script-only change
+reaches the browser exactly like a stylesheet change does.
 
 ## Accounting features (admin panel)
 

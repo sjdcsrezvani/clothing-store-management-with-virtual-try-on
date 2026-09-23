@@ -333,6 +333,10 @@ class ProductVariant(Base):
     demand_count = Column(Integer, default=0)
     reorder_point = Column(Integer, nullable=False, default=0)
     reorder_quantity = Column(Integer, nullable=False, default=0)
+    # Arrival checklist: the purchase receipt that took this variant in.
+    # Set once at finalize, cleared on reversal — a flagged variant never
+    # shows in another receipt's picker, so one arrival cannot be bought twice.
+    received_purchase_id = Column(Integer, ForeignKey("purchases.id"), nullable=True, index=True)
     # Weighed per sellable unit: sizes of one product rarely share a weight,
     # so the scale lives on the variant, not the product.
     weight_grams = Column(Integer, nullable=True)
