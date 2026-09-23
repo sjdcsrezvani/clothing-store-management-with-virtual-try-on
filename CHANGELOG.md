@@ -1,3 +1,27 @@
+## 2.6.7 — 1405/07/01 (2026-09-23)
+
+### طراح تگ: a designer that refuses loudly, wipes once, and saves the image with the design
+
+- **Saving the design saves the barcode image with it.** The custom barcode
+  picture rides the same submit as the rest of the design — picked, stored,
+  pointed at, and the mode switched to «تصویر سفارشی» in one consistent save —
+  replacing the separate upload step that could leave design and image
+  disagreeing. The page names the file currently in force.
+- **A designer that refuses in place.** An impossible number — out of range,
+  not a number at all — rings its own field in the danger voice and the
+  summary answers with a clickable line that selects the offender, instead of
+  a save that silently rounds or a JSON error nobody invited.
+- **Wiping is one deliberate act.** «شروع دوباره» returns the canvas to the
+  default template with a single confirm, and a template worn by active
+  products shows a disabled «حذف» that says why on its title — the refusal
+  happens on the button, not after the confirm.
+- **The field editor carries the units on its labels** (mm for geometry, pt
+  for text) with step and accessible names, layer buttons move a field in
+  front of or behind its siblings, and a live readout states the barcode
+  width the current layout mode produces. A new care-instructions field
+  (راهنمای نگهداری) joins the vocabulary, off by default.
+- Schema stays on revision 21.
+
 ## 2.6.6 — 1405/07/01 (2026-09-23)
 
 ### قفسه چاپ تگ: a shelf that stages deliberately, prints honestly and speaks inline
