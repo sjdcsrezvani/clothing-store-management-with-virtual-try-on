@@ -1467,6 +1467,7 @@ async def admin_barcodes_print(
     request: Request,
     category: str = "",
     page: str = "1",
+    q: str = "",
     db: Session = Depends(get_db),
 ):
     guard = require_html_role(request, db, "manager")
@@ -1478,6 +1479,15 @@ async def admin_barcodes_print(
 
     if category:
         query = query.filter(Product.category == category)
+
+    if q:
+        query = query.filter(
+            Product.name.contains(q) |
+            Product.base_sku.contains(q) |
+            Product.category.contains(q) |
+            Product.variants.any(ProductVariant.barcode.contains(q)) |
+            Product.variants.any(ProductVariant.sku.contains(q))
+        )
 
     products = query.order_by(Product.name).all()
     categories = db.query(Product.category).distinct().all()
@@ -1576,6 +1586,7 @@ async def admin_barcodes_print(
         "total_pages": total_pages,
         "categories": categories,
         "category_filter": category,
+        "search": q,
         "tag_config": config,
         "tag_fit": tag_fit,
         "tag_preview_scale": tag_preview_scale,
@@ -1613,7 +1624,6 @@ async def admin_barcodes_mark_printed(request: Request, db: Session = Depends(ge
             pass
 
     is_reprint = str(form.get("reprint", "")).lower() in {"1", "true", "yes"}
-    batch_lines = []
     for variant_id, selected_count in selected_counts.items():
         requested_count = selected_quantities.get(variant_id, selected_count)
         variant = db.query(ProductVariant).filter(
@@ -1679,7 +1689,7 @@ async def admin_barcodes_mark_printed(request: Request, db: Session = Depends(ge
         )
 
     db.commit()
-    query_values = {"page": page, "category": category}
+    query_values = {"page": page, "category": category, "q": search}
     if batch_lines:
         query_values["msg"] = "وضعیت چاپ تگ‌ها ثبت شد."
     else:
@@ -1701,6 +1711,7 @@ async def admin_barcodes_reset(request: Request, db: Session = Depends(get_db)):
         selected_ids = [value for value in str(form.get("selected_ids", "")).split(",") if value]
     category = str(form.get("category", ""))
     page = str(form.get("page", "1"))
+    search = str(form.get("q", ""))
 
     selected_quantities = _selected_quantities(form)
 
@@ -1731,7 +1742,7 @@ async def admin_barcodes_reset(request: Request, db: Session = Depends(get_db)):
         changed = True
 
     db.commit()
-    query_values = {"page": page, "category": category}
+    query_values = {"page": page, "category": category, "q": search}
     query_values["msg" if changed else "err"] = (
         "تعداد چاپ تگ‌ها بازگردانی شد." if changed else "هیچ تگ چاپ‌شده‌ای برای بازگردانی انتخاب نشده است."
     )
