@@ -473,6 +473,7 @@ async def admin_tag_settings(request: Request, db: Session = Depends(get_db)):
         "name": "نمونه محصول", "price": 250000, "price_display": fmt(250000),
         "size": "۴ سال", "color": "آبی", "sku": "SKU-001", "brand": "رای کیدز",
         "category": "لباس کودک", "image_path": None,
+        "care_instructions": "شست‌وشو با آب سرد",
     }
     store = get_store(db)
     barcode_preview_sources = {
@@ -508,12 +509,24 @@ async def admin_tag_settings(request: Request, db: Session = Depends(get_db)):
             for name in (
                 "product_name", "price", "size", "color", "barcode", "barcode_text",
                 "sku", "brand", "category", "store_name", "instagram", "product_image", "custom_text",
+                "care_instructions",
             )
         ],
         "tag_templates": [
             {"id": template.id, "name": template.name, "config": tag_template_config(template, config)}
             for template in tag_templates
         ],
+        # Products wearing each template: deleting a worn template is refused
+        # on the button, not after the confirm.
+        "tag_template_usage": {
+            row[0]: row[1]
+            for row in db.query(
+                Product.tag_template_id, func.count(Product.id)
+            ).filter(
+                Product.is_active == True,  # noqa: E712
+                Product.tag_template_id.isnot(None),
+            ).group_by(Product.tag_template_id).all()
+        },
         "tag_fit": calculate_a4_fit(config),
         "sample_item": sample_item,
         # A corrupted rules table raises inside the preview's own re-validation;
@@ -577,12 +590,21 @@ async def admin_tag_settings(request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/settings/tags", response_class=HTMLResponse)
-async def admin_tag_settings_save(request: Request, tag_config: str = Form(""), db: Session = Depends(get_db)):
+async def admin_tag_settings_save(request: Request, tag_config: str = Form(""),
+                                  image: UploadFile | None = File(None),
+                                  db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
     try:
-        save_tag_config(db, json.loads(tag_config))
+        config = json.loads(tag_config)
+        # The image rides the same save: a picked file is stored, pointed at,
+        # and switches the mode to custom — one submit, one consistent design.
+        if image is not None and (image.filename or "").strip():
+            config["custom_image_path"] = save_tag_image(
+                await image.read(), image.filename or "", image.content_type)
+            config["barcode_mode"] = "custom_image"
+        save_tag_config(db, config)
         db.commit()
     except (json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError) as exc:
         db.rollback()
@@ -628,27 +650,6 @@ async def admin_tag_template_delete(template_id: int, request: Request, db: Sess
         template.is_active = False
         db.commit()
     return RedirectResponse(url="/admin/settings/tags?msg=" + quote_plus("قالب تگ حذف شد."), status_code=303)
-
-
-@router.post("/settings/tags/image", response_class=HTMLResponse)
-async def admin_tag_settings_image(request: Request, image: UploadFile | None = File(None), db: Session = Depends(get_db)):
-    guard = require_html_role(request, db, "manager")
-    if not hasattr(guard, "role"):
-        return guard
-    if image is None or not (image.filename or "").strip():
-        return RedirectResponse(
-            url="/admin/settings/tags?err=" + quote_plus("ابتدا یک تصویر انتخاب کنید."),
-            status_code=303)
-    try:
-        config = load_tag_config(db)
-        config["custom_image_path"] = save_tag_image(await image.read(), image.filename or "", image.content_type)
-        save_tag_config(db, config)
-        db.commit()
-    except ValueError as exc:
-        db.rollback()
-        return RedirectResponse(url="/admin/settings/tags?err=" + quote_plus(str(exc)), status_code=303)
-    log_action(db, "tag_image_update", "به‌روزرسانی تصویر سفارشی بارکد", request=request, target_type="settings")
-    return RedirectResponse(url="/admin/settings/tags?msg=تصویر تگ ذخیره شد.", status_code=303)
 
 
 @router.get("/products/add", response_class=HTMLResponse)

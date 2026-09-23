@@ -200,6 +200,13 @@ only counts fresh prints (reprints stay honest), an out-of-stock variant
 dims but stays printable, and the page speaks in one inline notice bar —
 empty tray, unreadable page and the after-print offer all land in the same
 place.
+- **✏️ طراح تگ** (`/admin/settings/tags`) — design the tag itself: field
+geometry in mm (text in pt) with layer ordering, fixed or auto fill layout,
+border/radius/padding, and a custom barcode image that saves with the design
+in one submit. Impossible numbers refuse in place — the field rings and the
+summary line selects the offender — «شروع دوباره» wipes once with a
+confirm, and a template worn by products cannot be deleted until they are
+moved elsewhere.
 - **📚 دفتر انبار** (`/admin/inventory-movements`) — the append-only inventory
 ledger: every stock change (opening stock, sale, refund, manual adjustment, cost
 adjustment) with what the balance *became* at that moment, who recorded it, and

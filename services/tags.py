@@ -36,6 +36,7 @@ ALLOWED_FIELDS = {
     "instagram",
     "product_image",
     "custom_text",
+    "care_instructions",
 }
 FIELD_LABELS = {
     "product_name": "نام محصول",
@@ -51,6 +52,7 @@ FIELD_LABELS = {
     "instagram": "اینستاگرام",
     "product_image": "تصویر محصول",
     "custom_text": "متن سفارشی",
+    "care_instructions": "راهنمای نگهداری",
 }
 _COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 _TAG_ASSET_RE = re.compile(r"^/static/uploads/tag-assets/[A-Za-z0-9_.-]+$")
@@ -139,6 +141,7 @@ def _base_config(width=48, height=38, columns=4, rows=7, *, layout_mode="fixed")
             "instagram": _field(2, footer_y, content_width, 2, font_size=5, visible=False, color="#777777"),
             "product_image": _field(2, 10, content_width, min(14, max(2, height - 12)), font_size=7, visible=False),
             "custom_text": _field(2, footer_y, content_width, 2, font_size=6, visible=False),
+            "care_instructions": _field(2, footer_y, content_width, 2, font_size=6, visible=False),
         },
     }
 
@@ -519,6 +522,7 @@ def _item_values(item: dict[str, Any], store: dict[str, Any], custom_text: str) 
         "store_name": str(store.get("name") or ""),
         "instagram": str(store.get("instagram") or ""),
         "custom_text": custom_text or "",
+        "care_instructions": str(item.get("care_instructions") or ""),
     }
 
 
@@ -597,6 +601,7 @@ def item_from_variant(variant, fmt=None) -> dict[str, Any]:
         "sku": variant.sku,
         "brand": product.brand if product else "",
         "category": product.category if product else "",
+        "care_instructions": (product.care_instructions if product else "") or "",
         "image_path": variant.image_path or (product.image_path if product else None),
         "reserved_quantity": variant.reserved_quantity or 0,
         "available_quantity": variant.available_quantity,
