@@ -388,6 +388,59 @@ def _sorted(query, sort: str):
     return query.order_by(Customer.created_at.desc())  # date (default)
 
 
+def _customer_query(db: Session, *, search: str = "", tier: str = "", status: str = "all",
+                    tag: str = "", drifted: bool = False):
+    """The filtered customer query both the list and the export read.
+
+    One chain, two callers: the export used to be a second spelling of these
+    filters, and a second spelling is where a filter gets forgotten.
+    """
+    status = status if status in STATUSES else "all"
+    if drifted:
+        drift_ids = drifted_customer_ids(db)
+        query = db.query(Customer).filter(Customer.id.in_(drift_ids))
+        if (search or "").strip():
+            query = query.filter(
+                or_(Customer.phone.contains(search),
+                    Customer.first_name.contains(search),
+                    Customer.last_name.contains(search)))
+    else:
+        query = _filtered_query(db, search=search, tier=tier, status=status, tag=tag)
+    return query
+
+
+def export_customers(db: Session, *, search: str = "", tier: str = "", status: str = "all",
+                     tag: str = "", sort: str = "date", drifted: bool = False) -> list:
+    """Every customer the filtered view would show, unsliced for the file."""
+    sort = sort if sort in SORTS else "date"
+    return _sorted(_customer_query(
+        db, search=search, tier=tier, status=status, tag=tag, drifted=drifted), sort).all()
+
+
+def bulk_tag_customers(db: Session, ids: list[int], tag: str, *, remove: bool = False) -> int:
+    """Tag (or untag) many customers at once, in palette order.
+
+    Unknown tags are refused, not stored: the column is a CSV of palette keys
+    and a stray string would render as nothing anywhere.
+    """
+    if tag not in TAG_KEYS:
+        raise ValueError(f"Unknown tag: {tag}")
+    changed = 0
+    for customer in db.query(Customer).filter(Customer.id.in_(ids or [0])).all():
+        keys = parse_tags(customer.tags)
+        if remove:
+            if tag not in keys:
+                continue
+            keys = [key for key in keys if key != tag]
+        elif tag in keys:
+            continue
+        else:
+            keys = parse_tags(",".join(keys + [tag]))
+        customer.tags = serialize_tags(keys)
+        changed += 1
+    return changed
+
+
 def list_customers(db: Session, *, search: str = "", tier: str = "", status: str = "all",
                    tag: str = "", sort: str = "date", page: int = 1,
                    per_page: int = PER_PAGE, drifted: bool = False) -> dict:
@@ -404,16 +457,7 @@ def list_customers(db: Session, *, search: str = "", tier: str = "", status: str
     sort = sort if sort in SORTS else "date"
     page = max(1, int(page or 1))
 
-    if drifted:
-        drift_ids = drifted_customer_ids(db)
-        query = db.query(Customer).filter(Customer.id.in_(drift_ids))
-        if (search or "").strip():
-            query = query.filter(
-                or_(Customer.phone.contains(search),
-                    Customer.first_name.contains(search),
-                    Customer.last_name.contains(search)))
-    else:
-        query = _filtered_query(db, search=search, tier=tier, status=status, tag=tag)
+    query = _customer_query(db, search=search, tier=tier, status=status, tag=tag, drifted=drifted)
     total = query.count()
     per_page = per_page if per_page in (10, 25, 50) else PER_PAGE
     total_pages = max(1, (total + per_page - 1) // per_page)

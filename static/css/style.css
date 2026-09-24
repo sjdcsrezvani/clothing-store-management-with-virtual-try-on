@@ -2640,6 +2640,19 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .customer-phone { direction: ltr; unicode-bidi: isolate; color: var(--ink-soft); font-size: 0.78rem; }
 .customer-meta { color: var(--ink-soft); font-size: 0.72rem; }
 .customer-stale { color: var(--link-hover); font-weight: 700; }
+
+/* Narrow screens: customer rows stack into cards, each cell naming itself
+   from its data-label. The table-scroll container stays for wider tables;
+   this table opts out because eleven scrolled columns answer nothing. */
+@media (max-width: 700px) {
+  .customer-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .customer-table, .customer-table tbody, .customer-table tr, .customer-table td { display: block; }
+  .customer-table tr { border: 1px solid var(--rule); border-radius: var(--radius-sm); margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; }
+  .customer-table td { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; border: none; padding: 0.25rem 0; text-align: start; }
+  .customer-table td::before { content: attr(data-label); color: var(--ink-soft); font-size: 0.72rem; flex-shrink: 0; }
+  .customer-table td.bulk-cell::before { content: none; }
+  .customer-table td.bulk-cell { padding: 0 0 0.25rem; }
+}
 .customer-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; white-space: nowrap; }
 .customer-actions .btn { min-height: 1.9rem; padding: 0.25rem 0.6rem; font-size: 0.74rem; }
 

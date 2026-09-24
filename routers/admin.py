@@ -4,7 +4,7 @@ from pathlib import Path
 from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
@@ -53,10 +53,12 @@ from services.customers import (
     archive_customer,
     birthday_fields,
     build_customer_rows,
+    bulk_tag_customers,
     can_delete_customer,
     customer_overview,
     customer_profile,
     delete_customer,
+    export_customers,
     invalidate_customer_cache,
     is_archived_customer,
     list_customers,
@@ -301,19 +303,20 @@ async def admin_customers(
     # Query strings are urlencoded once in the route (the purchases page's
     # rule): the template only drops this inside quoted hrefs.
     from urllib.parse import urlencode
-    filter_qs = "&" + urlencode({
+    sort_base_qs = "&" + urlencode({
         "tier": listing["tier"],
         "status": listing["status"],
         "tag": listing["tag"],
-        "sort": listing["sort"],
         "search": listing["search"],
         "per_page": listing["per_page"],
         **({"drifted": "1"} if drifted_on else {}),
     })
+    filter_qs = f"{sort_base_qs}&sort={listing['sort']}"
 
     return templates.TemplateResponse(request, "admin/customers.html", {
         **listing,
         "filter_qs": filter_qs,
+        "export_qs": sort_base_qs.lstrip("&"),
         "per_page_options": (10, 25, 50),
         "tier_labels": TIER_LABELS,
         "tags_in_use": db.query(Customer.id).filter(
@@ -333,6 +336,79 @@ async def admin_customers(
         "fmt": fmt,
         "jalali_str": jalali_str,
     })
+
+
+@router.get("/customers/export", response_class=HTMLResponse)
+async def admin_customers_export(
+    request: Request,
+    search: str = "",
+    sort: str = "date",
+    tier: str = "",
+    status: str = "all",
+    tag: str = "",
+    drifted: str = "0",
+    db: Session = Depends(get_db),
+):
+    """The filtered list as a file: the same query the page reads, unsliced."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    import csv
+    import io
+    customers = export_customers(
+        db, search=search, tier=tier, status=status, tag=tag, sort=sort,
+        drifted=bool(int_arg(drifted, default=0)),
+    )
+    rows = build_customer_rows(db, customers)
+    out = [["تلفن", "نام", "سطح", "مجموع خرید", "تعداد خرید", "امتیاز",
+            "بدهی", "آخرین خرید", "برچسب‌ها"]]
+    for row in rows:
+        customer = row["customer"]
+        out.append([
+            customer.phone,
+            customer.full_name or "",
+            TIER_LABELS.get(customer.tier, customer.tier or ""),
+            row["invoice_spent"] if row["invoice_spent"] is not None else "",
+            row["invoice_count"] if row["invoice_count"] is not None else "",
+            row["invoice_points"] if row["invoice_points"] is not None else "",
+            customer.total_debt or 0,
+            jalali_str(customer.last_purchase_date, False) if customer.last_purchase_date else "",
+            "، ".join(TAG_LABELS.get(key, key) for key in row["tags"]),
+        ])
+    buf = io.StringIO()
+    buf.write("\ufeff")  # BOM so Excel opens Persian correctly
+    csv.writer(buf).writerows(out)
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="customers_{today}.csv"'},
+    )
+
+
+@router.post("/customers/bulk-tag", response_class=HTMLResponse)
+async def admin_customers_bulk_tag(request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    form = await request.form()
+    ids = [int(raw) for raw in form.getlist("ids") if str(raw).isdigit()]
+    tag = str(form.get("tag", "") or "")
+    remove = str(form.get("mode", "") or "") == "remove"
+    try:
+        changed = bulk_tag_customers(db, ids, tag, remove=remove) if ids else 0
+    except ValueError:
+        return RedirectResponse(
+            url="/admin/customers?err=برچسب نامعتبر است.", status_code=303)
+    if changed:
+        db.commit()
+        verb = "برداشته شد" if remove else "افزوده شد"
+        message = f"برچسب {TAG_LABELS.get(tag, tag)} برای {changed} مشتری {verb}."
+    else:
+        message = "مشتری‌ای برای برچسب‌زدن انتخاب نشده بود."
+    log_action(db, "customer_bulk_tag", message, request=request, after={"count": changed, "tag": tag})
+    return RedirectResponse(
+        url="/admin/customers?msg=" + quote_plus(message), status_code=303)
 
 
 @router.get("/customers/{customer_id}", response_class=HTMLResponse)
