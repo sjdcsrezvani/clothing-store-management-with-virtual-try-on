@@ -138,7 +138,7 @@ def test_filters_narrow_the_ledger(client, db_session, authed):
     grouped = ledger_snapshot(db_session, [first.id, second.id])
     newest_id = max(grouped["by_movement"])
     by_id = _rows(client.get(f"{LEDGER_URL}?q=%23{newest_id}").text)
-    assert len(re.findall(r'movement-id">#', by_id)) == 1
+    assert len(re.findall(r'href="#movement-', by_id)) == 1
 
     # Date range that excludes everything in the past
     future = _rows(client.get(f"{LEDGER_URL}?start_date=2099-01-01").text)
@@ -165,7 +165,7 @@ def test_pagination_reports_the_real_total(client, db_session, authed):
     second = client.get(f"{LEDGER_URL}?page=2")
     assert second.status_code == 200
     assert "نمایش 26–30 از 30 حرکت" in second.text
-    assert len(re.findall(r'movement-id">#', second.text)) == 5
+    assert len(re.findall(r'href="#movement-', second.text)) == 5
 
 
 def test_actor_trail_and_filter(client, db_session, authed):

@@ -215,8 +215,10 @@ moved elsewhere.
 ledger: every stock change (opening stock, sale, refund, manual adjustment, cost
 adjustment) with what the balance *became* at that moment, who recorded it, and
 a link to the invoice behind it. Filter by type, direction, product, user and
-date; paginated. Because purchases only record money and cost, the ledger is the
-single authoritative account of stock movement.
+date; sort, per-page presets, a variant-scoped search; paginated. A variant
+whose stored balance disagrees with the ledger offers a one-click reconcile
+recorded as its own movement. Because purchases only record money and cost, the
+ledger is the single authoritative account of stock movement.
   Stock that existed before the ledger (or that was entered outside a recorded
   flow) has no rows, so the page reports it as **موجودی بدون سابقه** and,
 on request, writes one explanatory opening row per variant. That action never
