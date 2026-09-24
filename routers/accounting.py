@@ -1245,11 +1245,15 @@ async def admin_suppliers(request: Request, db: Session = Depends(get_db)):
     rollup = purchase_payment_rollup(db, [p.id for p in open_rows])
     now = datetime.now(timezone.utc)
     open_invoices: dict[int, list[dict]] = {}
+    overdue_suppliers: set[int] = set()
     for purchase in open_rows:
         paid = purchase_paid_from_rollup(purchase, rollup.get(purchase.id))
         remaining = max(0, (purchase.total_cost or 0) - paid)
         if remaining <= 0:
             continue
+        is_overdue = bool(purchase.due_date and as_utc(purchase.due_date) < now)
+        if is_overdue and purchase.supplier_id is not None:
+            overdue_suppliers.add(purchase.supplier_id)
         open_invoices.setdefault(purchase.supplier_id, []).append({
             "id": purchase.id,
             "remaining": remaining,
@@ -1261,6 +1265,7 @@ async def admin_suppliers(request: Request, db: Session = Depends(get_db)):
         "suppliers": suppliers,
         "balances": balances,
         "open_invoices": open_invoices,
+        "overdue_suppliers": overdue_suppliers,
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
         "fmt": fmt,
@@ -1281,12 +1286,58 @@ async def admin_supplier_add(
         return guard
     if not name.strip():
         return RedirectResponse(url="/admin/suppliers?err=نام تأمین‌کننده الزامی است.", status_code=303)
-    supplier = Supplier(name=name.strip(), phone=phone.strip() or None, note=note.strip() or None)
+    clean_name = name.strip()
+    clean_phone = _normalize_supplier_phone(phone)
+    if clean_phone is None:
+        return RedirectResponse(
+            url="/admin/suppliers?err=" + quote_plus("شماره تلفن معتبر نیست — فقط رقم بنویسید."),
+            status_code=303)
+    supplier = Supplier(name=clean_name, phone=clean_phone or None, note=note.strip() or None)
     db.add(supplier)
     db.flush()
     db.commit()
-    log_action(db, "supplier_add", name.strip(), request=request, target_type="supplier", target_id=supplier.id, after={"name": name.strip()})
-    return RedirectResponse(url="/admin/suppliers?msg=تأمین‌کننده اضافه شد.", status_code=303)
+    log_action(db, "supplier_add", clean_name, request=request, target_type="supplier", target_id=supplier.id, after={"name": clean_name})
+    # Warn-but-allow on duplicates: two wholesalers can share a name, but the
+    # owner should know the new row is not the only one wearing it.
+    message = "تأمین‌کننده اضافه شد."
+    if _supplier_name_taken(db, clean_name, ignore_id=supplier.id):
+        message += " هم‌نام دیگری با همین نام وجود دارد."
+    return RedirectResponse(url="/admin/suppliers?msg=" + quote_plus(message), status_code=303)
+
+
+@router.post("/suppliers/{supplier_id}/edit", response_class=HTMLResponse)
+async def admin_supplier_edit(
+    supplier_id: int,
+    request: Request,
+    name: str = Form(...),
+    phone: str = Form(""),
+    note: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    supplier = db.query(Supplier).filter(Supplier.id == supplier_id).first()
+    if not supplier:
+        return RedirectResponse(url="/admin/suppliers?err=تأمین‌کننده یافت نشد.", status_code=303)
+    if not name.strip():
+        return RedirectResponse(url="/admin/suppliers?err=نام تأمین‌کننده الزامی است.", status_code=303)
+    clean_phone = _normalize_supplier_phone(phone)
+    if clean_phone is None:
+        return RedirectResponse(
+            url="/admin/suppliers?err=" + quote_plus("شماره تلفن معتبر نیست — فقط رقم بنویسید."),
+            status_code=303)
+    before = {"name": supplier.name, "phone": supplier.phone, "note": supplier.note}
+    supplier.name = name.strip()
+    supplier.phone = clean_phone or None
+    supplier.note = note.strip() or None
+    db.commit()
+    log_action(db, "supplier_edit", supplier.name, request=request, target_type="supplier", target_id=supplier.id,
+               before=before, after={"name": supplier.name, "phone": supplier.phone, "note": supplier.note})
+    message = f"مشخصات {supplier.name} به‌روز شد."
+    if _supplier_name_taken(db, supplier.name, ignore_id=supplier.id):
+        message += " هم‌نام دیگری با همین نام وجود دارد."
+    return RedirectResponse(url="/admin/suppliers?msg=" + quote_plus(message), status_code=303)
 
 
 @router.post("/suppliers/{supplier_id}/payment", response_class=HTMLResponse)
@@ -1521,6 +1572,32 @@ def _pd_money(amount: int) -> str:
     """
     from services._common import _to_persian_digits as _pd
     return _pd(fmt(amount).replace(",", "٬"))
+
+
+def _normalize_supplier_phone(value) -> str | None:
+    """Phone with money-field discipline: Farsi digits become English ones.
+
+    Returns the clean digits, "" when nothing was typed, or None when the
+    input cannot be a phone number (letters mixed in, too short, too long).
+    Landlines stay valid — the rule is digits of a plausible length, not the
+    mobile-only 09/11 shape the customer signup enforces.
+    """
+    cleaned = (to_english_digits(str(value or ""))
+               .replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+               .replace("٬", "").replace(",", "").strip())
+    if not cleaned:
+        return ""
+    if not cleaned.isdigit() or not 8 <= len(cleaned) <= 15:
+        return None
+    return cleaned
+
+
+def _supplier_name_taken(db, name: str, ignore_id: int | None = None) -> bool:
+    """A same-name supplier already on the books (warn, never block)."""
+    query = db.query(Supplier.id).filter(Supplier.name == name)
+    if ignore_id is not None:
+        query = query.filter(Supplier.id != ignore_id)
+    return query.first() is not None
 
 
 def _purchase_money(value) -> int:
