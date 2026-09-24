@@ -40,17 +40,45 @@
     </form>
 </div>
 
-<div class="card">
+<section class="card" data-list-region="suppliers">
+    <div class="section-heading-row">
+        <div>
+            <h3 data-list-heading tabindex="-1">فهرست تأمین‌کنندگان</h3>
+            <p class="muted">صفحه {{ page }} از {{ total_pages }} · {{ total_count }} تأمین‌کننده</p>
+        </div>
+        <form method="get" action="/admin/suppliers" class="per-page-form">
+            <input type="hidden" name="search" value="{{ search }}">
+            <input type="hidden" name="sort" value="{{ sort_key }}">
+            <input type="hidden" name="dir" value="{{ sort_dir }}">
+            <label class="sr-only" for="supplier-per-page">تعداد در صفحه</label>
+            <select name="per_page" id="supplier-per-page" onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}" aria-label="تعداد در صفحه">
+                {% for option in per_page_options %}
+                <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }} در صفحه</option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
+
+    <form method="get" action="/admin/suppliers" class="search-form">
+        <input type="hidden" name="sort" value="{{ sort_key }}">
+        <input type="hidden" name="dir" value="{{ sort_dir }}">
+        <input type="hidden" name="per_page" value="{{ per_page }}">
+        <label class="sr-only" for="supplier-search">جست‌وجوی تأمین‌کننده</label>
+        <input type="text" id="supplier-search" name="q" value="{{ search }}" placeholder="نام، تلفن یا توضیح" autocomplete="off">
+        <button type="submit" class="btn btn-primary">جست‌وجو</button>
+        {% if search %}<a href="/admin/suppliers" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
+    </form>
+
     {% if suppliers %}
     <table class="data-table">
         <thead>
             <tr>
-                <th>نام</th>
+                <th scope="col" aria-sort="{{ 'descending' if sort_key == 'name' and sort_dir == 'desc' else 'ascending' if sort_key == 'name' else 'none' }}"><a class="sort-link" href="/admin/suppliers?search={{ search }}&per_page={{ per_page }}&sort=name&dir={{ 'asc' if sort_key == 'name' and sort_dir == 'desc' else 'desc' }}">نام</a></th>
                 <th>تلفن</th>
                 <th>توضیح</th>
                 <th>مجموع خرید</th>
                 <th>پرداخت‌شده</th>
-                <th>بدهی</th>
+                <th scope="col" aria-sort="{{ 'descending' if sort_key == 'debt' and sort_dir == 'desc' else 'ascending' if sort_key == 'debt' else 'none' }}"><a class="sort-link" href="/admin/suppliers?search={{ search }}&per_page={{ per_page }}&sort=debt&dir={{ 'asc' if sort_key == 'debt' and sort_dir == 'desc' else 'desc' }}">بدهی</a></th>
                 <th>ثبت پرداخت</th>
                 <th>عملیات</th>
             </tr>
@@ -141,10 +169,19 @@
             {% endfor %}
         </tbody>
     </table>
+    {% if total_pages > 1 %}
+    <nav class="product-pagination" aria-label="صفحه‌بندی تأمین‌کنندگان">
+        {% if page > 1 %}<a class="btn btn-sm btn-ghost" href="/admin/suppliers?page={{ page - 1 }}&search={{ search }}&per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}">صفحه قبل</a>{% endif %}
+        <span>صفحه {{ page }} از {{ total_pages }}</span>
+        {% if page < total_pages %}<a class="btn btn-sm btn-ghost" href="/admin/suppliers?page={{ page + 1 }}&search={{ search }}&per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}">صفحه بعد</a>{% endif %}
+    </nav>
+    {% endif %}
+    {% elif search %}
+    <div class="empty-state"><h3>تأمین‌کننده‌ای با این جست‌وجو پیدا نشد</h3><p>عبارت دیگری را امتحان کنید یا <a class="text-link" href="/admin/suppliers">فیلتر را پاک کنید</a>.</p></div>
     {% else %}
     <div class="empty-state"><h3>هنوز تأمین‌کننده‌ای ثبت نشده است</h3><p>اولین تأمین‌کننده را از فرم بالا اضافه کنید؛ بعد می‌توانید در صفحه «خرید» از او خرید ثبت کنید.</p></div>
     {% endif %}
-</div>
+</section>
 
 <script>
 (function () {

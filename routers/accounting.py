@@ -623,6 +623,7 @@ async def admin_accounting_export(
         export_q = _purchase_query_filters(
             export_q, search=(q or "").strip(),
             supplier_id=int(supplier_id) if supplier_id.isdigit() else None,
+            supplier_none=(supplier_id == "none"),
             status=status if status in PURCHASE_STATUSES else "all",
             start=start, end=end, paid_expr=paid_expr,
             remaining_expr=remaining_expr, now=now,
@@ -1224,10 +1225,25 @@ async def admin_payment_delete_compat(payment_id: int, request: Request, db: Ses
 # ── Suppliers ────────────────────────────────────────────────────────────────
 
 @router.get("/suppliers", response_class=HTMLResponse)
-async def admin_suppliers(request: Request, db: Session = Depends(get_db)):
+async def admin_suppliers(
+    request: Request,
+    q: str = "",
+    sort: str = "newest",
+    dir: str = "desc",
+    per_page: str = "10",
+    page: str = "1",
+    db: Session = Depends(get_db),
+):
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
+    search = (q or "").strip()
+    # Unknown sort keys answer the newest-first list, never an error — the
+    # same degrade the purchases ledger uses.
+    sort_key = sort if sort in ("name", "debt", "newest") else "newest"
+    sort_dir = dir if dir in ("asc", "desc") else "desc"
+    per_page_int = int(per_page) if str(per_page).isdigit() and int(per_page) in (10, 25, 50) else 10
+    page_int = max(1, int(page)) if str(page).isdigit() else 1
     suppliers = db.query(Supplier).order_by(Supplier.created_at.desc()).all()
     # One definition for every figure on the page: get_supplier_balances's
     # `invoiced` runs the same filter chain (non-reversed, non-draft) the
@@ -1261,11 +1277,42 @@ async def admin_suppliers(request: Request, db: Session = Depends(get_db)):
                      + (" — سررسیدگذشته" if purchase.due_date and as_utc(purchase.due_date) < now else ""),
         })
     balances = {row["supplier"].id: row for row in get_supplier_balances(db)}
+    # Search, sort and paginate over the loaded rows: the supplier book is
+    # dozens of rows, not thousands, and the debt sort needs the balances
+    # map no SQL ORDER BY can see. Stats above the table keep reading the
+    # full book, so the totals stay honest while the rows narrow.
+    if search:
+        needle = search.casefold()
+        digit_needle = to_english_digits(search).strip()
+        suppliers = [s for s in suppliers
+                     if needle in (s.name or "").casefold()
+                     or needle in (s.note or "").casefold()
+                     or (digit_needle and digit_needle in (s.phone or ""))]
+    reverse = (sort_dir == "desc")
+    if sort_key == "name":
+        suppliers.sort(key=lambda s: (s.name or "").casefold(), reverse=reverse)
+    elif sort_key == "debt":
+        suppliers.sort(key=lambda s: balances.get(s.id, {}).get("owed", 0), reverse=reverse)
+    elif sort_dir == "asc":
+        # ids grow with creation, so id order is creation order.
+        suppliers.sort(key=lambda s: (s.id or 0))
+    total_count = len(suppliers)
+    total_pages = max(1, -(-total_count // per_page_int))
+    page_int = min(page_int, total_pages)
+    suppliers = suppliers[(page_int - 1) * per_page_int:page_int * per_page_int]
     return templates.TemplateResponse(request, "admin/suppliers.html", {
         "suppliers": suppliers,
         "balances": balances,
         "open_invoices": open_invoices,
         "overdue_suppliers": overdue_suppliers,
+        "search": search,
+        "sort_key": sort_key,
+        "sort_dir": sort_dir,
+        "per_page": per_page_int,
+        "per_page_options": (10, 25, 50),
+        "page": page_int,
+        "total_pages": total_pages,
+        "total_count": total_count,
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
         "fmt": fmt,
@@ -1424,14 +1471,33 @@ async def admin_supplier_payment(supplier_id: int, request: Request, amount: str
     )
     db.commit()
     log_action(db, "supplier_payment", f"پرداخت به {supplier.name}", request=request, target_type="supplier", target_id=supplier.id, after={"amount": amount_int})
-    # The shift linkage is said, not silent: a payment recorded with no open
-    # session leaves no row in any shift's statement, and an owner reading the
-    # cashbox deserves to know why today's figure moved without a shift row.
-    if open_session:
-        message = f"پرداخت {_pd_money(amount_int)} تومانی به {supplier.name} در شیفت جاری ثبت شد."
-    else:
-        message = f"پرداخت {_pd_money(amount_int)} تومانی به {supplier.name} ثبت شد — شیفت بازی نبود، در صورت‌جدول شیفت نمی‌آید."
-    return RedirectResponse(url="/admin/suppliers?msg=" + quote_plus(message), status_code=303)
+    # The slip is the receipt: the payment lands on its own print page, which
+    # also says the shift linkage (in this shift's statement, or outside any
+    # shift) instead of a toast that vanishes.
+    return RedirectResponse(url=f"/admin/suppliers/payments/{supplier_payment.id}/print", status_code=303)
+
+
+@router.get("/suppliers/payments/{payment_id}/print", response_class=HTMLResponse)
+async def admin_supplier_payment_print(payment_id: int, request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    payment = db.query(SupplierPayment).filter(SupplierPayment.id == payment_id).first()
+    if not payment:
+        return RedirectResponse(url="/admin/suppliers?err=پرداخت یافت نشد.", status_code=303)
+    supplier = db.query(Supplier).filter(Supplier.id == payment.supplier_id).first()
+    purchase = db.query(Purchase).filter(Purchase.id == payment.purchase_id).first() if payment.purchase_id else None
+    operator = db.query(StaffUser).filter(StaffUser.id == payment.operator_user_id).first() if payment.operator_user_id else None
+    return templates.TemplateResponse(request, "admin/supplier_payment_print.html", {
+        "payment": payment,
+        "supplier": supplier,
+        "purchase": purchase,
+        "operator_name": (operator.full_name or operator.username) if operator else "—",
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
+        "fmt": fmt,
+        "jalali_str": jalali_str,
+    })
 
 
 @router.post("/suppliers/{supplier_id}/delete", response_class=HTMLResponse)
@@ -1484,7 +1550,7 @@ PURCHASE_STATUSES = {
 }
 
 
-def _purchase_query_filters(query, *, search, supplier_id, status, start, end, paid_expr, remaining_expr, now):
+def _purchase_query_filters(query, *, search, supplier_id, supplier_none, status, start, end, paid_expr, remaining_expr, now):
     """The purchases table's filter chain, in the list route's exact order.
 
     The list route and the CSV export must read the same rows, and the export
@@ -1494,6 +1560,10 @@ def _purchase_query_filters(query, *, search, supplier_id, status, start, end, p
     """
     if supplier_id:
         query = query.filter(Purchase.supplier_id == supplier_id)
+    elif supplier_none:
+        # The orphans: purchases whose supplier was deleted and detached.
+        # A named id and the ownerless state are mutually exclusive filters.
+        query = query.filter(Purchase.supplier_id.is_(None))
     if search:
         query = query.outerjoin(Supplier, Purchase.supplier_id == Supplier.id)
         digits = search.lstrip("#").strip()
@@ -1837,8 +1907,10 @@ async def admin_purchases(
     search = (q or "").strip()
     start = _purchase_form_date(start_date)
     end = _purchase_form_date_end(end_date)
+    supplier_none = (supplier_id == "none")
     query = _purchase_query_filters(
         query, search=search, supplier_id=int(supplier_id) if supplier_id.isdigit() else None,
+        supplier_none=supplier_none,
         status=status, start=start, end=end,
         paid_expr=paid_expr, remaining_expr=remaining_expr, now=now,
     )
