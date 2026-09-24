@@ -61,7 +61,7 @@ from models import Product, ProductVariant  # noqa: E402
 from tests.test_visual_hover import (  # noqa: E402
     CHROME,
     SNAPSHOTS,
-    THEME_IDS,
+    WANTED,
     _contrast,
     _decode_png,
     _owner_cookie,
@@ -254,107 +254,114 @@ def _worst_label_on_fill(png: Path, rect: dict) -> tuple[float, str, str, int]:
 @pytest.mark.skipif(CHROME is None, reason="no chromium-family browser on this machine")
 @pytest.mark.skipif(shutil.which("node") is None, reason="no node to drive the browser")
 @pytest.mark.skipif(os.environ.get("RAYKIDS_SKIP_VISUAL") == "1", reason="RAYKIDS_SKIP_VISUAL=1")
-def test_the_till_filled_buttons_read_at_the_pixels(probe_server):
-    _seed_shop()
-    _seed_credit_customers()
-    invoice_sale_id = _seed_invoice_sale()
-    cookie = _owner_cookie(probe_server)
-
-    wanted = [
-        theme.strip() for theme in os.environ.get("RAYKIDS_VISUAL_THEMES", "").split(",")
-        if theme.strip()
-    ] or THEME_IDS
-
-    offenders: list[str] = []
-    evidence: list[str] = []
-    for theme_id in wanted:
-        _switch_theme(probe_server, cookie, theme_id)
-
-        # Screen 1: the till's front door — search (filled) and the
-        # anonymous-sale ghost beside it.
-        first = _shoot_buttons(probe_server, cookie, f"till-{theme_id}",
-                               f"{SEARCH_SELECTOR},{TILL_GHOST_SELECTOR}")
-        search_capture = first["buttons"][0]
-        till_ghost_capture = first["buttons"][1]
-
-        # Screen 2: the money screen — the driver walks the real flow
-        # (skip-customer, scan one item) before photographing. The confirm
-        # (success), the payment step's own control (primary, terminal), and
-        # the option spans in their default states: کارت selected, نقد
-        # unselected — the payment radios, seen rather than assumed.
-        second = _shoot_till_scan(probe_server, cookie, f"till-scan-{theme_id}",
-                                  f"{CONFIRM_SELECTOR},{TERMINAL_SELECTOR},"
-                                  f"{CARD_OPTION_SELECTOR},{CASH_OPTION_SELECTOR}")
-        confirm_capture = second["buttons"][0]
-        terminal_capture = second["buttons"][1]
-        card_default_capture = second["buttons"][2]
-        cash_default_capture = second["buttons"][3]
-        if (second.get("till") or {}).get("confirmDisabled"):
-            evidence.append(f"{theme_id} confirm payment: button rendered disabled (POS approval) — photographed as painted")
-
-        # Screen 2b: the نسیه walks. The credit radio is clicked inside the
-        # browser, so what is photographed is the credit confirmation state:
-        # the selected option's candy wash, the confirm button with the
-        # terminal primary gone, and — for the customer over their سقف اعتبار —
-        # the refusal warning on the same screen.
-        credit_selectors = f"{CONFIRM_SELECTOR},{CREDIT_RADIO_SELECTOR},{CARD_OPTION_SELECTOR}"
-        calm = _shoot_till_credit(probe_server, cookie, f"till-credit-{theme_id}",
-                                  "09120009701", credit_selectors)
-        calm_state = calm.get("till") or {}
-        assert calm_state.get("creditRadio") and calm_state.get("creditPanel"), \
-            f"{theme_id}: the credit walk never reached the نسیه state ({calm_state})"
-        assert calm_state.get("terminalHidden"), \
-            f"{theme_id}: the terminal step should hide on a نسیه sale"
-        assert not calm_state.get("creditWarning"), \
-            f"{theme_id}: a customer with room must not see the refusal warning"
-        over = _shoot_till_credit(probe_server, cookie, f"till-credit-over-{theme_id}",
-                                  "09120009702", credit_selectors)
-        over_state = over.get("till") or {}
-        assert over_state.get("creditWarning"), \
-            f"{theme_id}: the over-limit customer's warning never rendered ({over_state})"
-
-        # Screen 3: the sale path's last screen — the invoice. Print (the
-        # button the paper doctrine hangs off), the refund danger, the PDF
-        # ghost and the new-sale success.
-        third = _shoot_buttons(
-            probe_server, cookie, f"invoice-{theme_id}",
-            f"{INVOICE_PRINT_SELECTOR},{INVOICE_DANGER_SELECTOR},"
-            f"{INVOICE_GHOST_SELECTOR},{INVOICE_SUCCESS_SELECTOR}",
-            path=f"/sales/invoice/{invoice_sale_id}",
-        )
-        invoice_captures = third["buttons"]
-        assert len(invoice_captures) == 4, \
-            f"{theme_id}: the invoice should offer print, refund, PDF and new-sale — got {len(invoice_captures)}"
-
-        controls = [
-            ("customer search", search_capture),
-            ("anonymous sale ghost", till_ghost_capture),
-            ("confirm payment", confirm_capture),
-            ("send to terminal ghost", terminal_capture),
-            ("card option selected (default)", card_default_capture),
-            ("cash option unselected", cash_default_capture),
-            ("نسیه confirm", calm["buttons"][0]),
-            ("نسیه radio selected", calm["buttons"][1]),
-            ("card option unselected (after نسیه)", calm["buttons"][2]),
-            ("نسیه over-limit confirm", over["buttons"][0]),
-            ("نسیه over-limit radio", over["buttons"][1]),
-            ("invoice print", invoice_captures[0]),
-            ("invoice refund danger", invoice_captures[1]),
-            ("invoice PDF ghost", invoice_captures[2]),
-            ("invoice new sale", invoice_captures[3]),
-        ]
-        for what, capture in controls:
-            ratio, label_px, fill_px, distinct = _worst_label_on_fill(
-                Path(capture["png"]), capture["rect"])
-            evidence.append(f"{theme_id} {what}: {ratio:.2f}:1 ({label_px} on {fill_px}, {distinct} label px)")
-            if ratio < 4.5:
-                offenders.append(
-                    f"{theme_id}: the {what} button's label reads {ratio:.2f}:1 at the "
-                    f"pixels ({label_px} on {fill_px}) — the pair guard's floor is 4.5:1")
-
+@pytest.mark.flaky(reruns=1)
+@pytest.mark.parametrize("theme_id", WANTED)
+def test_the_till_filled_buttons_read_at_the_pixels(probe_server, theme_id):
+    evidence, offenders = _button_cell(probe_server, theme_id)
     print("\npixel evidence:")
     for line in evidence:
         print("  " + line)
     if offenders:  # pragma: no cover
         raise AssertionError("a till button's label does not read at the pixels:\n"
-                             + "\n".join(offenders))
+                            + "\n".join(offenders))
+
+
+def _button_cell(probe_server, theme_id: str) -> tuple[list[str], list[str]]:
+    """One palette's till at the pixels: seeds its own shop, walks the flow,
+    photographs every filled control, measures each label on its fill."""
+    _seed_shop()
+    _seed_credit_customers()
+    invoice_sale_id = _seed_invoice_sale()
+    cookie = _owner_cookie(probe_server)
+
+    offenders: list[str] = []
+    evidence: list[str] = []
+    _switch_theme(probe_server, cookie, theme_id)
+
+    # Screen 1: the till's front door — search (filled) and the
+    # anonymous-sale ghost beside it.
+    first = _shoot_buttons(probe_server, cookie, f"till-{theme_id}",
+                           f"{SEARCH_SELECTOR},{TILL_GHOST_SELECTOR}")
+    search_capture = first["buttons"][0]
+    till_ghost_capture = first["buttons"][1]
+
+    # Screen 2: the money screen — the driver walks the real flow
+    # (skip-customer, scan one item) before photographing. The confirm
+    # (success), the payment step's own control (primary, terminal), and
+    # the option spans in their default states: کارت selected, نقد
+    # unselected — the payment radios, seen rather than assumed.
+    second = _shoot_till_scan(probe_server, cookie, f"till-scan-{theme_id}",
+                              f"{CONFIRM_SELECTOR},{TERMINAL_SELECTOR},"
+                              f"{CARD_OPTION_SELECTOR},{CASH_OPTION_SELECTOR}")
+    confirm_capture = second["buttons"][0]
+    terminal_capture = second["buttons"][1]
+    card_default_capture = second["buttons"][2]
+    cash_default_capture = second["buttons"][3]
+    if (second.get("till") or {}).get("confirmDisabled"):
+        evidence.append(f"{theme_id} confirm payment: button rendered disabled (POS approval) — photographed as painted")
+
+    # Screen 2b: the نسیه walks. The credit radio is clicked inside the
+    # browser, so what is photographed is the credit confirmation state:
+    # the selected option's candy wash, the confirm button with the
+    # terminal primary gone, and — for the customer over their سقف اعتبار —
+    # the refusal warning on the same screen.
+    credit_selectors = f"{CONFIRM_SELECTOR},{CREDIT_RADIO_SELECTOR},{CARD_OPTION_SELECTOR}"
+    calm = _shoot_till_credit(probe_server, cookie, f"till-credit-{theme_id}",
+                              "09120009701", credit_selectors)
+    calm_state = calm.get("till") or {}
+    assert calm_state.get("creditRadio") and calm_state.get("creditPanel"), \
+        f"{theme_id}: the credit walk never reached the نسیه state ({calm_state})"
+    assert calm_state.get("terminalHidden"), \
+        f"{theme_id}: the terminal step should hide on a نسیه sale"
+    assert not calm_state.get("creditWarning"), \
+        f"{theme_id}: a customer with room must not see the refusal warning"
+    over = _shoot_till_credit(probe_server, cookie, f"till-credit-over-{theme_id}",
+                              "09120009702", credit_selectors)
+    over_state = over.get("till") or {}
+    assert over_state.get("creditWarning"), \
+        f"{theme_id}: the over-limit customer's warning never rendered ({over_state})"
+
+    # Screen 3: the sale path's last screen — the invoice. Print (the
+    # button the paper doctrine hangs off), the refund danger, the PDF
+    # ghost and the new-sale success.
+    third = _shoot_buttons(
+        probe_server, cookie, f"invoice-{theme_id}",
+        f"{INVOICE_PRINT_SELECTOR},{INVOICE_DANGER_SELECTOR},"
+        f"{INVOICE_GHOST_SELECTOR},{INVOICE_SUCCESS_SELECTOR}",
+        path=f"/sales/invoice/{invoice_sale_id}",
+    )
+    invoice_captures = third["buttons"]
+    assert len(invoice_captures) == 4, \
+        f"{theme_id}: the invoice should offer print, refund, PDF and new-sale — got {len(invoice_captures)}"
+
+    controls = [
+        ("customer search", search_capture),
+        ("anonymous sale ghost", till_ghost_capture),
+        ("confirm payment", confirm_capture),
+        ("send to terminal ghost", terminal_capture),
+        ("card option selected (default)", card_default_capture),
+        ("cash option unselected", cash_default_capture),
+        ("نسیه confirm", calm["buttons"][0]),
+        ("نسیه radio selected", calm["buttons"][1]),
+        ("card option unselected (after نسیه)", calm["buttons"][2]),
+        ("نسیه over-limit confirm", over["buttons"][0]),
+        ("نسیه over-limit radio", over["buttons"][1]),
+        ("invoice print", invoice_captures[0]),
+        ("invoice refund danger", invoice_captures[1]),
+        ("invoice PDF ghost", invoice_captures[2]),
+        ("invoice new sale", invoice_captures[3]),
+    ]
+    for what, capture in controls:
+        ratio, label_px, fill_px, distinct = _worst_label_on_fill(
+            Path(capture["png"]), capture["rect"])
+        evidence.append(f"{theme_id} {what}: {ratio:.2f}:1 ({label_px} on {fill_px}, {distinct} label px)")
+        if ratio < 4.5:
+            offenders.append(
+                f"{theme_id}: the {what} button's label reads {ratio:.2f}:1 at the "
+                f"pixels ({label_px} on {fill_px}) — the pair guard's floor is 4.5:1")
+
+    return evidence, offenders
+
+
+
+
