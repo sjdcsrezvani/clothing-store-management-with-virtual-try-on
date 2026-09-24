@@ -402,6 +402,56 @@ def ledger_mismatched_variants(db) -> list[tuple[ProductVariant, int]]:
     return [(variant, int(total or 0)) for variant, total in rows]
 
 
+def record_ledger_true_up(
+    db,
+    variant: ProductVariant,
+    *,
+    actor_user_id: int | None = None,
+    request_id: str | None = None,
+) -> StockMovement | None:
+    """Explain a ledger/cached-balance drift without touching the stock.
+
+    The sibling of :func:`record_ledger_opening` for variants that *have*
+    history: one ``adjustment`` row carries the difference between the shelf
+    figure and the ledger's sum, so the books read what the shelf says. A
+    plain :func:`record_stock_movement` cannot do this — it moves the cached
+    balance by the same delta, so the two would still disagree afterwards.
+    Idempotent in effect: a variant that already agrees gets no row.
+    """
+    ledger_total = db.query(
+        func.coalesce(func.sum(StockMovement.quantity_delta), 0)
+    ).filter(StockMovement.variant_id == variant.id).scalar() or 0
+    difference = int(variant.stock_quantity or 0) - int(ledger_total)
+    if difference == 0:
+        return None
+    movement = StockMovement(
+        variant_id=variant.id,
+        quantity_delta=difference,
+        movement_type="adjustment",
+        unit_cost=variant.cost_price,
+        note=(f"ثبت اختلاف دفتر — موجودی {variant.stock_quantity}، جمع دفتر {ledger_total}"),
+    )
+    db.add(movement)
+    db.flush()
+    from services.events import append_event
+    append_event(
+        db,
+        "StockAdjusted",
+        "variant",
+        variant.id,
+        idempotency_key=f"stock-movement:{movement.id}",
+        actor_user_id=actor_user_id,
+        request_id=request_id,
+        payload={
+            "movement_id": movement.id,
+            "quantity_delta": difference,
+            "movement_type": "adjustment",
+            "ledger_true_up": True,
+        },
+    )
+    return movement
+
+
 def record_ledger_opening(
     db,
     variant: ProductVariant,

@@ -85,6 +85,14 @@
         <a href="/admin/inventory-movements" class="btn btn-sm btn-ghost">بازگشت به دفتر</a>
     </div>
 
+    <form method="get" action="/admin/inventory-movements" class="search-form">
+        <input type="hidden" name="reconcile" value="{{ reconcile }}">
+        <label class="sr-only" for="reconcile-search">جست‌وجو در این فهرست</label>
+        <input type="text" id="reconcile-search" name="q" value="{{ search }}" placeholder="نام تنوع، بارکد یا محصول" autocomplete="off">
+        <button type="submit" class="btn btn-primary">جست‌وجو</button>
+        {% if search %}<a href="/admin/inventory-movements?reconcile={{ reconcile }}" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
+    </form>
+
     {% if reconcile_rows %}
     <p class="movement-results tnum">
         نمایش {{ (page - 1) * page_size + 1 }}–{{ [page * page_size, total_count]|min }} از {{ total_count }} تنوع
@@ -124,6 +132,17 @@
                     <td>
                         <div class="table-actions">
                             <a href="/admin/inventory-movements?variant_id={{ row.variant.id }}" class="btn btn-sm btn-ghost">حرکت‌های دفتر</a>
+                            {% if reconcile == 'mismatch' %}
+                            {# The drift fix lives where the drift is seen: one click
+                               appends an explanatory adjustment row — the shelf
+                               figure stays untouched, the books come to read it. #}
+                            <form method="post" action="/admin/inventory-movements/true-up" class="inline-form"
+                                  onsubmit="return confirm('اختلاف {{ row.difference }} عددی «{{ row.variant.display_name }}» در دفتر ثبت می‌شود؛ موجودی دست نمی‌خورد. ادامه؟')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="hidden" name="variant_id" value="{{ row.variant.id }}">
+                                <button type="submit" class="btn btn-sm btn-primary">ثبت اختلاف در دفتر</button>
+                            </form>
+                            {% endif %}
                         </div>
                     </td>
                 </tr>
@@ -153,21 +172,48 @@
     <div class="section-heading-row">
         <div>
             <h3 data-list-heading tabindex="-1">حرکت‌های ثبت‌شده</h3>
-            <p class="muted">ستون «موجودی پس از حرکت» از جمع تغییرات همین دفتر محاسبه می‌شود، نه از موجودی فعلی محصول.</p>
+            <p class="muted">صفحه {{ page }} از {{ total_pages }} · {{ total_count }} حرکت · ستون «موجودی پس از حرکت» از جمع تغییرات همین دفتر محاسبه می‌شود، نه از موجودی فعلی محصول.</p>
         </div>
+        <form method="get" action="/admin/inventory-movements" class="per-page-form">
+            <input type="hidden" name="q" value="{{ search }}">
+            <input type="hidden" name="variant" value="{{ variant_search }}">
+            <input type="hidden" name="movement_type" value="{{ movement_type_filter }}">
+            <input type="hidden" name="direction" value="{{ direction_filter }}">
+            <input type="hidden" name="product_id" value="{{ product_filter }}">
+            <input type="hidden" name="variant_id" value="{{ variant_filter }}">
+            <input type="hidden" name="actor" value="{{ actor_filter }}">
+            <input type="hidden" name="start_date" value="{{ start_date_filter }}">
+            <input type="hidden" name="end_date" value="{{ end_date_filter }}">
+            <input type="hidden" name="sort" value="{{ sort_key }}">
+            <input type="hidden" name="dir" value="{{ sort_dir }}">
+            <label class="sr-only" for="movement-per-page">تعداد در صفحه</label>
+            <select name="per_page" id="movement-per-page" onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}" aria-label="تعداد در صفحه">
+                {% for option in per_page_options %}
+                <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }} در صفحه</option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
     </div>
 
     <form method="get" action="/admin/inventory-movements" class="search-form movement-filter-form">
+        <input type="hidden" name="sort" value="{{ sort_key }}">
+        <input type="hidden" name="dir" value="{{ sort_dir }}">
+        <input type="hidden" name="per_page" value="{{ per_page }}">
         <div class="form-group">
             <label class="sr-only" for="filter-q">جست‌وجو</label>
             <input type="text" id="filter-q" name="q" value="{{ search }}" placeholder="شماره حرکت، محصول، تنوع، بارکد یا توضیح">
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="filter-variant">تنوع</label>
+            <input type="text" id="filter-variant" name="variant" value="{{ variant_search }}" placeholder="بارکد، سایز یا رنگ تنوع" autocomplete="off">
         </div>
         <div class="form-group">
             <label class="sr-only" for="filter-type">نوع حرکت</label>
             <select id="filter-type" name="movement_type">
                 <option value="all" {% if movement_type_filter == 'all' %}selected{% endif %}>همه انواع حرکت</option>
                 {% for value, label in movement_labels.items() %}
-                <option value="{{ value }}" {% if movement_type_filter == value %}selected{% endif %}>{{ label }}</option>
+                <option value="{{ value }}" {% if movement_type_filter == value %}selected{% endif %}>{{ label }}{% if value in legacy_types %} (قدیمی){% endif %}</option>
                 {% endfor %}
             </select>
         </div>
@@ -206,6 +252,9 @@
             <input type="text" id="filter-end" name="end_date" class="persian-date-input" value="{{ end_date_filter }}" placeholder="۱۴۰۵/۰۶/۳۱">
         </div>
         <button type="submit" class="btn btn-primary">اعمال فیلتر</button>
+        <button type="submit" name="preset" value="today" class="btn btn-sm btn-ghost">امروز</button>
+        <button type="submit" name="preset" value="week" class="btn btn-sm btn-ghost">۷ روز اخیر</button>
+        <button type="submit" name="preset" value="month" class="btn btn-sm btn-ghost">این ماه</button>
         {% if has_filters %}<a href="/admin/inventory-movements" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
     </form>
 
@@ -218,10 +267,10 @@
             <thead>
                 <tr>
                     <th scope="col">#</th>
-                    <th scope="col">تاریخ و ساعت</th>
+                    <th scope="col" aria-sort="{{ 'descending' if sort_key == 'date' and sort_dir == 'desc' else 'ascending' if sort_key == 'date' else 'none' }}"><a class="sort-link" href="?{{ sort_base_qs }}&sort=date&dir={{ 'asc' if sort_key == 'date' and sort_dir == 'desc' else 'desc' }}">تاریخ و ساعت</a></th>
                     <th scope="col">محصول / تنوع</th>
                     <th scope="col">نوع حرکت</th>
-                    <th scope="col">تغییر</th>
+                    <th scope="col" aria-sort="{{ 'descending' if sort_key == 'delta' and sort_dir == 'desc' else 'ascending' if sort_key == 'delta' else 'none' }}"><a class="sort-link" href="?{{ sort_base_qs }}&sort=delta&dir={{ 'asc' if sort_key == 'delta' and sort_dir == 'desc' else 'desc' }}">تغییر</a></th>
                     <th scope="col">موجودی پس از حرکت</th>
                     <th scope="col">بهای واحد</th>
                     <th scope="col">کاربر</th>
@@ -233,8 +282,8 @@
                 {% for row in movements %}
                 {% set movement = row.movement %}
                 {% set delta = movement.quantity_delta %}
-                <tr>
-                    <td class="tnum movement-id">#{{ movement.id }}</td>
+                <tr id="movement-{{ movement.id }}">
+                    <td class="tnum movement-id"><a class="text-link" href="#movement-{{ movement.id }}">#{{ movement.id }}</a></td>
                     <td class="tnum movement-time">{{ jalali_str(movement.created_at) }}</td>
                     <td>
                         {% if row.product %}

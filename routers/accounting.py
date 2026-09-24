@@ -58,6 +58,7 @@ from services.inventory import (
     movement_direction,
     movement_type_label,
     record_ledger_opening,
+    record_ledger_true_up,
 )
 from services.reporting import canonical_report, reconciliation_checks
 from services.checks import (
@@ -2290,10 +2291,14 @@ async def admin_inventory_movements(
     direction: str = "all",
     product_id: str = "",
     variant_id: str = "",
+    variant: str = "",
     actor: str = "",
     start_date: str = "",
     end_date: str = "",
     reconcile: str = "",
+    sort: str = "date",
+    dir: str = "desc",
+    per_page: str = "25",
     page: str = "1",
     db: Session = Depends(get_db),
 ):
@@ -2312,6 +2317,26 @@ async def admin_inventory_movements(
     direction = direction if direction in MOVEMENT_DIRECTIONS else "all"
     reconcile = reconcile if reconcile in RECONCILE_VIEWS else ""
     search = (q or "").strip()
+    variant_search = (variant or "").strip()
+    now = datetime.now(timezone.utc)
+    # Quick ranges: one tap fills the date window instead of typing it. The
+    # filled values travel as ordinary start/end params, so the inputs show
+    # what the chip chose and clearing works the same way.
+    preset = (request.query_params.get("preset", "") or "")
+    preset_today = jalali_str(now, with_time=False)
+    preset_week = jalali_str(now - timedelta(days=6), with_time=False)
+    month_start, _ = get_date_range("month")
+    preset_month = jalali_str(month_start, with_time=False)
+    if preset == "today":
+        start_date, end_date = preset_today, preset_today
+    elif preset == "week":
+        start_date, end_date = preset_week, preset_today
+    elif preset == "month":
+        start_date, end_date = preset_month, preset_today
+    # Unknown sort keys answer the newest-first ledger, never an error — the
+    # purchases list route's rule too.
+    sort_key, sort_dir = parse_sort(request.query_params, {"date": "desc", "delta": "desc"}, "date")
+    per_page_int = int(per_page) if str(per_page).isdigit() and int(per_page) in (10, 25, 50) else MOVEMENT_PAGE_SIZE
     # A typed or malformed page number degrades to page 1 — a bare 422 JSON is
     # not an answer a shop can read (the purchases list route's rule too).
     page = max(1, int(page)) if str(page).isdigit() else 1
@@ -2338,10 +2363,18 @@ async def admin_inventory_movements(
         listing = None
 
     if listing is not None:
+        # The search box narrows these views too: a needle matches the
+        # variant's name, barcode or its product's name.
+        if search:
+            needle = search.casefold()
+            listing = [(variant, total) for variant, total in listing
+                       if needle in (variant.display_name or "").casefold()
+                       or needle in (variant.barcode or "").casefold()
+                       or needle in ((variant.product.name if variant.product else "") or "").casefold()]
         total_count = len(listing)
-        total_pages = max(1, -(-total_count // MOVEMENT_PAGE_SIZE))
+        total_pages = max(1, -(-total_count // per_page_int))
         page = min(page, total_pages)
-        window = listing[(page - 1) * MOVEMENT_PAGE_SIZE: page * MOVEMENT_PAGE_SIZE]
+        window = listing[(page - 1) * per_page_int: page * per_page_int]
         for variant, ledger_total in window:
             current = int(variant.stock_quantity or 0)
             reconcile_rows.append({
@@ -2375,6 +2408,15 @@ async def admin_inventory_movements(
                 query = query.filter(text_match)
         if variant_id.isdigit():
             query = query.filter(StockMovement.variant_id == int(variant_id))
+        if variant_search:
+            # The variant box names one variant by its own marks — barcode,
+            # size or colour — where the general search also reads notes,
+            # product names and movement ids.
+            query = query.filter(or_(
+                ProductVariant.barcode.ilike(f"%{variant_search}%"),
+                ProductVariant.size.ilike(f"%{variant_search}%"),
+                ProductVariant.color.ilike(f"%{variant_search}%"),
+            ))
         if product_id.isdigit():
             query = query.filter(ProductVariant.product_id == int(product_id))
         if movement_type != "all":
@@ -2393,12 +2435,17 @@ async def admin_inventory_movements(
             query = query.filter(StockMovement.created_at <= end)
 
         total_count = query.count()
-        total_pages = max(1, -(-total_count // MOVEMENT_PAGE_SIZE))
+        total_pages = max(1, -(-total_count // per_page_int))
         page = min(page, total_pages)
-        window = query.order_by(
-            StockMovement.created_at.desc(), StockMovement.id.desc()
-        ).options(joinedload(StockMovement.variant)) \
-            .offset((page - 1) * MOVEMENT_PAGE_SIZE).limit(MOVEMENT_PAGE_SIZE).all()
+        if sort_key == "delta":
+            primary = StockMovement.quantity_delta.desc() if sort_dir == "desc" \
+                else StockMovement.quantity_delta.asc()
+        else:
+            primary = StockMovement.created_at.desc() if sort_dir == "desc" \
+                else StockMovement.created_at.asc()
+        window = query.order_by(primary, StockMovement.id.desc()) \
+            .options(joinedload(StockMovement.variant)) \
+            .offset((page - 1) * per_page_int).limit(per_page_int).all()
 
         snapshot = ledger_snapshot(db, [movement.variant_id for movement, _, _ in window])
         actor_ids = {actor_id for _, actor_id, _ in window if actor_id}
@@ -2431,16 +2478,19 @@ async def admin_inventory_movements(
     ).filter(BusinessEvent.idempotency_key.like("stock-movement:%")).distinct().all()
 
     from urllib.parse import urlencode
-    filter_qs = urlencode({
+    sort_base_qs = urlencode({
         "q": search,
         "movement_type": movement_type,
         "direction": direction,
         "product_id": product_id,
         "variant_id": variant_id,
+        "variant": variant_search,
         "actor": actor,
         "start_date": start_date,
         "end_date": end_date,
+        "per_page": per_page_int,
     })
+    filter_qs = f"{sort_base_qs}&sort={sort_key}&dir={sort_dir}" if sort_base_qs else f"sort={sort_key}&dir={sort_dir}"
 
     return templates.TemplateResponse(request, "admin/inventory_movements.html", {
         "movements": movements,
@@ -2449,6 +2499,7 @@ async def admin_inventory_movements(
         "reconcile_label": RECONCILE_VIEWS.get(reconcile, ""),
         "reconciliation": reconciliation,
         "movement_labels": MOVEMENT_LABELS,
+        "legacy_types": LEGACY_MOVEMENT_TYPES,
         "directions": MOVEMENT_DIRECTIONS,
         "products": products,
         "actor_options": [(u.id, u.full_name or u.username) for u in actor_options],
@@ -2456,18 +2507,27 @@ async def admin_inventory_movements(
         "direction_filter": direction,
         "product_filter": product_id,
         "variant_filter": variant_id,
+        "variant_search": variant_search,
         "actor_filter": actor,
         "search": search,
         "start_date_filter": start_date,
         "end_date_filter": end_date,
+        "preset_today": preset_today,
+        "preset_week": preset_week,
+        "preset_month": preset_month,
+        "sort_key": sort_key,
+        "sort_dir": sort_dir,
+        "per_page": per_page_int,
+        "per_page_options": (10, 25, 50),
         "page": page,
         "filter_qs": filter_qs,
+        "sort_base_qs": sort_base_qs,
         "total_pages": total_pages,
         "total_count": total_count,
-        "page_size": MOVEMENT_PAGE_SIZE,
+        "page_size": per_page_int,
         "has_filters": bool(
             search or movement_type != "all" or direction != "all" or product_id
-            or variant_id or actor or start_date or end_date
+            or variant_id or variant_search or actor or start_date or end_date
         ),
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
@@ -2503,6 +2563,48 @@ async def admin_inventory_movements_reconcile(request: Request, db: Session = De
         )
     return RedirectResponse(
         url=f"/admin/inventory-movements?msg=موجودی اولیه {recorded} تنوع در دفتر ثبت شد.",
+        status_code=303,
+    )
+
+
+@router.post("/inventory-movements/true-up", response_class=HTMLResponse)
+async def admin_inventory_movements_true_up(
+    request: Request,
+    variant_id: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Explain one variant's drift with an adjustment row, stock untouched.
+
+    The row carries (shelf − ledger) so the books read what the shelf says —
+    a plain movement would move both sides and leave them disagreeing. The
+    guard re-reads the drift: a variant that already agrees is refused loudly
+    instead of gaining a zero row.
+    """
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    variant = db.query(ProductVariant).filter(
+        ProductVariant.id == int(variant_id)).first() if variant_id.isdigit() else None
+    if not variant:
+        return RedirectResponse(
+            url="/admin/inventory-movements?reconcile=mismatch&err=تنوع یافت نشد.", status_code=303)
+    movement = record_ledger_true_up(
+        db, variant, actor_user_id=getattr(guard, "id", None),
+        request_id=request.headers.get("X-Request-ID"),
+    )
+    if not movement:
+        return RedirectResponse(
+            url="/admin/inventory-movements?reconcile=mismatch&err=این تنوع با دفتر می‌خواند؛ ردیفی ثبت نشد.",
+            status_code=303)
+    db.commit()
+    log_action(
+        db, "inventory_ledger_true_up",
+        f"ثبت اختلاف دفتر {variant.display_name} ({movement.quantity_delta:+d})",
+        request=request, target_type="variant", target_id=variant.id,
+        after={"quantity_delta": movement.quantity_delta},
+    )
+    return RedirectResponse(
+        url="/admin/inventory-movements?reconcile=mismatch&msg=اختلاف دفتر ثبت شد و این تنوع حالا می‌خواند.",
         status_code=303,
     )
 
