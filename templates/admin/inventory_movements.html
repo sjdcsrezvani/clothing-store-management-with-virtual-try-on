@@ -18,10 +18,10 @@
 
 
 <p class="muted movement-legacy-note">
-    از نسخه ۲.۳.۰ خریدها موجودی را تغییر نمی‌دهند و فقط بهای تمام‌شده را به‌روز می‌کنند؛
-    ردیف‌های «ورود از خرید» و «برگشت خرید» مربوط به داده‌های قدیمی هستند.
+    ردیف‌های «ورود از خرید» و «برگشت خرید» مربوط به داده‌های قدیمی‌اند؛ خریدهای جدید موجودی را در همین دفتر جابه‌جا نمی‌کنند.
 </p>
 
+{% if reconciliation.missing_count or reconciliation.mismatch_count %}
 <section class="card movement-reconcile-card">
     <div class="section-heading-row">
         <div>
@@ -41,6 +41,14 @@
             </div>
             {% if reconciliation.missing_count %}
             <a class="text-link" href="/admin/inventory-movements?reconcile=missing">مشاهده فهرست</a>
+            <form method="post" action="/admin/inventory-movements/reconcile" class="reconcile-action"
+                  onsubmit="return confirm('برای {{ reconciliation.missing_count }} تنوع یک ردیف «موجودی اولیه» ثبت می‌شود تا دفتر با موجودی فعلی بخواند. موجودی هیچ تنوعی تغییر نمی‌کند. ادامه؟')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-sm btn-primary">سابقه‌دار کردن موجودی‌ها</button>
+            </form>
+            <p class="field-help">
+                فقط یک ردیف توضیحی ساخته می‌شود؛ عدد موجودی دست نمی‌خورد و نامطابق‌ها خودکار اصلاح نمی‌شوند.
+            </p>
             {% else %}
             <span class="reconcile-ok">همه موجودی‌ها در دفتر سابقه دارند</span>
             {% endif %}
@@ -56,18 +64,10 @@
             {% endif %}
         </div>
     </div>
-    {% if reconciliation.missing_count %}
-    <form method="post" action="/admin/inventory-movements/reconcile" class="reconcile-action"
-          onsubmit="return confirm('برای {{ reconciliation.missing_count }} تنوع یک ردیف «موجودی اولیه» ثبت می‌شود تا دفتر با موجودی فعلی بخواند. موجودی هیچ تنوعی تغییر نمی‌کند. ادامه؟')">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button type="submit" class="btn btn-primary">ثبت موجودی اولیه دفتر</button>
-    </form>
-    <p class="field-help">
-        این کار فقط یک ردیف توضیحی برای موجودی فعلی می‌سازد و عدد موجودی را دست نمی‌زند.
-        تنوع‌های نامطابق به‌صورت خودکار اصلاح نمی‌شوند و باید دستی بررسی شوند.
-    </p>
-    {% endif %}
 </section>
+{% else %}
+<p class="muted" role="status">دفتر و موجودی می‌خوانند — موردی برای همخوانی نیست.</p>
+{% endif %}
 
 {% if reconcile %}
 <section class="card" data-list-region="movements">
@@ -112,7 +112,7 @@
                         {{ row.variant.display_name }}
                         {% endif %}
                     </td>
-                    <td class="tnum">{{ row.variant.barcode or '—' }}</td>
+                    <td class="tnum" dir="ltr">{{ row.variant.barcode or '—' }}</td>
                     <td class="tnum"><strong>{{ row.current_stock }}</strong></td>
                     <td class="tnum">{{ row.ledger_total }}</td>
                     <td class="tnum">
@@ -120,7 +120,7 @@
                             {% if row.difference > 0 %}+{% endif %}{{ row.difference }}
                         </span>
                     </td>
-                    <td class="tnum">{{ figure(row.variant.cost_price) }} ت</td>
+                    <td class="tnum">{{ figure(row.variant.cost_price) }}</td>
                     <td>
                         <div class="table-actions">
                             <a href="/admin/inventory-movements?variant_id={{ row.variant.id }}" class="btn btn-sm btn-ghost">حرکت‌های دفتر</a>
@@ -155,7 +155,6 @@
             <h3 data-list-heading tabindex="-1">حرکت‌های ثبت‌شده</h3>
             <p class="muted">ستون «موجودی پس از حرکت» از جمع تغییرات همین دفتر محاسبه می‌شود، نه از موجودی فعلی محصول.</p>
         </div>
-        <span class="section-step">۱</span>
     </div>
 
     <form method="get" action="/admin/inventory-movements" class="search-form movement-filter-form">
@@ -189,17 +188,15 @@
                 {% endfor %}
             </select>
         </div>
-        {% if actor_options %}
         <div class="form-group">
             <label class="sr-only" for="filter-actor">کاربر</label>
-            <select id="filter-actor" name="actor">
+            <select id="filter-actor" name="actor" {% if not actor_options %}disabled aria-disabled="true"{% endif %}>
                 <option value="">همه کاربران</option>
                 {% for user_id, label in actor_options %}
                 <option value="{{ user_id }}" {% if actor_filter == user_id|string %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
             </select>
         </div>
-        {% endif %}
         <div class="form-group">
             <label class="sr-only" for="filter-start">از تاریخ</label>
             <input type="text" id="filter-start" name="start_date" class="persian-date-input" data-pdp-pair="#filter-end" value="{{ start_date_filter }}" placeholder="۱۴۰۵/۰۱/۰۱">
@@ -248,7 +245,7 @@
                         —
                         {% endif %}
                         <small class="movement-meta">
-                            {% if movement.variant and movement.variant.barcode %}{{ movement.variant.barcode }}{% else %}بدون بارکد{% endif %}
+                            {% if movement.variant and movement.variant.barcode %}<span dir="ltr">{{ movement.variant.barcode }}</span>{% else %}بدون بارکد{% endif %}
                         </small>
                     </td>
                     <td>
@@ -261,7 +258,7 @@
                         <span class="movement-delta is-{{ row.direction }} tnum">{% if delta > 0 %}+{% endif %}{{ delta }}</span>
                     </td>
                     <td class="tnum movement-balance">
-                        <strong>{{ row.balance_after }}</strong>
+                        <strong>{{ row.balance_after if row.balance_after is not none else '—' }}</strong>
                         {% if not row.balanced %}
                         <span class="movement-flag" title="جمع دفتر این تنوع با موجودی فعلی محصول نمی‌خواند">نامطابق</span>
                         {% endif %}
@@ -299,7 +296,7 @@
             {% if has_filters %}
             فیلترها را تغییر دهید تا حرکت‌های دیگر را ببینید.
             {% else %}
-            دفتر از اولین تغییر موجودی پر می‌شود: موجودی اولیه محصول، فروش، اصلاح دستی و نهایی‌سازی خرید.
+            دفتر از اولین تغییر موجودی پر می‌شود: موجودی اولیه، فروش، برگشت فروش و اصلاح دستی.
             {% endif %}
         </p>
         {% if has_filters %}<a href="/admin/inventory-movements" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
