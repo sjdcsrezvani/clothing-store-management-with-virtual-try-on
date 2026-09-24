@@ -1,3 +1,20 @@
+## 2.6.10 — 1405/07/02 (2026-09-24)
+
+### دفتر انبار: a ledger you can steer, not only scroll
+
+- **Power tools on the list.** Sort the ledger by date, movement type or
+  quantity, per-page presets, a variant-scoped search, and the type/direction
+  filters ride along through every page turn.
+- **Drift repair in one click.** A variant whose stored balance disagrees with
+  the ledger's own arithmetic is offered a one-click reconcile that writes the
+  correcting adjustment itself — the ledger stays the single account of truth,
+  and the repair is recorded in it like any other movement.
+- **The ledger tells the truth quietly.** Honest copy replaces the polite
+  blanks: the reconcile panel collapses out of the way when there is nothing to
+  reconcile, and every movement names the actor who made it.
+
+**Schema change.** None — the database stays on revision 22.
+
 ## 2.6.9 — 1405/07/02 (2026-09-24)
 
 ### تأمین‌کنندگان: a supplier ledger you can search, settle and print
