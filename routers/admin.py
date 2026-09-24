@@ -462,6 +462,7 @@ async def admin_customer_profile(
         "tag_palette": TAG_PALETTE,
         "tag_labels": TAG_LABELS,
         "tag_keys": TAG_KEYS,
+        "tier_labels": TIER_LABELS,
         "may_delete": may_delete,
         "sale_count": sale_count,
         "msg": request.query_params.get("msg", ""),
