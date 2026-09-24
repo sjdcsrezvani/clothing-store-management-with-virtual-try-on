@@ -1,3 +1,22 @@
+## 2.6.9 — 1405/07/02 (2026-09-24)
+
+### تأمین‌کنندگان: a supplier ledger you can search, settle and print
+
+- **Find the account in one step.** Search by name or phone, sort by debt or
+  recent activity, page through the ledger, and a dedicated filter for suppliers
+  whose goods arrived but nothing is settled against them yet.
+- **Payments that act their age.** Amounts edit inline under the same clamp the
+  form enforces, phones display as typed rather than being reformatted mid-word,
+  a note field rides every payment, and «تسویه» settles a debt in one tap.
+- **A receipt the owner can file.** Every payment prints a Persian slip with the
+  supplier, the settled invoice, the operator and the amount — reachable from the
+  ledger row and the payment's own page.
+- **The matrix learned the slip.** The visual matrix seeds a real supplier
+  payment so the print page is judged in all ten palettes, the way every other
+  page is.
+
+**Schema change.** None — the database stays on revision 22.
+
 ## 2.6.8 — 1405/07/01 (2026-09-23)
 
 ### خریدها: the receipt files arrivals and books the debt, and never rewrites the catalogue

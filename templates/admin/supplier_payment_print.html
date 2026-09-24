@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}رسید پرداخت #{{ payment.id }} — {{ store.name }}{% endblock %}
+{% block content %}
+<div class="document-actions">
+    <button type="button" class="btn btn-primary" onclick="window.print()">چاپ رسید پرداخت</button>
+    <a class="btn btn-ghost" href="/admin/suppliers">بازگشت به تأمین‌کنندگان</a>
+</div>
+
+<div class="print-document">
+    <div class="print-document-header">
+        <h1>{{ store.name }}</h1>
+        <h2>رسید پرداخت به تأمین‌کننده</h2>
+        <div class="print-document-meta">
+            <span>شماره رسید: #{{ payment.id }}</span>
+            <span>تاریخ پرداخت: {{ jalali_str(payment.created_at) }}</span>
+        </div>
+    </div>
+
+    <table>
+        <tbody>
+            <tr>
+                <th scope="row">تأمین‌کننده</th>
+                <td>{{ supplier.name or 'تأمین‌کننده حذف‌شده' }}</td>
+                <th scope="row">مبلغ</th>
+                <td class="tnum">{{ fmt(payment.amount) }} تومان</td>
+            </tr>
+            <tr>
+                <th scope="row">بابت فاکتور</th>
+                <td>{% if purchase %}<a href="/admin/purchases/{{ purchase.id }}">فاکتور #{{ purchase.id }}</a>{% else %}پرداخت کلی (بدون فاکتور){% endif %}</td>
+                <th scope="row">روش</th>
+                <td>نقد</td>
+            </tr>
+            <tr>
+                <th scope="row">ثبت‌کننده</th>
+                <td>{{ operator_name }}</td>
+                <th scope="row">شیفت</th>
+                <td>{% if payment.cash_session_id %}در شیفت #{{ payment.cash_session_id }} ثبت شد{% else %}شیفت بازی نبود — در صورت‌جدول شیفت نمی‌آید{% endif %}</td>
+            </tr>
+            {% if payment.note %}
+            <tr>
+                <th scope="row">یادداشت</th>
+                <td colspan="3">{{ payment.note }}</td>
+            </tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

@@ -224,7 +224,11 @@ changes a stock quantity — those units are already on the shelf; it only gives
 the ledger a row that accounts for them. Any variant whose ledger total
 disagrees with its current balance is listed separately and is never corrected
 automatically.
-- **🏭 تأمین‌کنندگان** (`/admin/suppliers`) — supplier list with total purchased.
+- **🏭 تأمین‌کنندگان** (`/admin/suppliers`) — supplier ledger with total
+  purchased: search by name or phone, sort and page the list, an orphan filter
+  for suppliers with arrivals but no settlement, inline payment editing with the
+  debt clamp, one-tap «تسویه», and a printable Persian receipt for every
+  payment.
 - **💸 هزینه‌ها** (`/admin/expenses`) — rent, utilities, wages… with categories and separate one-time/monthly types.
 - **🧾 صندوق** (`/admin/cashbox`) — the cash drawer, run as a **shift**. The
 person at the counter opens it by counting the float and closes it by counting

@@ -716,6 +716,10 @@ HTML_ANSWERS = (200, 403, 404)
 # from it, so this address is pointed at the draft kept beside it.
 DRAFT_EDIT = "/admin/purchases/{purchase_id}/edit"
 
+# The supplier-payment slip's placeholder is spelled the same as the payroll
+# routes' but reads a different table, so it is filled from its own seed id.
+SUPPLIER_PAYMENT_PRINT = "/admin/suppliers/payments/{payment_id}/print"
+
 
 def _served_addresses() -> list[str]:
     """Every GET the shell serves, taken from the app's own route table.
@@ -738,6 +742,8 @@ def _filled_addresses(ids: dict[str, object]) -> list[tuple[str, str]]:
         page_ids = dict(ids)
         if template == DRAFT_EDIT:
             page_ids["purchase_id"] = ids["draft_purchase_id"]
+        if template == SUPPLIER_PAYMENT_PRINT:
+            page_ids["payment_id"] = ids["supplier_payment_id"]
         address = re.sub(r"\{(\w+)\}",
                          lambda match: str(page_ids.get(match.group(1), match.group(0))), template)
         (filled if "{" not in address else unresolved).append((template, address))
@@ -898,7 +904,7 @@ def _one_of_everything(db_session, staff: dict) -> dict[str, object]:
     from models import (Campaign, CashSession, CashSessionEntry, CheckRecord, Customer,
                         Expense, GeneratedImage, Product, ProductVariant, Purchase,
                         PurchaseItem, Sale, SaleItem, SalaryPayment, SmsMessage,
-                        SmsTemplate, Supplier)
+                        SmsTemplate, Supplier, SupplierPayment)
 
     now = datetime.now(timezone.utc)
     product = Product(name="کتانی تست", category="کفش")
@@ -985,6 +991,15 @@ def _one_of_everything(db_session, staff: dict) -> dict[str, object]:
                            paid_at=now - timedelta(days=1), note="حقوق مرداد")
     db_session.add(salary)
 
+    # A settled instalment the supplier-payment slip can print: the matrix's
+    # `payment_id` belongs to this table, not the payroll's, and a payment for
+    # the seeded purchase makes the slip name its invoice.
+    supplier_payment = SupplierPayment(
+        supplier_id=supplier.id, purchase_id=purchase.id, amount=1_500_000,
+        method="cash", operator_user_id=staff["owner"].id,
+        created_at=now - timedelta(days=2), note="قسط اول")
+    db_session.add(supplier_payment)
+
     # A check past its date: the checks page counts it and prints its days late
     # in the attention colour.
     db_session.add(CheckRecord(supplier_id=supplier.id, provider_name="چاپخانه تست",
@@ -1015,6 +1030,7 @@ def _one_of_everything(db_session, staff: dict) -> dict[str, object]:
         "customer_id": customer.id, "product_id": product.id, "variant_id": variant.id,
         "purchase_id": purchase.id, "draft_purchase_id": draft.id, "campaign_id": campaign.id,
         "staff_id": staff["cashier"].id, "payment_id": salary.id,
+        "supplier_payment_id": supplier_payment.id,
         "template_id": template.id, "session_id": closed_shift.id, "img_id": image.id,
         "sale_id": credit_sale.id, "barcode": variant.barcode,
     }

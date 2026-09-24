@@ -202,6 +202,7 @@
             <label class="sr-only" for="filter-supplier">تأمین‌کننده</label>
             <select id="filter-supplier" name="supplier_id">
                 <option value="">همه تأمین‌کنندگان</option>
+                <option value="none" {% if supplier_filter == 'none' %}selected{% endif %}>بدون تأمین‌کننده</option>
                 {% for s in suppliers %}
                 <option value="{{ s.id }}" {% if supplier_filter == s.id|string %}selected{% endif %}>{{ s.name }}</option>
                 {% endfor %}

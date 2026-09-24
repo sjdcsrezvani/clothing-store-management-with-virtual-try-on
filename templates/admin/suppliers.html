@@ -25,7 +25,7 @@
     <div class="stat-card {{ 'accent-saffron' if owing else '' }}">
         <div class="stat-label">دارای بدهی</div>
         <div class="stat-value tnum">{{ fmt(owing | length) }}</div>
-        <div class="stat-sub">{{ fmt(total_owed) }} تومان بین آن‌ها تقسیم شده</div>
+        <div class="stat-sub">{{ fmt(total_owed) }} تومان بین آن‌ها پخش است</div>
     </div>
 </div>
 
@@ -40,17 +40,45 @@
     </form>
 </div>
 
-<div class="card">
+<section class="card" data-list-region="suppliers">
+    <div class="section-heading-row">
+        <div>
+            <h3 data-list-heading tabindex="-1">فهرست تأمین‌کنندگان</h3>
+            <p class="muted">صفحه {{ page }} از {{ total_pages }} · {{ total_count }} تأمین‌کننده</p>
+        </div>
+        <form method="get" action="/admin/suppliers" class="per-page-form">
+            <input type="hidden" name="search" value="{{ search }}">
+            <input type="hidden" name="sort" value="{{ sort_key }}">
+            <input type="hidden" name="dir" value="{{ sort_dir }}">
+            <label class="sr-only" for="supplier-per-page">تعداد در صفحه</label>
+            <select name="per_page" id="supplier-per-page" onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}" aria-label="تعداد در صفحه">
+                {% for option in per_page_options %}
+                <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }} در صفحه</option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
+
+    <form method="get" action="/admin/suppliers" class="search-form">
+        <input type="hidden" name="sort" value="{{ sort_key }}">
+        <input type="hidden" name="dir" value="{{ sort_dir }}">
+        <input type="hidden" name="per_page" value="{{ per_page }}">
+        <label class="sr-only" for="supplier-search">جست‌وجوی تأمین‌کننده</label>
+        <input type="text" id="supplier-search" name="q" value="{{ search }}" placeholder="نام، تلفن یا توضیح" autocomplete="off">
+        <button type="submit" class="btn btn-primary">جست‌وجو</button>
+        {% if search %}<a href="/admin/suppliers" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
+    </form>
+
     {% if suppliers %}
     <table class="data-table">
         <thead>
             <tr>
-                <th>نام</th>
+                <th scope="col" aria-sort="{{ 'descending' if sort_key == 'name' and sort_dir == 'desc' else 'ascending' if sort_key == 'name' else 'none' }}"><a class="sort-link" href="/admin/suppliers?search={{ search }}&per_page={{ per_page }}&sort=name&dir={{ 'asc' if sort_key == 'name' and sort_dir == 'desc' else 'desc' }}">نام</a></th>
                 <th>تلفن</th>
                 <th>توضیح</th>
                 <th>مجموع خرید</th>
                 <th>پرداخت‌شده</th>
-                <th>بدهی</th>
+                <th scope="col" aria-sort="{{ 'descending' if sort_key == 'debt' and sort_dir == 'desc' else 'ascending' if sort_key == 'debt' else 'none' }}"><a class="sort-link" href="/admin/suppliers?search={{ search }}&per_page={{ per_page }}&sort=debt&dir={{ 'asc' if sort_key == 'debt' and sort_dir == 'desc' else 'desc' }}">بدهی</a></th>
                 <th>ثبت پرداخت</th>
                 <th>عملیات</th>
             </tr>
@@ -64,14 +92,17 @@
                     <strong>{{ s.name }}</strong>
                     <br><small><a class="text-link" href="/admin/purchases?supplier_id={{ s.id }}">خریدهای این تأمین‌کننده</a></small>
                 </td>
-                <td class="tnum">{{ s.phone or '—' }}</td>
+                <td class="tnum" dir="ltr">{{ s.phone or '—' }}</td>
                 <td>{{ s.note or '—' }}</td>
                 <td class="tnum">{{ fmt(row.get('invoiced', 0)) }} تومان</td>
                 <td class="tnum">{{ fmt(row.get('paid', 0)) }} تومان</td>
                 <td class="tnum">
                     {% if owed > 0 %}
                     <strong>{{ fmt(owed) }} تومان</strong>
-                    <span class="badge badge-warning">بدهکار</span>
+                    <span class="badge badge-warning">تسویه‌نشده</span>
+                    {% if s.id in overdue_suppliers %}
+                    <span class="badge badge-danger">سررسیدگذشته</span>
+                    {% endif %}
                     {% else %}
                     <span class="badge badge-success">تسویه است</span>
                     {% endif %}
@@ -102,6 +133,11 @@
                                data-owed="{{ owed }}" required
                                aria-label="مبلغ پرداخت به {{ s.name }}"
                                placeholder="مثال: 2,000,000">
+                        <button type="button" class="btn btn-sm btn-ghost supplier-pay-full"
+                                aria-label="پرداخت کامل مانده {{ s.name }}">تسویه کامل</button>
+                        <input type="text" name="note" maxlength="200"
+                               aria-label="یادداشت پرداخت به {{ s.name }}"
+                               placeholder="یادداشت (اختیاری)">
                         <button type="submit" class="btn btn-sm btn-primary">ثبت</button>
                     </form>
                     {% else %}
@@ -109,6 +145,9 @@
                     {% endif %}
                 </td>
                 <td>
+                    <button type="button" class="btn btn-sm btn-ghost supplier-edit-toggle"
+                            aria-expanded="false" aria-controls="supplier-edit-{{ s.id }}"
+                            aria-label="ویرایش {{ s.name }}">ویرایش</button>
                     <form method="post" action="/admin/suppliers/{{ s.id }}/delete" class="inline-form"
                           onsubmit="return confirm('⚠️ حذف {{ s.name }}؟ اگر پرداختی ثبت شده باشد، حذف ممکن نخواهد بود.')">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -116,13 +155,33 @@
                     </form>
                 </td>
             </tr>
+            <tr id="supplier-edit-{{ s.id }}" class="supplier-edit-row" hidden>
+                <td colspan="8">
+                    <form method="post" action="/admin/suppliers/{{ s.id }}/edit" class="supplier-edit-form">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <input type="text" name="name" value="{{ s.name }}" required aria-label="نام تأمین‌کننده">
+                        <input type="tel" name="phone" value="{{ s.phone or '' }}" dir="ltr" aria-label="تلفن تأمین‌کننده" placeholder="09123456789">
+                        <input type="text" name="note" value="{{ s.note or '' }}" aria-label="توضیح" placeholder="مثال: تسویه آخر ماه">
+                        <button type="submit" class="btn btn-sm btn-primary">ذخیره</button>
+                    </form>
+                </td>
+            </tr>
             {% endfor %}
         </tbody>
     </table>
+    {% if total_pages > 1 %}
+    <nav class="product-pagination" aria-label="صفحه‌بندی تأمین‌کنندگان">
+        {% if page > 1 %}<a class="btn btn-sm btn-ghost" href="/admin/suppliers?page={{ page - 1 }}&search={{ search }}&per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}">صفحه قبل</a>{% endif %}
+        <span>صفحه {{ page }} از {{ total_pages }}</span>
+        {% if page < total_pages %}<a class="btn btn-sm btn-ghost" href="/admin/suppliers?page={{ page + 1 }}&search={{ search }}&per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}">صفحه بعد</a>{% endif %}
+    </nav>
+    {% endif %}
+    {% elif search %}
+    <div class="empty-state"><h3>تأمین‌کننده‌ای با این جست‌وجو پیدا نشد</h3><p>عبارت دیگری را امتحان کنید یا <a class="text-link" href="/admin/suppliers">فیلتر را پاک کنید</a>.</p></div>
     {% else %}
     <div class="empty-state"><h3>هنوز تأمین‌کننده‌ای ثبت نشده است</h3><p>اولین تأمین‌کننده را از فرم بالا اضافه کنید؛ بعد می‌توانید در صفحه «خرید» از او خرید ثبت کنید.</p></div>
     {% endif %}
-</div>
+</section>
 
 <script>
 (function () {
@@ -152,6 +211,42 @@
     }
     select.addEventListener('change', applyClamp);
     applyClamp();
+  });
+  // The pay-in-full fill: one tap writes the tightest bound — the chosen
+  // invoice's remaining when one is named, the supplier's whole debt when
+  // the payment is general. The server re-reads both bounds on POST.
+  document.querySelectorAll('.supplier-pay-full').forEach(function (button) {
+    button.addEventListener('click', function () {
+      var form = button.closest('form');
+      if (!form) return;
+      var input = form.querySelector('input[name="amount"]');
+      var select = form.querySelector('select[name="purchase_id"]');
+      if (!input) return;
+      var bound = parseInt(input.getAttribute('data-owed'), 10) || 0;
+      if (select && select.selectedOptions[0]) {
+        var remaining = parseInt(select.selectedOptions[0].getAttribute('data-remaining'), 10);
+        if (!isNaN(remaining)) bound = Math.min(bound, remaining);
+      }
+      input.value = bound > 0 ? String(bound) : '';
+      input.focus();
+    });
+  });
+  // Inline edit rows: the toggle reveals the supplier's own edit form.
+  document.querySelectorAll('.supplier-edit-toggle').forEach(function (button) {
+    button.addEventListener('click', function () {
+      var row = document.getElementById(button.getAttribute('aria-controls'));
+      if (!row) return;
+      var open = row.hasAttribute('hidden');
+      if (open) {
+        row.removeAttribute('hidden');
+        button.setAttribute('aria-expanded', 'true');
+        var nameInput = row.querySelector('input[name="name"]');
+        if (nameInput) { nameInput.focus(); nameInput.select(); }
+      } else {
+        row.setAttribute('hidden', '');
+        button.setAttribute('aria-expanded', 'false');
+      }
+    });
   });
 })();
 </script>
