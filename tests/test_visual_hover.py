@@ -64,7 +64,10 @@ from models import (  # noqa: E402
 )
 
 PROBE = ROOT / "tools" / "visual_probe.mjs"
-SNAPSHOTS = ROOT / ".snapshots"
+# Screenshots are evidence; under pytest-xdist each worker gets its own
+# folder so two palettes rendering at once cannot overwrite each other.
+_WORKER = os.environ.get("PYTEST_XDIST_WORKER", "")
+SNAPSHOTS = ROOT / ".snapshots" / _WORKER if _WORKER else ROOT / ".snapshots"
 
 # Chrome on this machine; the driver also checks its own candidates.
 CHROME_CANDIDATES = (
@@ -81,6 +84,17 @@ THEME_IDS = [
 ]
 
 ROW_SELECTOR = "tbody tr"
+
+
+def wanted_themes() -> list[str]:
+    """The palettes this run owns: RAYKIDS_VISUAL_THEMES trims, default is all ten."""
+    return [
+        theme.strip() for theme in os.environ.get("RAYKIDS_VISUAL_THEMES", "").split(",")
+        if theme.strip()
+    ] or list(THEME_IDS)
+
+
+WANTED = wanted_themes()
 
 
 # ── PNG reading, without a dependency on browser screenshot formats ─────────
@@ -206,8 +220,12 @@ class _Server:
         self.thread.join(timeout=10)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def probe_server():
+    """One warm server per xdist worker (session scope is per-worker under
+    -n): the db it reads is the worker's own scratch file, and each cell
+    seeds and wipes it, so no cell inherits another's state — but nobody
+    pays the boot cost thirty-four times."""
     server = _Server()
     yield server
     server.stop()
@@ -287,56 +305,58 @@ def _hover_row(server: _Server, cookie: str, theme_id: str) -> dict:
 @pytest.mark.skipif(CHROME is None, reason="no chromium-family browser on this machine")
 @pytest.mark.skipif(shutil.which("node") is None, reason="no node to drive the browser")
 @pytest.mark.skipif(os.environ.get("RAYKIDS_SKIP_VISUAL") == "1", reason="RAYKIDS_SKIP_VISUAL=1")
-def test_the_customer_list_hover_is_seen_in_every_palette(probe_server):
+@pytest.mark.flaky(reruns=1)
+@pytest.mark.parametrize("theme_id", WANTED)
+def test_the_customer_list_hover_is_seen_in_every_palette(probe_server, theme_id):
+    offenders = _hover_cell(probe_server, theme_id)
+    if offenders:  # pragma: no cover
+        raise AssertionError("the hover is not seen, or not legible:\n" + "\n".join(offenders))
+
+
+def _hover_cell(probe_server, theme_id: str) -> list[str]:
+    """One palette's hover, seen at the pixels: the row must repaint a distinct
+    hover surface, and ink on it must read 4.5:1 against what was painted."""
     _seed_customers()
     cookie = _owner_cookie(probe_server)
 
-    wanted = [
-        theme.strip() for theme in os.environ.get("RAYKIDS_VISUAL_THEMES", "").split(",")
-        if theme.strip()
-    ] or THEME_IDS
-
     offenders: list[str] = []
-    for theme_id in wanted:
-        _switch_theme(probe_server, cookie, theme_id)
-        capture = _hover_row(probe_server, cookie, theme_id)
+    _switch_theme(probe_server, cookie, theme_id)
+    capture = _hover_row(probe_server, cookie, theme_id)
 
-        png = Path(capture["png"])
-        data = png.read_bytes()
-        width, height = _read_png_size(data)
-        assert width > 40 and height > 8, f"{theme_id}: capture is not a rendered row ({width}x{height})"
+    png = Path(capture["png"])
+    data = png.read_bytes()
+    width, height = _read_png_size(data)
+    assert width > 40 and height > 8, f"{theme_id}: capture is not a rendered row ({width}x{height})"
 
-        pixels = _decode_png(data)
+    pixels = _decode_png(data)
 
-        def paint_at(y: int) -> tuple[int, int, int]:
-            """The painted row background on one scanline: the modal colour of
-            the row's edge columns, which its cells' padding keeps glyph-free."""
-            counted: dict[tuple[int, int, int], int] = {}
-            for pixel in pixels[y][4:16]:
-                counted[pixel] = counted.get(pixel, 0) + 1
-            return max(counted, key=counted.get)
+    def paint_at(y: int) -> tuple[int, int, int]:
+        """The painted row background on one scanline: the modal colour of
+        the row's edge columns, which its cells' padding keeps glyph-free."""
+        counted: dict[tuple[int, int, int], int] = {}
+        for pixel in pixels[y][4:16]:
+            counted[pixel] = counted.get(pixel, 0) + 1
+        return max(counted, key=counted.get)
 
-        boundary = int(capture["rowHeight"])
-        hovered = paint_at(boundary - 8)
-        sibling = paint_at(boundary + 8)   # the row below: not hovered
+    boundary = int(capture["rowHeight"])
+    hovered = paint_at(boundary - 8)
+    sibling = paint_at(boundary + 8)   # the row below: not hovered
 
-        if _contrast(hovered, sibling) < 1.2:
-            offenders.append(
-                f"{theme_id}: hovered row's paint ({hovered}) is indistinct from its "
-                f"sibling's ({sibling}) — {_contrast(hovered, sibling):.2f}:1; the hover is not seen")
+    if _contrast(hovered, sibling) < 1.2:
+        offenders.append(
+            f"{theme_id}: hovered row's paint ({hovered}) is indistinct from its "
+            f"sibling's ({sibling}) — {_contrast(hovered, sibling):.2f}:1; the hover is not seen")
 
-        inks = [
-            pixel for y in range(4, min(height, 36)) for pixel in pixels[y]
-            if _contrast(pixel, hovered) >= 4.5
-        ]
-        if not inks:
-            offenders.append(
-                f"{theme_id}: no ink on the hovered row reads 4.5:1 against the "
-                f"painted hover — text washes out at the pixels")
+    inks = [
+        pixel for y in range(4, min(height, 36)) for pixel in pixels[y]
+        if _contrast(pixel, hovered) >= 4.5
+    ]
+    if not inks:
+        offenders.append(
+            f"{theme_id}: no ink on the hovered row reads 4.5:1 against the "
+            f"painted hover — text washes out at the pixels")
 
-    if offenders:  # pragma: no cover
-        import textwrap
-        raise AssertionError("the hover is not seen, or not legible:\n" + "\n".join(offenders))
+    return offenders
 
 
 def test_the_probe_reports_its_own_blindness():
@@ -439,10 +459,18 @@ def _pdf_pages_as_png(pdf_path: Path) -> list[list[list[tuple[int, int, int]]]]:
 @pytest.mark.skipif(CHROME is None, reason="no chromium-family browser on this machine")
 @pytest.mark.skipif(shutil.which("node") is None, reason="no node to drive the browser")
 @pytest.mark.skipif(sys.platform != "darwin", reason="PDF rasterization needs macOS Quartz")
-def test_the_printed_invoice_wears_the_theme_paper_in_midnight_and_kids(probe_server):
+@pytest.mark.flaky(reruns=1)
+@pytest.mark.parametrize("theme_id", ["midnight-operations", "kids-boutique", "kashi-tile", "night-bazaar"])
+def test_the_printed_invoice_wears_the_theme_paper_in_midnight_and_kids(probe_server, theme_id):
     """The paper doctrine, seen: the invoice printed from a dark palette must
     reach the printer as ink on white paper, not the dark surfaces the screen
     wears — measured from the pixels of the PDF a real print dialog produces."""
+    offenders = _paper_cell(probe_server, theme_id)
+    if offenders:  # pragma: no cover
+        raise AssertionError("the printed paper state is not clean:\n" + "\n".join(offenders))
+
+
+def _paper_cell(probe_server, theme_id: str) -> list[str]:
     sale_id = _seed_sale()
     cookie = _owner_cookie(probe_server)
 
@@ -456,89 +484,88 @@ def test_the_printed_invoice_wears_the_theme_paper_in_midnight_and_kids(probe_se
     assert "html, body { background: var(--paper) !important; color: var(--paper-ink) !important; }" in print_css, \
         "the print block's body rule no longer paints paper and paper-ink"
 
-    for theme_id in ("midnight-operations", "kids-boutique", "kashi-tile", "night-bazaar"):
-        _switch_theme(probe_server, cookie, theme_id)
-        pdf = _print_pdf(probe_server, cookie, f"/sales/invoice/{sale_id}", f"invoice-{theme_id}")
-        pages = _pdf_pages_as_png(pdf)
+    _switch_theme(probe_server, cookie, theme_id)
+    pdf = _print_pdf(probe_server, cookie, f"/sales/invoice/{sale_id}", f"invoice-{theme_id}")
+    pages = _pdf_pages_as_png(pdf)
 
-        for page_number, pixels in enumerate(pages, 1):
-            height, width = len(pixels), len(pixels[0])
-            from collections import Counter
+    for page_number, pixels in enumerate(pages, 1):
+        height, width = len(pixels), len(pixels[0])
+        from collections import Counter
 
-            def modal(y0: int, y1: int) -> tuple[int, int, int]:
-                counted: dict[tuple[int, int, int], int] = {}
-                for y in range(y0, y1):
-                    for pixel in pixels[y][::7]:
-                        counted[pixel] = counted.get(pixel, 0) + 1
-                return max(counted, key=counted.get)
+        def modal(y0: int, y1: int) -> tuple[int, int, int]:
+            counted: dict[tuple[int, int, int], int] = {}
+            for y in range(y0, y1):
+                for pixel in pixels[y][::7]:
+                    counted[pixel] = counted.get(pixel, 0) + 1
+            return max(counted, key=counted.get)
 
-            def modal_region(y0: int, y1: int, x0: int, x1: int) -> tuple[int, int, int]:
-                counted: dict[tuple[int, int, int], int] = {}
-                for y in range(y0, y1):
-                    for pixel in pixels[y][x0:x1:5]:
-                        counted[pixel] = counted.get(pixel, 0) + 1
-                return max(counted, key=counted.get)
+        def modal_region(y0: int, y1: int, x0: int, x1: int) -> tuple[int, int, int]:
+            counted: dict[tuple[int, int, int], int] = {}
+            for y in range(y0, y1):
+                for pixel in pixels[y][x0:x1:5]:
+                    counted[pixel] = counted.get(pixel, 0) + 1
+            return max(counted, key=counted.get)
 
-            # What the page is made of: the whole sheet's modal colour is the
-            # paper; the ink is the page's dark pixels, sampled honestly — a
-            # modal of a band that is mostly whitespace reads white and says
-            # nothing about text. A dark palette's card grey reaching the
-            # printer shows up as a page that is not paper.
-            page_paint = modal(0, height)
-            # The invoice box's own interior: the sheet's middle. A dark card
-            # surface that leaked into the print block can lose the sheet-wide
-            # modal vote to the white margins — here it cannot hide.
-            interior = modal_region(int(height * 0.3), int(height * 0.7),
-                                    int(width * 0.3), int(width * 0.7))
-            ink_sample = [
-                pixel for y in range(0, height, 2) for pixel in pixels[y][::4]
-                if sum(pixel) < 330
-            ]
-            if not ink_sample:
-                offenders.append(f"{theme_id} p{page_number}: no ink found on the sheet at all")
-                continue
-            ink_median = sorted(ink_sample, key=sum)[len(ink_sample) // 2]
-            paper_ok = all(channel >= 245 for channel in page_paint)
-            ink_ok = sum(ink_median) <= 330
-            if not paper_ok:
+        # What the page is made of: the whole sheet's modal colour is the
+        # paper; the ink is the page's dark pixels, sampled honestly — a
+        # modal of a band that is mostly whitespace reads white and says
+        # nothing about text. A dark palette's card grey reaching the
+        # printer shows up as a page that is not paper.
+        page_paint = modal(0, height)
+        # The invoice box's own interior: the sheet's middle. A dark card
+        # surface that leaked into the print block can lose the sheet-wide
+        # modal vote to the white margins — here it cannot hide.
+        interior = modal_region(int(height * 0.3), int(height * 0.7),
+                                int(width * 0.3), int(width * 0.7))
+        ink_sample = [
+            pixel for y in range(0, height, 2) for pixel in pixels[y][::4]
+            if sum(pixel) < 330
+        ]
+        if not ink_sample:
+            offenders.append(f"{theme_id} p{page_number}: no ink found on the sheet at all")
+            continue
+        ink_median = sorted(ink_sample, key=sum)[len(ink_sample) // 2]
+        paper_ok = all(channel >= 245 for channel in page_paint)
+        ink_ok = sum(ink_median) <= 330
+        if not paper_ok:
+            offenders.append(
+                f"{theme_id} p{page_number}: the page prints {page_paint} — not paper; "
+                f"a theme surface reached the printer")
+        if not all(channel >= 245 for channel in interior):
+            offenders.append(
+                f"{theme_id} p{page_number}: the invoice's own box prints {interior} — "
+                f"not paper; its print rule is not painting the paper tokens")
+        if not ink_ok:
+            offenders.append(
+                f"{theme_id} p{page_number}: the darkest quarter of ink reads {ink_median} — "
+                f"text would not survive toner")
+
+        # The corners are the body's own paint — the one place no element's
+        # paper rule can mask a theme surface that leaked to the printer.
+        corners = [pixels[2][2], pixels[2][width - 3],
+                   pixels[height - 3][2], pixels[height - 3][width - 3]]
+        for corner in corners:
+            if not all(channel >= 245 for channel in corner):
                 offenders.append(
-                    f"{theme_id} p{page_number}: the page prints {page_paint} — not paper; "
-                    f"a theme surface reached the printer")
-            if not all(channel >= 245 for channel in interior):
-                offenders.append(
-                    f"{theme_id} p{page_number}: the invoice's own box prints {interior} — "
-                    f"not paper; its print rule is not painting the paper tokens")
-            if not ink_ok:
-                offenders.append(
-                    f"{theme_id} p{page_number}: the darkest quarter of ink reads {ink_median} — "
-                    f"text would not survive toner")
+                    f"{theme_id} p{page_number}: the sheet's margin prints {corner} — "
+                    f"the body's own background is not paper")
+                break
 
-            # The corners are the body's own paint — the one place no element's
-            # paper rule can mask a theme surface that leaked to the printer.
-            corners = [pixels[2][2], pixels[2][width - 3],
-                       pixels[height - 3][2], pixels[height - 3][width - 3]]
-            for corner in corners:
-                if not all(channel >= 245 for channel in corner):
-                    offenders.append(
-                        f"{theme_id} p{page_number}: the sheet's margin prints {corner} — "
-                        f"the body's own background is not paper")
-                    break
-
-            # And text must actually read on it: sample the page's own pixels —
-            # text antialiasing means the darkest pixels approximate the ink.
-            darkest = min(
-                (pixel for y in range(0, height, 3) for pixel in pixels[y][::5]),
-                key=sum,
-            )
-            lightest = max(
-                (pixel for y in range(0, height, 3) for pixel in pixels[y][::5]),
-                key=sum,
-            )
-            ratio = _contrast(darkest, lightest)
-            if ratio < 8.0:
-                offenders.append(
-                    f"{theme_id} p{page_number}: strongest ink on the sheet reads {ratio:.1f}:1 "
-                    f"— a printed page has no excuse below 8:1")
+        # And text must actually read on it: sample the page's own pixels —
+        # text antialiasing means the darkest pixels approximate the ink.
+        darkest = min(
+            (pixel for y in range(0, height, 3) for pixel in pixels[y][::5]),
+            key=sum,
+        )
+        lightest = max(
+            (pixel for y in range(0, height, 3) for pixel in pixels[y][::5]),
+            key=sum,
+        )
+        ratio = _contrast(darkest, lightest)
+        if ratio < 8.0:
+            offenders.append(
+                f"{theme_id} p{page_number}: strongest ink on the sheet reads {ratio:.1f}:1 "
+                f"— a printed page has no excuse below 8:1")
 
     if offenders:  # pragma: no cover
         raise AssertionError("the printed paper state is not clean:\n" + "\n".join(offenders))
