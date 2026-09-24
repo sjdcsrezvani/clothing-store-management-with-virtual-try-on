@@ -2,9 +2,6 @@
 {# Storefront accent: the club sells, so it wears the full rainbow. #}
 {% set page_accent_full = True %}
 {% block content %}
-{% set filter_qs = '&tier=' ~ tier ~ '&status=' ~ status ~ '&tag=' ~ tag ~ '&sort=' ~ sort
-    ~ '&search=' ~ (search|urlencode) ~ ('&drifted=1' if drifted else '') %}
-
 {% set page_description %}
 پرونده هر مشتری: خریدها، امتیاز، بدهی و تولدها. برای دیدن پرونده کامل روی نام بزنید.
 {% endset %}
@@ -43,7 +40,7 @@
     </a>
     <a class="stat-card {% if overview.drifted_count %}accent-persimmon{% else %}accent-ink{% endif %}"
        href="/admin/customers?drifted=1">
-        <div class="stat-label">شمارنده ناهم‌خوان</div>
+        <div class="stat-label">حساب‌های ناهم‌خوان</div>
         <div class="stat-value tnum">{{ overview.drifted_count }}</div>
         <div class="stat-sub">با فاکتورها نمی‌خواند — فهرست هم‌سازی</div>
     </a>
@@ -52,8 +49,8 @@
 {% if drifted %}
 <div class="alert alert-info drift-banner" role="status">
     <div>
-        <strong>فهرست هم‌سازی شمارنده‌ها.</strong>
-        شمارنده‌ی ذخیره‌شده‌ی این مشتری‌ها با فاکتورهایشان نمی‌خواند. فهرست و پیامک‌ها
+        <strong>فهرست هم‌سازی حساب‌ها.</strong>
+        حساب ذخیره‌شده‌ی این مشتری‌ها با فاکتورهایشان نمی‌خواند. فهرست و پیامک‌ها
         از فاکتورها می‌خوانند، اما سطح مشتری و امتیازها تا هم‌سازی روی عدد قدیمی می‌مانند.
     </div>
     {% if is_owner %}
@@ -78,8 +75,22 @@
     <div class="section-heading-row">
         <div>
             <h3 data-list-heading tabindex="-1">فهرست مشتریان</h3>
-            <p class="muted">وضعیت هر مشتری از آخرین خرید او می‌آید؛ بایگانی‌شده‌ها به‌صورت پیش‌فرض نمایش داده نمی‌شوند.</p>
+            <p class="muted">وضعیت از آخرین خرید می‌آید؛ بایگانی‌ها پنهان‌اند.</p>
         </div>
+        <form method="get" action="/admin/customers" class="per-page-form">
+            <input type="hidden" name="search" value="{{ search }}">
+            <input type="hidden" name="tier" value="{{ tier }}">
+            <input type="hidden" name="status" value="{{ status }}">
+            <input type="hidden" name="tag" value="{{ tag }}">
+            <input type="hidden" name="sort" value="{{ sort }}">
+            {% if drifted %}<input type="hidden" name="drifted" value="1">{% endif %}
+            <label class="sr-only" for="customer-per-page">تعداد در صفحه</label>
+            <select name="per_page" id="customer-per-page" onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}" aria-label="تعداد در صفحه">
+                {% for option in per_page_options %}
+                <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }} در صفحه</option>
+                {% endfor %}
+            </select>
+        </form>
     </div>
 
     {# View chips, not filter shortcuts: «همه» is the plain list, the drifted
@@ -95,9 +106,8 @@
         <a href="/admin/customers?drifted=1"
            class="source-chip{% if drifted %} is-active{% endif %}"
            {% if drifted %}aria-pressed="true"{% endif %}>
-            شمارنده ناهم‌خوان{% if overview.drifted_count %} ({{ overview.drifted_count }}){% endif %}
-        </a>
-        {% endif %}
+            حساب‌های ناهم‌خوان{% if overview.drifted_count %} ({{ overview.drifted_count }}){% endif %}
+        </a>        {% endif %}
     </div>
 
     <form method="get" action="/admin/customers" class="search-form customer-filter-form">
@@ -121,9 +131,9 @@
             <label class="sr-only" for="filter-tier">سطح</label>
             <select id="filter-tier" name="tier">
                 <option value="">همه سطوح</option>
-                <option value="silver" {% if tier == 'silver' %}selected{% endif %}>نقره‌ای</option>
-                <option value="gold" {% if tier == 'gold' %}selected{% endif %}>طلایی</option>
-                <option value="diamond" {% if tier == 'diamond' %}selected{% endif %}>الماس</option>
+                {% for key, label in tier_labels.items() %}
+                <option value="{{ key }}" {% if tier == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
             </select>
         </div>
         <div class="form-group">
@@ -144,6 +154,7 @@
             </select>
         </div>
         <button type="submit" class="btn btn-primary">اعمال فیلتر</button>
+        {% if has_filters %}<a href="/admin/customers" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
     </form>
 
     <p class="customer-results">
@@ -164,10 +175,9 @@
                     <th scope="col">بدهی</th>
                     <th scope="col">آخرین خرید</th>
                     <th scope="col">{{ overview.birthday_column_label }}</th>
-                    <th scope="col">کمپین</th>
-                    <th scope="col">برچسب‌ها</th>
+                    {% if overview.campaign_count %}<th scope="col">کمپین</th>{% endif %}
+                    {% if tags_in_use %}<th scope="col">برچسب‌ها</th>{% endif %}
                     <th scope="col">وضعیت</th>
-                    <th scope="col">عملیات</th>
                 </tr>
             </thead>
             <tbody>
@@ -177,6 +187,7 @@
                     <td class="customer-name">
                         <strong><a href="/admin/customers/{{ customer.id }}">{{ customer.full_name }}</a></strong>
                         <small class="customer-phone">{{ customer.phone }}</small>
+                        {% if customer.referral_code %}<small class="customer-phone" dir="ltr">{{ customer.referral_code }}</small>{% endif %}
                         {% if child_profile and customer.child_name %}
                         <small class="customer-meta">فرزند: {{ customer.child_name }}</small>
                         {% endif %}
@@ -186,25 +197,26 @@
                     </td>
                     <td>
                         <span class="tier-badge tier-{{ customer.tier }}">
-                            {% if customer.tier == 'diamond' %}الماس
-                            {% elif customer.tier == 'gold' %}طلایی
-                            {% else %}نقره‌ای{% endif %}
+                            {{ tier_labels.get(customer.tier, 'سطح نامشخص') }}
                         </span>
                     </td>
                     <td class="tnum">
-                        <strong>{{ figure(row.invoice_spent) }}</strong>
+                        <strong>{{ figure(row.invoice_spent) }} تومان</strong>
                         <small>{{ figure(row.invoice_count) }} خرید</small>
                     </td>
                     <td class="tnum">{{ figure(row.invoice_points) }}</td>
                     <td class="tnum">
                         {% if customer.total_debt %}
-                        <strong>{{ fmt(customer.total_debt) }}</strong>
+                        <strong>{{ fmt(customer.total_debt) }} تومان</strong>
                         <small><a class="text-link" href="/admin/credit/{{ customer.id }}">ثبت دریافت</a></small>
                         {% else %}—{% endif %}
                     </td>
                     <td class="tnum">
                         {% if row.days_since_purchase is none %}
                         <small class="customer-meta">بدون خرید</small>
+                        {% elif row.days_since_purchase == 0 %}
+                        <strong>{{ jalali_str(customer.last_purchase_date, false) }}</strong>
+                        <small class="customer-meta">امروز</small>
                         {% else %}
                         <strong>{{ jalali_str(customer.last_purchase_date, false) }}</strong>
                         <small class="{% if row.days_since_purchase > inactive_days %}customer-stale{% else %}customer-meta{% endif %}">
@@ -228,6 +240,7 @@
                         <span class="customer-meta">—</span>
                         {% endif %}
                     </td>
+                    {% if overview.campaign_count %}
                     <td class="customer-campaign">
                         {% if row.campaign %}
                         <a class="campaign-chip" href="/admin/campaigns/{{ row.campaign.campaign.id }}"
@@ -236,11 +249,13 @@
                             <small class="tnum">{{ row.campaign.percent }}٪</small>
                         </a>
                         {% elif row.campaigns_used %}
-                        <span class="campaign-chip is-used">{{ row.campaigns_used }} کمپین استفاده‌شده</span>
+                        <a class="campaign-chip is-used" href="/admin/customers/{{ customer.id }}">{{ row.campaigns_used }} کمپین استفاده‌شده</a>
                         {% else %}
                         <span class="customer-meta">—</span>
                         {% endif %}
                     </td>
+                    {% endif %}
+                    {% if tags_in_use %}
                     <td>
                         {% if row.tags %}
                         {% for key in row.tags %}
@@ -250,22 +265,18 @@
                         <span class="customer-meta">—</span>
                         {% endif %}
                     </td>
+                    {% endif %}
                     <td>
                         {% if row.archived %}
                         <span class="status-badge is-archived">بایگانی</span>
                         {% elif row.status == 'active' %}
                         <span class="status-badge">فعال</span>
                         {% else %}
-                        <span class="status-badge is-inactive">کم‌فعال</span>
+                        <span class="status-badge is-inactive">غیرفعال</span>
                         {% endif %}
-                    </td>
-                    <td>
-                        <div class="customer-actions">
-                            <a href="/admin/customers/{{ customer.id }}" class="btn btn-sm btn-ghost">پرونده</a>
-                            {% if customer.total_debt %}
-                            <a href="/admin/credit/{{ customer.id }}" class="btn btn-sm btn-ghost">نسیه</a>
-                            {% endif %}
-                        </div>
+                        {% if customer.total_debt %}
+                        <span class="status-badge is-debtor">بدهکار</span>
+                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}

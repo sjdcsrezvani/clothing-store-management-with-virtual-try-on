@@ -2656,6 +2656,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 }
 .status-badge.is-inactive { background: color-mix(in srgb, var(--sunshine) 26%, var(--card)); color: var(--ink); }
 .status-badge.is-archived { background: color-mix(in srgb, var(--ink-soft) 20%, var(--card)); color: var(--ink-soft); }
+.status-badge.is-debtor { background: color-mix(in srgb, var(--persimmon) 20%, var(--card)); color: var(--persimmon); }
 
 .tag-chip {
   display: inline-block;

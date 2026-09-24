@@ -97,6 +97,7 @@ from services.tier import (
     tier_up_candidates,
     tier_up_marker_key,
     tier_up_sent_rank,
+    TIER_LABELS,
     TIER_RANK,
 )
 from services.events import EVENT_LIMIT_RULES, event_history, event_payload, append_event
@@ -281,6 +282,7 @@ async def admin_customers(
     status: str = "all",
     tag: str = "",
     page: str = "1",
+    per_page: str = "25",
     drifted: str = "0",
     db: Session = Depends(get_db),
 ):
@@ -290,13 +292,32 @@ async def admin_customers(
         return guard
 
     page = page_arg(page)
+    per_page_int = int(per_page) if str(per_page).isdigit() and int(per_page) in (10, 25, 50) else 25
+    drifted_on = bool(int_arg(drifted, default=0))
     listing = list_customers(
         db, search=search, tier=tier, status=status, tag=tag, sort=sort, page=page,
-        drifted=bool(int_arg(drifted, default=0)),
+        per_page=per_page_int, drifted=drifted_on,
     )
+    # Query strings are urlencoded once in the route (the purchases page's
+    # rule): the template only drops this inside quoted hrefs.
+    from urllib.parse import urlencode
+    filter_qs = "&" + urlencode({
+        "tier": listing["tier"],
+        "status": listing["status"],
+        "tag": listing["tag"],
+        "sort": listing["sort"],
+        "search": listing["search"],
+        "per_page": listing["per_page"],
+        **({"drifted": "1"} if drifted_on else {}),
+    })
 
     return templates.TemplateResponse(request, "admin/customers.html", {
         **listing,
+        "filter_qs": filter_qs,
+        "per_page_options": (10, 25, 50),
+        "tier_labels": TIER_LABELS,
+        "tags_in_use": db.query(Customer.id).filter(
+            Customer.tags.isnot(None), Customer.tags != "").first() is not None,
         "rows": build_customer_rows(db, listing["customers"]),
         "overview": customer_overview(db),
         "active_days": ACTIVE_DAYS,

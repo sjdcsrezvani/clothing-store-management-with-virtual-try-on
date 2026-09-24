@@ -156,7 +156,7 @@ STATUSES = ("all", "active", "inactive", "debtor", "birthday", "discount",
 STATUS_LABELS = {
     "all": "همه مشتریان",
     "active": "فعال (خرید ۳۰ روز اخیر)",
-    "inactive": "کم‌فعال (بدون خرید ۹۰ روز)",
+    "inactive": "غیرفعال (بدون خرید ۹۰ روز)",
     "debtor": "بدهکار",
     "birthday": "تولد نزدیک",
     "discount": "تخفیف استفاده‌نشده",
@@ -390,7 +390,7 @@ def _sorted(query, sort: str):
 
 def list_customers(db: Session, *, search: str = "", tier: str = "", status: str = "all",
                    tag: str = "", sort: str = "date", page: int = 1,
-                   drifted: bool = False) -> dict:
+                   per_page: int = PER_PAGE, drifted: bool = False) -> dict:
     """One page of customers plus the totals the page needs to describe itself.
 
     ``drifted`` swaps the whole query for the drift worklist: only customers
@@ -415,16 +415,17 @@ def list_customers(db: Session, *, search: str = "", tier: str = "", status: str
     else:
         query = _filtered_query(db, search=search, tier=tier, status=status, tag=tag)
     total = query.count()
-    total_pages = max(1, (total + PER_PAGE - 1) // PER_PAGE)
+    per_page = per_page if per_page in (10, 25, 50) else PER_PAGE
+    total_pages = max(1, (total + per_page - 1) // per_page)
     page = min(page, total_pages)
-    rows = _sorted(query, sort).offset((page - 1) * PER_PAGE).limit(PER_PAGE).all()
+    rows = _sorted(query, sort).offset((page - 1) * per_page).limit(per_page).all()
 
     return {
         "customers": rows,
         "total": total,
         "page": page,
         "total_pages": total_pages,
-        "per_page": PER_PAGE,
+        "per_page": per_page,
         "search": search,
         "tier": tier,
         "status": status,
