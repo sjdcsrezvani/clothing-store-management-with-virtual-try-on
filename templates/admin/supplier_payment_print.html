@@ -20,7 +20,7 @@
         <tbody>
             <tr>
                 <th scope="row">تأمین‌کننده</th>
-                <td>{{ supplier.name if supplier else 'تأمین‌کننده حذف‌شده' }}</td>
+                <td>{{ supplier.name or 'تأمین‌کننده حذف‌شده' }}</td>
                 <th scope="row">مبلغ</th>
                 <td class="tnum">{{ fmt(payment.amount) }} تومان</td>
             </tr>
