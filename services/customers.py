@@ -765,10 +765,14 @@ def birthday_fields(customer: Customer, db: Session) -> dict:
 # ── profile ───────────────────────────────────────────────────────────────────
 
 
-def customer_profile(db: Session, customer: Customer) -> dict:
+def customer_profile(db: Session, customer: Customer, history_page: int = 1) -> dict:
     """Everything the customer's own page shows, computed from source."""
     from services.campaigns import customer_campaign_history
     sales_query = db.query(Sale).filter(Sale.customer_id == customer.id)
+    sale_count = sales_query.count()
+    history_page = max(1, int(history_page or 1))
+    history_pages = max(1, -(-sale_count // PROFILE_SALES))
+    history_page = min(history_page, history_pages)
 
     computed_row = _counted_sales_query(db, customer.id).with_entities(
         func.coalesce(func.sum(Sale.final_amount), 0),
@@ -795,9 +799,12 @@ def customer_profile(db: Session, customer: Customer) -> dict:
 
     tier_config = get_tier_config(db)
     return {
-        "sales": sales_query.order_by(Sale.created_at.desc()).limit(PROFILE_SALES).all(),
-        "sale_count": sales_query.count(),
+        "sales": sales_query.order_by(Sale.created_at.desc())
+            .offset((history_page - 1) * PROFILE_SALES).limit(PROFILE_SALES).all(),
+        "sale_count": sale_count,
         "history_limit": PROFILE_SALES,
+        "history_page": history_page,
+        "history_pages": history_pages,
         "computed_spent": computed_spent,
         "computed_count": computed_count,
         "computed_points": computed_points,

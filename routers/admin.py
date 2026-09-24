@@ -413,7 +413,7 @@ async def admin_customers_bulk_tag(request: Request, db: Session = Depends(get_d
 
 @router.get("/customers/{customer_id}", response_class=HTMLResponse)
 async def admin_customer_profile(
-    customer_id: int, request: Request, db: Session = Depends(get_db)
+    customer_id: int, request: Request, page: str = "1", db: Session = Depends(get_db)
 ):
     """One customer's file: purchases, discounts, referrals, debt and details."""
     guard = require_html_role(request, db, "manager")
@@ -436,7 +436,7 @@ async def admin_customer_profile(
         customer_campaign_history,
     )
 
-    profile = customer_profile(db, customer)
+    profile = customer_profile(db, customer, history_page=page_arg(page))
     held_ids = {row["campaign"].id for row in profile["campaign_history"]
                 if row["status"] != "removed"}
     assignable = [
@@ -511,6 +511,95 @@ async def admin_customer_meta(
                "birth_month_day": customer.birth_month_day},
     )
     return RedirectResponse(url=f"/admin/customers/{customer.id}?msg=پرونده ذخیره شد.", status_code=303)
+
+
+@router.post("/customers/{customer_id}/identity", response_class=HTMLResponse)
+async def admin_customer_identity(
+    customer_id: int, request: Request, db: Session = Depends(get_db)
+):
+    """Correct the name and phone on the file, audited with before/after.
+
+    Phone obeys the signup rule (09 + 11 digits, Farsi digits accepted) and a
+    number that already belongs to another file is refused — two files never
+    share a phone, so the refusal names the fact instead of merging.
+    """
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="مشتری یافت نشد")
+    form = await request.form()
+    phone = to_english_digits(str(form.get("phone", "") or "").strip())
+    if not phone.startswith("09") or len(phone) != 11:
+        return RedirectResponse(
+            url=f"/admin/customers/{customer.id}?err=شماره موبایل نامعتبر است. فرمت صحیح: 09xxxxxxxxx",
+            status_code=303)
+    clash = db.query(Customer).filter(
+        Customer.phone == phone, Customer.id != customer.id).first()
+    if clash:
+        return RedirectResponse(
+            url=f"/admin/customers/{customer.id}?err=این شماره برای مشتری دیگری ثبت است.",
+            status_code=303)
+    before = {"first_name": customer.first_name, "last_name": customer.last_name,
+              "phone": customer.phone}
+    customer.first_name = str(form.get("first_name", "") or "").strip() or None
+    customer.last_name = str(form.get("last_name", "") or "").strip() or None
+    customer.phone = phone
+    db.commit()
+    log_action(
+        db, "customer_identity", f"اصلاح مشخصات {phone}", request=request,
+        target_type="customer", target_id=customer.id, before=before,
+        after={"first_name": customer.first_name, "last_name": customer.last_name,
+               "phone": customer.phone},
+    )
+    return RedirectResponse(
+        url=f"/admin/customers/{customer.id}?msg=مشخصات مشتری به‌روز شد.", status_code=303)
+
+
+@router.post("/customers/{customer_id}/sms", response_class=HTMLResponse)
+async def admin_customer_sms(
+    customer_id: int, request: Request, db: Session = Depends(get_db)
+):
+    """Flip the marketing-SMS consent from the facts card, one tap."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="مشتری یافت نشد")
+    form = await request.form()
+    customer.sms_opt_in = str(form.get("value", "") or "") == "1"
+    db.commit()
+    log_action(
+        db, "customer_sms_opt", f"پیامک تبلیغاتی {customer.phone}: "
+        f"{'فعال' if customer.sms_opt_in else 'انصراف'}",
+        request=request, target_type="customer", target_id=customer.id,
+        after={"sms_opt_in": customer.sms_opt_in},
+    )
+    return RedirectResponse(
+        url=f"/admin/customers/{customer.id}?msg=وضعیت پیامک ثبت شد.", status_code=303)
+
+
+@router.post("/customers/{customer_id}/reconcile-request", response_class=HTMLResponse)
+async def admin_customer_reconcile_request(
+    customer_id: int, request: Request, db: Session = Depends(get_db)
+):
+    """A non-owner's ask for a reconcile: the run stays owner-only, but the
+    ask lands in the audit trail where the owner reads it."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="مشتری یافت نشد")
+    log_action(
+        db, "customer_reconcile_request", f"درخواست هم‌سازی حساب‌ها: {customer.phone}",
+        request=request, target_type="customer", target_id=customer.id,
+    )
+    return RedirectResponse(
+        url=f"/admin/customers/{customer.id}?msg=درخواست هم‌سازی برای مالک ثبت شد.",
+        status_code=303)
 
 
 @router.post("/customers/{customer_id}/reconcile", response_class=HTMLResponse)
