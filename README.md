@@ -599,7 +599,10 @@ PYTHONPATH=. python -m pytest -q
 ```
 
 Tests use a temporary database directory and do not modify `referral.db`, `.env`,
-uploads, backups, or any other local shop data.
+uploads, backups, or any other local shop data. On a machine with Chrome and
+node, the visual probes (which render pages in every palette) run in parallel
+via `pytest-xdist` — the full suite takes about three minutes; without a
+browser those probes skip themselves and the rest runs in under half a minute.
 
 ## Database migrations
 

@@ -1,3 +1,22 @@
+## 2.6.11 — 1405/07/02 (2026-09-24)
+
+### The release gate runs in three minutes, not nine
+
+- **The palette probes fan out.** The three visual-probe modules were 90% of
+  the suite — 423 of 470 seconds — because each one walked all ten palettes
+  serially through a single headless Chrome. Their theme loops are now
+  parametrized cells, each probe server is warmed once per worker instead of
+  once per test, and `pytest-xdist` spreads the cells across four workers.
+  Same 890 checks, same per-palette pixel evidence: **3:12 instead of 9:04**.
+- **Tuned by measurement, not hope.** Eight workers oversubscribe the machine
+  and the pixel evidence degrades nondeterministically; four is the measured
+  sweet spot (five gains nothing). The probe modules carry a single-scoped
+  retry so contention noise is absorbed once, while a real defect — the kind
+  every past red release caught — still fails deterministically.
+- **CI untouched and unaffected.** The probe modules skip themselves on
+  machines without Chrome or node, so CI's plain `pytest` run never drove
+  them; it inherits the new worker count from `pytest.ini` untouched.
+
 ## 2.6.10 — 1405/07/02 (2026-09-24)
 
 ### دفتر انبار: a ledger you can steer, not only scroll
