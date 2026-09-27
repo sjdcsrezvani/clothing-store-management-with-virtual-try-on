@@ -92,7 +92,7 @@ def test_get_forms_inside_regions_stay_on_the_page():
         "templates/admin/sales.html": [],
         "templates/admin/purchases.html": ["/admin/purchases"],
         "templates/admin/expenses.html": ["/admin/expenses"],
-        "templates/admin/customers.html": ["/admin/customers"],
+        "templates/admin/customers.html": ["/admin/customers", "/admin/customers"],
         "templates/admin/credit.html": ["/admin/credit"],
         "templates/admin/checks.html": ["/admin/checks"],
         "templates/admin/campaigns.html": ["/admin/campaigns"],

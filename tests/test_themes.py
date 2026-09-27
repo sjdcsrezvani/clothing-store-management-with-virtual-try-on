@@ -683,6 +683,7 @@ NOT_A_PAGE: dict[str, str] = {
     "/admin/accounting/export": "the سود و زیان export is a CSV for the shop's books program",
     "/admin/analytics/export": "the تحلیل فروش export is a CSV of one tab's figures",
     "/admin/products/export": "the فهرست محصولات export is a CSV of the filtered list",
+    "/admin/customers/export": "the فهرست مشتریان export is a CSV of the filtered list",
     "/admin/backups/download": "the download is the backup file itself",
     "/admin/try-on/download": "the try-on engine answers with its own response",
     "/admin/collections": "a shortcut that redirects to the invoices it collects",
