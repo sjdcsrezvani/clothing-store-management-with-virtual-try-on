@@ -136,6 +136,11 @@ DEBT_SORTS = {
     "lateness": "بیشترین دیرکرد",
     "name": "نام مشتری",
 }
+INVOICE_SORTS = {
+    "late": "دیرکرددارترین",
+    "oldest": "قدیمی‌ترین فاکتور",
+    "remaining": "بیشترین مانده",
+}
 
 
 def credit_terms_days(db) -> int:
@@ -335,6 +340,9 @@ def summarise_debts(rows: list, now: datetime | None = None) -> dict:
     now = now or datetime.now(timezone.utc)
     bucket_totals = {key: 0 for key in AGE_BUCKETS}
     bucket_counts = {key: 0 for key in AGE_BUCKETS}
+    # A customer with invoices in three buckets belongs to all three cards:
+    # the cards count invoices, and now the customers behind them too.
+    bucket_customers = {key: 0 for key in AGE_BUCKETS}
     total_debt = overdue_amount = overdue_customers = 0
     over_limit_count = over_limit_amount = 0
     due_soon_amount = due_soon_customers = 0
@@ -345,6 +353,8 @@ def summarise_debts(rows: list, now: datetime | None = None) -> dict:
         for key in AGE_BUCKETS:
             bucket_totals[key] += row["bucket_amounts"][key]
             bucket_counts[key] += row["bucket_counts"][key]
+            if row["bucket_counts"][key]:
+                bucket_customers[key] += 1
         if row["overdue_amount"] > 0:
             overdue_customers += 1
             overdue_amount += row["overdue_amount"]
@@ -373,6 +383,7 @@ def summarise_debts(rows: list, now: datetime | None = None) -> dict:
         "drift_count": drift_count,
         "buckets": bucket_totals,
         "bucket_counts": bucket_counts,
+        "bucket_customers": bucket_customers,
         "bucket_labels": AGE_BUCKET_LABELS,
         "due_soon_days": DUE_SOON_DAYS,
         "now": now,
@@ -432,7 +443,7 @@ def list_debts(db, *, search: str = "", status: str = "all", bucket: str = "",
 
 
 def list_open_invoices(db, *, search: str = "", status: str = "all", bucket: str = "",
-                       page: int = 1, per_page: int = PER_PAGE,
+                       page: int = 1, per_page: int = PER_PAGE, sort: str = "late",
                        now: datetime | None = None) -> dict:
     """Every open نسیه invoice, latest deadline first — the invoice-level view.
 
@@ -476,7 +487,12 @@ def list_open_invoices(db, *, search: str = "", status: str = "all", bucket: str
             "bucket": key,
             "bucket_label": AGE_BUCKET_LABELS[key],
         })
-    rows.sort(key=lambda row: -row["days_late"])
+    if sort == "oldest":
+        rows.sort(key=lambda row: (row["sale"].created_at, row["sale"].id))
+    elif sort == "remaining":
+        rows.sort(key=lambda row: -row["remaining"])
+    else:
+        rows.sort(key=lambda row: -row["days_late"])
     total = len(rows)
     total_pages = max(1, math.ceil(total / per_page)) if total else 1
     page = max(1, min(page, total_pages))
@@ -576,6 +592,23 @@ def credit_reminder_vars(customer, amount: int, due_date: datetime | None = None
         "var2": f"{int(amount):,}",
         "var3": jalali_str(due_date, with_time=False) if due_date else "—",
     }
+
+
+def preview_credit_reminder(db, customer) -> str:
+    """The reminder text this customer would get, with their own figures in.
+
+    The send path renders the same way, so the preview cannot promise words
+    the phone will not receive. Empty when no pattern is written.
+    """
+    from services.sms import get_sms_config
+    from services.sms_templates import render_text
+    pattern = (get_sms_config(db) or {}).get("credit_reminder_pattern", "") or ""
+    if not pattern.strip():
+        return ""
+    unpaid = unpaid_credit_sales(db, customer.id)
+    amount = sum(sale_remaining(sale) for sale in unpaid)
+    dues = [due_effective_at(sale) for sale in unpaid if due_effective_at(sale)]
+    return render_text(pattern, credit_reminder_vars(customer, amount, min(dues) if dues else None))
 
 
 def get_payment_history(db, customer_id: int, limit: int = 50) -> list:

@@ -920,6 +920,13 @@ def test_credit_arithmetic_has_one_definition():
         "sale_remaining must clamp its subtraction at zero")
 
     offenders = []
+    # The canonical definition is the one place the arithmetic lives: exempt
+    # by span, not by line number, so an added dict above it can't move it.
+    canonical_lines = canonical.splitlines()
+    def_start = next(i for i, text in enumerate(canonical_lines)
+                     if text.startswith("def sale_remaining"))
+    def_end = next(i for i in range(def_start + 1, len(canonical_lines))
+                   if not canonical_lines[i].strip())
     for path in sources:
         if not path.is_file():
             continue
@@ -927,10 +934,9 @@ def test_credit_arithmetic_has_one_definition():
         for match in re.finditer(
                 r"(final_amount|credit_paid_amount)[^\n;]{0,40}[-+][^\n;]{0,40}"
                 r"(final_amount|credit_paid_amount)", src):
-            # The canonical definition is the one place the arithmetic lives.
             if path.name == "accounting.py" and "def sale_remaining" in canonical:
-                line = src[:match.start()].count("\n") + 1
-                if line == 158:
+                line = src[:match.start()].count("\n")
+                if def_start <= line <= def_end:
                     continue
             offenders.append(f"{path}: {match.group(0)[:80]}")
         if path.suffix == ".html" and "final_amount" in src:

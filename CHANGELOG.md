@@ -1,3 +1,32 @@
+## 2.7.0 — 1405/07/05 (2026-09-27)
+
+### حساب نسیه: the page speaks plainly, the tools get sharper
+
+- **One language, spoken everywhere.** Amounts say «تومان» instead of a bare
+  «ت», flash messages arrive in Persian digits, the mismatch flag reads
+  «ناهم‌خوان» and carries a tooltip that explains the drift, and the tier
+  badge reads from the one label source the customers page already uses.
+  The view toggle and the bucket cards stopped fighting each other in the
+  query string too: parameters are urlencoded once in the route — the
+  purchases page's rule — and each card carries exactly its own key.
+- **The invoice view finds its order.** Sort by most overdue (the default),
+  oldest invoice or largest remainder, while the customer view keeps its
+  own sorts; per-page presets (10/25/50) ride every filter and page turn,
+  and the bucket cards now count the customers behind the invoices, not
+  only the papers.
+- **Dangerous moves ask first.** Assigning due dates to undated invoices
+  confirms before it rewrites their age, and the receive form refuses a
+  figure above the invoice's own remaining before the POST — in Persian or
+  English digits — the server's clamp, painted on the input. The reminder
+  shows its exact SMS as a quoted preview before it is queued.
+- **The over-limit card says what it means.** «فروش نسیه جدید برایشان
+  مسدود است»: a blocked checkout, not just a number.
+- **The tables read on a phone.** Under 700px both credit tables become
+  labelled cards, each cell naming itself, the way the customer list
+  already does.
+
+**Schema change.** None — the database stays on revision 23.
+
 ## 2.6.13 — 1405/07/05 (2026-09-27)
 
 ### ثبت سریع مشتری: the quick register reads as a card, not a browser default

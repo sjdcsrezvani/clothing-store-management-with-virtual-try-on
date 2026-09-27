@@ -2669,6 +2669,21 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
   .customer-table td.bulk-cell::before { content: none; }
   .customer-table td.bulk-cell { padding: 0 0 0.25rem; }
 }
+/* The credit tables stack the same way: eleven scrolled columns answer
+   nothing on a phone. data-labels name each cell, like the customer table. */
+@media (max-width: 700px) {
+  .credit-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .credit-table, .credit-table tbody, .credit-table tr, .credit-table td { display: block; }
+  .credit-table tr { border: 1px solid var(--rule); border-radius: var(--radius-sm); margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; }
+  .credit-table td { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; border: none; padding: 0.25rem 0; text-align: start; }
+  .credit-table td::before { content: attr(data-label); color: var(--ink-soft); font-size: 0.72rem; flex-shrink: 0; }
+}
+/* Quoted message previews: the reminder text and the unpaid-invoice detail
+   read as inset notes, not as more form. */
+.reminder-preview, .unpaid-details { margin-top: 0.5rem; }
+.reminder-preview summary, .unpaid-details summary { cursor: pointer; color: var(--ink-soft); font-size: 0.8rem; }
+.reminder-preview p, .unpaid-details ul { margin: 0.4rem 0 0; padding: 0.6rem 0.8rem; background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius-sm); font-size: 0.85rem; }
+.unpaid-details ul { list-style: none; padding-inline-start: 0.8rem; }
 .customer-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; white-space: nowrap; }
 .customer-actions .btn { min-height: 1.9rem; padding: 0.25rem 0.6rem; font-size: 0.74rem; }
 

@@ -27,6 +27,7 @@ from services.accounting import (
     AGE_BUCKETS,
     DEBT_SORTS,
     DEBT_STATUS_LABELS,
+    INVOICE_SORTS,
     PER_PAGE as DEBTS_PER_PAGE,
     apply_customer_payment, apply_purchase_cost_basis, assign_due_dates,
     credit_due_date_for, credit_reminder_allowed, credit_reminder_cooldown_hours,
@@ -34,7 +35,7 @@ from services.accounting import (
     age_bucket, as_utc, build_debt_rows, days_past_due, due_effective_at,
     get_credit_limit, get_net_pl, get_opening_balance, get_payment_history,
     last_credit_reminder, list_debts, list_open_invoices,
-    mark_credit_reminder_sent, reverse_payment, sale_remaining,
+    mark_credit_reminder_sent, preview_credit_reminder, reverse_payment, sale_remaining,
     unpaid_credit_sales,
     get_supplier_balances, purchase_effective_at, purchase_effective_column,
     purchase_item_totals, purchase_landed_unit_cost, purchase_overview,
@@ -48,6 +49,7 @@ from services.analytics import KNOWN_PERIODS, UnreadableRange, get_date_range, p
 from services.security import log_action, require_html_role, role_allows
 from services.sorting import parse_sort
 from services.templating import templates
+from services.tier import TIER_LABELS
 from services.inventory import (
     LEGACY_MOVEMENT_TYPES,
     MOVEMENT_LABELS,
@@ -732,7 +734,9 @@ async def admin_credit(
     status: str = "all",
     bucket: str = "",
     sort: str = "debt",
+    isort: str = "late",
     view: str = "customers",
+    per_page: str = "25",
     page: str = "1",
     db: Session = Depends(get_db),
 ):
@@ -750,13 +754,31 @@ async def admin_credit(
     sort = _clean(sort, DEBT_SORTS, "debt")
     bucket = _clean(bucket, AGE_BUCKETS, "")
     view = _clean(view, ("customers", "invoices"), "customers")
+    isort = _clean(isort, INVOICE_SORTS, "late")
+    per_page_int = int(per_page) if str(per_page).isdigit() and int(per_page) in (10, 25, 50) else DEBTS_PER_PAGE
 
     page = page_arg(page)
     listing = list_debts(db, search=search, status=status, bucket=bucket,
-                         sort=sort, page=page, per_page=DEBTS_PER_PAGE)
+                         sort=sort, page=page, per_page=per_page_int)
     invoices = (list_open_invoices(db, search=search, status=status, bucket=bucket,
-                                   page=page, per_page=DEBTS_PER_PAGE)
+                                   page=page, per_page=per_page_int, sort=isort)
                 if view == "invoices" else None)
+    # Query strings are urlencoded once in the route (the purchases page's
+    # rule): the toggle used to repeat `view=` inside filter_qs, a duplicate
+    # that only worked by accident of parameter order. bucket_qs carries no
+    # bucket so the bucket cards select exactly one.
+    from urllib.parse import urlencode
+    base_qs = urlencode({
+        "status": status,
+        "bucket": bucket,
+        "sort": sort,
+        "isort": isort,
+        "per_page": per_page_int,
+        "search": search,
+    })
+    filter_qs = f"&{base_qs}&view={view}" if base_qs else f"&view={view}"
+    bucket_qs = f"&{urlencode({'status': status, 'sort': sort, 'isort': isort, 'per_page': per_page_int, 'search': search})}&view={view}"
+    toggle_qs = f"&{base_qs}" if base_qs else ""
     return templates.TemplateResponse(request, "admin/credit.html", {
         "overview": listing["overview"],
         "rows": listing["rows"],
@@ -764,15 +786,24 @@ async def admin_credit(
         "page": listing["page"],
         "total_pages": listing["total_pages"],
         "has_filters": listing["has_filters"],
+        "filter_qs": filter_qs,
+        "bucket_qs": bucket_qs,
+        "toggle_qs": toggle_qs,
+        "tier_labels": TIER_LABELS,
         "invoice_page": invoices,
         "view": view,
         "search": search,
         "status": status,
         "sort": sort,
+        "isort": isort,
+        "per_page": per_page_int,
+        "per_page_options": (10, 25, 50),
         "bucket": bucket,
         "status_labels": DEBT_STATUS_LABELS,
         "sort_labels": DEBT_SORTS,
+        "isort_labels": INVOICE_SORTS,
         "bucket_labels": AGE_BUCKET_LABELS,
+        "reminder_pattern": _setting_value(db, "sms_pattern_credit_reminder"),
         "due_soon_days": listing["overview"]["due_soon_days"],
         "terms_days": credit_terms_days(db),
         "reminder_cooldown": credit_reminder_cooldown_hours(db),
@@ -780,7 +811,6 @@ async def admin_credit(
         "today": jalali_str(datetime.now(timezone.utc), with_time=False),
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
-        "sent": request.query_params.get("sent", ""),
         "fmt": fmt,
         "jalali_str": jalali_str,
     })
@@ -863,10 +893,12 @@ async def admin_credit_customer(customer_id: int, request: Request, db: Session 
         "overdue_amount": overdue_amount,
         "oldest_overdue": oldest_overdue,
         "drift": drift,
+        "tier_labels": TIER_LABELS,
         "bucket_labels": AGE_BUCKET_LABELS,
         "terms_days": credit_terms_days(db),
         "reminder_ready": allowed,
         "reminder_reason": reason,
+        "reminder_preview": preview_credit_reminder(db, customer) if allowed else "",
         "last_reminder": last_credit_reminder(db, customer.id),
         "has_reminder_pattern": bool(_setting_value(db, "sms_pattern_credit_reminder")),
         "msg": request.query_params.get("msg", ""),
@@ -936,7 +968,7 @@ async def admin_credit_pay(
         target_note = f" (فاکتور #{target_id})" if target_id else ""
         log_action(db, "credit_payment", f"دریافت {applied:,} از {customer.phone}{target_note}", request=request, target_type="customer", target_id=customer.id, after={"amount": applied, "method": method, "sale_id": target_id})
         return RedirectResponse(
-            url=f"/admin/credit/{customer.id}?msg={applied:,} تومان ثبت شد.", status_code=303,
+            url=f"/admin/credit/{customer.id}?msg={_pd_money(applied)} تومان ثبت شد.", status_code=303,
         )
     return RedirectResponse(url=f"/admin/credit/{customer.id}?err=بدهی‌ای برای تسویه وجود ندارد.", status_code=303)
 
@@ -1024,7 +1056,8 @@ async def _send_credit_reminders(request: Request, db, guard, customers: list,
             failed += 1
     db.commit()
 
-    message = f"یادآوری برای {sent} مشتری در صف ارسال قرار گرفت."
+    from services._common import _to_persian_digits as _pd
+    message = f"یادآوری برای {_pd(str(sent))} مشتری در صف ارسال قرار گرفت."
     if failed:
         message += " متن پیامک یادآوری تنظیم نشده است."
     log_action(
@@ -1209,7 +1242,7 @@ async def admin_payment_reverse(
     payment = db.query(Payment).filter(Payment.id == payment_id).first()
     log_action(db, "payment_reverse", f"برگشت دریافت {reversed_amount:,}", request=request, target_type="payment", target_id=payment_id, after={"reversed_amount": reversed_amount, "operator_user_id": guard.id, "reason": reason})
     return RedirectResponse(
-        url=f"/admin/credit/{customer_id}?msg={reversed_amount:,} تومان برگشت ثبت شد.",
+        url=f"/admin/credit/{customer_id}?msg={_pd_money(reversed_amount)} تومان برگشت ثبت شد.",
         status_code=303,
     )
 
