@@ -121,6 +121,7 @@
                         <strong><a href="/admin/campaigns/{{ campaign.id }}">{{ campaign.name|highlight(search) }}</a></strong>
                         <small class="campaign-code tnum" dir="ltr">{{ campaign.code|highlight(search) }}</small>
                         {% if campaign.is_reusable %}<small class="campaign-meta">چندباره</small>{% endif %}
+                        {% if campaign.is_archived %}<small class="campaign-meta">بایگانی‌شده</small>{% endif %}
                     </td>
                     <td class="tnum" data-label="تخفیف"><strong>{{ campaign.discount_percent }}٪</strong></td>
                     <td class="tnum" data-label="حداقل خرید">

@@ -456,6 +456,7 @@ def audience_options(db: Session, campaign: Campaign) -> list[dict]:
         "label": "همه مشتریان رضایت‌دار",
         "count": min(len(pool), limit),
         "total": len(pool),
+        "limit": limit,
     }]
     for key, label in TIER_LABELS.items():
         matched = _matches(pool, "tier", key, assigned_ids)
@@ -464,6 +465,7 @@ def audience_options(db: Session, campaign: Campaign) -> list[dict]:
             "label": f"سطح {label}",
             "count": min(len(matched), limit),
             "total": len(matched),
+            "limit": limit,
         })
     try:
         from services.customers import TAG_PALETTE
@@ -476,6 +478,7 @@ def audience_options(db: Session, campaign: Campaign) -> list[dict]:
             "label": f"برچسب {label}",
             "count": min(len(matched), limit),
             "total": len(matched),
+            "limit": limit,
         })
     handpicked = _matches(pool, "assigned", "", assigned_ids)
     options.append({
@@ -483,6 +486,7 @@ def audience_options(db: Session, campaign: Campaign) -> list[dict]:
         "label": "مشتریان دست‌چین‌شده",
         "count": min(len(handpicked), limit),
         "total": len(handpicked),
+        "limit": limit,
     })
     return options
 

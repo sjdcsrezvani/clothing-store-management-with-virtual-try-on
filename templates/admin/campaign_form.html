@@ -62,6 +62,7 @@
                             فقط یک‌بار اعمال می‌شود.</small>
                     </span>
                 </label>
+                <p class="muted tnum" id="discount-example" aria-live="polite"></p>
             </div>
 
             <div class="form-section">
@@ -144,4 +145,36 @@
         {% endif %}
     </aside>
 </div>
+<script>
+// A worked example under the discount fields: percent and minimum in, plain
+// sentence out. Latin digits with commas, the list page's own numerals.
+(function () {
+    var percent = document.getElementById('discount_percent');
+    var min = document.getElementById('min_purchase');
+    var out = document.getElementById('discount-example');
+    if (!percent || !min || !out) return;
+    var fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩';
+    function digits(value) {
+        return String(value == null ? '' : value)
+            .replace(/[۰-۹]/g, function (d) { return fa.indexOf(d); })
+            .replace(/[٠-٩]/g, function (d) { return ar.indexOf(d); })
+            .replace(/[,٬\s]/g, '');
+    }
+    function group(n) {
+        return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    }
+    function sync() {
+        var p = parseInt(digits(percent.value), 10);
+        var m = parseInt(digits(min.value), 10) || 0;
+        if (!(p > 0)) { out.textContent = ''; return; }
+        var base = m > 0 ? m : 500000;
+        var off = Math.floor(base * Math.min(p, 100) / 100);
+        out.textContent = 'مثال: ' + Math.min(p, 100) + '٪ روی ' + group(base) +
+            ' یعنی ' + group(off) + ' تخفیف.';
+    }
+    percent.addEventListener('input', sync);
+    min.addEventListener('input', sync);
+    sync();
+})();
+</script>
 {% endblock %}

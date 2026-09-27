@@ -3040,12 +3040,36 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
    name each cell. Row actions grow to a comfortable touch target. */
 .page-current { font-weight: 700; color: var(--ink); padding: 0.25rem 0.5rem; }
 .page-gap { color: var(--ink-soft); }
+/* One confirm surface for the campaign detail page: the scrim is fixed and
+   theme-token coloured, the card scales in via the shared [data-dialog]
+   tween in motion.css. */
+.confirm-scrim { position: fixed; inset: 0; z-index: 60; display: flex;
+  align-items: center; justify-content: center; padding: 1rem;
+  background: var(--scrim); }
+.confirm-card { max-width: 26rem; width: 100%; background: var(--card);
+  border: 1px solid var(--rule); border-radius: var(--radius);
+  padding: 1.25rem 1.5rem; }
+.confirm-actions { display: flex; gap: 0.75rem; margin-top: 1rem; }
+/* The holder picker is a filter over a real select: the search narrows
+   options, the select stays the field, and typing digits wins over it. */
+.campaign-assign-form #assign-customer { width: 100%; }
+.campaign-assign-form #assign-search { margin-bottom: 0.35rem; }
+/* Zero-count audiences fold away: the radio wall shows only sendable groups. */
+.audience-empty { margin-top: 0.5rem; }
+.audience-empty summary { cursor: pointer; color: var(--ink-soft); font-size: 0.8rem; }
+.audience-empty ul { list-style: none; margin: 0.4rem 0 0; padding: 0; display: grid; gap: 0.25rem; }
 @media (max-width: 700px) {
   .campaign-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .campaign-table, .campaign-table tbody, .campaign-table tr, .campaign-table td { display: block; }
   .campaign-table tr { border: 1px solid var(--rule); border-radius: var(--radius-sm); margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; }
   .campaign-table td { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; border: none; padding: 0.25rem 0; text-align: start; }
   .campaign-table td::before { content: attr(data-label); color: var(--ink-soft); font-size: 0.72rem; flex-shrink: 0; }
+  .campaign-holders-table thead, .campaign-redemptions-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .campaign-holders-table, .campaign-holders-table tbody, .campaign-holders-table tr, .campaign-holders-table td,
+  .campaign-redemptions-table, .campaign-redemptions-table tbody, .campaign-redemptions-table tr, .campaign-redemptions-table td { display: block; }
+  .campaign-holders-table tr, .campaign-redemptions-table tr { border: 1px solid var(--rule); border-radius: var(--radius-sm); margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; }
+  .campaign-holders-table td, .campaign-redemptions-table td { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; border: none; padding: 0.25rem 0; text-align: start; }
+  .campaign-holders-table td::before, .campaign-redemptions-table td::before { content: attr(data-label); color: var(--ink-soft); font-size: 0.72rem; flex-shrink: 0; }
 }
 
 /* ── پیامک ───────────────────────────────────────────────────────────────────
