@@ -18,7 +18,7 @@
 
 {% if drift.mismatch %}
 <div class="alert alert-error" role="alert">
-    ⚠️ بدهی ثبت‌شده این مشتری ({{ fmt(drift.stored) }} تومان) با جمع فاکتورهای باز ({{ fmt(drift.recomputed) }} تومان) نمی‌خواند.
+    بدهی ثبت‌شده این مشتری ({{ fmt(drift.stored) }} تومانومان) با جمع فاکتورهای باز ({{ fmt(drift.recomputed) }} تومانومان) نمی‌خواند.
     یکی از این دو از یک دریافت یا برگشت عقب مانده است.
 </div>
 {% endif %}
@@ -26,13 +26,13 @@
 <div class="stats-grid credit-kpi" aria-label="خلاصه حساب نسیه مشتری">
     <div class="stat-card accent-persimmon">
         <div class="stat-label">بدهی فعلی</div>
-        <div class="stat-value tnum">{{ fmt(debt) }} ت</div>
+        <div class="stat-value tnum">{{ fmt(debt) }} تومان</div>
         <div class="stat-sub">{{ unpaid_sales|length }} فاکتور باز</div>
     </div>
     <div class="stat-card accent-ink">
         <div class="stat-label">سررسید گذشته</div>
         {% if overdue_amount %}
-        <div class="stat-value tnum">{{ fmt(overdue_amount) }} ت</div>
+        <div class="stat-value tnum">{{ fmt(overdue_amount) }} تومان</div>
         <div class="stat-sub">قدیمی‌ترین سررسید: {{ jalali_str(oldest_overdue, false) }}</div>
         {% else %}
         <div class="stat-value">—</div>
@@ -41,19 +41,19 @@
     </div>
     <div class="stat-card accent-sky">
         <div class="stat-label">سقف اعتبار</div>
-        <div class="stat-value tnum">{% if credit_limit > 0 %}{{ fmt(credit_limit) }} ت{% else %}—{% endif %}</div>
+        <div class="stat-value tnum">{% if credit_limit > 0 %}{{ fmt(credit_limit) }} تومان{% else %}—{% endif %}</div>
         <div class="stat-sub">
             {% if credit_limit > 0 %}
                 {% if debt > credit_limit %}
-                <span class="credit-over-limit">{{ fmt(debt - credit_limit) }} ت بیش از سقف — نسیه جدید مسدود است</span>
-                {% else %}{{ fmt(credit_limit - debt) }} ت مانده{% endif %}
+                <span class="credit-over-limit">{{ fmt(debt - credit_limit) }} تومان بیش از سقف — نسیه جدید مسدود است</span>
+                {% else %}{{ fmt(credit_limit - debt) }} تومان مانده{% endif %}
             {% else %}بدون محدودیت{% endif %}
         </div>
     </div>
     <div class="stat-card accent-pine">
         <div class="stat-label">آخرین دریافت</div>
         {% if payments and payments[0].reversed_at is none %}
-        <div class="stat-value tnum">{{ fmt(payments[0].amount) }} ت</div>
+        <div class="stat-value tnum">{{ fmt(payments[0].amount) }} تومان</div>
         <div class="stat-sub">{{ jalali_str(payments[0].created_at, false) }}</div>
         {% else %}
         <div class="stat-value">—</div>
@@ -79,24 +79,24 @@
                 <input type="hidden" name="customer_id" value="{{ customer.id }}">
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="receive-amount">💰 مبلغ (تومان)</label>
+                        <label for="receive-amount">مبلغ (تومان)</label>
                         <input type="text" inputmode="numeric" id="receive-amount" name="amount" min="1" max="{{ debt }}"
                                value="{{ debt }}" required class="tnum">
-                        <small>حداکثر بدهی: {{ fmt(debt) }} تومان</small>
+                        <small>حداکثر بدهی: {{ fmt(debt) }} تومانومان</small>
                     </div>
                     <div class="form-group">
-                        <label for="receive-method">💳 روش</label>
+                        <label for="receive-method">روش</label>
                         <select id="receive-method" name="method">
-                            <option value="cash">💵 نقد (به صندوق می‌رود)</option>
-                            <option value="card">💳 کارت (به صندوق نمی‌رود)</option>
+                            <option value="cash">نقد (به صندوق می‌رود)</option>
+                            <option value="card">کارت (به صندوق نمی‌رود)</option>
                         </select>
                     </div>
                 </div>
                 <div class="form-group">
-                    <label for="receive-note">📝 توضیح (اختیاری)</label>
+                    <label for="receive-note">توضیح (اختیاری)</label>
                     <input type="text" id="receive-note" name="note" placeholder="مثلاً: قسط اول">
                 </div>
-                <button type="submit" class="btn btn-success btn-large">💵 ثبت دریافت</button>
+                <button type="submit" class="btn btn-success btn-large">ثبت دریافت</button>
             </form>
             {% else %}
             <div class="empty-state">
@@ -213,7 +213,7 @@
                         <tr>
                             <td class="tnum">{{ jalali_str(p.created_at) }}</td>
                             <td class="tnum">{{ fmt(p.amount) }}</td>
-                            <td>{% if p.method == 'card' %}💳 کارت{% else %}💵 نقد{% endif %}</td>
+                            <td>{% if p.method == 'card' %}کارت{% else %}نقد{% endif %}</td>
                             <td>
                                 {% if p.received_by %}
                                 {{ p.received_by.full_name or p.received_by.username }}
@@ -261,20 +261,18 @@
     <div class="profile-side">
         <section class="card profile-card">
             <div class="profile-head">
-                <div class="profile-avatar" aria-hidden="true">ن</div>
+                <div class="profile-avatar" aria-hidden="true">{{ customer.full_name[:1] if customer.full_name else 'ن' }}</div>
                 <div>
                     <h3>{{ customer.full_name }}</h3>
                     <span class="tier-badge tier-{{ customer.tier }}">
-                        {% if customer.tier == 'diamond' %}الماس
-                        {% elif customer.tier == 'gold' %}طلایی
-                        {% else %}نقره‌ای{% endif %}
+                        {{ tier_labels.get(customer.tier, 'سطح نامشخص') }}
                     </span>
                 </div>
             </div>
             <ul class="profile-facts">
                 <li><span class="label">تلفن</span><span class="value tnum customer-phone">{{ customer.phone }}</span></li>
-                <li><span class="label">بدهی</span><span class="value tnum">{{ fmt(debt) }} ت</span></li>
-                <li><span class="label">مجموع خرید</span><span class="value tnum">{{ figure(customer.total_spent) }} ت</span></li>
+                <li><span class="label">بدهی</span><span class="value tnum">{{ fmt(debt) }} تومان</span></li>
+                <li><span class="label">مجموع خرید</span><span class="value tnum">{% if customer.total_spent is not none %}{{ fmt(customer.total_spent) }} تومان{% else %}—{% endif %}</span></li>
                 <li>
                     <span class="label">آخرین خرید</span>
                     <span class="value tnum">{% if customer.last_purchase_date %}{{ jalali_str(customer.last_purchase_date, false) }}{% else %}—{% endif %}</span>
@@ -285,12 +283,12 @@
                 </li>
             </ul>
             <div class="credit-side-actions">
-                <a class="btn btn-sm btn-ghost" href="/admin/credit/{{ customer.id }}/statement">🖨️ صورت‌حساب</a>
+                <a class="btn btn-sm btn-ghost" href="/admin/credit/{{ customer.id }}/statement">صورت‌حساب</a>
                 {% if has_reminder_pattern %}
                 <form method="post" action="/admin/credit/{{ customer.id }}/remind">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <button type="submit" class="btn btn-sm btn-ghost" {% if not reminder_ready %}disabled{% endif %}>
-                        📱 یادآوری پیامکی
+                        یادآوری پیامکی
                     </button>
                 </form>
                 {% endif %}
@@ -304,7 +302,7 @@
             <h3>سقف اعتبار</h3>
             <p class="muted">
                 {% if credit_limit > 0 %}
-                سقف فعلی {{ fmt(credit_limit) }} تومان{% if custom_limit %} (اختصاصی همین مشتری){% else %} (پیش‌فرض فروشگاه){% endif %}.
+                سقف فعلی {{ fmt(credit_limit) }} تومانومان{% if custom_limit %} (اختصاصی همین مشتری){% else %} (پیش‌فرض فروشگاه){% endif %}.
                 {% else %}بدون محدودیت؛ فروش نسیه سقفی ندارد.{% endif %}
             </p>
             <form method="post" action="/admin/credit/{{ customer.id }}/limit">

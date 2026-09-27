@@ -1,11 +1,5 @@
 {% extends "base.html" %}
 {% block content %}
-{% set filter_qs = '&status=' ~ status ~ '&bucket=' ~ bucket ~ '&sort=' ~ sort
-    ~ '&view=' ~ view ~ '&search=' ~ (search|urlencode) %}
-{# The bucket cards carry their own key, so each link is the filter it counts.
-   No `bucket=` in this suffix: two of the same parameter would fight. #}
-{% set bucket_qs = '&status=' ~ status ~ '&sort=' ~ sort ~ '&view=' ~ view
-    ~ '&search=' ~ (search|urlencode) %}
 
 {% set page_description %}
 هر چه مشتریان بدهکارند، از سررسید گذشته تا جاری — با فیلتر، فاکتور به فاکتور و دریافت. سن بدهی از <strong>سررسید</strong> حساب می‌شود و برای فاکتورهای بدون سررسید از تاریخ فاکتور.
@@ -17,29 +11,27 @@
 {% endset %}
 {% include 'partials/page_header.html' %}
 
-{% if sent %}<div class="alert alert-success" role="status">{{ sent }} یادآوری ارسال شد.</div>{% endif %}
-
 <div class="stats-grid credit-kpi" aria-label="خلاصه حساب نسیه">
     <a class="stat-card accent-persimmon" href="/admin/credit">
         <div class="stat-label">کل بدهی</div>
-        <div class="stat-value tnum">{{ fmt(overview.total_debt) }} ت</div>
+        <div class="stat-value tnum">{{ fmt(overview.total_debt) }} تومان</div>
         <div class="stat-sub">{{ overview.debtor_count }} مشتری بدهکار</div>
     </a>
     <a class="stat-card accent-ink" href="/admin/credit?status=overdue">
         <div class="stat-label">سررسید گذشته</div>
-        <div class="stat-value tnum">{{ fmt(overview.overdue_amount) }} ت</div>
+        <div class="stat-value tnum">{{ fmt(overview.overdue_amount) }} تومان</div>
         <div class="stat-sub">{{ overview.overdue_customers }} مشتری · {{ overview.bucket_counts['1_30'] + overview.bucket_counts['31_60'] + overview.bucket_counts['61_90'] + overview.bucket_counts['over_90'] }} فاکتور</div>
     </a>
     <a class="stat-card accent-saffron" href="/admin/credit?status=due_soon">
         <div class="stat-label">سررسید تا {{ overview.due_soon_days }} روز</div>
-        <div class="stat-value tnum">{{ fmt(overview.due_soon_amount) }} ت</div>
+        <div class="stat-value tnum">{{ fmt(overview.due_soon_amount) }} تومان</div>
         <div class="stat-sub">{{ overview.due_soon_customers }} مشتری در آستانه سررسید</div>
     </a>
     <a class="stat-card accent-sky" href="/admin/credit?status=over_limit">
         <div class="stat-label">بالای سقف اعتبار</div>
         <div class="stat-value tnum">{{ overview.over_limit_count }}</div>
         <div class="stat-sub">
-            {% if overview.over_limit_count %}در مجموع {{ fmt(overview.over_limit_amount) }} ت بیش از سقف{% else %}همه در محدوده سقف{% endif %}
+            {% if overview.over_limit_count %}در مجموع {{ fmt(overview.over_limit_amount) }} تومان بیش از سقف{% else %}همه در محدوده سقف{% endif %}
         </div>
     </a>
 </div>
@@ -51,7 +43,7 @@
             <p class="muted">
                 روی هر کارت بزنید تا همان بازه فیلتر شود؛
                 {% if overview.no_due_date_count %}
-                {{ overview.no_due_date_count }} فاکتور بدون سررسید ({{ fmt(overview.no_due_date_amount) }} ت) از تاریخ فاکتور سن می‌خورد.
+                {{ overview.no_due_date_count }} فاکتور بدون سررسید ({{ fmt(overview.no_due_date_amount) }} تومان) از تاریخ فاکتور سن می‌خورد.
                 {% else %}همه فاکتورهای باز سررسید دارند.{% endif %}
             </p>
         </div>
@@ -70,7 +62,7 @@
            href="/admin/credit{{ bucket_url }}{{ bucket_qs }}"
            {% if bucket == key %}aria-current="true"{% endif %}>
             <span class="bucket-label">{{ bucket_labels[key] }}</span>
-            <strong class="bucket-amount tnum">{{ fmt(overview.buckets[key]) }} ت</strong>
+            <strong class="bucket-amount tnum">{{ fmt(overview.buckets[key]) }} تومان</strong>
             <small class="bucket-count tnum">{{ overview.bucket_counts[key] }} فاکتور</small>
         </a>
         {% endfor %}
@@ -87,8 +79,8 @@
     {% endif %}
     {% if overview.drift_count %}
     <p class="credit-drift-note">
-        {{ overview.drift_count }} مشتری «نامطابق» هستند: بدهی ثبت‌شده‌شان با جمع فاکتورهای باز نمی‌خواند.
-        در پرونده هر کدام مشخص شده است.
+        {{ overview.drift_count }} حساب با جمع فاکتورهای باز نمی‌خواند:
+        بدهی ثبت‌شده این مشتری‌ها با دفتر یکی نیست. در پرونده هر کدام مشخص شده است.
     </p>
     {% endif %}
 </section>
@@ -107,9 +99,9 @@
         </div>
         <div class="view-toggle" role="group" aria-label="نمایش">
             <a class="btn btn-sm {% if view == 'customers' %}btn-primary{% else %}btn-ghost{% endif %}"
-               href="?view=customers{{ filter_qs }}">مشتریان</a>
+               href="?view=customers{{ toggle_qs }}">مشتریان</a>
             <a class="btn btn-sm {% if view == 'invoices' %}btn-primary{% else %}btn-ghost{% endif %}"
-               href="?view=invoices{{ filter_qs }}">فاکتورها</a>
+               href="?view=invoices{{ toggle_qs }}">فاکتورها</a>
         </div>
     </div>
 
@@ -182,7 +174,7 @@
                             <strong><a href="/admin/credit/{{ entry.customer.id }}#invoice-{{ entry.sale.id }}">{{ entry.customer.full_name }}</a></strong>
                             <small class="customer-phone tnum">{{ entry.customer.phone }}</small>
                         </td>
-                        <td class="tnum"><strong>{{ fmt(entry.remaining) }} ت</strong></td>
+                        <td class="tnum"><strong>{{ fmt(entry.remaining) }} تومان</strong></td>
                         <td class="tnum">
                             {% if entry.due %}{{ jalali_str(entry.due, false) }}
                             {% else %}<span class="customer-meta">—</span>{% endif %}
@@ -248,24 +240,22 @@
                         <td class="customer-name">
                             <strong><a href="/admin/credit/{{ customer.id }}">{{ customer.full_name }}</a></strong>
                             <small class="customer-phone tnum">{{ customer.phone }}</small>
-                            {% if row.drift %}<span class="drift-flag">نامطابق</span>{% endif %}
+                            {% if row.drift %}<span class="drift-flag" title="بدهی ثبت‌شده با جمع فاکتورهای باز نمی‌خواند">ناهم‌خوان</span>{% endif %}
                         </td>
                         <td>
                             <span class="tier-badge tier-{{ customer.tier }}">
-                                {% if customer.tier == 'diamond' %}الماس
-                                {% elif customer.tier == 'gold' %}طلایی
-                                {% else %}نقره‌ای{% endif %}
+                                {{ tier_labels.get(customer.tier, 'سطح نامشخص') }}
                             </span>
                         </td>
                         {# The unit lives inside the <strong>: `td strong` is a block,
                            so a trailing " ت" would drop to its own line. #}
-                        <td class="tnum"><strong class="credit-amount">{{ fmt(row.debt) }} ت</strong></td>
+                        <td class="tnum"><strong class="credit-amount">{{ fmt(row.debt) }} تومان</strong></td>
                         <td class="tnum">
                             {% if row.limit > 0 %}
-                            <span>{{ fmt(row.limit) }} ت</span>
+                            <span>{{ fmt(row.limit) }} تومان</span>
                             <small class="{% if row.over_limit %}credit-over-limit{% else %}customer-meta{% endif %}">
-                                {% if row.over_limit %}{{ fmt(row.debt - row.limit) }} ت بیش از سقف
-                                {% else %}{{ fmt(row.headroom) }} ت مانده{% endif %}
+                                {% if row.over_limit %}{{ fmt(row.debt - row.limit) }} تومان بیش از سقف
+                                {% else %}{{ fmt(row.headroom) }} تومان مانده{% endif %}
                             </small>
                             {% else %}
                             <span class="customer-meta">بدون محدودیت</span>
@@ -291,7 +281,7 @@
                         <td class="tnum">
                             {% if row.last_payment %}
                             {{ jalali_str(row.last_payment.created_at, false) }}
-                            <small class="customer-meta">{{ fmt(row.last_payment.amount) }} ت</small>
+                            <small class="customer-meta">{{ fmt(row.last_payment.amount) }} تومان</small>
                             {% else %}<span class="customer-meta">بدون دریافت</span>{% endif %}
                         </td>
                         <td>
@@ -323,7 +313,7 @@
         {% else %}
         <div class="empty-state">
             <h3>هیچ بدهی نسیه‌ای وجود ندارد</h3>
-            <p>همه تسویه کرده‌اند. برای ثبت نسیه، در فروش جدید روش پرداخت «📒 نسیه» را انتخاب کنید.</p>
+            <p>همه تسویه کرده‌اند. برای ثبت نسیه، در فروش جدید روش پرداخت «نسیه» را انتخاب کنید.</p>
             <a href="/sales/new" class="btn btn-primary">فروش جدید</a>
         </div>
         {% endif %}

@@ -48,6 +48,7 @@ from services.analytics import KNOWN_PERIODS, UnreadableRange, get_date_range, p
 from services.security import log_action, require_html_role, role_allows
 from services.sorting import parse_sort
 from services.templating import templates
+from services.tier import TIER_LABELS
 from services.inventory import (
     LEGACY_MOVEMENT_TYPES,
     MOVEMENT_LABELS,
@@ -757,6 +758,20 @@ async def admin_credit(
     invoices = (list_open_invoices(db, search=search, status=status, bucket=bucket,
                                    page=page, per_page=DEBTS_PER_PAGE)
                 if view == "invoices" else None)
+    # Query strings are urlencoded once in the route (the purchases page's
+    # rule): the toggle used to repeat `view=` inside filter_qs, a duplicate
+    # that only worked by accident of parameter order. bucket_qs carries no
+    # bucket so the bucket cards select exactly one.
+    from urllib.parse import urlencode
+    base_qs = urlencode({
+        "status": status,
+        "bucket": bucket,
+        "sort": sort,
+        "search": search,
+    })
+    filter_qs = f"&{base_qs}&view={view}" if base_qs else f"&view={view}"
+    bucket_qs = f"&{urlencode({'status': status, 'sort': sort, 'search': search})}&view={view}"
+    toggle_qs = f"&{base_qs}" if base_qs else ""
     return templates.TemplateResponse(request, "admin/credit.html", {
         "overview": listing["overview"],
         "rows": listing["rows"],
@@ -764,6 +779,10 @@ async def admin_credit(
         "page": listing["page"],
         "total_pages": listing["total_pages"],
         "has_filters": listing["has_filters"],
+        "filter_qs": filter_qs,
+        "bucket_qs": bucket_qs,
+        "toggle_qs": toggle_qs,
+        "tier_labels": TIER_LABELS,
         "invoice_page": invoices,
         "view": view,
         "search": search,
@@ -780,7 +799,6 @@ async def admin_credit(
         "today": jalali_str(datetime.now(timezone.utc), with_time=False),
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
-        "sent": request.query_params.get("sent", ""),
         "fmt": fmt,
         "jalali_str": jalali_str,
     })
@@ -863,6 +881,7 @@ async def admin_credit_customer(customer_id: int, request: Request, db: Session 
         "overdue_amount": overdue_amount,
         "oldest_overdue": oldest_overdue,
         "drift": drift,
+        "tier_labels": TIER_LABELS,
         "bucket_labels": AGE_BUCKET_LABELS,
         "terms_days": credit_terms_days(db),
         "reminder_ready": allowed,
@@ -936,7 +955,7 @@ async def admin_credit_pay(
         target_note = f" (فاکتور #{target_id})" if target_id else ""
         log_action(db, "credit_payment", f"دریافت {applied:,} از {customer.phone}{target_note}", request=request, target_type="customer", target_id=customer.id, after={"amount": applied, "method": method, "sale_id": target_id})
         return RedirectResponse(
-            url=f"/admin/credit/{customer.id}?msg={applied:,} تومان ثبت شد.", status_code=303,
+            url=f"/admin/credit/{customer.id}?msg={_pd_money(applied)} تومان ثبت شد.", status_code=303,
         )
     return RedirectResponse(url=f"/admin/credit/{customer.id}?err=بدهی‌ای برای تسویه وجود ندارد.", status_code=303)
 
@@ -1024,7 +1043,8 @@ async def _send_credit_reminders(request: Request, db, guard, customers: list,
             failed += 1
     db.commit()
 
-    message = f"یادآوری برای {sent} مشتری در صف ارسال قرار گرفت."
+    from services._common import _to_persian_digits as _pd
+    message = f"یادآوری برای {_pd(str(sent))} مشتری در صف ارسال قرار گرفت."
     if failed:
         message += " متن پیامک یادآوری تنظیم نشده است."
     log_action(
@@ -1209,7 +1229,7 @@ async def admin_payment_reverse(
     payment = db.query(Payment).filter(Payment.id == payment_id).first()
     log_action(db, "payment_reverse", f"برگشت دریافت {reversed_amount:,}", request=request, target_type="payment", target_id=payment_id, after={"reversed_amount": reversed_amount, "operator_user_id": guard.id, "reason": reason})
     return RedirectResponse(
-        url=f"/admin/credit/{customer_id}?msg={reversed_amount:,} تومان برگشت ثبت شد.",
+        url=f"/admin/credit/{customer_id}?msg={_pd_money(reversed_amount)} تومان برگشت ثبت شد.",
         status_code=303,
     )
 
