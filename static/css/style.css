@@ -2970,8 +2970,17 @@ html[data-theme-mode="high-contrast"] .pdp-day.is-today { outline: 2px dashed va
 .audience-label { font-weight: 600; font-size: 0.86rem; }
 .audience-count { margin-inline-start: auto; font-size: 0.78rem; color: var(--ink-soft); font-weight: 700; }
 
-.campaign-assign-form { display: flex; gap: 0.5rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: 1rem; }
-.campaign-assign-form .form-group { margin-bottom: 0; min-width: 220px; }
+/* Manual add, one person: an inset panel with two named paths — pick from
+   the list, or type the digits — and a single submit. */
+.assign-panel { background: var(--card); border: 1px solid var(--rule);
+  border-radius: var(--radius-sm); padding: 0.9rem 1rem; margin-bottom: 1.2rem; }
+.assign-title { font-weight: 700; font-size: 0.85rem; margin: 0 0 0.6rem; }
+.assign-paths { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 0.9rem; align-items: start; margin-bottom: 0.8rem; }
+.assign-paths .form-group { margin-bottom: 0; min-width: 0; }
+.assign-or { align-self: center; color: var(--ink-soft); font-size: 0.78rem;
+  border: 1px solid var(--rule); border-radius: 999px; padding: 0.15rem 0.7rem; }
+.holders-summary { font-weight: 700; font-size: 0.85rem; margin: 0.4rem 0 0; }
 
 .campaign-holders-table { min-width: 760px; }
 .campaign-holders-table td .btn { min-height: 1.9rem; padding: 0.25rem 0.6rem; font-size: 0.74rem; }
@@ -3018,7 +3027,8 @@ html[data-theme-mode="high-contrast"] .pdp-day.is-today { outline: 2px dashed va
 }
 @media (max-width: 700px) {
   .campaign-filter-form .form-group { flex: 1 1 100%; min-width: 0; }
-  .campaign-assign-form .form-group { min-width: 0; flex: 1 1 100%; }
+  .assign-paths { grid-template-columns: minmax(0, 1fr); }
+  .assign-or { justify-self: start; }
   .campaign-history-row { grid-template-columns: minmax(0, 1fr); }
   .campaign-history-row form { grid-row: auto; grid-column: 1; }
 }

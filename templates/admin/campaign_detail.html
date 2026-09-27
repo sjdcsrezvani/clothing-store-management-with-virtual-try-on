@@ -114,33 +114,49 @@
         <div>
             <h3>دارندگان کمپین</h3>
             <p class="muted">
-                «دعوت‌شده» یعنی تخفیف در صندوق برایش فعال است؛ «استفاده‌شده» یعنی روی فاکتوری اعمال شد.
+                این‌ها همان کسانی‌اند که تخفیف در صندوق برایشان خودکار اعمال می‌شود —
+                با «ارسال پیامک» گروهی آمده‌اند یا دستی همین‌جا اضافه شده‌اند.
+                «دعوت‌شده» یعنی تخفیف فعال است؛ «استفاده‌شده» یعنی روی فاکتوری اعمال شد؛
+                «برداشته‌شده» یعنی بیرون رفته و دیگر تخفیف نمی‌گیرد.
             </p>
+            {% if assignments %}
+            {% set invited_count = assignments | selectattr('assignment.status', 'equalto', 'invited') | list | length %}
+            {% set used_count = assignments | selectattr('assignment.status', 'equalto', 'used') | list | length %}
+            {% set removed_count = assignments | selectattr('assignment.status', 'equalto', 'removed') | list | length %}
+            <p class="holders-summary tnum">
+                {{ invited_count }} دعوت‌شده · {{ used_count }} استفاده‌شده
+                {%- if removed_count %} · {{ removed_count }} برداشته‌شده{% endif %}
+            </p>
+            {% endif %}
         </div>
     </div>
 
-    <form method="post" action="/admin/campaigns/{{ campaign.id }}/assign" class="campaign-assign-form">
+    <form method="post" action="/admin/campaigns/{{ campaign.id }}/assign" class="campaign-assign-form assign-panel">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <div class="form-group">
-            <label for="assign-search">افزودن مشتری</label>
-            <input type="search" id="assign-search" placeholder="نام یا شماره…" autocomplete="off"
-                   {% if not customer_picker %}disabled{% endif %}
-                   aria-describedby="assign-search-count">
-            <small class="muted" id="assign-search-count" aria-live="polite"></small>
-            <label class="sr-only" for="assign-customer">مشتری</label>
-            <select id="assign-customer" name="customer_id" size="6" {% if not customer_picker %}disabled{% endif %}>
-                {% for customer in customer_picker %}
-                <option value="{{ customer.id }}" data-search="{{ customer.name }} {{ customer.phone }}">{{ customer.name }} — {{ customer.phone }}</option>
-                {% endfor %}
-                {% if not customer_picker %}<option>مشتری دیگری برای افزودن نیست</option>{% endif %}
-            </select>
-            <small class="muted">یا شماره را دقیق تایپ کنید — فاصله، خط‌تیره و ۹۸+ پذیرفته است.</small>
+        <p class="assign-title">افزودن دستی — یک نفر</p>
+        <div class="assign-paths">
+            <div class="form-group">
+                <label for="assign-search">جست‌وجو در مشتریان</label>
+                <input type="search" id="assign-search" placeholder="نام یا شماره…" autocomplete="off"
+                       {% if not customer_picker %}disabled{% endif %}
+                       aria-describedby="assign-search-count">
+                <label class="sr-only" for="assign-customer">مشتری</label>
+                <select id="assign-customer" name="customer_id" {% if not customer_picker %}disabled{% endif %}>
+                    {% for customer in customer_picker %}
+                    <option value="{{ customer.id }}" data-search="{{ customer.name }} {{ customer.phone }}">{{ customer.name }} — {{ customer.phone }}</option>
+                    {% endfor %}
+                    {% if not customer_picker %}<option>مشتری دیگری برای افزودن نیست</option>{% endif %}
+                </select>
+                <small class="muted" id="assign-search-count" aria-live="polite"></small>
+            </div>
+            <span class="assign-or" aria-hidden="true">یا</span>
+            <div class="form-group">
+                <label for="assign-phone">افزودن با شماره موبایل</label>
+                <input type="tel" id="assign-phone" name="phone" dir="ltr" placeholder="09123456789" autocomplete="off">
+                <small class="muted">فاصله، خط‌تیره و ۹۸+ پذیرفته است.</small>
+            </div>
         </div>
-        <div class="form-group">
-            <label class="sr-only" for="assign-phone">شماره موبایل</label>
-            <input type="tel" id="assign-phone" name="phone" dir="ltr" placeholder="09123456789" autocomplete="off">
-        </div>
-        <button type="submit" class="btn btn-ghost" {% if not customer_picker %}disabled{% endif %}>
+        <button type="submit" class="btn btn-primary" {% if not customer_picker %}disabled{% endif %}>
             افزودن به کمپین
         </button>
     </form>
