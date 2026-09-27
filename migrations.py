@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 23
+MIGRATION_VERSION = 24
 
 
 def migration_status(engine) -> int:
@@ -238,6 +238,13 @@ def _rebuild_sms_messages(conn) -> None:
 
 
 def _apply_revision(conn, version: int) -> None:
+    if version == 24:
+        # Archiving retires a campaign without erasing it: the list hides it
+        # and the send audience skips it, while redemptions stay put.
+        # Purely additive — every existing row starts unarchived.
+        _add_column_if_missing(conn, "campaigns", "is_archived", "INTEGER DEFAULT 0")
+        return
+
     if version == 23:
         # When the invitation SMS actually left, beside when the assignment
         # was created: the model grew the column but no revision carried it,

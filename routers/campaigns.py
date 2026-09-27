@@ -58,6 +58,7 @@ STATUS_FILTERS = (
     ("scheduled", STATUS_LABELS["scheduled"]),
     ("expired", STATUS_LABELS["expired"]),
     ("inactive", STATUS_LABELS["inactive"]),
+    ("archived", "بایگانی‌شده"),
 )
 
 ORDER_LABELS = {
@@ -158,6 +159,7 @@ async def admin_campaigns(
     status: str = "all",
     order: str = "newest",
     page: str = "1",
+    per_page: str = "25",
     db: Session = Depends(get_db),
 ):
     guard = _guard(request, db)
@@ -165,11 +167,15 @@ async def admin_campaigns(
         return guard
 
     page = page_arg(page)
-    listing = campaign_filtered(db, search=search, status=status, order=order, page=page)
+    per_page_int = int(per_page) if str(per_page).isdigit() and int(per_page) in (10, 25, 50) else 25
+    listing = campaign_filtered(
+        db, search=search, status=status, order=order, page=page, per_page=per_page_int,
+    )
     return templates.TemplateResponse(request, "admin/campaigns.html", {
         **listing,
         "overview": campaign_overview(db),
         "status_filters": STATUS_FILTERS,
+        "per_page_options": (10, 25, 50),
         "order_labels": ORDER_LABELS,
         "sources": SOURCE_LABELS,
         "assignment_labels": ASSIGNMENT_STATUS_LABELS,

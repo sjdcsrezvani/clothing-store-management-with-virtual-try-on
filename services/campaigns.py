@@ -66,6 +66,12 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _is_archived(campaign: Campaign) -> bool:
+    """Archived means retired, not erased: hidden from the list, skipped by
+    the send audience, but every redemption row stays put."""
+    return bool(getattr(campaign, "is_archived", False))
+
+
 def _aware(value: datetime | None) -> datetime | None:
     """SQLite hands datetimes back naive; compare them in UTC."""
     if value is not None and value.tzinfo is None:
@@ -136,6 +142,8 @@ def resolve_campaign_code(
     campaign = db.query(Campaign).filter(func.upper(Campaign.code) == wanted).first()
     if not campaign:
         return None, f"کد کمپین «{wanted}» پیدا نشد."
+    if _is_archived(campaign):
+        return None, f"کمپین «{campaign.name}» بایگانی شده است."
 
     status = campaign_status(campaign)
     if status != STATUS_LIVE:
@@ -292,6 +300,8 @@ def campaign_for_customer(
     best: Campaign | None = None
     best_amount = 0
     for campaign, assignment in rows:
+        if _is_archived(campaign):
+            continue
         if not campaign_is_live(campaign):
             continue
         # 'used' only stays eligible when the campaign is reusable.
@@ -324,6 +334,8 @@ def customer_campaign_map(db: Session, customer_ids: list[int]) -> dict[int, dic
 
     out: dict[int, dict] = {}
     for assignment, campaign in rows:
+        if _is_archived(campaign):
+            continue
         entry = out.setdefault(assignment.customer_id, {"offered": None, "used_count": 0})
         live = campaign_is_live(campaign)
         if assignment.status == "used":
@@ -552,7 +564,7 @@ def campaign_stats(db: Session, campaign: Campaign) -> dict:
 
 def campaign_overview(db: Session) -> dict:
     """The list page's KPI row: what campaigns are doing, in four numbers."""
-    campaigns = db.query(Campaign).all()
+    campaigns = [c for c in db.query(Campaign).all() if not _is_archived(c)]
     live = sum(1 for c in campaigns if campaign_is_live(c))
     scheduled = sum(1 for c in campaigns if campaign_status(c) == STATUS_SCHEDULED)
 
@@ -598,14 +610,23 @@ def campaign_filtered(
 ) -> dict:
     """One page of campaigns with the counters the table shows per row."""
     page = max(1, int(page or 1))
+    per_page = int(per_page or 25)
+    if per_page not in (10, 25, 50):
+        per_page = 25
     rows = db.query(Campaign).all()
 
     if search:
         needle = search.strip().lower()
         rows = [c for c in rows
                 if needle in (c.name or "").lower() or needle in (c.code or "").lower()]
-    if status in {"live", "scheduled", "expired", "inactive"}:
-        rows = [c for c in rows if campaign_status(c) == status]
+    # Archived campaigns hide everywhere except their own filter — the
+    # customers list's rule: retirement hides, it never rewrites.
+    if status == "archived":
+        rows = [c for c in rows if _is_archived(c)]
+    else:
+        rows = [c for c in rows if not _is_archived(c)]
+        if status in {"live", "scheduled", "expired", "inactive"}:
+            rows = [c for c in rows if campaign_status(c) == status]
 
     if order == "name":
         rows.sort(key=lambda c: c.name or "")
@@ -632,6 +653,7 @@ def campaign_filtered(
         "total": total,
         "page": page,
         "total_pages": total_pages,
+        "per_page": per_page,
         "search": search,
         "status": status,
         "order": order,

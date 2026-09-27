@@ -2919,7 +2919,7 @@ html[data-theme-mode="high-contrast"] .pdp-day.is-today { outline: 2px dashed va
 .campaign-meta { color: var(--ink-soft); font-size: 0.72rem; }
 .campaign-window { font-size: 0.78rem; color: var(--ink-soft); white-space: nowrap; }
 .campaign-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; white-space: nowrap; }
-.campaign-actions .btn { min-height: 1.9rem; padding: 0.25rem 0.6rem; font-size: 0.74rem; }
+.campaign-actions .btn { min-height: 2.5rem; padding: 0.45rem 0.9rem; font-size: 0.85rem; }
 
 /* Status badges: live / scheduled / expired / inactive, plus assignment states. */
 .status-badge.is-live { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--success-ink); }
@@ -3034,6 +3034,18 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
   .campaign-card, .campaign-holders, .campaign-redemptions { border: 0; box-shadow: none; padding: 0; }
   .campaign-table, .campaign-holders-table, .campaign-redemptions-table { min-width: 0; width: 100%; font-size: 0.8rem; }
   .campaign-card .table-scroll, .campaign-holders .table-scroll, .campaign-redemptions .table-scroll { overflow: visible; }
+}
+/* The nine-column campaign table answers nothing on a phone, so it stacks
+   into cards the same way the customers and credit tables do: data-labels
+   name each cell. Row actions grow to a comfortable touch target. */
+.page-current { font-weight: 700; color: var(--ink); padding: 0.25rem 0.5rem; }
+.page-gap { color: var(--ink-soft); }
+@media (max-width: 700px) {
+  .campaign-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .campaign-table, .campaign-table tbody, .campaign-table tr, .campaign-table td { display: block; }
+  .campaign-table tr { border: 1px solid var(--rule); border-radius: var(--radius-sm); margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; }
+  .campaign-table td { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; border: none; padding: 0.25rem 0; text-align: start; }
+  .campaign-table td::before { content: attr(data-label); color: var(--ink-soft); font-size: 0.72rem; flex-shrink: 0; }
 }
 
 /* ── پیامک ───────────────────────────────────────────────────────────────────

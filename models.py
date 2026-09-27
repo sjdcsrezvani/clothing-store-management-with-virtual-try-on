@@ -883,6 +883,9 @@ class Campaign(Base):
     discount_percent = Column(Integer, nullable=False)
     min_purchase = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
+    # Retired, not erased: archived campaigns vanish from the list and the
+    # send audience but keep every redemption row, so history never rewrites.
+    is_archived = Column(Boolean, default=False)
     # A reusable campaign is a standing promo: it applies to every qualifying
     # invoice while it is live. The default (once) burns on the first invoice,
     # which is what most SMS promos mean.

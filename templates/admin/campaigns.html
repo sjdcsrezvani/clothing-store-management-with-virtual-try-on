@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
-{% set filter_qs = '&status=' ~ status ~ '&order=' ~ order ~ '&search=' ~ (search|urlencode) %}
+{% set filter_qs = '&status=' ~ status ~ '&order=' ~ order ~ '&search=' ~ (search|urlencode) ~ '&per_page=' ~ per_page %}
+{% set sort_qs = 'status=' ~ status ~ '&search=' ~ (search|urlencode) ~ '&per_page=' ~ per_page %}
 
 {% set page_description %}
 هر کمپین یک کد تخفیف، یک بازه و یک گروه مشتری دارد. مشتری‌ای که کمپین به او اختصاص یافته تخفیف را در صندوق <strong>خودکار</strong> می‌گیرد؛ کد هم برای بقیه کار می‌کند. روی هر کمپین بزنید تا ببینید پیامک به چه کسی رفت و چه کسی از آن خرید کرد.
@@ -27,13 +28,13 @@
         <div class="stat-sub">آماده اعمال در صندوق</div>
     </a>
     <a class="stat-card accent-saffron" href="/admin/campaigns?order=used">
-        <div class="stat-label">پیامک‌شده</div>
+        <div class="stat-label">دعوت‌شده</div>
         <div class="stat-value tnum">{{ overview.messaged }}</div>
         <div class="stat-sub">{{ overview.used }} مشتری استفاده کرده‌اند</div>
     </a>
     <a class="stat-card accent-persimmon" href="/admin/campaigns?order=used">
-        <div class="stat-label">تخفیف کمپین‌ها</div>
-        <div class="stat-value tnum">{{ fmt(overview.discount_given) }} ت</div>
+        <div class="stat-label">تخفیف داده‌شده</div>
+        <div class="stat-value tnum">{{ fmt(overview.discount_given) }} تومان</div>
         <div class="stat-sub">جمع تخفیف اعمال‌شده روی فاکتورها</div>
     </a>
 </div>
@@ -43,9 +44,23 @@
         <div>
             <h3 data-list-heading tabindex="-1">فهرست کمپین‌ها</h3>
             <p class="muted">
-                «پیامک‌شده» تعداد مشتریانی است که این کمپین برایشان ارسال شده و «استفاده» نسبت کسانی
-                که واقعاً خرید کردند.
+                «دعوت‌شده» تعداد مشتریانی است که این کمپین برایشان ارسال شده،
+                «استفاده‌شده» کسانی که واقعاً خرید کردند و «فروش با کمپین»
+                جمع فاکتورهایی است که تخفیف گرفته‌اند. بایگانی‌ها پنهان‌اند.
             </p>
+        </div>
+        <div class="list-heading-actions">
+            <form method="get" action="/admin/campaigns" class="per-page-form">
+                <input type="hidden" name="search" value="{{ search }}">
+                <input type="hidden" name="status" value="{{ status }}">
+                <input type="hidden" name="order" value="{{ order }}">
+                <label class="sr-only" for="campaign-per-page">تعداد در صفحه</label>
+                <select name="per_page" id="campaign-per-page" onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}" aria-label="تعداد در صفحه">
+                    {% for option in per_page_options %}
+                    <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }} در صفحه</option>
+                    {% endfor %}
+                </select>
+            </form>
         </div>
     </div>
 
@@ -87,14 +102,14 @@
         <table class="data-table campaign-table">
             <thead>
                 <tr>
-                    <th scope="col">کمپین</th>
-                    <th scope="col">تخفیف</th>
+                    <th scope="col" aria-sort="{{ 'ascending' if order == 'name' else 'none' }}"><a class="sort-link" href="/admin/campaigns?{{ sort_qs }}&order={{ 'newest' if order == 'name' else 'name' }}">کمپین</a></th>
+                    <th scope="col" aria-sort="{{ 'descending' if order == 'discount' else 'none' }}"><a class="sort-link" href="/admin/campaigns?{{ sort_qs }}&order={{ 'newest' if order == 'discount' else 'discount' }}">تخفیف</a></th>
                     <th scope="col">حداقل خرید</th>
                     <th scope="col">بازه</th>
                     <th scope="col">وضعیت</th>
-                    <th scope="col">پیامک‌شده</th>
-                    <th scope="col">استفاده</th>
-                    <th scope="col">فروش کمپین</th>
+                    <th scope="col">دعوت‌شده</th>
+                    <th scope="col" aria-sort="{{ 'descending' if order == 'used' else 'none' }}"><a class="sort-link" href="/admin/campaigns?{{ sort_qs }}&order={{ 'newest' if order == 'used' else 'used' }}">استفاده‌شده</a></th>
+                    <th scope="col">فروش با کمپین</th>
                     <th scope="col">عملیات</th>
                 </tr>
             </thead>
@@ -102,33 +117,33 @@
                 {% for row in rows %}
                 {% set campaign = row.campaign %}
                 <tr>
-                    <td class="campaign-name">
-                        <strong><a href="/admin/campaigns/{{ campaign.id }}">{{ campaign.name }}</a></strong>
-                        <small class="campaign-code tnum" dir="ltr">{{ campaign.code }}</small>
+                    <td class="campaign-name" data-label="کمپین">
+                        <strong><a href="/admin/campaigns/{{ campaign.id }}">{{ campaign.name|highlight(search) }}</a></strong>
+                        <small class="campaign-code tnum" dir="ltr">{{ campaign.code|highlight(search) }}</small>
                         {% if campaign.is_reusable %}<small class="campaign-meta">چندباره</small>{% endif %}
                     </td>
-                    <td class="tnum"><strong>{{ campaign.discount_percent }}٪</strong></td>
-                    <td class="tnum">
-                        {% if campaign.min_purchase %}{{ fmt(campaign.min_purchase) }}{% else %}—{% endif %}
+                    <td class="tnum" data-label="تخفیف"><strong>{{ campaign.discount_percent }}٪</strong></td>
+                    <td class="tnum" data-label="حداقل خرید">
+                        {% if campaign.min_purchase %}{{ fmt(campaign.min_purchase) }} تومان{% else %}—{% endif %}
                     </td>
-                    <td class="tnum campaign-window">{{ row.window_label }}</td>
-                    <td>
+                    <td class="tnum campaign-window" data-label="بازه">{{ row.window_label }}</td>
+                    <td data-label="وضعیت">
                         <span class="status-badge is-{{ row.status }}">{{ row.status_label }}</span>
                     </td>
-                    <td class="tnum">{{ row.stats.messaged }}</td>
-                    <td class="tnum">
+                    <td class="tnum" data-label="دعوت‌شده">{{ row.stats.messaged }}</td>
+                    <td class="tnum" data-label="استفاده‌شده">
                         {% if row.stats.reached %}
                         <strong>{{ row.stats.used }}</strong>
                         <small>{{ percent(row.stats.response_rate, 0) }} پاسخ</small>
                         {% else %}—{% endif %}
                     </td>
-                    <td class="tnum">
+                    <td class="tnum" data-label="فروش با کمپین">
                         {% if row.stats.revenue %}
-                        <strong>{{ fmt(row.stats.revenue) }}</strong>
-                        <small>{{ fmt(row.stats.used_money) }} تخفیف · {{ row.stats.redemptions }} فاکتور</small>
+                        <strong>{{ fmt(row.stats.revenue) }} تومان</strong>
+                        <small>{{ fmt(row.stats.used_money) }} تومان تخفیف · {{ row.stats.redemptions }} فاکتور</small>
                         {% else %}—{% endif %}
                     </td>
-                    <td>
+                    <td data-label="عملیات">
                         <div class="campaign-actions">
                             <a href="/admin/campaigns/{{ campaign.id }}" class="btn btn-sm btn-ghost">گزارش</a>
                             <a href="/admin/campaigns/{{ campaign.id }}/edit" class="btn btn-sm btn-ghost">ویرایش</a>
@@ -145,7 +160,12 @@
     {% if total_pages > 1 %}
     <nav class="product-pagination" aria-label="صفحه‌بندی کمپین‌ها">
         {% if page > 1 %}<a class="btn btn-sm btn-ghost" href="?page={{ page - 1 }}{{ filter_qs }}">صفحه قبل</a>{% endif %}
-        <span>صفحه {{ page }} از {{ total_pages }}</span>
+        {% for p in range(1, total_pages + 1) %}
+        {% if p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+        {% if p == page %}<span class="page-current" aria-current="page">{{ p }}</span>
+        {% else %}<a class="btn btn-sm btn-ghost" href="?page={{ p }}{{ filter_qs }}" aria-label="صفحه {{ p }}">{{ p }}</a>{% endif %}
+        {% elif p == 2 or p == total_pages - 1 %}<span class="page-gap" aria-hidden="true">…</span>{% endif %}
+        {% endfor %}
         {% if page < total_pages %}<a class="btn btn-sm btn-ghost" href="?page={{ page + 1 }}{{ filter_qs }}">صفحه بعد</a>{% endif %}
     </nav>
     {% endif %}
