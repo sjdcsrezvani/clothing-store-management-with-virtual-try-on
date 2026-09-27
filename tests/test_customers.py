@@ -1498,8 +1498,8 @@ def test_the_drift_banner_names_both_sides_and_offers_the_fix(authed, db_session
     db_session.commit()
 
     body = list_html(authed, f"/{drifted.id}")
-    assert "شمارنده‌های این پرونده با فاکتورها نمی‌خوانند." in body
-    assert "ثبت‌شده 9,000,000 ت، از فاکتورها 1,200,000 ت." in body
+    assert "حساب‌های این پرونده با فاکتورها نمی‌خوانند." in body
+    assert "ثبت‌شده 9,000,000 تومان، از فاکتورها 1,200,000 تومان." in body
     assert "تعداد خرید: ثبت‌شده 7، از فاکتورها 1" in body
     assert "هم‌سازی با فاکتورها" in body
 
@@ -1593,7 +1593,9 @@ def test_the_reconcile_machinery_keeps_its_shape():
     assert service_src.count("_counted_sales_query(") >= 3, \
         "the counted-sales rule must be shared, not restated"
     admin_src = (ROOT / "routers" / "admin.py").read_text(encoding="utf-8")
-    start = admin_src.index("async def admin_customer_reconcile")
+    # The open paren: the non-owner's *request* for a reconcile is spelled with
+    # the same prefix and sits above the run, so the slice must name the run.
+    start = admin_src.index("async def admin_customer_reconcile(")
     route = admin_src[start:admin_src.index("\n@router.", start)]
     assert 'require_html_role(request, db, "owner")' in route
     assert "log_action(" in route

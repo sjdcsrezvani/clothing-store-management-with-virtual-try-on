@@ -4,7 +4,7 @@ from pathlib import Path
 from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
@@ -53,10 +53,12 @@ from services.customers import (
     archive_customer,
     birthday_fields,
     build_customer_rows,
+    bulk_tag_customers,
     can_delete_customer,
     customer_overview,
     customer_profile,
     delete_customer,
+    export_customers,
     invalidate_customer_cache,
     is_archived_customer,
     list_customers,
@@ -97,6 +99,7 @@ from services.tier import (
     tier_up_candidates,
     tier_up_marker_key,
     tier_up_sent_rank,
+    TIER_LABELS,
     TIER_RANK,
 )
 from services.events import EVENT_LIMIT_RULES, event_history, event_payload, append_event
@@ -281,6 +284,7 @@ async def admin_customers(
     status: str = "all",
     tag: str = "",
     page: str = "1",
+    per_page: str = "25",
     drifted: str = "0",
     db: Session = Depends(get_db),
 ):
@@ -290,13 +294,33 @@ async def admin_customers(
         return guard
 
     page = page_arg(page)
+    per_page_int = int(per_page) if str(per_page).isdigit() and int(per_page) in (10, 25, 50) else 25
+    drifted_on = bool(int_arg(drifted, default=0))
     listing = list_customers(
         db, search=search, tier=tier, status=status, tag=tag, sort=sort, page=page,
-        drifted=bool(int_arg(drifted, default=0)),
+        per_page=per_page_int, drifted=drifted_on,
     )
+    # Query strings are urlencoded once in the route (the purchases page's
+    # rule): the template only drops this inside quoted hrefs.
+    from urllib.parse import urlencode
+    sort_base_qs = "&" + urlencode({
+        "tier": listing["tier"],
+        "status": listing["status"],
+        "tag": listing["tag"],
+        "search": listing["search"],
+        "per_page": listing["per_page"],
+        **({"drifted": "1"} if drifted_on else {}),
+    })
+    filter_qs = f"{sort_base_qs}&sort={listing['sort']}"
 
     return templates.TemplateResponse(request, "admin/customers.html", {
         **listing,
+        "filter_qs": filter_qs,
+        "export_qs": sort_base_qs.lstrip("&"),
+        "per_page_options": (10, 25, 50),
+        "tier_labels": TIER_LABELS,
+        "tags_in_use": db.query(Customer.id).filter(
+            Customer.tags.isnot(None), Customer.tags != "").first() is not None,
         "rows": build_customer_rows(db, listing["customers"]),
         "overview": customer_overview(db),
         "active_days": ACTIVE_DAYS,
@@ -314,9 +338,82 @@ async def admin_customers(
     })
 
 
+@router.get("/customers/export", response_class=HTMLResponse)
+async def admin_customers_export(
+    request: Request,
+    search: str = "",
+    sort: str = "date",
+    tier: str = "",
+    status: str = "all",
+    tag: str = "",
+    drifted: str = "0",
+    db: Session = Depends(get_db),
+):
+    """The filtered list as a file: the same query the page reads, unsliced."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    import csv
+    import io
+    customers = export_customers(
+        db, search=search, tier=tier, status=status, tag=tag, sort=sort,
+        drifted=bool(int_arg(drifted, default=0)),
+    )
+    rows = build_customer_rows(db, customers)
+    out = [["تلفن", "نام", "سطح", "مجموع خرید", "تعداد خرید", "امتیاز",
+            "بدهی", "آخرین خرید", "برچسب‌ها"]]
+    for row in rows:
+        customer = row["customer"]
+        out.append([
+            customer.phone,
+            customer.full_name or "",
+            TIER_LABELS.get(customer.tier, customer.tier or ""),
+            row["invoice_spent"] if row["invoice_spent"] is not None else "",
+            row["invoice_count"] if row["invoice_count"] is not None else "",
+            row["invoice_points"] if row["invoice_points"] is not None else "",
+            customer.total_debt or 0,
+            jalali_str(customer.last_purchase_date, False) if customer.last_purchase_date else "",
+            "، ".join(TAG_LABELS.get(key, key) for key in row["tags"]),
+        ])
+    buf = io.StringIO()
+    buf.write("\ufeff")  # BOM so Excel opens Persian correctly
+    csv.writer(buf).writerows(out)
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="customers_{today}.csv"'},
+    )
+
+
+@router.post("/customers/bulk-tag", response_class=HTMLResponse)
+async def admin_customers_bulk_tag(request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    form = await request.form()
+    ids = [int(raw) for raw in form.getlist("ids") if str(raw).isdigit()]
+    tag = str(form.get("tag", "") or "")
+    remove = str(form.get("mode", "") or "") == "remove"
+    try:
+        changed = bulk_tag_customers(db, ids, tag, remove=remove) if ids else 0
+    except ValueError:
+        return RedirectResponse(
+            url="/admin/customers?err=برچسب نامعتبر است.", status_code=303)
+    if changed:
+        db.commit()
+        verb = "برداشته شد" if remove else "افزوده شد"
+        message = f"برچسب {TAG_LABELS.get(tag, tag)} برای {changed} مشتری {verb}."
+    else:
+        message = "مشتری‌ای برای برچسب‌زدن انتخاب نشده بود."
+    log_action(db, "customer_bulk_tag", message, request=request, after={"count": changed, "tag": tag})
+    return RedirectResponse(
+        url="/admin/customers?msg=" + quote_plus(message), status_code=303)
+
+
 @router.get("/customers/{customer_id}", response_class=HTMLResponse)
 async def admin_customer_profile(
-    customer_id: int, request: Request, db: Session = Depends(get_db)
+    customer_id: int, request: Request, page: str = "1", db: Session = Depends(get_db)
 ):
     """One customer's file: purchases, discounts, referrals, debt and details."""
     guard = require_html_role(request, db, "manager")
@@ -339,7 +436,7 @@ async def admin_customer_profile(
         customer_campaign_history,
     )
 
-    profile = customer_profile(db, customer)
+    profile = customer_profile(db, customer, history_page=page_arg(page))
     held_ids = {row["campaign"].id for row in profile["campaign_history"]
                 if row["status"] != "removed"}
     assignable = [
@@ -365,6 +462,7 @@ async def admin_customer_profile(
         "tag_palette": TAG_PALETTE,
         "tag_labels": TAG_LABELS,
         "tag_keys": TAG_KEYS,
+        "tier_labels": TIER_LABELS,
         "may_delete": may_delete,
         "sale_count": sale_count,
         "msg": request.query_params.get("msg", ""),
@@ -413,6 +511,95 @@ async def admin_customer_meta(
                "birth_month_day": customer.birth_month_day},
     )
     return RedirectResponse(url=f"/admin/customers/{customer.id}?msg=پرونده ذخیره شد.", status_code=303)
+
+
+@router.post("/customers/{customer_id}/identity", response_class=HTMLResponse)
+async def admin_customer_identity(
+    customer_id: int, request: Request, db: Session = Depends(get_db)
+):
+    """Correct the name and phone on the file, audited with before/after.
+
+    Phone obeys the signup rule (09 + 11 digits, Farsi digits accepted) and a
+    number that already belongs to another file is refused — two files never
+    share a phone, so the refusal names the fact instead of merging.
+    """
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="مشتری یافت نشد")
+    form = await request.form()
+    phone = to_english_digits(str(form.get("phone", "") or "").strip())
+    if not phone.startswith("09") or len(phone) != 11:
+        return RedirectResponse(
+            url=f"/admin/customers/{customer.id}?err=شماره موبایل نامعتبر است. فرمت صحیح: 09xxxxxxxxx",
+            status_code=303)
+    clash = db.query(Customer).filter(
+        Customer.phone == phone, Customer.id != customer.id).first()
+    if clash:
+        return RedirectResponse(
+            url=f"/admin/customers/{customer.id}?err=این شماره برای مشتری دیگری ثبت است.",
+            status_code=303)
+    before = {"first_name": customer.first_name, "last_name": customer.last_name,
+              "phone": customer.phone}
+    customer.first_name = str(form.get("first_name", "") or "").strip() or None
+    customer.last_name = str(form.get("last_name", "") or "").strip() or None
+    customer.phone = phone
+    db.commit()
+    log_action(
+        db, "customer_identity", f"اصلاح مشخصات {phone}", request=request,
+        target_type="customer", target_id=customer.id, before=before,
+        after={"first_name": customer.first_name, "last_name": customer.last_name,
+               "phone": customer.phone},
+    )
+    return RedirectResponse(
+        url=f"/admin/customers/{customer.id}?msg=مشخصات مشتری به‌روز شد.", status_code=303)
+
+
+@router.post("/customers/{customer_id}/sms", response_class=HTMLResponse)
+async def admin_customer_sms(
+    customer_id: int, request: Request, db: Session = Depends(get_db)
+):
+    """Flip the marketing-SMS consent from the facts card, one tap."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="مشتری یافت نشد")
+    form = await request.form()
+    customer.sms_opt_in = str(form.get("value", "") or "") == "1"
+    db.commit()
+    log_action(
+        db, "customer_sms_opt", f"پیامک تبلیغاتی {customer.phone}: "
+        f"{'فعال' if customer.sms_opt_in else 'انصراف'}",
+        request=request, target_type="customer", target_id=customer.id,
+        after={"sms_opt_in": customer.sms_opt_in},
+    )
+    return RedirectResponse(
+        url=f"/admin/customers/{customer.id}?msg=وضعیت پیامک ثبت شد.", status_code=303)
+
+
+@router.post("/customers/{customer_id}/reconcile-request", response_class=HTMLResponse)
+async def admin_customer_reconcile_request(
+    customer_id: int, request: Request, db: Session = Depends(get_db)
+):
+    """A non-owner's ask for a reconcile: the run stays owner-only, but the
+    ask lands in the audit trail where the owner reads it."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="مشتری یافت نشد")
+    log_action(
+        db, "customer_reconcile_request", f"درخواست هم‌سازی حساب‌ها: {customer.phone}",
+        request=request, target_type="customer", target_id=customer.id,
+    )
+    return RedirectResponse(
+        url=f"/admin/customers/{customer.id}?msg=درخواست هم‌سازی برای مالک ثبت شد.",
+        status_code=303)
 
 
 @router.post("/customers/{customer_id}/reconcile", response_class=HTMLResponse)

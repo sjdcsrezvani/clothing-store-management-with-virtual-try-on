@@ -1389,6 +1389,22 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 .supplier-payment-form select { min-width: 180px; flex: 1; }
 .supplier-payment-form input[name="amount"] { min-width: 140px; }
 
+/* The customers page's quick register: a disclosure that reads as a card
+   header, not a browser default. The marker is drawn, not inherited, and the
+   form follows the suppliers add-row's flex language. */
+.customer-add-card { padding: 0; overflow: hidden; }
+.customer-add-summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; padding: 0.9rem 1.1rem; font-weight: 700; margin: 0; }
+.customer-add-summary::marker { content: none; }
+.customer-add-summary::-webkit-details-marker { display: none; }
+.customer-add-summary::after { content: '+'; margin-inline-start: auto; font-size: 1.2rem; line-height: 1; color: var(--ink-soft); transition: transform 160ms ease-out; }
+.customer-add-card[open] .customer-add-summary::after { transform: rotate(45deg); }
+.customer-add-summary:hover { color: var(--link-hover); }
+.customer-add-summary:hover::after { color: var(--link-hover); }
+.customer-add-summary:focus-visible { outline: 2px solid var(--link-hover); outline-offset: -2px; }
+.customer-add-form { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: end; margin: 0; border-top: 1px solid var(--rule); padding: 1rem 1.1rem 1.1rem; }
+.customer-add-form input[name="phone"] { flex: 1; min-width: 150px; }
+.customer-add-form input[name="first_name"], .customer-add-form input[name="last_name"] { flex: 1; min-width: 140px; }
+
 /* Login */
 .login-card {
   max-width: 380px;
@@ -2640,6 +2656,19 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .customer-phone { direction: ltr; unicode-bidi: isolate; color: var(--ink-soft); font-size: 0.78rem; }
 .customer-meta { color: var(--ink-soft); font-size: 0.72rem; }
 .customer-stale { color: var(--link-hover); font-weight: 700; }
+
+/* Narrow screens: customer rows stack into cards, each cell naming itself
+   from its data-label. The table-scroll container stays for wider tables;
+   this table opts out because eleven scrolled columns answer nothing. */
+@media (max-width: 700px) {
+  .customer-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .customer-table, .customer-table tbody, .customer-table tr, .customer-table td { display: block; }
+  .customer-table tr { border: 1px solid var(--rule); border-radius: var(--radius-sm); margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; }
+  .customer-table td { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; border: none; padding: 0.25rem 0; text-align: start; }
+  .customer-table td::before { content: attr(data-label); color: var(--ink-soft); font-size: 0.72rem; flex-shrink: 0; }
+  .customer-table td.bulk-cell::before { content: none; }
+  .customer-table td.bulk-cell { padding: 0 0 0.25rem; }
+}
 .customer-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; white-space: nowrap; }
 .customer-actions .btn { min-height: 1.9rem; padding: 0.25rem 0.6rem; font-size: 0.74rem; }
 
@@ -2656,6 +2685,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 }
 .status-badge.is-inactive { background: color-mix(in srgb, var(--sunshine) 26%, var(--card)); color: var(--ink); }
 .status-badge.is-archived { background: color-mix(in srgb, var(--ink-soft) 20%, var(--card)); color: var(--ink-soft); }
+.status-badge.is-debtor { background: color-mix(in srgb, var(--persimmon) 20%, var(--card)); color: var(--persimmon); }
 
 .tag-chip {
   display: inline-block;

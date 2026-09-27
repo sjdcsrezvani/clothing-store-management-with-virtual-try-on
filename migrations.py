@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 22
+MIGRATION_VERSION = 23
 
 
 def migration_status(engine) -> int:
@@ -238,6 +238,14 @@ def _rebuild_sms_messages(conn) -> None:
 
 
 def _apply_revision(conn, version: int) -> None:
+    if version == 23:
+        # When the invitation SMS actually left, beside when the assignment
+        # was created: the model grew the column but no revision carried it,
+        # so any database built before it 500s the customers page.
+        # Purely additive — existing rows simply have no sent time yet.
+        _add_column_if_missing(conn, "campaign_assignments", "invite_sent_at", "DATETIME")
+        return
+
     if version == 22:
         # One arrival, one receipt: the purchase that took a variant in is
         # stamped on the variant itself. Purely additive — every existing row

@@ -156,7 +156,7 @@ STATUSES = ("all", "active", "inactive", "debtor", "birthday", "discount",
 STATUS_LABELS = {
     "all": "همه مشتریان",
     "active": "فعال (خرید ۳۰ روز اخیر)",
-    "inactive": "کم‌فعال (بدون خرید ۹۰ روز)",
+    "inactive": "غیرفعال (بدون خرید ۹۰ روز)",
     "debtor": "بدهکار",
     "birthday": "تولد نزدیک",
     "discount": "تخفیف استفاده‌نشده",
@@ -388,9 +388,62 @@ def _sorted(query, sort: str):
     return query.order_by(Customer.created_at.desc())  # date (default)
 
 
+def _customer_query(db: Session, *, search: str = "", tier: str = "", status: str = "all",
+                    tag: str = "", drifted: bool = False):
+    """The filtered customer query both the list and the export read.
+
+    One chain, two callers: the export used to be a second spelling of these
+    filters, and a second spelling is where a filter gets forgotten.
+    """
+    status = status if status in STATUSES else "all"
+    if drifted:
+        drift_ids = drifted_customer_ids(db)
+        query = db.query(Customer).filter(Customer.id.in_(drift_ids))
+        if (search or "").strip():
+            query = query.filter(
+                or_(Customer.phone.contains(search),
+                    Customer.first_name.contains(search),
+                    Customer.last_name.contains(search)))
+    else:
+        query = _filtered_query(db, search=search, tier=tier, status=status, tag=tag)
+    return query
+
+
+def export_customers(db: Session, *, search: str = "", tier: str = "", status: str = "all",
+                     tag: str = "", sort: str = "date", drifted: bool = False) -> list:
+    """Every customer the filtered view would show, unsliced for the file."""
+    sort = sort if sort in SORTS else "date"
+    return _sorted(_customer_query(
+        db, search=search, tier=tier, status=status, tag=tag, drifted=drifted), sort).all()
+
+
+def bulk_tag_customers(db: Session, ids: list[int], tag: str, *, remove: bool = False) -> int:
+    """Tag (or untag) many customers at once, in palette order.
+
+    Unknown tags are refused, not stored: the column is a CSV of palette keys
+    and a stray string would render as nothing anywhere.
+    """
+    if tag not in TAG_KEYS:
+        raise ValueError(f"Unknown tag: {tag}")
+    changed = 0
+    for customer in db.query(Customer).filter(Customer.id.in_(ids or [0])).all():
+        keys = parse_tags(customer.tags)
+        if remove:
+            if tag not in keys:
+                continue
+            keys = [key for key in keys if key != tag]
+        elif tag in keys:
+            continue
+        else:
+            keys = parse_tags(",".join(keys + [tag]))
+        customer.tags = serialize_tags(keys)
+        changed += 1
+    return changed
+
+
 def list_customers(db: Session, *, search: str = "", tier: str = "", status: str = "all",
                    tag: str = "", sort: str = "date", page: int = 1,
-                   drifted: bool = False) -> dict:
+                   per_page: int = PER_PAGE, drifted: bool = False) -> dict:
     """One page of customers plus the totals the page needs to describe itself.
 
     ``drifted`` swaps the whole query for the drift worklist: only customers
@@ -404,27 +457,19 @@ def list_customers(db: Session, *, search: str = "", tier: str = "", status: str
     sort = sort if sort in SORTS else "date"
     page = max(1, int(page or 1))
 
-    if drifted:
-        drift_ids = drifted_customer_ids(db)
-        query = db.query(Customer).filter(Customer.id.in_(drift_ids))
-        if (search or "").strip():
-            query = query.filter(
-                or_(Customer.phone.contains(search),
-                    Customer.first_name.contains(search),
-                    Customer.last_name.contains(search)))
-    else:
-        query = _filtered_query(db, search=search, tier=tier, status=status, tag=tag)
+    query = _customer_query(db, search=search, tier=tier, status=status, tag=tag, drifted=drifted)
     total = query.count()
-    total_pages = max(1, (total + PER_PAGE - 1) // PER_PAGE)
+    per_page = per_page if per_page in (10, 25, 50) else PER_PAGE
+    total_pages = max(1, (total + per_page - 1) // per_page)
     page = min(page, total_pages)
-    rows = _sorted(query, sort).offset((page - 1) * PER_PAGE).limit(PER_PAGE).all()
+    rows = _sorted(query, sort).offset((page - 1) * per_page).limit(per_page).all()
 
     return {
         "customers": rows,
         "total": total,
         "page": page,
         "total_pages": total_pages,
-        "per_page": PER_PAGE,
+        "per_page": per_page,
         "search": search,
         "tier": tier,
         "status": status,
@@ -720,10 +765,14 @@ def birthday_fields(customer: Customer, db: Session) -> dict:
 # ── profile ───────────────────────────────────────────────────────────────────
 
 
-def customer_profile(db: Session, customer: Customer) -> dict:
+def customer_profile(db: Session, customer: Customer, history_page: int = 1) -> dict:
     """Everything the customer's own page shows, computed from source."""
     from services.campaigns import customer_campaign_history
     sales_query = db.query(Sale).filter(Sale.customer_id == customer.id)
+    sale_count = sales_query.count()
+    history_page = max(1, int(history_page or 1))
+    history_pages = max(1, -(-sale_count // PROFILE_SALES))
+    history_page = min(history_page, history_pages)
 
     computed_row = _counted_sales_query(db, customer.id).with_entities(
         func.coalesce(func.sum(Sale.final_amount), 0),
@@ -750,9 +799,12 @@ def customer_profile(db: Session, customer: Customer) -> dict:
 
     tier_config = get_tier_config(db)
     return {
-        "sales": sales_query.order_by(Sale.created_at.desc()).limit(PROFILE_SALES).all(),
-        "sale_count": sales_query.count(),
+        "sales": sales_query.order_by(Sale.created_at.desc())
+            .offset((history_page - 1) * PROFILE_SALES).limit(PROFILE_SALES).all(),
+        "sale_count": sale_count,
         "history_limit": PROFILE_SALES,
+        "history_page": history_page,
+        "history_pages": history_pages,
         "computed_spent": computed_spent,
         "computed_count": computed_count,
         "computed_points": computed_points,

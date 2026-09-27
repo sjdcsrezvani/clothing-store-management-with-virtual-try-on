@@ -1,3 +1,57 @@
+## 2.6.13 — 1405/07/05 (2026-09-27)
+
+### ثبت سریع مشتری: the quick register reads as a card, not a browser default
+
+- **The quick register is a card now.** The disclosure that adds a customer
+  from the list opened with the platform's own triangle marker and a bare
+  title; it now draws its own affordance — a `+` that turns into a `×` while
+  the form is open — says what it is for inline («ثبت سریع با شماره موبایل»),
+  and answers hover with the link colour and a visible focus ring for
+  keyboard use.
+- **The form follows the house flex language.** The phone keeps the widest
+  share because the number is what makes the row, the two names divide the
+  rest, and minimum widths let the row wrap on a phone instead of crushing
+  its fields; a rule above the form makes the open card read as one surface
+  rather than a floating row of inputs.
+
+**Schema change.** None — the database stays on revision 23.
+
+## 2.6.12 — 1405/07/05 (2026-09-27)
+
+### پرونده مشتری: the list finds them, the file answers for them
+
+- **The list carries its own tools.** A customer can be added from the list
+  itself: the phone makes the row, the names only dress it, and a number that
+  already belongs to a file answers with that owner instead of opening a
+  second one. Selected rows take a palette tag in one move — added or removed
+  — and a tag outside the palette is refused rather than stored.
+- **The filtered list leaves the screen.** «خروجی CSV» writes exactly the query
+  the page is reading, unsliced, from the same filter chain the list uses, so
+  nothing the view hides can reappear in the file; a BOM and Persian headers
+  let Excel open it correctly. The per-page presets (10/25/50), the sort and
+  the drift filter all survive every page turn, a clear-filters link retires
+  the whole form in one click, and the column headers are now real sort links
+  that state their direction.
+- **The file explains itself.** Unpaid credit lists its invoices with amounts
+  and dates instead of a bare count; sales history pages with «صفحه N از M»;
+  the referral code copies in one tap; and the name and phone can be corrected
+  on the file under the signup rule — a number already on another file is
+  refused, not merged, and the correction is audited with before and after. A
+  manager who may not run a reconcile can ask the owner for one, and the ask
+  lands in the audit trail where the owner reads it.
+- **Honest words, everywhere.** «کمفعال» becomes «غیرفعال», saved counters are
+  «حساب» rather than the ledger-ish «شمارنده», amounts say «تومان» instead of a
+  bare «ت», the tier badges read from one label source instead of scattered
+  conditionals, the campaign and tag columns retire themselves when the shop
+  has none, the inbox-style row buttons fold into the name they act on, and a
+  purchase made today says «امروز» instead of «۰ روز پیش».
+- **The list reads on a phone.** Under 700px the eleven-column table becomes
+  labelled cards, each cell naming itself, with the debtor badge and campaign
+  chip still visible.
+
+**Schema change.** The database moves to revision 23 (campaign invite
+sent-at timestamp, additive).
+
 ## 2.6.11 — 1405/07/02 (2026-09-24)
 
 ### The release gate runs in three minutes, not nine
