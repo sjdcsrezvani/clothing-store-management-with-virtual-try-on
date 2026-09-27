@@ -1,3 +1,21 @@
+## 2.6.13 — 1405/07/05 (2026-09-27)
+
+### ثبت سریع مشتری: the quick register reads as a card, not a browser default
+
+- **The quick register is a card now.** The disclosure that adds a customer
+  from the list opened with the platform's own triangle marker and a bare
+  title; it now draws its own affordance — a `+` that turns into a `×` while
+  the form is open — says what it is for inline («ثبت سریع با شماره موبایل»),
+  and answers hover with the link colour and a visible focus ring for
+  keyboard use.
+- **The form follows the house flex language.** The phone keeps the widest
+  share because the number is what makes the row, the two names divide the
+  rest, and minimum widths let the row wrap on a phone instead of crushing
+  its fields; a rule above the form makes the open card read as one surface
+  rather than a floating row of inputs.
+
+**Schema change.** None — the database stays on revision 23.
+
 ## 2.6.12 — 1405/07/05 (2026-09-27)
 
 ### پرونده مشتری: the list finds them, the file answers for them
