@@ -507,7 +507,7 @@ def test_the_detail_page_offers_a_real_audience_choice(detail_page):
     assert 'name="audience"' in body
     assert "مشتری" in body
     # The send is confirmed with the real number, not a generic warning.
-    assert "پیامک کمپین برای گروه انتخاب‌شده ارسال می‌شود" in body
+    assert "پیامک کمپین برای گروه انتخاب‌شده در صف ارسال قرار می‌گیرد" in body
 
 
 @pytest.fixture()

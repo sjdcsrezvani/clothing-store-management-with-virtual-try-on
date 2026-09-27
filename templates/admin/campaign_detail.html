@@ -25,7 +25,7 @@
         <div class="stat-sub">{{ stats.window_label }}</div>
     </div>
     <div class="stat-card accent-saffron">
-        <div class="stat-label">پیامک‌شده</div>
+        <div class="stat-label">دعوت‌شده</div>
         <div class="stat-value tnum">{{ stats.messaged }}</div>
         <div class="stat-sub">{{ stats.reached }} مشتری این کمپین را دارند</div>
     </div>
@@ -37,13 +37,20 @@
         </div>
     </div>
     <div class="stat-card accent-persimmon">
-        <div class="stat-label">فروش کمپین</div>
-        <div class="stat-value tnum">{{ fmt(stats.revenue) }} ت</div>
+        <div class="stat-label">فروش با کمپین</div>
+        <div class="stat-value tnum">{{ fmt(stats.revenue) }} تومان</div>
         <div class="stat-sub">
-            {{ fmt(stats.used_money) }} ت تخفیف · {{ stats.redemptions }} فاکتور
+            {{ fmt(stats.used_money) }} تومان تخفیف · {{ stats.redemptions }} فاکتور
         </div>
     </div>
 </div>
+
+{% if campaign.is_archived %}
+<div class="alert alert-error" role="status">
+    این کمپین بایگانی شده است — در فهرست نیست و پیامکی برایش نمی‌رود، ولی سابقه‌اش می‌ماند.
+    برای برگرداندن، پایین صفحه «بازگردانی از بایگانی» را بزنید (فعال‌سازی جدا در ویرایش است).
+</div>
+{% endif %}
 
 {# ── The send panel: a real audience, counted before anything is queued ── #}
 <section class="card campaign-send" id="send">
@@ -58,23 +65,36 @@
     </div>
 
     {% if audience_options | sum(attribute='count') %}
-    <form method="post" action="/admin/campaigns/{{ campaign.id }}/send" class="campaign-send-form">
+    <form method="post" action="/admin/campaigns/{{ campaign.id }}/send" class="campaign-send-form"
+          data-confirm="پیامک کمپین برای گروه انتخاب‌شده در صف ارسال قرار می‌گیرد. مطمئن هستید؟">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <fieldset class="audience-choices">
             <legend>گروه دریافت‌کننده</legend>
-            {% for option in audience_options %}
-            <label class="audience-choice{% if not option.count %} is-empty{% endif %}">
+            {% for option in audience_options if option.count %}
+            <label class="audience-choice">
                 <input type="radio" name="audience" value="{{ option.key }}"
-                       {% if loop.first %}checked{% endif %} {% if not option.count %}disabled{% endif %}>
+                       {% if loop.first %}checked{% endif %}>
                 <span class="audience-label">{{ option.label }}</span>
                 <span class="audience-count tnum">
-                    {% if option.count %}{{ option.count }} مشتری{% else %}کسی برای ارسال نمانده{% endif %}
+                    {{ option.count }} از {{ option.total }} مشتری
+                    {% if option.count < option.total %}<small>سقف هر ارسال {{ option.limit }} مشتری است</small>{% endif %}
                 </span>
             </label>
             {% endfor %}
+            {% set empty_options = audience_options | selectattr('count', 'equalto', 0) | list %}
+            {% if empty_options %}
+            <details class="audience-empty">
+                <summary>{{ empty_options | length }} گروه خالی — کسی برای ارسال نمانده</summary>
+                <ul>
+                    {% for option in empty_options %}
+                    <li><span class="audience-label">{{ option.label }}</span>
+                        <small class="muted">از {{ option.total }} مشتری، همه دیده‌شده یا کنار گذاشته شده‌اند</small></li>
+                    {% endfor %}
+                </ul>
+            </details>
+            {% endif %}
         </fieldset>
-        <button type="submit" class="btn btn-primary btn-large"
-                onclick="return confirm('⚠️ پیامک کمپین برای گروه انتخاب‌شده ارسال می‌شود. مطمئن هستید؟')">
+        <button type="submit" class="btn btn-primary btn-large">
             ارسال پیامک کمپین
         </button>
         <small class="muted">متن پیامک از «تنظیمات ← متن پیامک کمپین» خوانده می‌شود.</small>
@@ -94,23 +114,49 @@
         <div>
             <h3>دارندگان کمپین</h3>
             <p class="muted">
-                «دعوت‌شده» یعنی تخفیف در صندوق برایش فعال است؛ «استفاده‌شده» یعنی روی فاکتوری اعمال شد.
+                این‌ها همان کسانی‌اند که تخفیف در صندوق برایشان خودکار اعمال می‌شود —
+                با «ارسال پیامک» گروهی آمده‌اند یا دستی همین‌جا اضافه شده‌اند.
+                «دعوت‌شده» یعنی تخفیف فعال است؛ «استفاده‌شده» یعنی روی فاکتوری اعمال شد؛
+                «برداشته‌شده» یعنی بیرون رفته و دیگر تخفیف نمی‌گیرد.
             </p>
+            {% if assignments %}
+            {% set invited_count = assignments | selectattr('assignment.status', 'equalto', 'invited') | list | length %}
+            {% set used_count = assignments | selectattr('assignment.status', 'equalto', 'used') | list | length %}
+            {% set removed_count = assignments | selectattr('assignment.status', 'equalto', 'removed') | list | length %}
+            <p class="holders-summary tnum">
+                {{ invited_count }} دعوت‌شده · {{ used_count }} استفاده‌شده
+                {%- if removed_count %} · {{ removed_count }} برداشته‌شده{% endif %}
+            </p>
+            {% endif %}
         </div>
     </div>
 
-    <form method="post" action="/admin/campaigns/{{ campaign.id }}/assign" class="campaign-assign-form">
+    <form method="post" action="/admin/campaigns/{{ campaign.id }}/assign" class="campaign-assign-form assign-panel">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <div class="form-group">
-            <label class="sr-only" for="assign-customer">افزودن مشتری</label>
-            <select id="assign-customer" name="customer_id" {% if not customer_picker %}disabled{% endif %}>
-                {% for customer in customer_picker %}
-                <option value="{{ customer.id }}">{{ customer.name }} — {{ customer.phone }}</option>
-                {% endfor %}
-                {% if not customer_picker %}<option>مشتری دیگری برای افزودن نیست</option>{% endif %}
-            </select>
+        <p class="assign-title">افزودن دستی — یک نفر</p>
+        <div class="assign-paths">
+            <div class="form-group">
+                <label for="assign-search">جست‌وجو در مشتریان</label>
+                <input type="search" id="assign-search" placeholder="نام یا شماره…" autocomplete="off"
+                       {% if not customer_picker %}disabled{% endif %}
+                       aria-describedby="assign-search-count">
+                <label class="sr-only" for="assign-customer">مشتری</label>
+                <select id="assign-customer" name="customer_id" {% if not customer_picker %}disabled{% endif %}>
+                    {% for customer in customer_picker %}
+                    <option value="{{ customer.id }}" data-search="{{ customer.name }} {{ customer.phone }}">{{ customer.name }} — {{ customer.phone }}</option>
+                    {% endfor %}
+                    {% if not customer_picker %}<option>مشتری دیگری برای افزودن نیست</option>{% endif %}
+                </select>
+                <small class="muted" id="assign-search-count" aria-live="polite"></small>
+            </div>
+            <span class="assign-or" aria-hidden="true">یا</span>
+            <div class="form-group">
+                <label for="assign-phone">افزودن با شماره موبایل</label>
+                <input type="tel" id="assign-phone" name="phone" dir="ltr" placeholder="09123456789" autocomplete="off">
+                <small class="muted">فاصله، خط‌تیره و ۹۸+ پذیرفته است.</small>
+            </div>
         </div>
-        <button type="submit" class="btn btn-ghost" {% if not customer_picker %}disabled{% endif %}>
+        <button type="submit" class="btn btn-primary" {% if not customer_picker %}disabled{% endif %}>
             افزودن به کمپین
         </button>
     </form>
@@ -131,24 +177,24 @@
             <tbody>
                 {% for row in assignments %}
                 <tr>
-                    <td class="customer-name">
+                    <td class="customer-name" data-label="مشتری">
                         <strong><a href="/admin/customers/{{ row.customer.id }}">{{ row.customer.full_name }}</a></strong>
-                        <small class="customer-phone">{{ row.customer.phone }}</small>
+                        <small class="customer-phone tnum">{{ row.customer.phone }}</small>
                     </td>
-                    <td><span class="status-badge is-assignment-{{ row.assignment.status }}">{{ row.status_label }}</span></td>
-                    <td>{{ row.source_label }}</td>
-                    <td class="tnum">
+                    <td data-label="وضعیت"><span class="status-badge is-assignment-{{ row.assignment.status }}">{{ row.status_label }}</span></td>
+                    <td data-label="از چه راهی">{{ row.source_label }}</td>
+                    <td class="tnum" data-label="پیامک">
                         {% if row.invite_sent_at %}{{ jalali_str(row.invite_sent_at, false) }}{% else %}—{% endif %}
                     </td>
-                    <td class="tnum">
+                    <td class="tnum" data-label="استفاده">
                         {% if row.used_count %}
                         <strong>{{ jalali_str(row.used_at, false) if row.used_at else '—' }}</strong>
                         <small>{{ row.used_count }} بار</small>
                         {% else %}—{% endif %}
                     </td>
-                    <td>
+                    <td data-label="عملیات">
                         <form method="post" action="/admin/campaigns/{{ campaign.id }}/unassign"
-                              onsubmit="return confirm('این مشتری از کمپین برداشته شود؟')">
+                              data-confirm="این مشتری از کمپین برداشته شود؟ تخفیف خودکارش قطع می‌شود.">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                             <input type="hidden" name="customer_id" value="{{ row.customer.id }}">
                             <button type="submit" class="btn btn-sm btn-ghost"
@@ -183,16 +229,16 @@
                     <th scope="col">فاکتور</th>
                     <th scope="col">تاریخ</th>
                     <th scope="col">مبلغ فاکتور</th>
-                    <th scope="col">تخفیف کمپین</th>
+                    <th scope="col">تخفیف داده‌شده</th>
                 </tr>
             </thead>
             <tbody>
                 {% for row in redemptions %}
                 <tr>
-                    <td><a class="text-link" href="/sales/invoice/{{ row.sale.id }}">#{{ row.sale.id }}</a></td>
-                    <td class="tnum">{{ jalali_str(row.sale.created_at, false) }}</td>
-                    <td class="tnum">{{ fmt(row.sale.final_amount) }}</td>
-                    <td class="tnum"><strong>{{ fmt(row.link.discount_amount) }}</strong></td>
+                    <td data-label="فاکتور"><a class="text-link" href="/sales/invoice/{{ row.sale.id }}">#{{ row.sale.id }}</a></td>
+                    <td class="tnum" data-label="تاریخ">{{ jalali_str(row.sale.created_at, false) }}</td>
+                    <td class="tnum" data-label="مبلغ فاکتور">{{ fmt(row.sale.final_amount) }} تومان</td>
+                    <td class="tnum" data-label="تخفیف داده‌شده"><strong>{{ fmt(row.link.discount_amount) }} تومان</strong></td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -204,21 +250,121 @@
 <section class="card campaign-danger">
     <div class="section-heading-row">
         <div>
-            <h3>حذف کمپین</h3>
+            <h3>بایگانی و حذف کمپین</h3>
             <p class="muted">
                 {% if stats.redemptions %}
                 این کمپین روی {{ stats.redemptions }} فاکتور ثبت شده است و حذف آن سابقه فروش را از بین می‌برد
-                — برای توقف آن را در ویرایش غیرفعال کنید.
+                — بایگانی کنید یا برای توقف، در ویرایش غیرفعال کنید.
                 {% else %}
-                حذف فقط برای کمپینی است که هنوز روی هیچ فاکتوری اعمال نشده؛ برای توقف، غیرفعال کنید.
+                حذف فقط برای کمپینی است که هنوز روی هیچ فاکتوری اعمال نشده؛ برای توقفِ کم‌خطر، بایگانی کنید.
                 {% endif %}
             </p>
         </div>
-        <form method="post" action="/admin/campaigns/{{ campaign.id }}/delete"
-              onsubmit="return confirm('⚠️ این کمپین حذف شود؟')">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button type="submit" class="btn btn-danger" {% if stats.redemptions %}disabled{% endif %}>حذف کمپین</button>
-        </form>
+        <div class="campaign-actions">
+            {% if campaign.is_archived %}
+            <form method="post" action="/admin/campaigns/{{ campaign.id }}/unarchive"
+                  data-confirm="کمپین به فهرست برگردد؟ فعال‌سازی جدا در ویرایش انجام می‌شود.">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-ghost">بازگردانی از بایگانی</button>
+            </form>
+            {% else %}
+            <form method="post" action="/admin/campaigns/{{ campaign.id }}/archive"
+                  data-confirm="کمپین بایگانی شود؟ از فهرست و ارسال‌ها بیرون می‌آید ولی سابقه‌اش می‌ماند.">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-ghost">بایگانی کمپین</button>
+            </form>
+            {% endif %}
+            <form method="post" action="/admin/campaigns/{{ campaign.id }}/delete"
+                  data-confirm="این کمپین برای همیشه حذف شود؟ فقط وقتی مجاز است که روی هیچ فاکتوری نباشد.">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-danger" {% if stats.redemptions %}disabled{% endif %}>حذف کمپین</button>
+            </form>
+        </div>
     </div>
 </section>
+
+{# One confirm surface for the whole page: destructive forms carry their
+   sentence in data-confirm, the dialog reads it back, and the confirm
+   button finishes that form's own submit. Focus trap + Escape come from
+   the shared dialog helper; without JS the forms post directly. #}
+<div id="campaign-confirm" data-dialog role="alertdialog" aria-modal="true"
+     aria-labelledby="campaign-confirm-title" class="confirm-scrim" tabindex="-1">
+    <div class="t-modal-card confirm-card" role="document">
+        <h3 id="campaign-confirm-title">مطمئن هستید؟</h3>
+        <p class="muted" id="campaign-confirm-text"></p>
+        <div class="confirm-actions">
+            <button type="button" class="btn btn-danger" id="campaign-confirm-yes">تأیید</button>
+            <button type="button" class="btn btn-ghost" data-dialog-close>انصراف</button>
+        </div>
+    </div>
+</div>
+<script>
+// Confirm modal + assign-picker filter, bound once per document. The submit
+// listener is the only gate: form.submit() skips it, so confirming never
+// loops back into the dialog.
+(function () {
+    var pendingForm = null;
+    function faNum(value) {
+        var fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩';
+        return String(value == null ? '' : value)
+            .replace(/[۰-۹]/g, function (d) { return fa.indexOf(d); })
+            .replace(/[٠-٩]/g, function (d) { return ar.indexOf(d); });
+    }
+    document.addEventListener('submit', function (event) {
+        var form = event.target.closest ? event.target.closest('form[data-confirm]') : null;
+        if (!form || form === pendingForm) return;
+        if (!window.RaykidDialog) return; // no helper, no gate: post directly
+        event.preventDefault();
+        pendingForm = form;
+        document.getElementById('campaign-confirm-text').textContent =
+            form.getAttribute('data-confirm');
+        window.RaykidDialog.open('campaign-confirm', document.activeElement);
+    });
+    document.getElementById('campaign-confirm-yes').addEventListener('click', function () {
+        var form = pendingForm;
+        pendingForm = null;
+        window.RaykidDialog.close('campaign-confirm');
+        if (form) form.submit();
+    });
+    document.getElementById('campaign-confirm').addEventListener('click', function (event) {
+        if (event.target.closest('[data-dialog-close]')) pendingForm = null;
+    });
+    // Escape closes the surface inside the shared helper, which tells us
+    // nothing — so a dismissed dialog must never leave a live bypass behind.
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') pendingForm = null;
+    });
+
+    var search = document.getElementById('assign-search');
+    var select = document.getElementById('assign-customer');
+    var phone = document.getElementById('assign-phone');
+    var count = document.getElementById('assign-search-count');
+    if (!search || !select) return;
+    var options = Array.prototype.slice.call(select.options);
+    function syncCount(visible) {
+        if (count) count.textContent = visible + ' مشتری در فهرست';
+    }
+    syncCount(options.length);
+    search.addEventListener('input', function () {
+        var needle = faNum(search.value).trim().toLowerCase();
+        var visible = 0, first = null;
+        options.forEach(function (opt) {
+            var hay = faNum(opt.getAttribute('data-search') || opt.text).toLowerCase();
+            var show = !needle || hay.indexOf(needle) !== -1;
+            opt.hidden = !show;
+            if (show) { visible++; if (!first) first = opt; }
+        });
+        if (first) select.value = first.value;
+        syncCount(visible);
+    });
+    // Typed digits win over the list: each side clears the other so the
+    // server never has to guess which one was meant.
+    if (phone) phone.addEventListener('input', function () {
+        if (phone.value.trim()) select.selectedIndex = -1;
+    });
+    select.addEventListener('change', function () {
+        if (phone && select.selectedIndex >= 0) phone.value = '';
+    });
+})();
+</script>
 {% endblock %}

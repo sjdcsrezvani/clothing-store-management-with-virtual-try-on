@@ -58,6 +58,7 @@ STATUS_FILTERS = (
     ("scheduled", STATUS_LABELS["scheduled"]),
     ("expired", STATUS_LABELS["expired"]),
     ("inactive", STATUS_LABELS["inactive"]),
+    ("archived", "بایگانی‌شده"),
 )
 
 ORDER_LABELS = {
@@ -78,6 +79,26 @@ def _safe_next(value: str, fallback: str) -> str:
 
 def _guard(request, db):
     return require_html_role(request, db, "manager")
+
+
+def _normalize_campaign_phone(value: str) -> str:
+    """A typed phone becomes the digits the customers table stores.
+
+    Spaces, dashes and parens fall away, Farsi digits become English ones,
+    and a +98/0098 prefix folds back to the 09 mobile the signup writes —
+    the suppliers page's rule, narrowed to the mobile shape this lookup
+    needs (empty stays empty, anything else is compared as typed).
+    """
+    cleaned = (to_english_digits(str(value or ""))
+               .replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+               .strip())
+    if cleaned.startswith("+"):
+        cleaned = cleaned[1:]
+    if cleaned.startswith("0098"):
+        cleaned = "0" + cleaned[4:]
+    elif cleaned.startswith("98") and len(cleaned) == 12:
+        cleaned = "0" + cleaned[2:]
+    return cleaned
 
 
 def _values_from_form(
@@ -158,6 +179,7 @@ async def admin_campaigns(
     status: str = "all",
     order: str = "newest",
     page: str = "1",
+    per_page: str = "25",
     db: Session = Depends(get_db),
 ):
     guard = _guard(request, db)
@@ -165,11 +187,15 @@ async def admin_campaigns(
         return guard
 
     page = page_arg(page)
-    listing = campaign_filtered(db, search=search, status=status, order=order, page=page)
+    per_page_int = int(per_page) if str(per_page).isdigit() and int(per_page) in (10, 25, 50) else 25
+    listing = campaign_filtered(
+        db, search=search, status=status, order=order, page=page, per_page=per_page_int,
+    )
     return templates.TemplateResponse(request, "admin/campaigns.html", {
         **listing,
         "overview": campaign_overview(db),
         "status_filters": STATUS_FILTERS,
+        "per_page_options": (10, 25, 50),
         "order_labels": ORDER_LABELS,
         "sources": SOURCE_LABELS,
         "assignment_labels": ASSIGNMENT_STATUS_LABELS,
@@ -533,12 +559,14 @@ async def admin_campaign_assign(
         raise HTTPException(status_code=404, detail="کمپین یافت نشد")
 
     customer = None
-    if customer_id:
-        customer = db.query(Customer).filter(Customer.id == customer_id).first()
-    elif phone.strip():
+    # Typed digits beat a stale list selection: when both arrive, the phone
+    # the person just typed is what they meant.
+    if phone.strip():
         customer = db.query(Customer).filter(
-            Customer.phone == to_english_digits(phone.strip())
+            Customer.phone == _normalize_campaign_phone(phone)
         ).first()
+    elif customer_id:
+        customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:
         return RedirectResponse(
             url=_safe_next(next, f"/admin/campaigns/{campaign.id}") + "?err=مشتری پیدا نشد.",
@@ -593,6 +621,51 @@ async def admin_campaign_unassign(
         + f"?msg={customer.full_name} از کمپین برداشته شد.",
         status_code=303,
     )
+
+
+# ── archive ───────────────────────────────────────────────────────────────────
+
+@router.post("/campaigns/{campaign_id}/archive", response_class=HTMLResponse)
+async def admin_campaign_archive(
+    campaign_id: int, request: Request, db: Session = Depends(get_db),
+):
+    """Retire a campaign without erasing it: hidden from the list, skipped by
+    the send audience, every redemption row untouched. Archiving also stops
+    the counter, so unarchiving alone never re-activates — that stays the
+    edit form's explicit switch."""
+    guard = _guard(request, db)
+    if not hasattr(guard, "role"):
+        return guard
+
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="کمپین یافت نشد")
+    campaign.is_archived = True
+    campaign.is_active = False
+    db.commit()
+    log_action(db, "campaign_archive", f"کمپین «{campaign.name}» بایگانی شد",
+               request=request, target_type="campaign", target_id=campaign.id)
+    return RedirectResponse(url=f"/admin/campaigns/{campaign.id}?msg=کمپین بایگانی شد؛ سابقه‌اش می‌ماند.",
+                            status_code=303)
+
+
+@router.post("/campaigns/{campaign_id}/unarchive", response_class=HTMLResponse)
+async def admin_campaign_unarchive(
+    campaign_id: int, request: Request, db: Session = Depends(get_db),
+):
+    guard = _guard(request, db)
+    if not hasattr(guard, "role"):
+        return guard
+
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="کمپین یافت نشد")
+    campaign.is_archived = False
+    db.commit()
+    log_action(db, "campaign_unarchive", f"کمپین «{campaign.name}» از بایگانی برگشت",
+               request=request, target_type="campaign", target_id=campaign.id)
+    return RedirectResponse(url=f"/admin/campaigns/{campaign.id}?msg=کمپین به فهرست برگشت. برای فعال‌سازی در ویرایش اقدام کنید.",
+                            status_code=303)
 
 
 # ── delete ────────────────────────────────────────────────────────────────────

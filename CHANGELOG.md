@@ -1,3 +1,32 @@
+## 2.7.1 — 1405/07/06 (2026-09-28)
+
+### کمپین‌ها: the list retires a campaign, the detail page earns trust
+
+- **A campaign can be retired without erasing it.** «بایگانی» hides it from
+  the list and skips it in the send audience and the checkout, while every
+  redemption row stays put; an archived code answers that it is archived
+  instead of pretending to be live, and unarchiving returns it to the list
+  without flipping it back on — that stays the edit form's explicit switch.
+  The database grows an `is_archived` flag the same way the customers list
+  retires a file.
+- **The list gets the customers page's tools.** Per-page presets (10/25/50)
+  ride every filter, the archived filter lives beside the status filters,
+  and the KPI row counts only what the list shows.
+- **The detail page asks before it acts.** The bulk send confirms with the
+  real queue wording, the audience picker states its per-person cap, and
+  the SMS shows its exact rendered text as a preview before it is queued.
+- **Manual add becomes two clear paths.** Search in the customers, or type
+  the mobile: spaces, dashes and +98/0098 prefixes fold to the digits the
+  customers table stores, and typed digits now win over a stale list
+  selection when both arrive.
+- **The holders section explains itself.** What «دعوت‌شده»، «استفاده‌شده»
+  and «برداشته‌شده» mean is said in one sentence, with a per-status count
+  beside the list, and the add panel reads as one card with a named
+  «یا» between its two paths.
+
+**Schema change.** The database moves to revision 24 (campaigns
+archived flag, additive — every existing row starts unarchived).
+
 ## 2.7.0 — 1405/07/05 (2026-09-27)
 
 ### حساب نسیه: the page speaks plainly, the tools get sharper
