@@ -27,6 +27,7 @@ from services.accounting import (
     AGE_BUCKETS,
     DEBT_SORTS,
     DEBT_STATUS_LABELS,
+    INVOICE_SORTS,
     PER_PAGE as DEBTS_PER_PAGE,
     apply_customer_payment, apply_purchase_cost_basis, assign_due_dates,
     credit_due_date_for, credit_reminder_allowed, credit_reminder_cooldown_hours,
@@ -34,7 +35,7 @@ from services.accounting import (
     age_bucket, as_utc, build_debt_rows, days_past_due, due_effective_at,
     get_credit_limit, get_net_pl, get_opening_balance, get_payment_history,
     last_credit_reminder, list_debts, list_open_invoices,
-    mark_credit_reminder_sent, reverse_payment, sale_remaining,
+    mark_credit_reminder_sent, preview_credit_reminder, reverse_payment, sale_remaining,
     unpaid_credit_sales,
     get_supplier_balances, purchase_effective_at, purchase_effective_column,
     purchase_item_totals, purchase_landed_unit_cost, purchase_overview,
@@ -733,7 +734,9 @@ async def admin_credit(
     status: str = "all",
     bucket: str = "",
     sort: str = "debt",
+    isort: str = "late",
     view: str = "customers",
+    per_page: str = "25",
     page: str = "1",
     db: Session = Depends(get_db),
 ):
@@ -751,12 +754,14 @@ async def admin_credit(
     sort = _clean(sort, DEBT_SORTS, "debt")
     bucket = _clean(bucket, AGE_BUCKETS, "")
     view = _clean(view, ("customers", "invoices"), "customers")
+    isort = _clean(isort, INVOICE_SORTS, "late")
+    per_page_int = int(per_page) if str(per_page).isdigit() and int(per_page) in (10, 25, 50) else DEBTS_PER_PAGE
 
     page = page_arg(page)
     listing = list_debts(db, search=search, status=status, bucket=bucket,
-                         sort=sort, page=page, per_page=DEBTS_PER_PAGE)
+                         sort=sort, page=page, per_page=per_page_int)
     invoices = (list_open_invoices(db, search=search, status=status, bucket=bucket,
-                                   page=page, per_page=DEBTS_PER_PAGE)
+                                   page=page, per_page=per_page_int, sort=isort)
                 if view == "invoices" else None)
     # Query strings are urlencoded once in the route (the purchases page's
     # rule): the toggle used to repeat `view=` inside filter_qs, a duplicate
@@ -767,10 +772,12 @@ async def admin_credit(
         "status": status,
         "bucket": bucket,
         "sort": sort,
+        "isort": isort,
+        "per_page": per_page_int,
         "search": search,
     })
     filter_qs = f"&{base_qs}&view={view}" if base_qs else f"&view={view}"
-    bucket_qs = f"&{urlencode({'status': status, 'sort': sort, 'search': search})}&view={view}"
+    bucket_qs = f"&{urlencode({'status': status, 'sort': sort, 'isort': isort, 'per_page': per_page_int, 'search': search})}&view={view}"
     toggle_qs = f"&{base_qs}" if base_qs else ""
     return templates.TemplateResponse(request, "admin/credit.html", {
         "overview": listing["overview"],
@@ -788,10 +795,15 @@ async def admin_credit(
         "search": search,
         "status": status,
         "sort": sort,
+        "isort": isort,
+        "per_page": per_page_int,
+        "per_page_options": (10, 25, 50),
         "bucket": bucket,
         "status_labels": DEBT_STATUS_LABELS,
         "sort_labels": DEBT_SORTS,
+        "isort_labels": INVOICE_SORTS,
         "bucket_labels": AGE_BUCKET_LABELS,
+        "reminder_pattern": _setting_value(db, "sms_pattern_credit_reminder"),
         "due_soon_days": listing["overview"]["due_soon_days"],
         "terms_days": credit_terms_days(db),
         "reminder_cooldown": credit_reminder_cooldown_hours(db),
@@ -886,6 +898,7 @@ async def admin_credit_customer(customer_id: int, request: Request, db: Session 
         "terms_days": credit_terms_days(db),
         "reminder_ready": allowed,
         "reminder_reason": reason,
+        "reminder_preview": preview_credit_reminder(db, customer) if allowed else "",
         "last_reminder": last_credit_reminder(db, customer.id),
         "has_reminder_pattern": bool(_setting_value(db, "sms_pattern_credit_reminder")),
         "msg": request.query_params.get("msg", ""),

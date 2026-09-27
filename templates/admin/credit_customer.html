@@ -137,16 +137,16 @@
                         {% for sale in unpaid_sales %}
                         <tr id="invoice-{{ sale.id }}">
                             {% set status = invoice_status[sale.id] %}
-                            <td><a class="text-link" href="/sales/invoice/{{ sale.id }}">#{{ sale.id }}</a></td>
-                            <td class="tnum">{{ jalali_str(sale.created_at, false) }}</td>
-                            <td class="tnum">{{ fmt(sale.final_amount) }}</td>
-                            <td class="tnum">{{ fmt(status.paid) }}</td>
-                            <td class="tnum"><strong class="credit-amount">{{ fmt(status.remaining) }}</strong></td>
-                            <td class="tnum">
+                            <td data-label="فاکتور"><a class="text-link" href="/sales/invoice/{{ sale.id }}">#{{ sale.id }}</a></td>
+                            <td class="tnum" data-label="تاریخ">{{ jalali_str(sale.created_at, false) }}</td>
+                            <td class="tnum" data-label="مبلغ">{{ fmt(sale.final_amount) }} تومان</td>
+                            <td class="tnum" data-label="پرداخت‌شده">{{ fmt(status.paid) }} تومان</td>
+                            <td class="tnum" data-label="باقی‌مانده"><strong class="credit-amount">{{ fmt(status.remaining) }} تومان</strong></td>
+                            <td class="tnum" data-label="سررسید">
                                 {% if status.due %}{{ jalali_str(status.due, false) }}
                                 {% else %}<span class="customer-meta">بدون سررسید</span>{% endif %}
                             </td>
-                            <td>
+                            <td data-label="وضعیت">
                                 {% if status.bucket == 'current' %}
                                 <span class="status-badge">جاری</span>
                                 <small class="customer-meta">سن از {{ jalali_str(status.effective, false) }}</small>
@@ -155,7 +155,7 @@
                                 <small class="customer-meta">{{ status.days_late }} روز</small>
                                 {% endif %}
                             </td>
-                            <td>
+                            <td data-label="دریافت این فاکتور">
                                 <form method="post" action="/admin/credit/pay" class="invoice-receive">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                     <input type="hidden" name="customer_id" value="{{ customer.id }}">
@@ -211,16 +211,16 @@
                     <tbody>
                         {% for p in payments %}
                         <tr>
-                            <td class="tnum">{{ jalali_str(p.created_at) }}</td>
-                            <td class="tnum">{{ fmt(p.amount) }}</td>
-                            <td>{% if p.method == 'card' %}کارت{% else %}نقد{% endif %}</td>
-                            <td>
+                            <td class="tnum" data-label="تاریخ">{{ jalali_str(p.created_at) }}</td>
+                            <td class="tnum" data-label="مبلغ">{{ fmt(p.amount) }} تومان</td>
+                            <td data-label="روش">{% if p.method == 'card' %}کارت{% else %}نقد{% endif %}</td>
+                            <td data-label="دریافت‌کننده">
                                 {% if p.received_by %}
                                 {{ p.received_by.full_name or p.received_by.username }}
                                 {% else %}<span class="customer-meta">—</span>{% endif %}
                             </td>
-                            <td>{{ p.note or '—' }}</td>
-                            <td>
+                            <td data-label="توضیح">{{ p.note or '—' }}</td>
+                            <td data-label="وضعیت">
                                 {% if p.reversed_at %}
                                 <span class="status-badge is-archived">برگشت‌شده</span>
                                 {% if reversal_reasons.get(p.id) %}
@@ -230,7 +230,7 @@
                                 <span class="status-badge">ثبت‌شده</span>
                                 {% endif %}
                             </td>
-                            <td>
+                            <td data-label="برگشت">
                                 {% if not p.reversed_at %}
                                 <form method="post" action="/admin/payments/{{ p.id }}/reverse" class="reversal-form"
                                       onsubmit="return confirm('این دریافت برگشت شود؟ بدهی مشتری به‌روز می‌شود.');">
@@ -293,6 +293,12 @@
                 </form>
                 {% endif %}
             </div>
+            {% if has_reminder_pattern and reminder_preview %}
+            <details class="reminder-preview">
+                <summary>پیش‌نمایش پیامک</summary>
+                <p class="tnum" dir="auto">{{ reminder_preview }}</p>
+            </details>
+            {% endif %}
             {% if has_reminder_pattern and not reminder_ready %}
             <p class="muted credit-reminder-note">{{ reminder_reason }}</p>
             {% endif %}
@@ -318,4 +324,26 @@
         </section>
     </div>
 </div>
+<script>
+// The clamp the server enforces, painted on the inputs: a figure above the
+// invoice's own remaining (or the whole debt on the round form) is refused
+// before the POST. The suppliers page's rule, same digits.
+document.querySelectorAll('form[action="/admin/credit/pay"]').forEach(function (form) {
+    var input = form.querySelector('input[name="amount"]');
+    if (!input) return;
+    var fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩';
+    function faNum(value) {
+        return String(value == null ? '' : value)
+            .replace(/[۰-۹]/g, function (d) { return fa.indexOf(d); })
+            .replace(/[٠-٩]/g, function (d) { return ar.indexOf(d); });
+    }
+    function bound() {
+        return parseInt(input.getAttribute('max'), 10) || 0;
+    }
+    input.addEventListener('change', function () {
+        var max = bound();
+        if (max > 0 && parseInt(faNum(input.value), 10) > max) input.value = max;
+    });
+});
+</script>
 {% endblock %}
