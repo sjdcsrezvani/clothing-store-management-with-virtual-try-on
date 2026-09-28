@@ -15,6 +15,32 @@ from services.sms_templates import (
 
 logger = logging.getLogger(__name__)
 
+# When set, the shop is in test mode: only these numbers may receive SMS and
+# everything else is refused at the queue — no row, no send, no trouble. Empty
+# means open sending. The owner edits it on the پیامک page; the shop database
+# holds it, so a deploy never flips the mode by accident.
+SETTING_ALLOWED_PHONES = "sms_allowed_phones"
+
+
+def allowed_phones(db: Session) -> list[str]:
+    """The test-mode allowlist, or [] for open sending."""
+    from services.sms_send import parse_phone_list
+
+    row = db.query(Settings).filter(Settings.key == SETTING_ALLOWED_PHONES).first()
+    if row is None or not (row.value or "").strip():
+        return []
+    return parse_phone_list(row.value)
+
+
+def is_allowed_recipient(db: Session, phone: str) -> bool:
+    """True when this number may be queued right now."""
+    from services.sms_send import normalise_phone
+
+    allowed = allowed_phones(db)
+    if not allowed:
+        return True
+    return normalise_phone(phone) in allowed
+
 
 def get_sms_setting(db: Session, key: str) -> str:
     """Get SMS setting from database."""
@@ -96,7 +122,8 @@ async def queue_sms(pattern: str, recipient: str, attributes: dict, db: Session,
                     template=None, template_key: str | None = None,
                     source: str = "manual", kind: str | None = None,
                     customer=None, employee_id: int | None = None,
-                    body: str | None = None, ref: str = "", values=None):
+                    body: str | None = None, ref: str = "", values=None,
+                    commit: bool = True):
     """Queue one message and record it in the log.
 
     The body is rendered **now**, at queue time, and that rendered text is what
@@ -113,6 +140,11 @@ async def queue_sms(pattern: str, recipient: str, attributes: dict, db: Session,
     """
     if not pattern and not body:
         return None
+    if not is_allowed_recipient(db, recipient):
+        # Test mode: this number is not on the allowlist. Refused before any
+        # row exists, so history never shows a message that must not exist.
+        logger.warning("SMS to %s refused by the allowlist", recipient)
+        return None
     rendered = body if body is not None else _render(pattern, attributes)
     if template is None and template_key:
         template = get_template(db, template_key)
@@ -127,7 +159,10 @@ async def queue_sms(pattern: str, recipient: str, attributes: dict, db: Session,
     # No BackgroundJob: the scheduler batch used to add up to five minutes in
     # front of every message, and the gateway claim is atomic on its own. The
     # log row *is* the queue item now; ``job_id`` stays for old rows.
-    db.commit()
+    # Batch callers (the manual blast) pass commit=False and commit once for
+    # the whole batch; everyone else keeps the per-message commit.
+    if commit:
+        db.commit()
     return row
 
 

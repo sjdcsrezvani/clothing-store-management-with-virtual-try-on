@@ -167,15 +167,20 @@ def resolve_recipients(
 
     pool: list[Customer] = []
     if mode in {"all", "tier", "tag"}:
-        query = db.query(Customer).order_by(Customer.id.asc())
-        if mode == "tier" and tier in TIER_LABELS:
-            query = query.filter(Customer.tier == tier)
-        pool = query.all()
-        if mode == "tag":
-            if tag not in TAG_LABELS:
-                pool = []
-            else:
-                pool = [customer for customer in pool if tag in parse_tags(customer.tags)]
+        if mode == "tier" and tier not in TIER_LABELS:
+            # An unknown tier is nobody's tier: an empty pool, never the
+            # whole store. (A tampered «tier:…» must not become a blast.)
+            pool = []
+        else:
+            query = db.query(Customer).order_by(Customer.id.asc())
+            if mode == "tier":
+                query = query.filter(Customer.tier == tier)
+            pool = query.all()
+            if mode == "tag":
+                if tag not in TAG_LABELS:
+                    pool = []
+                else:
+                    pool = [customer for customer in pool if tag in parse_tags(customer.tags)]
     elif mode == "picked":
         ids = [int(value) for value in (picked or []) if str(value).strip().isdigit()]
         if ids:
@@ -253,7 +258,13 @@ def plan_from_form(db: Session, *, audience: str, picked=None, numbers: str = ""
     if raw in {"picked", "numbers", "all"}:
         return resolve_recipients(db, mode=raw, picked=picked, numbers=numbers,
                                  transactional=transactional)
-    return resolve_recipients(db, mode="all", transactional=transactional)
+    # A forged audience value refuses instead of blasting everyone: the old
+    # silent fallback to «all» is exactly how a tampered post empties the shop.
+    return {"recipients": [], "matched": 0, "count": 0, "capped": False,
+            "limit": _limit(db), "skipped": {},
+            "mode": "all", "mode_label": MODE_LABELS["all"],
+            "tier_label": "", "tag_label": "",
+            "error": f"گروه «{raw}» شناخته نشد؛ چیزی فرستاده نشد."}
 
 
 # ── sending ───────────────────────────────────────────────────────────────────
@@ -270,24 +281,59 @@ async def send_bulk(
     """Queue one rendered message per recipient. Returns an honest count.
 
     A recipient whose rendered text comes out empty is skipped rather than sent
-    a blank SMS, and that count is reported alongside the queued one.
+    a blank SMS, and that count is reported alongside the queued one. The batch
+    commits once at the end: a mid-loop failure rolls everything back, so a
+    blast is all-or-nothing and never a half-queue with a success message.
     """
     queued = 0
     empty = 0
-    for recipient in plan["recipients"]:
-        customer = recipient.get("customer")
-        values = values_for_customer(customer, template, extra)
+    refused = 0
+    try:
+        for recipient in plan["recipients"]:
+            customer = recipient.get("customer")
+            values = values_for_customer(customer, template, extra)
+            body = render_template(template, values)
+            if not body.strip():
+                empty += 1
+                continue
+            job = await queue_sms(body, recipient["phone"], {}, db, template=template,
+                                  source=source, customer=customer,
+                                  employee_id=employee_id, body=body, values=values,
+                                  commit=False)
+            if job is not None:
+                queued += 1
+            else:
+                # A non-empty body that queues nothing was refused by the
+                # test-mode allowlist — counted, never silent.
+                refused += 1
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("manual blast rolled back")
+        return {"queued": 0, "empty": empty, "refused": refused,
+                "matched": plan["matched"], "plan": plan, "aborted": True}
+    return {"queued": queued, "empty": empty, "refused": refused,
+            "matched": plan["matched"], "plan": plan, "aborted": False}
+
+
+def render_preview_rows(template: SmsTemplate, plan: dict, *, extra: dict | None = None) -> list[dict]:
+    """Every recipient's final text, before anything is queued.
+
+    The bubble preview renders with sample values and always looks full; these
+    rows render per recipient, so the ones that come out blank — skipped at
+    send time — are visible up front instead of surprising the summary.
+    """
+    rows = []
+    for recipient in plan.get("recipients") or []:
+        values = values_for_customer(recipient.get("customer"), template, extra)
         body = render_template(template, values)
-        if not body.strip():
-            empty += 1
-            continue
-        job = await queue_sms(body, recipient["phone"], {}, db, template=template,
-                              source=source, customer=customer,
-                              employee_id=employee_id, body=body, values=values)
-        if job is not None:
-            queued += 1
-    db.commit()
-    return {"queued": queued, "empty": empty, "matched": plan["matched"], "plan": plan}
+        rows.append({"name": recipient.get("name") or "",
+                     "phone": recipient.get("phone") or "",
+                     "customer_id": (recipient.get("customer").id
+                                     if recipient.get("customer") is not None else None),
+                     "body": body,
+                     "blank": not body.strip()})
+    return rows
 
 
 def preview_body(template: SmsTemplate, values: dict | None = None) -> str:

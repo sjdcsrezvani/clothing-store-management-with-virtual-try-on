@@ -13,6 +13,12 @@
 {% include 'partials/page_header.html' %}
 
 {% if error %}<div class="alert alert-error" role="alert">⚠️ {{ error }}</div>{% endif %}
+{% if allowed_phones %}
+<div class="alert alert-error" role="status">
+    حالت آزمایشی فعال است — از این ارسال فقط شماره‌های مجاز در صف می‌روند
+    (<span dir="ltr">{{ allowed_phones }}</span>)؛ بقیه شمرده و کنار گذاشته می‌شوند.
+</div>
+{% endif %}
 
 <div class="sms-send-layout">
     <section class="card">
@@ -119,6 +125,15 @@
                 <span>{% for item in unfilled %}<span dir="ltr">%{{ item.token }}%</span>{% if not loop.last %}، {% endif %}{% endfor %}</span>
                 به هیچ مقداری وصل نیست و خالی فرستاده می‌شود — یا در ویرایش قالب یک مقدار
                 برایش انتخاب کنید یا خودِ متن را جای متغیر بنویسید.
+            </p>
+            {% endif %}
+            {# Per-recipient truth beside the sample: these are the people whose
+               final text comes out blank and who the send would skip. The full
+               per-person table is the next pass; this line is the warning. #}
+            {% if blank_count %}
+            <p class="sms-warning">
+                {{ blank_count }} نفر متن خالی می‌گیرند و فرستاده نمی‌شوند —
+                متنشان را در جدول کامل فاز بعد ببینید.
             </p>
             {% endif %}
         </section>
