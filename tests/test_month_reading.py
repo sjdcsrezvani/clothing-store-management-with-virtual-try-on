@@ -101,8 +101,8 @@ def test_the_digest_says_the_month_in_one_text():
                        top_products=[{"name": "تیشرت پسرانه", "qty_sold": 7}])
     # The reading and nothing else: the same sentences the page draws.
     assert "گزارش مرداد 1405:" in body
-    assert "فروش 2,500,000 ت در 6 فاکتور، سود 850,000 ت." in body
-    assert "بیشترین فروش ۰۵/۰۳ با 2,000,000 ت." in body
+    assert "فروش 2,500,000 تومان در 6 فاکتور، سود 850,000 تومان." in body
+    assert "بیشترین فروش ۰۵/۰۳ با 2,000,000 تومان." in body
     assert "پرفروش‌ترین: تیشرت پسرانه (7 عدد)." in body
     # No placeholder, no raw «این بازه» leaking from the page's vocabulary.
     assert "این بازه" not in body
@@ -352,7 +352,9 @@ def test_the_preview_names_the_finished_month_before_the_window_opens(db_session
     assert "مرداد" in preview["body"]
 
 
-def test_the_settings_page_shows_the_preview_bubble_to_the_owner_only(client, db_session):
+def test_the_settings_page_shows_the_preview_bubble_read_only_to_managers(client, db_session):
+    """Managers read the bubble but may neither change the numbers nor send:
+    the inputs and the send-now form stay behind can_configure."""
     from tests.test_roles import _session_as, _staff
 
     owner, password = _staff(db_session, "digest-preview-owner", "owner")
@@ -366,22 +368,31 @@ def test_the_settings_page_shows_the_preview_bubble_to_the_owner_only(client, db
 
     manager, password = _staff(db_session, "digest-preview-manager", "manager")
     _session_as(client, manager, password)
-    assert "digest-preview" not in client.get("/admin/sms").text
+    html = client.get("/admin/sms").text
+    assert "digest-preview" in html
+    assert "sms-bubble digest-preview-bubble" in html
+    assert 'action="/admin/sms/digest/send-now"' not in html
+    assert 'name="monthly_digest_phone"' not in html
 
 
-def test_the_preview_is_never_computed_for_a_manager(client, db_session, monkeypatch):
-    """Owner-only work: the reading walks the analytics queries, so a manager's
-    page must not pay for it — the same laziness the dashboard strip keeps."""
+def test_the_preview_is_computed_for_a_manager_read_only(client, db_session, monkeypatch):
+    """The bubble is worth its queries: a manager's page computes the preview
+    but never the send — the phone numbers and the send route stay owner's."""
     import routers.sms as sms_router
     from tests.test_roles import _session_as, _staff
 
-    def _refuse(*args, **kwargs):
-        raise AssertionError("the digest preview ran for a manager")
+    calls = []
+    real_preview = sms_router.digest_preview
 
-    monkeypatch.setattr(sms_router, "digest_preview", _refuse)
+    def _count(*args, **kwargs):
+        calls.append(1)
+        return real_preview(*args, **kwargs)
+
+    monkeypatch.setattr(sms_router, "digest_preview", _count)
     manager, password = _staff(db_session, "digest-preview-lazy", "manager")
     _session_as(client, manager, password)
     assert client.get("/admin/sms").status_code == 200
+    assert calls, "the digest preview did not run for a manager"
 
 
 # ── the history: finding and re-sending a past month ─────────────────────────

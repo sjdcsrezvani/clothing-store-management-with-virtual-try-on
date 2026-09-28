@@ -24,9 +24,8 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from models import Customer, SmsMessage, SmsTemplate, to_english_digits
-from services._common import (_to_persian_digits as to_persian_digits,
-                              get_setting_int, is_archived_customer, jalali_str,
-                              marketing_opt_in)
+from services._common import (get_setting_int, is_archived_customer, jalali_str,
+                               marketing_opt_in)
 from services.customers import TAG_LABELS, TAG_PALETTE, parse_tags
 from services.sms import queue_sms
 from services.tier import TIER_LABELS
@@ -324,7 +323,7 @@ def trigger_preview(db: Session, template: SmsTemplate) -> dict | None:
             return {
                 "body": render_template(template, values_for_customer(customer, template)),
                 "note": (f"پیام واقعی برای «{name}» — یکی از "
-                         f"{to_persian_digits(str(len(due)))} نفری که موعدشان رسیده."),
+                         f"{len(due)} نفری که موعدشان رسیده."),
                 "real": True,
             }
         return {

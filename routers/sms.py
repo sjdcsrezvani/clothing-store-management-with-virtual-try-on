@@ -108,7 +108,7 @@ _PAIRING_FLASH_LIMIT_SECONDS = 60
 # against it and the two forms render their min/max from it, so the browser's
 # attributes stay a kindness, not the rule.
 SMS_NUMERIC_RULES = {
-    "campaign_sms_limit": (1, None, "سقف هر ارسال گروهی"),
+    "campaign_sms_limit": (1, None, "سقف هر ارسال"),
     "trigger_sms_limit": (1, None, "سقف ارسال خودکار در هر بررسی"),
     "monthly_digest_day": (1, 28, "روز ارسال خلاصه"),
     # The upper bound *is* MAX_TRIGGER_DAYS — the editor's field and the
@@ -293,10 +293,11 @@ def _manager_context(request, db, guard, *, usage="all", sort="default",
         "digest_next_ref": digest_ref(db),
         "digest_next_month": digest_month_label(db),
         # What opting in puts on the phone: last month's own text, composed by
-        # the same composer the send uses. Owner-only work (the reading walks
-        # the analytics queries) and owner-only figures (profit, margins) —
-        # so it is computed here exactly when the settings form renders.
-        **({"digest_preview": digest_preview(db)} if guard.role == "owner" else {}),
+        # the same composer the send uses. Managers read it too (a blind
+        # phone/day form invites a wrong opt-in) but only the owner may change
+        # the numbers or send — the template gates both on can_configure.
+        "digest_preview": digest_preview(db),
+        "pairing_flash_seconds": _PAIRING_FLASH_LIMIT_SECONDS,
         "balance": device_status_label(db),
         "device": device,
         "device_status": device_status_label(db),
@@ -345,7 +346,7 @@ async def admin_sms_gateway_unpair(request: Request, db: Session = Depends(get_d
     db.commit()
     log_action(db, "sms_gateway_unpair", "اتصال گوشی درگاه پیامک قطع شد",
                request=request, target_type="sms_device")
-    return RedirectResponse(url="/admin/sms?err=اتصال گوشی قطع شد؛ پیامک‌های در صف می‌مانند تا گوشی دوباره جفت شود.",
+    return RedirectResponse(url="/admin/sms?msg=اتصال گوشی قطع شد؛ پیامک‌های در صف می‌مانند تا گوشی دوباره جفت شود.",
                             status_code=303)
 
 
