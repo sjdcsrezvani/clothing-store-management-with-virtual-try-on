@@ -40,6 +40,21 @@ HEARTBEAT_OFFLINE_MINUTES = 3       # no heartbeat for this long ⇒ «آفلا�
 DEVICE_AUTH_HEADER = "X-Device-API-Key"
 
 
+def gateway_port() -> int:
+    """The port the phone pairs to — one truth for the listener and the QR.
+
+    The launcher binds this port and the pairing page encodes it; reading the
+    same variable in both places is what keeps a custom ``RAYKID_GATEWAY_PORT``
+    from pairing the phone to a port nothing listens on.
+    """
+    import os
+
+    try:
+        return int(os.environ.get("RAYKID_GATEWAY_PORT", "") or GATEWAY_PORT)
+    except (TypeError, ValueError):
+        return GATEWAY_PORT
+
+
 # ── the device and its key ────────────────────────────────────────────────────
 
 def _hash_key(raw: str) -> str:

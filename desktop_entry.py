@@ -239,7 +239,9 @@ def main() -> None:
             "or set RAYKID_DESKTOP_PORT before starting the app."
         ) from exc
 
-    gateway_port = int(os.environ.get("RAYKID_GATEWAY_PORT", "8101"))
+    from services.sms_gateway import gateway_port as _gateway_port
+
+    gateway_port = _gateway_port()
     gateway_server, gateway_thread = _start_gateway(gateway_port)
 
     try:

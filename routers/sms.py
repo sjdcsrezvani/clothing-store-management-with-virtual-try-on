@@ -355,7 +355,7 @@ def _lan_base_url(request: Request) -> str:
     and prints the LAN IP; here we echo the request host with the gateway port.
     When served through the preview/tests the hostname is loopback — correct
     for that context, and the QR text is always editable on the phone anyway."""
-    from services.sms_gateway import GATEWAY_PORT as port
+    from services.sms_gateway import gateway_port
 
     host = (request.url.hostname or "127.0.0.1").strip()
     # A LAN-hosted request already carries the machine's own address; loopback
@@ -368,7 +368,7 @@ def _lan_base_url(request: Request) -> str:
             host = sock.getsockname()[0]
         finally:
             sock.close()
-    return f"http://{host}:{port}"
+    return f"http://{host}:{gateway_port()}"
 
 
 # ── template editor ───────────────────────────────────────────────────────────
