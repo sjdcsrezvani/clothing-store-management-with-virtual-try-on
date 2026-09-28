@@ -617,6 +617,13 @@ def _top_rows(numbers: _Numbers, role: str) -> list[dict]:
     return rows
 
 
+def _gateway_status(db: Session) -> dict:
+    """The gateway strip's facts, via the one status reader the پیامک page uses."""
+    from services.sms_gateway import gateway_status
+
+    return gateway_status(db)
+
+
 def dashboard_overview(db: Session, *, role: str = "manager") -> dict:
     """Every card this viewer may see, already formatted, in reading order.
 
@@ -659,4 +666,7 @@ def dashboard_overview(db: Session, *, role: str = "manager") -> dict:
         "role": role,
         "role_label": ROLE_LABELS.get(role, role),
         "sections": sections,
+        # The gateway strip reads this, not a card: two light queries, no
+        # money figures, safe for every role that reaches the dashboard.
+        "gateway": _gateway_status(db),
     }

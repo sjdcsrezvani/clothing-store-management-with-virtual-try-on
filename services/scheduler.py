@@ -53,6 +53,20 @@ async def scheduler_task():
                 released = release_stale_claims(db)
                 if released:
                     logger.info("Released %s stale SMS claims", released)
+                # The phone is the SMS channel, so a dead phone cannot text
+                # anyone about itself: one audit line per outage and one per
+                # recovery, and the dashboard strip (from gateway_status)
+                # carries the live state in between.
+                from services.sms_gateway import check_gateway_offline
+                from services.security import log_action
+                episode = check_gateway_offline(db)
+                if episode == "alerted":
+                    log_action(db, "sms_gateway_offline",
+                               "گوشی درگاه پیامک از دسترس خارج شد؛ پیامک‌ها در صف می‌مانند.")
+                    logger.warning("SMS gateway went offline")
+                elif episode == "recovered":
+                    log_action(db, "sms_gateway_online", "گوشی درگاه پیامک برگشت.")
+                    logger.info("SMS gateway recovered")
                 db.commit()
                 for _ in range(10):
                     job = claim_next(db)

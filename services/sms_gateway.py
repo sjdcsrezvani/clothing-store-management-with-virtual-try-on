@@ -219,6 +219,57 @@ def device_health(db: Session) -> SmsDevice | None:
     return device
 
 
+_OFFLINE_ALERT_KEY = "sms_gateway_offline_alerted"
+
+
+def gateway_status(db: Session) -> dict:
+    """What the dashboard strip needs: paired, online, and what is waiting.
+
+    No money figures — safe for every role that sees the dashboard. A phone
+    never paired is not an outage, so it reads as quiet, not alarming.
+    """
+    device = device_health(db)
+    if device is None or device.status == "never_connected":
+        return {"paired": False, "online": False, "offline": False,
+                "queued": 0, "device_name": "", "last_seen_at": None}
+    queued = db.query(SmsMessage).filter(SmsMessage.status == "queued").count()
+    online = device.status == "online"
+    return {"paired": True, "online": online, "offline": not online,
+            "queued": int(queued), "device_name": device.name or "",
+            "last_seen_at": device.last_seen_at}
+
+
+def check_gateway_offline(db: Session) -> str | None:
+    """One alert per outage, one note per recovery — for the scheduler.
+
+    Returns "alerted" the first pass the paired phone reads offline,
+    "recovered" the first pass it is back, else None. The latch lives in
+    Settings so a restart mid-outage does not re-announce it.
+    """
+    from models import Settings
+
+    status = gateway_status(db)
+    row = db.query(Settings).filter(Settings.key == _OFFLINE_ALERT_KEY).first()
+    latched = bool(row and row.value)
+    if not status["paired"]:
+        if latched:
+            row.value = ""
+            db.commit()
+        return None
+    if status["offline"] and not latched:
+        if row is None:
+            db.add(Settings(key=_OFFLINE_ALERT_KEY, value="1"))
+        else:
+            row.value = "1"
+        db.commit()
+        return "alerted"
+    if not status["offline"] and latched:
+        row.value = ""
+        db.commit()
+        return "recovered"
+    return None
+
+
 def pair_device(db: Session, *, name: str = "", phone: str = "") -> tuple[SmsDevice, str]:
     """Create (or re-key) the shop's device and return it with the raw key.
 

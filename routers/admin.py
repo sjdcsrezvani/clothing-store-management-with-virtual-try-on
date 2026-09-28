@@ -269,6 +269,7 @@ async def admin_dashboard(request: Request, db: Session = Depends(get_db)):
         **view,
         # The print heading names the day; a staple carries no URL.
         "today": jalali_str(datetime.now(), with_time=False),
+        "jalali_str": jalali_str,
         # Nothing redirects here with a result any more: the only action the
         # dashboard used to carry was the downgrade sweep, and it now reports
         # back on its own page.
