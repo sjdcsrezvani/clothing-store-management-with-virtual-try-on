@@ -40,6 +40,143 @@ HEARTBEAT_OFFLINE_MINUTES = 3       # no heartbeat for this long ⇒ «آفلا�
 DEVICE_AUTH_HEADER = "X-Device-API-Key"
 
 
+def _is_usable_lan_ip(value: str) -> bool:
+    """An IPv4 address a phone on the same WiFi could dial."""
+    try:
+        parts = [int(p) for p in value.split(".")]
+    except (AttributeError, ValueError):
+        return False
+    if len(parts) != 4 or any(p < 0 or p > 255 for p in parts):
+        return False
+    if parts[0] == 127:
+        return False
+    if parts[0] == 169 and parts[1] == 254:
+        return False  # link-local: no router, no phone route
+    return True
+
+
+def _is_private_ip(value: str) -> bool:
+    parts = [int(p) for p in value.split(".")]
+    return (
+        parts[0] == 10
+        or (parts[0] == 172 and 16 <= parts[1] <= 31)
+        or (parts[0] == 192 and parts[1] == 168)
+    )
+
+
+def _wifi_ip_darwin() -> str | None:
+    """The Mac's WiFi address straight from the interface.
+
+    The old default-route probe answers with the VPN tunnel the moment one
+    is up — an address the phone can never dial. en0 *is* the WiFi on every
+    Mac that matters here, so it is asked first, by name.
+    """
+    import subprocess
+    import sys
+
+    if not sys.platform.startswith("darwin"):
+        return None
+    try:
+        out = subprocess.run(
+            ["ipconfig", "getifaddr", "en0"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, ValueError):
+        return None
+    candidate = (out.stdout or "").strip()
+    return candidate if _is_usable_lan_ip(candidate) else None
+
+
+def _tunnel_ips() -> set[str]:
+    """Addresses no phone can dial: VPN tunnels and point-to-point links.
+
+    The UDP default-route probe answers with the tunnel the moment a VPN is
+    up — that 10.x address looks private and plausible, but the phone's route
+    to it does not exist. Anything bound to a tunnel interface is excluded.
+    """
+    import re
+    import subprocess
+    import sys
+
+    if not sys.platform.startswith("darwin"):
+        return set()
+    try:
+        out = subprocess.run(
+            ["ifconfig", "-a"], capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, ValueError):
+        return set()
+    found: set[str] = set()
+    point_to_point = False
+    for line in (out.stdout or "").splitlines():
+        head = re.match(r"^(\w+): flags=\d+<([^>]*)>", line)
+        if head:
+            flags = head.group(2).split(",")
+            point_to_point = "POINTOPOINT" in flags
+            continue
+        if point_to_point:
+            match = re.search(r"\binet (\d+\.\d+\.\d+\.\d+)", line)
+            if match:
+                found.add(match.group(1))
+    return found
+
+
+def _hostname_ip() -> str | None:
+    """Whatever this machine calls itself, if it is dialable."""
+    import socket
+
+    try:
+        infos = socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)
+    except OSError:
+        return None
+    tunnels = _tunnel_ips()
+    dialable = [info[4][0] for info in infos
+                if _is_usable_lan_ip(info[4][0]) and info[4][0] not in tunnels]
+    privates = [ip for ip in dialable if _is_private_ip(ip)]
+    if privates:
+        return privates[0]
+    return dialable[0] if dialable else None
+
+
+def _default_route_ip() -> str | None:
+    """Last resort: the source address of the default route.
+
+    Right when a VPN is up — the case that kept printing the tunnel address
+    on the pairing page — so a VPN address is refused here even if usable:
+    a tunnel IP is never the phone's route.
+    """
+    import socket
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("192.0.2.1", 80))
+        candidate = sock.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        sock.close()
+    if not _is_usable_lan_ip(candidate) or candidate in _tunnel_ips():
+        return None
+    return candidate
+
+
+def lan_ip() -> str:
+    """This machine's LAN address — the one the phone dials.
+
+    One implementation for the launcher print, the pairing QR and the page:
+    WiFi interface first, hostname second, default route last, loopback never.
+    A new PC answers with its own address with no configuration.
+    """
+    for probe in (_wifi_ip_darwin, _hostname_ip, _default_route_ip):
+        try:
+            found = probe()
+        except OSError:
+            continue
+        if found:
+            return found
+    return "127.0.0.1"
+
+
 def gateway_port() -> int:
     """The port the phone pairs to — one truth for the listener and the QR.
 

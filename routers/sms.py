@@ -362,16 +362,13 @@ def _lan_base_url(request: Request) -> str:
     from services.sms_gateway import gateway_port
 
     host = (request.url.hostname or "127.0.0.1").strip()
-    # A LAN-hosted request already carries the machine's own address; loopback
-    # names are swapped for the configured LAN IP the launcher computed.
+    # A LAN-hosted request already carries the machine's own address; a
+    # loopback host (the desktop window, the tests) resolves to the real LAN
+    # address instead — WiFi first, never a VPN tunnel.
     if host in {"127.0.0.1", "localhost", "0.0.0.0"}:
-        import socket
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sock.connect(("192.0.2.1", 80))
-            host = sock.getsockname()[0]
-        finally:
-            sock.close()
+        from services.sms_gateway import lan_ip
+
+        host = lan_ip()
     return f"http://{host}:{gateway_port()}"
 
 
