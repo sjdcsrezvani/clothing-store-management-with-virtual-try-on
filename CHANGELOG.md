@@ -1,3 +1,52 @@
+## 2.7.2 — 1405/07/06 (2026-09-28)
+
+### درگاه پیامک: the pairing address tells one truth, the quiet phone gets noticed
+
+- **The address the phone dials is the WiFi one.** The default-route probe
+  used to answer with the VPN tunnel the moment one was up — a private-looking
+  address the phone has no route to, printed on the pairing page as if it were
+  the shop's. The probes now ask the WiFi interface first, the hostname
+  second, and the default route only as a last resort; a tunnel address is
+  refused at every step and loopback is never an answer. The phone's QR, the
+  address printed on the page and the launcher's own printout all read the
+  same function, so a new machine answers with its own address and no
+  configuration.
+- **One port, read by the listener and the QR together.** The pairing address
+  is built from the one reader of `RAYKID_GATEWAY_PORT`, so a custom port can
+  no longer bind the listener under one number while the phone is told to dial
+  another.
+- **The dashboard notices when the phone goes quiet.** The gateway cannot text
+  anyone about itself, so a paired phone that has stopped polling now raises a
+  strip on the dashboard: when it was last heard from and how many messages
+  are waiting on it, with a link to the gateway section. A phone that was
+  never paired reads as quiet, not as an outage — and a strip is not a card,
+  so no money figure rides it. The scheduler writes one audit line when it
+  goes, one when it comes back, and latches the state in the settings so a
+  restart mid-outage does not announce it twice.
+- **The gateway controls know who they belong to.** Pairing, unpairing and the
+  send caps sit behind the owner's role now, with a plain sentence in their
+  place for a manager. The page's confirms — unpair, template toggle, template
+  delete, digest send-now — moved off their inline `onsubmit` onto the page's
+  own dialog, the same surface the campaign detail page uses; without JS every
+  form still posts directly, exactly as before.
+- **The pairing key shows its clock.** The page counts the key's remaining
+  seconds down, so an expired QR reads as expired instead of as broken, and
+  the address is printed beside it to type into the phone by hand — select-all,
+  left-to-right inside the RTL page so Latin digits and dots stay readable.
+- **The digest preview is read by every role, sent by one.** A blind
+  phone/day form is what invites a wrong opt-in, so the bubble is computed for
+  whoever opens the page; the numbers and the send stay behind the owner's
+  gate, and the send-now button confirms with the real count of numbers it
+  will queue.
+- **Copy sharpened where it was thin.** The monthly digest's own text says
+  «تومان» instead of a bare «ت», the trigger preview drops Persian digits
+  beside the Latin ones in the same sentence, «سقف هر ارسال گروهی» becomes
+  «سقف هر ارسال» — it caps the automatic sends too — the SMS row buttons grew
+  to a real touch target, and unpairing stops arriving as an error now that it
+  is one.
+
+**Schema change.** None — the database stays on revision 24.
+
 ## 2.7.1 — 1405/07/06 (2026-09-28)
 
 ### کمپین‌ها: the list retires a campaign, the detail page earns trust

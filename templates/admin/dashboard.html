@@ -11,6 +11,18 @@
 {% set print_heading = 'داشبورد فروشگاه — ' ~ today ~ ((' (' ~ role_label ~ ')') if role_label else '') %}
 {% include 'partials/page_header.html' %}
 
+{# The gateway cannot text anyone about itself, so its outage lives here:
+   one strip while the paired phone is silent, gone the moment it polls.
+   Queued-but-unsent is the number that matters — those wait on the phone. #}
+{% if gateway and gateway.offline %}
+<div class="alert alert-error" role="alert">
+    درگاه پیامک آفلاین است
+    {%- if gateway.last_seen_at %} — آخرین ارتباط {{ jalali_str(gateway.last_seen_at) }}{% endif %}
+    {%- if gateway.queued %} · {{ gateway.queued }} پیامک در صف مانده{% endif %}.
+    <a class="text-link" href="/admin/sms#gateway">بررسی درگاه</a>
+</div>
+{% endif %}
+
 {# Every section and card here was chosen before the page was drawn: a card this
    viewer may not see was never built and never counted. Nothing below branches
    on the role, so a template edit cannot reveal a number to the wrong person.

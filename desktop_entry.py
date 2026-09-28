@@ -162,14 +162,9 @@ def _find_free_port(host: str = "127.0.0.1") -> int:
 
 
 def _lan_ip() -> str:
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        sock.connect(("192.0.2.1", 80))
-        return sock.getsockname()[0]
-    except OSError:
-        return "127.0.0.1"
-    finally:
-        sock.close()
+    from services.sms_gateway import lan_ip
+
+    return lan_ip()
 
 
 def _start_server(port: int, host: str):
@@ -239,7 +234,9 @@ def main() -> None:
             "or set RAYKID_DESKTOP_PORT before starting the app."
         ) from exc
 
-    gateway_port = int(os.environ.get("RAYKID_GATEWAY_PORT", "8101"))
+    from services.sms_gateway import gateway_port as _gateway_port
+
+    gateway_port = _gateway_port()
     gateway_server, gateway_thread = _start_gateway(gateway_port)
 
     try:

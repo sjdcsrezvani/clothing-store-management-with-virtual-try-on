@@ -152,10 +152,10 @@ def digest_text(reading: dict, *, month: str, year: int,
     revenue = sum(float(row.get("revenue") or 0) for row in daily)
     profit = sum(float(row.get("profit") or 0) for row in daily)
     count = sum(int(row.get("count") or 0) for row in daily)
-    parts.append(f"فروش {_fmt(revenue)} ت در {count} فاکتور، سود {_fmt(profit)} ت.")
+    parts.append(f"فروش {_fmt(revenue)} تومان در {count} فاکتور، سود {_fmt(profit)} تومان.")
 
     best = max(daily, key=lambda row: float(row.get("revenue") or 0))
-    parts.append(f"بیشترین فروش {best['date']} با {_fmt(best.get('revenue'))} ت.")
+    parts.append(f"بیشترین فروش {best['date']} با {_fmt(best.get('revenue'))} تومان.")
     parts.append(notes.get("categoryChart", ""))
     parts.append(notes.get("tierChart", ""))
 
