@@ -336,6 +336,76 @@ def render_preview_rows(template: SmsTemplate, plan: dict, *, extra: dict | None
     return rows
 
 
+# ── saved audiences ─────────────────────────────────────────────────────────
+
+_SAVED_AUDIENCES_KEY = "sms_saved_audiences"
+_SAVED_AUDIENCES_MAX = 20
+_SAVED_AUDIENCE_MODES = {"all", "picked", "numbers"}
+
+
+def saved_audiences(db: Session) -> list[dict]:
+    """Named audiences the owner stored from the send page, newest last."""
+    from models import Settings
+
+    row = db.query(Settings).filter(Settings.key == _SAVED_AUDIENCES_KEY).first()
+    if row is None or not (row.value or "").strip():
+        return []
+    try:
+        items = json.loads(row.value)
+    except (TypeError, ValueError):
+        return []
+    return [item for item in items if isinstance(item, dict) and item.get("name")]
+
+
+def save_audience(db: Session, *, name: str, audience: str, picked=None,
+                  numbers: str = "") -> tuple[bool, str]:
+    """Store the current pick under ``name``. Returns (ok, message)."""
+    from models import Settings
+
+    label = (name or "").strip()
+    if not label:
+        return False, "برای ذخیره مخاطب‌ها یک نام بنویسید."
+    if len(label) > 60:
+        return False, "نام مخاطب‌ها حداکثر ۶۰ نویسه است."
+    raw = (audience or "all").strip()
+    if raw.startswith("tier:"):
+        mode = raw
+    elif raw.startswith("tag:"):
+        mode = raw
+    elif raw in _SAVED_AUDIENCE_MODES:
+        mode = raw
+    else:
+        return False, f"گروه «{raw}» شناخته نشد؛ ذخیره نشد."
+    ids = [int(value) for value in (picked or []) if str(value).strip().isdigit()]
+    items = [item for item in saved_audiences(db) if item.get("name") != label]
+    items.append({"name": label, "audience": mode, "picked": ids,
+                  "numbers": str(numbers or "")})
+    items = items[-_SAVED_AUDIENCES_MAX:]
+    row = db.query(Settings).filter(Settings.key == _SAVED_AUDIENCES_KEY).first()
+    payload = json.dumps(items, ensure_ascii=False)
+    if row is None:
+        db.add(Settings(key=_SAVED_AUDIENCES_KEY, value=payload))
+    else:
+        row.value = payload
+    db.commit()
+    return True, f"مخاطب‌های «{label}» ذخیره شد."
+
+
+def delete_saved_audience(db: Session, name: str) -> bool:
+    """Drop one stored audience by name."""
+    from models import Settings
+
+    items = saved_audiences(db)
+    kept = [item for item in items if item.get("name") != (name or "").strip()]
+    if len(kept) == len(items):
+        return False
+    row = db.query(Settings).filter(Settings.key == _SAVED_AUDIENCES_KEY).first()
+    if row is not None:
+        row.value = json.dumps(kept, ensure_ascii=False)
+        db.commit()
+    return True
+
+
 def preview_body(template: SmsTemplate, values: dict | None = None) -> str:
     """What one message looks like, using samples for anything unfilled."""
     return render_template(template, values, use_samples=True)

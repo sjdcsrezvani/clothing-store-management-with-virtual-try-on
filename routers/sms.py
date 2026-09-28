@@ -52,6 +52,7 @@ from services.sms_send import (
     plan_from_form,
     preview_body,
     render_preview_rows,
+    saved_audiences,
     send_bulk,
 )
 from services.sms_triggers import SETTING_AUTO_SEND_LIMIT
@@ -749,6 +750,7 @@ def _send_context(request, db, *, template, plan=None, body="", error="", messag
         "preview_rows": preview_rows or [],
         "blank_count": blank_count,
         "allowed_phones": " ".join(allowed_phones(db)),
+        "saved": saved_audiences(db),
         "error": error,
         "msg": message,
         "fmt": fmt,
@@ -776,10 +778,23 @@ async def admin_sms_send_form(request: Request, template_id: str = "0", db: Sess
     if template is None:
         return RedirectResponse(url="/admin/sms?err=قالب پیامک فعالی برای ارسال وجود ندارد.",
                                 status_code=303)
+    # Recalling a stored pick fills the form without queueing anything.
+    saved_name = (request.query_params.get("saved") or "").strip()
+    audience, picked, numbers, message = "all", [], "", request.query_params.get("msg", "")
+    if saved_name:
+        match = next((item for item in saved_audiences(db) if item.get("name") == saved_name), None)
+        if match is None:
+            message = f"مخاطب‌های «{saved_name}» پیدا نشد."
+        else:
+            audience, picked, numbers = (match.get("audience") or "all",
+                                         [str(v) for v in match.get("picked") or []],
+                                         match.get("numbers") or "")
+            message = message or f"مخاطب‌های «{saved_name}» بازیابی شد؛ پیش‌نمایش بگیرید."
     # The right panel shows the real message with its sample values, not an
     # empty bubble, so the template choice is visible before any preview click.
     return _send_context(request, db, template=template, body=preview_body(template),
-                         message=request.query_params.get("msg", ""),
+                         audience=audience, picked=picked, numbers=numbers,
+                         message=message,
                          error=request.query_params.get("err", ""))
 
 
@@ -792,12 +807,14 @@ async def admin_sms_send(
     numbers: str = Form(""),
     action: str = Form("preview"),
     transactional: str = Form(""),
+    save_name: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    """Preview the blast, then send it — the same form, two steps.
+    """Preview the blast, then send it — the same form, three steps.
 
     The preview re-resolves the audience on the spot, so the number the owner
     approves is the number that gets queued (and the cap is applied to both).
+    A pick can also be stored under a name and recalled later.
     """
     guard = _guard(request, db)
     if not hasattr(guard, "role"):
@@ -822,6 +839,18 @@ async def admin_sms_send(
         )
 
     is_transactional = transactional == "on"
+    if action == "save-audience":
+        # Storing a pick queues nothing: the form comes back exactly as posted
+        # with the save's own verdict, and the preview runs only on demand.
+        from services.sms_send import save_audience
+
+        ok, message = save_audience(db, name=save_name, audience=audience,
+                                    picked=picked, numbers=numbers)
+        return _send_context(request, db, template=template, plan=None,
+                             body=preview_body(template),
+                             error="" if ok else message, message=message if ok else "",
+                             audience=audience, picked=picked, numbers=numbers,
+                             transactional=is_transactional)
     plan = plan_from_form(db, audience=audience, picked=picked, numbers=numbers,
                           transactional=is_transactional)
     if plan.get("error"):
@@ -869,6 +898,28 @@ async def admin_sms_send(
         after={"queued": summary["queued"], "matched": plan["matched"], "audience": plan["mode"]},
     )
     return RedirectResponse(url=f"/admin/sms/history?msg={message}", status_code=303)
+
+
+@router.post("/sms/send/audiences/delete", response_class=HTMLResponse)
+async def admin_sms_send_audience_delete(
+    request: Request,
+    name: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Drop one stored audience. The queue is never touched here."""
+    guard = _guard(request, db)
+    if not hasattr(guard, "role"):
+        return guard
+
+    from services.sms_send import delete_saved_audience
+
+    if delete_saved_audience(db, name):
+        log_action(db, "sms_audience_delete", f"مخاطب‌های «{name.strip()}» حذف شد",
+                   request=request, target_type="sms_template")
+        return RedirectResponse(url="/admin/sms/send?msg=مخاطب‌های ذخیره‌شده حذف شد.",
+                                status_code=303)
+    return RedirectResponse(url="/admin/sms/send?err=این مخاطب‌ها پیدا نشد.",
+                            status_code=303)
 
 
 # ── history ───────────────────────────────────────────────────────────────────

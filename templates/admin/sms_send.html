@@ -48,6 +48,19 @@
 
             <div class="form-section">
                 <h3>۲. مخاطب‌ها</h3>
+                {% if saved %}
+                <div class="saved-audiences" role="group" aria-label="مخاطب‌های ذخیره‌شده">
+                    {% for item in saved %}
+                    <span class="saved-audience">
+                        <a href="/admin/sms/send?saved={{ item.name|urlencode }}">{{ item.name }}</a>
+                        <button type="submit" class="saved-audience-remove"
+                                formaction="/admin/sms/send/audiences/delete"
+                                name="name" value="{{ item.name }}"
+                                aria-label="حذف {{ item.name }}">×</button>
+                    </span>
+                    {% endfor %}
+                </div>
+                {% endif %}
                 <div class="sms-audience-grid">
                     {% for choice in choices %}
                     <label class="sms-audience-option">
@@ -56,7 +69,7 @@
                         <span>
                             <strong>{{ choice.label }}</strong>
                             {% if choice.count is not none %}
-                            <small class="tnum">{{ choice.count }} نفر</small>
+                            <small class="tnum">{{ choice.count }} مخاطب</small>
                             {% endif %}
                         </span>
                     </label>
@@ -76,18 +89,19 @@
                             <small class="tnum" dir="ltr">{{ customer.phone }}</small>
                         </label>
                         {% else %}
-                        <p class="muted">مشتری برای دست‌چین‌کردن وجود ندارد — مخاطب دیگری انتخاب کنید.</p>
+                        <p class="muted">هنوز مشتری‌ای ثبت نشده — اول از صفحه مشتریان بسازید.</p>
                         {% endfor %}
                     </div>
-                    <small class="tnum" id="sms-picked-count">۰ مشتری انتخاب شده</small>
+                    <small class="tnum" id="sms-picked-count">۰ مخاطب دست‌چین‌شده</small>
                 </div>
 
                 <div class="form-group">
                     <label for="numbers">یا شماره‌های دستی</label>
                     <textarea id="numbers" name="numbers" rows="3" dir="ltr"
-                              placeholder="۰۹۱۲۳۴۵۶۷۸۹، ۰۹۳۵۱۲۳۴۵۶۷">{{ numbers }}</textarea>
+                              placeholder="09123456789, 09351234567">{{ numbers }}</textarea>
                     <small>
                         هر شماره در یک خط یا با کاما. شماره‌ای که در مشتریان باشد با نامش ثبت می‌شود.
+                        <span class="tnum" id="sms-numbers-count" aria-live="polite"></span>
                     </small>
                 </div>
 
@@ -96,8 +110,8 @@
                     <span>
                         <strong>پیام تراکنشی است (بدون نیاز به رضایت تبلیغاتی)</strong>
                         <small>
-                            برای پیام‌های مربوط به حساب خود مشتری — مثل یادآوری بدهی.
-                            برای پیام تبلیغاتی، رضایت مشتری شرط است.
+                            برای پیام‌های مربوط به حساب خود مشتری — مثل یادآوری بدهی — که انصراف
+                            از تبلیغات جلویشان را نمی‌گیرد. برای تبلیغات، رضایت مشتری شرط است.
                         </small>
                     </span>
                 </label>
@@ -106,8 +120,20 @@
             <div class="form-actions">
                 <button type="submit" name="action" value="preview" class="btn btn-ghost">پیش‌نمایش مخاطب‌ها</button>
                 <button type="submit" name="action" value="send" class="btn btn-primary btn-large"
-                        onclick="return confirm('پیامک برای مخاطبان همین پیش‌نمایش در صف ارسال قرار بگیرد؟');">
+                        {% if plan %}
+                        data-confirm="قالب «{{ template.name }}» برای {{ plan.count }} مخاطب در صف قرار می‌گیرد{% if plan.capped %} (سقف هر ارسال {{ plan.limit }} پیامک){% endif %}. مطمئن هستید؟"
+                        {% else %}
+                        data-confirm="پیامک برای مخاطبان انتخاب‌شده در صف قرار می‌گیرد. مطمئن هستید؟"
+                        {% endif %}>
                     ارسال پیامک
+                </button>
+            </div>
+            <div class="form-group save-audience-row">
+                <label class="sr-only" for="save_name">نام مخاطب‌ها</label>
+                <input type="text" id="save_name" name="save_name" maxlength="60"
+                       placeholder="نام این انتخاب، مثلا مشتریان طلایی">
+                <button type="submit" name="action" value="save-audience" class="btn btn-sm btn-ghost">
+                    ذخیره این انتخاب
                 </button>
             </div>
         </form>
@@ -127,13 +153,12 @@
                 برایش انتخاب کنید یا خودِ متن را جای متغیر بنویسید.
             </p>
             {% endif %}
-            {# Per-recipient truth beside the sample: these are the people whose
-               final text comes out blank and who the send would skip. The full
-               per-person table is the next pass; this line is the warning. #}
+            {# Per-recipient truth beside the sample: the table shows every
+               مخاطب's final text, and the blank ones the send would skip. #}
             {% if blank_count %}
             <p class="sms-warning">
-                {{ blank_count }} نفر متن خالی می‌گیرند و فرستاده نمی‌شوند —
-                متنشان را در جدول کامل فاز بعد ببینید.
+                {{ blank_count }} مخاطب متن خالی می‌گیرند و فرستاده نمی‌شوند —
+                ردیف‌های «خالی» جدول زیر را ببینید.
             </p>
             {% endif %}
         </section>
@@ -150,8 +175,8 @@
             </p>
             {% if info.mode == 'auto' %}
             <p class="muted">
-                این پیامک خودبه‌خود فرستاده می‌شود؛ فرستادنش از این صفحه جداگانه است و
-                می‌تواند پیام تکراری برای همان مشتری بشود.
+                خودبه‌خود هم فرستاده می‌شود — این ارسال جداگانه ممکن است برای
+                همان مخاطب تکراری شود.
             </p>
             {% elif info.url and info.url != '/admin/sms/send' %}
             <a href="{{ info.url }}" class="btn btn-sm btn-ghost">{{ info.action }} ←</a>
@@ -175,29 +200,58 @@
             </ul>
             {% if plan.capped %}
             <p class="sms-warning">
-                {{ plan.matched - plan.count }} نفر به نوبت بعد ماندند — سقف هر ارسال
-                {{ plan.limit }} پیامک است و از صفحه پیامک قابل تغییر است.
+                {{ plan.matched - plan.count }} مخاطب ماندند برای نوبت بعد —
+                سقف هر ارسال {{ plan.limit }} پیامک است (تنظیم در صفحه پیامک).
             </p>
             {% endif %}
             {% set skipped = plan.skipped %}
             {% if skipped.opted_out or skipped.archived or skipped.blocked or skipped.invalid or skipped.duplicate %}
             <p class="muted sms-skipped">
-                کنار گذاشته‌شده:
-                {% if skipped.opted_out %}انصراف {{ skipped.opted_out }}{% endif %}
-                {% if skipped.archived %} · بایگانی {{ skipped.archived }}{% endif %}
-                {% if skipped.blocked %} · بلاک {{ skipped.blocked }}{% endif %}
-                {% if skipped.invalid %} · شماره نامعتبر {{ skipped.invalid }}{% endif %}
-                {% if skipped.duplicate %} · تکراری {{ skipped.duplicate }}{% endif %}
+                دیده نشدند:
+                {% if skipped.opted_out %}{{ skipped.opted_out }} انصراف{% endif %}
+                {% if skipped.archived %}{% if skipped.opted_out %} · {% endif %}{{ skipped.archived }} بایگانی{% endif %}
+                {% if skipped.blocked %}{% if skipped.opted_out or skipped.archived %} · {% endif %}{{ skipped.blocked }} بلاک{% endif %}
+                {% if skipped.invalid %}{% if skipped.opted_out or skipped.archived or skipped.blocked %} · {% endif %}{{ skipped.invalid }} نامعتبر{% endif %}
+                {% if skipped.duplicate %}{% if skipped.opted_out or skipped.archived or skipped.blocked or skipped.invalid %} · {% endif %}{{ skipped.duplicate }} تکراری{% endif %}
             </p>
             {% endif %}
 
-            {% if plan.recipients %}
+            {% if preview_rows %}
+            <details class="sms-recipients" open>
+                <summary>متن نهایی هر مخاطب ({{ preview_rows|length }})</summary>
+                <div class="table-scroll">
+                    <table class="data-table sms-preview-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">مخاطب</th>
+                                <th scope="col">متن نهایی</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in preview_rows %}
+                            <tr{% if row.blank %} class="preview-blank"{% endif %}>
+                                <td class="preview-who" data-label="مخاطب">
+                                    <strong>{{ row.name or 'بدون پرونده مشتری' }}</strong>
+                                    <small class="tnum" dir="ltr">{{ row.phone }}</small>
+                                    {% if row.blank %}<span class="preview-blank-flag">خالی</span>{% endif %}
+                                </td>
+                                <td data-label="متن نهایی">
+                                    {% if row.blank %}<span class="customer-meta">—</span>
+                                    {% else %}<span dir="auto">{{ row.body }}</span>{% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+            {% elif plan.recipients %}
             <details class="sms-recipients">
                 <summary>فهرست مخاطبان این ارسال ({{ plan.count }})</summary>
                 <ul>
                     {% for recipient in plan.recipients %}
                     <li>
-                        <span>{{ recipient.customer.full_name if recipient.customer else 'شماره مهمان' }}</span>
+                        <span>{{ recipient.customer.full_name if recipient.customer else 'بدون پرونده مشتری' }}</span>
                         <small class="tnum" dir="ltr">{{ recipient.phone }}</small>
                     </li>
                     {% endfor %}
@@ -206,49 +260,116 @@
             {% endif %}
             {% else %}
             <p class="muted">
-                برای دیدن تعداد دقیق مخاطب‌ها و متن نهایی، «پیش‌نمایش مخاطب‌ها» را بزنید.
-                تا آن لحظه هیچ پیامکی صف نمی‌شود.
+                مخاطب‌ها را بالا مشخص کنید و «پیش‌نمایش مخاطب‌ها» را بزنید تا
+                تعداد دقیق و متن نهایی هر کدام را همین‌جا ببینید — تا آن لحظه
+                هیچ پیامکی صف نمی‌شود.
             </p>
             {% endif %}
         </section>
     </aside>
 </div>
 
+<div id="sms-confirm" data-dialog role="alertdialog" aria-modal="true"
+     aria-labelledby="sms-confirm-title" class="confirm-scrim" tabindex="-1">
+    <div class="t-modal-card confirm-card" role="document">
+        <h3 id="sms-confirm-title">مطمئن هستید؟</h3>
+        <p class="muted" id="sms-confirm-text"></p>
+        <div class="confirm-actions">
+            <button type="button" class="btn btn-danger" id="sms-confirm-yes">تأیید</button>
+            <button type="button" class="btn btn-ghost" data-dialog-close>انصراف</button>
+        </div>
+    </div>
+</div>
 <script>
+// One confirm surface for the send button (same shape as the manager page),
+// live picked/numbers counts, and a picker filter. No auto-preview: choosing
+// a template or an audience must not throw the scroll away — the owner
+// presses «پیش‌نمایش مخاطب‌ها» when ready. form.submit() skips the submit
+// listener, so confirming never loops back into the dialog.
 (function () {
+    var pendingForm = null;
+    // Only the send button carries data-confirm; preview, save and delete
+    // post straight through.
+    document.addEventListener('submit', function (event) {
+        var sender = event.submitter;
+        if (!sender || !sender.hasAttribute || !sender.hasAttribute('data-confirm')) return;
+        var form = sender.form;
+        if (!form || form === pendingForm || !window.RaykidDialog) return;
+        event.preventDefault();
+        pendingForm = form;
+        document.getElementById('sms-confirm-text').textContent =
+            sender.getAttribute('data-confirm');
+        window.RaykidDialog.open('sms-confirm', document.activeElement);
+    });
+    document.getElementById('sms-confirm-yes').addEventListener('click', function () {
+        var form = pendingForm;
+        pendingForm = null;
+        window.RaykidDialog.close('sms-confirm');
+        if (form) form.submit();
+    });
+    document.getElementById('sms-confirm').addEventListener('click', function (event) {
+        if (event.target.closest('[data-dialog-close]')) pendingForm = null;
+    });
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') pendingForm = null;
+    });
+
     var picker = document.getElementById('sms-picker');
     var counter = document.getElementById('sms-picked-count');
     var search = document.getElementById('sms-picker-search');
     if (picker) {
         var boxes = picker.querySelectorAll('input[type="checkbox"]');
-        function update() {
+        var fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩';
+        function faNum(value) {
+            return String(value == null ? '' : value)
+                .replace(/[۰-۹]/g, function (d) { return fa.indexOf(d); })
+                .replace(/[٠-٩]/g, function (d) { return ar.indexOf(d); });
+        }
+        // Latin digits on this page, like every other count here.
+        function updatePicked() {
             if (!counter) return;
             var count = 0;
             boxes.forEach(function (box) { if (box.checked) count += 1; });
-            counter.textContent = count.toLocaleString('fa-IR') + ' مشتری انتخاب شده';
+            counter.textContent = count + ' مخاطب دست‌چین‌شده';
         }
-        boxes.forEach(function (box) { box.addEventListener('change', update); });
-        update();
-    }
-    if (search && picker) {
-        search.addEventListener('input', function () {
-            var needle = search.value.trim().toLowerCase();
-            picker.querySelectorAll('.sms-pick-row').forEach(function (row) {
-                var haystack = (row.getAttribute('data-search') || '').toLowerCase();
-                row.hidden = needle.length > 0 && haystack.indexOf(needle) === -1;
+        boxes.forEach(function (box) { box.addEventListener('change', updatePicked); });
+        updatePicked();
+        if (search) {
+            search.addEventListener('input', function () {
+                var needle = faNum(search.value).trim().toLowerCase();
+                picker.querySelectorAll('.sms-pick-row').forEach(function (row) {
+                    var haystack = faNum(row.getAttribute('data-search') || '').toLowerCase();
+                    row.hidden = needle.length > 0 && haystack.indexOf(needle) === -1;
+                });
             });
-        });
+        }
     }
-    // Choosing a template or an audience re-runs the preview (action defaults to
-    // «preview»), so the count and the message on the right always describe the
-    // choice currently on screen. Nothing is queued without the send button.
-    var form = document.getElementById('sms-send-form');
-    if (form) {
-        form.querySelectorAll('select, input[name="audience"]').forEach(function (field) {
-            field.addEventListener('change', function () {
-                if (form.requestSubmit) form.requestSubmit();
+    // Pasted numbers, counted the way the server splits them: separators are
+    // whitespace, commas and semicolons; valid means 11 digits on 09.
+    var numbers = document.getElementById('numbers');
+    var numbersCount = document.getElementById('sms-numbers-count');
+    if (numbers && numbersCount) {
+        var fa2 = '۰۱۲۳۴۵۶۷۸۹', ar2 = '٠١٢٣٤٥٦٧٨٩';
+        function digits(value) {
+            return String(value == null ? '' : value)
+                .replace(/[۰-۹]/g, function (d) { return fa2.indexOf(d); })
+                .replace(/[٠-٩]/g, function (d) { return ar2.indexOf(d); });
+        }
+        function updateNumbers() {
+            var valid = 0, invalid = 0;
+            digits(numbers.value).split(/[\s,;،\n\r]+/).forEach(function (part) {
+                part = part.trim();
+                if (!part) return;
+                var only = part.replace(/[^0-9]/g, '');
+                if (/^09\d{9}$/.test(only)) valid++;
+                else invalid++;
             });
-        });
+            numbersCount.textContent = valid || invalid
+                ? (' · ' + valid + ' معتبر' + (invalid ? ' · ' + invalid + ' نامعتبر' : ''))
+                : '';
+        }
+        numbers.addEventListener('input', updateNumbers);
+        updateNumbers();
     }
 })();
 </script>

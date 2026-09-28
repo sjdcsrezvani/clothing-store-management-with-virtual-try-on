@@ -327,6 +327,46 @@ def test_the_preview_names_the_recipients_it_would_skip(db_session):
     assert all("body" in row and "blank" in row for row in rows)
 
 
+def test_audience_picks_round_trip_through_names(db_session):
+    from services.sms_send import delete_saved_audience, saved_audiences, save_audience
+
+    assert saved_audiences(db_session) == []
+    ok, _ = save_audience(db_session, name="", audience="all")
+    assert ok is False
+    ok, _ = save_audience(db_session, name="طلایی‌ها", audience="tier:gold",
+                           picked=[], numbers="")
+    assert ok is True
+    ok, _ = save_audience(db_session, name="bogus", audience="everyone")
+    assert ok is False
+    items = saved_audiences(db_session)
+    assert [item["name"] for item in items] == ["طلایی‌ها"]
+    assert items[0]["audience"] == "tier:gold"
+    assert delete_saved_audience(db_session, "طلایی‌ها") is True
+    assert delete_saved_audience(db_session, "طلایی‌ها") is False
+    assert saved_audiences(db_session) == []
+
+
+def test_saving_a_pick_from_the_form_queues_nothing(client, authed, db_session):
+    ensure_seeded(db_session)
+    template = get_template(db_session, "campaign")
+    template.body = "خبر"
+    template.is_active = True
+    db_session.commit()
+    make_customer(db_session, first_name="سارا")
+    token = csrf_token(client, "/admin/sms/send")
+
+    response = authed.post("/admin/sms/send", data={
+        "csrf_token": token, "template_id": template.id, "audience": "all",
+        "numbers": "", "action": "save-audience", "save_name": "همه‌جا",
+    })
+    assert response.status_code == 200
+    assert db_session.query(SmsMessage).count() == 0
+    assert "ذخیره شد" in response.text
+
+    recalled = client.get("/admin/sms/send?saved=همه‌جا")
+    assert "بازیابی شد" in recalled.text
+
+
 def test_the_allowlist_refuses_strangers_and_keeps_friends(db_session):
     from models import Settings
     from services.sms import allowed_phones, is_allowed_recipient
@@ -793,7 +833,7 @@ def test_the_send_page_says_how_the_chosen_template_fires(client, authed, db_ses
 
     auto_page = authed.get(f"/admin/sms/send?template_id={welcome.id}").text
     assert "sms-fire-badge is-auto" in auto_page
-    assert "پیام تکراری" in auto_page
+    assert "تکراری شود" in auto_page
 
     # A manual built-in points at its own page, so the sender is not left guessing
     # why they have never sent it from here.

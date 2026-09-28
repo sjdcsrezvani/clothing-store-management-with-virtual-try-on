@@ -3292,6 +3292,25 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
 .sms-audience-option span { display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; font-size: 0.84rem; }
 .sms-audience-option small { color: var(--ink-soft); font-size: 0.74rem; font-weight: 700; }
 .sms-picked-block { border-top: 1px dashed var(--rule); padding-top: 0.7rem; }
+/* Stored audiences: recall chips with a quiet × beside each name. */
+.saved-audiences { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.8rem; }
+.saved-audience { display: inline-flex; align-items: center; gap: 0.3rem;
+  border: 1px solid var(--rule); border-radius: 999px; padding: 0.2rem 0.7rem;
+  background: var(--surface-soft); font-size: 0.8rem; }
+.saved-audience a { color: inherit; text-decoration: none; font-weight: 700; }
+.saved-audience-remove { border: none; background: none; color: var(--ink-soft);
+  font-size: 1rem; line-height: 1; cursor: pointer; padding: 0 0.1rem; min-height: 2rem; }
+.saved-audience-remove:hover { color: var(--danger); }
+.save-audience-row { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.7rem; }
+.save-audience-row input { flex: 1 1 auto; }
+/* Per-recipient final texts: the phone column stays narrow, the text wraps. */
+.sms-preview-table { min-width: 0; width: 100%; font-size: 0.82rem; }
+.sms-preview-table td { vertical-align: top; }
+.preview-who small { display: block; }
+.preview-blank .preview-who strong { color: var(--ink-soft); }
+.preview-blank-flag { display: inline-block; margin-inline-start: 0.4rem;
+  font-size: 0.7rem; font-weight: 700; color: var(--warning-ink, var(--ink-soft));
+  border: 1px solid var(--rule); border-radius: 999px; padding: 0 0.5rem; }
 .sms-picker-search { margin-bottom: 0.4rem; }
 .sms-picker {
   max-height: 15rem; overflow-y: auto;
@@ -3300,7 +3319,7 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
 }
 .sms-pick-row {
   display: flex; align-items: center; gap: 0.5rem;
-  min-height: 2.2rem; padding: 0.25rem 0.55rem;
+  min-height: var(--touch-target); padding: 0.4rem 0.55rem;
   border-bottom: 1px solid color-mix(in srgb, var(--rule) 55%, transparent);
   cursor: pointer; font-size: 0.82rem;
 }
