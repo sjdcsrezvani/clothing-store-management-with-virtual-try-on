@@ -303,6 +303,10 @@ def _manager_context(request, db, guard, *, usage="all", sort="default",
         "device_status": device_status_label(db),
         "gateway_queue": queue_snapshot(db),
         "pairing_key": pairing[0] if pairing else None,
+        "pairing_base_url": pairing[1] if pairing else None,
+        # The address the phone dials, printed on the page so nobody hunts it
+        # in a terminal: same value the QR encodes, always visible.
+        "gateway_base_url": _lan_base_url(request),
         "pairing_qr": (pairing_qr_data_uri({"base_url": pairing[1], "api_key": pairing[0]})
                        if pairing else None),
         "gateway_port": GATEWAY_PORT,

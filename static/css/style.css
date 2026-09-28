@@ -3104,6 +3104,10 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
   border: 1px solid var(--rule); border-radius: var(--radius);
 }
 .sms-pairing-help { max-width: 24rem; font-size: 0.78rem; }
+/* The gateway address, printed for typing into the phone: Latin digits and
+   dots stay left-to-right inside the RTL page, and one tap selects it all. */
+.pairing-url { user-select: all; overflow-wrap: anywhere; }
+.sms-gateway-facts dd.pairing-url { font-size: 0.85rem; font-weight: 700; }
 .sms-gateway-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
 .sms-gateway-status { display: grid; gap: 0.8rem; }
 .sms-gateway-facts {

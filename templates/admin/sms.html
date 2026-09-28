@@ -100,8 +100,10 @@
             <img src="{{ pairing_qr }}" alt="QR جفت‌کردن گوشی" class="sms-qr" width="180" height="180">
             <p class="muted tnum" id="pairing-countdown" data-seconds="{{ pairing_flash_seconds }}"
                aria-live="polite"></p>
+            <p class="tnum pairing-url" dir="ltr">{{ pairing_base_url }}</p>
             <p class="muted sms-pairing-help">
                 یک‌بار اسکن کنید: اپ «SMS Gateway» روی گوشی، همین نشانی و کلید را ذخیره می‌کند.
+                نشانی بالا را هم می‌توانید دستی در اپ تایپ کنید.
                 کلید فقط همین‌جا دیده می‌شود — بعد از بستن صفحه هرگز.
                 {% if device %}جفت‌کردن دوباره، کلید قبلی را باطل می‌کند.{% endif %}
             </p>
@@ -131,6 +133,7 @@
 
         <div class="sms-gateway-status">
             <dl class="sms-gateway-facts">
+                <div><dt>نشانی درگاه</dt><dd class="tnum pairing-url" dir="ltr">{{ gateway_base_url }}</dd></div>
                 <div><dt>در صف</dt><dd class="tnum">{{ gateway_queue.queued }}</dd></div>
                 <div><dt>دست گوشی</dt><dd class="tnum">{{ gateway_queue.claimed }}</dd></div>
                 <div><dt>تحویل‌شده</dt><dd class="tnum">{{ gateway_queue.delivered }}</dd></div>
