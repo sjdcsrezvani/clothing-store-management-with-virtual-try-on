@@ -104,15 +104,15 @@
             <tbody>
                 {% for row_movement in movements %}
                 <tr>
-                    <td class="tnum">{{ jalali_str(row_movement.when) }}</td>
-                    <td>
+                    <td class="tnum" data-label="زمان">{{ jalali_str(row_movement.when) }}</td>
+                    <td data-label="نوع">
                         {% if row_movement.direction == 'in' %}
                         <span class="status-badge is-balanced">ورود</span>
                         {% else %}
                         <span class="status-badge is-over">خروج</span>
                         {% endif %}
                     </td>
-                    <td>
+                    <td data-label="توضیح">
                         {% if row_movement.href and row_movement.kind != 'withdrawal' %}
                         <a href="{{ row_movement.href }}">{{ row_movement.label }}</a>
                         {% else %}{{ row_movement.label }}{% endif %}
@@ -120,10 +120,10 @@
                     </td>
                     {# Left-to-right and an ASCII sign: the number is one run, so
                        the sign cannot drift to the far side of the digits. #}
-                    <td class="tnum" dir="ltr">
+                    <td class="tnum" dir="ltr" data-label="مبلغ">
                         {{ '+' if row_movement.direction == 'in' else '-' }}{{ fmt(row_movement.amount) }} تومان
                     </td>
-                    <td>
+                    <td data-label="اقدام">
                         {% if row_movement.kind == 'withdrawal' and verify and session.status == 'open'
                                and not row_movement.reversed %}
                         <form method="post" action="/admin/cashbox/withdrawals/{{ row_movement.entry_id }}/reverse"

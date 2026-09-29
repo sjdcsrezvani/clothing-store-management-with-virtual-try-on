@@ -485,8 +485,8 @@ def test_a_shift_the_upgrade_closed_says_so_instead_of_pretending(client, db_ses
     assert "بسته‌شده بدون شمارش" in _content(client.get("/admin/cashbox").text)
 
 
-def test_the_shift_list_is_paged_and_can_be_opened_whole(client, db_session, authed):
-    """Twenty shifts is a page, not a wall — and «نمایش همه» really shows all."""
+def test_the_shift_list_is_paged_with_numbered_pages(client, db_session, authed):
+    """Twenty-five shifts is three pages of ten, not a wall and not a cap."""
     for index in range(25):
         db_session.add(CashSession(cashier_user_id=1, opening_balance=1_000,
                                    status="closed", variance=0,
@@ -496,13 +496,50 @@ def test_the_shift_list_is_paged_and_can_be_opened_whole(client, db_session, aut
                                    closed_at=datetime.now(timezone.utc) - timedelta(days=index)))
     db_session.commit()
 
-    page = client.get("/admin/cashbox")
-    assert "20 از 25" in page.text
-    assert "نمایش همهٔ شیفت‌ها (25)" in page.text
+    first = client.get("/admin/cashbox?per_page=10")
+    assert "25 شیفت" in first.text
+    assert 'aria-label="صفحه 3"' in first.text
+    assert "نمایش همهٔ شیفت‌ها" not in first.text
 
-    whole = client.get("/admin/cashbox?history=all")
-    assert "25 از 25" in whole.text
-    assert whole.text.count("/admin/cashbox/sessions/") > 20
+    third = client.get("/admin/cashbox?per_page=10&page=3")
+    assert 'aria-current="page">3<' in third.text
+    assert third.text.count("/admin/cashbox/sessions/") == 5
+
+    # A page past the end lands on the last page, not an empty list.
+    assert 'aria-current="page">3<' in client.get("/admin/cashbox?per_page=10&page=9").text
+
+
+def test_the_shift_list_searches_by_opener_and_filters_by_outcome(client, db_session):
+    """A name finds its shifts; an outcome finds its differences."""
+    sarah, sarah_password = _cashier(db_session, "shift-sarah")
+    omid, _ = _cashier(db_session, "shift-omid")
+    _session_as(client, sarah, sarah_password)
+    assert _open(client, 500_000).status_code == 303
+    assert _close(client, 470_000).status_code == 303
+    sarah_shift = _latest_shift(db_session)
+    db_session.add(CashSession(cashier_user_id=omid.id, opening_balance=100_000,
+                               status="closed", variance=0,
+                               expected_closing_balance=100_000,
+                               counted_closing_balance=100_000,
+                               opened_at=datetime.now(timezone.utc) - timedelta(days=1),
+                               closed_at=datetime.now(timezone.utc) - timedelta(days=1)))
+    db_session.commit()
+    omid_shift = _latest_shift(db_session)
+
+    _login(client, "owner", "test-admin-pass")
+    by_name = _content(client.get("/admin/cashbox?q=shift-sarah").text)
+    assert f"/admin/cashbox/sessions/{sarah_shift.id}" in by_name
+    assert f"/admin/cashbox/sessions/{omid_shift.id}" not in by_name
+
+    short = _content(client.get("/admin/cashbox?outcome=short").text)
+    assert f"/admin/cashbox/sessions/{sarah_shift.id}" in short
+    assert "30,000 تومان کسری" in short
+
+    balanced = _content(client.get("/admin/cashbox?outcome=balanced").text)
+    assert f"/admin/cashbox/sessions/{sarah_shift.id}" not in balanced
+
+    # The closer is named on the row, not just on the statement.
+    assert "بستننده" in _content(client.get("/admin/cashbox").text)
 
 
 def test_the_period_report_explains_the_number_it_prints(client, db_session, authed):

@@ -3050,8 +3050,6 @@ async def admin_expense_delete(expense_id: int, request: Request, db: Session = 
 # whoever is about to count it — see ``_blind`` below — because a count typed off
 # a figure the register already printed can never disagree with it.
 
-SESSIONS_SHOWN = 20
-
 
 def _staff_names(db, ids) -> dict:
     """Names for the people on a shift, so the till never says «کاربر #۳»."""
@@ -3067,23 +3065,30 @@ def _cash_session_row(session, names: dict) -> dict:
     variance = session.variance
     if session.status == "open":
         status_label, variance_label, variance_tone = "باز", "—", None
+        outcome = "open"
     elif session.status == "abandoned":
         status_label, variance_label, variance_tone = "بسته‌شده بدون شمارش", "—", None
+        outcome = "abandoned"
     else:
         status_label = "بسته"
         if variance is None:
-            variance_label, variance_tone = "ثبت نشده", None
+            variance_label, variance_tone, outcome = "ثبت نشده", None, "unrecorded"
         elif variance == 0:
-            variance_label, variance_tone = "مطابق", "balanced"
+            variance_label, variance_tone, outcome = "مطابق", "balanced", "balanced"
         elif variance < 0:
             variance_label, variance_tone = f"{fmt(abs(variance))} تومان کسری", "short"
+            outcome = "short"
         else:
             variance_label, variance_tone = f"{fmt(variance)} تومان اضافه", "over"
+            outcome = "over"
     return {
         "session": session,
         "status_label": status_label,
         "variance_label": variance_label,
         "variance_tone": variance_tone,
+        # The machine word behind the wording, so the history filter can ask
+        # for an outcome without re-reading the Persian.
+        "outcome": outcome,
         "opener": names.get(session.cashier_user_id) or "کاربر حذف‌شده",
         "closer": names.get(session.manager_user_id) if session.manager_user_id else None,
     }
@@ -3099,7 +3104,10 @@ async def admin_cashbox(
     period: str = "today",
     start_date: str = "",
     end_date: str = "",
-    history: str = "",
+    page: str = "1",
+    per_page: str = "25",
+    q: str = "",
+    outcome: str = "",
     db: Session = Depends(get_db),
 ):
     guard = require_html_role(request, db, "cashier")
@@ -3134,10 +3142,30 @@ async def admin_cashbox(
     if not verifier:
         # A cashier reads their own shifts, not the rest of the shop's day.
         open_shifts = open_shifts.filter(CashSession.cashier_user_id == guard.id)
-    total_shifts = open_shifts.count()
-    listed = open_shifts.all() if history == "all" else open_shifts.limit(SESSIONS_SHOWN).all()
+    needle = q.strip()
+    if needle:
+        # Who opened it is a name, not an id, so the search joins the staff
+        # table rather than asking for a number nobody memorises.
+        open_shifts = (
+            open_shifts.join(StaffUser, StaffUser.id == CashSession.cashier_user_id)
+            .filter(or_(
+                StaffUser.full_name.ilike(f"%{needle}%"),
+                StaffUser.username.ilike(f"%{needle}%"),
+            ))
+        )
+    listed = open_shifts.all()
     names = _staff_names(db, [s.cashier_user_id for s in listed] + [s.manager_user_id for s in listed])
-    sessions = [_cash_session_row(s, names) for s in listed]
+    rows = [_cash_session_row(s, names) for s in listed]
+    if outcome in ("open", "balanced", "short", "over", "abandoned"):
+        rows = [row for row in rows if row["outcome"] == outcome]
+
+    page_arg_value = (page or "1").strip()
+    page_int = int(page_arg_value) if page_arg_value.isdigit() else 1
+    per_page_raw = (per_page or "25").strip()
+    per_page_int = int(per_page_raw) if per_page_raw.isdigit() and int(per_page_raw) in (10, 25, 50) else 25
+    total_shifts = len(rows)
+    total_pages = max(1, (total_shifts + per_page_int - 1) // per_page_int)
+    page_int = min(max(1, page_int), total_pages)
 
     window = period_range(period, start_date or None, end_date or None)
     report = None
@@ -3160,14 +3188,16 @@ async def admin_cashbox(
         "start_date": start_date,
         "end_date": end_date,
         "range_notice": window.notice,
-        "history": history,
         "verify": verifier,
         "shift": shift,
-        "sessions": sessions,
-        # Reading «۲۰ از ۲۵» above a list that is showing all of them would make
-        # the page lie to the reader about what is in front of them.
-        "sessions_shown": total_shifts if history == "all" else min(total_shifts, SESSIONS_SHOWN),
+        "sessions": rows[(page_int - 1) * per_page_int: page_int * per_page_int],
         "sessions_total": total_shifts,
+        "page": page_int,
+        "total_pages": total_pages,
+        "per_page": per_page_int,
+        "per_page_options": (10, 25, 50),
+        "q": q,
+        "outcome": outcome,
         "report": report,
         "settings_opening": settings_opening,
         # The cashbox forms paint their bounds from the same table the POSTs

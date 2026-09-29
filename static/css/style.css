@@ -3534,6 +3534,32 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
 .cash-note { margin-top: 1rem; font-size: 0.85rem; line-height: 1.9; }
 .cash-default summary { cursor: pointer; font-weight: 700; }
 .cash-default > p { margin: 0.6rem 0 0.8rem; font-size: 0.85rem; }
+/* The shift-history filter: same rhythm as the customers filter, one breath
+   above the table it narrows. */
+.cash-shift-filter { align-items: end; margin-bottom: 1rem; }
+.cash-shift-filter .form-group { margin-bottom: 0; flex: 1 1 175px; min-width: 160px; }
+.cash-shift-filter .form-group:first-child { flex: 1 1 320px; }
+/* Fingers at the drawer: the reversal is a small button in a statement row,
+   and small must still mean tappable on a phone held one-handed. */
+.cash-movements .btn-sm { min-height: 44px; display: inline-flex; align-items: center; }
+/* Narrow screens stack shift and movement rows into labelled cards instead of
+   scrolling sideways: a cashier checking yesterday's difference on a phone
+   reads «بستننده: …» rather than guessing which column they are under. */
+@media (max-width: 700px) {
+  .cash-shifts-table thead, .cash-movements thead {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .cash-shifts-table, .cash-shifts-table tbody, .cash-shifts-table tr, .cash-shifts-table td,
+  .cash-movements, .cash-movements tbody, .cash-movements tr, .cash-movements td { display: block; }
+  .cash-shifts-table tr, .cash-movements tr {
+    border: 1px solid var(--rule); border-radius: var(--radius-sm);
+    margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; }
+  .cash-shifts-table td, .cash-movements td {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
+    border: none; padding: 0.25rem 0; text-align: start; }
+  .cash-shifts-table td::before, .cash-movements td::before {
+    content: attr(data-label); color: var(--ink-soft); font-size: 0.72rem; flex-shrink: 0; }
+  .cash-shift-filter .form-group { flex: 1 1 100%; min-width: 0; }
+}
 
 /* One card alone in the grid would take half a row and leave a gap: the
    cashier's shift shows the float and nothing else. */
