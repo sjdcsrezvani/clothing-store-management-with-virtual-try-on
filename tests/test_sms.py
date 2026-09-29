@@ -286,7 +286,109 @@ def test_plan_from_form_reads_the_tier_and_tag_prefixes(db_session):
     assert plan_from_form(db_session, audience="tier:gold")["count"] == 1
     assert plan_from_form(db_session, audience="tag:vip")["count"] == 1
     assert plan_from_form(db_session, audience="all")["count"] == 3
-    assert plan_from_form(db_session, audience="nonsense")["count"] == 3
+    refused = plan_from_form(db_session, audience="nonsense")
+    assert refused["count"] == 0 and refused["recipients"] == []
+    assert "شناخته نشد" in refused["error"]
+
+
+def test_a_forged_tier_matches_nobody_not_the_whole_store(db_session):
+    make_customer(db_session, tier="gold")
+    plan = plan_from_form(db_session, audience="tier:platinum")
+    assert plan["recipients"] == [] and plan["matched"] == 0
+    assert plan_from_form(db_session, audience="tier:")["recipients"] == []
+
+
+def test_a_failed_blast_queues_nothing_not_half_a_blast(db_session, monkeypatch):
+    from services import sms_send as sms_send_module
+
+    make_customer(db_session, first_name="آرش", phone="09120000001")
+    make_customer(db_session, first_name="نیما", phone="09120000002")
+    template = create_custom(db_session, name="اطلاع", body="سلام ثابت")
+    plan = plan_from_form(db_session, audience="all")
+    assert plan["count"] == 2
+
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("line down")
+
+    monkeypatch.setattr(sms_send_module, "queue_sms", _boom)
+    summary = asyncio.run(send_bulk(db_session, template=template, plan=plan))
+    assert summary["aborted"] is True and summary["queued"] == 0
+    assert db_session.query(SmsMessage).count() == 0
+
+
+def test_the_preview_names_the_recipients_it_would_skip(db_session):
+    from services.sms_send import render_preview_rows
+
+    make_customer(db_session, first_name="آرش", phone="09120000003")
+    template = get_template(db_session, "welcome")
+    plan = plan_from_form(db_session, audience="all")
+    rows = render_preview_rows(template, plan)
+    assert len(rows) == plan["count"]
+    assert all("body" in row and "blank" in row for row in rows)
+
+
+def test_audience_picks_round_trip_through_names(db_session):
+    from services.sms_send import delete_saved_audience, saved_audiences, save_audience
+
+    assert saved_audiences(db_session) == []
+    ok, _ = save_audience(db_session, name="", audience="all")
+    assert ok is False
+    ok, _ = save_audience(db_session, name="طلایی‌ها", audience="tier:gold",
+                           picked=[], numbers="")
+    assert ok is True
+    ok, _ = save_audience(db_session, name="bogus", audience="everyone")
+    assert ok is False
+    items = saved_audiences(db_session)
+    assert [item["name"] for item in items] == ["طلایی‌ها"]
+    assert items[0]["audience"] == "tier:gold"
+    assert delete_saved_audience(db_session, "طلایی‌ها") is True
+    assert delete_saved_audience(db_session, "طلایی‌ها") is False
+    assert saved_audiences(db_session) == []
+
+
+def test_saving_a_pick_from_the_form_queues_nothing(client, authed, db_session):
+    ensure_seeded(db_session)
+    template = get_template(db_session, "campaign")
+    template.body = "خبر"
+    template.is_active = True
+    db_session.commit()
+    make_customer(db_session, first_name="سارا")
+    token = csrf_token(client, "/admin/sms/send")
+
+    response = authed.post("/admin/sms/send", data={
+        "csrf_token": token, "template_id": template.id, "audience": "all",
+        "numbers": "", "action": "save-audience", "save_name": "همه‌جا",
+    })
+    assert response.status_code == 200
+    assert db_session.query(SmsMessage).count() == 0
+    assert "ذخیره شد" in response.text
+
+    recalled = client.get("/admin/sms/send?saved=همه‌جا")
+    assert "بازیابی شد" in recalled.text
+
+
+def test_the_allowlist_refuses_strangers_and_keeps_friends(db_session):
+    from models import Settings
+    from services.sms import allowed_phones, is_allowed_recipient
+
+    assert allowed_phones(db_session) == []
+    assert is_allowed_recipient(db_session, "09120000001") is True
+    db_session.add(Settings(key="sms_allowed_phones", value="09017631093"))
+    db_session.commit()
+    assert allowed_phones(db_session) == ["09017631093"]
+    assert is_allowed_recipient(db_session, "09017631093") is True
+    assert is_allowed_recipient(db_session, "09120000001") is False
+
+
+def test_a_listed_number_queues_but_a_stranger_leaves_no_row(db_session):
+    from models import Settings
+
+    db_session.add(Settings(key="sms_allowed_phones", value="09017631093"))
+    db_session.commit()
+    friend = asyncio.run(queue_sms("سلام", "09017631093", {}, db_session, source="test"))
+    stranger = asyncio.run(queue_sms("سلام", "09120000001", {}, db_session, source="test"))
+    assert friend is not None and stranger is None
+    assert db_session.query(SmsMessage).count() == 1
 
 
 # ── queueing and the log ─────────────────────────────────────────────────────
@@ -731,7 +833,7 @@ def test_the_send_page_says_how_the_chosen_template_fires(client, authed, db_ses
 
     auto_page = authed.get(f"/admin/sms/send?template_id={welcome.id}").text
     assert "sms-fire-badge is-auto" in auto_page
-    assert "پیام تکراری" in auto_page
+    assert "تکراری شود" in auto_page
 
     # A manual built-in points at its own page, so the sender is not left guessing
     # why they have never sent it from here.

@@ -12,6 +12,16 @@
 {% endset %}
 {% include 'partials/page_header.html' %}
 
+{# Test mode is never silent: while the allowlist holds any number, every
+   send in the shop reaches only those numbers. #}
+{% if allowed_phones %}
+<div class="alert alert-error" role="status">
+    حالت آزمایشی فعال است — پیامک فقط به {{ allowed_phones.split()|length }} شماره
+    (<span dir="ltr">{{ allowed_phones }}</span>) می‌رسد. برای بازکردن ارسال،
+    فهرست را در تنظیمات همین صفحه خالی کنید.
+</div>
+{% endif %}
+
 
 <div class="stats-grid sms-kpi" aria-label="خلاصه پیامک‌ها">
     <a class="stat-card accent-sky" href="/admin/sms/history">
@@ -176,6 +186,16 @@
                     <small>
                         مثلاً با عدد ۳، سومِ هر ماه، گزارش ماه قبلی فرستاده می‌شود — همیشه یک ماه کامل،
                         نه نیمه‌کاره. {% if digest_next_month %}خلاصه بعدی درباره‌ «{{ digest_next_month }}» است.{% endif %}
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label for="sms_allowed_phones">حالت آزمایشی — فقط این شماره‌ها</label>
+                    <input type="text" id="sms_allowed_phones" name="sms_allowed_phones"
+                           value="{{ allowed_phones }}" dir="ltr" placeholder="09123456789">
+                    <small>
+                        تا وقتی اینجا شماره‌ای هست، هیچ پیامکی به شماره دیگری — مشتری،
+                        کمپین، پیگیری، خلاصه — در صف نمی‌رود. خالی بگذارید تا ارسال
+                        برای همه باز شود.
                     </small>
                 </div>
                 <div class="form-actions">
