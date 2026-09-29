@@ -44,20 +44,20 @@
     <div class="stats-grid">
         <div class="stat-card accent-pine">
             <div class="stat-label">موجودی ابتدای شیفت</div>
-            <div class="stat-value tnum">{{ fmt(session.opening_balance) }} ت</div>
+            <div class="stat-value tnum">{{ fmt(session.opening_balance) }} تومان</div>
             <div class="stat-sub">شمرده و ثبت‌شده در شروع شیفت</div>
         </div>
         <div class="stat-card accent-persimmon">
             <div class="stat-label">{{ 'عدد مورد انتظار (تا این لحظه)' if row.session.status == 'open' else 'عدد مورد انتظار' }}</div>
-            <div class="stat-value tnum">{{ fmt(expected) }} ت</div>
+            <div class="stat-value tnum">{{ fmt(expected) }} تومان</div>
             <div class="stat-sub">
-                ورودی {{ fmt(register.cash_in) }} ت · خروجی {{ fmt(register.cash_out) }} ت
+                ورودی {{ fmt(register.cash_in) }} تومان · خروجی {{ fmt(register.cash_out) }} تومان
             </div>
         </div>
         <div class="stat-card accent-ink">
             <div class="stat-label">شمارش‌شده</div>
             <div class="stat-value tnum">
-                {{ fmt(session.counted_closing_balance) ~ ' ت' if session.counted_closing_balance is not none else '—' }}
+                {{ fmt(session.counted_closing_balance) ~ ' تومان' if session.counted_closing_balance is not none else '—' }}
             </div>
             <div class="stat-sub">
                 {% if session.counted_closing_balance is not none %}پولی که شمرده شد
@@ -68,7 +68,7 @@
         <div class="stat-card accent-{{ 'candy' if not row.variance_tone else ('ink' if row.variance_tone == 'balanced' else 'persimmon') }}">
             <div class="stat-label">اختلاف</div>
             <div class="stat-value tnum">
-                {% if session.variance is not none %}{{ fmt(session.variance) }} ت{% else %}—{% endif %}
+                {% if session.variance is not none %}{{ fmt(session.variance) }} تومان{% else %}—{% endif %}
             </div>
             <div class="stat-sub">
                 {% if row.variance_tone %}<span class="status-badge is-{{ row.variance_tone }}">{{ row.variance_label }}</span>
@@ -84,7 +84,7 @@
         <div>
             <h3>حرکت‌های این شیفت</h3>
             <p class="muted">
-                {{ movements|length }} حرکت — {{ fmt(register.cash_in) }} ت ورود و {{ fmt(register.cash_out) }} ت خروج
+                {{ movements|length }} حرکت — {{ fmt(register.cash_in) }} تومان ورود و {{ fmt(register.cash_out) }} تومان خروج
             </p>
         </div>
     </div>
@@ -121,13 +121,14 @@
                     {# Left-to-right and an ASCII sign: the number is one run, so
                        the sign cannot drift to the far side of the digits. #}
                     <td class="tnum" dir="ltr">
-                        {{ '+' if row_movement.direction == 'in' else '-' }}{{ fmt(row_movement.amount) }} ت
+                        {{ '+' if row_movement.direction == 'in' else '-' }}{{ fmt(row_movement.amount) }} تومان
                     </td>
                     <td>
                         {% if row_movement.kind == 'withdrawal' and verify and session.status == 'open'
-                              and not row_movement.reversed %}
+                               and not row_movement.reversed %}
                         <form method="post" action="/admin/cashbox/withdrawals/{{ row_movement.entry_id }}/reverse"
-                              onsubmit="return confirm('این برداشت برگشت بخورد؟ مبلغش به عدد مورد انتظار برمی‌گردد.')">
+                              data-reverse-form
+                              data-confirm="برداشت {{ fmt(row_movement.amount) }} تومان برگشت بخورد؟ مبلغش به عدد مورد انتظار برمی‌گردد.">
                             <button type="submit" class="btn btn-sm btn-ghost">برگشت برداشت</button>
                         </form>
                         {% endif %}
@@ -144,4 +145,18 @@
     </div>
     {% endif %}
 </section>
+{# The reversal confirmation: the row's own amount is echoed back, and without
+   JS the form posts directly with the server still guarding the rules. #}
+<div id="cashbox-reverse-confirm" data-dialog role="alertdialog" aria-modal="true"
+     aria-labelledby="cashbox-reverse-confirm-title" class="confirm-scrim" tabindex="-1">
+    <div class="t-modal-card confirm-card" role="document">
+        <h3 id="cashbox-reverse-confirm-title">برگشت برداشت؟</h3>
+        <p class="muted" id="cashbox-reverse-confirm-text"></p>
+        <div class="confirm-actions">
+            <button type="button" class="btn btn-primary" id="cashbox-reverse-confirm-yes">برگشت برداشت</button>
+            <button type="button" class="btn btn-ghost" data-dialog-close>انصراف</button>
+        </div>
+    </div>
+</div>
+<script src="/static/js/cashbox.js?v={{ static_version }}"></script>
 {% endblock %}

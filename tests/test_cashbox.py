@@ -33,9 +33,13 @@ def _open(client, amount):
                        follow_redirects=False)
 
 
-def _close(client, counted):
+def _close(client, counted, repeat=None):
+    # The count is typed twice: the helper repeats the same figure unless a
+    # different second typing is handed in on purpose.
     return client.post("/admin/cashbox/close",
-                       data={"counted": str(counted), "csrf_token": csrf_token(client, "/admin/cashbox")},
+                       data={"counted": str(counted),
+                             "counted2": str(counted if repeat is None else repeat),
+                             "csrf_token": csrf_token(client, "/admin/cashbox")},
                        follow_redirects=False)
 
 
@@ -114,6 +118,35 @@ def test_a_cashier_opens_and_closes_their_own_drawer(client, db_session):
     # The closer is recorded whoever they were: the column is named «manager»,
     # the label says «بستننده», and a cashier closing their own shift is normal.
     assert session.manager_user_id == cashier.id
+
+
+def test_a_mismatched_second_counting_leaves_the_shift_open(client, db_session):
+    """One mistyped digit must not lock a false variance into a closed shift."""
+    cashier, password = _cashier(db_session, "till-twice")
+    _session_as(client, cashier, password)
+
+    assert _open(client, 500_000).status_code == 303
+    response = _close(client, 500_000, repeat=50_000)
+    assert response.status_code == 303
+    assert "err=" in response.headers["location"]
+    assert _live_shift(db_session) is not None       # still open, nothing recorded
+    session = _live_shift(db_session)
+    assert session.counted_closing_balance is None
+
+    # A missing repeat is a mismatch too, not a silent single typing.
+    response = client.post("/admin/cashbox/close",
+                           data={"counted": "500000",
+                                 "csrf_token": csrf_token(client, "/admin/cashbox")},
+                           follow_redirects=False)
+    assert response.status_code == 303
+    assert "err=" in response.headers["location"]
+    assert _live_shift(db_session) is not None
+
+    # Agreeing twice closes normally.
+    assert _close(client, 500_000).status_code == 303
+    db_session.refresh(session)
+    assert session.status == "closed"
+    assert session.variance == 0
 
 
 def test_the_drawer_refuses_a_second_opening_and_names_who_holds_it(client, db_session):
@@ -414,9 +447,9 @@ def test_the_statement_shows_what_makes_up_the_expected_figure(client, db_sessio
     page = client.get(f"/admin/cashbox/sessions/{session.id}")
     assert page.status_code == 200
     assert f"شیفت صندوق #{session.id}" in page.text
-    assert f"+90,000 ت" in page.text                       # the sale
-    assert "-30,000 ت" in page.text                 # the withdrawal
-    assert "-20,000 ت" in page.text                 # the expense
+    assert f"+90,000 تومان" in page.text                # the sale
+    assert "-30,000 تومان" in page.text           # the withdrawal
+    assert "-20,000 تومان" in page.text           # the expense
     assert "240,000" in page.text                          # 200,000 + 90,000 − 30,000 − 20,000
     assert "/sales/invoice/" in page.text                  # every row reaches its record
     assert "برگشت برداشت" in page.text                      # and a mistake is fixable
@@ -433,7 +466,7 @@ def test_the_shift_history_shows_the_difference_a_count_found(client, db_session
 
     _session_as(client, manager, manager_password)
     content = _content(client.get("/admin/cashbox").text)
-    assert "50,000 ت کسری" in content
+    assert "50,000 تومان کسری" in content
     assert "450,000" in content                      # what was counted
     assert f"/admin/cashbox/sessions/{session.id}" in content   # and where to read why
 
@@ -518,6 +551,22 @@ def test_the_cashbox_page_is_persian_and_names_people(client, db_session):
     assert not EMOJI.search(content), EMOJI.findall(content)[:5]
     assert "کاربر #" not in content
     assert "till-names" in content                       # the opener is named
+
+
+def test_the_close_form_counts_twice_and_confirms_before_posting(client, db_session):
+    """The typo guards are painted, not just enforced: repeat field, modal, datalist."""
+    cashier, password = _cashier(db_session, "till-guards")
+    _session_as(client, cashier, password)
+    assert _open(client, 10_000).status_code == 303
+
+    content = _content(client.get("/admin/cashbox").text)
+    assert 'name="counted2"' in content
+    assert 'id="cashbox-close-form"' in content
+    assert 'id="cashbox-confirm"' in content
+    assert 'list="withdraw-reasons"' in content
+    assert "واریز به بانک" in content
+    assert "/static/js/cashbox.js" in content
+    assert not EMOJI.search(content), EMOJI.findall(content)[:5]
 
 
 # ── the dashboard ────────────────────────────────────────────────────────────

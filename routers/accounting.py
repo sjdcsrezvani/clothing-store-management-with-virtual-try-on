@@ -1729,6 +1729,10 @@ def _purchase_money(value) -> int:
 CASHBOX_NUMERIC_RULES = {
     "amount": (1, None, "مبلغ برداشت"),
     "counted": (0, None, "مبلغ شمارش‌شده"),
+    # The count is typed twice and the two must agree: a single mistyped digit
+    # would otherwise lock a false variance into a closed shift, and a closed
+    # shift is deliberately immutable.
+    "counted2": (0, None, "تکرار شمارش"),
     "opening": (0, None, "موجودی ابتدای روز"),
 }
 
@@ -3072,9 +3076,9 @@ def _cash_session_row(session, names: dict) -> dict:
         elif variance == 0:
             variance_label, variance_tone = "مطابق", "balanced"
         elif variance < 0:
-            variance_label, variance_tone = f"{fmt(abs(variance))} ت کسری", "short"
+            variance_label, variance_tone = f"{fmt(abs(variance))} تومان کسری", "short"
         else:
-            variance_label, variance_tone = f"{fmt(variance)} ت اضافه", "over"
+            variance_label, variance_tone = f"{fmt(variance)} تومان اضافه", "over"
     return {
         "session": session,
         "status_label": status_label,
@@ -3228,7 +3232,8 @@ async def admin_cashbox_open(request: Request, opening: str = Form("0"), db: Ses
 
 
 @router.post("/cashbox/close", response_class=HTMLResponse)
-async def admin_cashbox_close(request: Request, counted: str = Form("0"), db: Session = Depends(get_db)):
+async def admin_cashbox_close(request: Request, counted: str = Form("0"), counted2: str = Form(""),
+                              db: Session = Depends(get_db)):
     """Count the drawer and record the difference.
 
     The opener may close their own shift; a manager or the owner may close any
@@ -3253,6 +3258,15 @@ async def admin_cashbox_close(request: Request, counted: str = Form("0"), db: Se
         counted_int = -1
     if counted_int < CASHBOX_NUMERIC_RULES["counted"][0]:
         return RedirectResponse(url=f"/admin/cashbox?err={quote_plus('مبلغ شمارش‌شده باید عددی صفر یا بیشتر باشد.')}", status_code=303)
+    # The second typing is compared, not trusted: an empty repeat is a mismatch
+    # too, so a form posted without it (or by a client without the modal) is
+    # refused rather than silently accepted on one typing.
+    try:
+        counted2_int = int(to_english_digits(counted2)) if counted2.strip() else -1
+    except (TypeError, ValueError):
+        counted2_int = -1
+    if counted2_int != counted_int:
+        return RedirectResponse(url=f"/admin/cashbox?err={quote_plus('دو شمارش یکی نیست؛ دوباره بشمارید و هر دو را یکسان بنویسید.')}", status_code=303)
     start = session.opened_at
     end = datetime.now(timezone.utc)
     expected = get_cashbox(db, start, end, session.opening_balance, session.id)["closing"]
@@ -3284,15 +3298,15 @@ async def admin_cashbox_close(request: Request, counted: str = Form("0"), db: Se
     log_action(db, "cash_session_close", "بستن صندوق", request=request, target_type="cash_session", target_id=session.id, after={"expected": expected, "counted": counted_int, "variance": session.variance})
     # Only now is the expected figure spoken: the count is already in.
     if session.variance == 0:
-        note = f"صندوق بسته شد. شمارش {fmt(counted_int)} ت با عدد مورد انتظار می‌خواند."
+        note = f"صندوق بسته شد. شمارش {fmt(counted_int)} تومان با عدد مورد انتظار می‌خواند."
         tone = ""
     elif session.variance < 0:
-        note = (f"صندوق بسته شد. شمارش {fmt(counted_int)} ت، {fmt(abs(session.variance))} ت کمتر از عدد مورد انتظار "
-                f"({fmt(expected)} ت) است؛ اختلاف ثبت شد.")
+        note = (f"صندوق بسته شد. شمارش {fmt(counted_int)} تومان، {fmt(abs(session.variance))} تومان کمتر از عدد مورد انتظار "
+                f"({fmt(expected)} تومان) است؛ اختلاف ثبت شد.")
         tone = "&tone=warning"
     else:
-        note = (f"صندوق بسته شد. شمارش {fmt(counted_int)} ت، {fmt(session.variance)} ت بیشتر از عدد مورد انتظار "
-                f"({fmt(expected)} ت) است؛ اختلاف ثبت شد.")
+        note = (f"صندوق بسته شد. شمارش {fmt(counted_int)} تومان، {fmt(session.variance)} تومان بیشتر از عدد مورد انتظار "
+                f"({fmt(expected)} تومان) است؛ اختلاف ثبت شد.")
         tone = "&tone=warning"
     return RedirectResponse(url=f"/admin/cashbox?msg={quote_plus(note)}{tone}", status_code=303)
 

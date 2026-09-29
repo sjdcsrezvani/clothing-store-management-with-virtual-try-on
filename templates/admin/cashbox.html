@@ -3,8 +3,8 @@
 {% from 'partials/numeric_input.html' import num with context %}
 
 {% set page_description %}
-کشوی نقدی مغازه: با شمارش باز میشود، با شمارش بسته میشود و هر اختلافی ثبت میگردد.
-فقط پول نقد اینجا حساب میشود؛ کارتخوان و نسیه جای خودشان را دارند.
+پول نقد کشو: با شمارش باز می‌شود، با شمارش بسته می‌شود و هر اختلافی ثبت می‌گردد.
+فقط نقد اینجا شمرده می‌شود؛ فروش کارتخوان در «تطبیق کارتخوان» و نسیه در «حساب نسیه» است.
 {% endset %}
 {% set page_actions %}
 {% if verify %}
@@ -43,14 +43,14 @@
     <div class="stats-grid{% if not verify %} is-single{% endif %}">
         <div class="stat-card accent-pine">
             <div class="stat-label">موجودی ابتدای شیفت</div>
-            <div class="stat-value tnum">{{ fmt(shift.session.opening_balance) }} ت</div>
+            <div class="stat-value tnum">{{ fmt(shift.session.opening_balance) }} تومان</div>
             <div class="stat-sub">آنچه در شروع شیفت شمرده و ثبت شد</div>
         </div>
         {% if verify %}
         <div class="stat-card accent-persimmon">
             <div class="stat-label">حرکت این شیفت</div>
-            <div class="stat-value tnum">{{ fmt(shift.register.cash_in) }} ت ورود</div>
-            <div class="stat-sub">{{ fmt(shift.register.cash_out) }} ت خروج</div>
+            <div class="stat-value tnum">{{ fmt(shift.register.cash_in) }} تومان ورود</div>
+            <div class="stat-sub">{{ fmt(shift.register.cash_out) }} تومان خروج</div>
             {# Amounts without signs: the card's value already says «ورود» or
                «خروج», and a leading minus in a right-to-left line is a
                punctuation question rather than a fact. #}
@@ -61,11 +61,12 @@
                 هزینه {{ fmt(shift.register.expenses) }} ·
                 تأمین‌کننده {{ fmt(shift.register.supplier_payments) }} ·
                 برداشت {{ fmt(shift.register.withdrawals) }}
+                (تومان)
             </div>
         </div>
         <div class="stat-card accent-candy">
             <div class="stat-label">تا این لحظه باید در کشو باشد</div>
-            <div class="stat-value tnum">{{ fmt(shift.expected) }} ت</div>
+            <div class="stat-value tnum">{{ fmt(shift.expected) }} تومان</div>
             <div class="stat-sub">ابتدای شیفت به‌علاوهٔ حرکت‌های بالا</div>
         </div>
         {% endif %}
@@ -87,7 +88,7 @@
                     {% for row in shift.withdrawals %}
                     <tr>
                         <td class="tnum">{{ jalali_str(row.when) }}</td>
-                        <td class="tnum">{{ fmt(row.amount) }} ت</td>
+                        <td class="tnum">{{ fmt(row.amount) }} تومان</td>
                         <td>{{ row.note }}</td>
                     </tr>
                     {% endfor %}
@@ -102,7 +103,13 @@
             </label>
             <label class="filter-field">
                 <span>دلیل</span>
-                <input type="text" name="reason" required placeholder="مثلاً واریز به بانک">
+                <input type="text" name="reason" list="withdraw-reasons" required placeholder="مثلاً واریز به بانک">
+                <datalist id="withdraw-reasons">
+                    <option value="واریز به بانک"></option>
+                    <option value="خرید نقدی کوچک"></option>
+                    <option value="کرایه"></option>
+                    <option value="تنخواه"></option>
+                </datalist>
             </label>
             <button type="submit" class="btn btn-ghost">ثبت برداشت</button>
         </form>
@@ -111,14 +118,23 @@
     <div class="cash-subsection">
         <h4>بستن صندوق</h4>
         {% if shift.can_close %}
-        <form method="post" action="/admin/cashbox/close" class="filter-bar is-inline">
+        {# The count is typed twice and the two must agree: one mistyped digit
+           would otherwise lock a false difference into a shift that can never
+           be reopened. The modal echoes the figure back before anything posts. #}
+        <form method="post" action="/admin/cashbox/close" class="filter-bar is-inline"
+              id="cashbox-close-form" data-opener="{{ shift.opener }}">
             <label class="filter-field">
                 <span>پولی که شمرده‌اید (تومان)</span>
                 {{ num('counted', '', required=True) }}
             </label>
+            <label class="filter-field">
+                <span>تکرار شمارش (تومان)</span>
+                {{ num('counted2', '', required=True) }}
+            </label>
             <button type="submit" class="btn btn-primary btn-large">ثبت شمارش و بستن صندوق</button>
         </form>
         <p class="field-help">
+            هر دو را از روی شمارش خودتان بنویسید؛ اگر یکی نباشند صندوق بسته نمی‌شود.
             {% if verify %}
             عدد مورد انتظار را در کارت بالا می‌بینید؛ پول کشو را بشمارید و اینجا بنویسید.
             {% else %}
@@ -148,7 +164,7 @@
     </form>
     {% if opening_suggestion is not none %}
     <p class="field-help">
-        پیشنهاد از آخرین شمارش ({{ fmt(opening_suggestion) }} ت) آمده است — هر عددی که همین حالا در کشو هست را بنویسید.
+        پیشنهاد از آخرین شمارش ({{ fmt(opening_suggestion) }} تومان) آمده است — هر عددی که همین حالا در کشو هست را بنویسید.
     </p>
     {% endif %}
     {% endif %}
@@ -232,30 +248,31 @@
     <div class="stats-grid">
         <div class="stat-card accent-pine">
             <div class="stat-label">ورودی‌ها</div>
-            <div class="stat-value tnum">{{ fmt(report.register.cash_in) }} ت</div>
-            <div class="stat-sub">فروش نقدی {{ fmt(report.register.cash_sales) }} ت · دریافت نسیه {{ fmt(report.register.credit_payments) }} ت</div>
+            <div class="stat-value tnum">{{ fmt(report.register.cash_in) }} تومان</div>
+            <div class="stat-sub">فروش نقدی {{ fmt(report.register.cash_sales) }} تومان · دریافت نسیه {{ fmt(report.register.credit_payments) }} تومان</div>
         </div>
         <div class="stat-card accent-persimmon">
             <div class="stat-label">خروجی‌ها</div>
-            <div class="stat-value tnum">{{ fmt(report.register.cash_out) }} ت</div>
+            <div class="stat-value tnum">{{ fmt(report.register.cash_out) }} تومان</div>
             <div class="stat-sub">
                 مرجوعی {{ fmt(report.register.refunds) }} ·
                 هزینه {{ fmt(report.register.expenses) }} ·
                 تأمین‌کننده {{ fmt(report.register.supplier_payments) }} ·
                 برداشت {{ fmt(report.register.withdrawals) }}
+                (تومان)
             </div>
         </div>
         {% if report.timeless %}
         <div class="stat-card accent-ink">
             <div class="stat-label">خالص حرکت بازه</div>
-            <div class="stat-value tnum">{{ fmt(report.net) }} ت</div>
+            <div class="stat-value tnum">{{ fmt(report.net) }} تومان</div>
             <div class="stat-sub">ورودی منهای خروجی — برای «همه» موجودی پایانی معنی ندارد</div>
         </div>
         {% else %}
         <div class="stat-card accent-candy">
             <div class="stat-label">موجودی پایان بازه</div>
-            <div class="stat-value tnum">{{ fmt(report.register.closing) }} ت</div>
-            <div class="stat-sub">شروع {{ fmt(report.register.opening) }} ت به‌علاوهٔ حرکت این بازه</div>
+            <div class="stat-value tnum">{{ fmt(report.register.closing) }} تومان</div>
+            <div class="stat-sub">شروع {{ fmt(report.register.opening) }} تومان به‌علاوهٔ حرکت این بازه</div>
         </div>
         {% endif %}
     </div>
@@ -273,7 +290,7 @@
         <summary>موجودی پیش‌فرض شروع روز</summary>
         <p class="muted">
             فقط وقتی به کار می‌آید که صندوق قبلاً هرگز بسته نشده باشد؛ در غیر این صورت پیشنهاد باز کردن صندوق
-            از آخرین شمارش می‌آید. اکنون: {{ fmt(settings_opening) }} ت
+            از آخرین شمارش می‌آید. اکنون: {{ fmt(settings_opening) }} تومان
         </p>
         <form method="post" action="/admin/cashbox/opening" class="filter-bar is-inline">
             <label class="filter-field">
@@ -285,4 +302,19 @@
     </details>
 </section>
 {% endif %}
+{# The close confirmation: the counted figure is echoed back with the opener's
+   name so the person closing reads what they are about to lock in. Without JS
+   the form posts directly and the server still refuses mismatched counts. #}
+<div id="cashbox-confirm" data-dialog role="alertdialog" aria-modal="true"
+     aria-labelledby="cashbox-confirm-title" class="confirm-scrim" tabindex="-1">
+    <div class="t-modal-card confirm-card" role="document">
+        <h3 id="cashbox-confirm-title">صندوق بسته شود؟</h3>
+        <p class="muted" id="cashbox-confirm-text"></p>
+        <div class="confirm-actions">
+            <button type="button" class="btn btn-primary" id="cashbox-confirm-yes">ثبت شمارش و بستن</button>
+            <button type="button" class="btn btn-ghost" data-dialog-close>انصراف</button>
+        </div>
+    </div>
+</div>
+<script src="/static/js/cashbox.js?v={{ static_version }}"></script>
 {% endblock %}
