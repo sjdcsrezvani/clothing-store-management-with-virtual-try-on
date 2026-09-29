@@ -1,3 +1,43 @@
+## 2.7.6 — 1405/07/07 (2026-09-29)
+
+### موعدگذشته‌ها: every follow-up answers to one purchase, and the list is workable
+
+- **A second purchase on the same day re-arms the follow-up.** The guard now
+  names the sale itself — `purchase:45:2026-09-01` — instead of only the date, so
+  a customer who buys twice in one day earns a پیگیری for the second buy instead
+  of hiding behind the first one's record. Rows written before sale ids were
+  recorded still answer to the old date-only ref, so the upgrade re-asks nobody.
+- **A failed send is not an answer.** A row whose status is `failed` no longer
+  counts as «already asked»: the phone died, the customer heard nothing, and the
+  next pass owes them the message rather than silence.
+- **The waiting list pages per قالب.** Each template keeps its own window and its
+  own «تعداد در صفحه» (۱۰ / ۲۵ / ۵۰) while the header keeps counting the whole
+  queue, so a window is never mistaken for the waiting list and turning the page
+  on one template leaves the others where they were.
+- **Search narrows by name or number, in either script.** The box matches the
+  customer's name and the printed number, reads Farsi digits as digits, and says
+  how many of the page's rows are left standing.
+- **Selecting is bulk, counting is live.** «انتخاب همه» takes the rows the search
+  left visible, «پاک‌کردن» takes none, and the send button carries the number it
+  is about to send instead of a fixed label.
+- **The paid send asks first, by name and count.** Confirmation goes through the
+  page's own dialog — «قالب» برای چند مخاطب — and without JS the form posts
+  straight through, exactly as before.
+- **Why somebody waits is written down.** Every plan folds open the reasons its
+  candidates were set aside — بدون خرید، هنوز موعد نرسیده، پیش‌تر فرستاده شده،
+  بایگانی، بلاک، انصراف از تبلیغات، شماره نامعتبر، متن خالی — each with its
+  count, instead of one number that hides eight different decisions.
+- **Each row shows the message it would send, and what it costs to send.** A
+  body past ۹۰ characters is folded behind «متن کامل», and the row states how
+  many پیامک it will be billed as.
+- **A customer without a سطح says so.** «بدون سطح» replaces the blank cell, so a
+  missing tier reads as a fact about the customer rather than a gap in the row.
+- **The decision stays in reach.** The send bar sticks to the bottom of a long
+  list, and on a phone the table becomes one card per customer with every cell
+  labelled, so the button never scrolls away from the rows it sends to.
+
+**Schema change.** None — the database stays on revision 24.
+
 ## 2.7.5 — 1405/07/07 (2026-09-29)
 
 ### قالب پیامک: the editor shows the draft it will really send
