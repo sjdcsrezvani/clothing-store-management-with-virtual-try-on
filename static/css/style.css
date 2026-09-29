@@ -3337,7 +3337,7 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
   display: inline-flex; align-items: center; justify-content: center; }
 .sms-pick-row:hover { background: var(--hover-surface); }
 .sms-pick-row:has(input:checked) { border-color: var(--candy); background: var(--surface-soft); }
-.sms-pick-row:has(input:checked) .pick-tick { background: var(--candy); border-color: var(--candy); color: #fff; }
+.sms-pick-row:has(input:checked) .pick-tick { background: var(--candy); border-color: var(--candy); color: var(--brand-label); }
 .sms-pick-row:has(input:focus-visible) { outline: 2px solid var(--candy); outline-offset: 1px; }
 .sms-summary { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
 .sms-summary li { display: flex; justify-content: space-between; gap: 0.8rem; font-size: 0.84rem; }
