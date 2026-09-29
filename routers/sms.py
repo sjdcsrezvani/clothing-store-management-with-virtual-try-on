@@ -41,6 +41,7 @@ from services.sms_gateway import (
 )
 from services.sms_send import (
     HISTORY_ORDERS,
+    DATE_PRESETS,
     MODE_LABELS,
     TEMPLATE_SORTS,
     USAGE_FILTERS,
@@ -52,6 +53,7 @@ from services.sms_send import (
     plan_from_form,
     preview_body,
     render_preview_rows,
+    retry_message,
     saved_audiences,
     send_bulk,
 )
@@ -932,31 +934,47 @@ async def admin_sms_history(
     source: str = "all",
     order: str = "newest",
     page: str = "1",
+    per_page: str = "25",
+    date_preset: str = "all",
     db: Session = Depends(get_db),
 ):
     guard = _guard(request, db)
     if not hasattr(guard, "role"):
         return guard
 
+    # The URL must never claim a filter the list does not apply: unknown
+    # values fall back to the defaults before anything renders.
+    if status not in ("all", *STATUS_LABELS):
+        status = "all"
+    if source not in ("all", *SOURCE_LABELS):
+        source = "all"
+    if order not in HISTORY_ORDERS:
+        order = "newest"
+    if date_preset not in DATE_PRESETS:
+        date_preset = "all"
     page = page_arg(page)
+    per_page_int = int(per_page) if str(per_page).isdigit() and int(per_page) in (10, 25, 50) else 25
     listing = message_filtered(db, search=search, status=status, source=source,
-                              order=order, page=page)
-    if source == DIGEST_SOURCE:
-        # The owner came looking for the monthly summaries: each row carries its
-        # month's name, so «مرداد ۱۴۰۵» is findable at a glance.
-        for row in listing["rows"]:
+                               order=order, page=page, per_page=per_page_int,
+                               date_preset=date_preset)
+    # Every digest row carries its month's name, in every filter — «مرداد ۱۴۰۵»
+    # stays findable even from a phone-number search.
+    for row in listing["rows"]:
+        if row["message"].source == DIGEST_SOURCE:
             row["digest_month"] = digest_month_of_ref(row["message"].ref or "")
     return templates.TemplateResponse(request, "admin/sms_history.html", {
         **listing,
         "overview": message_overview(db),
         "orders": HISTORY_ORDERS,
         "status_filters": (("all", "همه وضعیت‌ها"),) + tuple(STATUS_LABELS.items()),
-        "source_filters": (("all", "همه فرستنده‌ها"),) + tuple(SOURCE_LABELS.items()),
+        "source_filters": (("all", "همه مبدأها"),) + tuple(SOURCE_LABELS.items()),
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
         # The resend form posts to an owner-only route, so it renders only for
         # one — a manager whose form 403s would be a trap, not a control.
         "can_resend_digest": guard.role == "owner",
+        "digest_phone_count": len(digest_phones(db)),
+        "per_page_options": (10, 25, 50),
         "fmt": fmt,
     })
 
@@ -1066,4 +1084,31 @@ async def admin_sms_history_digest_resend(
     db.rollback()
     return RedirectResponse(
         url=f"/admin/sms/history?source=monthly_digest&err=هیچ پیامکی در صف قرار نگرفت.",
+        status_code=303)
+
+
+# Declared after ``/sms/history/digest/resend`` on purpose: a static path has
+# to be matched first or ``digest`` would be read as a message id — the same
+# rule the campaigns router keeps for ``/assign``.
+@router.post("/sms/history/{message_id}/resend", response_class=HTMLResponse)
+async def admin_sms_history_resend(
+    message_id: int, request: Request, db: Session = Depends(get_db),
+):
+    """Re-queue one failed row's frozen body to its same phone.
+
+    Only failed rows retry; anything else (or a test-mode refusal) comes back
+    as an error with nothing queued. Managers may retry — the retry changes
+    nothing but a second chance for a message already approved once.
+    """
+    guard = _guard(request, db)
+    if not hasattr(guard, "role"):
+        return guard
+
+    row, error = await retry_message(db, message_id)
+    if error:
+        return RedirectResponse(url=f"/admin/sms/history?err={error}", status_code=303)
+    log_action(db, "sms_retry", f"پیامک #{message_id} دوباره در صف قرار گرفت",
+               request=request, target_type="sms_message", target_id=row.id)
+    return RedirectResponse(
+        url=f"/admin/sms/history?msg=پیامک دوباره در صف قرار گرفت.",
         status_code=303)

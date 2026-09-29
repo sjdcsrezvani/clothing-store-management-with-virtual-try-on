@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import jdatetime
 from sqlalchemy import func, or_
@@ -670,6 +670,21 @@ def message_overview(db: Session) -> dict:
 
 HISTORY_ORDERS = {"newest": "جدیدترین", "oldest": "قدیمی‌ترین"}
 
+DATE_PRESETS = {"all": "همه زمان‌ها", "today": "امروز", "week": "۷ روز گذشته", "month": "این ماه"}
+
+
+def _preset_cutoff(preset: str) -> datetime | None:
+    """The UTC instant a date preset starts at, or None for all time."""
+    now = datetime.now(timezone.utc)
+    if preset == "today":
+        return _today_start()
+    if preset == "week":
+        return now - timedelta(days=7)
+    if preset == "month":
+        start = jdatetime.date.today().replace(day=1).togregorian()
+        return datetime(start.year, start.month, start.day, tzinfo=timezone.utc)
+    return None
+
 
 def journey_label(message: SmsMessage) -> str:
     """The gateway leg beyond the three queue states, in the owner's words.
@@ -769,6 +784,50 @@ def message_values(message, template=None) -> dict:
     }
 
 
+def _like_escape(value: str) -> str:
+    """`%` and `_` typed into a search are letters, not wildcards."""
+    return str(value or "").replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+async def retry_message(db: Session, message_id: int) -> tuple[SmsMessage | None, str]:
+    """Re-queue one failed message's frozen body to its same phone.
+
+    Only ``failed`` rows retry — anything else returns an error and queues
+    nothing. The retry is a fresh row (new journey, cleared error) carrying
+    the original's text, template link, customer, kind, values record and ref,
+    so the log shows both the failure and its second chance. The test-mode
+    allowlist applies through ``queue_sms``: a stranger's retry queues nothing.
+    """
+    from services.sms import queue_sms
+
+    message = db.query(SmsMessage).filter(SmsMessage.id == message_id).first()
+    if message is None:
+        return None, "این پیامک در گزارش پیدا نشد."
+    if message.status != "failed":
+        return None, "فقط پیامک ناموفق دوباره فرستاده می‌شود."
+    if not (message.body or "").strip():
+        return None, "متن این پیامک خالی است."
+    customer = None
+    if message.customer_id:
+        customer = db.query(Customer).filter(Customer.id == message.customer_id).first()
+    template = None
+    if message.template_id:
+        template = db.query(SmsTemplate).filter(SmsTemplate.id == message.template_id).first()
+    new_row = await queue_sms(
+        "", message.phone, {}, db,
+        template=template, source=message.source, kind=message.kind,
+        customer=customer, body=message.body, ref=message.ref or "",
+        values={item["token"]: item["value"] for item in recorded_rows(message)},
+    )
+    if new_row is None:
+        return None, "این شماره در حالت آزمایشی مجاز نیست."
+    if template is None and (message.values_json or "").strip():
+        # No template row to relabel through: the original record travels
+        # verbatim, since the body it explains travels verbatim too.
+        new_row.values_json = message.values_json
+    return new_row, ""
+
+
 def message_filtered(
     db: Session,
     *,
@@ -778,22 +837,44 @@ def message_filtered(
     order: str = "newest",
     page: int = 1,
     per_page: int = 25,
+    date_preset: str = "all",
 ) -> dict:
     """One page of the log: what went out, to whom, and what the queue said."""
     page = max(1, int(page or 1))
+    try:
+        per_page = int(per_page or 25)
+    except (TypeError, ValueError):
+        per_page = 25
+    if not 1 <= per_page <= 100:
+        per_page = 25
     query = db.query(SmsMessage)
     if status in STATUS_LABELS:
         query = query.filter(SmsMessage.status == status)
     if source in SOURCE_LABELS:
         query = query.filter(SmsMessage.source == source)
+    cutoff = _preset_cutoff(date_preset if date_preset in DATE_PRESETS else "all")
+    if cutoff is not None:
+        query = query.filter(SmsMessage.created_at >= cutoff)
     if search.strip():
-        needle = f"%{search.strip()}%"
+        raw = search.strip()
+        needle = f"%{_like_escape(raw)}%"
+        digits = normalise_phone(raw)
+        customer_conditions = [
+            Customer.first_name.ilike(needle, escape="\\"),
+            Customer.last_name.ilike(needle, escape="\\"),
+            Customer.phone.ilike(needle, escape="\\"),
+        ]
+        if digits:
+            # A number typed the way people write it — spaces, dashes, +98,
+            # Farsi digits — still finds the stored 09… row.
+            customer_conditions.append(Customer.phone.ilike(f"%{digits}%"))
         matching_ids = [row[0] for row in db.query(Customer.id).filter(
-            or_(Customer.first_name.ilike(needle),
-                Customer.last_name.ilike(needle),
-                Customer.phone.ilike(needle)),
+            or_(*customer_conditions),
         ).all()]
-        conditions = [SmsMessage.phone.ilike(needle), SmsMessage.body.ilike(needle)]
+        conditions = [SmsMessage.phone.ilike(needle, escape="\\"),
+                      SmsMessage.body.ilike(needle, escape="\\")]
+        if digits:
+            conditions.append(SmsMessage.phone.ilike(f"%{digits}%"))
         if matching_ids:
             conditions.append(SmsMessage.customer_id.in_(matching_ids))
         query = query.filter(or_(*conditions))
@@ -841,10 +922,13 @@ def message_filtered(
         "total": total,
         "page": page,
         "total_pages": total_pages,
+        "per_page": per_page,
         "search": search,
         "status": status,
         "source": source,
         "order": order,
+        "date_preset": date_preset if date_preset in DATE_PRESETS else "all",
+        "date_presets": DATE_PRESETS,
         "status_labels": STATUS_LABELS,
         "source_labels": SOURCE_LABELS,
         "category_labels": CATEGORY_LABELS,

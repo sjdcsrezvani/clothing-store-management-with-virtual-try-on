@@ -645,6 +645,76 @@ def test_history_filters_by_status_source_and_search(db_session):
     assert message_overview(db_session)["failed"] == 0
 
 
+def test_search_wildcards_are_letters_and_phones_normalise(db_session):
+    ensure_seeded(db_session)
+    customer = make_customer(db_session, first_name="سارا", phone="09120000009")
+    db_session.add(SmsMessage(phone=customer.phone, body="100% تخفیف_ویژه", status="sent",
+                              source="manual", kind="marketing", customer_id=customer.id))
+    db_session.add(SmsMessage(phone="09350000000", body="یادآوری", status="sent",
+                              source="manual", kind="marketing"))
+    db_session.commit()
+
+    # A bare % finds only the row that literally holds one; if it were a
+    # wildcard it would match everything. Same for _: literal, not any-char.
+    assert message_filtered(db_session, search="%")["total"] == 1
+    assert message_filtered(db_session, search="_")["total"] == 1
+    assert message_filtered(db_session, search="تخفیف_ویژه")["total"] == 1
+    assert message_filtered(db_session, search="تخفیفXویژه")["total"] == 0
+    # Typed the way people write numbers: spaces, dashes, +98, Farsi digits.
+    assert message_filtered(db_session, search="0912 000-0009")["total"] == 1
+    assert message_filtered(db_session, search="+989120000009")["total"] == 1
+    assert message_filtered(db_session, search="۰۹۱۲۰۰۰۰۰۰۹")["total"] == 1
+
+
+def test_history_paging_clamps_and_counts(db_session):
+    ensure_seeded(db_session)
+    for _ in range(3):
+        db_session.add(SmsMessage(phone="09120000000", body="x", status="sent",
+                                  source="manual", kind="marketing"))
+    db_session.commit()
+
+    page = message_filtered(db_session, per_page=2)
+    assert (page["total"], page["total_pages"], page["per_page"]) == (3, 2, 2)
+    assert message_filtered(db_session, per_page=999)["per_page"] == 25
+    assert message_filtered(db_session, page=99)["page"] == 1
+
+
+def test_only_failed_rows_retry_and_the_retry_is_a_new_row(db_session):
+    import asyncio
+
+    from services.sms_send import retry_message
+
+    ensure_seeded(db_session)
+    customer = make_customer(db_session, first_name="سارا", phone="09120000011")
+    failed = SmsMessage(phone=customer.phone, body="سلام سارا", status="failed",
+                        source="manual", kind="marketing", customer_id=customer.id,
+                        error="boom")
+    queued = SmsMessage(phone=customer.phone, body="در صف", status="queued",
+                        source="manual", kind="marketing")
+    db_session.add_all([failed, queued])
+    db_session.commit()
+
+    row, error = asyncio.run(retry_message(db_session, failed.id))
+    assert error == "" and row is not None
+    assert row.status == "queued" and row.body == "سلام سارا"
+    assert row.error is None and row.id != failed.id
+    assert failed.status == "failed"
+
+    row, error = asyncio.run(retry_message(db_session, queued.id))
+    assert row is None and "ناموفق" in error
+    row, error = asyncio.run(retry_message(db_session, 999999))
+    assert row is None and "پیدا نشد" in error
+    assert db_session.query(SmsMessage).count() == 3
+
+
+def test_history_sanitises_a_forged_filter_combination(client, authed, db_session):
+    ensure_seeded(db_session)
+    page = client.get("/admin/sms/history?status=bogus&source=nope&order=sideways")
+    assert page.status_code == 200
+    # The sanitised defaults render, not the forged words.
+    assert "bogus" not in page.text and "sideways" not in page.text
+
+
 def test_template_card_counts_what_it_sent(db_session):
     """The row separates the queue's verdicts, so «ارسال‌شده» can no longer
     flatter a message that is still waiting or that the gateway refused."""
@@ -1282,7 +1352,8 @@ def test_the_sms_tables_never_hide_their_state_behind_a_sideways_scroll():
     assert "  .sms-table { white-space: normal; }" in STYLE_CSS
     # Three columns each: something (plus how it fires), its state, its actions.
     assert 'قالب، متن و نحوه ارسال' in SMS_HTML and "عملیات" in SMS_HTML
-    assert 'مخاطب و متن' in HISTORY_HTML
+    assert '<th scope="col">مخاطب</th>' in HISTORY_HTML
+    assert '<th scope="col">متن</th>' in HISTORY_HTML
     assert "status-badge is-{{ message.status }}" in HISTORY_HTML
 
 

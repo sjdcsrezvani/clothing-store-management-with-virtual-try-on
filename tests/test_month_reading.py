@@ -417,9 +417,9 @@ def test_digest_rows_carry_their_month_in_history(client, db_session):
     filtered = client.get("/admin/sms/history?source=monthly_digest").text
     assert "مرداد ۱۴۰۵" in filtered
     assert "digest-month-chip" in filtered
-    # The month is the digests' own view; elsewhere the log keeps its shape.
+    # The month travels with its rows in every filter, not just the digests'.
     unfiltered = client.get("/admin/sms/history").text
-    assert "digest-month-chip" not in unfiltered
+    assert "digest-month-chip" in unfiltered and "مرداد ۱۴۰۵" in unfiltered
 
 
 def test_the_owner_can_resend_a_past_month_by_hand(client, db_session):

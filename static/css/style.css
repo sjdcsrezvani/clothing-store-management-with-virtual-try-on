@@ -3407,6 +3407,23 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
   .sms-table, .sms-history-table { min-width: 0; width: 100%; font-size: 0.78rem; }
   .sms-history-card .table-scroll, .sms-group-card .table-scroll { overflow: visible; }
 }
+/* The history log reads as cards on a phone: the four columns stack with
+   data-labels, like every other admin table. Expands and chips keep a
+   comfortable touch target; the sender chips scroll instead of wrapping. */
+.sms-source-chips { display: flex; gap: 0.4rem; overflow-x: auto; padding-bottom: 0.3rem; margin-bottom: 0.8rem; }
+.sms-source-chips .source-chip { flex-shrink: 0; min-height: var(--touch-target); }
+.sms-history-table .sms-expand { margin-top: 0.35rem; }
+.sms-history-table .sms-expand summary { cursor: pointer; color: var(--info-ink); font-size: 0.78rem; min-height: 2rem; display: inline-flex; align-items: center; }
+.sms-history-table .sms-expand p { margin: 0.35rem 0; padding: 0.6rem 0.8rem; background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius-sm); font-size: 0.82rem; overflow-wrap: anywhere; }
+.sms-history-table .sms-error { max-width: none; }
+@media (max-width: 700px) {
+  .sms-history-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .sms-history-table, .sms-history-table tbody, .sms-history-table tr, .sms-history-table td { display: block; }
+  .sms-history-table tr { border: 1px solid var(--rule); border-radius: var(--radius-sm); margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; }
+  .sms-history-table td { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; border: none; padding: 0.25rem 0; text-align: start; }
+  .sms-history-table td::before { content: attr(data-label); color: var(--ink-soft); font-size: 0.72rem; flex-shrink: 0; }
+  .sms-history-table td .sms-expand, .sms-history-table td .sms-values { flex-basis: 100%; }
+}
 
 /* ===================== صندوق: the cash drawer ===================== */
 
