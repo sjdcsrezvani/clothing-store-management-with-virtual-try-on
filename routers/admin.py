@@ -1644,10 +1644,17 @@ async def admin_follow_ups(request: Request, db: Session = Depends(get_db)):
     if not hasattr(guard, "role"):
         return guard
 
-    from services.sms_triggers import auto_send_limit, follow_up_plans
+    from services.sms_triggers import auto_send_limit, follow_up_plans, triggered_templates
 
-    plans = follow_up_plans(db)
-    total_due = sum(len(plan["rows"]) for plan in plans)
+    per_page_raw = (request.query_params.get("per_page") or "25").strip()
+    per_page = int(per_page_raw) if per_page_raw.isdigit() and int(per_page_raw) in (10, 25, 50) else 25
+    pages = {}
+    for row in triggered_templates(db, "follow_up"):
+        raw = (request.query_params.get(f"page_{row.id}") or "").strip()
+        if raw.isdigit():
+            pages[row.id] = int(raw)
+    plans = follow_up_plans(db, per_page=per_page, pages=pages)
+    total_due = sum(plan["total"] for plan in plans)
     return templates.TemplateResponse(request, "admin/follow-ups.html", {
         "plans": plans,
         "total_due": total_due,
@@ -1656,6 +1663,8 @@ async def admin_follow_ups(request: Request, db: Session = Depends(get_db)):
         "total_due_label": to_persian_digits(str(total_due)),
         "plans_count_label": to_persian_digits(str(len(plans))),
         "auto_limit_label": to_persian_digits(str(auto_send_limit(db))),
+        "per_page": per_page,
+        "per_page_options": (10, 25, 50),
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
         "fmt": fmt,

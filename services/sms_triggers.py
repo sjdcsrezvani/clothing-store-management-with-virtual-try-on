@@ -19,11 +19,16 @@ be taken back:
    page would have skipped.
 2. **One message per event.** Every automatic message records the event it
    belongs to in ``sms_messages.ref``: ``sale:12`` for a purchase, and
-   ``purchase:2026-09-01`` for a follow-up. A trigger that already has that ref
-   for that customer stays quiet — so a retried checkout, a double-click or a
-   sweep that runs every five minutes cannot message anyone twice, and buying
-   again re-arms the follow-up on its own.
-3. **A sale never fails because of SMS.** The purchase trigger is called after
+   ``purchase:45:2026-09-01`` for a follow-up about one sale. A trigger that
+   already has that ref for that customer stays quiet — so a retried checkout,
+   a double-click or a sweep that runs every five minutes cannot message anyone
+   twice, and buying again re-arms the follow-up on its own (even twice in one
+   day). Rows from before the sale id was recorded answer to the legacy
+   ``purchase:2026-09-01`` date ref, so the upgrade never re-asks anyone.
+3. **A failure is not an answer.** Rows with status ``failed`` never count as
+   «already asked»: the phone died, the customer heard nothing, and the next
+   pass owes them the message, not silence.
+4. **A sale never fails because of SMS.** The purchase trigger is called after
    the sale is committed and swallows its own errors — a template mistake or a
    broken gateway must not undo a completed sale.
 
@@ -43,9 +48,10 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from models import Customer, SmsMessage, SmsTemplate
+from models import Customer, Sale, SmsMessage, SmsTemplate
 from services._common import _to_persian_digits as to_persian_digits, get_setting_int
 from services.sms import queue_sms
 from services.sms_send import TIER_LABELS, normalise_phone, message_block_reason
@@ -109,14 +115,23 @@ def auto_send_limit(db: Session) -> int:
     return max(1, get_setting_int(db, SETTING_AUTO_SEND_LIMIT, AUTO_SEND_LIMIT_DEFAULT))
 
 
-def already_fired(db: Session, template: SmsTemplate, customer, ref: str) -> bool:
-    """Whether this customer already had this template about this exact event."""
+def already_fired(db: Session, template: SmsTemplate, customer, ref: str,
+                  *, legacy_ref: str = "") -> bool:
+    """Whether this customer already had this template about this exact event.
+
+    ``failed`` rows never count: the phone died mid-send, the customer heard
+    nothing, and treating the failure as «asked» would silence the retry the
+    next pass owes them. ``legacy_ref`` covers rows written before the current
+    ref format existed, so a format upgrade never re-asks anyone.
+    """
     if not ref or customer is None:
         return False
+    wanted = [ref] if ref == legacy_ref or not legacy_ref else [ref, legacy_ref]
     return db.query(SmsMessage).filter(
         SmsMessage.template_id == template.id,
         SmsMessage.customer_id == customer.id,
-        SmsMessage.ref == ref,
+        SmsMessage.ref.in_(wanted),
+        SmsMessage.status != "failed",
     ).first() is not None
 
 
@@ -169,12 +184,28 @@ async def fire_purchase_sms(db: Session, *, sale, customer) -> list[SmsMessage]:
 
 # ── trigger 2: the follow-up sweep ────────────────────────────────────────────
 
-def _follow_up_ref(customer: Customer) -> str:
-    """The purchase a follow-up belongs to: the same buy never nags twice."""
+def _follow_up_ref(db: Session, customer: Customer) -> tuple[str, str]:
+    """The purchase a follow-up belongs to, as (current ref, legacy ref).
+
+    The current ref names the sale itself, so a second purchase on the same
+    calendar date re-arms the follow-up instead of hiding behind the first
+    buy's date. The legacy date-only ref guards rows written before sale ids
+    were recorded. Without any sale row (legacy data), both are the date ref
+    and the guard behaves exactly as it always did. Cross-midnight sales read
+    in UTC, like every other date comparison in this module.
+    """
     stamp = _as_utc(customer.last_purchase_date)
     if stamp is None:
-        return ""
-    return f"purchase:{stamp.date().isoformat()}"
+        return "", ""
+    legacy = f"purchase:{stamp.date().isoformat()}"
+    sale = db.query(Sale).filter(
+        Sale.customer_id == customer.id,
+        Sale.is_refunded == False,  # noqa: E712 — SQL comparison
+    ).order_by(Sale.created_at.desc(), Sale.id.desc()).first()
+    if sale is None:
+        return legacy, legacy
+    created = _as_utc(sale.created_at) or stamp
+    return f"purchase:{sale.id}:{created.date().isoformat()}", legacy
 
 
 def follow_up_candidates(db: Session, *, template: SmsTemplate,
@@ -207,8 +238,8 @@ def follow_up_candidates(db: Session, *, template: SmsTemplate,
         if last > cutoff:
             skipped["too_soon"] += 1
             continue
-        ref = _follow_up_ref(customer)
-        if already_fired(db, template, customer, ref):
+        ref, legacy_ref = _follow_up_ref(db, customer)
+        if already_fired(db, template, customer, ref, legacy_ref=legacy_ref):
             skipped["already_sent"] += 1
             continue
         reason = message_block_reason(customer, transactional=False)
@@ -258,7 +289,7 @@ async def fire_follow_up_sms(db: Session, *, at: datetime | None = None) -> dict
             # left over is picked up by the next run five minutes later.
             for customer in plan["due"][:auto_send_limit(db)]:
                 row = await _queue_one(db, template, customer, trigger="follow_up",
-                                       ref=_follow_up_ref(customer))
+                                       ref=_follow_up_ref(db, customer)[0])
                 if row is None:
                     empty += 1
                     continue
@@ -278,7 +309,9 @@ def _days_since(customer: Customer, at: datetime) -> int | None:
     return None if last is None else max(0, (at - last).days)
 
 
-def follow_up_plans(db: Session, *, at: datetime | None = None) -> list[dict]:
+def follow_up_plans(db: Session, *, at: datetime | None = None,
+                    page: int = 1, per_page: int = 25,
+                    pages: dict | None = None) -> list[dict]:
     """Every follow-up template with the people it is due to message right now.
 
     The review page's data, one entry per template: a shop may point several
@@ -286,8 +319,18 @@ def follow_up_plans(db: Session, *, at: datetime | None = None) -> list[dict]:
     rules and its own once-per-purchase guard. Each row carries the message it
     would actually send, rendered from that customer's real values, so the owner
     reads what would leave rather than a sample.
+
+    Rows page per template (``pages`` maps template id to page, ``page`` is the
+    fallback for all); ``total`` always counts the whole waiting list, so the
+    header never mistakes a window for the queue.
     """
     at = at or datetime.now(timezone.utc)
+    try:
+        per_page = int(per_page or 25)
+    except (TypeError, ValueError):
+        per_page = 25
+    if not 1 <= per_page <= 100:
+        per_page = 25
     plans: list[dict] = []
     for template in triggered_templates(db, "follow_up"):
         candidates = follow_up_candidates(db, template=template, at=at)
@@ -308,11 +351,22 @@ def follow_up_plans(db: Session, *, at: datetime | None = None) -> list[dict]:
             # this page shows: the shop reads Persian digits, not 45.
             row["days_label"] = "—" if row["days_since"] is None else \
                 f"{to_persian_digits(str(row['days_since']))} روز"
+        total = len(rows)
+        total_pages = max(1, (total + per_page - 1) // per_page)
+        try:
+            plan_page = int((pages or {}).get(template.id, page) or 1)
+        except (TypeError, ValueError):
+            plan_page = 1
+        plan_page = min(max(1, plan_page), total_pages)
         plans.append({
             "template": template,
             "days": candidates["days"],
             "days_label": f"{to_persian_digits(str(candidates['days']))} روز",
-            "rows": rows,
+            "rows": rows[(plan_page - 1) * per_page: plan_page * per_page],
+            "total": total,
+            "page": plan_page,
+            "total_pages": total_pages,
+            "per_page": per_page,
             "skipped": candidates["skipped"],
             "skipped_total": sum(candidates["skipped"].values()),
             "skipped_label": to_persian_digits(str(sum(candidates["skipped"].values()))),
@@ -349,7 +403,7 @@ async def send_follow_ups(db: Session, *, template: SmsTemplate, customer_ids,
             rejected += 1
             continue
         row = await _queue_one(db, template, customer, trigger="follow_up",
-                               ref=_follow_up_ref(customer))
+                               ref=_follow_up_ref(db, customer)[0])
         if row is None:
             empty += 1
             continue
