@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import jdatetime
 from sqlalchemy import func, or_
@@ -670,6 +670,21 @@ def message_overview(db: Session) -> dict:
 
 HISTORY_ORDERS = {"newest": "جدیدترین", "oldest": "قدیمی‌ترین"}
 
+DATE_PRESETS = {"all": "همه زمان‌ها", "today": "امروز", "week": "۷ روز گذشته", "month": "این ماه"}
+
+
+def _preset_cutoff(preset: str) -> datetime | None:
+    """The UTC instant a date preset starts at, or None for all time."""
+    now = datetime.now(timezone.utc)
+    if preset == "today":
+        return _today_start()
+    if preset == "week":
+        return now - timedelta(days=7)
+    if preset == "month":
+        start = jdatetime.date.today().replace(day=1).togregorian()
+        return datetime(start.year, start.month, start.day, tzinfo=timezone.utc)
+    return None
+
 
 def journey_label(message: SmsMessage) -> str:
     """The gateway leg beyond the three queue states, in the owner's words.
@@ -822,6 +837,7 @@ def message_filtered(
     order: str = "newest",
     page: int = 1,
     per_page: int = 25,
+    date_preset: str = "all",
 ) -> dict:
     """One page of the log: what went out, to whom, and what the queue said."""
     page = max(1, int(page or 1))
@@ -836,6 +852,9 @@ def message_filtered(
         query = query.filter(SmsMessage.status == status)
     if source in SOURCE_LABELS:
         query = query.filter(SmsMessage.source == source)
+    cutoff = _preset_cutoff(date_preset if date_preset in DATE_PRESETS else "all")
+    if cutoff is not None:
+        query = query.filter(SmsMessage.created_at >= cutoff)
     if search.strip():
         raw = search.strip()
         needle = f"%{_like_escape(raw)}%"
@@ -908,6 +927,8 @@ def message_filtered(
         "status": status,
         "source": source,
         "order": order,
+        "date_preset": date_preset if date_preset in DATE_PRESETS else "all",
+        "date_presets": DATE_PRESETS,
         "status_labels": STATUS_LABELS,
         "source_labels": SOURCE_LABELS,
         "category_labels": CATEGORY_LABELS,

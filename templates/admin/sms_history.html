@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
-{% set filter_qs = '&status=' ~ status ~ '&source=' ~ source ~ '&order=' ~ order ~ '&search=' ~ (search|urlencode) %}
+{% set filter_qs = '&status=' ~ status ~ '&source=' ~ source ~ '&order=' ~ order ~ '&search=' ~ (search|urlencode) ~ '&per_page=' ~ per_page ~ '&date_preset=' ~ date_preset %}
+{% set kpi_qs = '&source=' ~ source ~ '&order=' ~ order ~ '&search=' ~ (search|urlencode) ~ '&per_page=' ~ per_page ~ '&date_preset=' ~ date_preset %}
+{% set has_filters = search or status != 'all' or source != 'all' or order != 'newest' or date_preset != 'all' %}
 
 {% set page_description %}
 هر پیامکی که این فروشگاه فرستاده — خودکار یا دستی — همین‌جا با متن دقیق لحظه‌ی ارسال ثبت شده است. وضعیت «در صف» یعنی درگاه هنوز آن را نبرده.
@@ -25,17 +27,17 @@
         <div class="stat-value tnum">{{ overview.total }}</div>
         <div class="stat-sub">امروز: {{ overview.today }}</div>
     </a>
-    <a class="stat-card accent-pine" href="/admin/sms/history?status=sent">
+    <a class="stat-card accent-pine" href="/admin/sms/history?status=sent{{ kpi_qs }}">
         <div class="stat-label">ارسال‌شده</div>
         <div class="stat-value tnum">{{ overview.sent }}</div>
         <div class="stat-sub">تأییدشده توسط درگاه</div>
     </a>
-    <a class="stat-card accent-saffron" href="/admin/sms/history?status=queued">
+    <a class="stat-card accent-saffron" href="/admin/sms/history?status=queued{{ kpi_qs }}">
         <div class="stat-label">در صف</div>
         <div class="stat-value tnum">{{ overview.queued }}</div>
         <div class="stat-sub">در انتظار ارسال</div>
     </a>
-    <a class="stat-card accent-persimmon" href="/admin/sms/history?status=failed">
+    <a class="stat-card accent-persimmon" href="/admin/sms/history?status=failed{{ kpi_qs }}">
         <div class="stat-label">ناموفق</div>
         <div class="stat-value tnum">{{ overview.failed }}</div>
         <div class="stat-sub">بعد از چند تلاش رد شده</div>
@@ -50,13 +52,28 @@
                 متن هر ردیف همان متنی است که در لحظه صف‌شدن رندر شده؛ ویرایش قالب بعداً آن را تغییر نمی‌دهد.
             </p>
         </div>
+        <div class="list-heading-actions">
+            <form method="get" action="/admin/sms/history" class="per-page-form">
+                <input type="hidden" name="search" value="{{ search }}">
+                <input type="hidden" name="status" value="{{ status }}">
+                <input type="hidden" name="source" value="{{ source }}">
+                <input type="hidden" name="order" value="{{ order }}">
+                <input type="hidden" name="date_preset" value="{{ date_preset }}">
+                <label class="sr-only" for="history-per-page">تعداد در صفحه</label>
+                <select name="per_page" id="history-per-page" onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}" aria-label="تعداد در صفحه">
+                    {% for option in per_page_options %}
+                    <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }} در صفحه</option>
+                    {% endfor %}
+                </select>
+            </form>
+        </div>
     </div>
 
     {# The quick path to one sender: the same vocabulary the select below
        renders, as links that keep the other filters in place — the digests
        view (خلاصه ماهانه) is one click, not a select and a submit. #}
-    {% set chip_base = '&status=' ~ status ~ '&order=' ~ order ~ '&search=' ~ (search|urlencode) %}
-    <div class="sms-source-chips" role="group" aria-label="فیلتر سریع فرستنده">
+    {% set chip_base = '&status=' ~ status ~ '&order=' ~ order ~ '&search=' ~ (search|urlencode) ~ '&per_page=' ~ per_page ~ '&date_preset=' ~ date_preset %}
+    <div class="sms-source-chips" role="group" aria-label="فیلتر سریع مبدأ ارسال">
         {% for value, label in source_filters %}
         <a href="/admin/sms/history?source={{ value }}{{ chip_base }}"
            class="source-chip{% if source == value %} is-active{% endif %}"
@@ -79,7 +96,7 @@
             </select>
         </div>
         <div class="form-group">
-            <label class="sr-only" for="filter-source">فرستنده</label>
+            <label class="sr-only" for="filter-source">مبدأ</label>
             <select id="filter-source" name="source">
                 {% for value, label in source_filters %}
                 <option value="{{ value }}" {% if source == value %}selected{% endif %}>{{ label }}</option>
@@ -94,14 +111,22 @@
                 {% endfor %}
             </select>
         </div>
+        <div class="form-group">
+            <label class="sr-only" for="filter-date">بازه زمانی</label>
+            <select id="filter-date" name="date_preset">
+                {% for value, label in date_presets.items() %}
+                <option value="{{ value }}" {% if date_preset == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
         <button type="submit" class="btn btn-primary">اعمال فیلتر</button>
-        {% if search or status != 'all' or source != 'all' or order != 'newest' %}
+        {% if has_filters %}
         <a href="/admin/sms/history" class="btn btn-ghost">پاک‌کردن فیلتر</a>
         {% endif %}
     </form>
 
     <p class="sms-results">
-        {{ total }} پیامک{% if search or status != 'all' or source != 'all' %} با این فیلترها{% endif %}
+        {{ total }} پیامک{% if has_filters %} با این فیلترها{% endif %}
         {%- if total_pages > 1 %} · صفحه {{ page }} از {{ total_pages }}{% endif %}
     </p>
 
@@ -111,7 +136,8 @@
             <thead>
                 <tr>
                     <th scope="col">زمان</th>
-                    <th scope="col">مخاطب و متن</th>
+                    <th scope="col">مخاطب</th>
+                    <th scope="col">متن</th>
                     <th scope="col">وضعیت</th>
                 </tr>
             </thead>
@@ -119,12 +145,12 @@
                 {% for row in rows %}
                 {% set message = row.message %}
                 <tr>
-                    <td class="tnum sms-time">{{ jalali_str(message.created_at) }}</td>
-                    <td class="sms-name">
+                    <td class="tnum sms-time" data-label="زمان">{{ jalali_str(message.created_at) }}</td>
+                    <td class="sms-name" data-label="مخاطب">
                         {% if row.customer %}
                         <a href="/admin/customers/{{ row.customer.id }}"><strong>{{ row.customer.full_name }}</strong></a>
                         {% else %}
-                        <strong>شماره مهمان</strong>
+                        <strong>بدون پرونده مشتری</strong>
                         {% endif %}
                         <small class="sms-meta tnum" dir="ltr">{{ message.phone }}</small>
                         <small class="sms-meta">
@@ -136,7 +162,18 @@
                             <a href="/admin/sms/templates/{{ message.template_id }}/edit">{{ message.template_name }}</a>
                             {%- elif message.template_name %} · {{ message.template_name }}{% endif %}
                         </small>
+                    </td>
+                    <td data-label="متن">
+                        {% if message.body|length > 90 %}
                         <span class="sms-body" dir="auto">{{ message.body|truncate(90, true) }}</span>
+                        <details class="sms-expand">
+                            <summary>متن کامل</summary>
+                            <p dir="auto">{{ message.body }}</p>
+                            <button type="button" class="btn btn-sm btn-ghost" data-copy="{{ message.body|e }}">رونوشت متن</button>
+                        </details>
+                        {% else %}
+                        <span class="sms-body" dir="auto">{{ message.body }}</span>
+                        {% endif %}
                         <small class="sms-meta tnum">{{ row.segments }} پیامک</small>
                         {# What the text was built out of, not just what it says. #}
                         {% if row.audit.state == 'unrecorded' %}
@@ -185,10 +222,23 @@
                         </details>
                         {% endif %}
                     </td>
-                    <td>
+                    <td data-label="وضعیت">
                         <span class="status-badge is-{{ message.status }}">{{ row.status_label }}</span>
                         {% if row.journey_label %}<small class="sms-journey">{{ row.journey_label }}</small>{% endif %}
-                        {% if message.error %}<small class="sms-error" title="{{ message.error }}">{{ message.error|truncate(30, true) }}</small>{% endif %}
+                        {% if message.error %}
+                        <details class="sms-expand">
+                            <summary class="sms-error">{{ message.error|truncate(30, true) }}</summary>
+                            <p dir="auto">{{ message.error }}</p>
+                            <button type="button" class="btn btn-sm btn-ghost" data-copy="{{ message.error|e }}">رونوشت خطا</button>
+                        </details>
+                        {% endif %}
+                        {% if message.status == 'failed' %}
+                        <form method="post" action="/admin/sms/history/{{ message.id }}/resend" class="inline-form"
+                              data-confirm="پیامک #{{ message.id }} با همان متن به {{ message.phone }} دوباره در صف قرار می‌گیرد. مطمئن هستید؟">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <button type="submit" class="btn btn-sm btn-ghost">ارسال دوباره</button>
+                        </form>
+                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}
@@ -199,7 +249,12 @@
     {% if total_pages > 1 %}
     <nav class="product-pagination" aria-label="صفحه‌بندی تاریخچه پیامک">
         {% if page > 1 %}<a class="btn btn-sm btn-ghost" href="?page={{ page - 1 }}{{ filter_qs }}">صفحه قبل</a>{% endif %}
-        <span>صفحه {{ page }} از {{ total_pages }}</span>
+        {% for p in range(1, total_pages + 1) %}
+        {% if p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+        {% if p == page %}<span class="page-current" aria-current="page">{{ p }}</span>
+        {% else %}<a class="btn btn-sm btn-ghost" href="?page={{ p }}{{ filter_qs }}" aria-label="صفحه {{ p }}">{{ p }}</a>{% endif %}
+        {% elif p == 2 or p == total_pages - 1 %}<span class="page-gap" aria-hidden="true">…</span>{% endif %}
+        {% endfor %}
         {% if page < total_pages %}<a class="btn btn-sm btn-ghost" href="?page={{ page + 1 }}{{ filter_qs }}">صفحه بعد</a>{% endif %}
     </nav>
     {% endif %}
@@ -209,9 +264,10 @@
     {% if source == 'monthly_digest' and can_resend_digest %}
     {% set digest_refs = rows|map(attribute='message.ref')|select|list %}
     {% if digest_refs %}
-    <form method="post" action="/admin/sms/history/digest/resend" class="digest-resend">
+    <form method="post" action="/admin/sms/history/digest/resend" class="digest-resend"
+          data-confirm="خلاصه ماهانه برای {{ digest_phone_count }} شماره در صف قرار می‌گیرد. مطمئن هستید؟">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <label for="digest-resend-ref">ارسال دوباره خلاصه یک ماه</label>
+        <label for="digest-resend-ref">ارسال دوباره خلاصه یک ماه ({{ digest_phone_count }} شماره)</label>
         <div class="digest-resend-row">
             <select id="digest-resend-ref" name="ref">
                 {% for ref in digest_refs|unique %}
@@ -226,10 +282,10 @@
     {% endif %}
     {% endif %}
 
-    {% elif search or status != 'all' or source != 'all' %}
+    {% elif has_filters %}
     <div class="empty-state">
         <h3>پیامکی با این فیلترها پیدا نشد</h3>
-        <p>جست‌وجو یا وضعیت را تغییر دهید — شاید پیامک مربوط به بازه دیگری باشد.</p>
+        <p>جست‌وجو، وضعیت، مبدأ یا بازه را عوض کنید — یا همه فیلترها را پاک کنید.</p>
         <a href="/admin/sms/history" class="btn btn-ghost">پاک‌کردن فیلتر</a>
     </div>
     {% else %}
@@ -243,4 +299,72 @@
     </div>
     {% endif %}
 </section>
+{# One confirm surface for the retry and digest-resend forms: same shape as
+   the manager and send pages, no native dialogs on this log. #}
+<div id="history-confirm" data-dialog role="alertdialog" aria-modal="true"
+     aria-labelledby="history-confirm-title" class="confirm-scrim" tabindex="-1">
+    <div class="t-modal-card confirm-card" role="document">
+        <h3 id="history-confirm-title">مطمئن هستید؟</h3>
+        <p class="muted" id="history-confirm-text"></p>
+        <div class="confirm-actions">
+            <button type="button" class="btn btn-danger" id="history-confirm-yes">تأیید</button>
+            <button type="button" class="btn btn-ghost" data-dialog-close>انصراف</button>
+        </div>
+    </div>
+</div>
+<script>
+// Confirm gate for the retry/resend forms + tap-to-copy for full texts and
+// errors. form.submit() skips the submit listener, so confirming never loops.
+(function () {
+    var pendingForm = null;
+    document.addEventListener('submit', function (event) {
+        var form = event.target.closest ? event.target.closest('form[data-confirm]') : null;
+        if (!form || form === pendingForm || !window.RaykidDialog) return;
+        event.preventDefault();
+        pendingForm = form;
+        document.getElementById('history-confirm-text').textContent =
+            form.getAttribute('data-confirm');
+        window.RaykidDialog.open('history-confirm', document.activeElement);
+    });
+    document.getElementById('history-confirm-yes').addEventListener('click', function () {
+        var form = pendingForm;
+        pendingForm = null;
+        window.RaykidDialog.close('history-confirm');
+        if (form) form.submit();
+    });
+    document.getElementById('history-confirm').addEventListener('click', function (event) {
+        if (event.target.closest('[data-dialog-close]')) pendingForm = null;
+    });
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') pendingForm = null;
+    });
+    // Copy buttons read their own payload: no selection fiddling, and a label
+    // flip so the tap visibly lands.
+    document.addEventListener('click', function (event) {
+        var btn = event.target.closest ? event.target.closest('[data-copy]') : null;
+        if (!btn) return;
+        var text = btn.getAttribute('data-copy') || '';
+        function done(ok) {
+            btn.textContent = ok ? 'رونوشت شد ✓' : 'رونوشت نشد';
+            setTimeout(function () {
+                btn.textContent = btn.getAttribute('data-copy-label') || 'رونوشت';
+            }, 1500);
+        }
+        if (!btn.hasAttribute('data-copy-label')) {
+            btn.setAttribute('data-copy-label', btn.textContent);
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); });
+        } else {
+            var field = document.createElement('textarea');
+            field.value = text;
+            document.body.appendChild(field);
+            field.select();
+            try { document.execCommand('copy'); done(true); }
+            catch (e) { done(false); }
+            document.body.removeChild(field);
+        }
+    });
+})();
+</script>
 {% endblock %}

@@ -1352,7 +1352,8 @@ def test_the_sms_tables_never_hide_their_state_behind_a_sideways_scroll():
     assert "  .sms-table { white-space: normal; }" in STYLE_CSS
     # Three columns each: something (plus how it fires), its state, its actions.
     assert 'قالب، متن و نحوه ارسال' in SMS_HTML and "عملیات" in SMS_HTML
-    assert 'مخاطب و متن' in HISTORY_HTML
+    assert '<th scope="col">مخاطب</th>' in HISTORY_HTML
+    assert '<th scope="col">متن</th>' in HISTORY_HTML
     assert "status-badge is-{{ message.status }}" in HISTORY_HTML
 
 
