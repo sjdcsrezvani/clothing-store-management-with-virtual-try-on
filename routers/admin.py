@@ -1644,7 +1644,7 @@ async def admin_follow_ups(request: Request, db: Session = Depends(get_db)):
     if not hasattr(guard, "role"):
         return guard
 
-    from services.sms_triggers import auto_send_limit, follow_up_plans, triggered_templates
+    from services.sms_triggers import SKIPPED_LABELS, auto_send_limit, follow_up_plans, triggered_templates
 
     per_page_raw = (request.query_params.get("per_page") or "25").strip()
     per_page = int(per_page_raw) if per_page_raw.isdigit() and int(per_page_raw) in (10, 25, 50) else 25
@@ -1665,6 +1665,7 @@ async def admin_follow_ups(request: Request, db: Session = Depends(get_db)):
         "auto_limit_label": to_persian_digits(str(auto_send_limit(db))),
         "per_page": per_page,
         "per_page_options": (10, 25, 50),
+        "skipped_labels": SKIPPED_LABELS,
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
         "fmt": fmt,

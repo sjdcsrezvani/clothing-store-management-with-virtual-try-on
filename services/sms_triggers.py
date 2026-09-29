@@ -59,11 +59,25 @@ from services.sms_templates import (
     AUTO_SEND_LIMIT_DEFAULT,
     TRIGGERS_BY_KEY,
     render_template,
+    sms_metrics,
     template_variables,
     trigger_days,
     unfilled_in_body,
     values_for_customer,
 )
+
+#: Why a customer waits instead of being messaged, in the owner's words — the
+#: same keys :func:`follow_up_candidates` counts under ``skipped``.
+SKIPPED_LABELS = {
+    "no_purchase": "بدون خرید",
+    "too_soon": "هنوز موعد نرسیده",
+    "already_sent": "پیش‌تر فرستاده شده",
+    "archived": "بایگانی",
+    "blocked": "بلاک",
+    "opted_out": "انصراف از تبلیغات",
+    "invalid": "شماره نامعتبر",
+    "empty": "متن خالی",
+}
 
 logger = logging.getLogger(__name__)
 
@@ -336,6 +350,7 @@ def follow_up_plans(db: Session, *, at: datetime | None = None,
         candidates = follow_up_candidates(db, template=template, at=at)
         rows = []
         for customer in candidates["due"]:
+            body = render_template(template, values_for_customer(customer, template))
             rows.append({
                 "customer": customer,
                 "phone": normalise_phone(customer.phone),
@@ -343,7 +358,8 @@ def follow_up_plans(db: Session, *, at: datetime | None = None,
                 "tier_label": TIER_LABELS.get(customer.tier or "", ""),
                 "last_purchase": _as_utc(customer.last_purchase_date),
                 "days_since": _days_since(customer, at),
-                "body": render_template(template, values_for_customer(customer, template)),
+                "body": body,
+                "segments": sms_metrics(body)["segments"],
             })
         rows.sort(key=lambda row: (row["days_since"] or 0), reverse=True)
         for row in rows:

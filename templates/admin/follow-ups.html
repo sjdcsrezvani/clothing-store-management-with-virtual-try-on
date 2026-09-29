@@ -25,19 +25,31 @@
 {% endif %}
 
 {% if plans %}
-<section class="card follow-up-card">
+<section class="card follow-up-card" data-list-region="follow-ups">
     <div class="section-heading-row">
         <div>
-            <h3>موعدگذشته‌ها</h3>
+            <h3 data-list-heading tabindex="-1">موعدگذشته‌ها</h3>
             <p class="muted">
                 {{ total_due_label }} مشتری در {{ plans_count_label }} قالب پیگیری — همه در انتظار،
                 هیچ‌کدام هنوز فرستاده نشده است.
             </p>
         </div>
+        <div class="list-heading-actions">
+            <form method="get" action="/admin/follow-ups" class="per-page-form">
+                <label class="sr-only" for="followup-per-page">تعداد در صفحه</label>
+                <select name="per_page" id="followup-per-page" onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}" aria-label="تعداد در صفحه">
+                    {% for option in per_page_options %}
+                    <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }} در صفحه</option>
+                    {% endfor %}
+                </select>
+            </form>
+        </div>
     </div>
 
     {% for plan in plans %}
-    <div class="follow-up-group">
+    {% set ns = namespace(qs='&per_page=' ~ per_page) %}
+    {% for other in plans %}{% if other.template.id != plan.template.id %}{% set ns.qs = ns.qs ~ '&page_' ~ other.template.id ~ '=' ~ other.page %}{% endif %}{% endfor %}
+    <div class="follow-up-group" data-followup-group="{{ plan.template.id }}">
         <h4>
             {{ plan.template.name }}
             <span class="sms-fire-badge is-auto">خودکار</span>
@@ -48,10 +60,30 @@
             · {{ plan.skipped_label }} نفر کنار گذاشته شدند
             {% endif %}
         </p>
+        {% if plan.skipped_total %}
+        <details class="skipped-details">
+            <summary>جزئیات کنارگذاشته‌شدگان</summary>
+            <ul>
+                {% for key, count in plan.skipped.items() %}
+                {% if count %}<li>{{ skipped_labels.get(key, key) }}: <strong class="tnum">{{ count }}</strong></li>{% endif %}
+                {% endfor %}
+            </ul>
+        </details>
+        {% endif %}
 
         {% if plan.rows %}
-        <form method="post" action="/admin/follow-ups/send">
+        <form method="post" action="/admin/follow-ups/send" class="follow-up-form"
+              data-confirm-template="{{ plan.template.name }}">
             <input type="hidden" name="template_id" value="{{ plan.template.id }}">
+            <div class="follow-up-tools">
+                <input type="search" class="follow-up-search" placeholder="جست‌وجوی نام یا شماره…" dir="auto" autocomplete="off"
+                       aria-label="جست‌وجو در {{ plan.template.name }}">
+                <span class="picked-tools">
+                    <button type="button" class="btn btn-sm btn-ghost follow-up-all">انتخاب همه</button>
+                    <button type="button" class="btn btn-sm btn-ghost follow-up-none">پاک‌کردن</button>
+                </span>
+                <small class="muted tnum follow-up-match" aria-live="polite"></small>
+            </div>
             <div class="table-scroll">
                 <table class="data-table sms-table follow-up-table">
                     <thead>
@@ -65,30 +97,50 @@
                     </thead>
                     <tbody>
                         {% for row in plan.rows %}
-                        <tr>
-                            <td>
+                        <tr class="follow-up-row" data-search="{{ row.customer.full_name }} {{ row.phone }}">
+                            <td class="follow-check" data-label="ارسال">
                                 <input type="checkbox" name="customer_ids" value="{{ row.customer.id }}" checked
                                        aria-label="ارسال پیگیری به {{ row.customer.full_name }}">
                             </td>
-                            <td class="sms-name">
+                            <td class="sms-name" data-label="مشتری">
                                 <a href="/admin/customers/{{ row.customer.id }}"><strong>{{ row.customer.full_name }}</strong></a>
                                 <small class="sms-meta tnum" dir="ltr">{{ row.phone }}</small>
                                 {% if row.tier_label %}
                                 <small class="sms-meta">سطح {{ row.tier_label }}</small>
+                                {% else %}
+                                <small class="sms-meta">بدون سطح</small>
                                 {% endif %}
                             </td>
-                            <td class="tnum">
+                            <td class="tnum" data-label="آخرین خرید">
                                 {% if row.last_purchase %}{{ jalali_str(row.last_purchase) }}{% else %}—{% endif %}
                             </td>
-                            <td class="tnum">{{ row.days_label }}</td>
-                            <td class="sms-body-cell"><span class="sms-body" dir="auto">{{ row.body }}</span></td>
+                            <td class="tnum" data-label="فاصله">{{ row.days_label }}</td>
+                            <td class="sms-body-cell" data-label="پیامک">
+                                {% if row.body|length > 90 %}
+                                <span class="sms-body" dir="auto">{{ row.body|truncate(90, true) }}</span>
+                                <details class="sms-expand">
+                                    <summary>متن کامل</summary>
+                                    <p dir="auto">{{ row.body }}</p>
+                                </details>
+                                {% else %}
+                                <span class="sms-body" dir="auto">{{ row.body }}</span>
+                                {% endif %}
+                                <small class="sms-meta tnum">{{ row.segments }} پیامک</small>
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
-            <div class="form-actions">
-                <button type="submit" class="btn btn-primary btn-large">
+            {% if plan.total_pages > 1 %}
+            <nav class="product-pagination" aria-label="صفحه‌بندی {{ plan.template.name }}">
+                {% if plan.page > 1 %}<a class="btn btn-sm btn-ghost" href="?page_{{ plan.template.id }}={{ plan.page - 1 }}{{ ns.qs }}">صفحه قبل</a>{% endif %}
+                <span>صفحه {{ plan.page }} از {{ plan.total_pages }} · {{ plan.total }} مخاطب</span>
+                {% if plan.page < plan.total_pages %}<a class="btn btn-sm btn-ghost" href="?page_{{ plan.template.id }}={{ plan.page + 1 }}{{ ns.qs }}">صفحه بعد</a>{% endif %}
+            </nav>
+            {% endif %}
+            <div class="form-actions follow-up-actions">
+                <button type="submit" class="btn btn-primary btn-large follow-up-send">
                     📮 ارسال پیامک‌های انتخاب‌شده
                 </button>
             </div>
@@ -106,6 +158,100 @@
     </div>
     {% endfor %}
 </section>
+{# One confirm surface for every plan form: the sentence names the template
+   and the live checked count, composed at submit time. #}
+<div id="followup-confirm" data-dialog role="alertdialog" aria-modal="true"
+     aria-labelledby="followup-confirm-title" class="confirm-scrim" tabindex="-1">
+    <div class="t-modal-card confirm-card" role="document">
+        <h3 id="followup-confirm-title">مطمئن هستید؟</h3>
+        <p class="muted" id="followup-confirm-text"></p>
+        <div class="confirm-actions">
+            <button type="button" class="btn btn-danger" id="followup-confirm-yes">تأیید</button>
+            <button type="button" class="btn btn-ghost" data-dialog-close>انصراف</button>
+        </div>
+    </div>
+</div>
+<script>
+// Per-plan bulk tools: search narrows, toggles check the visible, the send
+// button counts the checked, and the modal names template + count. form
+// .submit() skips the submit listener, so confirming never loops.
+(function () {
+    var pendingForm = null;
+    function faNum(value) {
+        var fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩';
+        return String(value == null ? '' : value)
+            .replace(/[۰-۹]/g, function (d) { return fa.indexOf(d); })
+            .replace(/[٠-٩]/g, function (d) { return ar.indexOf(d); });
+    }
+    document.querySelectorAll('.follow-up-form').forEach(function (form) {
+        var boxes = Array.prototype.slice.call(form.querySelectorAll('input[name="customer_ids"]'));
+        var send = form.querySelector('.follow-up-send');
+        var search = form.querySelector('.follow-up-search');
+        var match = form.querySelector('.follow-up-match');
+        function checked() {
+            return boxes.filter(function (box) { return box.checked; });
+        }
+        function syncCount() {
+            if (send) send.textContent = '📮 ارسال پیامک‌های انتخاب‌شده (' + checked().length + ')';
+        }
+        function syncMatch() {
+            if (!match) return;
+            var visible = 0;
+            form.querySelectorAll('.follow-up-row').forEach(function (row) {
+                if (!row.hidden) visible++;
+            });
+            match.textContent = search && search.value.trim() ? (visible + ' از ' + boxes.length) : '';
+        }
+        boxes.forEach(function (box) { box.addEventListener('change', syncCount); });
+        var all = form.querySelector('.follow-up-all');
+        if (all) all.addEventListener('click', function () {
+            boxes.forEach(function (box) {
+                var row = box.closest('.follow-up-row');
+                if (row && !row.hidden) box.checked = true;
+            });
+            syncCount();
+        });
+        var none = form.querySelector('.follow-up-none');
+        if (none) none.addEventListener('click', function () {
+            boxes.forEach(function (box) { box.checked = false; });
+            syncCount();
+        });
+        if (search) search.addEventListener('input', function () {
+            var needle = faNum(search.value).trim().toLowerCase();
+            form.querySelectorAll('.follow-up-row').forEach(function (row) {
+                var hay = faNum(row.getAttribute('data-search') || '').toLowerCase();
+                row.hidden = needle.length > 0 && hay.indexOf(needle) === -1;
+            });
+            syncMatch();
+        });
+        syncCount();
+    });
+    document.addEventListener('submit', function (event) {
+        var form = event.target.closest ? event.target.closest('.follow-up-form') : null;
+        if (!form || form === pendingForm || !window.RaykidDialog) return;
+        var count = form.querySelectorAll('input[name="customer_ids"]:checked').length;
+        if (!count) return; // the server refuses empty picks with its own error
+        event.preventDefault();
+        pendingForm = form;
+        document.getElementById('followup-confirm-text').textContent =
+            '«' + form.getAttribute('data-confirm-template') + '» برای ' + count +
+            ' مخاطب در صف قرار می‌گیرد. مطمئن هستید؟';
+        window.RaykidDialog.open('followup-confirm', document.activeElement);
+    });
+    document.getElementById('followup-confirm-yes').addEventListener('click', function () {
+        var form = pendingForm;
+        pendingForm = null;
+        window.RaykidDialog.close('followup-confirm');
+        if (form) form.submit();
+    });
+    document.getElementById('followup-confirm').addEventListener('click', function (event) {
+        if (event.target.closest('[data-dialog-close]')) pendingForm = null;
+    });
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') pendingForm = null;
+    });
+})();
+</script>
 {% else %}
 <div class="empty-state">
     <h3>هنوز قالبی برای پیگیری تنظیم نشده است</h3>
