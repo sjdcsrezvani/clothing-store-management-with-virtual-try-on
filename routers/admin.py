@@ -1532,7 +1532,8 @@ async def admin_birthdays(request: Request, db: Session = Depends(get_db)):
     rows = []
     for customer, days_until, occasion in result["eligible"]:
         month_day = customer.birth_month_day if occasion == "customer" else customer.child_birthday
-        year = None if occasion == "customer" else customer.child_birth_year
+        year = customer.birth_year if occasion == "customer" else customer.child_birth_year
+        turning = jalali_age(year, month_day)
         rows.append({
             "customer": customer,
             "occasion": occasion,
@@ -1540,9 +1541,10 @@ async def admin_birthdays(request: Request, db: Session = Depends(get_db)):
             "celebrated": (customer.first_name or "مشتری") if occasion == "customer"
                           else (customer.child_name or "فرزند"),
             "date": birthday_display(month_day, year),
+            "age": (turning + 1) if turning is not None else None,
             "days_until": days_until,
-            "days_label": ("امروز" if days_until == 1
-                           else (f"{to_persian_digits(str(days_until - 1))} روز دیگر" if days_until > 1 else "")),
+            "days_label": ("امروز" if days_until == 0
+                           else f"{to_persian_digits(str(days_until))} روز دیگر"),
             "already_sent": _birthday_marker(db, customer, occasion) is not None,
         })
     rows.sort(key=lambda row: row["days_until"])
@@ -1578,12 +1580,12 @@ async def admin_birthdays_send(request: Request, customer_ids: list[int] = Form(
 
     pattern = get_sms_config(db)["birthday_pattern"]
     if not pattern:
-        return RedirectResponse(url="/admin/birthdays?err=ابتدا متن پیامک تولد را در صفحه پیامک بنویسید و فعال کنید.",
+        return RedirectResponse(url="/admin/birthdays?err=" + quote_plus("ابتدا متن پیامک تولد را در صفحه پیامک بنویسید و فعال کنید."),
                                 status_code=303)
 
     wanted = {int(value) for value in customer_ids if str(value).strip().isdigit()}
     if not wanted:
-        return RedirectResponse(url="/admin/birthdays?err=هیچ مشتری انتخاب نشده است.", status_code=303)
+        return RedirectResponse(url="/admin/birthdays?err=" + quote_plus("هیچ مشتری انتخاب نشده است."), status_code=303)
 
     days_before = get_tier_config(db)["birthday_sms_days_before"]
     eligible = {customer.id: (customer, occasion)
@@ -1592,6 +1594,7 @@ async def admin_birthdays_send(request: Request, customer_ids: list[int] = Form(
     sent = 0
     skipped = 0
     rejected = 0
+    refused = 0
     for customer_id in wanted:
         pair = eligible.get(customer_id)
         if pair is None:                     # window passed or no longer eligible
@@ -1617,6 +1620,10 @@ async def admin_birthdays_send(request: Request, customer_ids: list[int] = Form(
             month_day = customer.birth_month_day if occasion == "customer" else customer.child_birthday
             db.add(Settings(key=f"birthday_sms_{customer.id}_{year}_{occasion}_{month_day}", value="sent"))
             sent += 1
+        else:
+            # The queue said no — test-mode allowlist, or a body that came out
+            # empty. Counted apart from the ineligible, so the message adds up.
+            refused += 1
     db.commit()
     log_action(db, "birthday_sms", f"{sent} پیامک تولد ارسال شد ({skipped} تکراری، {rejected} خارج از پنجره)",
                request=request, target_type="customer")
@@ -1626,7 +1633,9 @@ async def admin_birthdays_send(request: Request, customer_ids: list[int] = Form(
         message += f" {skipped} مورد قبلاً ارسال شده بود."
     if rejected:
         message += f" {rejected} مورد دیگر در پنجره تولد نیست و رد شد."
-    return RedirectResponse(url=f"/admin/birthdays?msg={message}", status_code=303)
+    if refused:
+        message += f" {refused} مورد در صف نرفت (حالت آزمایشی یا متن خالی)."
+    return RedirectResponse(url=f"/admin/birthdays?msg={quote_plus(message)}", status_code=303)
 
 
 @router.get("/follow-ups", response_class=HTMLResponse)
@@ -1804,13 +1813,14 @@ async def admin_tier_up(request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/tier-up/send", response_class=HTMLResponse)
-async def admin_tier_up_send(request: Request, customer_ids: list[int] = Form([]), db: Session = Depends(get_db)):
+async def admin_tier_up_send(request: Request, customer_ids: list[str] = Form([]), db: Session = Depends(get_db)):
     """Send tier-up SMS to selected customers, capped so we never blast >10 at once."""
     guard = require_html_role(request, db, "owner")
     if not hasattr(guard, "role"):
         return guard
 
-    from services.sms import get_sms_config
+    from services.sms import get_sms_config, queue_sms
+    from services.sms_send import message_block_reason
 
     sms_config = get_sms_config(db)
     gold_pattern = sms_config["tier_up_gold_pattern"]
@@ -1818,12 +1828,25 @@ async def admin_tier_up_send(request: Request, customer_ids: list[int] = Form([]
     if not gold_pattern or not diamond_pattern:
         return RedirectResponse(url="/admin/tier-up?skipped=no_pattern", status_code=303)
 
+    wanted = [int(value) for value in customer_ids if str(value).strip().isdigit()]
+    if not wanted:
+        return RedirectResponse(url="/admin/tier-up?err=" + quote_plus("هیچ مشتری انتخاب نشده است."),
+                                status_code=303)
+
     sent = 0
-    for customer_id in customer_ids[:TIER_UP_SMS_LIMIT]:
+    skipped_cap = 0
+    skipped_ineligible = 0
+    refused = 0
+    for customer_id in wanted[:TIER_UP_SMS_LIMIT]:
         customer = db.query(Customer).filter(Customer.id == customer_id).first()
         if not customer or customer.tier == "silver":
+            skipped_ineligible += 1
             continue
         if tier_up_sent_rank(db, customer) >= TIER_RANK[customer.tier]:
+            skipped_ineligible += 1
+            continue
+        if message_block_reason(customer, transactional=False):
+            skipped_ineligible += 1
             continue
 
         is_gold = customer.tier == "gold"
@@ -1844,12 +1867,15 @@ async def admin_tier_up_send(request: Request, customer_ids: list[int] = Form([]
             else:
                 db.add(Settings(key=tier_up_marker_key(customer.id), value=customer.tier))
             sent += 1
+        else:
+            refused += 1
 
     db.commit()
     log_action(db, "tier_up_sms", f"{sent} پیامک ارتقا ارسال شد", request=request, target_type="customer")
 
-    skipped = max(0, len(customer_ids) - TIER_UP_SMS_LIMIT)
-    return RedirectResponse(url=f"/admin/tier-up?sent={sent}&skipped={skipped}", status_code=303)
+    skipped_cap = max(0, len(wanted) - TIER_UP_SMS_LIMIT)
+    params = f"sent={sent}&skipped={skipped_cap}&ineligible={skipped_ineligible}&refused={refused}"
+    return RedirectResponse(url=f"/admin/tier-up?{params}", status_code=303)
 
 
 @router.get("/sales", response_class=HTMLResponse)

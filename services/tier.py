@@ -337,7 +337,10 @@ def get_customers_for_birthday_check(db: Session, days_before: int = 3) -> dict:
         best = None
         for rank, subject in enumerate(subjects):
             days_until = days_until_jalali_birthday(birthday_on_file(customer, subject), today)
-            if days_until is None or not (0 < days_until <= days_before):
+            # Today counts: a birthday that *is* today is the most due of all,
+            # and excluding it pushed every label a day off (tomorrow read as
+            # «امروز» while today vanished entirely).
+            if days_until is None or not (0 <= days_until <= days_before):
                 continue
             key = (days_until, rank)
             if best is None or key < best[0]:
