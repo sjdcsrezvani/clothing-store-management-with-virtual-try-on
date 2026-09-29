@@ -805,16 +805,28 @@ def values_for_customer(customer, template: SmsTemplate | None = None,
 # ── measuring ─────────────────────────────────────────────────────────────────
 
 def sms_metrics(body: str) -> dict:
-    """Length and segment count, so the owner can see what one send costs."""
+    """Length and segment count, so the owner can see what one send costs.
+
+    Multipart math, not first-segment math: the first part carries 70/160
+    characters and every following part 67/153 (the headers eat the rest).
+    The editor's live counter computes the same formula — a preview that
+    disagrees with the log by a segment is a lie about money.
+    """
     text = str(body or "")
     unicode_text = any(ord(char) > 127 for char in text)
-    per_segment = 70 if unicode_text else 160
+    first, rest = (70, 67) if unicode_text else (160, 153)
     length = len(text)
+    if length == 0:
+        segments = 0
+    elif length <= first:
+        segments = 1
+    else:
+        segments = 1 + -(-(length - first) // rest)
     return {
         "length": length,
-        "segments": 0 if length == 0 else -(-length // per_segment),
-        "per_segment": per_segment,
-        "encoding": "یونیکد (فارسی)" if unicode_text else "لاتین",
+        "segments": segments,
+        "per_segment": first,
+        "encoding": "فارسی" if unicode_text else "لاتین",
     }
 
 

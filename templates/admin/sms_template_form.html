@@ -62,17 +62,19 @@
                 {% if not template or not template.is_builtin %}
                 <div class="sms-variable-editor">
                     <p class="muted">
-                        جای متغیر در متن آزاد است: هر کجای پیامک <span dir="ltr">%var1%</span> بنویسید، همان‌جا
-                        پر می‌شود — اول، وسط یا آخر. فقط اسم متغیر مهم است، نه ترتیبش.
-                        برای هر متغیر بگویید از کدام مقدار مشتری پر شود. هر متغیری که در متن
-                        آمده باید یک مقدار داشته باشد؛ متغیر بی‌مقدار، جای خالی روی گوشی مشتری
-                        می‌شود، پس تا تعیین‌تکلیف‌نشدنش قالب ذخیره نمی‌شود.
+                        جای متغیر در متن آزاد است: هر کجای پیامک
+                        <span dir="ltr">%var1%</span> یا <span dir="ltr">{var1}</span>
+                        بنویسید، همان‌جا پر می‌شود — اول، وسط یا آخر. فقط اسم متغیر
+                        مهم است، نه ترتیبش. برای هر متغیر بگویید از کدام مقدار
+                        مشتری پر شود. متغیری که در متن آمده و مقداری ندارد، روی
+                        گوشی خالی می‌ماند و قالب ذخیره نمی‌شود.
                     </p>
                     {% for variable in variables %}
                     <div class="sms-slot">
                         <div class="form-group">
                             <label for="source_{{ variable.token }}">
                                 مقدار <span dir="ltr">%{{ variable.token }}%</span>
+                                <small class="muted">({{ variable.label }})</small>
                             </label>
                             <select id="source_{{ variable.token }}" name="source_{{ variable.token }}"
                                     class="sms-slot-source" data-token="{{ variable.token }}">
@@ -104,6 +106,12 @@
                     </div>
                     {% endfor %}
                 </div>
+                {% endif %}
+                {% if template and template.is_builtin %}
+                <p class="muted">
+                    این قالب پیش‌فرض است: متغیرها و زمان‌بندی‌اش را فرستنده‌اش تعیین
+                    می‌کند، پس همین‌جا ویرایش نمی‌شوند — فقط نام، متن و وضعیت.
+                </p>
                 {% endif %}
             </div>
 
@@ -191,6 +199,7 @@
             <div class="form-actions">
                 <button type="submit" class="btn btn-primary btn-large">
                     {% if edit_mode %}ذخیره متن{% else %}ساخت قالب{% endif %}
+                    <span id="save-dirty" class="save-dirty-dot" aria-hidden="true" hidden>•</span>
                 </button>
                 <a href="/admin/sms" class="btn btn-ghost">لغو</a>
             </div>
@@ -205,6 +214,10 @@
             </div>
             <p class="muted sms-preview-note" id="sms-preview-note">
                 {{ metrics.length }} نویسه · {{ metrics.segments }} پیامک · {{ metrics.encoding }}
+            </p>
+            <p class="muted">
+                هر پیامک جدا حساب می‌شود: بالای ۳ پیامک پرهزینه است و متن از ۶۱۲
+                نویسه بیشتر ذخیره نمی‌شود.
             </p>
             {% if edit_mode and not values.is_active %}
             <p class="sms-warning">این قالب خاموش است؛ تا روشنش نکنید، چیزی از آن فرستاده نمی‌شود.</p>
@@ -225,7 +238,8 @@
             <h3>ارسال آزمایشی</h3>
             <p class="muted">
                 یک پیامک واقعی به این شماره در صف قرار می‌گیرد تا متن را روی گوشی ببینید.
-                متنِ ذخیره‌شده فرستاده می‌شود؛ اگر تغییرش داده‌اید اول ذخیره کنید.
+                متنِ ذخیره‌شده فرستاده می‌شود، نه پیش‌نویس بالا.
+                <span id="sms-test-dirty" class="sms-warning" hidden>متن شما با ذخیره‌شده فرق دارد — اول ذخیره کنید.</span>
             </p>
             <form method="post" action="/admin/sms/templates/{{ template.id }}/test" id="sms-test-form"
                   class="sms-test-form">
@@ -233,10 +247,22 @@
                 <div class="form-group">
                     <label for="test_phone">شماره موبایل</label>
                     <input type="tel" id="test_phone" name="phone" dir="ltr" placeholder="09123456789" required>
+                    <small class="muted tnum" id="sms-test-cost" aria-live="polite"></small>
                 </div>
                 <button type="submit" class="btn btn-ghost">ارسال آزمایشی</button>
             </form>
         </section>
+        <div id="sms-test-confirm" data-dialog role="alertdialog" aria-modal="true"
+             aria-labelledby="sms-test-confirm-title" class="confirm-scrim" tabindex="-1">
+            <div class="t-modal-card confirm-card" role="document">
+                <h3 id="sms-test-confirm-title">مطمئن هستید؟</h3>
+                <p class="muted" id="sms-test-confirm-text"></p>
+                <div class="confirm-actions">
+                    <button type="button" class="btn btn-danger" id="sms-test-confirm-yes">تأیید</button>
+                    <button type="button" class="btn btn-ghost" data-dialog-close>انصراف</button>
+                </div>
+            </div>
+        </div>
         {% endif %}
 
         {# Every template answers this — a custom one that nothing queues used to
@@ -265,8 +291,12 @@
     var counter = document.getElementById('sms-counter');
     var note = document.getElementById('sms-preview-note');
     if (!body) return;
-    var placeholders = [{% for variable in variables %}'%{{ variable.token }}%'{% if not loop.last %}, {% endif %}{% endfor %}];
-    var samples = { {% for variable in variables %}'%{{ variable.token }}%': {{ variable.sample|tojson }}{% if not loop.last %}, {% endif %}{% endfor %} };
+    var placeholders = [{% for variable in variables %}'{{ variable.token }}'{% if not loop.last %}, {% endif %}{% endfor %}];
+    var samples = { {% for variable in variables %}'{{ variable.token }}': {{ variable.sample|tojson }}{% if not loop.last %}, {% endif %}{% endfor %} };
+    // Both spellings the server accepts: %var1% and {var1} render the same.
+    function spellings(name) {
+        return ['%' + name + '%', '{' + name + '}'];
+    }
     // The ready-made sentences, each with the values it reads.
     var sentenceCatalog = { {% for sentence in sentences %}{{ sentence.key|tojson }}: {text: {{ sentence.text|tojson }}, bind: {{ sentence.bind|tojson }}}{% if not loop.last %}, {% endif %}{% endfor %} };
     // Tokens no source fills: they leave the phone empty, so the preview shows
@@ -276,7 +306,7 @@
     function unboundTokens() {
         var tokens = [];
         document.querySelectorAll('.sms-slot-source').forEach(function (select) {
-            if (!select.value) tokens.push('%' + select.getAttribute('data-token') + '%');
+            if (!select.value) tokens.push(select.getAttribute('data-token'));
         });
         return tokens;
     }
@@ -285,17 +315,20 @@
 
     function segments(text) {
         var unicode = /[^\x00-\x7F]/.test(text);
-        var per = unicode ? 70 : 160;
-        return { count: text.length ? Math.ceil(text.length / per) : 0, per: per, unicode: unicode };
+        var first = unicode ? 70 : 160, rest = unicode ? 67 : 153;
+        var count = !text.length ? 0
+            : (text.length <= first ? 1 : 1 + Math.ceil((text.length - first) / rest));
+        return { count: count, unicode: unicode };
     }
 
     function refreshUnfilled() {
         if (!unfilledNote) return;
-        // Only the unbound tokens this text actually uses: a slot left empty on
-        // purpose is fine, so warning about it would be noise. This is the same
-        // rule the server refuses a save with, read off the live form.
-        var shown = unboundTokens().filter(function (token) {
-            return body.value.indexOf(token) !== -1;
+        // Only the unbound tokens this text actually uses, in either spelling:
+        // a slot left empty on purpose is fine, so warning about it would be
+        // noise. This is the same rule the server refuses a save with, read
+        // off the live form.
+        var shown = unboundTokens().filter(function (name) {
+            return spellings(name).some(function (sp) { return body.value.indexOf(sp) !== -1; });
         });
         if (!shown.length) {
             unfilledNote.hidden = true;
@@ -303,8 +336,8 @@
         }
         unfilledNote.hidden = false;
         if (unfilledTokens) {
-            unfilledTokens.innerHTML = shown.map(function (token) {
-                return '<span dir="ltr">' + token + '</span>';
+            unfilledTokens.innerHTML = shown.map(function (name) {
+                return '<span dir="ltr">%' + name + '%</span>';
             }).join('، ');
         }
     }
@@ -313,23 +346,27 @@
         var text = body.value;
         var preview = text;
         var unbound = unboundTokens();
-        placeholders.forEach(function (token) {
-            var value = unbound.indexOf(token) !== -1 ? '' : (samples[token] || '');
-            preview = preview.split(token).join(value);
+        placeholders.forEach(function (name) {
+            var value = unbound.indexOf(name) !== -1 ? '' : (samples[name] || '');
+            spellings(name).forEach(function (sp) {
+                preview = preview.split(sp).join(value);
+            });
         });
         var metrics = segments(text);
         if (bubble) bubble.textContent = preview || 'متن پیامک اینجا نمایش داده می‌شود.';
         if (counter) {
             counter.textContent = metrics.count
-                ? (text.length + ' نویسه · ' + metrics.count + ' پیامک' + (metrics.unicode ? ' (فارسی)' : ''))
+                ? (text.length + ' نویسه · ' + metrics.count + ' پیامک · ' + (metrics.unicode ? 'فارسی' : 'لاتین'))
                 : 'متن خالی است';
             counter.classList.toggle('is-over', metrics.count > 3);
         }
         if (note) {
             note.textContent = metrics.count
-                ? (text.length + ' نویسه · ' + metrics.count + ' پیامک · ' + (metrics.unicode ? 'یونیکد (فارسی)' : 'لاتین'))
+                ? (text.length + ' نویسه · ' + metrics.count + ' پیامک · ' + (metrics.unicode ? 'فارسی' : 'لاتین'))
                 : 'برای دیدن پیش‌نمایش، متن را بنویسید.';
         }
+        updateTestCost(metrics);
+        markDirty();
         // Typing a token into the text is what makes it a hole, so the warning
         // has to follow the text as well as the dropdowns.
         refreshUnfilled();
@@ -356,6 +393,9 @@
             var auto = option.getAttribute('data-mode') === 'auto';
             var needsDays = option.getAttribute('data-needs-days') === '1';
             if (daysGroup) daysGroup.hidden = !needsDays;
+            // A hidden field must not be submitted: the server reads an absent
+            // field as «default», an out-of-range one as a refusal.
+            if (daysInput) daysInput.disabled = !needsDays;
             if (hint) hint.textContent = option.getAttribute('data-hint') || '';
             if (badge) {
                 badge.className = 'sms-fire-badge is-' + (auto ? 'auto' : 'manual');
@@ -365,7 +405,7 @@
             if (fireText) {
                 // Plain digits, like every other count on these pages — the
                 // manager and the send page render the same sentence.
-                var days = daysInput ? parseInt(daysInput.value, 10) || 0 : 0;
+                var days = daysInput ? parseInt(faDigits(daysInput.value), 10) || 0 : 0;
                 fireText.textContent = auto
                     ? (option.getAttribute('data-text') || '').replace('{days}', String(days))
                     : '{{ CUSTOM_TRIGGER }}';
@@ -399,20 +439,95 @@
     // sample follow the choice, and the «خالی می‌ماند» warning clears.
     document.querySelectorAll('.sms-slot-source').forEach(function (select) {
         select.addEventListener('change', function () {
-            var token = '%' + select.getAttribute('data-token') + '%';
+            var name = select.getAttribute('data-token');
             var option = select.options[select.selectedIndex];
-            var labelInput = document.getElementById('label_' + select.getAttribute('data-token'));
-            var sampleInput = document.getElementById('sample_' + select.getAttribute('data-token'));
+            var labelInput = document.getElementById('label_' + name);
+            var sampleInput = document.getElementById('sample_' + name);
             if (select.value) {
-                samples[token] = option.getAttribute('data-sample') || '';
+                samples[name] = option.getAttribute('data-sample') || '';
                 if (labelInput) labelInput.value = option.getAttribute('data-label') || '';
-                if (sampleInput) sampleInput.value = samples[token];
+                if (sampleInput) sampleInput.value = samples[name];
             }
             render();
         });
     });
 
     body.addEventListener('input', render);
+
+    // The test card prices the text as it stands: segments now, so the trial
+    // never surprises. Latin digits, like every other count on these pages.
+    var testCost = document.getElementById('sms-test-cost');
+    function updateTestCost(metrics) {
+        if (!testCost) return;
+        testCost.textContent = metrics.count
+            ? ('این متن ' + metrics.count + ' پیامک می‌شود.')
+            : '';
+    }
+
+    // The save button wears a dot while the textarea differs from the saved
+    // text — the test card sends the saved text, so a dot means «save first».
+    var saveButton = document.querySelector('#sms-template-form button[type="submit"]');
+    var saveDirty = document.getElementById('save-dirty');
+    var savedBody = {{ (template.body if template else '')|tojson }};
+    var savedName = {{ (template.name if template else '')|tojson }};
+    var nameInput = document.getElementById('name');
+    function markDirty() {
+        if (!saveDirty || !saveButton) return;
+        var dirty = body.value !== savedBody
+            || (nameInput && nameInput.value !== savedName);
+        saveDirty.hidden = !dirty;
+        var testDirty = document.getElementById('sms-test-dirty');
+        if (testDirty) testDirty.hidden = !dirty;
+    }
+    if (nameInput) nameInput.addEventListener('input', render);
+
+    // Leaving with unsaved words asks first — the cancel link included. Test
+    // sends and saves clear the flag; anything else keeps it.
+    var cleanSubmit = false;
+    ['sms-template-form', 'sms-test-form'].forEach(function (id) {
+        var form = document.getElementById(id);
+        if (form) form.addEventListener('submit', function () { cleanSubmit = true; });
+    });
+    window.addEventListener('beforeunload', function (event) {
+        if (cleanSubmit || !saveDirty || saveDirty.hidden) return;
+        event.preventDefault();
+    });
+
+    // The trial costs a real SMS: the modal names the number and the segments,
+    // and refuses when the phone field is still empty.
+    var testForm = document.getElementById('sms-test-form');
+    var testPhone = document.getElementById('test_phone');
+    var pendingTest = false;
+    if (testForm) {
+        testForm.addEventListener('submit', function (event) {
+            if (pendingTest || !window.RaykidDialog) return;
+            var digits = faDigits(testPhone ? testPhone.value : '').replace(/[^0-9]/g, '');
+            if (!digits) return; // required + server refusal handle the empty case
+            event.preventDefault();
+            pendingTest = true;
+            var metrics = segments(body.value);
+            document.getElementById('sms-test-confirm-text').textContent =
+                'ارسال آزمایشی به ' + digits + ' (' + metrics.count + ' پیامک)؟ متنِ ذخیره‌شده فرستاده می‌شود.';
+            window.RaykidDialog.open('sms-test-confirm', document.activeElement);
+        });
+        document.getElementById('sms-test-confirm-yes').addEventListener('click', function () {
+            window.RaykidDialog.close('sms-test-confirm');
+            if (pendingTest) { pendingTest = false; testForm.submit(); }
+        });
+        document.getElementById('sms-test-confirm').addEventListener('click', function (event) {
+            if (event.target.closest('[data-dialog-close]')) pendingTest = false;
+        });
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') pendingTest = false;
+        });
+    }
+
+    function faDigits(value) {
+        var fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩';
+        return String(value == null ? '' : value)
+            .replace(/[۰-۹]/g, function (d) { return fa.indexOf(d); })
+            .replace(/[٠-٩]/g, function (d) { return ar.indexOf(d); });
+    }
 
     // A chip inserts a whole sentence, not a bare token: «%var1% عزیز، سلام!» is
     // something a shop would write and «%var1%» is not. The sentence carries the

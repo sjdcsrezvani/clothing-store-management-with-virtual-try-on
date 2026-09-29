@@ -3222,12 +3222,16 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
 .sms-variable-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.6rem; }
 .sms-chip {
   display: inline-flex; align-items: baseline; gap: 0.35rem;
-  min-height: 2rem; padding: 0.25rem 0.6rem;
+  min-height: var(--touch-target); padding: 0.45rem 0.8rem;
   border: 1px dashed color-mix(in srgb, var(--lavender) 55%, var(--rule));
   border-radius: 999px;
   background: color-mix(in srgb, var(--lavender) 10%, var(--card));
   color: var(--ink); font: inherit; font-size: 0.76rem; cursor: pointer;
 }
+/* The save button wears a dot while the form differs from the saved text —
+   the test card sends the saved text, so a dot means «save first». */
+.save-dirty-dot { color: var(--persimmon); font-size: 1.2rem; line-height: 1; }
+#sms-test-dirty { display: block; margin-top: 0.3rem; }
 .sms-chip:hover { border-style: solid; border-color: var(--lavender); }
 .sms-chip small { color: var(--ink-soft); font-size: 0.72rem; }
 /* Ready-made sentences: the chip shows the whole wording, clipped when it runs
@@ -3382,6 +3386,10 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
 
 @media (max-width: 900px) {
   .sms-editor-layout, .sms-send-layout { grid-template-columns: 1fr; }
+  /* On a phone the preview answers first: what the customer reads outranks
+     the fields that write it. */
+  .sms-editor-layout { display: flex; flex-direction: column; }
+  .sms-editor-layout .sms-editor-side { order: -1; }
   .sms-gateway-grid { grid-template-columns: 1fr; }
   /* The app-wide mobile rule turns every table into a horizontal scroller. These
      two carry their detail inside a single cell, so they wrap instead and

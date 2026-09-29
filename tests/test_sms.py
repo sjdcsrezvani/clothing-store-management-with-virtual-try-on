@@ -187,10 +187,16 @@ def test_render_template_blanks_a_declared_token_nobody_filled(db_session):
 def test_sms_metrics_counts_segments_per_encoding():
     assert sms_metrics("")["segments"] == 0
     assert sms_metrics("a" * 160)["segments"] == 1
+    # Concatenated parts carry 153, not 160.
     assert sms_metrics("a" * 161)["segments"] == 2
+    assert sms_metrics("a" * 313)["segments"] == 2
+    assert sms_metrics("a" * 314)["segments"] == 3
     assert sms_metrics("س" * 70)["segments"] == 1
     assert sms_metrics("س" * 71)["segments"] == 2
-    assert sms_metrics("س")["encoding"].startswith("یونیکد")
+    assert sms_metrics("س" * 137)["segments"] == 2
+    assert sms_metrics("س" * 138)["segments"] == 3
+    assert sms_metrics("س")["encoding"] == "فارسی"
+    assert sms_metrics("a")["encoding"] == "لاتین"
 
 
 def test_validate_refuses_an_empty_or_oversized_body():
