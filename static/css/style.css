@@ -3292,6 +3292,10 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
 .sms-audience-option span { display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; font-size: 0.84rem; }
 .sms-audience-option small { color: var(--ink-soft); font-size: 0.74rem; font-weight: 700; }
 .sms-picked-block { border-top: 1px dashed var(--rule); padding-top: 0.7rem; }
+.picked-head { display: flex; align-items: center; justify-content: space-between;
+  gap: 0.6rem; margin-bottom: 0.4rem; }
+.picked-head label { font-weight: 700; }
+.picked-tools { display: inline-flex; gap: 0.35rem; }
 /* Stored audiences: recall chips with a quiet × beside each name. */
 .saved-audiences { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.8rem; }
 .saved-audience { display: inline-flex; align-items: center; gap: 0.3rem;
@@ -3318,16 +3322,23 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
   background: var(--card);
 }
 .sms-pick-row {
-  display: flex; align-items: center; gap: 0.5rem;
-  min-height: var(--touch-target); padding: 0.4rem 0.55rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--rule) 55%, transparent);
-  cursor: pointer; font-size: 0.82rem;
+  display: flex; align-items: center; gap: 0.6rem;
+  min-height: var(--touch-target); padding: 0.4rem 0.7rem; margin-bottom: 0.35rem;
+  border: 1px solid var(--rule); border-radius: var(--radius-sm);
+  background: var(--card); cursor: pointer; font-size: 0.84rem;
 }
-.sms-pick-row:last-child { border-bottom: 0; }
+/* The checkbox itself stays the field; the tick is the visible face. */
+.sms-pick-row input { position: absolute; opacity: 0; pointer-events: none; }
+.pick-who { min-width: 0; flex: 1 1 auto; }
+.pick-who strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-who small { color: var(--ink-soft); font-size: 0.74rem; }
+.pick-tick { flex-shrink: 0; width: 1.4rem; height: 1.4rem; border-radius: 999px;
+  border: 1px solid var(--rule); color: transparent; font-size: 0.85rem;
+  display: inline-flex; align-items: center; justify-content: center; }
 .sms-pick-row:hover { background: var(--hover-surface); }
-.sms-pick-row input { width: auto; min-height: 0; }
-.sms-pick-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sms-pick-row small { margin-inline-start: auto; color: var(--ink-soft); font-size: 0.74rem; }
+.sms-pick-row:has(input:checked) { border-color: var(--candy); background: var(--surface-soft); }
+.sms-pick-row:has(input:checked) .pick-tick { background: var(--candy); border-color: var(--candy); color: #fff; }
+.sms-pick-row:has(input:focus-visible) { outline: 2px solid var(--candy); outline-offset: 1px; }
 .sms-summary { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
 .sms-summary li { display: flex; justify-content: space-between; gap: 0.8rem; font-size: 0.84rem; }
 .sms-summary li > span { color: var(--ink-soft); }

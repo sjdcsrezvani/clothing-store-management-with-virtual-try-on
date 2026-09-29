@@ -77,22 +77,31 @@
                 </div>
 
                 <div class="form-group sms-picked-block">
-                    <label>مشتریان دست‌چین‌شده</label>
+                    <div class="picked-head">
+                        <label>مشتریان دست‌چین‌شده</label>
+                        <span class="picked-tools">
+                            <button type="button" class="btn btn-sm btn-ghost" id="sms-pick-visible">انتخاب نمایان‌ها</button>
+                            <button type="button" class="btn btn-sm btn-ghost" id="sms-pick-clear">پاک‌کردن</button>
+                        </span>
+                    </div>
                     <input type="search" id="sms-picker-search" class="sms-picker-search"
-                           placeholder="جست‌وجوی نام یا شماره…" dir="auto">
-                    <div class="sms-picker" id="sms-picker">
+                           placeholder="جست‌وجوی نام یا شماره…" dir="auto" autocomplete="off">
+                    <div class="sms-picker" id="sms-picker" role="group" aria-label="مشتریان دست‌چین‌شده">
                         {% for customer in customers %}
                         <label class="sms-pick-row" data-search="{{ customer.full_name }} {{ customer.phone }}">
                             <input type="checkbox" name="picked" value="{{ customer.id }}"
                                    {% if customer.id|string in picked %}checked{% endif %}>
-                            <span>{{ customer.full_name }}</span>
-                            <small class="tnum" dir="ltr">{{ customer.phone }}</small>
+                            <span class="pick-who">
+                                <strong>{{ customer.full_name }}</strong>
+                                <small class="tnum" dir="ltr">{{ customer.phone }}</small>
+                            </span>
+                            <span class="pick-tick" aria-hidden="true">✓</span>
                         </label>
                         {% else %}
                         <p class="muted">هنوز مشتری‌ای ثبت نشده — اول از صفحه مشتریان بسازید.</p>
                         {% endfor %}
                     </div>
-                    <small class="tnum" id="sms-picked-count">۰ مخاطب دست‌چین‌شده</small>
+                    <small class="tnum" id="sms-picked-count" aria-live="polite"></small>
                 </div>
 
                 <div class="form-group">
@@ -332,8 +341,25 @@
             boxes.forEach(function (box) { if (box.checked) count += 1; });
             counter.textContent = count + ' مخاطب دست‌چین‌شده';
         }
+        function setVisible(checked) {
+            var changed = false;
+            picker.querySelectorAll('.sms-pick-row').forEach(function (row) {
+                if (row.hidden) return;
+                var box = row.querySelector('input[type="checkbox"]');
+                if (box && box.checked !== checked) { box.checked = checked; changed = true; }
+            });
+            if (changed) updatePicked();
+        }
         boxes.forEach(function (box) { box.addEventListener('change', updatePicked); });
         updatePicked();
+        var pickVisible = document.getElementById('sms-pick-visible');
+        if (pickVisible) pickVisible.addEventListener('click', function () { setVisible(true); });
+        var pickClear = document.getElementById('sms-pick-clear');
+        if (pickClear) pickClear.addEventListener('click', function () {
+            var changed = false;
+            boxes.forEach(function (box) { if (box.checked) { box.checked = false; changed = true; } });
+            if (changed) updatePicked();
+        });
         if (search) {
             search.addEventListener('input', function () {
                 var needle = faNum(search.value).trim().toLowerCase();
