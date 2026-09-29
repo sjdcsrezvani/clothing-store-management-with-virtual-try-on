@@ -1,3 +1,52 @@
+## 2.7.3 — 1405/07/07 (2026-09-29)
+
+### ارسال گروهی: the blast shows every final text, and test mode refuses strangers
+
+- **Test mode: only the numbers on the list can leave the shop.** A field on
+  the پیامک page holds an allowlist. While it carries any number, every send —
+  the manual blast, a campaign, a follow-up, the monthly digest — is refused
+  for anyone else at the queue, before a row exists, so the history never
+  shows a message that must not be there. An empty field is open sending, and
+  the list lives in the shop's own database, so a deploy never flips the mode
+  by accident. Both send pages say the mode is on and name the numbers, and
+  the blast's summary counts the recipients it turned away.
+- **A blast that fails leaves nothing behind.** The manual send commits once,
+  at the end of the batch: a failure mid-loop rolls the whole thing back and
+  says nothing went out, instead of leaving half the shop queued under a
+  success message.
+- **A forged audience refuses instead of emptying the shop.** An unknown
+  «tier:…» used to slip past the filter and match every customer, and a group
+  name the page does not know fell back to «همه». Both plan nobody now, and
+  the page says the group was not recognised.
+- **The preview shows each recipient's own text.** The bubble on the right
+  always rendered with sample values, so it always looked full. A table beside
+  it renders every recipient's real text and flags the rows that come out
+  blank, so the people a send will skip are visible before the button rather
+  than only in the summary after it.
+- **A pick can be named and recalled.** A tier, a tag, hand-picked customers
+  or typed numbers save under a name and come back from a chip above the form;
+  the × beside a chip drops the name and never touches the queue. Twenty names
+  are kept, newest last.
+- **The picker reads as a filter, and the tick as a tick.** The search field
+  is a pill with a magnifier, a live «N از M», and a clear × that exists only
+  while typing; the hand-pick rows are real rows with a tick on the brand fill
+  instead of a checkbox dump, «انتخاب نمایان‌ها» and «پاک‌کردن» sit beside
+  them, and pasted numbers get a live count of the valid and the invalid ones.
+  The field keeps the shell's own focus ring, so a keyboard reader never loses
+  the one cue they follow. Choosing a template or an audience no longer re-runs
+  the preview and throws the scroll away — the owner presses «پیش‌نمایش
+  مخاطب‌ها» when ready.
+- **The send confirms with the number it is about to queue.** The inline
+  `confirm()` is gone: the button opens the page's own dialog with the
+  template name, the recipient count, and the cap when it bites. Without JS the
+  form posts straight through, exactly as before.
+- **Copy sharpened where it was thin.** The audience counts say «مخاطب»
+  instead of «نفر», the number placeholders show Latin digits like the rest of
+  the page, and the skipped line reads «دیده نشدند» with each count in front of
+  its label.
+
+**Schema change.** None — the database stays on revision 24.
+
 ## 2.7.2 — 1405/07/06 (2026-09-28)
 
 ### درگاه پیامک: the pairing address tells one truth, the quiet phone gets noticed
