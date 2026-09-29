@@ -1125,6 +1125,134 @@ def test_a_new_template_with_an_unbound_slot_is_refused_too(client, authed, db_s
     assert db_session.query(SmsTemplate).filter(SmsTemplate.category == "custom").count() == 0
 
 
+def test_a_refused_save_previews_the_draft_not_the_stored_text(client, authed, db_session):
+    """The bubble after a refusal shows the posted draft — samples for bound
+    slots, blank for holes — because the stored text is not what failed."""
+    ensure_seeded(db_session)
+    custom = create_custom(db_session, name="تبریک عید", body="%var1% عزیز")
+    db_session.commit()
+    token = csrf_token(client, f"/admin/sms/templates/{custom.id}/edit")
+
+    refused = authed.post(f"/admin/sms/templates/{custom.id}", data={
+        "csrf_token": token, "name": "تبریک عید", "body": "سلام %var1%، %var2% ماند",
+        "source_var1": "first_name",
+    })
+
+    assert refused.status_code == 200
+    bubble = refused.text.split('id="sms-bubble"', 1)[1].split("</div>", 1)[0]
+    assert "سلام سارا" in bubble and "ماند" in bubble
+    assert "%var1%" not in bubble and "%var2%" not in bubble
+
+
+def test_a_validate_error_keeps_the_posted_slot_bindings(client, authed, db_session):
+    """An empty name used to reset every slot to «no source». The bindings the
+    form posted survive the refusal now."""
+    ensure_seeded(db_session)
+    custom = create_custom(db_session, name="تبریک عید", body="%var1% عزیز")
+    db_session.commit()
+    token = csrf_token(client, f"/admin/sms/templates/{custom.id}/edit")
+
+    refused = authed.post(f"/admin/sms/templates/{custom.id}", data={
+        "csrf_token": token, "name": "", "body": "%var1% عزیز",
+        "source_var1": "first_name",
+    })
+
+    assert refused.status_code == 200
+    assert "نام قالب را وارد کنید" in refused.text
+    assert 'value="first_name" selected' in refused.text or "first_name" in refused.text
+
+
+def test_a_custom_template_stays_off_when_switched_off(client, authed, db_session):
+    """Editing no longer silently re-activates: the switch is the state."""
+    ensure_seeded(db_session)
+    custom = create_custom(db_session, name="تبریک عید", body="%var1% عزیز")
+    db_session.commit()
+    token = csrf_token(client, f"/admin/sms/templates/{custom.id}/edit")
+
+    saved = authed.post(f"/admin/sms/templates/{custom.id}", data={
+        "csrf_token": token, "name": "تبریک عید", "body": "%var1% عزیز",
+        "source_var1": "first_name",
+    }, follow_redirects=False)
+    assert saved.status_code == 303
+    db_session.expire_all()
+    assert db_session.query(SmsTemplate).filter(
+        SmsTemplate.id == custom.id).one().is_active is False
+
+    on = authed.post(f"/admin/sms/templates/{custom.id}", data={
+        "csrf_token": token, "name": "تبریک عید", "body": "%var1% عزیز",
+        "source_var1": "first_name", "is_active": "on",
+    }, follow_redirects=False)
+    assert on.status_code == 303
+    db_session.expire_all()
+    assert db_session.query(SmsTemplate).filter(
+        SmsTemplate.id == custom.id).one().is_active is True
+
+
+def test_a_builtin_with_an_undeclared_token_is_refused(client, authed, db_session):
+    """Render strips undeclared tokens to blank, so a builtin carrying one
+    cannot be saved — the sender cannot fill what is not declared."""
+    ensure_seeded(db_session)
+    template = get_template(db_session, "welcome")
+    token = csrf_token(client, f"/admin/sms/templates/{template.id}/edit")
+
+    refused = authed.post(f"/admin/sms/templates/{template.id}", data={
+        "csrf_token": token, "name": template.name,
+        "body": "خوش آمدی %var1%، کدت %var9%", "is_active": "on",
+    })
+
+    assert refused.status_code == 200
+    assert "%var9%" in refused.text
+    db_session.expire_all()
+    assert "%var9%" not in (get_template(db_session, "welcome").body or "")
+
+
+def test_absurd_follow_up_days_are_refused_not_clamped(client, authed, db_session):
+    ensure_seeded(db_session)
+    custom = create_custom(db_session, name="پیگیری", body="%var1% عزیز",
+                           trigger_key="follow_up", trigger_days=30)
+    db_session.commit()
+    token = csrf_token(client, f"/admin/sms/templates/{custom.id}/edit")
+
+    refused = authed.post(f"/admin/sms/templates/{custom.id}", data={
+        "csrf_token": token, "name": "پیگیری", "body": "%var1% عزیز",
+        "source_var1": "first_name", "trigger_key": "follow_up", "trigger_days": "999",
+    })
+
+    assert refused.status_code == 200
+    assert "۳۶۵" in refused.text or "365" in refused.text
+    db_session.expire_all()
+    assert db_session.query(SmsTemplate).filter(
+        SmsTemplate.id == custom.id).one().trigger_days == 30
+
+
+def test_a_test_send_needs_a_hole_free_template_and_a_number(client, authed, db_session):
+    ensure_seeded(db_session)
+    custom = create_custom(db_session, name="تبریک عید", body="%var1% عزیز")
+    db_session.commit()
+    token = csrf_token(client, f"/admin/sms/templates/{custom.id}/edit")
+
+    refused = authed.post(f"/admin/sms/templates/{custom.id}/test", data={
+        "csrf_token": token, "phone": "abc",
+    }, follow_redirects=False)
+    assert refused.status_code == 303
+    assert "err=" in refused.headers["location"]
+
+    make_customer(db_session, first_name="سارا", phone="09120000001")
+    ok = authed.post(f"/admin/sms/templates/{custom.id}/test", data={
+        "csrf_token": token, "phone": "0912 000-0001",
+    }, follow_redirects=False)
+    assert ok.status_code == 303
+    assert "err=" not in ok.headers["location"]
+
+    holey = create_custom(db_session, name="سوراخ", body="%var1% عزیز، %var2%")
+    db_session.commit()
+    blocked = authed.post(f"/admin/sms/templates/{holey.id}/test", data={
+        "csrf_token": token, "phone": "09120000001",
+    }, follow_redirects=False)
+    assert blocked.status_code == 303
+    assert "err=" in blocked.headers["location"]
+
+
 def test_a_slot_the_text_does_not_use_may_stay_empty(client, authed, db_session):
     """The rule is about tokens the text uses. An unused slot may sit unbound, or
     it would have become a demand to fill all three every time."""

@@ -270,6 +270,28 @@ def trigger_from_form(key: str, days) -> tuple[str, int]:
     return spec["key"], max(1, min(value, MAX_TRIGGER_DAYS))
 
 
+def validate_trigger_days(key: str, days) -> str:
+    """Why these follow-up days cannot be saved, or "" when they can.
+
+    Empty means the default — the field was never a promise to type a number.
+    Anything typed must be a number inside 1..MAX, because the clamp used to
+    silently turn 999 into 365 and the owner read the 999 back as chosen.
+    """
+    spec = TRIGGERS_BY_KEY.get((key or "").strip())
+    if spec is None or not spec.get("needs_days"):
+        return ""
+    cleaned = to_english_digits(str(days or "")).strip()
+    if not cleaned:
+        return ""
+    try:
+        value = int(cleaned)
+    except (TypeError, ValueError):
+        return "روزهای پیگیری باید عدد باشد."
+    if not 1 <= value <= MAX_TRIGGER_DAYS:
+        return f"روزهای پیگیری باید بین ۱ تا {MAX_TRIGGER_DAYS} باشد."
+    return ""
+
+
 def trigger_info(template) -> dict | None:
     """This template's trigger, or None while it is hand-sent.
 
@@ -627,6 +649,46 @@ def render_text(body: str, values: dict) -> str:
         replacement = "" if value is None else str(value)
         text = text.replace(f"%{key}%", replacement).replace("{" + key + "}", replacement)
     return text
+
+
+def used_tokens(body: str) -> list[str]:
+    """Placeholder names this text carries, in either spelling, first-seen order."""
+    seen: list[str] = []
+    for match in _PLACEHOLDER.finditer(body or ""):
+        token = match.group(1) or match.group(2)
+        if token not in seen:
+            seen.append(token)
+    return seen
+
+
+def undeclared_tokens(body: str, variables) -> list[str]:
+    """Used tokens no declared slot covers — render strips these to blank."""
+    declared = {str(item.get("token")) for item in variables or () if item.get("token")}
+    return [token for token in used_tokens(body) if token not in declared]
+
+
+def preview_draft(body: str, variables) -> str:
+    """What a refused draft would have looked like: samples for bound slots,
+    blank for holes — the same picture a save would have previewed."""
+    resolved = {}
+    for item in variables or ():
+        token = item.get("token")
+        if not token:
+            continue
+        resolved[token] = item.get("sample") if item.get("field") else ""
+    return _PLACEHOLDER.sub("", render_text(body or "", resolved))
+
+
+def body_holes(body: str, variables, *, builtin: bool = False) -> list[dict]:
+    """Tokens in this text that would arrive blank, each as ``{"token": …}``.
+
+    Custom slots need a binding (their sender is nobody); built-in slots need
+    a declaration (their sender fills declared tokens, but render strips
+    undeclared ones whatever the sender hands over).
+    """
+    if builtin:
+        return [{"token": token} for token in undeclared_tokens(body, variables)]
+    return unfilled_in_body(body, variables)
 
 
 def source_value(customer, field: str) -> str:

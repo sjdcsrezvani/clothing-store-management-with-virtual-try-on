@@ -49,6 +49,7 @@ from services.sms_send import (
     manager_view,
     message_filtered,
     message_overview,
+    normalise_phone,
     parse_phone_list,
     plan_from_form,
     preview_body,
@@ -83,6 +84,7 @@ from services.sms_templates import (
     SOURCE_LABELS,
     STATUS_LABELS,
     TRIGGERS,
+    body_holes,
     create_custom,
     customer_for_phone,
     delete_blocked_reason,
@@ -90,6 +92,7 @@ from services.sms_templates import (
     ensure_seeded,
     fire_summary,
     grouped_templates,
+    preview_draft,
     send_info,
     sentences_for,
     sms_metrics,
@@ -99,6 +102,7 @@ from services.sms_templates import (
     unfilled_in_body,
     unfilled_tokens,
     validate,
+    validate_trigger_days,
     values_for_customer,
 )
 from services.templating import templates
@@ -413,11 +417,19 @@ def _form_context(request, db, *, template, edit_mode, values, error="", message
     """
     if draft_variables is not None:
         variables = draft_variables
-        unfilled = unfilled_in_body(values.get("body") or "", variables)
+        draft_body = values.get("body") or ""
+        if template is not None and template.is_builtin:
+            unfilled = body_holes(draft_body, variables, builtin=True)
+        else:
+            unfilled = unfilled_in_body(draft_body, variables)
+        preview = preview_draft(draft_body, variables)
+        metrics = sms_metrics(draft_body)
     else:
         variables = (template_variables(template) if template is not None
                      else list(CUSTOM_VARIABLES))
         unfilled = unfilled_tokens(template)
+        preview = preview_body(template) if template is not None else ""
+        metrics = sms_metrics(template.body or "") if template is not None else sms_metrics("")
     return templates.TemplateResponse(request, "admin/sms_template_form.html", {
         "template": template,
         "edit_mode": edit_mode,
@@ -433,8 +445,8 @@ def _form_context(request, db, *, template, edit_mode, values, error="", message
         "numeric_rules": SMS_NUMERIC_RULES,
         "template_mode_labels": TEMPLATE_MODE_LABELS,
         "CUSTOM_TRIGGER": CUSTOM_TRIGGER,
-        "preview": preview_body(template) if template is not None else "",
-        "metrics": sms_metrics(template.body or "") if template is not None else sms_metrics(""),
+        "preview": preview,
+        "metrics": metrics,
         "send_info": send_info,
         "error": error,
         "msg": message,
@@ -519,19 +531,26 @@ async def admin_sms_template_create(
     if not hasattr(guard, "role"):
         return guard
 
+    # The form is read before any refusal, so every error below can hand the
+    # posted bindings back — a refused save must never reset the owner's slots.
+    form = await request.form()
+    variables = _variables_from_form(form)
+    refused = lambda error: _form_context(
+        request, db, template=None, edit_mode=False,
+        values=_values_from_form(name, body, True), error=error,
+        draft_variables=variables)
+
     error = validate(name, body)
     if error:
-        return _form_context(request, db, template=None, edit_mode=False,
-                             values=_values_from_form(name, body, True), error=error)
-    form = await request.form()
-    trigger_key, trigger_value = trigger_from_form(
-        str(form.get("trigger_key", "") or ""), form.get("trigger_days"))
-    variables = _variables_from_form(form)
+        return refused(error)
+    trigger_key = str(form.get("trigger_key", "") or "")
+    days_error = validate_trigger_days(trigger_key, form.get("trigger_days"))
+    if days_error:
+        return refused(days_error)
+    trigger_key, trigger_value = trigger_from_form(trigger_key, form.get("trigger_days"))
     problem = _unbound_slot_error(body, variables, trigger_key)
     if problem:
-        return _form_context(request, db, template=None, edit_mode=False,
-                             values=_values_from_form(name, body, True), error=problem,
-                             draft_variables=variables)
+        return refused(problem)
     template = create_custom(db, name=name, body=body, variables=variables,
                              trigger_key=trigger_key, trigger_days=trigger_value)
     db.commit()
@@ -577,33 +596,45 @@ async def admin_sms_template_update(
     if template is None:
         raise HTTPException(status_code=404, detail="قالب پیامک یافت نشد")
 
+    form = await request.form()
+    existing = template_variables(template)
+    submitted = _variables_from_form(form, existing) if not template.is_builtin else existing
+    refused = lambda error: _form_context(
+        request, db, template=template, edit_mode=True,
+        values=_values_from_form(name, body, is_active == "on"), error=error,
+        draft_variables=submitted)
+
     error = validate(name, body)
     if error:
-        return _form_context(request, db, template=template, edit_mode=True,
-                             values=_values_from_form(name, body, is_active == "on"),
-                             error=error)
+        return refused(error)
 
     if template.is_builtin:
+        holes = body_holes(body, existing, builtin=True)
+        if holes:
+            names = "، ".join(f"%{item['token']}%" for item in holes)
+            return refused(
+                f"این متن از {names} استفاده می‌کند که در هیچ مقداری تعریف نشده و "
+                f"در پیامک خالی می‌ماند — یا متغیر را از متن بردارید یا قالب دستی "
+                f"بسازید که مقدارش را خودش بگیرد.")
         template.name = name.strip()
         template.body = body
         template.is_active = is_active == "on"
     else:
-        form = await request.form()
-        submitted = _variables_from_form(form, template_variables(template))
         # Only a custom template can fire on its own; the built-ins have their
         # own senders, so their trigger stays empty however the form is posted.
-        trigger_key, trigger_value = trigger_from_form(
-            str(form.get("trigger_key", "") or ""), form.get("trigger_days"))
+        trigger_key = str(form.get("trigger_key", "") or "")
+        days_error = validate_trigger_days(trigger_key, form.get("trigger_days"))
+        if days_error:
+            return refused(days_error)
+        trigger_key, trigger_value = trigger_from_form(trigger_key, form.get("trigger_days"))
         # Checked before anything is written, so a refused save leaves the stored
         # template exactly as it was rather than half-edited in the session.
         problem = _unbound_slot_error(body, submitted, trigger_key)
         if problem:
-            return _form_context(request, db, template=template, edit_mode=True,
-                                 values=_values_from_form(name, body, is_active == "on"),
-                                 error=problem, draft_variables=submitted)
+            return refused(problem)
         template.name = name.strip()
         template.body = body
-        template.is_active = True
+        template.is_active = is_active == "on"
         template.variables = json.dumps(submitted, ensure_ascii=False)
         template.trigger_key, template.trigger_days = trigger_key, trigger_value
     # The legacy settings row is the contract every sender already reads, so it
@@ -692,7 +723,19 @@ async def admin_sms_template_test(
     if template is None:
         raise HTTPException(status_code=404, detail="قالب پیامک یافت نشد")
 
-    target = parse_phone_list(phone)
+    # The send page refuses holey templates before queueing; the test button
+    # holds the same line, or a trial run becomes the hole the gate exists for.
+    holes = body_holes(template.body or "", template_variables(template),
+                       builtin=bool(template.is_builtin))
+    if holes:
+        names = "، ".join(f"%{item['token']}%" for item in holes)
+        return RedirectResponse(
+            url=(f"/admin/sms/templates/{template.id}/edit?err=این قالب از {names} "
+                 f"استفاده می‌کند که خالی می‌ماند؛ اول در ویرایش به آن مقدار بدهید."),
+            status_code=303,
+        )
+
+    target = parse_phone_list(normalise_phone(phone))
     if not target:
         return RedirectResponse(
             url=f"/admin/sms/templates/{template.id}/edit?err=شماره آزمایشی معتبر نیست (مثال: ۰۹۱۲۳۴۵۶۷۸۹).",

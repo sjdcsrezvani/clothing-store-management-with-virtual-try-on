@@ -152,26 +152,35 @@
             </div>
             {% endif %}
 
-            {% if edit_mode and template.is_builtin %}
+            {% if edit_mode %}
             <div class="form-section">
                 <h3>وضعیت</h3>
                 <label class="switch-row">
                     <input type="checkbox" name="is_active" {% if values.is_active %}checked{% endif %}>
                     <span>
                         <strong>
+                            {% if template.is_builtin %}
                             {% if send_info(template).mode == 'auto' %}
                             این پیامک خودکار فرستاده شود
                             {% else %}
                             این پیامک قابل فرستادن باشد
                             {% endif %}
+                            {% else %}
+                            این قالب فعال باشد
+                            {% endif %}
                         </strong>
                         <small>
+                            {% if template.is_builtin %}
                             {% if send_info(template).mode == 'auto' %}
                             خاموش‌کردن، متن را پاک نمی‌کند؛ فقط جلوی ارسال خودکار آن را می‌گیرد
                             و در صندوق و پرونده مشتری هم چیزی از آن دیده نمی‌شود.
                             {% else %}
                             خاموش‌کردن، متن را پاک نمی‌کند؛ فقط تا روشن‌کردن دوباره، این متن
                             از صفحه‌ای که می‌فرستد فرستاده نمی‌شود.
+                            {% endif %}
+                            {% else %}
+                            خاموش‌کردن، متن را پاک نمی‌کند؛ فقط تا روشن‌کردن دوباره نه
+                            دستی فرستاده می‌شود نه خودکار.
                             {% endif %}
                         </small>
                     </span>
