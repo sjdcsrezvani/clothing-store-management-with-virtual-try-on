@@ -1,3 +1,54 @@
+## 2.7.4 — 1405/07/07 (2026-09-29)
+
+### گزارش ارسال: every row keeps its whole text, and a failure gets a second chance
+
+- **A search treats the typed words as words.** `%` and `_` are letters in the
+  box now, not wildcards: «100%» no longer matches the whole shop, and
+  «تخفیف_ویژه» no longer matches «تخفیفXویژه». A number typed the way people
+  write it — spaces, dashes, `+98`, Farsi digits — still finds the row stored
+  as `09…`, because the query is normalised instead of the column.
+- **A failed row can be sent again.** Each ردشده row carries «ارسال دوباره»:
+  the retry queues a fresh row with the original's frozen text, template link,
+  customer, kind and recorded values, to the same phone, with a cleared error
+  and a new journey — so the log keeps both the failure and its second chance.
+  Only `failed` rows retry; anything else comes back as an error with nothing
+  queued, an empty body refuses too, and the test-mode allowlist still turns a
+  stranger's number away. Managers may retry: a second chance changes nothing
+  about a message the shop already approved once.
+- **The whole text is one tap away.** مخاطب and متن are their own columns now.
+  A body longer than 90 characters renders clipped with a «متن کامل» expand
+  beneath it, and the stored gateway error opens the same way instead of hiding
+  behind a `title` attribute — both with a copy button that flips its own label
+  for a second and a half, so a tap visibly lands. On a phone the table stacks
+  into cards with a label on every cell, so no column is lost behind a
+  sideways scroll.
+- **The page takes its own size, and the pager shows numbers.** A per-page
+  control in the heading offers ۱۰، ۲۵ یا ۵۰ rows and travels in every link and
+  form — a filter, a chip, a sort and the pager all keep the size the owner
+  chose, and a number invented in the URL (999, `abc`) falls back to 25 rather
+  than blowing the page up. First page, last page and a window of ±2 around the
+  current one render as real links with an `aria-current` mark on where the
+  reader is and «…» where pages are skipped; previous/next stay.
+- **The log can be read by date, not only by scrolling.** A بازه زمانی select
+  adds همه زمان‌ها، امروز، ۷ روز گذشته، این ماه, cut from the same Jalali
+  calendar the digests use: «این ماه» starts at the first of the Jalali month,
+  not thirty days back, and «امروز» at the local midnight.
+- **A forged link stops meaning what it says.** Unknown status, source, order or
+  date values are replaced with the defaults before anything renders, so the
+  address bar can never claim a filter the list did not apply.
+- **The digest keeps its month in every filter.** Each خلاصه ماهانه row carries
+  its «مرداد ۱۴۰۵» chip whatever the other filters say, so one past month stays
+  findable from a phone-number search instead of only from the digests view.
+- **The filter speaks about a مبدأ, not a person.** The source select and its
+  chips say مبدأ — where a message came from — instead of فرستنده, now that the
+  log reads campaigns and monthly digests beside the shop's own messages.
+- **The log confirms with the row it is about.** The retry and the monthly
+  resend open the page's own dialog, naming the phone and the recipient count,
+  instead of a native `confirm()`; without JS the forms post straight through,
+  exactly as before.
+
+**Schema change.** None — the database stays on revision 24.
+
 ## 2.7.3 — 1405/07/07 (2026-09-29)
 
 ### ارسال گروهی: the blast shows every final text, and test mode refuses strangers
