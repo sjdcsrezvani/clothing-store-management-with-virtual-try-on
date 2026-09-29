@@ -1522,18 +1522,22 @@ async def admin_birthdays(request: Request, db: Session = Depends(get_db)):
     if not hasattr(guard, "role"):
         return guard
 
-    from services.sms import get_sms_config
+    from services.sms import birthday_sms_vars, get_sms_config
+    from services.sms_templates import render_text, sms_metrics
     from services.tier import get_customers_for_birthday_check, get_tier_config
 
     days_before = get_tier_config(db)["birthday_sms_days_before"]
     result = get_customers_for_birthday_check(db, days_before)
-    pattern_ready = bool(get_sms_config(db)["birthday_pattern"])
+    pattern = get_sms_config(db)["birthday_pattern"]
+    pattern_ready = bool(pattern)
 
     rows = []
     for customer, days_until, occasion in result["eligible"]:
         month_day = customer.birth_month_day if occasion == "customer" else customer.child_birthday
         year = customer.birth_year if occasion == "customer" else customer.child_birth_year
         turning = jalali_age(year, month_day)
+        body = render_text(pattern, birthday_sms_vars(
+            customer.first_name, customer.child_name, occasion)) if pattern else ""
         rows.append({
             "customer": customer,
             "occasion": occasion,
@@ -1546,12 +1550,29 @@ async def admin_birthdays(request: Request, db: Session = Depends(get_db)):
             "days_label": ("امروز" if days_until == 0
                            else f"{to_persian_digits(str(days_until))} روز دیگر"),
             "already_sent": _birthday_marker(db, customer, occasion) is not None,
+            "body": body,
+            "segments": sms_metrics(body)["segments"] if body else 0,
         })
     rows.sort(key=lambda row: row["days_until"])
 
+    page_arg_value = (request.query_params.get("page") or "1").strip()
+    page = int(page_arg_value) if page_arg_value.isdigit() else 1
+    per_page_raw = (request.query_params.get("per_page") or "25").strip()
+    per_page = int(per_page_raw) if per_page_raw.isdigit() and int(per_page_raw) in (10, 25, 50) else 25
+    total = len(rows)
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = min(max(1, page), total_pages)
+
     return templates.TemplateResponse(request, "admin/birthdays.html", {
-        "rows": rows,
+        "rows": rows[(page - 1) * per_page: page * per_page],
+        "total": total,
+        "page": page,
+        "total_pages": total_pages,
+        "per_page": per_page,
+        "per_page_options": (10, 25, 50),
         "blocked": result["blocked"],
+        "blocked_reasons": result["blocked_reasons"],
+        "silver": result["silver"],
         "days_before": days_before,
         "pattern_ready": pattern_ready,
         "msg": request.query_params.get("msg", ""),
@@ -1741,8 +1762,21 @@ async def admin_tier_downgrades(request: Request, db: Session = Depends(get_db))
         return guard
 
     plan = downgrade_candidates(db)
+    all_rows = plan["rows"]
+    page_arg_value = (request.query_params.get("page") or "1").strip()
+    page = int(page_arg_value) if page_arg_value.isdigit() else 1
+    per_page_raw = (request.query_params.get("per_page") or "25").strip()
+    per_page = int(per_page_raw) if per_page_raw.isdigit() and int(per_page_raw) in (10, 25, 50) else 25
+    total = len(all_rows)
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = min(max(1, page), total_pages)
     return templates.TemplateResponse(request, "admin/tier_downgrades.html", {
-        "rows": plan["rows"],
+        "rows": all_rows[(page - 1) * per_page: page * per_page],
+        "total": total,
+        "page": page,
+        "total_pages": total_pages,
+        "per_page": per_page,
+        "per_page_options": (10, 25, 50),
         "rule": {"months": plan["months"], "enabled": plan["enabled"],
                  "months_label": plan["months_label"]},
         "skipped_archived": plan["skipped_archived"],
@@ -1796,17 +1830,57 @@ async def admin_tier_up(request: Request, db: Session = Depends(get_db)):
     if not hasattr(guard, "role"):
         return guard
 
+    from services.sms import get_sms_config
+    from services.sms_send import message_block_reason
+    from services.sms_templates import render_text, sms_metrics
+
     customers = sorted(
         tier_up_candidates(db),
         key=lambda c: TIER_RANK[c.tier],
         reverse=True,
     )
+    blocked = sum(1 for customer in customers
+                  if message_block_reason(customer, transactional=False))
+    shown = [customer for customer in customers
+             if not message_block_reason(customer, transactional=False)]
+
+    sms_config = get_sms_config(db)
+    patterns = {"gold": sms_config["tier_up_gold_pattern"],
+                "diamond": sms_config["tier_up_diamond_pattern"]}
+    pattern_ready = bool(patterns["gold"] and patterns["diamond"])
+
+    rows = []
+    for customer in shown:
+        body = render_text(patterns[customer.tier] or "",
+                           {"var1": customer.first_name or "مشتری",
+                            "var2": str(customer.total_points)})
+        rows.append({"customer": customer, "body": body,
+                     "segments": sms_metrics(body)["segments"] if body else 0})
+
+    page_arg_value = (request.query_params.get("page") or "1").strip()
+    page = int(page_arg_value) if page_arg_value.isdigit() else 1
+    per_page_raw = (request.query_params.get("per_page") or "25").strip()
+    per_page = int(per_page_raw) if per_page_raw.isdigit() and int(per_page_raw) in (10, 25, 50) else 25
+    total = len(rows)
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = min(max(1, page), total_pages)
 
     return templates.TemplateResponse(request, "admin/tier_up.html", {
-        "customers": customers,
+        "rows": rows[(page - 1) * per_page: page * per_page],
+        "total": total,
+        "page": page,
+        "total_pages": total_pages,
+        "per_page": per_page,
+        "per_page_options": (10, 25, 50),
+        "blocked": blocked,
+        "pattern_ready": pattern_ready,
+        "customers": shown,
         "limit": TIER_UP_SMS_LIMIT,
         "sent_msg": request.query_params.get("sent"),
         "skipped_msg": request.query_params.get("skipped"),
+        "ineligible_msg": request.query_params.get("ineligible"),
+        "refused_msg": request.query_params.get("refused"),
+        "err": request.query_params.get("err"),
         "fmt": fmt,
         "jalali_str": jalali_str,
     })
