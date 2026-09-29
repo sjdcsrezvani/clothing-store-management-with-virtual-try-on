@@ -3189,6 +3189,32 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
 .follow-up-group > p.muted { margin: 0 0 0.5rem; font-size: 0.8rem; }
 .follow-up-table .sms-body-cell { max-width: 24rem; }
 .follow-up-table .sms-name small { display: block; }
+/* Bulk tools: search, toggles and the live match count in one row. */
+.follow-up-tools { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
+.follow-up-tools .follow-up-search { flex: 1 1 200px; min-width: 0; }
+.follow-up-tools .picked-tools { display: inline-flex; gap: 0.35rem; }
+/* The send bar sticks: a long waiting list keeps its decision in reach. */
+.follow-up-actions { position: sticky; bottom: 0; background: var(--card);
+  padding: 0.6rem 0 0.2rem; border-top: 1px solid var(--rule); }
+/* Checkbox cell meets the touch target without stretching the row. */
+.follow-up-table .follow-check input { width: 1.35rem; height: 1.35rem; }
+/* Skipped reasons fold away; message cells unfold past 90 chars. */
+.skipped-details { margin: 0 0 0.6rem; font-size: 0.8rem; }
+.skipped-details summary { cursor: pointer; color: var(--ink-soft); min-height: 2rem;
+  display: inline-flex; align-items: center; }
+.skipped-details ul { list-style: none; margin: 0.3rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; }
+.follow-up-table .sms-expand { margin-top: 0.35rem; }
+.follow-up-table .sms-expand summary { cursor: pointer; color: var(--info-ink); font-size: 0.78rem;
+  min-height: 2rem; display: inline-flex; align-items: center; }
+.follow-up-table .sms-expand p { margin: 0.35rem 0 0; font-size: 0.84rem; overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+  .follow-up-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .follow-up-table, .follow-up-table tbody, .follow-up-table tr, .follow-up-table td { display: block; }
+  .follow-up-table tr { border: 1px solid var(--rule); border-radius: var(--radius-sm); margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; }
+  .follow-up-table td { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; border: none; padding: 0.25rem 0; text-align: start; }
+  .follow-up-table td::before { content: attr(data-label); color: var(--ink-soft); font-size: 0.72rem; flex-shrink: 0; }
+  .follow-up-table td.follow-check { align-items: center; }
+}
 .sms-failed { color: var(--persimmon); font-size: 0.72rem; }
 .sms-error { display: block; max-width: 12rem; color: var(--persimmon); font-size: 0.72rem; }
 .sms-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; align-items: center; }

@@ -279,6 +279,84 @@ def test_buying_again_re_arms_the_follow_up(db_session):
     assert len(queued_texts(db_session)) == 2
 
 
+def _record_sale(db, customer, *, days_ago=40):
+    sale = Sale(customer_id=customer.id, total_amount=100000, final_amount=100000,
+                created_at=datetime.now(timezone.utc) - timedelta(days=days_ago))
+    db.add(sale)
+    db.commit()
+    return sale
+
+
+def test_a_second_purchase_the_same_day_re_arms_the_follow_up(db_session):
+    from services.sms_triggers import _follow_up_ref
+
+    template = make_follow_up_template(db_session, days=30)
+    customer = make_customer(db_session, days_since_purchase=40)
+    first_sale = _record_sale(db_session, customer)
+
+    assert asyncio.run(fire_follow_up_sms(db_session))["sent"] == 1
+    # Same calendar date, second invoice: a new event, not the same buy twice.
+    second_sale = _record_sale(db_session, customer)
+    assert second_sale.id != first_sale.id
+    ref, legacy = _follow_up_ref(db_session, customer)
+    assert ref != legacy and str(second_sale.id) in ref
+
+    assert asyncio.run(fire_follow_up_sms(db_session))["sent"] == 1
+    assert len(queued_texts(db_session)) == 2
+
+
+def test_a_legacy_date_ref_still_guards_after_the_upgrade(db_session):
+    from services.sms_triggers import already_fired
+
+    template = make_follow_up_template(db_session, days=30)
+    customer = make_customer(db_session, days_since_purchase=40)
+    stamp = customer.last_purchase_date.date().isoformat()
+    db_session.add(SmsMessage(phone=customer.phone, body="x", status="sent",
+                              source="follow_up", kind="marketing",
+                              customer_id=customer.id, template_id=template.id,
+                              ref=f"purchase:{stamp}"))
+    db_session.commit()
+
+    assert already_fired(db_session, template, customer,
+                         f"purchase:9999:{stamp}", legacy_ref=f"purchase:{stamp}") is True
+    assert follow_up_candidates(db_session, template=template)["due"] == []
+
+
+def test_a_failed_send_does_not_block_its_own_retry(db_session):
+    template = make_follow_up_template(db_session, days=30)
+    customer = make_customer(db_session, days_since_purchase=40)
+    assert asyncio.run(fire_follow_up_sms(db_session))["sent"] == 1
+
+    row = db_session.query(SmsMessage).one()
+    row.status = "failed"
+    row.error = "No service"
+    db_session.commit()
+
+    plan = follow_up_candidates(db_session, template=template)
+    assert [c.id for c in plan["due"]] == [customer.id]
+    assert asyncio.run(fire_follow_up_sms(db_session))["sent"] == 1
+
+
+def test_follow_up_plans_page_per_template_but_count_everything(db_session):
+    from services.sms_triggers import follow_up_plans
+
+    make_follow_up_template(db_session, days=30)
+    for index in range(3):
+        make_customer(db_session, days_since_purchase=40, phone=f"091200000{10 + index}",
+                      referral_code=f"TRG{100 + index}")
+
+    plans = follow_up_plans(db_session, per_page=2)
+    assert len(plans) == 1
+    assert plans[0]["total"] == 3
+    assert plans[0]["total_pages"] == 2
+    assert len(plans[0]["rows"]) == 2
+
+    second = follow_up_plans(db_session, per_page=2,
+                             pages={plans[0]["template"].id: 2})
+    assert len(second[0]["rows"]) == 1
+    assert second[0]["page"] == 2
+
+
 def test_a_follow_up_respects_consent_and_the_block_list(db_session):
     make_follow_up_template(db_session, days=30)
     make_customer(db_session, phone="09120000021", referral_code="TRG021",
