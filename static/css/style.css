@@ -3324,7 +3324,8 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
 .picker-search-wrap .ui-icon { flex-shrink: 0; color: var(--ink-soft); }
 .picker-search-wrap .sms-picker-search { flex: 1 1 auto; min-width: 0; border: none;
   background: none; margin-bottom: 0; padding: 0.3rem 0; }
-.picker-search-wrap .sms-picker-search:focus { outline: none; }
+/* No own focus rule here: the shared `input:focus` ring is the cue, so the
+   pill does not take the one outline a keyboard reader follows away. */
 .picker-search-wrap:focus-within { border-color: var(--candy); }
 .picker-search-clear { border: none; background: none; color: var(--ink-soft);
   font-size: 1.1rem; line-height: 1; cursor: pointer; padding: 0.2rem 0.3rem;
@@ -3352,7 +3353,7 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
   display: inline-flex; align-items: center; justify-content: center; }
 .sms-pick-row:hover { background: var(--hover-surface); }
 .sms-pick-row:has(input:checked) { border-color: var(--candy); background: var(--surface-soft); }
-.sms-pick-row:has(input:checked) .pick-tick { background: var(--candy); border-color: var(--candy); color: var(--brand-label); }
+.sms-pick-row:has(input:checked) .pick-tick { background: var(--brand-fill); border-color: var(--brand-fill); color: var(--brand-label); }
 .sms-pick-row:has(input:focus-visible) { outline: 2px solid var(--candy); outline-offset: 1px; }
 .sms-summary { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
 .sms-summary li { display: flex; justify-content: space-between; gap: 0.8rem; font-size: 0.84rem; }
