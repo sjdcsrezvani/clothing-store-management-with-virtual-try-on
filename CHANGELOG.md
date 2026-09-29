@@ -1,3 +1,56 @@
+## 2.7.5 — 1405/07/07 (2026-09-29)
+
+### قالب پیامک: the editor shows the draft it will really send
+
+- **A refused save shows the draft, not the stored text.** When a save is turned
+  away — an empty body, an impossible عدد روز, a placeholder with no source — the
+  editor comes back with the sentence the owner just typed, previewed and
+  measured, instead of the version sitting in the database. The error lands on
+  the words that caused it.
+- **A refused save hands the slot bindings back.** Whatever the owner had picked
+  for each متغیر travels with the refusal and is rendered as chosen, so a
+  rejection costs one correction instead of a re-entry.
+- **A switch that means off stays off.** A custom template saved with «این قالب
+  فعال باشد» switched off is stored inactive; before, the save quietly turned it
+  back on and the shop kept sending a text the owner had stopped.
+- **A built-in refuses a placeholder it does not declare.** `%var9%` pasted into
+  a built-in used to be stored as a token no sender would ever fill; it is
+  refused now, the offending `%var9%` is named in the error, and the text is
+  left alone.
+- **روزهای پیگیری are checked, not clamped.** A follow-up window of `999` used to
+  be silently rounded down to the maximum; anything outside ۱ تا ۳۶۵, or a value
+  that is not a number at all, is refused with a message that says which rule it
+  broke and the stored template is left exactly as it was.
+- **The test send is gated, and the number is read the way people write it.** A
+  template holding a hole cannot be test-sent at all: the test button turns the
+  owner back with the reason and the tokens to blame, so a trial run cannot
+  become the broken message the gate exists to prevent. The number is normalised
+  first — spaces, dashes, `+98` and Farsi digits all reach the same stored shape.
+- **The segment count is the carrier's arithmetic, not an estimate.** Server and
+  editor now agree on real multipart sizing: the first segment holds 70
+  characters and each one after it 67 in فارسی, and 160 / 153 in لاتین. A body
+  that will be billed as three messages says three. The encoding label is simply
+  فارسی or لاتین.
+- **Both spellings of a placeholder work, and every slot shows its name.**
+  `%var1%` and `{var1}` are the same slot; the picker lists each one beside the
+  label it will fill, so the owner can read what the customer will receive before
+  the customer does.
+- **The editor prices the send while it is being typed.** The cost note states
+  that each segment is billed separately and that a body past 612 characters is
+  refused, and the test card says plainly that it sends the saved text, not the
+  پیش‌نویس above it.
+- **Dirty work is visible.** A dot on the save button, a note beside the test
+  button and a browser guard on leaving the page all point at the same fact: the
+  box no longer matches what is stored.
+- **The paid test send names what it will cost.** The test send goes through the
+  page's own dialog with the recipient and the price, instead of a native
+  `confirm()`; without JS the form posts straight through, exactly as before.
+- **On a phone the preview leads.** The editor becomes a single column with the
+  preview first and the chips padded out to a real touch target, so the message
+  being written sits above the fold instead of below it.
+
+**Schema change.** None — the database stays on revision 24.
+
 ## 2.7.4 — 1405/07/07 (2026-09-29)
 
 ### گزارش ارسال: every row keeps its whole text, and a failure gets a second chance
