@@ -3560,6 +3560,14 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
     content: attr(data-label); color: var(--ink-soft); font-size: 0.72rem; flex-shrink: 0; }
   .cash-shift-filter .form-group { flex: 1 1 100%; min-width: 0; }
 }
+/* The shift statement on paper: the figures and the rows are the file, the
+   buttons and the modal surface are the screen's and die with it. One column,
+   ink on the theme's paper, rows un-boxed so a long shift staples cleanly. */
+@media print {
+  .cash-movements tr { border: none; border-bottom: 1px solid var(--paper-mid); border-radius: 0; margin-bottom: 0; padding: 0; }
+  .cash-movements td { padding: 0.2rem 0; }
+  #cashbox-confirm, #cashbox-reverse-confirm { display: none !important; }
+}
 
 /* One card alone in the grid would take half a row and leave a gap: the
    cashier's shift shows the float and nothing else. */

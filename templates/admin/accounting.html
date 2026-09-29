@@ -112,4 +112,53 @@
         <div class="stat-value tnum">{{ fmt(cashbox.closing) }} ت</div>
         <div class="stat-sub"><a href="/admin/cashbox">جزئیات صندوق ←</a></div>
     </div>
-</div>{% endblock %}
+</div>
+
+{# ─── Cash movement of this range: the drawer page is a shift, this page is a
+   range, so the range's cash-only arithmetic lives here. ─── #}
+<section class="card">
+    <div class="section-heading-row">
+        <div>
+            <h3>حرکت نقدی این بازه</h3>
+            <p class="muted">فقط پول نقد. خرید فاکتوری، کارتخوان و نسیه در همین صفحه، «تطبیق کارتخوان» و «حساب نسیه» است.</p>
+        </div>
+    </div>
+    <div class="stats-grid">
+        <div class="stat-card accent-pine">
+            <div class="stat-label">ورودی‌ها</div>
+            <div class="stat-value tnum">{{ fmt(cashbox.cash_in) }} تومان</div>
+            <div class="stat-sub">فروش نقدی {{ fmt(cashbox.cash_sales) }} تومان · دریافت نسیه {{ fmt(cashbox.credit_payments) }} تومان</div>
+        </div>
+        <div class="stat-card accent-persimmon">
+            <div class="stat-label">خروجی‌ها</div>
+            <div class="stat-value tnum">{{ fmt(cashbox.cash_out) }} تومان</div>
+            <div class="stat-sub">
+                مرجوعی {{ fmt(cashbox.refunds) }} ·
+                هزینه {{ fmt(cashbox.expenses) }} ·
+                تأمین‌کننده {{ fmt(cashbox.supplier_payments) }} ·
+                برداشت {{ fmt(cashbox.withdrawals) }}
+                (تومان)
+            </div>
+        </div>
+        {% if cashbox_timeless %}
+        <div class="stat-card accent-ink">
+            <div class="stat-label">خالص حرکت بازه</div>
+            <div class="stat-value tnum">{{ fmt(cashbox_net) }} تومان</div>
+            <div class="stat-sub">ورودی منهای خروجی — برای «همه» موجودی پایانی معنی ندارد</div>
+        </div>
+        {% else %}
+        <div class="stat-card accent-candy">
+            <div class="stat-label">موجودی پایان بازه</div>
+            <div class="stat-value tnum">{{ fmt(cashbox.closing) }} تومان</div>
+            <div class="stat-sub">شروع {{ fmt(cashbox.opening) }} تومان به‌علاوهٔ حرکت این بازه</div>
+        </div>
+        {% endif %}
+    </div>
+    {% if not cashbox_timeless %}
+    <p class="muted cash-note">
+        «موجودی پایان بازه» حرکت نقدی همین بازه را روی موجودی ابتدای روز می‌سنجد و موجودی واقعی کشو نیست؛
+        پولی که همین حالا در کشو است را فقط بستن شیفت نشان می‌دهد.
+    </p>
+    {% endif %}
+</section>
+{% endblock %}

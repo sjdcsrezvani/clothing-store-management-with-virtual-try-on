@@ -153,9 +153,10 @@ def test_the_pages_that_take_a_period_say_which_range_they_used(client, authed):
     assert "شناخته نشد" in accounting
     assert '<option value="month" selected>' in accounting
 
+    # The drawer takes no period at all — the range's arithmetic lives on سود و
+    # زیان — so a stray ?period= is ignored rather than answered-with-notice.
     cashbox = client.get("/admin/cashbox?period=quarter").text
-    assert "شناخته نشد" in cashbox
-    assert '<option value="month" selected>' in cashbox
+    assert "شناخته نشد" not in cashbox
 
     # An unreadable custom range is the same story, with the dates left on screen
     # for the reader to correct.

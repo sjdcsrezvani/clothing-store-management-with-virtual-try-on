@@ -6,11 +6,16 @@
 دریافت یا برداشتی باشد که ساخته است.
 {% endset %}
 {% set page_title %}شیفت صندوق #{{ session.id }}{% endset %}
+{% set print_heading %}صورت شیفت صندوق #{{ session.id }} — {{ row.opener }}{% endset %}
 {% set page_actions %}
 <a href="/admin/cashbox" class="btn btn-ghost">صندوق</a>
 {% if row.session.status == 'open' %}
 <a href="/admin/cashbox" class="btn btn-ghost">بازگشت به شیفت جاری</a>
 {% endif %}
+{% if verify %}
+<a href="/admin/cashbox/sessions/{{ session.id }}/export" class="btn btn-ghost screen-only"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-backup"/></svg>خروجی CSV</a>
+{% endif %}
+<button type="button" class="btn btn-ghost screen-only" onclick="window.print()">چاپ صورت</button>
 {% endset %}
 {% include 'partials/page_header.html' %}
 
@@ -98,7 +103,7 @@
                     <th scope="col">نوع</th>
                     <th scope="col">توضیح</th>
                     <th scope="col">مبلغ</th>
-                    <th scope="col"></th>
+                    <th scope="col" class="screen-only"><span class="sr-only">اقدام</span></th>
                 </tr>
             </thead>
             <tbody>
@@ -123,7 +128,7 @@
                     <td class="tnum" dir="ltr" data-label="مبلغ">
                         {{ '+' if row_movement.direction == 'in' else '-' }}{{ fmt(row_movement.amount) }} تومان
                     </td>
-                    <td data-label="اقدام">
+                    <td data-label="اقدام" class="screen-only">
                         {% if row_movement.kind == 'withdrawal' and verify and session.status == 'open'
                                and not row_movement.reversed %}
                         <form method="post" action="/admin/cashbox/withdrawals/{{ row_movement.entry_id }}/reverse"

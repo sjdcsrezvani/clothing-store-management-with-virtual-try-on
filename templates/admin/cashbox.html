@@ -33,6 +33,11 @@
         <span class="status-badge is-open">باز</span>
     </div>
 
+    {# Card sales never enter the till math, so naming their total compromises
+       no count — and a cashier who has taken cards all morning otherwise goes
+       looking for that money in the figures above. #}
+    <p class="muted cash-note">فروش کارتخوان امروز {{ fmt(card_today) }} تومان است؛ در «تطبیق کارتخوان» شمرده می‌شود، نه اینجا.</p>
+
     {% if shift.stale %}
     <div class="alert alert-warning" role="status">
         این شیفت از {{ jalali_str(shift.session.opened_at, with_time=False) }} باز مانده است؛
@@ -183,10 +188,10 @@
             </p>
         </div>
         <div class="list-heading-actions">
+            {% if verify %}
+            <a href="/admin/cashbox/export?q={{ q | urlencode }}&outcome={{ outcome }}" class="btn btn-sm btn-ghost"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-backup"/></svg>خروجی CSV</a>
+            {% endif %}
             <form method="get" action="/admin/cashbox" class="per-page-form">
-                <input type="hidden" name="period" value="{{ period }}">
-                <input type="hidden" name="start_date" value="{{ start_date }}">
-                <input type="hidden" name="end_date" value="{{ end_date }}">
                 <input type="hidden" name="q" value="{{ q }}">
                 <input type="hidden" name="outcome" value="{{ outcome }}">
                 <label class="sr-only" for="shift-per-page">تعداد در صفحه</label>
@@ -200,9 +205,6 @@
     </div>
 
     <form method="get" action="/admin/cashbox" class="search-form cash-shift-filter">
-        <input type="hidden" name="period" value="{{ period }}">
-        <input type="hidden" name="start_date" value="{{ start_date }}">
-        <input type="hidden" name="end_date" value="{{ end_date }}">
         <input type="hidden" name="per_page" value="{{ per_page }}">
         <div class="form-group">
             <label class="sr-only" for="shift-search">جست‌وجوی بازکننده</label>
@@ -221,7 +223,7 @@
             </select>
         </div>
         <button type="submit" class="btn btn-primary">جست‌وجو</button>
-        {% if q or outcome %}<a class="btn btn-ghost" href="/admin/cashbox?period={{ period }}">پاک‌کردن</a>{% endif %}
+        {% if q or outcome %}<a class="btn btn-ghost" href="/admin/cashbox">پاک‌کردن</a>{% endif %}
     </form>
 
     {% if sessions %}
@@ -263,7 +265,7 @@
     </div>
     {% if total_pages > 1 %}
     <nav class="product-pagination" aria-label="صفحه‌بندی شیفت‌ها">
-        {% set qs_tail = "per_page=" ~ per_page ~ "&period=" ~ period ~ "&start_date=" ~ start_date ~ "&end_date=" ~ end_date ~ "&q=" ~ (q | urlencode) ~ "&outcome=" ~ outcome %}
+        {% set qs_tail = "per_page=" ~ per_page ~ "&q=" ~ (q | urlencode) ~ "&outcome=" ~ outcome %}
         {% if page > 1 %}<a class="btn btn-sm btn-ghost" href="?page={{ page - 1 }}&{{ qs_tail }}">صفحه قبل</a>{% endif %}
         {% for p in range(1, total_pages + 1) %}
         {% if p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
@@ -277,64 +279,13 @@
     {% else %}
     <div class="empty-state">
         <h3>{% if q or outcome %}شیفتی با این مشخصات نیست{% else %}هنوز شیفتی بسته نشده است{% endif %}</h3>
-        <p>{% if q or outcome %}جست‌وجو یا نتیجه را عوض کنید؛ یا <a href="/admin/cashbox?period={{ period }}">همه شیفت‌ها</a> را ببینید.
+        <p>{% if q or outcome %}جست‌وجو یا نتیجه را عوض کنید؛ یا <a href="/admin/cashbox">همه شیفت‌ها</a> را ببینید.
         {% else %}از این پس هر بار که صندوق بسته شود، شمارش و اختلافش همین‌جا می‌ماند.{% endif %}</p>
     </div>
     {% endif %}
 </section>
 
 {% if verify %}
-{# ─── The period, which is accounting and not a drawer ─────────────────────── #}
-{% set filter_action = '/admin/cashbox' %}
-{% set filter_id = 'cash' %}
-{% include 'partials/period_filter.html' %}
-
-<section class="card">
-    <div class="section-heading-row">
-        <div>
-            <h3>حرکت نقدی این بازه</h3>
-            <p class="muted">فقط پول نقد. خرید فاکتوری، کارتخوان و نسیه در «سود و زیان»، «تطبیق کارتخوان» و «حساب نسیه» است.</p>
-        </div>
-    </div>
-    <div class="stats-grid">
-        <div class="stat-card accent-pine">
-            <div class="stat-label">ورودی‌ها</div>
-            <div class="stat-value tnum">{{ fmt(report.register.cash_in) }} تومان</div>
-            <div class="stat-sub">فروش نقدی {{ fmt(report.register.cash_sales) }} تومان · دریافت نسیه {{ fmt(report.register.credit_payments) }} تومان</div>
-        </div>
-        <div class="stat-card accent-persimmon">
-            <div class="stat-label">خروجی‌ها</div>
-            <div class="stat-value tnum">{{ fmt(report.register.cash_out) }} تومان</div>
-            <div class="stat-sub">
-                مرجوعی {{ fmt(report.register.refunds) }} ·
-                هزینه {{ fmt(report.register.expenses) }} ·
-                تأمین‌کننده {{ fmt(report.register.supplier_payments) }} ·
-                برداشت {{ fmt(report.register.withdrawals) }}
-                (تومان)
-            </div>
-        </div>
-        {% if report.timeless %}
-        <div class="stat-card accent-ink">
-            <div class="stat-label">خالص حرکت بازه</div>
-            <div class="stat-value tnum">{{ fmt(report.net) }} تومان</div>
-            <div class="stat-sub">ورودی منهای خروجی — برای «همه» موجودی پایانی معنی ندارد</div>
-        </div>
-        {% else %}
-        <div class="stat-card accent-candy">
-            <div class="stat-label">موجودی پایان بازه</div>
-            <div class="stat-value tnum">{{ fmt(report.register.closing) }} تومان</div>
-            <div class="stat-sub">شروع {{ fmt(report.register.opening) }} تومان به‌علاوهٔ حرکت این بازه</div>
-        </div>
-        {% endif %}
-    </div>
-    {% if not report.timeless %}
-    <p class="muted cash-note">
-        «موجودی پایان بازه» حرکت نقدی همین بازه را روی موجودی ابتدای روز می‌سنجد و موجودی واقعی کشو نیست؛
-        پولی که همین حالا در کشو است را فقط بستن شیفت نشان می‌دهد.
-    </p>
-    {% endif %}
-</section>
-
 {# ─── The default float, which matters once ────────────────────────────────── #}
 <section class="card">
     <details class="cash-default">

@@ -529,6 +529,12 @@ async def admin_accounting(
         "reconciliation": checks,
         "debts": debts,
         "cashbox": cashbox,
+        # The cash-movement section lives here now, not on the cashbox page:
+        # the drawer page is a shift, this page is a range. For «همه» there is
+        # no float to have started from, so a closing balance would be
+        # arithmetic about nothing; the net movement means something instead.
+        "cashbox_timeless": window.period == "all",
+        "cashbox_net": cashbox["cash_in"] - cashbox["cash_out"],
         "payment_labels": PAYMENT_LABELS,
         "today_jalali": jalali_str(datetime.now(timezone.utc), with_time=False),
         "fmt": fmt,
@@ -3098,12 +3104,39 @@ def _withdrawals_of(summary: dict) -> list:
     return [row for row in summary["movements"] if row["kind"] == "withdrawal"]
 
 
+def _filtered_shift_rows(db, *, verifier: bool, user_id: int, q: str = "", outcome: str = "") -> list:
+    """Every shift the reader may see, newest first, filters already applied.
+
+    One definition for the page and the history export: a file of a different
+    set of shifts than the screen showed would be a file the shop did not ask
+    for. An unknown outcome is no filter rather than an empty list.
+    """
+    query = db.query(CashSession).order_by(CashSession.opened_at.desc())
+    if not verifier:
+        # A cashier reads their own shifts, not the rest of the shop's day.
+        query = query.filter(CashSession.cashier_user_id == user_id)
+    needle = (q or "").strip()
+    if needle:
+        # Who opened it is a name, not an id, so the search joins the staff
+        # table rather than asking for a number nobody memorises.
+        query = (
+            query.join(StaffUser, StaffUser.id == CashSession.cashier_user_id)
+            .filter(or_(
+                StaffUser.full_name.ilike(f"%{needle}%"),
+                StaffUser.username.ilike(f"%{needle}%"),
+            ))
+        )
+    listed = query.all()
+    names = _staff_names(db, [s.cashier_user_id for s in listed] + [s.manager_user_id for s in listed])
+    rows = [_cash_session_row(s, names) for s in listed]
+    if outcome in ("open", "balanced", "short", "over", "abandoned"):
+        rows = [row for row in rows if row["outcome"] == outcome]
+    return rows
+
+
 @router.get("/cashbox", response_class=HTMLResponse)
 async def admin_cashbox(
     request: Request,
-    period: str = "today",
-    start_date: str = "",
-    end_date: str = "",
     page: str = "1",
     per_page: str = "25",
     q: str = "",
@@ -3138,26 +3171,7 @@ async def admin_cashbox(
             shift["register"] = summary["register"]
             shift["expected"] = summary["register"]["closing"]
 
-    open_shifts = db.query(CashSession).order_by(CashSession.opened_at.desc())
-    if not verifier:
-        # A cashier reads their own shifts, not the rest of the shop's day.
-        open_shifts = open_shifts.filter(CashSession.cashier_user_id == guard.id)
-    needle = q.strip()
-    if needle:
-        # Who opened it is a name, not an id, so the search joins the staff
-        # table rather than asking for a number nobody memorises.
-        open_shifts = (
-            open_shifts.join(StaffUser, StaffUser.id == CashSession.cashier_user_id)
-            .filter(or_(
-                StaffUser.full_name.ilike(f"%{needle}%"),
-                StaffUser.username.ilike(f"%{needle}%"),
-            ))
-        )
-    listed = open_shifts.all()
-    names = _staff_names(db, [s.cashier_user_id for s in listed] + [s.manager_user_id for s in listed])
-    rows = [_cash_session_row(s, names) for s in listed]
-    if outcome in ("open", "balanced", "short", "over", "abandoned"):
-        rows = [row for row in rows if row["outcome"] == outcome]
+    rows = _filtered_shift_rows(db, verifier=verifier, user_id=guard.id, q=q, outcome=outcome)
 
     page_arg_value = (page or "1").strip()
     page_int = int(page_arg_value) if page_arg_value.isdigit() else 1
@@ -3167,27 +3181,17 @@ async def admin_cashbox(
     total_pages = max(1, (total_shifts + per_page_int - 1) // per_page_int)
     page_int = min(max(1, page_int), total_pages)
 
-    window = period_range(period, start_date or None, end_date or None)
-    report = None
-    settings_opening = None
-    if verifier:
-        start, end = window.start, window.end
-        settings_opening = get_opening_balance(db)
-        register = get_cashbox(db, start, end, settings_opening)
-        # For «همه» there is no float to have started from, so a closing balance
-        # would be arithmetic about nothing; the net movement of the range is a
-        # figure that means something instead.
-        report = {
-            "register": register,
-            "timeless": window.period == "all",
-            "net": register["cash_in"] - register["cash_out"],
-        }
+    settings_opening = get_opening_balance(db) if verifier else None
+    # Card sales are not drawer math, so naming their total compromises no
+    # count: the line exists because a cashier who has just taken cards all
+    # morning otherwise goes looking for that money in the till figures.
+    day_start = get_date_range("today")[0]
+    card_today = db.query(func.coalesce(func.sum(Sale.final_amount), 0)).filter(
+        Sale.payment_confirmed == True, Sale.is_refunded == False,  # noqa: E712
+        Sale.payment_method == "card", Sale.created_at >= day_start,
+    ).scalar() or 0
 
     return templates.TemplateResponse(request, "admin/cashbox.html", {
-        "period": window.period,
-        "start_date": start_date,
-        "end_date": end_date,
-        "range_notice": window.notice,
         "verify": verifier,
         "shift": shift,
         "sessions": rows[(page_int - 1) * per_page_int: page_int * per_page_int],
@@ -3198,8 +3202,8 @@ async def admin_cashbox(
         "per_page_options": (10, 25, 50),
         "q": q,
         "outcome": outcome,
-        "report": report,
         "settings_opening": settings_opening,
+        "card_today": card_today,
         # The cashbox forms paint their bounds from the same table the POSTs
         # validate against.
         "numeric_rules": CASHBOX_NUMERIC_RULES,
@@ -3478,3 +3482,79 @@ async def admin_cashbox_opening(request: Request, opening: str = Form("0"), db: 
         db.add(Settings(key="cash_opening_balance", value=str(opening_int)))
     db.commit()
     return RedirectResponse(url=f"/admin/cashbox?msg={quote_plus('موجودی پیش‌فرض شروع روز ذخیره شد.')}", status_code=303)
+
+
+def _cashbox_export_refused(problem: str) -> RedirectResponse:
+    """Send the shop back to the drawer with the reason, not a bare error page."""
+    return RedirectResponse(url=f"/admin/cashbox?err={quote_plus(problem)}", status_code=303)
+
+
+@router.get("/cashbox/export")
+async def admin_cashbox_history_export(
+    request: Request,
+    q: str = "",
+    outcome: str = "",
+    db: Session = Depends(get_db),
+):
+    """The shift history as a file, of the same rows the screen just showed.
+
+    Managers only: the page lets a cashier read their own shifts, but a file
+    leaves the building, so the bulk figures stay behind the higher role —
+    the same line the accounting exports draw.
+    """
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    rows = _filtered_shift_rows(db, verifier=True, user_id=guard.id, q=q, outcome=outcome)
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    table = [["شیفت", "باز شده", "بازکننده", "بستننده", "بسته شده",
+              "مورد انتظار (تومان)", "شمارش‌شده (تومان)", "اختلاف (تومان)", "وضعیت"]]
+    for row in rows:
+        session = row["session"]
+        # Raw integers, not grouped figures: a quoted «1,250,000» pastes into a
+        # spreadsheet as text, while 1250000 stays a number that sums.
+        table.append([
+            session.id,
+            jalali_str(session.opened_at),
+            row["opener"],
+            row["closer"] or "",
+            jalali_str(session.closed_at) if session.closed_at else "",
+            session.expected_closing_balance if session.expected_closing_balance is not None else "",
+            session.counted_closing_balance if session.counted_closing_balance is not None else "",
+            session.variance if session.variance is not None else "",
+            row["status_label"],
+        ])
+    return _csv_response(f"cashbox_history_{today}.csv", table)
+
+
+@router.get("/cashbox/sessions/{session_id}/export")
+async def admin_cash_session_export(request: Request, session_id: int, db: Session = Depends(get_db)):
+    """One shift's statement as a file, under the statement's own permissions.
+
+    Whoever may read the statement may keep it: a manager any time, the opener
+    once the shift is closed — an open shift stays invisible to its own
+    cashier here for the same blind-count reason it is on screen.
+    """
+    guard = require_html_role(request, db, "cashier")
+    if not hasattr(guard, "role"):
+        return guard
+    session = db.query(CashSession).filter(CashSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404)
+    verifier = role_allows(guard.role, "manager")
+    if not verifier and session.cashier_user_id != guard.id:
+        return _cashbox_export_refused("این شیفت با حساب شما باز نشده است؛ فقط شیفت‌های خودتان را می‌بینید.")
+    if not verifier and session.status == "open":
+        return _cashbox_export_refused("تا این شیفت بسته نشود، عدد مورد انتظار را نشان نمی‌دهیم تا شمارش واقعی بماند؛ بعد از بستن می‌توانید فایلش را بگیرید.")
+    summary = cash_shift_summary(db, session)
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    table = [["زمان", "جهت", "شرح", "یادداشت", "مبلغ (تومان)"]]
+    for row in summary["movements"]:
+        table.append([
+            jalali_str(row["when"]),
+            "ورود" if row["direction"] == "in" else "خروج",
+            row["label"],
+            row["note"] or "",
+            row["amount"] or 0,
+        ])
+    return _csv_response(f"cashbox_shift_{session.id}_{today}.csv", table)

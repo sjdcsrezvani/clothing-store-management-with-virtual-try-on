@@ -300,16 +300,20 @@ def test_range_pairs_are_declared_once(template, fragment):
 
 
 def test_the_shared_period_filter_pairs_its_dates_on_each_page(client, authed):
-    """«سود و زیان» and «صندوق» draw one filter now, so the pair is asserted on
-    what it renders rather than in whichever file used to hand-write it — and
-    the ids differ per page, because the picker pairs a start with an end by id.
+    """«سود و زیان» draws the one shared filter, so the pair is asserted on what
+    it renders — and the drawer page draws no filter at all any more, because
+    the range's arithmetic moved here with it.
     """
-    for path, prefix in (("/admin/accounting", "accounting"), ("/admin/cashbox", "cash")):
+    for path, prefix in (("/admin/accounting", "accounting"),):
         page = client.get(path)
         assert page.status_code == 200, path
         assert f'data-pdp-pair="#{prefix}-end"' in page.text, path
         assert f'id="{prefix}-start"' in page.text, path
         assert f'id="{prefix}-end"' in page.text, path
+
+    drawer = client.get("/admin/cashbox")
+    assert drawer.status_code == 200
+    assert 'class="persian-date-input"' not in drawer.text
 
 
 # Every birthday field is drawn by one partial now, so the ceiling is declared once.
