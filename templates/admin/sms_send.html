@@ -84,8 +84,15 @@
                             <button type="button" class="btn btn-sm btn-ghost" id="sms-pick-clear">پاک‌کردن</button>
                         </span>
                     </div>
-                    <input type="search" id="sms-picker-search" class="sms-picker-search"
-                           placeholder="جست‌وجوی نام یا شماره…" dir="auto" autocomplete="off">
+                    <div class="picker-search-wrap">
+                        <svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-search"/></svg>
+                        <label class="sr-only" for="sms-picker-search">جست‌وجوی نام یا شماره</label>
+                        <input type="search" id="sms-picker-search" class="sms-picker-search"
+                               placeholder="نام یا شماره را بنویسید تا فهرست تنگ شود…" dir="auto" autocomplete="off">
+                        <button type="button" class="picker-search-clear" id="sms-picker-clear"
+                                aria-label="پاک‌کردن جست‌وجو" hidden>×</button>
+                    </div>
+                    <small class="muted tnum" id="sms-picker-match" aria-live="polite"></small>
                     <div class="sms-picker" id="sms-picker" role="group" aria-label="مشتریان دست‌چین‌شده">
                         {% for customer in customers %}
                         <label class="sms-pick-row" data-search="{{ customer.full_name }} {{ customer.phone }}">
@@ -361,13 +368,29 @@
             if (changed) updatePicked();
         });
         if (search) {
-            search.addEventListener('input', function () {
+            var clear = document.getElementById('sms-picker-clear');
+            var match = document.getElementById('sms-picker-match');
+            var rows = picker.querySelectorAll('.sms-pick-row');
+            function updateSearch() {
                 var needle = faNum(search.value).trim().toLowerCase();
-                picker.querySelectorAll('.sms-pick-row').forEach(function (row) {
+                var visible = 0;
+                rows.forEach(function (row) {
                     var haystack = faNum(row.getAttribute('data-search') || '').toLowerCase();
-                    row.hidden = needle.length > 0 && haystack.indexOf(needle) === -1;
+                    var show = needle.length === 0 || haystack.indexOf(needle) !== -1;
+                    row.hidden = !show;
+                    if (show) visible++;
                 });
+                if (clear) clear.hidden = needle.length === 0;
+                if (match) match.textContent = needle.length === 0
+                    ? '' : (visible + ' از ' + rows.length);
+            }
+            search.addEventListener('input', updateSearch);
+            if (clear) clear.addEventListener('click', function () {
+                search.value = '';
+                updateSearch();
+                search.focus();
             });
+            updateSearch();
         }
     }
     // Pasted numbers, counted the way the server splits them: separators are

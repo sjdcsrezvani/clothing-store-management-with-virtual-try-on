@@ -3316,6 +3316,21 @@ html[data-theme-mode="high-contrast"] .campaign-history-row { border-width: 2px;
   font-size: 0.7rem; font-weight: 700; color: var(--warning-ink, var(--ink-soft));
   border: 1px solid var(--rule); border-radius: 999px; padding: 0 0.5rem; }
 .sms-picker-search { margin-bottom: 0.4rem; }
+/* The picker filter reads as a filter, not a data field: a soft pill with a
+   magnifier, a live «N از M», and a clear × that only exists while typing. */
+.picker-search-wrap { display: flex; align-items: center; gap: 0.5rem;
+  background: var(--surface-soft); border: 1px solid var(--rule);
+  border-radius: 999px; padding: 0.15rem 0.8rem; margin-bottom: 0.25rem; }
+.picker-search-wrap .ui-icon { flex-shrink: 0; color: var(--ink-soft); }
+.picker-search-wrap .sms-picker-search { flex: 1 1 auto; min-width: 0; border: none;
+  background: none; margin-bottom: 0; padding: 0.3rem 0; }
+.picker-search-wrap .sms-picker-search:focus { outline: none; }
+.picker-search-wrap:focus-within { border-color: var(--candy); }
+.picker-search-clear { border: none; background: none; color: var(--ink-soft);
+  font-size: 1.1rem; line-height: 1; cursor: pointer; padding: 0.2rem 0.3rem;
+  min-height: 2rem; }
+.picker-search-clear:hover { color: var(--danger); }
+#sms-picker-match { display: block; margin-bottom: 0.3rem; }
 .sms-picker {
   max-height: 15rem; overflow-y: auto;
   border: 1px solid var(--rule); border-radius: var(--radius-sm);
