@@ -96,7 +96,7 @@ def test_get_forms_inside_regions_stay_on_the_page():
         "templates/admin/credit.html": ["/admin/credit", "/admin/credit"],
         "templates/admin/checks.html": ["/admin/checks"],
         "templates/admin/campaigns.html": ["/admin/campaigns", "/admin/campaigns"],
-        "templates/admin/sms_history.html": ["/admin/sms/history"],
+        "templates/admin/sms_history.html": ["/admin/sms/history", "/admin/sms/history"],
         "templates/admin/inventory_movements.html": ["/admin/inventory-movements", "/admin/inventory-movements", "/admin/inventory-movements"],
         "templates/admin/barcode_print.html": ["/admin/barcodes/print"],
     }
