@@ -52,6 +52,7 @@ from services.sms_send import (
     plan_from_form,
     preview_body,
     render_preview_rows,
+    retry_message,
     saved_audiences,
     send_bulk,
 )
@@ -932,15 +933,25 @@ async def admin_sms_history(
     source: str = "all",
     order: str = "newest",
     page: str = "1",
+    per_page: str = "25",
     db: Session = Depends(get_db),
 ):
     guard = _guard(request, db)
     if not hasattr(guard, "role"):
         return guard
 
+    # The URL must never claim a filter the list does not apply: unknown
+    # values fall back to the defaults before anything renders.
+    if status not in ("all", *STATUS_LABELS):
+        status = "all"
+    if source not in ("all", *SOURCE_LABELS):
+        source = "all"
+    if order not in HISTORY_ORDERS:
+        order = "newest"
     page = page_arg(page)
+    per_page_int = int(per_page) if str(per_page).isdigit() and int(per_page) in (10, 25, 50) else 25
     listing = message_filtered(db, search=search, status=status, source=source,
-                              order=order, page=page)
+                               order=order, page=page, per_page=per_page_int)
     if source == DIGEST_SOURCE:
         # The owner came looking for the monthly summaries: each row carries its
         # month's name, so «مرداد ۱۴۰۵» is findable at a glance.
@@ -957,6 +968,7 @@ async def admin_sms_history(
         # The resend form posts to an owner-only route, so it renders only for
         # one — a manager whose form 403s would be a trap, not a control.
         "can_resend_digest": guard.role == "owner",
+        "per_page_options": (10, 25, 50),
         "fmt": fmt,
     })
 
@@ -1066,4 +1078,31 @@ async def admin_sms_history_digest_resend(
     db.rollback()
     return RedirectResponse(
         url=f"/admin/sms/history?source=monthly_digest&err=هیچ پیامکی در صف قرار نگرفت.",
+        status_code=303)
+
+
+# Declared after ``/sms/history/digest/resend`` on purpose: a static path has
+# to be matched first or ``digest`` would be read as a message id — the same
+# rule the campaigns router keeps for ``/assign``.
+@router.post("/sms/history/{message_id}/resend", response_class=HTMLResponse)
+async def admin_sms_history_resend(
+    message_id: int, request: Request, db: Session = Depends(get_db),
+):
+    """Re-queue one failed row's frozen body to its same phone.
+
+    Only failed rows retry; anything else (or a test-mode refusal) comes back
+    as an error with nothing queued. Managers may retry — the retry changes
+    nothing but a second chance for a message already approved once.
+    """
+    guard = _guard(request, db)
+    if not hasattr(guard, "role"):
+        return guard
+
+    row, error = await retry_message(db, message_id)
+    if error:
+        return RedirectResponse(url=f"/admin/sms/history?err={error}", status_code=303)
+    log_action(db, "sms_retry", f"پیامک #{message_id} دوباره در صف قرار گرفت",
+               request=request, target_type="sms_message", target_id=row.id)
+    return RedirectResponse(
+        url=f"/admin/sms/history?msg=پیامک دوباره در صف قرار گرفت.",
         status_code=303)
