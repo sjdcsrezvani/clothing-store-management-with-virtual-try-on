@@ -558,6 +558,9 @@ class CheckRecord(Base):
     reminder_days = Column(Text, nullable=False, default="[14,7,3]")
     status = Column(String(20), nullable=False, default="issued", index=True)
     paid_at = Column(DateTime, nullable=True)
+    # A bounced cheque stays flagged until someone resolves it or re-issues
+    # from it: برگشتی is terminal as a status, open as a task.
+    needs_followup = Column(Boolean, nullable=False, default=False)
     operator_user_id = Column(Integer, ForeignKey("staff_users.id"), nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)

@@ -3598,6 +3598,10 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
    small in a wide row and must still meet a thumb on a phone. */
 .expense-table tr.is-reversed { opacity: 0.55; }
 .expense-table .btn-sm { min-height: 44px; display: inline-flex; align-items: center; }
+/* Issued cheques carry five small moves per row: without a wrapping flex
+   they stack into a tower and the row grows past its neighbours. */
+.check-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+.check-actions form { margin: 0; }
 /* Nine columns never fit a phone: narrow screens stack rows into labelled
    cards instead of scrolling sideways, like every other admin list. */
 @media (max-width: 700px) {

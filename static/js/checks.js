@@ -93,6 +93,33 @@
         form.submit();
     });
 
+    // Row actions — resolve, delete, paid, cancelled, bounced — share one
+    // surface: each form carries its own words in data-confirm.
+    document.querySelectorAll('[data-check-action]').forEach(function (form) {
+        form.addEventListener('submit', function (event) {
+            if (submitting || pendingForm === form) return;
+            if (!window.RaykidDialog) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            pendingForm = form;
+            document.getElementById('check-action-confirm-text').textContent =
+                form.getAttribute('data-confirm') || '';
+            window.RaykidDialog.open('check-action-confirm', document.activeElement);
+        });
+    });
+
+    var actionYes = document.getElementById('check-action-confirm-yes');
+    if (actionYes) actionYes.addEventListener('click', function () {
+        var form = pendingForm;
+        pendingForm = null;
+        window.RaykidDialog.close('check-action-confirm');
+        if (!form) return;
+        submitting = true;
+        var send = form.querySelector('[type="submit"]');
+        if (send) send.setAttribute('disabled', '');
+        form.submit();
+    });
+
     // A dismissal is a change of mind: the form stays exactly as typed.
     document.addEventListener('click', function (event) {
         if (event.target.closest && event.target.closest('[data-dialog-close]')) pendingForm = null;
