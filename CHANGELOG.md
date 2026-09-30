@@ -1,3 +1,50 @@
+## 2.7.10 — 1405/07/08 (2026-09-30)
+
+### سود و زیان و فرم‌ها: the page answers its next question, and the books check themselves
+
+- **The books check themselves on every visit.** خودترازی دفاتر puts فروش،
+  موجودی and نسیه beside what the ledger expects, each row printing انتظار،
+  واقعی and اختلاف — so a mismatch is a badge that names itself instead of two
+  figures the reader has to compare by eye.
+- **A mismatch names the shelf that disagrees.** تنوع‌های ناهم‌خوان lists each
+  variant as کالا · سایز · رنگ with its own difference and a link to
+  حرکت‌های انبار, the page that can actually fix it, rather than a bare id.
+- **A disagreement leaves a card on the dashboard until it is gone.** The
+  dashboard never runs the walk itself — a page opened all day stays cheap — so
+  سود و زیان leaves its verdict in two settings rows and «مغایرت دفاتر» reads
+  them, naming the day the verdict was established so a stale card cannot cry
+  wolf; only a change writes.
+- **Every headline figure answers its next question.** درآمد فروش links to the
+  sales list, هزینه‌ها to the expense list in the same range, the debt card to
+  its دیرکرد، داده‌شده and وصول‌شده, خریدها to its مانده پرداخت‌نشده, and صندوق
+  says outright that it is this range's movement and not the drawer.
+- **حقوق is separated from سایر inside هزینه‌ها**, so a month's payroll is
+  visible as payroll inside the total, and **ارزش موجودی انبار is printed at
+  cost** — the doctrine the dashboard already follows — not at retail.
+- **The cheque form reads in sections.** در وجه چه کسی، چه مقدار و کی، از کجا
+  و با چه یادآوری — and the fields that really are one line (دریافت‌کننده،
+  شماره، مبلغ) take three columns instead of wrapping the third at half width.
+- **Fields drop from a frame to a hairline.** Every input, select and custom
+  select now carries a 1px rule instead of 2px: nine shouting boxes were what
+  read as ugly, and the focus ring still speaks up when a field owns the
+  keyboard.
+- **Numbers lose their emoji and their abbreviation.** Stat labels are words
+  again — درآمد فروش، بهای تمام‌شده کالا، سود خالص — and amounts print تومان in
+  full instead of a bare ت.
+- **An empty cheque list counts nothing.** «۰ مورد» no longer prints above a
+  list with no rows to count.
+- **A report prints as a report.** The heading actions, the range filter and
+  the confirmation dialogs are hidden on paper, so a printed page is figures
+  rather than navigation.
+- **The self-check reads on a phone too.** Its tables stack label-first under
+  700px, like every other admin list, instead of scrolling sideways.
+- **The export links carry the range the page is showing.** The four خروجی
+  buttons are composed from one server-built query string instead of template
+  string arithmetic, so a bound the filter holds — including a range given only
+  one end — reaches the export instead of being dropped.
+
+**Schema change.** None — the database stays on revision 26.
+
 ## 2.7.9 — 1405/07/08 (2026-09-30)
 
 ### چک‌ها و هزینه‌ها: the cheque becomes a record you can work, and a rule's day becomes a field

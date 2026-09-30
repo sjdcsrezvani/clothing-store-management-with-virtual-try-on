@@ -436,3 +436,10 @@ def test_reminder_figure_is_plain_text_and_alerts_lead(client, db_session, authe
     assert 'id="check-alerts"' in triggered
     assert 'role="alert"' not in triggered
     assert triggered.index('id="check-alerts"') < triggered.index('id="checks-list"')
+
+
+def test_add_form_shows_effective_defaults_and_empty_list_counts_nothing(client, db_session, authed):
+    """The reminder field arrives prefilled with what will apply; zero rows print no count."""
+    page = client.get("/admin/checks")
+    assert 'value="14, 7, 3"' in page.text
+    assert "0 مورد" not in page.text
