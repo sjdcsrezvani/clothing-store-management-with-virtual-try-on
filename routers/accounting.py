@@ -46,7 +46,7 @@ from services.accounting import (
     upcoming_occurrence,
 )
 from services.sms import queue_credit_reminder_sms
-from services.analytics import KNOWN_PERIODS, UnreadableRange, get_date_range, period_range
+from services.analytics import KNOWN_PERIODS, UnreadableRange, get_date_range, get_inventory_value, period_range
 from services.security import log_action, require_html_role, role_allows
 from services.sorting import parse_sort
 from services.templating import templates
@@ -750,6 +750,18 @@ async def admin_accounting(
     debts = debt_totals(db)
     cashbox = get_cashbox(db, start, end, get_opening_balance(db))
 
+    # Depth behind the trio, each from the helper its own page reads: payroll
+    # is the salary-linked slice of the same expense query, supplier
+    # remainder is what the wholesalers are still owed, and stock value
+    # follows the dashboard's own doctrine — cost price, not retail.
+    salary_total = db.query(func.coalesce(func.sum(Expense.amount), 0)).join(
+        SalaryPayment, SalaryPayment.expense_id == Expense.id).filter(
+        Expense.created_at.between(start, end),
+        Expense.reversed_at.is_(None)).scalar() or 0
+    supplier_unpaid = sum(
+        entry["owed"] for entry in get_supplier_balances(db))
+    inventory_value = get_inventory_value(db)["total_cost"]
+
     # The dashboard may never call the reconciliation walk itself (a page
     # opened all day must stay cheap), so this page leaves its verdict where
     # the dashboard can read it for the price of one settings row: disagree
@@ -817,6 +829,9 @@ async def admin_accounting(
         "recon_disagree": checks["has_discrepancies"],
         "export_qs": export_qs,
         "debts": debts,
+        "salary_total": salary_total,
+        "supplier_unpaid": supplier_unpaid,
+        "inventory_value": inventory_value,
         "cashbox": cashbox,
         # The cash-movement section lives here now, not on the cashbox page:
         # the drawer page is a shift, this page is a range. For «همه» there is

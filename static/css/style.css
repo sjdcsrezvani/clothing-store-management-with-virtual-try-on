@@ -3638,6 +3638,13 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
   .check-table td { padding: 0.2rem 0; }
   #check-add-confirm, #check-action-confirm { display: none !important; }
 }
+/* Report pages on paper: the heading actions, the range filter and the
+   modal surfaces are navigation, not figures. */
+@media print {
+  .page-heading .admin-nav, .filter-card { display: none !important; }
+  #cashbox-confirm, #cashbox-reverse-confirm,
+  #expense-add-confirm, #expense-void-confirm, #recurring-stop-confirm { display: none !important; }
+}
 /* Nine columns never fit a phone: narrow screens stack rows into labelled
    cards instead of scrolling sideways, like every other admin list. */
 @media (max-width: 700px) {

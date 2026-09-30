@@ -1195,3 +1195,21 @@ def test_a_stock_mismatch_raises_the_section_and_the_dashboard_card(client, db_s
     client.get("/admin/accounting")
     assert "مغایرت دفاتر" not in client.get("/admin").text
     assert "مطابق" in client.get("/admin/accounting").text
+
+
+def test_accounting_depth_lines_drilldowns_and_stock_value(client, db_session, authed):
+    """Every figure answers its next question; stock is valued at cost."""
+    from tests.test_sales_money import _make_variant
+    _make_variant(db_session, price=100_000, cost=40_000, stock=3)
+    _post(client, "/admin/expenses/add", {"amount": "50000", "category": "متفرقه"}, authed)
+    page = client.get("/admin/accounting")
+    assert "حقوق 0 تومان" in page.text
+    assert "دیرکرد 0 تومان" in page.text
+    assert "داده‌شده 0" in page.text and "وصول‌شده 0 تومان" in page.text
+    assert "مانده پرداخت‌نشده 0 تومان" in page.text
+    assert "ارزش موجودی انبار" in page.text
+    assert "120,000 تومان" in page.text            # 3 × 40,000 at cost, not retail
+    assert "به قیمت خرید" in page.text
+    assert 'href="/sales/"' in page.text
+    assert "/admin/expenses?period=month" in page.text
+    assert 'data-label="دسته"' in page.text
