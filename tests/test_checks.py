@@ -117,3 +117,52 @@ def test_only_owner_can_change_default_check_reminders(client, db_session):
         follow_redirects=False,
     )
     assert response.status_code == 403
+
+
+def test_a_cheque_without_its_number_is_refused(client, db_session, authed):
+    """The leaf it was torn from is the only identity a cheque has at the bank."""
+    from urllib.parse import unquote_plus
+    token = csrf_token(client, "/admin/checks")
+    response = client.post(
+        "/admin/checks/add",
+        data={
+            "csrf_token": token,
+            "provider_name": "بدون شماره",
+            "check_number": "",
+            "amount_rials": "50000000",
+            "due_date": "2027/03/01",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert "شماره چک الزامی است" in unquote_plus(response.headers["location"])
+    assert db_session.query(CheckRecord).count() == 0
+
+
+def test_the_add_form_confirms_and_suggests_without_mixing(client, db_session, authed):
+    """Modal, script, and datalists drawn from the shop's own words only."""
+    import re
+    token = csrf_token(client, "/admin/checks")
+    client.post(
+        "/admin/checks/add",
+        data={
+            "csrf_token": token,
+            "provider_name": "پرداخت‌کننده پیشین",
+            "check_number": "777001",
+            "amount_rials": "200000000",
+            "due_date": "2027/04/01",
+            "bank_name": "بانک پیشین",
+        },
+        follow_redirects=False,
+    )
+    page = client.get("/admin/checks")
+    assert page.status_code == 200
+    assert 'id="check-add-form"' in page.text
+    assert 'id="check-add-confirm"' in page.text
+    assert "/static/js/checks.js" in page.text
+    assert '<option value="پرداخت‌کننده پیشین">' in page.text
+    assert '<option value="بانک پیشین">' in page.text
+    # Same-named fields elsewhere must never leak into these suggestions.
+    for field in ("provider_name", "bank_name"):
+        tag = re.search(rf'<input[^>]*name="{field}"[^>]*>', page.text)
+        assert tag and 'autocomplete="off"' in tag.group(0), field

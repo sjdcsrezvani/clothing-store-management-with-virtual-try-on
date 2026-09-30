@@ -36,12 +36,12 @@
 <div class="card">
     <h3>ثبت چک جدید</h3>
     <p class="appearance-intro">مبلغ را به <strong>ریال</strong> وارد کنید. تاریخ‌ها را به‌صورت شمسی مثل ۱۴۰۵/۰۷/۱۵ بنویسید.</p>
-    <form method="post" action="/admin/checks/add" onsubmit="var b=this.querySelector('button[type=submit]'); if(b) b.disabled=true;">
+    <form method="post" action="/admin/checks/add" id="check-add-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="form-row">
-            <div class="form-group"><label for="provider_name">دریافت‌کننده چک</label><input id="provider_name" name="provider_name" required placeholder="نام شخص یا شرکت"><small class="field-help">شخص یا شرکتی که چک در وجه او صادر شده.</small></div>
+            <div class="form-group"><label for="provider_name">دریافت‌کننده چک</label><input id="provider_name" name="provider_name" list="check-payees" autocomplete="off" required placeholder="نام شخص یا شرکت"><small class="field-help">شخص یا شرکتی که چک در وجه او صادر شده.</small></div>
             <div class="form-group"><label for="supplier_id">تأمین‌کننده مرتبط</label><select id="supplier_id" name="supplier_id"><option value="">— بدون ارتباط —</option>{% for supplier in suppliers %}<option value="{{ supplier.id }}">{{ supplier.name }}</option>{% endfor %}</select></div>
-            <div class="form-group"><label for="check_number">شماره چک</label><input id="check_number" name="check_number" dir="ltr" placeholder="شماره چک"></div>
+            <div class="form-group"><label for="check_number">شماره چک <span class="required-mark">*</span></label><input id="check_number" name="check_number" dir="ltr" required placeholder="شماره چک"></div>
         </div>
         <div class="form-row">
             {% from 'partials/numeric_input.html' import num with context %}
@@ -50,14 +50,32 @@
             <div class="form-group"><label for="due_date">تاریخ سررسید</label><input id="due_date" name="due_date" class="persian-date-input" required placeholder="۱۴۰۵/۰۷/۱۵"></div>
         </div>
         <div class="form-row">
-            <div class="form-group"><label for="bank_name">بانک</label><input id="bank_name" name="bank_name" placeholder="نام بانک"></div>
+            <div class="form-group"><label for="bank_name">بانک</label><input id="bank_name" name="bank_name" list="check-banks" autocomplete="off" placeholder="نام بانک"></div>
             <div class="form-group"><label for="account_reference">شناسه حساب / توضیح بانکی</label><input id="account_reference" name="account_reference" placeholder="مثال: حساب 1234"></div>
             <div class="form-group"><label for="reminder_days">هشدارها (روز قبل)</label><input id="reminder_days" name="reminder_days" value="{{ default_reminder_days|join(', ') }}" placeholder="14, 7, 3"><small>مثال: 14, 7, 3 یا 30, 14, 7, 3</small></div>
         </div>
         <div class="form-group"><label for="note">توضیحات</label><textarea id="note" name="note" rows="2" placeholder="توضیح اختیاری درباره چک"></textarea></div>
+        <datalist id="check-payees">
+            {% for name in past_payees %}<option value="{{ name }}"></option>{% endfor %}
+        </datalist>
+        <datalist id="check-banks">
+            {% for name in past_banks %}<option value="{{ name }}"></option>{% endfor %}
+        </datalist>
         <button type="submit" class="btn btn-primary btn-large">ثبت چک</button>
     </form>
 </div>
+<div id="check-add-confirm" data-dialog role="alertdialog" aria-modal="true"
+     aria-labelledby="check-add-confirm-title" class="confirm-scrim" tabindex="-1">
+    <div class="t-modal-card confirm-card" role="document">
+        <h3 id="check-add-confirm-title">چک ثبت شود؟</h3>
+        <p class="muted" id="check-add-confirm-text"></p>
+        <div class="confirm-actions">
+            <button type="button" class="btn btn-primary" id="check-add-confirm-yes">ثبت چک</button>
+            <button type="button" class="btn btn-ghost" data-dialog-close>انصراف</button>
+        </div>
+    </div>
+</div>
+<script src="/static/js/checks.js?v={{ static_version }}"></script>
 
 {% if is_owner %}
 <div class="card">

@@ -214,6 +214,15 @@ async def admin_checks(
     checks = listing.order_by(CheckRecord.due_at.asc(), CheckRecord.id.asc()) \
         .offset((page - 1) * CHECKS_PAGE_SIZE).limit(CHECKS_PAGE_SIZE).all()
     suppliers = db.query(Supplier).order_by(Supplier.name.asc()).all()
+    # Suggestion pools for the add form, drawn from what the shop already
+    # wrote — past payees and banks already used — so typing stays free but
+    # repeat business is one tap. Distinct and ordered; the template renders
+    # them as datalists with autocomplete off, so the browser's own history
+    # from same-named fields elsewhere can never join in.
+    past_payees = [row[0] for row in db.query(CheckRecord.provider_name).distinct()
+                   .order_by(CheckRecord.provider_name.asc()).all() if row[0]]
+    past_banks = [row[0] for row in db.query(CheckRecord.bank_name).distinct()
+                  .order_by(CheckRecord.bank_name.asc()).all() if row[0]]
     overdue_ids = {check.id for check in summary["overdue"]}
     operator_names = {u.id: (u.full_name or u.username) for u in db.query(StaffUser).filter(
         StaffUser.id.in_([c.operator_user_id for c in checks])).all()} if checks else {}
@@ -235,6 +244,8 @@ async def admin_checks(
     return templates.TemplateResponse(request, "admin/checks.html", {
         "checks": checks,
         "suppliers": suppliers,
+        "past_payees": past_payees,
+        "past_banks": past_banks,
         "summary": summary,
         "stats": stats,
         "overdue_ids": overdue_ids,
@@ -308,6 +319,10 @@ async def admin_check_add(
     if not provider_name:
         return RedirectResponse(url="/admin/checks?err=نام دریافت‌کننده چک الزامی است.", status_code=303)
     check_number_clean = check_number.strip()[:100] or None
+    # A cheque without its number cannot be matched to the paper later: the
+    # leaf it was torn from is the only identity a cheque has at the bank.
+    if not check_number_clean:
+        return RedirectResponse(url="/admin/checks?err=شماره چک الزامی است.", status_code=303)
     submitted_at = datetime.now(timezone.utc)
     # Double-submit guard: the same operator recording the identical cheque
     # twice within two minutes is a double-click, not two cheques.
