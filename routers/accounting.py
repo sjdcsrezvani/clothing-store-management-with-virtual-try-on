@@ -73,6 +73,7 @@ from services.checks import (
     normalize_reminder_days,
     parse_amount_rials,
     parse_check_date,
+    reminder_days_from_record,
     reminders_enabled,
     trigger_due_reminders,
 )
@@ -120,8 +121,57 @@ CHECK_STATUSES = {
     "cancelled": "لغو‌شده",
     "bounced": "برگشتی",
 }
-CHECKS_PAGE_SIZE = 20
 CHECKS_UPCOMING_DAYS = 14
+
+
+def _check_list_conds(search: str, supplier_id: str, bank_search: str,
+                      start_date: str, end_date: str) -> list:
+    """The filter chain the cheque list reads — one definition for the page
+    and the export, so a file can never answer a different view than the
+    screen that ordered it."""
+    conds = []
+    if search:
+        digits = search.lstrip("#").strip()
+        if digits.isdigit():
+            value = int(digits)
+            conds.append(or_(CheckRecord.id == value, CheckRecord.amount_rials == value))
+        else:
+            like = f"%{search}%"
+            conds.append(or_(
+                CheckRecord.provider_name.ilike(like),
+                CheckRecord.check_number.ilike(like),
+                CheckRecord.note.ilike(like),
+            ))
+    if supplier_id.isdigit():
+        conds.append(CheckRecord.supplier_id == int(supplier_id))
+    if bank_search:
+        conds.append(CheckRecord.bank_name.ilike(f"%{bank_search}%"))
+    start = parse_form_date(start_date)
+    if start:
+        conds.append(CheckRecord.due_at >= start.replace(tzinfo=None))
+    end = parse_form_date_end(end_date)
+    if end:
+        conds.append(CheckRecord.due_at <= end.replace(tzinfo=None))
+    return conds
+
+
+def _apply_check_status(query, status_filter: str, now_naive, upcoming_end):
+    """Narrow a cheque query to one outcome of the status vocabulary."""
+    if status_filter == "issued":
+        return query.filter(CheckRecord.status == "issued")
+    if status_filter == "overdue":
+        return query.filter(CheckRecord.status == "issued",
+                            CheckRecord.due_at < now_naive)
+    if status_filter == "upcoming":
+        return query.filter(
+            CheckRecord.status == "issued",
+            CheckRecord.due_at >= now_naive,
+            CheckRecord.due_at <= upcoming_end.replace(tzinfo=None))
+    if status_filter in {"paid", "cancelled", "bounced"}:
+        return query.filter(CheckRecord.status == status_filter)
+    if status_filter == "needs_action":
+        return query.filter(CheckRecord.needs_followup == True)  # noqa: E712
+    return query
 
 
 @router.get("/checks", response_class=HTMLResponse)
@@ -134,6 +184,7 @@ async def admin_checks(
     start_date: str = "",
     end_date: str = "",
     page: str = "1",
+    per_page: str = "25",
     edit: str = "",
     reissue: str = "",
     db: Session = Depends(get_db),
@@ -154,29 +205,9 @@ async def admin_checks(
     search = (q or "").strip()
     bank_search = (bank or "").strip()
     page = page_arg(page)
+    per_page_int = int(per_page) if str(per_page).isdigit() and int(per_page) in (10, 25, 50) else 25
 
-    conds = []
-    if search:
-        digits = search.lstrip("#").strip()
-        if digits.isdigit():
-            conds.append(CheckRecord.id == int(digits))
-        else:
-            like = f"%{search}%"
-            conds.append(or_(
-                CheckRecord.provider_name.ilike(like),
-                CheckRecord.check_number.ilike(like),
-                CheckRecord.note.ilike(like),
-            ))
-    if supplier_id.isdigit():
-        conds.append(CheckRecord.supplier_id == int(supplier_id))
-    if bank_search:
-        conds.append(CheckRecord.bank_name.ilike(f"%{bank_search}%"))
-    start = parse_form_date(start_date)
-    if start:
-        conds.append(CheckRecord.due_at >= start.replace(tzinfo=None))
-    end = parse_form_date_end(end_date)
-    if end:
-        conds.append(CheckRecord.due_at <= end.replace(tzinfo=None))
+    conds = _check_list_conds(search, supplier_id, bank_search, start_date, end_date)
 
     base = db.query(CheckRecord).filter(*conds)
     issued = [CheckRecord.status == "issued"]
@@ -186,6 +217,7 @@ async def admin_checks(
         "upcoming": issued + [CheckRecord.due_at >= now_naive,
                               CheckRecord.due_at <= upcoming_end.replace(tzinfo=None)],
         "paid": [CheckRecord.status == "paid"],
+        "bounced": [CheckRecord.status == "bounced"],
     }.items():
         count, amount = base.filter(*extra).with_entities(
             func.count(CheckRecord.id),
@@ -198,26 +230,12 @@ async def admin_checks(
             CheckRecord.status == "issued", *conds).scalar() or 0,
     }
 
-    listing = base
-    if status_filter == "issued":
-        listing = listing.filter(CheckRecord.status == "issued")
-    elif status_filter == "overdue":
-        listing = listing.filter(CheckRecord.status == "issued",
-                                 CheckRecord.due_at < now_naive)
-    elif status_filter == "upcoming":
-        listing = listing.filter(
-            CheckRecord.status == "issued",
-            CheckRecord.due_at >= now_naive,
-            CheckRecord.due_at <= upcoming_end.replace(tzinfo=None))
-    elif status_filter in {"paid", "cancelled", "bounced"}:
-        listing = listing.filter(CheckRecord.status == status_filter)
-    elif status_filter == "needs_action":
-        listing = listing.filter(CheckRecord.needs_followup == True)  # noqa: E712
+    listing = _apply_check_status(base, status_filter, now_naive, upcoming_end)
     total_count = listing.count()
-    total_pages = max(1, -(-total_count // CHECKS_PAGE_SIZE))
+    total_pages = max(1, -(-total_count // per_page_int))
     page = min(page, total_pages)
     checks = listing.order_by(CheckRecord.due_at.asc(), CheckRecord.id.asc()) \
-        .offset((page - 1) * CHECKS_PAGE_SIZE).limit(CHECKS_PAGE_SIZE).all()
+        .offset((page - 1) * per_page_int).limit(per_page_int).all()
     suppliers = db.query(Supplier).order_by(Supplier.name.asc()).all()
     # Suggestion pools for the add form, drawn from what the shop already
     # wrote — past payees and banks already used — so typing stays free but
@@ -237,6 +255,12 @@ async def admin_checks(
         if due_at is not None and due_at.tzinfo is not None:
             due_at = due_at.replace(tzinfo=None)
         days_left_map[check.id] = (due_at - now_naive).days if due_at is not None else None
+    # The reminder-days figure, worked out once per row: the template used to
+    # operate on the Python list repr with string surgery.
+    reminder_text_map = {
+        check.id: "، ".join(str(day) for day in reminder_days_from_record(check))
+        for check in checks
+    }
     alert_rows = []
     for reminder in summary["triggered"]:
         due_at = reminder.check.due_at if reminder.check else None
@@ -246,6 +270,19 @@ async def admin_checks(
         alert_rows.append({"reminder": reminder, "days_left": days_left})
     has_filters = bool(search or status_filter != "all" or supplier_id
                          or bank_search or start_date or end_date)
+    # One urlencode-built string for the pagination links: raw values
+    # hand-concatenated into an href are how a filter value used to break
+    # out of its quotes, and Persian search text must not travel raw.
+    from urllib.parse import urlencode
+    base_qs = urlencode({
+        **({"q": search} if search else {}),
+        **({"status": status_filter} if status_filter != "all" else {}),
+        **({"supplier_id": supplier_id} if supplier_id else {}),
+        **({"bank": bank_search} if bank_search else {}),
+        **({"start_date": start_date} if start_date else {}),
+        **({"end_date": end_date} if end_date else {}),
+        "per_page": per_page_int,
+    })
     # Edit mode: the row's words move into an edit card, never its money or
     # its time. Re-issue mode: a dead cheque's words prefill the add form so
     # the replacement is one confirmation, and the new row closes the loop.
@@ -285,6 +322,7 @@ async def admin_checks(
         "overdue_ids": overdue_ids,
         "operator_names": operator_names,
         "days_left_map": days_left_map,
+        "reminder_text_map": reminder_text_map,
         "alert_rows": alert_rows,
         "is_owner": role_allows(guard.role, "owner"),
         "status_filter": status_filter,
@@ -297,6 +335,9 @@ async def admin_checks(
         "page": page,
         "total_pages": total_pages,
         "total_count": total_count,
+        "per_page": per_page_int,
+        "per_page_options": (10, 25, 50),
+        "base_qs": base_qs,
         "has_filters": has_filters,
         "default_reminder_days": get_default_reminder_days(db),
         "reminders_enabled": reminders_enabled(db),
@@ -619,6 +660,55 @@ async def admin_check_reminder_dismiss(reminder_id: int, request: Request, db: S
         reminder.dismissed_at = datetime.now(timezone.utc)
         db.commit()
     return RedirectResponse(url="/admin/checks?msg=هشدار بسته شد.", status_code=303)
+
+
+@router.get("/checks/export")
+async def admin_checks_export(
+    request: Request,
+    q: str = "",
+    status: str = "all",
+    supplier_id: str = "",
+    bank: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    db: Session = Depends(get_db),
+):
+    """The filtered cheque list as a file, of the rows the screen showed.
+
+    Raw integers for the rial figures — a grouped figure pastes into a
+    spreadsheet as text, while digits stay numbers that sum — and Jalali
+    dates the shop reads.
+    """
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    search = (q or "").strip()
+    bank_search = (bank or "").strip()
+    status_filter = status if status in CHECK_STATUSES else "all"
+    now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+    upcoming_end = datetime.now(timezone.utc) + timedelta(days=CHECKS_UPCOMING_DAYS)
+    query = _apply_check_status(
+        db.query(CheckRecord).filter(
+            *_check_list_conds(search, supplier_id, bank_search, start_date, end_date)),
+        status_filter, now_naive, upcoming_end,
+    ).order_by(CheckRecord.due_at.asc(), CheckRecord.id.asc())
+    suppliers = {s.id: s.name for s in db.query(Supplier).all()}
+    status_labels = {**CHECK_STATUSES, "needs_action": "نیازمند پیگیری"}
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    rows = [["ردیف", "دریافت‌کننده", "تأمین‌کننده", "شماره", "مبلغ (ریال)",
+             "صدور", "سررسید", "بانک", "وضعیت", "توضیح"]]
+    for check in query.all():
+        rows.append([
+            check.id, check.provider_name, suppliers.get(check.supplier_id) or "",
+            check.check_number or "",
+            check.amount_rials,
+            jalali_str(check.issue_at, with_time=False),
+            jalali_str(check.due_at, with_time=False),
+            check.bank_name or "",
+            status_labels.get(check.status, check.status),
+            check.note or "",
+        ])
+    return _csv_response(f"checks_{today}.csv", rows)
 
 
 # ── Accounting dashboard (net P&L) ───────────────────────────────────────────

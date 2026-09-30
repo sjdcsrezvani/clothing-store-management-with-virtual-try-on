@@ -5,7 +5,7 @@
 چک‌های صادرشده برای تأمین‌کنندگان و سایر دریافت‌کنندگان را ثبت و پیگیری کنید.
 {% endset %}
 {% set page_actions %}
-<a href="/admin/suppliers" class="btn btn-ghost">🏭 تأمین‌کنندگان</a>
+<a href="/admin/suppliers" class="btn btn-ghost">تأمین‌کنندگان</a>
 {% endset %}
 {% include 'partials/page_header.html' %}
 
@@ -31,7 +31,28 @@
         <div class="stat-value tnum">{{ stats.paid.count }}</div>
         <div class="stat-sub tnum">{{ fmt(stats.paid.amount) }} ریال</div>
     </a>
+    <a class="stat-card accent-candy" href="/admin/checks?status=bounced">
+        <div class="stat-label">برگشتی</div>
+        <div class="stat-value tnum">{{ stats.bounced.count }}</div>
+        <div class="stat-sub tnum">{{ fmt(stats.bounced.amount) }} ریال</div>
+    </a>
 </div>
+
+{% if alert_rows %}
+{# Triggered alerts sit above the list: money that needs eyes today must not
+   wait below a page of rows. When quiet, the list owns the top instead. #}
+<div class="card check-alerts" id="check-alerts" role="region" aria-label="هشدارهای فعال">
+    <div class="section-heading-row">
+        <div>
+            <h3>هشدارهای فعال</h3>
+            <p class="muted" role="status">{{ alert_rows|length }} هشدار نیازمند بررسی</p>
+        </div>
+    </div>
+    {% for row in alert_rows %}
+    <div class="check-alert-row"><span><strong>{{ row.reminder.check.provider_name }}</strong> — {{ fmt(row.reminder.check.amount_rials) }} ریال — سررسید {{ jalali_str(row.reminder.check.due_at, false) }}{% if row.days_left is not none %} ({% if row.days_left > 0 %}{{ row.days_left }} روز مانده{% elif row.days_left == 0 %}سررسید امروز{% else %}{{ row.days_left|abs }} روز گذشته{% endif %}){% endif %}</span><form method="post" action="/admin/checks/reminders/{{ row.reminder.id }}/dismiss"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-sm btn-ghost" type="submit">بستن هشدار</button></form></div>
+    {% endfor %}
+</div>
+{% endif %}
 
 <div class="card">
     <h3>{% if reissue_of %}صدور مجدد چک #{{ reissue_of.id }}{% else %}ثبت چک جدید{% endif %}</h3>
@@ -140,12 +161,30 @@
 {% endif %}
 
 <div class="card" id="checks-list" data-list-region="checks">
-    <div class="section-heading"><div><span class="eyebrow">چک‌های صادره</span><h3 data-list-heading tabindex="-1">فهرست چک‌ها</h3></div><span class="appearance-active">صفحه {{ page }} از {{ total_pages }} · {{ total_count }} مورد</span></div>
+    <div class="section-heading"><div><span class="eyebrow">چک‌های صادره</span><h3 data-list-heading tabindex="-1">فهرست چک‌ها</h3></div><span class="appearance-active">{{ total_count }} مورد</span></div>
+    <div class="list-heading-actions">
+        <a class="btn btn-sm btn-ghost" href="/admin/checks/export?{{ base_qs }}"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-backup"/></svg>خروجی CSV</a>
+        <form method="get" action="/admin/checks" class="per-page-form">
+            <input type="hidden" name="q" value="{{ search }}">
+            <input type="hidden" name="status" value="{{ status_filter }}">
+            <input type="hidden" name="supplier_id" value="{{ supplier_filter }}">
+            <input type="hidden" name="bank" value="{{ bank_filter }}">
+            <input type="hidden" name="start_date" value="{{ start_date_filter }}">
+            <input type="hidden" name="end_date" value="{{ end_date_filter }}">
+            <label class="sr-only" for="check-per-page">تعداد در صفحه</label>
+            <select name="per_page" id="check-per-page" onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}" aria-label="تعداد در صفحه">
+                {% for option in per_page_options %}
+                <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }} در صفحه</option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
 
     <form method="get" action="/admin/checks" class="search-form purchase-filter-form">
+        <input type="hidden" name="per_page" value="{{ per_page }}">
         <div class="form-group">
             <label class="sr-only" for="check-q">جست‌وجو</label>
-            <input type="text" id="check-q" name="q" value="{{ search }}" placeholder="شماره (#۱۲)، دریافت‌کننده یا توضیح">
+            <input type="text" id="check-q" name="q" value="{{ search }}" placeholder="شماره، مبلغ، دریافت‌کننده یا توضیح">
         </div>
         <div class="form-group">
             <label class="sr-only" for="check-status">وضعیت</label>
@@ -181,20 +220,20 @@
     </form>
 
     {% if checks %}
-    <div class="table-scroll"><table class="data-table">
+    <div class="table-scroll"><table class="data-table check-table">
         <thead><tr><th scope="col">وضعیت</th><th scope="col">دریافت‌کننده</th><th scope="col">شماره</th><th scope="col">مبلغ (ریال)</th><th scope="col">صدور</th><th scope="col">سررسید</th><th scope="col">بانک</th><th scope="col">توضیح</th><th scope="col">عملیات</th></tr></thead>
         <tbody>
         {% for check in checks %}
         <tr class="{% if check.id in overdue_ids %}check-overdue{% endif %}">
-            <td>{% if check.status == 'paid' %}<span class="badge badge-available">پرداخت‌شده</span>{% if check.paid_at %}<br><small class="muted">{{ jalali_str(check.paid_at, false) }}</small>{% endif %}{% elif check.status == 'cancelled' %}<span class="badge badge-none">لغو‌شده</span>{% elif check.status == 'bounced' %}<span class="badge badge-danger">برگشتی</span>{% if check.needs_followup %}<br><span class="badge badge-used">نیازمند پیگیری</span>{% endif %}{% elif check.id in overdue_ids %}<span class="badge badge-danger">سررسیدگذشته</span>{% else %}<span class="badge badge-used">صادرشده</span>{% endif %}</td>
-            <td><strong>{{ check.provider_name }}</strong>{% if check.supplier %}<br><small>{{ check.supplier.name }}</small>{% endif %}{% if operator_names.get(check.operator_user_id) %}<br><small class="muted">ثبت: {{ operator_names.get(check.operator_user_id) }}</small>{% endif %}</td>
-            <td class="tnum">{{ check.check_number or '—' }}</td>
-            <td class="tnum"><strong>{{ fmt(check.amount_rials) }}</strong></td>
-            <td class="tnum">{{ jalali_str(check.issue_at, false) }}</td>
-            <td class="tnum">{{ jalali_str(check.due_at, false) }}{% set left = days_left_map.get(check.id) %}{% if left is not none %}<br><small class="muted">{% if left > 0 %}{{ left }} روز مانده{% elif left == 0 %}سررسید امروز{% else %}{{ left|abs }} روز گذشته{% endif %}</small>{% endif %}</td>
-            <td>{{ check.bank_name or '—' }}{% if check.account_reference %}<br><small class="muted">{{ check.account_reference }}</small>{% endif %}</td>
-            <td>{{ check.note or '—' }}</td>
-            <td>
+            <td data-label="وضعیت">{% if check.status == 'paid' %}<span class="badge badge-available">پرداخت‌شده</span>{% if check.paid_at %}<br><small class="muted">{{ jalali_str(check.paid_at, false) }}</small>{% endif %}{% elif check.status == 'cancelled' %}<span class="badge badge-none">لغو‌شده</span>{% elif check.status == 'bounced' %}<span class="badge badge-danger">برگشتی</span>{% if check.needs_followup %}<br><span class="badge badge-used">نیازمند پیگیری</span>{% endif %}{% elif check.id in overdue_ids %}<span class="badge badge-danger">سررسیدگذشته</span>{% else %}<span class="badge badge-used">صادرشده</span>{% endif %}</td>
+            <td data-label="دریافت‌کننده"><strong>{{ check.provider_name|highlight(search) }}</strong>{% if check.supplier %}<br><small>{{ check.supplier.name }}</small>{% endif %}{% if operator_names.get(check.operator_user_id) %}<br><small class="muted">ثبت: {{ operator_names.get(check.operator_user_id) }}</small>{% endif %}</td>
+            <td class="tnum" data-label="شماره">{{ (check.check_number or '—')|highlight(search) }}</td>
+            <td class="tnum" data-label="مبلغ (ریال)"><strong>{{ fmt(check.amount_rials) }}</strong></td>
+            <td class="tnum" data-label="صدور">{{ jalali_str(check.issue_at, false) }}</td>
+            <td class="tnum" data-label="سررسید">{{ jalali_str(check.due_at, false) }}{% set left = days_left_map.get(check.id) %}{% if left is not none %}<br><small class="muted">{% if left > 0 %}{{ left }} روز مانده{% elif left == 0 %}سررسید امروز{% else %}{{ left|abs }} روز گذشته{% endif %}</small>{% endif %}</td>
+            <td data-label="بانک">{{ check.bank_name or '—' }}{% if check.account_reference %}<br><small class="muted">{{ check.account_reference }}</small>{% endif %}</td>
+            <td data-label="توضیح">{{ (check.note or '—')|highlight(search) }}</td>
+            <td data-label="عملیات">
                 {% if check.status == 'issued' %}
                 <div class="check-actions">
                     <form method="post" action="/admin/checks/{{ check.id }}/status"
@@ -210,7 +249,7 @@
                     <form method="post" action="/admin/checks/{{ check.id }}/delete"
                           data-check-action
                           data-confirm="چک #{{ check.id }} برای همیشه حذف می‌شود. فقط چون هنوز هیچ ردپایی ندارد؛ در غیر این صورت لغو کنید. ادامه؟"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-sm btn-ghost" type="submit">حذف</button></form>
-                    <form method="post" action="/admin/checks/{{ check.id }}/reminders" class="check-reminder-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><label class="sr-only" for="rem-{{ check.id }}">هشدارها (روز قبل)</label><input id="rem-{{ check.id }}" name="reminder_days" value="{{ check.reminder_days|replace('[','')|replace(']','')|replace(',','،') }}"><button class="btn btn-sm btn-ghost" type="submit" title="به‌روزرسانی هشدارها" aria-label="به‌روزرسانی هشدارهای چک {{ check.id }}">🔔</button></form>
+                    <form method="post" action="/admin/checks/{{ check.id }}/reminders" class="check-reminder-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><label class="sr-only" for="rem-{{ check.id }}">هشدارها (روز قبل)</label><input id="rem-{{ check.id }}" name="reminder_days" value="{{ reminder_text_map.get(check.id, '') }}"><button class="btn btn-sm btn-ghost" type="submit" aria-label="به‌روزرسانی هشدارهای چک {{ check.id }}">هشدارها</button></form>
                 </div>
                 {% elif check.status in ('bounced', 'cancelled') %}
                 <div class="check-actions">
@@ -238,21 +277,18 @@
     {% if total_pages > 1 %}
     <nav class="product-pagination" aria-label="صفحه‌بندی چک‌ها">
         {% if page > 1 %}
-        <a class="btn btn-sm btn-ghost" href="/admin/checks?page={{ page - 1 }}&q={{ search }}&status={{ status_filter }}&supplier_id={{ supplier_filter }}&bank={{ bank_filter }}&start_date={{ start_date_filter }}&end_date={{ end_date_filter }}">صفحه قبل</a>
+        <a class="btn btn-sm btn-ghost" href="/admin/checks?page={{ page - 1 }}&{{ base_qs }}">صفحه قبل</a>
         {% endif %}
-        <span>صفحه {{ page }} از {{ total_pages }}</span>
+        {% for p in range(1, total_pages + 1) %}
+        {% if p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+        {% if p == page %}<span class="page-current" aria-current="page">{{ p }}</span>
+        {% else %}<a class="btn btn-sm btn-ghost" href="/admin/checks?page={{ p }}&{{ base_qs }}" aria-label="صفحه {{ p }}">{{ p }}</a>{% endif %}
+        {% elif p == 2 or p == total_pages - 1 %}<span class="page-gap" aria-hidden="true">…</span>{% endif %}
+        {% endfor %}
         {% if page < total_pages %}
-        <a class="btn btn-sm btn-ghost" href="/admin/checks?page={{ page + 1 }}&q={{ search }}&status={{ status_filter }}&supplier_id={{ supplier_filter }}&bank={{ bank_filter }}&start_date={{ start_date_filter }}&end_date={{ end_date_filter }}">صفحه بعد</a>
+        <a class="btn btn-sm btn-ghost" href="/admin/checks?page={{ page + 1 }}&{{ base_qs }}">صفحه بعد</a>
         {% endif %}
     </nav>
     {% endif %}
 </div>
-
-{% if alert_rows %}
-<div class="card check-alerts" id="check-alerts" role="alert">
-    <h3>هشدارهای فعال</h3>
-    {% for row in alert_rows %}
-    <div class="check-alert-row"><span><strong>{{ row.reminder.check.provider_name }}</strong> — {{ fmt(row.reminder.check.amount_rials) }} ریال — سررسید {{ jalali_str(row.reminder.check.due_at, false) }}{% if row.days_left is not none %} ({% if row.days_left > 0 %}{{ row.days_left }} روز مانده{% elif row.days_left == 0 %}سررسید امروز{% else %}{{ row.days_left|abs }} روز گذشته{% endif %}){% endif %}</span><form method="post" action="/admin/checks/reminders/{{ row.reminder.id }}/dismiss"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-sm btn-ghost" type="submit">بستن هشدار</button></form></div>
-    {% endfor %}
-</div>
-{% endif %}{% endblock %}
+{% endblock %}

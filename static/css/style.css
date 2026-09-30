@@ -3602,6 +3602,35 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
    they stack into a tower and the row grows past its neighbours. */
 .check-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
 .check-actions form { margin: 0; }
+/* An overdue cheque is money at risk: the row wears the warning face, not
+   just the badge. Small row buttons stay tappable on a phone. */
+.check-table tr.check-overdue { background: color-mix(in srgb, var(--candy) 8%, transparent); }
+.check-table .btn-sm { min-height: 44px; display: inline-flex; align-items: center; }
+/* Triggered alerts read as a worklist, one cheque per row. */
+.check-alert-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.6rem 0; border-bottom: 1px solid var(--rule); }
+.check-alert-row:last-child { border-bottom: none; }
+/* Nine columns never fit a phone: narrow screens stack rows into labelled
+   cards instead of scrolling sideways, like every other admin list. */
+@media (max-width: 700px) {
+  .check-table thead {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .check-table, .check-table tbody, .check-table tr, .check-table td { display: block; }
+  .check-table tr {
+    border: 1px solid var(--rule); border-radius: var(--radius-sm);
+    margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; }
+  .check-table td {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
+    border: none; padding: 0.25rem 0; text-align: start; }
+  .check-table td::before {
+    content: attr(data-label); color: var(--ink-soft); font-size: 0.72rem; flex-shrink: 0; }
+}
+/* The cheque list on paper: figures and rows are the file, buttons and
+   forms are the screen's and die with it. */
+@media print {
+  .check-table tr { border: none; border-bottom: 1px solid var(--paper-mid); border-radius: 0; margin-bottom: 0; padding: 0; }
+  .check-table td { padding: 0.2rem 0; }
+  #check-add-confirm, #check-action-confirm { display: none !important; }
+}
 /* Nine columns never fit a phone: narrow screens stack rows into labelled
    cards instead of scrolling sideways, like every other admin list. */
 @media (max-width: 700px) {

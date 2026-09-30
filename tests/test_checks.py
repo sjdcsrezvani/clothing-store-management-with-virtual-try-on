@@ -324,3 +324,84 @@ def test_paid_rows_show_their_date_and_actions_confirm(client, db_session, authe
     assert jalali_str(check.paid_at, False) in page.text
     assert 'id="check-action-confirm"' in page.text
     assert page.text.count("data-check-action") >= 3
+
+
+def _seed_checks(db_session, count, **overrides):
+    from datetime import datetime, timezone, timedelta
+    operator = db_session.query(StaffUser).filter(StaffUser.username == "owner").one()
+    now = datetime.now(timezone.utc)
+    rows = []
+    for index in range(count):
+        check = CheckRecord(
+            provider_name=f"گیرنده {index}",
+            check_number=f"900{100 + index}",
+            amount_rials=50_000_000 + index,
+            issue_at=now - timedelta(days=60),
+            due_at=now + timedelta(days=30),
+            operator_user_id=operator.id,
+        )
+        for key, value in overrides.items():
+            setattr(check, key, value)
+        db_session.add(check)
+        rows.append(check)
+    db_session.commit()
+    return rows
+
+
+def test_cheque_list_pages_with_numbers_and_searches_figures(client, db_session, authed):
+    """Twenty-five rows is three pages of ten; a figure finds its cheque."""
+    _seed_checks(db_session, 25)
+    first = client.get("/admin/checks?per_page=10")
+    assert 'aria-label="صفحه 3"' in first.text
+    third = client.get("/admin/checks?per_page=10&page=3")
+    assert 'aria-current="page">3<' in third.text
+    assert 'aria-current="page">3<' in client.get("/admin/checks?per_page=10&page=9").text
+
+    by_amount = client.get("/admin/checks?q=50000000")
+    assert "گیرنده 0" in by_amount.text
+    assert by_amount.text.count('data-label="دریافت‌کننده"') == 1
+    by_text = client.get("/admin/checks?q=گیرنده 1")
+    assert "<mark>" in by_text.text
+
+
+def test_bounced_card_counts_and_export_files_the_view(client, db_session, authed):
+    """The fifth card watches برگشتی; the file answers the viewed rows."""
+    _seed_checks(db_session, 2)
+    doomed = db_session.query(CheckRecord).order_by(CheckRecord.id.asc()).first()
+    token = csrf_token(client, "/admin/checks")
+    client.post(f"/admin/checks/{doomed.id}/status",
+                data={"csrf_token": token, "status": "bounced"}, follow_redirects=False)
+
+    page = client.get("/admin/checks")
+    assert 'href="/admin/checks?status=bounced"' in page.text
+
+    whole = client.get("/admin/checks/export")
+    assert whole.status_code == 200
+    assert "text/csv" in whole.headers["content-type"]
+    assert whole.text.startswith("\ufeff")
+    assert "50000000" in whole.text
+    assert "50,000,000" not in whole.text
+
+    only_bounced = client.get("/admin/checks/export?status=bounced")
+    assert f"\n{doomed.id}," in only_bounced.text
+    assert only_bounced.text.count("\n") == 2  # header + the one row
+
+
+def test_reminder_figure_is_plain_text_and_alerts_lead(client, db_session, authed):
+    """No Python repr leaks into the field; triggered alerts sit above the list."""
+    from datetime import datetime, timezone, timedelta
+    _seed_checks(db_session, 1)
+    check = db_session.query(CheckRecord).one()
+    add_reminders(db_session, check, [14, 7, 3])
+    db_session.commit()
+    body = client.get("/admin/checks").text
+    assert 'value="14، 7، 3"' in body
+    assert "[14" not in body
+
+    reminder = db_session.query(CheckReminder).filter(CheckReminder.check_id == check.id).first()
+    reminder.remind_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    db_session.commit()
+    triggered = client.get("/admin/checks").text
+    assert 'id="check-alerts"' in triggered
+    assert 'role="alert"' not in triggered
+    assert triggered.index('id="check-alerts"') < triggered.index('id="checks-list"')
