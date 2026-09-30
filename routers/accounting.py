@@ -750,6 +750,59 @@ async def admin_accounting(
     debts = debt_totals(db)
     cashbox = get_cashbox(db, start, end, get_opening_balance(db))
 
+    # The dashboard may never call the reconciliation walk itself (a page
+    # opened all day must stay cheap), so this page leaves its verdict where
+    # the dashboard can read it for the price of one settings row: disagree
+    # or not, and when that was last established. Only a change writes.
+    disagree = "1" if checks["has_discrepancies"] else "0"
+    flag = db.query(Settings).filter(Settings.key == "books_disagree").first()
+    if flag is None or flag.value != disagree:
+        checked_at = datetime.now(timezone.utc).isoformat()
+        if flag is None:
+            db.add(Settings(key="books_disagree", value=disagree))
+            db.add(Settings(key="books_checked_at", value=checked_at))
+        else:
+            flag.value = disagree
+            stamped = db.query(Settings).filter(Settings.key == "books_checked_at").first()
+            if stamped is None:
+                db.add(Settings(key="books_checked_at", value=checked_at))
+            else:
+                stamped.value = checked_at
+        db.commit()
+
+    # Mismatch rows with names the shop reads: product plus size and colour,
+    # linked at the movements page that can actually fix them.
+    variant_ids = [d["variant_id"] for d in checks["inventory_details"]]
+    variants = {v.id: v for v in db.query(ProductVariant).filter(
+        ProductVariant.id.in_(variant_ids)).all()} if variant_ids else {}
+    product_names = {p.id: p.name for p in db.query(Product).filter(
+        Product.id.in_([v.product_id for v in variants.values()])).all()} if variants else {}
+    recon_details = []
+    for detail in checks["inventory_details"]:
+        variant = variants.get(detail["variant_id"])
+        if variant is None:
+            label = f"تنوع #{detail['variant_id']}"
+        else:
+            bits = [product_names.get(variant.product_id) or f"کالا #{variant.product_id}"]
+            if variant.size:
+                bits.append(f"سایز {variant.size}")
+            if variant.color:
+                bits.append(variant.color)
+            label = " · ".join(bits)
+        recon_details.append({**detail, "label": label})
+    recon_rows = [
+        {"label": "فروش", "unit": "تومان", **checks["checks"]["sales_balance"]},
+        {"label": "موجودی", "unit": "عدد", **checks["checks"]["inventory_balance"]},
+        {"label": "نسیه", "unit": "تومان", **checks["checks"]["customer_debt"]},
+    ]
+
+    from urllib.parse import urlencode
+    export_qs = urlencode({
+        "period": window.period,
+        **({"start_date": start_date} if start_date else {}),
+        **({"end_date": end_date} if end_date else {}),
+    })
+
     return templates.TemplateResponse(request, "admin/accounting.html", {
         "period": window.period,
         "start_date": start_date,
@@ -759,6 +812,10 @@ async def admin_accounting(
         "pl": pl,
         "report": report,
         "reconciliation": checks,
+        "recon_rows": recon_rows,
+        "recon_details": recon_details,
+        "recon_disagree": checks["has_discrepancies"],
+        "export_qs": export_qs,
         "debts": debts,
         "cashbox": cashbox,
         # The cash-movement section lives here now, not on the cashbox page:
@@ -767,8 +824,6 @@ async def admin_accounting(
         # arithmetic about nothing; the net movement means something instead.
         "cashbox_timeless": window.period == "all",
         "cashbox_net": cashbox["cash_in"] - cashbox["cash_out"],
-        "payment_labels": PAYMENT_LABELS,
-        "today_jalali": jalali_str(datetime.now(timezone.utc), with_time=False),
         "fmt": fmt,
         "jalali_str": jalali_str,
     })

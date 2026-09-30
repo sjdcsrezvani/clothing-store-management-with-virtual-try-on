@@ -36,7 +36,7 @@ from functools import cached_property
 import jdatetime
 from sqlalchemy.orm import Session
 
-from models import CashSession, to_persian_digits
+from models import CashSession, Settings, to_persian_digits
 from services._common import fmt, jalali_str, percent
 from services.accounting import (
     as_utc, debt_totals, get_cashbox, get_opening_balance, open_cash_session,
@@ -411,6 +411,32 @@ def _build_cash_variance(numbers: _Numbers, role: str) -> dict | None:
                     f"({jalali_str(session.closed_at, with_time=False)})")}
 
 
+def _build_books_disagree(numbers: _Numbers, role: str) -> dict | None:
+    """The books disagreed at the last سود و زیان visit, while they still do.
+
+    The dashboard may never run the reconciliation walk itself — a page
+    opened all day stays cheap — so it reads the verdict the accounting page
+    leaves behind for the price of two settings rows. A card that cried on
+    stale news would train the reader to ignore it, so the sub-line says
+    when the verdict was established.
+    """
+    flag = numbers.db.query(Settings).filter(Settings.key == "books_disagree").first()
+    if flag is None or flag.value != "1":
+        return None
+    stamped = numbers.db.query(Settings).filter(Settings.key == "books_checked_at").first()
+    when = ""
+    if stamped is not None and stamped.value:
+        try:
+            seen = datetime.fromisoformat(stamped.value)
+            if seen.tzinfo is None:
+                seen = seen.replace(tzinfo=timezone.utc)
+            when = f" · بررسی {jalali_str(seen, with_time=False)}"
+        except (TypeError, ValueError):
+            when = ""
+    return {"value": "نیازمند بررسی", "tone": "danger",
+            "sub": f"دفاتر نمی‌خوانند{when}"}
+
+
 def _build_cash_stale(numbers: _Numbers, role: str) -> dict | None:
     """A drawer left open from an earlier day — the shift nobody closed."""
     session = numbers.open_shift
@@ -515,6 +541,8 @@ CARDS: tuple[dict, ...] = (
           tone="danger", href="/admin/cashbox"),
     _card("cash_stale", "attention", "صندوق باز مانده", _build_cash_stale,
           tone="warning", href="/admin/cashbox"),
+    _card("books_disagree", "attention", "مغایرت دفاتر", _build_books_disagree,
+          tone="danger", href="/admin/accounting"),
     _card("backup", "attention", "پشتیبان‌گیری", _build_backup,
           min_role="owner", tone="success", href="/admin/backups"),
     _card("sms", "attention", "پیامک", _build_sms,

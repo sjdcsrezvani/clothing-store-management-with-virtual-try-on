@@ -1154,3 +1154,44 @@ def test_upcoming_occurrence_clamps_without_drifting():
     assert upcoming_occurrence(31, feb1) == datetime(2026, 2, 28, tzinfo=timezone.utc)
     feb28_noon = datetime(2026, 2, 28, 12, tzinfo=timezone.utc)
     assert upcoming_occurrence(15, feb28_noon) == datetime(2026, 3, 15, tzinfo=timezone.utc)
+
+
+def test_reconciliation_renders_and_agrees_on_a_clean_shop(client, db_session, authed):
+    """The self-check the backend always computed is finally on the page."""
+    page = client.get("/admin/accounting")
+    assert page.status_code == 200
+    assert "خودترازی دفاتر" in page.text
+    assert "مطابق" in page.text
+    assert "مغایرت" not in page.text
+    assert "سود و زیان فروشگاه در بازه" in page.text
+    assert " ت</div>" not in page.text
+    assert "kind=sales&period=month" in page.text
+
+
+def test_a_stock_mismatch_raises_the_section_and_the_dashboard_card(client, db_session, authed):
+    """A variant whose shelf disagrees with its ledger flags both pages."""
+    from models import Product, ProductVariant
+    product = Product(name="کالای ناهم‌خوان")
+    db_session.add(product)
+    db_session.flush()
+    db_session.add(ProductVariant(product_id=product.id, price=100_000,
+                                  barcode="MISMATCH-1", stock_quantity=5))
+    db_session.commit()
+
+    page = client.get("/admin/accounting")
+    assert "مغایرت" in page.text
+    assert "تنوع‌های ناهم‌خوان" in page.text
+    assert "کالای ناهم‌خوان" in page.text
+    assert "/admin/inventory-movements" in page.text
+
+    dash = client.get("/admin")
+    assert "مغایرت دفاتر" in dash.text
+
+    # Fixed on the shelf, rechecked on the page: both pages go quiet.
+    variant = db_session.query(ProductVariant).filter(
+        ProductVariant.barcode == "MISMATCH-1").one()
+    variant.stock_quantity = 0
+    db_session.commit()
+    client.get("/admin/accounting")
+    assert "مغایرت دفاتر" not in client.get("/admin").text
+    assert "مطابق" in client.get("/admin/accounting").text

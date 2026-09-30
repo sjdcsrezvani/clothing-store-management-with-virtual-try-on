@@ -3653,6 +3653,21 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
   .expense-table td::before {
     content: attr(data-label); color: var(--ink-soft); font-size: 0.72rem; flex-shrink: 0; }
 }
+/* The self-check tables stack the same way: a mismatch read on a phone is
+   still label-first, never column-guessing. */
+@media (max-width: 700px) {
+  .recon-table thead {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .recon-table, .recon-table tbody, .recon-table tr, .recon-table td { display: block; }
+  .recon-table tr {
+    border: 1px solid var(--rule); border-radius: var(--radius-sm);
+    margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; }
+  .recon-table td {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
+    border: none; padding: 0.25rem 0; text-align: start; }
+  .recon-table td::before {
+    content: attr(data-label); color: var(--ink-soft); font-size: 0.72rem; flex-shrink: 0; }
+}
 
 /* The digest preview: what opting in puts on the owner's phone, rendered from
    last month's own figures before any phone is saved. */
