@@ -326,6 +326,10 @@ async def admin_checks(
         "operator_names": operator_names,
         "days_left_map": days_left_map,
         "reminder_text_map": reminder_text_map,
+        # The add form shows the effective defaults prefilled: clearing the
+        # field means no reminders, leaving it means these — and the POST
+        # falls back to the same figure when it arrives empty.
+        "default_reminder_days": get_default_reminder_days(db),
         "alert_rows": alert_rows,
         "is_owner": role_allows(guard.role, "owner"),
         "status_filter": status_filter,
