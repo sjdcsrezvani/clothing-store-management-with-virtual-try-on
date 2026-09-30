@@ -80,7 +80,6 @@ from services.events import append_event
 PAYMENT_LABELS = {"card": "💳 کارت", "cash": "💵 نقد", "credit": "📒 نسیه"}
 EXPENSE_TYPE_LABELS = {"one_time": "یک‌باره", "monthly": "ماهانه"}
 EXPENSE_PAYMENT_LABELS = {"cash": "نقدی", "card": "کارتی"}
-EXPENSE_PAGE_SIZE = 50
 
 MOVEMENT_PAGE_SIZE = 25
 MOVEMENT_DIRECTIONS = {"all": "همه حرکت‌ها", "in": "فقط ورودی", "out": "فقط خروجی"}
@@ -2837,6 +2836,7 @@ async def admin_expenses(
     method: str = "all",
     status: str = "all",
     page: str = "1",
+    per_page: str = "25",
     db: Session = Depends(get_db),
 ):
     guard = require_html_role(request, db, "manager")
@@ -2849,12 +2849,16 @@ async def admin_expenses(
     payment_method = method if method in EXPENSE_PAYMENT_LABELS else "all"
     status_filter = status if status in {"active", "reversed"} else "all"
     page = page_arg(page)
+    per_page_int = int(per_page) if str(per_page).isdigit() and int(per_page) in (10, 25, 50) else 25
 
     query = db.query(Expense).filter(Expense.created_at.between(start, end))
     if search:
         digits = search.lstrip("#").strip()
         if digits.isdigit():
-            query = query.filter(Expense.id == int(digits))
+            # A bare number is a receipt number or a figure — an id match and
+            # an amount match are both exact, so the row is found either way.
+            value = int(digits)
+            query = query.filter(or_(Expense.id == value, Expense.amount == value))
         else:
             like = f"%{search}%"
             query = query.filter(or_(Expense.category.ilike(like), Expense.note.ilike(like)))
@@ -2875,15 +2879,33 @@ async def admin_expenses(
     monthly_total = query.filter(
         Expense.reversed_at.is_(None), Expense.expense_type == "monthly").with_entities(
         func.coalesce(func.sum(Expense.amount), 0)).scalar() or 0
+    # How much of the viewed total left the drawer versus the account: the two
+    # leave the business through different doors, and one figure hides that.
+    cash_total = query.filter(
+        Expense.reversed_at.is_(None), Expense.payment_method == "cash").with_entities(
+        func.coalesce(func.sum(Expense.amount), 0)).scalar() or 0
+    card_total = query.filter(
+        Expense.reversed_at.is_(None), Expense.payment_method == "card").with_entities(
+        func.coalesce(func.sum(Expense.amount), 0)).scalar() or 0
+    # The viewed categories with their shares, biggest first: the same shape
+    # the P&L breakdown uses, but grouped from this very query — so the list
+    # can never answer a different view than the table under it.
+    breakdown = [
+        {"category": (category or "بدون دسته"), "amount": amount}
+        for category, amount in query.with_entities(
+            Expense.category, func.coalesce(func.sum(Expense.amount), 0),
+        ).filter(Expense.reversed_at.is_(None)
+        ).group_by(Expense.category).order_by(func.sum(Expense.amount).desc()).all()
+    ]
     total_count = query.count()
-    total_pages = max(1, -(-total_count // EXPENSE_PAGE_SIZE))
+    total_pages = max(1, -(-total_count // per_page_int))
     page = min(page, total_pages)
     sort_key, sort_dir = parse_sort(request.query_params,
                                     {"date": "desc", "amount": "desc"}, "date")
     order_column = Expense.amount if sort_key == "amount" else Expense.created_at
     order = order_column.desc() if sort_dir == "desc" else order_column.asc()
     expenses = query.order_by(order, Expense.id.desc()) \
-        .offset((page - 1) * EXPENSE_PAGE_SIZE).limit(EXPENSE_PAGE_SIZE).all()
+        .offset((page - 1) * per_page_int).limit(per_page_int).all()
 
     ids = [e.id for e in expenses]
     salary_map: dict[int, int] = {}
@@ -2892,6 +2914,7 @@ async def admin_expenses(
                 SalaryPayment.expense_id.in_(ids)).all():
             salary_map[row[0]] = row[1]
     actor_map: dict[int, str] = {}
+    reversal_map: dict[int, dict] = {}
     if ids:
         events = db.query(BusinessEvent).filter(
             BusinessEvent.event_type == "ExpenseRecorded",
@@ -2902,6 +2925,20 @@ async def admin_expenses(
         for ev in events:
             if ev.aggregate_id is not None and ev.actor_user_id in names:
                 actor_map[ev.aggregate_id] = names[ev.actor_user_id]
+        # Who voided it and when — the mirror of ثبت:, read from the same
+        # event table so a reversal without a recorded witness is impossible.
+        reversals = db.query(BusinessEvent).filter(
+            BusinessEvent.event_type == "ExpenseReversed",
+            BusinessEvent.aggregate_id.in_(ids)).all()
+        void_ids = {ev.actor_user_id for ev in reversals if ev.actor_user_id}
+        void_names = {u.id: (u.full_name or u.username) for u in db.query(StaffUser).filter(
+            StaffUser.id.in_(list(void_ids))).all()} if void_ids else {}
+        for ev in reversals:
+            if ev.aggregate_id is not None:
+                reversal_map[ev.aggregate_id] = {
+                    "by": void_names.get(ev.actor_user_id) or "کاربر حذف‌شده",
+                    "when": ev.occurred_at,
+                }
 
     has_filters = bool(search or expense_type != "all" or payment_method != "all"
                         or status_filter != "all" or window.period != "month"
@@ -2921,14 +2958,32 @@ async def admin_expenses(
         **({"method": payment_method} if payment_method != "all" else {}),
         **({"status": status_filter} if status_filter != "all" else {}),
     })
+    # The same encoded string for the sort and pagination links: raw values
+    # hand-concatenated into an href are how a filter value used to break out
+    # of its quotes, and Persian search text always carries characters that
+    # must not travel raw. Sort and direction stay out so each link sets them.
+    base_qs = urlencode({
+        "period": window.period,
+        **({"start_date": start_date} if start_date else {}),
+        **({"end_date": end_date} if end_date else {}),
+        **({"q": search} if search else {}),
+        **({"type": expense_type} if expense_type != "all" else {}),
+        **({"method": payment_method} if payment_method != "all" else {}),
+        **({"status": status_filter} if status_filter != "all" else {}),
+        "per_page": per_page_int,
+    })
     return templates.TemplateResponse(request, "admin/expenses.html", {
         "expenses": expenses,
         "total": total,
         "expense_type_totals": {"one_time": one_time_total, "monthly": monthly_total},
+        "cash_total": cash_total,
+        "card_total": card_total,
+        "breakdown": breakdown,
         "expense_type_labels": EXPENSE_TYPE_LABELS,
         "expense_payment_labels": EXPENSE_PAYMENT_LABELS,
         "salary_map": salary_map,
         "actor_map": actor_map,
+        "reversal_map": reversal_map,
         "period": window.period,
         "start_date": start_date,
         "end_date": end_date,
@@ -2940,10 +2995,13 @@ async def admin_expenses(
         "page": page,
         "total_pages": total_pages,
         "total_count": total_count,
+        "per_page": per_page_int,
+        "per_page_options": (10, 25, 50),
         "sort_key": sort_key,
         "sort_dir": sort_dir,
         "has_filters": has_filters,
         "export_qs": export_qs,
+        "base_qs": base_qs,
         # The add form warns when no drawer is open: a cash expense then lands
         # shift-less and is counted by time window, which is correct but worth
         # saying out loud at the moment of recording.

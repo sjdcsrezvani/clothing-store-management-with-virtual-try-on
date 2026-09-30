@@ -998,3 +998,57 @@ def test_void_carries_its_reason_to_the_reversal(client, db_session, authed):
         FinancialEntry.entry_type == "expense_reversal",
         FinancialEntry.expense_id == second.id).one()
     assert fallback.reason == "ابطال دستی هزینه"
+
+
+def test_expenses_page_size_is_a_choice_with_numbered_pages(client, db_session, authed):
+    """Fifty fixed rows is a wall; ten per page with numbers is a list."""
+    from datetime import datetime, timezone
+    for index in range(30):
+        db_session.add(Expense(amount=10_000 + index, category="متفرقه",
+                               expense_type="one_time", payment_method="cash",
+                               created_at=datetime.now(timezone.utc)))
+    db_session.commit()
+
+    first = client.get("/admin/expenses?per_page=10")
+    assert 'aria-label="صفحه 3"' in first.text
+    assert "نمایش همه" not in first.text
+    third = client.get("/admin/expenses?per_page=10&page=3")
+    assert 'aria-current="page">3<' in third.text
+    # Out-of-range lands on the last page, not an empty list.
+    assert 'aria-current="page">3<' in client.get("/admin/expenses?per_page=10&page=9").text
+
+
+def test_expense_search_finds_a_figure_as_well_as_a_receipt_number(client, db_session, authed):
+    """A bare number is a receipt number or a figure — the row is found either way."""
+    _post(client, "/admin/expenses/add", {"amount": "7654321", "category": "تعمیرات"}, authed)
+    expense = db_session.query(Expense).order_by(Expense.id.desc()).first()
+
+    by_amount = client.get("/admin/expenses?q=7654321")
+    assert f"/admin/expenses/{expense.id}/delete" in by_amount.text
+    by_id = client.get(f"/admin/expenses?q=%23{expense.id}")
+    assert f"/admin/expenses/{expense.id}/delete" in by_id.text
+    missing = client.get("/admin/expenses?q= rent-that-is-nowhere")
+    assert "هزینه‌ای با این فیلترها پیدا نشد" in missing.text
+
+
+def test_expense_list_names_methods_breakdown_and_voider(client, db_session, authed):
+    """The viewed total is split by door, categorised with shares, and voids are witnessed."""
+    _post(client, "/admin/expenses/add", {"amount": "400000", "category": "اجاره",
+                                          "expense_type": "monthly", "note": "نقدی"}, authed)
+    _post(client, "/admin/expenses/add", {"amount": "600000", "category": "اجاره",
+                                          "expense_type": "one_time", "payment_method": "card",
+                                          "note": "کارتی"}, authed)
+    doomed = db_session.query(Expense).filter(Expense.amount == 400_000).one()
+    _post(client, f"/admin/expenses/{doomed.id}/delete", {"reason": "تکراری"}, authed)
+
+    page = client.get("/admin/expenses")
+    assert "نقدی 0 تومان" in page.text            # the cash one was voided
+    assert "کارتی 600,000 تومان" in page.text
+    assert "دسته‌ها در همین نما" in page.text
+    assert "اجاره" in page.text
+    assert "همه روش‌ها" in page.text and "همه وضعیت‌ها" in page.text
+    assert "نقدی و کارتی" not in page.text
+    assert "برگشت:" in page.text                   # the void is witnessed…
+    assert "برگشت: کاربر حذف‌شده" not in page.text  # …by a named human
+    assert 'data-label="مبلغ"' in page.text       # phone cards are labelled
+    assert "جمع هزینه‌های بازه" in page.text
