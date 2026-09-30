@@ -376,6 +376,7 @@ input[type="number"],
 input[type="email"],
 input[type="password"],
 input[type="date"],
+input[type="search"],
 select,
 textarea {
   width: 100%;
@@ -394,6 +395,12 @@ input:focus, select:focus, textarea:focus {
   border-color: var(--candy);
   box-shadow: var(--focus-ring);
 }
+/* A search field is a text field that happens to clear: the OS chrome
+   (rounded search look, cancel glyph) would make it the odd one out next to
+   every text filter on the site, so it wears exactly the same face. */
+input[type="search"] { -webkit-appearance: textfield; appearance: textfield; }
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; appearance: none; }
 /* Dropdowns draw their own chevron: two ink-soft gradients forming a ▾ at
    the inline end (physical left in this RTL shell), so the arrow always
    wears the theme instead of the OS default. Native option lists stay
@@ -1696,6 +1703,7 @@ html[data-theme="kids-boutique"] input[type="number"],
 html[data-theme="kids-boutique"] input[type="email"],
 html[data-theme="kids-boutique"] input[type="password"],
 html[data-theme="kids-boutique"] input[type="date"],
+html[data-theme="kids-boutique"] input[type="search"],
 html[data-theme="kids-boutique"] select,
 html[data-theme="kids-boutique"] textarea { background: var(--field-bg); border-color: var(--rule); }
 html[data-theme="kids-boutique"] .info-item,
