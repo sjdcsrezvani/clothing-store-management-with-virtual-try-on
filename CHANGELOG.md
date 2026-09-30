@@ -1,3 +1,74 @@
+## 2.7.9 — 1405/07/08 (2026-09-30)
+
+### چک‌ها و هزینه‌ها: the cheque becomes a record you can work, and a rule's day becomes a field
+
+- **A cheque without its number is not a cheque.** شماره چک is required when one
+  is recorded — the leaf it was torn from is the only thing that matches it to
+  the paper at the bank — and the edit form refuses to blank it as well, so a
+  row can never lose the one detail that gives it an identity.
+- **A cheque's words can be corrected; its money and its time cannot.** ویرایش
+  fixes دریافت‌کننده، شماره، تأمین‌کننده، بانک، حساب and توضیح while the cheque is
+  still صادرشده, and مبلغ and dates are read-only on purpose: a wrong figure or a
+  wrong deadline is cancel-and-re-record, not an edit.
+- **A cheque that never lived can be removed; one that did can only be cancelled.**
+  حذف is offered only for a صادرشده cheque with no fired reminder and no journal
+  entry beyond its own recording, and the full snapshot stays in the audit log; a
+  row with any trace in it is refused, with the reason named.
+- **A برگشتی cheque carries its follow-up until someone closes it.** A bounced
+  cheque is flagged, and the flag clears only when it is re-issued from or marked
+  «بررسی شد» — paying, cancelling or a normal edit clears a flag it should never
+  have kept, so «نیازمند پیگیری» is a list you can finish.
+- **Re-issue is one confirmation, and it closes the loop.** A برگشتی or لغو‌شده
+  cheque prefills the add form with its own name, number, amount, bank and
+  حساب, the new row records which cheque it replaced, and the old row's
+  پیگیری closes itself instead of being forgotten.
+- **Every irreversible move asks first, in the page's own dialog.** Recording
+  names the amount, the payee, the سررسید and the bank; each row action carries
+  the row's own words for پرداخت، لغو، برگشت، ویرایش and حذف; and a second click
+  while the first post is in flight is ignored. Without JavaScript every form
+  still posts directly, exactly as before.
+- **The add form suggests from what the shop already wrote.** دریافت‌کننده and
+  بانک are datalists drawn from the cheques already recorded, with autocomplete
+  off so the browser's own history from same-named fields elsewhere can never
+  join in — repeat business is one tap, and typing stays free.
+- **The cheque list is a tool, not a printout.** Numbered pages at ۱۰ / ۲۵ / ۵۰,
+  a برگشتی card counted beside صادرشده and سررسیدگذشته, a «نیازمند پیگیری»
+  filter, and a bare figure in the search box read as a cheque number or an
+  amount as well as an id — with filters, page size and page kept together
+  through every link, encoded, so Persian search text stops breaking its href.
+- **«نزدیک» is the owner's horizon, not a constant.** The upcoming window is a
+  setting (۱ to ۹۰ days, default ۱۴), and the card, the filter label and the
+  export all read that one figure, so the count and the list below it can never
+  disagree about what counts as near.
+- **The cheque defaults moved to settings, where the owner already is.**
+  روزهای هشدار پیش‌فرض, the near horizon and the هشدار روشن/خاموش toggle live in
+  a «چک‌ها» section of `/admin/settings` and apply to new cheques only; a
+  reminder list that cannot be read is refused with its own error instead of
+  being dropped quietly.
+- **A cheque's reminders read as days, not as a Python list.** The reminder days
+  are worked out once per row and rendered as «۷، ۳» rather than by string
+  surgery on a list repr, and the triggered alerts moved above the list as a
+  worklist, one cheque per row.
+- **The filtered list is also a file.** خروجی files exactly the rows on screen
+  as CSV — raw rial figures that sum in a spreadsheet, Jalali dates the shop
+  reads — built from the same filters as the table, so a file can never answer
+  a different view than the list that ordered it.
+- **Nine columns fit a phone, and the list prints.** Narrow screens stack a
+  cheque into labelled cards, an overdue row wears the warning face rather than
+  only a badge, each action meets a thumb at 44 pixels, and the print stylesheet
+  drops the buttons and dialogs so the paper carries figures, not controls.
+- **A month's روز سررسید is a typed day, not a 31-row dropdown.** The rule day is
+  a field that takes ۱ to ۳۱ and says so, and both category inputs now carry
+  autocomplete off, so the browser stops offering product categories borrowed
+  from another form when a manager is naming an expense.
+- **Being monthly and posting monthly are named apart.** The expenses page now
+  says in words which is which — a cost that is monthly by nature, against one
+  the page writes by itself every month — so a manager can tell the two apart
+  without reading the code behind them.
+
+**Schema change.** The database moves to revision 26 (an `issued_checks.needs_followup`
+column, additive — a database with no flagged cheques behaves exactly as before).
+
 ## 2.7.8 — 1405/07/08 (2026-09-30)
 
 ### هزینه‌ها: the list becomes a tool, and a fixed bill posts itself
