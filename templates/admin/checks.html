@@ -17,7 +17,7 @@
         <div class="stat-sub tnum">{{ fmt(stats.overdue.amount) }} ریال</div>
     </a>
     <a class="stat-card accent-saffron" href="/admin/checks?status=upcoming">
-        <div class="stat-label">دو هفته آینده</div>
+        <div class="stat-label">{{ upcoming_label }}</div>
         <div class="stat-value tnum">{{ stats.upcoming.count }}</div>
         <div class="stat-sub tnum">{{ fmt(stats.upcoming.amount) }} ریال</div>
     </a>
@@ -148,15 +148,13 @@
 
 {% if is_owner %}
 <div class="card">
-    <div class="section-heading"><div><span class="eyebrow">تنظیمات یادآوری</span><h3>تنظیمات هشدارها</h3></div><span class="badge {% if reminders_enabled %}badge-available{% else %}badge-none{% endif %}">{{ 'فعال' if reminders_enabled else 'خاموش' }}</span></div>
-    <p class="appearance-intro">این تنظیمات فقط روی چک‌های جدید اعمال می‌شود؛ هشدار هر چک را می‌توانید جداگانه تغییر دهید.</p>
-    <form method="post" action="/admin/checks/settings" class="filter-bar">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <label for="default_reminder_days">روزهای پیش‌فرض قبل از سررسید</label>
-        <input id="default_reminder_days" name="reminder_days" value="{{ default_reminder_days|join(', ') }}" placeholder="14, 7, 3">
-        <label class="checkbox-label"><input type="hidden" name="enabled" value="0"><input type="checkbox" name="enabled" value="1"{% if reminders_enabled %} checked{% endif %}> فعال‌سازی هشدارها</label>
-        <button type="submit" class="btn btn-ghost">ذخیره تنظیمات هشدار</button>
-    </form>
+    <div class="section-heading-row">
+        <div>
+            <h3>تنظیمات هشدارها</h3>
+            <p class="muted">روزهای پیش‌فرض هشدار، بازه نمای نزدیک و فعال‌سازی — همه در تنظیمات فروشگاه، کنار بقیه پیش‌فرض‌ها.</p>
+        </div>
+        <a href="/admin/settings" class="btn btn-ghost">تنظیمات چک‌ها</a>
+    </div>
 </div>
 {% endif %}
 

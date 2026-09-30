@@ -105,18 +105,49 @@ def test_rescheduling_a_check_dismisses_old_active_reminders(db_session, client,
     assert all(reminder.status != "triggered" for reminder in reminders)
 
 
-def test_only_owner_can_change_default_check_reminders(client, db_session):
+def test_only_owner_can_change_check_settings_and_values_are_validated(client, db_session):
+    """Reminder defaults live in /admin/settings now: validated, normalised."""
+    from urllib.parse import unquote_plus
     from tests.test_roles import _session_as, _staff
 
     manager, password = _staff(db_session, "checks-manager", "manager")
     _session_as(client, manager, password)
     token = csrf_token(client, "/admin/checks")
     response = client.post(
-        "/admin/checks/settings",
-        data={"csrf_token": token, "reminder_days": "30, 14, 7", "enabled": "1"},
+        "/admin/settings",
+        data={"csrf_token": token, "check_default_reminders": "30, 14, 7"},
         follow_redirects=False,
     )
     assert response.status_code == 403
+
+    token = csrf_token(client)
+    client.post("/admin/login", data={"username": "owner", "password": "test-admin-pass",
+                                      "csrf_token": token}, follow_redirects=False)
+    token = csrf_token(client, "/admin/settings")
+    bad = client.post(
+        "/admin/settings",
+        data={"csrf_token": token, "check_default_reminders": "banana"},
+        follow_redirects=False,
+    )
+    assert bad.status_code == 303
+    assert "روزهای هشدار چک" in unquote_plus(bad.headers["location"])
+
+    good = client.post(
+        "/admin/settings",
+        data={"csrf_token": token, "check_default_reminders": "30,14,7",
+              "check_upcoming_days": "30", "check_reminders_enabled": "1"},
+        follow_redirects=False,
+    )
+    assert good.status_code == 303
+    from models import Settings
+    stored = {row.key: row.value for row in db_session.query(Settings).all()}
+    assert stored["check_default_reminders"] == "30, 14, 7"
+    assert stored["check_upcoming_days"] == "30"
+
+    from services.checks import get_default_reminder_days, get_upcoming_days
+    assert get_default_reminder_days(db_session) == [30, 14, 7]
+    assert get_upcoming_days(db_session) == 30
+    assert "30 روز آینده" in client.get("/admin/checks").text
 
 
 def test_a_cheque_without_its_number_is_refused(client, db_session, authed):

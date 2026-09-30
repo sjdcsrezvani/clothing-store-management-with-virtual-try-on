@@ -628,7 +628,7 @@ def test_the_pages_are_named_in_persian():
     for english in ("Financial commitments", "Reminder settings", "Issued checks",
                     "Products / Printing", "Store theme", '>Appearance<'):
         assert english not in text, english
-    for persian in ("تنظیمات یادآوری", "چک‌های صادره", "محصولات و چاپ", "تم فروشگاه"):
+    for persian in ("تنظیمات هشدارها", "چک‌های صادره", "محصولات و چاپ", "تم فروشگاه"):
         assert persian in text, persian
     for item in ALL_ITEMS:
         assert not LATIN.search(item["label"]), item["label"]

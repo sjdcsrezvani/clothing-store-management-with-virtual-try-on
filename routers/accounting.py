@@ -70,11 +70,11 @@ from services.checks import (
     check_alert_summary,
     dismiss_reminders,
     get_default_reminder_days,
+    get_upcoming_days,
     normalize_reminder_days,
     parse_amount_rials,
     parse_check_date,
     reminder_days_from_record,
-    reminders_enabled,
     trigger_due_reminders,
 )
 from services.events import append_event
@@ -115,13 +115,12 @@ CHECK_STATUSES = {
     "all": "همه",
     "issued": "صادرشده",
     "overdue": "سررسیدگذشته",
-    "upcoming": "دو هفته آینده",
+    "upcoming": "نزدیک",
     "needs_action": "نیازمند پیگیری",
     "paid": "پرداخت‌شده",
     "cancelled": "لغو‌شده",
     "bounced": "برگشتی",
 }
-CHECKS_UPCOMING_DAYS = 14
 
 
 def _check_list_conds(search: str, supplier_id: str, bank_search: str,
@@ -198,7 +197,11 @@ async def admin_checks(
         db.commit()
     now_aware = datetime.now(timezone.utc)
     now_naive = now_aware.replace(tzinfo=None)
-    upcoming_end = now_aware + timedelta(days=CHECKS_UPCOMING_DAYS)
+    # The «نزدیک» horizon is the owner's, not a constant: the card and the
+    # filter below both read this figure, so the two cannot disagree.
+    upcoming_days = get_upcoming_days(db)
+    upcoming_end = now_aware + timedelta(days=upcoming_days)
+    upcoming_label = f"{upcoming_days} روز آینده"
     summary = check_alert_summary(db)
 
     status_filter = status if status in CHECK_STATUSES else "all"
@@ -326,7 +329,9 @@ async def admin_checks(
         "alert_rows": alert_rows,
         "is_owner": role_allows(guard.role, "owner"),
         "status_filter": status_filter,
-        "statuses": CHECK_STATUSES,
+        "statuses": {**CHECK_STATUSES, "upcoming": upcoming_label},
+        "upcoming_days": upcoming_days,
+        "upcoming_label": upcoming_label,
         "search": search,
         "supplier_filter": supplier_id,
         "bank_filter": bank_search,
@@ -339,8 +344,6 @@ async def admin_checks(
         "per_page_options": (10, 25, 50),
         "base_qs": base_qs,
         "has_filters": has_filters,
-        "default_reminder_days": get_default_reminder_days(db),
-        "reminders_enabled": reminders_enabled(db),
         # The check form paints its amount floor from the same constant
         # parse_amount_rials refuses below.
         "numeric_rules": {"amount_rials": (CHECK_AMOUNT_MIN, None, "مبلغ چک")},
@@ -462,39 +465,6 @@ async def admin_check_add(
     if reissued_from is not None:
         return RedirectResponse(url="/admin/checks?msg=چک جدید ثبت و پیگیری چک قبلی بسته شد.", status_code=303)
     return RedirectResponse(url="/admin/checks?msg=چک ثبت شد.", status_code=303)
-
-
-@router.post("/checks/settings", response_class=HTMLResponse)
-async def admin_check_settings(
-    request: Request,
-    db: Session = Depends(get_db),
-):
-    guard = require_html_role(request, db, "owner")
-    if not hasattr(guard, "role"):
-        return guard
-    form = await request.form()
-    try:
-        days = normalize_reminder_days(str(form.get("reminder_days", "") or "") or get_default_reminder_days(db))
-    except ValueError as error:
-        return RedirectResponse(url=f"/admin/checks?err={error}", status_code=303)
-    # The form posts the checkbox plus a "0" companion, so accept whichever
-    # truthy value arrives; without the companion an unchecked box posts
-    # nothing and the feature could never be switched off.
-    enabled_values = [str(value).strip().lower() for value in form.getlist("enabled")]
-    enabled = any(value in {"on", "1", "true", "yes"} for value in enabled_values)
-    values = {
-        "check_default_reminders": ",".join(str(day) for day in days),
-        "check_reminders_enabled": "1" if enabled else "0",
-    }
-    for key, value in values.items():
-        setting = db.query(Settings).filter(Settings.key == key).first()
-        if setting:
-            setting.value = value
-        else:
-            db.add(Settings(key=key, value=value))
-    db.commit()
-    log_action(db, "check_settings", "تنظیم هشدار چک‌ها", request=request, target_type="settings", after=values)
-    return RedirectResponse(url="/admin/checks?msg=تنظیمات هشدار ذخیره شد.", status_code=303)
 
 
 @router.post("/checks/{check_id}/reminders", response_class=HTMLResponse)
@@ -686,7 +656,7 @@ async def admin_checks_export(
     bank_search = (bank or "").strip()
     status_filter = status if status in CHECK_STATUSES else "all"
     now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
-    upcoming_end = datetime.now(timezone.utc) + timedelta(days=CHECKS_UPCOMING_DAYS)
+    upcoming_end = datetime.now(timezone.utc) + timedelta(days=get_upcoming_days(db))
     query = _apply_check_status(
         db.query(CheckRecord).filter(
             *_check_list_conds(search, supplier_id, bank_search, start_date, end_date)),
