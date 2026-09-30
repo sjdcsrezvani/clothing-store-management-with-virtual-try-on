@@ -42,8 +42,14 @@
             <p class="muted">مبلغ به تومان. هزینه کارتی به صندوق دست نمی‌زند؛ برداشت یا واریز بانک را در «صندوق» ثبت کنید نه اینجا.</p>
         </div>
     </div>
-    <form method="post" action="/admin/expenses/add">
+    <form method="post" action="/admin/expenses/add" id="expense-add-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        {% if not shift_open %}
+        <div class="alert alert-warning" role="status">
+            صندوق باز نیست؛ هزینه نقدی بدون شیفت ثبت می‌شود و با پنجره زمانی شمرده می‌شود.
+            اگر مغازه باز است، اول صندوق را باز کنید تا این هزینه به شیفت بچسبد.
+        </div>
+        {% endif %}
         <div class="form-row">
             <div class="form-group">
                 <label for="expense-amount">مبلغ (تومان) <span class="required-mark">*</span></label>
@@ -175,7 +181,8 @@
                         <a class="btn btn-sm btn-ghost" href="/admin/payroll/{{ payroll_id }}/receipt" target="_blank">رسید حقوق</a>
                         {% elif not is_reversed %}
                         <form method="post" action="/admin/expenses/{{ e.id }}/delete"
-                              onsubmit="return confirm('این هزینه برگشت داده می‌شود و از سود و صندوق خارج می‌گردد. ادامه؟')">
+                              data-void-form
+                              data-confirm="هزینه {{ fmt(e.amount) }} تومان ({{ e.category or 'بدون دسته' }}) برگشت داده می‌شود و از سود و صندوق خارج می‌گردد. ادامه؟">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                             <input type="hidden" name="reason" value="">
                             <button type="submit" class="btn btn-sm btn-danger">ابطال</button>
@@ -208,4 +215,37 @@
     </nav>
     {% endif %}
 </section>
+{# The add confirmation echoes the figure with its method, type and category,
+   so the person recording hears what they are about to lock in. The void
+   confirmation carries a reason field that travels in the row form's hidden
+   reason input. Without JS both forms post directly and the server still
+   validates, the void defaulting to its standing reason. #}
+<div id="expense-add-confirm" data-dialog role="alertdialog" aria-modal="true"
+     aria-labelledby="expense-add-confirm-title" class="confirm-scrim" tabindex="-1">
+    <div class="t-modal-card confirm-card" role="document">
+        <h3 id="expense-add-confirm-title">هزینه ثبت شود؟</h3>
+        <p class="muted" id="expense-add-confirm-text"></p>
+        <div class="confirm-actions">
+            <button type="button" class="btn btn-primary" id="expense-add-confirm-yes">ثبت هزینه</button>
+            <button type="button" class="btn btn-ghost" data-dialog-close>انصراف</button>
+        </div>
+    </div>
+</div>
+<div id="expense-void-confirm" data-dialog role="alertdialog" aria-modal="true"
+     aria-labelledby="expense-void-confirm-title" class="confirm-scrim" tabindex="-1">
+    <div class="t-modal-card confirm-card" role="document">
+        <h3 id="expense-void-confirm-title">هزینه برگشت داده شود؟</h3>
+        <p class="muted" id="expense-void-confirm-text"></p>
+        <label class="filter-field" for="expense-void-reason">
+            <span>دلیل برگشت (اختیاری)</span>
+            <input type="text" id="expense-void-reason" dir="auto" autocomplete="off"
+                   placeholder="مثلاً اشتباه ثبت شد">
+        </label>
+        <div class="confirm-actions">
+            <button type="button" class="btn btn-danger" id="expense-void-confirm-yes">برگشت هزینه</button>
+            <button type="button" class="btn btn-ghost" data-dialog-close>انصراف</button>
+        </div>
+    </div>
+</div>
+<script src="/static/js/expenses.js?v={{ static_version }}"></script>
 {% endblock %}

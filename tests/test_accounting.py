@@ -948,3 +948,53 @@ def test_credit_arithmetic_has_one_definition():
                 offenders.append(f"{path}:{line_no}: raw final_amount without fmt(): {line.strip()[:80]}")
 
     assert not offenders, "\n".join(offenders)
+
+
+def test_expense_add_modal_warning_and_void_surface_are_painted(client, db_session, authed):
+    """The typo guards are painted, not just enforced: modal, reason, script."""
+    page = client.get("/admin/expenses")
+    assert page.status_code == 200
+    assert 'id="expense-add-form"' in page.text
+    assert 'id="expense-add-confirm"' in page.text
+    assert 'id="expense-void-confirm"' in page.text
+    assert 'id="expense-void-reason"' in page.text
+    assert "/static/js/expenses.js" in page.text
+    # No drawer open in a fresh shop, so the form says the cash expense lands
+    # shift-less — still records, but out loud.
+    assert "صندوق باز نیست" in page.text
+
+    _post(client, "/admin/cashbox/open", {"opening": "100000"}, authed)
+    assert "صندوق باز نیست" not in client.get("/admin/expenses").text
+
+
+def test_expense_amount_refusals_name_the_rule(client, db_session, authed):
+    """One refusal per rule, each naming it — never a bare «معتبر نیست»."""
+    from urllib.parse import unquote_plus
+    for bad in ("0", "-5000", "نصفه"):
+        response = _post(client, "/admin/expenses/add", {"amount": bad, "category": "متفرقه"}, authed)
+        assert response.status_code == 303
+        assert "باید بیشتر از صفر باشد" in unquote_plus(response.headers["location"])
+    response = _post(client, "/admin/expenses/add", {"amount": "1000000000000", "category": "متفرقه"}, authed)
+    assert response.status_code == 303
+    assert "سقف مجاز" in unquote_plus(response.headers["location"])
+    assert db_session.query(Expense).count() == 0
+
+
+def test_void_carries_its_reason_to_the_reversal(client, db_session, authed):
+    """The modal's reason travels in the hidden input onto the reversal entry."""
+    from models import FinancialEntry
+    _post(client, "/admin/expenses/add", {"amount": "70000", "category": "حمل و نقل"}, authed)
+    first = db_session.query(Expense).order_by(Expense.id.desc()).first()
+    _post(client, f"/admin/expenses/{first.id}/delete", {"reason": "اشتباه ثبت شد"}, authed)
+    entry = db_session.query(FinancialEntry).filter(
+        FinancialEntry.entry_type == "expense_reversal",
+        FinancialEntry.expense_id == first.id).one()
+    assert entry.reason == "اشتباه ثبت شد"
+
+    _post(client, "/admin/expenses/add", {"amount": "80000", "category": "حمل و نقل"}, authed)
+    second = db_session.query(Expense).order_by(Expense.id.desc()).first()
+    _post(client, f"/admin/expenses/{second.id}/delete", {}, authed)
+    fallback = db_session.query(FinancialEntry).filter(
+        FinancialEntry.entry_type == "expense_reversal",
+        FinancialEntry.expense_id == second.id).one()
+    assert fallback.reason == "ابطال دستی هزینه"

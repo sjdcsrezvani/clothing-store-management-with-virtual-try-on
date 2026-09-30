@@ -2944,6 +2944,10 @@ async def admin_expenses(
         "sort_dir": sort_dir,
         "has_filters": has_filters,
         "export_qs": export_qs,
+        # The add form warns when no drawer is open: a cash expense then lands
+        # shift-less and is counted by time window, which is correct but worth
+        # saying out loud at the moment of recording.
+        "shift_open": open_cash_session(db) is not None,
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
         "fmt": fmt,
@@ -2969,8 +2973,12 @@ async def admin_expense_add(
         amount_int = int(cleaned) if cleaned else 0
     except (TypeError, ValueError):
         amount_int = 0
-    if amount_int <= 0 or amount_int > 999_999_999_999:
-        return RedirectResponse(url="/admin/expenses?err=مبلغ معتبر نیست.", status_code=303)
+    # One refusal per rule, each naming it: «معتبر نیست» never told the reader
+    # whether the figure was empty, zero, or larger than the ledger allows.
+    if amount_int <= 0:
+        return RedirectResponse(url="/admin/expenses?err=مبلغ هزینه باید بیشتر از صفر باشد.", status_code=303)
+    if amount_int > 999_999_999_999:
+        return RedirectResponse(url="/admin/expenses?err=مبلغ هزینه از سقف مجاز بیشتر است.", status_code=303)
     if expense_type not in EXPENSE_TYPE_LABELS:
         return RedirectResponse(url="/admin/expenses?err=نوع هزینه نامعتبر است.", status_code=303)
     if payment_method not in EXPENSE_PAYMENT_LABELS:
