@@ -68,7 +68,7 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         {% if prefill.reissue_id %}<input type="hidden" name="reissue_id" value="{{ prefill.reissue_id }}">{% endif %}
         <h4>در وجه چه کسی</h4>
-        <div class="form-row">
+        <div class="form-row is-3col">
             <div class="form-group">
                 <label for="provider_name">دریافت‌کننده چک</label>
                 <input id="provider_name" name="provider_name" list="check-payees" autocomplete="off" required placeholder="نام شخص یا شرکت" value="{{ prefill.provider_name or '' }}">
@@ -84,7 +84,7 @@
             </div>
         </div>
         <h4>چه مقدار، کی</h4>
-        <div class="form-row">
+        <div class="form-row is-3col">
             {% from 'partials/numeric_input.html' import num with context %}
             <div class="form-group">
                 <label for="amount_rials">مبلغ (ریال)</label>
@@ -102,7 +102,7 @@
             </div>
         </div>
         <h4>از کجا، با چه یادآوری</h4>
-        <div class="form-row">
+        <div class="form-row is-3col">
             <div class="form-group">
                 <label for="bank_name">بانک</label>
                 <input id="bank_name" name="bank_name" list="check-banks" autocomplete="off" placeholder="نام بانک" value="{{ prefill.bank_name or '' }}">
@@ -171,7 +171,7 @@
     </div>
     <form method="post" action="/admin/checks/{{ edit_check.id }}/edit">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <div class="form-row">
+        <div class="form-row is-3col">
             <div class="form-group"><label for="edit-provider">دریافت‌کننده چک</label><input id="edit-provider" name="provider_name" required autocomplete="off" value="{{ edit_check.provider_name }}"></div>
             <div class="form-group"><label for="edit-supplier">تأمین‌کننده مرتبط</label><select id="edit-supplier" name="supplier_id"><option value="">— بدون ارتباط —</option>{% for supplier in suppliers %}<option value="{{ supplier.id }}" {% if edit_check.supplier_id == supplier.id %}selected{% endif %}>{{ supplier.name }}</option>{% endfor %}</select></div>
             <div class="form-group"><label for="edit-number">شماره چک <span class="required-mark">*</span></label><input id="edit-number" name="check_number" dir="ltr" required value="{{ edit_check.check_number or '' }}"></div>
