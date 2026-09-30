@@ -959,6 +959,12 @@ def test_expense_add_modal_warning_and_void_surface_are_painted(client, db_sessi
     assert 'id="expense-void-confirm"' in page.text
     assert 'id="expense-void-reason"' in page.text
     assert "/static/js/expenses.js" in page.text
+    # Both category fields share their name with the product form's, so the
+    # browser's own history (بالاتنه، ست، …) would join the suggestions
+    # without autocomplete="off" — exactly the mixing this guards.
+    category_inputs = re.findall(r'<input[^>]*name="category"[^>]*>', page.text)
+    assert len(category_inputs) == 2
+    assert all('autocomplete="off"' in tag for tag in category_inputs)
     # No drawer open in a fresh shop, so the form says the cash expense lands
     # shift-less — still records, but out loud.
     assert "صندوق باز نیست" in page.text
