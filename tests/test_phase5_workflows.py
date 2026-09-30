@@ -23,7 +23,7 @@ def test_cash_session_open_and_close(client, db_session, authed):
     session = db_session.query(CashSession).one()
     assert session.status == "open"
     token = csrf_token(client, "/admin/cashbox")
-    response = client.post("/admin/cashbox/close", data={"counted": "500", "csrf_token": token}, follow_redirects=False)
+    response = client.post("/admin/cashbox/close", data={"counted": "500", "counted2": "500", "csrf_token": token}, follow_redirects=False)
     assert response.status_code == 303
     db_session.refresh(session)
     assert session.status == "closed"

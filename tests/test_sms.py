@@ -1695,3 +1695,58 @@ def test_the_count_of_never_used_templates_links_to_its_own_filter(client, authe
 
     assert re.search(r'<a href="/admin/sms\?usage=never">\d+ هرگز فرستاده‌نشده</a>', page)
 
+
+
+# ── tier-up review send ──────────────────────────────────────────────────────
+
+def _tier_up_patterns(db_session):
+    set_setting(db_session, "sms_pattern_tier_up_gold", "تبریک %var1%")
+    set_setting(db_session, "sms_pattern_tier_up_diamond", "تبریک ویژه %var1%")
+
+
+def test_tier_up_send_no_longer_crashes_and_queues(client, authed, db_session):
+    _tier_up_patterns(db_session)
+    customer = make_customer(db_session, tier="gold", total_points=2500)
+    token = csrf_token(client, "/admin/tier-up")
+
+    response = authed.post("/admin/tier-up/send", data={
+        "csrf_token": token, "customer_ids": str(customer.id),
+    }, follow_redirects=False)
+
+    assert response.status_code == 303
+    assert "sent=1" in response.headers["location"]
+    assert db_session.query(SmsMessage).count() == 1
+
+
+def test_tier_up_send_refuses_an_empty_pick_and_junk_ids(client, authed, db_session):
+    _tier_up_patterns(db_session)
+    token = csrf_token(client, "/admin/tier-up")
+
+    empty = authed.post("/admin/tier-up/send", data={"csrf_token": token},
+                        follow_redirects=False)
+    assert empty.status_code == 303
+    assert "err=" in empty.headers["location"]
+
+    junk = authed.post("/admin/tier-up/send",
+                       data={"csrf_token": token, "customer_ids": "abc"},
+                       follow_redirects=False)
+    assert junk.status_code == 303
+    assert "err=" in junk.headers["location"]
+    assert db_session.query(SmsMessage).count() == 0
+
+
+def test_tier_up_send_skips_the_opted_out_and_says_so(client, authed, db_session):
+    from urllib.parse import unquote
+
+    _tier_up_patterns(db_session)
+    make_customer(db_session, tier="gold", total_points=2500, sms_opt_in=False)
+    token = csrf_token(client, "/admin/tier-up")
+
+    response = authed.post("/admin/tier-up/send", data={
+        "csrf_token": token, "customer_ids": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "999"],
+    }, follow_redirects=False)
+
+    assert response.status_code == 303
+    location = unquote(response.headers["location"])
+    assert "ineligible=" in response.headers["location"]
+    assert db_session.query(SmsMessage).count() == 0

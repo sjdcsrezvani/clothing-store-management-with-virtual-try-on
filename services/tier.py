@@ -319,17 +319,20 @@ def update_customer_after_purchase(customer: Customer, amount: int, db: Session)
 def get_customers_for_birthday_check(db: Session, days_before: int = 3) -> dict:
     """Who should be wished in the next N days, and who was skipped.
 
-    Returns ``{"eligible": [(customer, days_until, occasion), ...], "blocked": N}``.
+    Returns ``{"eligible": [(customer, days_until, occasion), ...],
+    "blocked": N, "blocked_reasons": {"archived": a, "opted_out": o},
+    "silver": S}``.
     "eligible" holds one entry per customer — a parent and child whose birthdays
     fall in the same window get one message, the customer's own taking priority —
-    and "blocked" counts birthdays that were due but withheld because the
-    customer opted out of marketing SMS or is archived.
+    "blocked" counts birthdays that were due but withheld, split by reason, and
+    "silver" counts due birthdays left out because wishes are a Gold/Diamond perk.
     """
     today = jtoday()
     eligible = []
-    blocked = 0
+    blocked = {"archived": 0, "opted_out": 0}
+    silver = 0
 
-    for customer in db.query(Customer).filter(Customer.tier != "silver").all():
+    for customer in db.query(Customer).all():
         # Per customer: the wish follows their own «for whom» choice, not the
         # store's default, so one shop can wish some parents about a child and
         # other customers about themselves.
@@ -337,17 +340,27 @@ def get_customers_for_birthday_check(db: Session, days_before: int = 3) -> dict:
         best = None
         for rank, subject in enumerate(subjects):
             days_until = days_until_jalali_birthday(birthday_on_file(customer, subject), today)
-            if days_until is None or not (0 < days_until <= days_before):
+            # Today counts: a birthday that *is* today is the most due of all,
+            # and excluding it pushed every label a day off (tomorrow read as
+            # «امروز» while today vanished entirely).
+            if days_until is None or not (0 <= days_until <= days_before):
                 continue
             key = (days_until, rank)
             if best is None or key < best[0]:
                 best = (key, subject, days_until)
         if best is None:
             continue
-        if is_archived_customer(customer) or not marketing_opt_in(customer):
-            blocked += 1
+        if customer.tier == "silver":
+            silver += 1
+            continue
+        if is_archived_customer(customer):
+            blocked["archived"] += 1
+            continue
+        if not marketing_opt_in(customer):
+            blocked["opted_out"] += 1
             continue
         eligible.append((customer, best[2], best[1]))
 
     eligible.sort(key=lambda row: row[1])
-    return {"eligible": eligible, "blocked": blocked}
+    return {"eligible": eligible, "blocked": sum(blocked.values()),
+            "blocked_reasons": blocked, "silver": silver}

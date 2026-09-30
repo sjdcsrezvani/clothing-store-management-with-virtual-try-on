@@ -681,6 +681,8 @@ ROLES = ("cashier", "manager", "owner")
 # served at all — so an excuse cannot outlive the thing it excuses.
 NOT_A_PAGE: dict[str, str] = {
     "/admin/accounting/export": "the سود و زیان export is a CSV for the shop's books program",
+    "/admin/cashbox/export": "the shift-history export is a CSV of the filtered rows",
+    "/admin/cashbox/sessions/{session_id}/export": "the shift-statement export is a CSV of one shift's movements",
     "/admin/analytics/export": "the تحلیل فروش export is a CSV of one tab's figures",
     "/admin/products/export": "the فهرست محصولات export is a CSV of the filtered list",
     "/admin/customers/export": "the فهرست مشتریان export is a CSV of the filtered list",

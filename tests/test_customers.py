@@ -754,8 +754,8 @@ def test_birthday_send_refuses_a_customer_outside_the_window(authed, db_session)
 
     assert response.status_code == 303
     # The outsider is refused with a reason, not silently counted as sent.
-    from urllib.parse import unquote
-    location = unquote(response.headers["location"])
+    from urllib.parse import unquote_plus
+    location = unquote_plus(response.headers["location"])
     assert "0 پیامک" in location and "رد شد" in location
     assert db_session.query(Settings).filter(
         Settings.key.like(f"birthday_sms_{outsider.id}_%")
@@ -777,6 +777,46 @@ def test_dashboard_birthday_button_opens_the_review_page(authed):
     dashboard = authed.get("/admin")
     assert 'href="/admin/birthdays"' in dashboard.text
     assert "check-birthdays" not in dashboard.text
+
+
+def test_a_birthday_today_is_listed_as_today_with_true_distances(authed, db_session):
+    """Today used to vanish while tomorrow read as «امروز». The window now
+    includes day zero and every distance is what it says."""
+    set_setting(db_session, "birthday_target", "customer")
+    set_setting(db_session, "birthday_sms_days_before", "7")
+    set_setting(db_session, "sms_pattern_birthday", "تولدت مبارک {var2}")
+    today_kid = make_customer(db_session, tier="gold", first_name="امروزی",
+                              birth_month_day=month_day_in(0), birth_year=1400)
+    tomorrow_kid = make_customer(db_session, tier="gold", first_name="فردایی",
+                                 birth_month_day=month_day_in(1), birth_year=1400)
+
+    page = authed.get("/admin/birthdays").text
+
+    assert "امروزی" in page and "فردایی" in page
+    assert "امروز" in page
+    assert "۱ روز دیگر" in page
+    assert "۱۴۰۰" in page  # the year is no longer dropped for own birthdays
+
+
+def test_an_allowlisted_birthday_send_counts_the_refused(authed, db_session):
+    """Test mode refuses strangers at the queue; the birthday summary must say
+    so instead of undercounting into silence."""
+    set_setting(db_session, "birthday_target", "customer")
+    set_setting(db_session, "birthday_sms_days_before", "7")
+    set_setting(db_session, "sms_pattern_birthday", "تولدت مبارک {var2}")
+    set_setting(db_session, "sms_allowed_phones", "09017631093")
+    due = make_customer(db_session, tier="gold", first_name="سارا",
+                        birth_month_day=month_day_in(2), birth_year=1360)
+    token = csrf_token(authed, "/admin/birthdays")
+
+    from urllib.parse import unquote_plus
+    response = authed.post("/admin/birthdays/send", data={
+        "csrf_token": token, "customer_ids": str(due.id),
+    }, follow_redirects=False)
+
+    assert response.status_code == 303
+    location = unquote_plus(response.headers["location"])
+    assert "0 پیامک" in location and "صف نرفت" in location
 
 
 # ── the child module ─────────────────────────────────────────────────────────

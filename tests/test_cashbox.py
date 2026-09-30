@@ -33,9 +33,13 @@ def _open(client, amount):
                        follow_redirects=False)
 
 
-def _close(client, counted):
+def _close(client, counted, repeat=None):
+    # The count is typed twice: the helper repeats the same figure unless a
+    # different second typing is handed in on purpose.
     return client.post("/admin/cashbox/close",
-                       data={"counted": str(counted), "csrf_token": csrf_token(client, "/admin/cashbox")},
+                       data={"counted": str(counted),
+                             "counted2": str(counted if repeat is None else repeat),
+                             "csrf_token": csrf_token(client, "/admin/cashbox")},
                        follow_redirects=False)
 
 
@@ -114,6 +118,35 @@ def test_a_cashier_opens_and_closes_their_own_drawer(client, db_session):
     # The closer is recorded whoever they were: the column is named «manager»,
     # the label says «بستننده», and a cashier closing their own shift is normal.
     assert session.manager_user_id == cashier.id
+
+
+def test_a_mismatched_second_counting_leaves_the_shift_open(client, db_session):
+    """One mistyped digit must not lock a false variance into a closed shift."""
+    cashier, password = _cashier(db_session, "till-twice")
+    _session_as(client, cashier, password)
+
+    assert _open(client, 500_000).status_code == 303
+    response = _close(client, 500_000, repeat=50_000)
+    assert response.status_code == 303
+    assert "err=" in response.headers["location"]
+    assert _live_shift(db_session) is not None       # still open, nothing recorded
+    session = _live_shift(db_session)
+    assert session.counted_closing_balance is None
+
+    # A missing repeat is a mismatch too, not a silent single typing.
+    response = client.post("/admin/cashbox/close",
+                           data={"counted": "500000",
+                                 "csrf_token": csrf_token(client, "/admin/cashbox")},
+                           follow_redirects=False)
+    assert response.status_code == 303
+    assert "err=" in response.headers["location"]
+    assert _live_shift(db_session) is not None
+
+    # Agreeing twice closes normally.
+    assert _close(client, 500_000).status_code == 303
+    db_session.refresh(session)
+    assert session.status == "closed"
+    assert session.variance == 0
 
 
 def test_the_drawer_refuses_a_second_opening_and_names_who_holds_it(client, db_session):
@@ -339,7 +372,7 @@ def test_a_withdrawal_cannot_be_reversed_once_the_shift_is_closed(client, db_ses
 
 # ── the page, per role ───────────────────────────────────────────────────────
 
-def test_a_cashier_sees_their_own_shifts_and_no_period_report(client, db_session):
+def test_a_cashier_sees_their_own_shifts_and_no_managers_numbers(client, db_session):
     cashier, password = _cashier(db_session, "till-own")
     other, other_password = _cashier(db_session, "till-other")
     _session_as(client, other, other_password)
@@ -353,9 +386,9 @@ def test_a_cashier_sees_their_own_shifts_and_no_period_report(client, db_session
     assert page.status_code == 200
     assert "شیفت‌های خودتان" in page.text
     assert f"/admin/cashbox/sessions/{other_shift.id}" not in _content(page.text)
-    # The period register, the default float and the shop's other doors are a
-    # manager's business — a cashier's page offers none of them.
-    assert "حرکت نقدی این بازه" not in page.text
+    # The default float and the shop's other doors are a manager's business —
+    # a cashier's page offers none of them. The range's cash arithmetic lives
+    # on سود و زیان now, for managers, not on anyone's drawer page.
     assert "موجودی پیش‌فرض شروع روز" not in page.text
     assert "/admin/expenses" not in page.text
     assert "تا این لحظه باید در کشو باشد" not in page.text
@@ -363,10 +396,11 @@ def test_a_cashier_sees_their_own_shifts_and_no_period_report(client, db_session
     manager, manager_password = _staff(db_session, "till-report", "manager")
     _session_as(client, manager, manager_password)
     manager_page = client.get("/admin/cashbox")
-    assert "حرکت نقدی این بازه" in manager_page.text
+    assert "حرکت نقدی این بازه" not in manager_page.text
     assert "موجودی پیش‌فرض شروع روز" in manager_page.text
     assert f"/admin/cashbox/sessions/{other_shift.id}" in manager_page.text
     assert "تا این لحظه باید در کشو باشد" in manager_page.text
+    assert "حرکت نقدی این بازه" in client.get("/admin/accounting").text
 
 
 def test_the_statement_belongs_to_its_opener_and_to_a_manager(client, db_session):
@@ -414,9 +448,9 @@ def test_the_statement_shows_what_makes_up_the_expected_figure(client, db_sessio
     page = client.get(f"/admin/cashbox/sessions/{session.id}")
     assert page.status_code == 200
     assert f"شیفت صندوق #{session.id}" in page.text
-    assert f"+90,000 ت" in page.text                       # the sale
-    assert "-30,000 ت" in page.text                 # the withdrawal
-    assert "-20,000 ت" in page.text                 # the expense
+    assert f"+90,000 تومان" in page.text                # the sale
+    assert "-30,000 تومان" in page.text           # the withdrawal
+    assert "-20,000 تومان" in page.text           # the expense
     assert "240,000" in page.text                          # 200,000 + 90,000 − 30,000 − 20,000
     assert "/sales/invoice/" in page.text                  # every row reaches its record
     assert "برگشت برداشت" in page.text                      # and a mistake is fixable
@@ -433,7 +467,7 @@ def test_the_shift_history_shows_the_difference_a_count_found(client, db_session
 
     _session_as(client, manager, manager_password)
     content = _content(client.get("/admin/cashbox").text)
-    assert "50,000 ت کسری" in content
+    assert "50,000 تومان کسری" in content
     assert "450,000" in content                      # what was counted
     assert f"/admin/cashbox/sessions/{session.id}" in content   # and where to read why
 
@@ -452,8 +486,8 @@ def test_a_shift_the_upgrade_closed_says_so_instead_of_pretending(client, db_ses
     assert "بسته‌شده بدون شمارش" in _content(client.get("/admin/cashbox").text)
 
 
-def test_the_shift_list_is_paged_and_can_be_opened_whole(client, db_session, authed):
-    """Twenty shifts is a page, not a wall — and «نمایش همه» really shows all."""
+def test_the_shift_list_is_paged_with_numbered_pages(client, db_session, authed):
+    """Twenty-five shifts is three pages of ten, not a wall and not a cap."""
     for index in range(25):
         db_session.add(CashSession(cashier_user_id=1, opening_balance=1_000,
                                    status="closed", variance=0,
@@ -463,23 +497,65 @@ def test_the_shift_list_is_paged_and_can_be_opened_whole(client, db_session, aut
                                    closed_at=datetime.now(timezone.utc) - timedelta(days=index)))
     db_session.commit()
 
-    page = client.get("/admin/cashbox")
-    assert "20 از 25" in page.text
-    assert "نمایش همهٔ شیفت‌ها (25)" in page.text
+    first = client.get("/admin/cashbox?per_page=10")
+    assert "25 شیفت" in first.text
+    assert 'aria-label="صفحه 3"' in first.text
+    assert "نمایش همهٔ شیفت‌ها" not in first.text
 
-    whole = client.get("/admin/cashbox?history=all")
-    assert "25 از 25" in whole.text
-    assert whole.text.count("/admin/cashbox/sessions/") > 20
+    third = client.get("/admin/cashbox?per_page=10&page=3")
+    assert 'aria-current="page">3<' in third.text
+    assert third.text.count("/admin/cashbox/sessions/") == 5
+
+    # A page past the end lands on the last page, not an empty list.
+    assert 'aria-current="page">3<' in client.get("/admin/cashbox?per_page=10&page=9").text
 
 
-def test_the_period_report_explains_the_number_it_prints(client, db_session, authed):
-    page = client.get("/admin/cashbox")
+def test_the_shift_list_searches_by_opener_and_filters_by_outcome(client, db_session):
+    """A name finds its shifts; an outcome finds its differences."""
+    sarah, sarah_password = _cashier(db_session, "shift-sarah")
+    omid, _ = _cashier(db_session, "shift-omid")
+    _session_as(client, sarah, sarah_password)
+    assert _open(client, 500_000).status_code == 303
+    assert _close(client, 470_000).status_code == 303
+    sarah_shift = _latest_shift(db_session)
+    db_session.add(CashSession(cashier_user_id=omid.id, opening_balance=100_000,
+                               status="closed", variance=0,
+                               expected_closing_balance=100_000,
+                               counted_closing_balance=100_000,
+                               opened_at=datetime.now(timezone.utc) - timedelta(days=1),
+                               closed_at=datetime.now(timezone.utc) - timedelta(days=1)))
+    db_session.commit()
+    omid_shift = _latest_shift(db_session)
+
+    _login(client, "owner", "test-admin-pass")
+    by_name = _content(client.get("/admin/cashbox?q=shift-sarah").text)
+    assert f"/admin/cashbox/sessions/{sarah_shift.id}" in by_name
+    assert f"/admin/cashbox/sessions/{omid_shift.id}" not in by_name
+
+    short = _content(client.get("/admin/cashbox?outcome=short").text)
+    assert f"/admin/cashbox/sessions/{sarah_shift.id}" in short
+    assert "30,000 تومان کسری" in short
+
+    balanced = _content(client.get("/admin/cashbox?outcome=balanced").text)
+    assert f"/admin/cashbox/sessions/{sarah_shift.id}" not in balanced
+
+    # The closer is named on the row, not just on the statement.
+    assert "بستننده" in _content(client.get("/admin/cashbox").text)
+
+
+def test_the_period_report_lives_on_accounting_not_the_drawer(client, db_session, authed):
+    """The drawer page is a shift; the range's cash arithmetic lives on سود و زیان."""
+    page = client.get("/admin/accounting")
+    assert "حرکت نقدی این بازه" in page.text
     assert "موجودی پایان بازه" in page.text
     assert "پولی که همین حالا در کشو است را فقط بستن شیفت نشان می‌دهد" in page.text
 
-    all_time = client.get("/admin/cashbox?period=all")
+    all_time = client.get("/admin/accounting?period=all")
     assert "خالص حرکت بازه" in all_time.text
     assert "موجودی پایان بازه" not in all_time.text
+
+    drawer = client.get("/admin/cashbox")
+    assert "حرکت نقدی این بازه" not in drawer.text
 
 
 def test_the_default_float_refuses_a_negative_and_is_a_managers_form(client, db_session):
@@ -518,6 +594,22 @@ def test_the_cashbox_page_is_persian_and_names_people(client, db_session):
     assert not EMOJI.search(content), EMOJI.findall(content)[:5]
     assert "کاربر #" not in content
     assert "till-names" in content                       # the opener is named
+
+
+def test_the_close_form_counts_twice_and_confirms_before_posting(client, db_session):
+    """The typo guards are painted, not just enforced: repeat field, modal, datalist."""
+    cashier, password = _cashier(db_session, "till-guards")
+    _session_as(client, cashier, password)
+    assert _open(client, 10_000).status_code == 303
+
+    content = _content(client.get("/admin/cashbox").text)
+    assert 'name="counted2"' in content
+    assert 'id="cashbox-close-form"' in content
+    assert 'id="cashbox-confirm"' in content
+    assert 'list="withdraw-reasons"' in content
+    assert "واریز به بانک" in content
+    assert "/static/js/cashbox.js" in content
+    assert not EMOJI.search(content), EMOJI.findall(content)[:5]
 
 
 # ── the dashboard ────────────────────────────────────────────────────────────
@@ -569,3 +661,78 @@ def test_the_dashboard_and_the_page_name_a_drawer_left_open(client, db_session):
     _login(client, "owner", "test-admin-pass")
     assert "صندوق باز مانده" in client.get("/admin").text
     assert "باز مانده است" in client.get("/admin/cashbox").text
+
+
+# ── the card hint ─────────────────────────────────────────────────────────────
+
+def test_the_drawer_names_todays_card_sales_and_points_at_reconciliation(client, db_session):
+    """Card money is named so nobody goes looking for it in the till figures."""
+    cashier, password = _cashier(db_session, "till-cardhint")
+    _, variant = _make_variant(db_session, price=200_000, stock=5)
+    _session_as(client, cashier, password)
+    assert _open(client, 100_000).status_code == 303
+    assert _sell(client, variant, payment_method="card").status_code == 200
+
+    content = _content(client.get("/admin/cashbox").text)
+    assert "فروش کارتخوان امروز" in content
+    assert "200,000 تومان" in content
+    assert "تطبیق کارتخوان" in content
+
+
+# ── the exports ───────────────────────────────────────────────────────────────
+
+def test_the_history_export_is_a_managers_file_of_the_filtered_rows(client, db_session):
+    """The file answers with the rows the screen showed, not the whole ledger."""
+    cashier, password = _cashier(db_session, "till-exp-sarah")
+    _session_as(client, cashier, password)
+    assert _open(client, 500_000).status_code == 303
+    assert _close(client, 470_000).status_code == 303
+    sarah_shift = _latest_shift(db_session)
+
+    _login(client, "owner", "test-admin-pass")
+    whole = client.get("/admin/cashbox/export")
+    assert whole.status_code == 200
+    assert "text/csv" in whole.headers["content-type"]
+    assert whole.text.startswith("\ufeff")
+    assert "بستننده" in whole.text.splitlines()[0]
+    assert str(sarah_shift.id) in whole.text
+    assert "30000" in whole.text                       # raw integer, sums in Excel
+    assert "30,000" not in whole.text                  # no grouped figure as text
+
+    filtered = client.get("/admin/cashbox/export?outcome=balanced")
+    assert str(sarah_shift.id) not in filtered.text    # a کسری shift is not مطابق
+
+    # A cashier reads their own shifts on screen, but files stay managerial.
+    _session_as(client, cashier, password)
+    assert client.get("/admin/cashbox/export").status_code in (303, 403)
+
+
+def test_the_statement_export_follows_the_statements_own_permissions(client, db_session):
+    """Whoever may read the statement may keep it — nobody else."""
+    cashier, password = _cashier(db_session, "till-exp-opener")
+    stranger, stranger_password = _cashier(db_session, "till-exp-stranger")
+    _, variant = _make_variant(db_session, price=100_000, stock=5)
+    _session_as(client, cashier, password)
+    assert _open(client, 100_000).status_code == 303
+    assert _sell(client, variant).status_code == 200
+    session = _live_shift(db_session)
+
+    # While the shift is open, even its opener is refused the file.
+    refused = client.get(f"/admin/cashbox/sessions/{session.id}/export", follow_redirects=False)
+    assert refused.status_code == 303
+    assert "err=" in refused.headers["location"]
+
+    assert _close(client, 200_000).status_code == 303
+    mine = client.get(f"/admin/cashbox/sessions/{session.id}/export")
+    assert mine.status_code == 200
+    assert "text/csv" in mine.headers["content-type"]
+    assert "فروش نقدی" in mine.text
+    assert "100000" in mine.text
+
+    # A stranger's account sees neither the page's figures nor the file.
+    _session_as(client, stranger, stranger_password)
+    assert client.get(f"/admin/cashbox/sessions/{session.id}/export",
+                      follow_redirects=False).status_code == 303
+
+    _login(client, "owner", "test-admin-pass")
+    assert client.get("/admin/cashbox/sessions/999999/export").status_code == 404

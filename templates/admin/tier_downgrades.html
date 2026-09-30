@@ -27,22 +27,42 @@
 </div>
 
 {% if rows %}
-<section class="card">
+<section class="card" data-list-region="tier-downgrades">
     <div class="section-heading-row">
         <div>
-            <h3>واجد شرایط</h3>
+            <h3 data-list-heading tabindex="-1">واجد شرایط</h3>
             <p class="muted">
-                {{ rows|length }} مشتری — از کسی که دیرتر آمده اول.
+                {{ total }} مشتری
                 {%- if skipped_archived %}
-                · {{ skipped_archived }} مشتری بایگانی‌شده کنار گذاشته شدند.
+                · {{ skipped_archived }} بایگانی‌شده کنار گذاشته شدند
                 {%- endif %}
             </p>
         </div>
+        <div class="list-heading-actions">
+            <form method="get" action="/admin/tier-downgrades" class="per-page-form">
+                <label class="sr-only" for="downgrade-per-page">تعداد در صفحه</label>
+                <select name="per_page" id="downgrade-per-page" onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}" aria-label="تعداد در صفحه">
+                    {% for option in per_page_options %}
+                    <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }} در صفحه</option>
+                    {% endfor %}
+                </select>
+            </form>
+        </div>
     </div>
 
-    <form method="post" action="/admin/tier-downgrades/apply">
+    <form method="post" action="/admin/tier-downgrades/apply" class="bulk-form" data-bulk-form
+          data-confirm="📉 سطح {n} مشتری یک پله پایین می‌آید. این کار قابل بازگشت نیست — مطمئن هستید؟">
+        <div class="follow-up-tools">
+            <input type="search" class="bulk-search" placeholder="جست‌وجوی نام یا شماره…" dir="auto" autocomplete="off"
+                   aria-label="جست‌وجو در واجدین شرایط">
+            <span class="picked-tools">
+                <button type="button" class="btn btn-sm btn-ghost bulk-all">انتخاب همه</button>
+                <button type="button" class="btn btn-sm btn-ghost bulk-none">پاک‌کردن</button>
+            </span>
+            <small class="muted tnum bulk-match" aria-live="polite"></small>
+        </div>
         <div class="table-scroll">
-            <table class="data-table sms-table">
+            <table class="data-table sms-table downgrade-table">
                 <thead>
                     <tr>
                         <th scope="col">
@@ -62,36 +82,86 @@
                 </thead>
                 <tbody>
                     {% for row in rows %}
-                    <tr>
-                        <td>
+                    <tr class="bulk-row" data-search="{{ row.customer.full_name }} {{ row.customer.phone }}">
+                        <td class="follow-check" data-label="انتخاب">
                             <input type="checkbox" class="downgrade-check" name="customer_ids"
                                    value="{{ row.customer.id }}"
                                    aria-label="کاهش سطح {{ row.customer.full_name }}">
                         </td>
-                        <td class="sms-name">
+                        <td class="sms-name" data-label="مشتری">
                             <a href="/admin/customers/{{ row.customer.id }}"><strong>{{ row.customer.full_name }}</strong></a>
                             <small class="sms-meta tnum" dir="ltr">{{ row.customer.phone }}</small>
-                            <small class="sms-meta">مجموع خرید: {{ fmt(row.spent) }} ت</small>
+                            <small class="sms-meta">مجموع خرید: {{ fmt(row.spent) }} تومان</small>
                         </td>
-                        <td><span class="tier-badge tier-{{ row.from_tier }}">{{ row.from_label }}</span></td>
-                        <td><span class="tier-badge tier-{{ row.to_tier }}">{{ row.to_label }}</span></td>
-                        <td class="tnum">
+                        <td data-label="سطح فعلی"><span class="tier-badge tier-{{ row.from_tier }}">{{ row.from_label }}</span></td>
+                        <td data-label="سطح جدید"><span class="tier-badge tier-{{ row.to_tier }}">{{ row.to_label }}</span></td>
+                        <td class="tnum" data-label="آخرین خرید">
                             {% if row.last_purchase %}{{ jalali_str(row.last_purchase, false) }}{% else %}—{% endif %}
                         </td>
-                        <td class="tnum">{{ row.days_label }}</td>
-                        <td class="muted">{{ row.reason }}</td>
+                        <td class="tnum" data-label="فاصله">{{ row.days_label }}</td>
+                        <td class="muted" data-label="چرا">{{ row.reason }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
-        <div class="form-actions">
-            <button type="submit" class="btn btn-danger btn-large">
+        {% if total_pages > 1 %}
+        <nav class="product-pagination" aria-label="صفحه‌بندی واجدین شرایط">
+            {% if page > 1 %}<a class="btn btn-sm btn-ghost" href="?page={{ page - 1 }}&per_page={{ per_page }}">صفحه قبل</a>{% endif %}
+            {% for p in range(1, total_pages + 1) %}
+            {% if p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+            {% if p == page %}<span class="page-current" aria-current="page">{{ p }}</span>
+            {% else %}<a class="btn btn-sm btn-ghost" href="?page={{ p }}&per_page={{ per_page }}" aria-label="صفحه {{ p }}">{{ p }}</a>{% endif %}
+            {% elif p == 2 or p == total_pages - 1 %}<span class="page-gap" aria-hidden="true">…</span>{% endif %}
+            {% endfor %}
+            {% if page < total_pages %}<a class="btn btn-sm btn-ghost" href="?page={{ page + 1 }}&per_page={{ per_page }}">صفحه بعد</a>{% endif %}
+        </nav>
+        {% endif %}
+        <div class="form-actions follow-up-actions">
+            <p class="muted">کاهش سطح قابل بازگشت نیست — پیامکی هم فرستاده نمی‌شود، فقط سطح عوض می‌شود.</p>
+            <button type="submit" class="btn btn-danger btn-large bulk-send">
                 📉 کاهش سطح مشتریان انتخاب‌شده
             </button>
         </div>
     </form>
 </section>
+<div id="bulk-confirm" data-dialog role="alertdialog" aria-modal="true"
+     aria-labelledby="bulk-confirm-title" class="confirm-scrim" tabindex="-1">
+    <div class="t-modal-card confirm-card" role="document">
+        <h3 id="bulk-confirm-title">مطمئن هستید؟</h3>
+        <p class="muted" id="bulk-confirm-text"></p>
+        <div class="confirm-actions">
+            <button type="button" class="btn btn-danger" id="bulk-confirm-yes">تأیید</button>
+            <button type="button" class="btn btn-ghost" data-dialog-close>انصراف</button>
+        </div>
+    </div>
+</div>
+<script src="/static/js/bulk_list.js?v={{ static_version }}"></script>
+<script>
+// «انتخاب همه» is deliberately a separate move from the rows themselves: the
+// boxes start empty so that confirming is a decision, and this shortcut exists
+// for the shop that has read the list and does want all of it.
+(function () {
+    var all = document.getElementById('check-all');
+    var form = all ? all.closest('form') : null;
+    if (!all || !form) return;
+    all.addEventListener('change', function () {
+        form.querySelectorAll('.downgrade-check').forEach(function (box) {
+            var row = box.closest('.bulk-row');
+            if (!all.checked || !row || !row.hidden) {
+                box.checked = all.checked;
+                box.dispatchEvent(new Event('change'));
+            }
+        });
+    });
+    form.querySelectorAll('.downgrade-check').forEach(function (box) {
+        box.addEventListener('change', function () {
+            var boxes = Array.prototype.slice.call(form.querySelectorAll('.downgrade-check'));
+            all.checked = boxes.length > 0 && boxes.every(function (other) { return other.checked; });
+        });
+    });
+})();
+</script>
 {% else %}
 <div class="empty-state">
     <h3>کسی واجد شرایط نیست</h3>
@@ -105,23 +175,4 @@
     </p>
 </div>
 {% endif %}
-
-<script>
-// «انتخاب همه» is deliberately a separate move from the rows themselves: the
-// boxes start empty so that confirming is a decision, and this shortcut exists
-// for the shop that has read the list and does want all of it.
-(function () {
-    var all = document.getElementById('check-all');
-    if (!all) return;
-    var boxes = document.querySelectorAll('.downgrade-check');
-    all.addEventListener('change', function () {
-        boxes.forEach(function (box) { box.checked = all.checked; });
-    });
-    boxes.forEach(function (box) {
-        box.addEventListener('change', function () {
-            all.checked = Array.prototype.every.call(boxes, function (other) { return other.checked; });
-        });
-    });
-})();
-</script>
 {% endblock %}

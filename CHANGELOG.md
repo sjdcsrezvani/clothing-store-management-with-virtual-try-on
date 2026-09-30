@@ -1,3 +1,74 @@
+## 2.7.7 — 1405/07/08 (2026-09-30)
+
+### صندوق و بازبینی‌ها: the till counts twice, and every review list becomes workable
+
+- **A birthday that is today is called today.** The window now starts at day
+  zero, so today's تولد is listed and labelled «امروز» instead of disappearing
+  while tomorrow was called «امروز», and every other distance lost its
+  off-by-one with it.
+- **A birthday row says when and how old.** The year is no longer dropped from a
+  customer's own birthday, and the row states the age they are turning, so
+  «۱۴۰۰» and «۳۴ ساله» are read off the row rather than recalled.
+- **Why a birthday waits is counted apart.** بایگانی and انصراف از تبلیغات are
+  listed as their own numbers, and a سطح نقره‌ای birthday — wishes are a طلایی
+  and الماس perk — is named instead of being folded into one lump sum.
+- **A tier-up send that lands, and a summary that adds up.** The پیامک ارتقا
+  form used to be handed its ids as numbers, so one junk id refused the whole
+  post; ids are read as text now and the digit-only ones are kept. An empty pick
+  is refused with a reason, and the summary counts the سقف, the no-longer-eligible
+  and the queue's own refusals separately instead of one number that means three
+  things.
+- **Nobody who cannot be messaged is offered.** انصراف، بایگانی and بلاک are
+  counted above the table and left out of it, so every box on offer is a box
+  that would really send.
+- **The review lists are tools, not printouts.** تولدها، ارتقا and کاهش سطح share
+  one behaviour: search by نام or شماره (Farsi digits read as digits),
+  «انتخاب همه» takes the rows the search left visible, «پاک‌کردن» takes none, and
+  the submit button carries the number it is about to send.
+- **The paid send asks first, in the page's own dialog**, naming the count — and
+  the سقف where one applies — and a second click while the first post is in
+  flight is ignored.
+- **Each row shows the message and what it costs.** The body the قالب really
+  renders is previewed, folded past ۹۰ characters, with the پیامک count beside
+  it, so a list of names becomes a list of the messages about to be paid for.
+- **Every list pages on numbered pages.** ۱۰ / ۲۵ / ۵۰ with the header still
+  counting the whole list, on تولدها، ارتقا، کاهش سطح and شیفت‌های صندوق alike.
+- **The till counts twice before it locks.** Closing the صندوق asks for the
+  counted figure a second time, the confirmation echoes it back with the name of
+  the person who opened the shift, and the server refuses a mismatch — a missing
+  repeat included — so one mistyped digit can no longer write a false اختلاف
+  into a shift that is deliberately immutable.
+- **Money fields group their digits as typed.** `1250000` becomes `1,250,000`
+  while it is being typed, so a missing zero shows before the post, and the
+  separators are stripped on submit because the server parses digits.
+- **The shift list is searchable and filterable.** Search by the بازکننده's name
+  or username, narrow to a نتیجه (باز، مطابق، کسری، اضافه، بسته‌شده بدون شمارش),
+  keep the two while paging, and see who closed each shift in a بستننده column;
+  an unrecognised outcome filters nothing rather than emptying the page, and the
+  empty state answers the filter that found nothing.
+- **The range's arithmetic lives where the range does.** The cash-movement
+  section (ورودی‌ها، خروجی‌ها، خالص حرکت بازه and موجودی پایان بازه) moved off the
+  drawer page onto سود و زیان, where a period filter belongs, and `/admin/cashbox`
+  takes no period at all.
+- **The drawer names today's card sales.** A line states how much went through
+  the کارتخوان today and points at «تطبیق کارتخوان», so a cashier who has just
+  taken cards all morning stops looking for that money in the till figures.
+- **A shift statement prints and exports.** «چاپ صورت» prints the statement on
+  the theme's paper with the rows un-boxed and the buttons and dialog left on
+  the screen, and two CSV files join it: the shift history exactly as filtered
+  (managers only — a file leaves the building, so it stays behind the higher
+  role, the same line the accounting exports draw) and one shift's movements
+  under the statement's own permissions, which means an open shift exports
+  nothing until it closes, because the blind count stays blind. Figures leave as
+  raw integers, so a spreadsheet sums them instead of storing them as text.
+- **Withdrawal reasons come with suggestions**, and a reversal button in a
+  statement row is a finger-sized target.
+- **A search field wears the same face as a text field.** The OS search chrome —
+  the rounded look and its cancel glyph — is dropped, so the growing number of
+  search boxes stop being the odd one out beside every other filter.
+
+**Schema change.** None — the database stays on revision 24.
+
 ## 2.7.6 — 1405/07/07 (2026-09-29)
 
 ### موعدگذشته‌ها: every follow-up answers to one purchase, and the list is workable
