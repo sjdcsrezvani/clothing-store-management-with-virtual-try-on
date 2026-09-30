@@ -3593,6 +3593,27 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
 /* The total debt stat wears the attention colour, like the aging rows below. */
 .debt-figure { color: var(--persimmon); }
 
+/* Expenses: a voided row is history, not news — visible but dimmed, the same
+   courtesy the birthday review gives rows already wished. The void button is
+   small in a wide row and must still meet a thumb on a phone. */
+.expense-table tr.is-reversed { opacity: 0.55; }
+.expense-table .btn-sm { min-height: 44px; display: inline-flex; align-items: center; }
+/* Nine columns never fit a phone: narrow screens stack rows into labelled
+   cards instead of scrolling sideways, like every other admin list. */
+@media (max-width: 700px) {
+  .expense-table thead {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .expense-table, .expense-table tbody, .expense-table tr, .expense-table td { display: block; }
+  .expense-table tr {
+    border: 1px solid var(--rule); border-radius: var(--radius-sm);
+    margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; }
+  .expense-table td {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
+    border: none; padding: 0.25rem 0; text-align: start; }
+  .expense-table td::before {
+    content: attr(data-label); color: var(--ink-soft); font-size: 0.72rem; flex-shrink: 0; }
+}
+
 /* The digest preview: what opting in puts on the owner's phone, rendered from
    last month's own figures before any phone is saved. */
 .digest-preview { display: grid; gap: 0.4rem; margin-top: 0.6rem; }

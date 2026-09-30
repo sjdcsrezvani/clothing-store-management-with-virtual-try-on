@@ -1,12 +1,13 @@
 """Accounting-lite: net profit & loss, cash box register, customer debt
 (نسیه) ledger, FIFO settlement of credit-sale payments, credit surcharge,
 and aged-receivables (collection) dashboard."""
+import calendar
 import math
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import case, func, or_
 
 from models import (
-    Customer, Sale, SaleItem, Expense, Purchase, PurchaseItem, Payment, Settings,
+    BusinessEvent, Customer, RecurringExpense, Sale, SaleItem, Expense, Purchase, PurchaseItem, Payment, Settings,
     Supplier, SupplierPayment, CashSession, CashSessionEntry,
 )
 from services._common import get_setting_int, share
@@ -1333,3 +1334,91 @@ def debt_totals(db) -> dict:
         "overdue_customers": overview["overdue_customers"],
         "over_limit_count": overview["over_limit_count"],
     }
+
+
+def upcoming_occurrence(day_of_month: int, now: datetime | None = None) -> datetime:
+    """The next midnight (UTC) a monthly anchor day falls on, from now.
+
+    Short months clamp — the 31st means the 28th in February — but the anchor
+    itself never drifts, because every step is recomputed from it, never from
+    the clamped date it last produced.
+    """
+    now = now or datetime.now(timezone.utc)
+    year, month = now.year, now.month
+    last = calendar.monthrange(year, month)[1]
+    due = datetime(year, month, min(day_of_month, last), tzinfo=timezone.utc)
+    if due <= now:
+        month += 1
+        if month > 12:
+            month, year = 1, year + 1
+        last = calendar.monthrange(year, month)[1]
+        due = datetime(year, month, min(day_of_month, last), tzinfo=timezone.utc)
+    return due
+
+
+def run_due_recurring_expenses(db, actor_user_id: int | None = None) -> int:
+    """Post whatever monthly rules are due, at most once per rule per month.
+
+    Lazy by design: the expenses page calls this on every manager visit, so
+    there is no scheduler to watch. Each posting carries the idempotency key
+    of its rule and month, and the key is checked before anything is written
+    — a second visit in the same hour posts nothing. Months skipped while a
+    rule was paused are never backfilled: pausing means not accruing, and
+    resuming re-anchors the next due date instead.
+    """
+    from services.events import append_event
+
+    now = datetime.now(timezone.utc)
+    posted = 0
+    dirty = False
+    for rule in db.query(RecurringExpense).filter(RecurringExpense.active == True).all():  # noqa: E712
+        due = rule.next_due if rule.next_due.tzinfo else rule.next_due.replace(tzinfo=timezone.utc)
+        advanced_from = due
+        while rule.active and due <= now:
+            period = due.strftime("%Y-%m")
+            key = f"recurring-expense:{rule.id}:{period}"
+            exists = db.query(BusinessEvent).filter(
+                BusinessEvent.event_type == "ExpenseRecorded",
+                BusinessEvent.idempotency_key == key).first()
+            if exists is None:
+                open_session = open_cash_session(db)
+                expense = Expense(
+                    amount=rule.amount,
+                    category=rule.category,
+                    expense_type=rule.expense_type,
+                    payment_method=rule.payment_method,
+                    cash_session_id=(open_session.id
+                                     if (open_session and rule.payment_method == "cash") else None),
+                    note=rule.note,
+                    recurring_rule_id=rule.id,
+                )
+                db.add(expense)
+                db.flush()
+                append_event(
+                    db, "ExpenseRecorded", "expense", expense.id,
+                    idempotency_key=key,
+                    actor_user_id=actor_user_id,
+                    payload={
+                        "amount": expense.amount,
+                        "category": expense.category,
+                        "expense_type": expense.expense_type,
+                        "payment_method": expense.payment_method,
+                        "cash_session_id": expense.cash_session_id,
+                        "recurring_rule_id": rule.id,
+                        "period": period,
+                    },
+                    occurred_at=expense.created_at,
+                )
+                posted += 1
+            # The next step is always recomputed from the anchor day, so a
+            # clamped February never drags March off the 31st.
+            year, month = due.year, due.month + 1
+            if month > 12:
+                month, year = 1, year + 1
+            last = calendar.monthrange(year, month)[1]
+            due = datetime(year, month, min(rule.day_of_month, last), tzinfo=timezone.utc)
+        rule.next_due = due
+        dirty = dirty or due != advanced_from
+    if dirty or posted:
+        db.commit()
+    return posted

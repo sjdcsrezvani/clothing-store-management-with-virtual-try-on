@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, joinedload
 from database import get_db
 from models import (
     BusinessEvent, Customer, Expense, Payment, ProductVariant, Product, Purchase,
-    PurchaseItem, Sale, SaleItem, SalaryPayment, Settings, StaffUser, Supplier, StockMovement,
+    PurchaseItem, RecurringExpense, Sale, SaleItem, SalaryPayment, Settings, StaffUser, Supplier, StockMovement,
     CashSession, CashSessionEntry, SupplierPayment, FinancialEntry, CheckRecord,
     CheckReminder, PaymentReversal, to_english_digits,
 )
@@ -42,7 +42,8 @@ from services.accounting import (
     purchase_paid_amount, purchase_paid_from_rollup, purchase_payment_rollup,
     purchase_settlement, refresh_purchase_amount_paid,
     add_cash_withdrawal, cash_shift_summary, last_counted_balance,
-    open_cash_session, reverse_cash_withdrawal,
+    open_cash_session, reverse_cash_withdrawal, run_due_recurring_expenses,
+    upcoming_occurrence,
 )
 from services.sms import queue_credit_reminder_sms
 from services.analytics import KNOWN_PERIODS, UnreadableRange, get_date_range, period_range
@@ -80,7 +81,6 @@ from services.events import append_event
 PAYMENT_LABELS = {"card": "💳 کارت", "cash": "💵 نقد", "credit": "📒 نسیه"}
 EXPENSE_TYPE_LABELS = {"one_time": "یک‌باره", "monthly": "ماهانه"}
 EXPENSE_PAYMENT_LABELS = {"cash": "نقدی", "card": "کارتی"}
-EXPENSE_PAGE_SIZE = 50
 
 MOVEMENT_PAGE_SIZE = 25
 MOVEMENT_DIRECTIONS = {"all": "همه حرکت‌ها", "in": "فقط ورودی", "out": "فقط خروجی"}
@@ -2837,11 +2837,18 @@ async def admin_expenses(
     method: str = "all",
     status: str = "all",
     page: str = "1",
+    per_page: str = "25",
     db: Session = Depends(get_db),
 ):
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
+    # Lazy recurrence: whatever monthly rules are due posts now, before the
+    # list reads — so there is no scheduler to watch, and the new rows are
+    # already in the figures below. Idempotent per rule per month.
+    generated = run_due_recurring_expenses(db, actor_user_id=guard.id)
+    rules = db.query(RecurringExpense).order_by(
+        RecurringExpense.active.desc(), RecurringExpense.next_due.asc()).all()
     window = period_range(period, start_date or None, end_date or None)
     start, end = window.start, window.end
     search = (q or "").strip()
@@ -2849,12 +2856,16 @@ async def admin_expenses(
     payment_method = method if method in EXPENSE_PAYMENT_LABELS else "all"
     status_filter = status if status in {"active", "reversed"} else "all"
     page = page_arg(page)
+    per_page_int = int(per_page) if str(per_page).isdigit() and int(per_page) in (10, 25, 50) else 25
 
     query = db.query(Expense).filter(Expense.created_at.between(start, end))
     if search:
         digits = search.lstrip("#").strip()
         if digits.isdigit():
-            query = query.filter(Expense.id == int(digits))
+            # A bare number is a receipt number or a figure — an id match and
+            # an amount match are both exact, so the row is found either way.
+            value = int(digits)
+            query = query.filter(or_(Expense.id == value, Expense.amount == value))
         else:
             like = f"%{search}%"
             query = query.filter(or_(Expense.category.ilike(like), Expense.note.ilike(like)))
@@ -2875,15 +2886,33 @@ async def admin_expenses(
     monthly_total = query.filter(
         Expense.reversed_at.is_(None), Expense.expense_type == "monthly").with_entities(
         func.coalesce(func.sum(Expense.amount), 0)).scalar() or 0
+    # How much of the viewed total left the drawer versus the account: the two
+    # leave the business through different doors, and one figure hides that.
+    cash_total = query.filter(
+        Expense.reversed_at.is_(None), Expense.payment_method == "cash").with_entities(
+        func.coalesce(func.sum(Expense.amount), 0)).scalar() or 0
+    card_total = query.filter(
+        Expense.reversed_at.is_(None), Expense.payment_method == "card").with_entities(
+        func.coalesce(func.sum(Expense.amount), 0)).scalar() or 0
+    # The viewed categories with their shares, biggest first: the same shape
+    # the P&L breakdown uses, but grouped from this very query — so the list
+    # can never answer a different view than the table under it.
+    breakdown = [
+        {"category": (category or "بدون دسته"), "amount": amount}
+        for category, amount in query.with_entities(
+            Expense.category, func.coalesce(func.sum(Expense.amount), 0),
+        ).filter(Expense.reversed_at.is_(None)
+        ).group_by(Expense.category).order_by(func.sum(Expense.amount).desc()).all()
+    ]
     total_count = query.count()
-    total_pages = max(1, -(-total_count // EXPENSE_PAGE_SIZE))
+    total_pages = max(1, -(-total_count // per_page_int))
     page = min(page, total_pages)
     sort_key, sort_dir = parse_sort(request.query_params,
                                     {"date": "desc", "amount": "desc"}, "date")
     order_column = Expense.amount if sort_key == "amount" else Expense.created_at
     order = order_column.desc() if sort_dir == "desc" else order_column.asc()
     expenses = query.order_by(order, Expense.id.desc()) \
-        .offset((page - 1) * EXPENSE_PAGE_SIZE).limit(EXPENSE_PAGE_SIZE).all()
+        .offset((page - 1) * per_page_int).limit(per_page_int).all()
 
     ids = [e.id for e in expenses]
     salary_map: dict[int, int] = {}
@@ -2892,6 +2921,7 @@ async def admin_expenses(
                 SalaryPayment.expense_id.in_(ids)).all():
             salary_map[row[0]] = row[1]
     actor_map: dict[int, str] = {}
+    reversal_map: dict[int, dict] = {}
     if ids:
         events = db.query(BusinessEvent).filter(
             BusinessEvent.event_type == "ExpenseRecorded",
@@ -2902,6 +2932,20 @@ async def admin_expenses(
         for ev in events:
             if ev.aggregate_id is not None and ev.actor_user_id in names:
                 actor_map[ev.aggregate_id] = names[ev.actor_user_id]
+        # Who voided it and when — the mirror of ثبت:, read from the same
+        # event table so a reversal without a recorded witness is impossible.
+        reversals = db.query(BusinessEvent).filter(
+            BusinessEvent.event_type == "ExpenseReversed",
+            BusinessEvent.aggregate_id.in_(ids)).all()
+        void_ids = {ev.actor_user_id for ev in reversals if ev.actor_user_id}
+        void_names = {u.id: (u.full_name or u.username) for u in db.query(StaffUser).filter(
+            StaffUser.id.in_(list(void_ids))).all()} if void_ids else {}
+        for ev in reversals:
+            if ev.aggregate_id is not None:
+                reversal_map[ev.aggregate_id] = {
+                    "by": void_names.get(ev.actor_user_id) or "کاربر حذف‌شده",
+                    "when": ev.occurred_at,
+                }
 
     has_filters = bool(search or expense_type != "all" or payment_method != "all"
                         or status_filter != "all" or window.period != "month"
@@ -2921,14 +2965,32 @@ async def admin_expenses(
         **({"method": payment_method} if payment_method != "all" else {}),
         **({"status": status_filter} if status_filter != "all" else {}),
     })
+    # The same encoded string for the sort and pagination links: raw values
+    # hand-concatenated into an href are how a filter value used to break out
+    # of its quotes, and Persian search text always carries characters that
+    # must not travel raw. Sort and direction stay out so each link sets them.
+    base_qs = urlencode({
+        "period": window.period,
+        **({"start_date": start_date} if start_date else {}),
+        **({"end_date": end_date} if end_date else {}),
+        **({"q": search} if search else {}),
+        **({"type": expense_type} if expense_type != "all" else {}),
+        **({"method": payment_method} if payment_method != "all" else {}),
+        **({"status": status_filter} if status_filter != "all" else {}),
+        "per_page": per_page_int,
+    })
     return templates.TemplateResponse(request, "admin/expenses.html", {
         "expenses": expenses,
         "total": total,
         "expense_type_totals": {"one_time": one_time_total, "monthly": monthly_total},
+        "cash_total": cash_total,
+        "card_total": card_total,
+        "breakdown": breakdown,
         "expense_type_labels": EXPENSE_TYPE_LABELS,
         "expense_payment_labels": EXPENSE_PAYMENT_LABELS,
         "salary_map": salary_map,
         "actor_map": actor_map,
+        "reversal_map": reversal_map,
         "period": window.period,
         "start_date": start_date,
         "end_date": end_date,
@@ -2940,10 +3002,19 @@ async def admin_expenses(
         "page": page,
         "total_pages": total_pages,
         "total_count": total_count,
+        "per_page": per_page_int,
+        "per_page_options": (10, 25, 50),
         "sort_key": sort_key,
         "sort_dir": sort_dir,
         "has_filters": has_filters,
         "export_qs": export_qs,
+        "base_qs": base_qs,
+        "recurring_rules": rules,
+        "generated_count": generated,
+        # The add form warns when no drawer is open: a cash expense then lands
+        # shift-less and is counted by time window, which is correct but worth
+        # saying out loud at the moment of recording.
+        "shift_open": open_cash_session(db) is not None,
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
         "fmt": fmt,
@@ -2969,8 +3040,12 @@ async def admin_expense_add(
         amount_int = int(cleaned) if cleaned else 0
     except (TypeError, ValueError):
         amount_int = 0
-    if amount_int <= 0 or amount_int > 999_999_999_999:
-        return RedirectResponse(url="/admin/expenses?err=مبلغ معتبر نیست.", status_code=303)
+    # One refusal per rule, each naming it: «معتبر نیست» never told the reader
+    # whether the figure was empty, zero, or larger than the ledger allows.
+    if amount_int <= 0:
+        return RedirectResponse(url="/admin/expenses?err=مبلغ هزینه باید بیشتر از صفر باشد.", status_code=303)
+    if amount_int > 999_999_999_999:
+        return RedirectResponse(url="/admin/expenses?err=مبلغ هزینه از سقف مجاز بیشتر است.", status_code=303)
     if expense_type not in EXPENSE_TYPE_LABELS:
         return RedirectResponse(url="/admin/expenses?err=نوع هزینه نامعتبر است.", status_code=303)
     if payment_method not in EXPENSE_PAYMENT_LABELS:
@@ -3047,6 +3122,111 @@ async def admin_expense_delete(expense_id: int, request: Request, db: Session = 
     db.commit()
     log_action(db, "expense_reverse", f"ابطال هزینه {expense.amount:,} تومان ({expense.category or 'بدون دسته'})", request=request, target_type="expense", target_id=expense_id, after={"reversed": True, "operator_user_id": guard.id, "reason": raw_reason or None})
     return RedirectResponse(url="/admin/expenses?msg=هزینه برگشت داده شد.", status_code=303)
+
+
+@router.post("/expenses/recurring/add", response_class=HTMLResponse)
+async def admin_recurring_add(
+    request: Request,
+    amount: str = Form(""),
+    category: str = Form(""),
+    payment_method: str = Form("cash"),
+    note: str = Form(""),
+    day: str = Form("1"),
+    db: Session = Depends(get_db),
+):
+    """Define a monthly expense once; the expenses page posts it while due.
+
+    The same bounds as a hand-typed expense, because a rule is a promise to
+    spend — a zero-amount promise would post zero-تومان rows forever.
+    """
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    try:
+        cleaned = to_english_digits(str(amount or "")).replace(",", "").replace("٬", "").replace(" ", "").strip()
+        amount_int = int(cleaned) if cleaned else 0
+    except (TypeError, ValueError):
+        amount_int = 0
+    if amount_int <= 0:
+        return RedirectResponse(url="/admin/expenses?err=مبلغ قانون ماهانه باید بیشتر از صفر باشد.", status_code=303)
+    if amount_int > 999_999_999_999:
+        return RedirectResponse(url="/admin/expenses?err=مبلغ قانون ماهانه از سقف مجاز بیشتر است.", status_code=303)
+    if payment_method not in EXPENSE_PAYMENT_LABELS:
+        return RedirectResponse(url="/admin/expenses?err=روش پرداخت نامعتبر است.", status_code=303)
+    try:
+        day_int = int(to_english_digits(str(day or "")))
+    except (TypeError, ValueError):
+        day_int = 0
+    if not 1 <= day_int <= 31:
+        return RedirectResponse(url="/admin/expenses?err=روز سررسید باید بین ۱ تا ۳۱ باشد.", status_code=303)
+    rule = RecurringExpense(
+        amount=amount_int,
+        category=(category or "").strip()[:100] or None,
+        expense_type="monthly",
+        payment_method=payment_method,
+        note=(note or "").strip()[:1000] or None,
+        day_of_month=day_int,
+        next_due=upcoming_occurrence(day_int),
+        created_by_user_id=guard.id,
+    )
+    db.add(rule)
+    db.commit()
+    log_action(db, "recurring_expense_add", f"قانون ماهانه {amount_int:,} تومان ({rule.category or 'بدون دسته'})", request=request, target_type="recurring_expense", target_id=rule.id, after={"amount": amount_int, "day": day_int, "payment_method": payment_method})
+    return RedirectResponse(url="/admin/expenses?msg=قانون ماهانه ثبت شد؛ از سررسید بعدی خودش ثبت می‌شود.", status_code=303)
+
+
+def _recurring_rule_or_refuse(db, rule_id: int):
+    rule = db.query(RecurringExpense).filter(RecurringExpense.id == rule_id).first()
+    if rule is None:
+        return None, RedirectResponse(url="/admin/expenses?err=این قانون پیدا نشد.", status_code=303)
+    return rule, None
+
+
+@router.post("/expenses/recurring/{rule_id}/pause", response_class=HTMLResponse)
+async def admin_recurring_pause(request: Request, rule_id: int, db: Session = Depends(get_db)):
+    """Pause a rule: paused months never accrue, they are simply skipped."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    rule, refused = _recurring_rule_or_refuse(db, rule_id)
+    if refused is not None:
+        return refused
+    rule.active = False
+    db.commit()
+    log_action(db, "recurring_expense_pause", f"توقف قانون ماهانه {rule.amount:,} تومان", request=request, target_type="recurring_expense", target_id=rule.id, after={"active": False})
+    return RedirectResponse(url="/admin/expenses?msg=قانون متوقف شد؛ ماه‌های توقف عقب‌افتادگی نمی‌سازند.", status_code=303)
+
+
+@router.post("/expenses/recurring/{rule_id}/resume", response_class=HTMLResponse)
+async def admin_recurring_resume(request: Request, rule_id: int, db: Session = Depends(get_db)):
+    """Resume a rule from the next occurrence — the paused span stays skipped."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    rule, refused = _recurring_rule_or_refuse(db, rule_id)
+    if refused is not None:
+        return refused
+    rule.active = True
+    rule.next_due = upcoming_occurrence(rule.day_of_month)
+    db.commit()
+    log_action(db, "recurring_expense_resume", f"ازسرگیری قانون ماهانه {rule.amount:,} تومان", request=request, target_type="recurring_expense", target_id=rule.id, after={"active": True})
+    return RedirectResponse(url="/admin/expenses?msg=قانون از سر گرفته شد؛ سررسید بعدی دوباره ثبت می‌شود.", status_code=303)
+
+
+@router.post("/expenses/recurring/{rule_id}/delete", response_class=HTMLResponse)
+async def admin_recurring_delete(request: Request, rule_id: int, db: Session = Depends(get_db)):
+    """Stop a rule for good. Rows it already posted keep standing — and keep
+    their «خودکار» badge — because money that left did leave."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    rule, refused = _recurring_rule_or_refuse(db, rule_id)
+    if refused is not None:
+        return refused
+    db.delete(rule)
+    db.commit()
+    log_action(db, "recurring_expense_delete", f"حذف قانون ماهانه {rule.amount:,} تومان", request=request, target_type="recurring_expense", target_id=rule.id, after={"active": False})
+    return RedirectResponse(url="/admin/expenses?msg=قانون حذف شد؛ هزینه‌های ثبت‌شده می‌مانند.", status_code=303)
 
 
 # ── Cash box (the drawer) ────────────────────────────────────────────────────

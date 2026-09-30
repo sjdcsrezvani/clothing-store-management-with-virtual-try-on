@@ -948,3 +948,203 @@ def test_credit_arithmetic_has_one_definition():
                 offenders.append(f"{path}:{line_no}: raw final_amount without fmt(): {line.strip()[:80]}")
 
     assert not offenders, "\n".join(offenders)
+
+
+def test_expense_add_modal_warning_and_void_surface_are_painted(client, db_session, authed):
+    """The typo guards are painted, not just enforced: modal, reason, script."""
+    page = client.get("/admin/expenses")
+    assert page.status_code == 200
+    assert 'id="expense-add-form"' in page.text
+    assert 'id="expense-add-confirm"' in page.text
+    assert 'id="expense-void-confirm"' in page.text
+    assert 'id="expense-void-reason"' in page.text
+    assert "/static/js/expenses.js" in page.text
+    # No drawer open in a fresh shop, so the form says the cash expense lands
+    # shift-less — still records, but out loud.
+    assert "صندوق باز نیست" in page.text
+
+    _post(client, "/admin/cashbox/open", {"opening": "100000"}, authed)
+    assert "صندوق باز نیست" not in client.get("/admin/expenses").text
+
+
+def test_expense_amount_refusals_name_the_rule(client, db_session, authed):
+    """One refusal per rule, each naming it — never a bare «معتبر نیست»."""
+    from urllib.parse import unquote_plus
+    for bad in ("0", "-5000", "نصفه"):
+        response = _post(client, "/admin/expenses/add", {"amount": bad, "category": "متفرقه"}, authed)
+        assert response.status_code == 303
+        assert "باید بیشتر از صفر باشد" in unquote_plus(response.headers["location"])
+    response = _post(client, "/admin/expenses/add", {"amount": "1000000000000", "category": "متفرقه"}, authed)
+    assert response.status_code == 303
+    assert "سقف مجاز" in unquote_plus(response.headers["location"])
+    assert db_session.query(Expense).count() == 0
+
+
+def test_void_carries_its_reason_to_the_reversal(client, db_session, authed):
+    """The modal's reason travels in the hidden input onto the reversal entry."""
+    from models import FinancialEntry
+    _post(client, "/admin/expenses/add", {"amount": "70000", "category": "حمل و نقل"}, authed)
+    first = db_session.query(Expense).order_by(Expense.id.desc()).first()
+    _post(client, f"/admin/expenses/{first.id}/delete", {"reason": "اشتباه ثبت شد"}, authed)
+    entry = db_session.query(FinancialEntry).filter(
+        FinancialEntry.entry_type == "expense_reversal",
+        FinancialEntry.expense_id == first.id).one()
+    assert entry.reason == "اشتباه ثبت شد"
+
+    _post(client, "/admin/expenses/add", {"amount": "80000", "category": "حمل و نقل"}, authed)
+    second = db_session.query(Expense).order_by(Expense.id.desc()).first()
+    _post(client, f"/admin/expenses/{second.id}/delete", {}, authed)
+    fallback = db_session.query(FinancialEntry).filter(
+        FinancialEntry.entry_type == "expense_reversal",
+        FinancialEntry.expense_id == second.id).one()
+    assert fallback.reason == "ابطال دستی هزینه"
+
+
+def test_expenses_page_size_is_a_choice_with_numbered_pages(client, db_session, authed):
+    """Fifty fixed rows is a wall; ten per page with numbers is a list."""
+    from datetime import datetime, timezone
+    for index in range(30):
+        db_session.add(Expense(amount=10_000 + index, category="متفرقه",
+                               expense_type="one_time", payment_method="cash",
+                               created_at=datetime.now(timezone.utc)))
+    db_session.commit()
+
+    first = client.get("/admin/expenses?per_page=10")
+    assert 'aria-label="صفحه 3"' in first.text
+    assert "نمایش همه" not in first.text
+    third = client.get("/admin/expenses?per_page=10&page=3")
+    assert 'aria-current="page">3<' in third.text
+    # Out-of-range lands on the last page, not an empty list.
+    assert 'aria-current="page">3<' in client.get("/admin/expenses?per_page=10&page=9").text
+
+
+def test_expense_search_finds_a_figure_as_well_as_a_receipt_number(client, db_session, authed):
+    """A bare number is a receipt number or a figure — the row is found either way."""
+    _post(client, "/admin/expenses/add", {"amount": "7654321", "category": "تعمیرات"}, authed)
+    expense = db_session.query(Expense).order_by(Expense.id.desc()).first()
+
+    by_amount = client.get("/admin/expenses?q=7654321")
+    assert f"/admin/expenses/{expense.id}/delete" in by_amount.text
+    by_id = client.get(f"/admin/expenses?q=%23{expense.id}")
+    assert f"/admin/expenses/{expense.id}/delete" in by_id.text
+    missing = client.get("/admin/expenses?q= rent-that-is-nowhere")
+    assert "هزینه‌ای با این فیلترها پیدا نشد" in missing.text
+
+
+def test_expense_list_names_methods_breakdown_and_voider(client, db_session, authed):
+    """The viewed total is split by door, categorised with shares, and voids are witnessed."""
+    _post(client, "/admin/expenses/add", {"amount": "400000", "category": "اجاره",
+                                          "expense_type": "monthly", "note": "نقدی"}, authed)
+    _post(client, "/admin/expenses/add", {"amount": "600000", "category": "اجاره",
+                                          "expense_type": "one_time", "payment_method": "card",
+                                          "note": "کارتی"}, authed)
+    doomed = db_session.query(Expense).filter(Expense.amount == 400_000).one()
+    _post(client, f"/admin/expenses/{doomed.id}/delete", {"reason": "تکراری"}, authed)
+
+    page = client.get("/admin/expenses")
+    assert "نقدی 0 تومان" in page.text            # the cash one was voided
+    assert "کارتی 600,000 تومان" in page.text
+    assert "دسته‌ها در همین نما" in page.text
+    assert "اجاره" in page.text
+    assert "همه روش‌ها" in page.text and "همه وضعیت‌ها" in page.text
+    assert "نقدی و کارتی" not in page.text
+    assert "برگشت:" in page.text                   # the void is witnessed…
+    assert "برگشت: کاربر حذف‌شده" not in page.text  # …by a named human
+    assert 'data-label="مبلغ"' in page.text       # phone cards are labelled
+    assert "جمع هزینه‌های بازه" in page.text
+
+
+def test_recurring_rule_lifecycle_is_validated_and_reversible(client, db_session, authed):
+    """A rule is a promise to spend, so its bounds match a hand-typed expense."""
+    from urllib.parse import unquote_plus
+    from models import RecurringExpense
+    bad_amount = _post(client, "/admin/expenses/recurring/add",
+                       {"amount": "0", "category": "اجاره", "day": "1"}, authed)
+    assert "بیشتر از صفر" in unquote_plus(bad_amount.headers["location"])
+    bad_day = _post(client, "/admin/expenses/recurring/add",
+                    {"amount": "500000", "category": "اجاره", "day": "32"}, authed)
+    assert "۱ تا ۳۱" in unquote_plus(bad_day.headers["location"])
+    assert db_session.query(RecurringExpense).count() == 0
+
+    assert _post(client, "/admin/expenses/recurring/add",
+                 {"amount": "1500000", "category": "اجاره",
+                  "payment_method": "cash", "note": "ماهانه", "day": "1"}, authed).status_code == 303
+    rule = db_session.query(RecurringExpense).one()
+    assert rule.amount == 1_500_000 and rule.active is True
+    assert rule.next_due > rule.created_at
+
+    assert _post(client, f"/admin/expenses/recurring/{rule.id}/pause", {}, authed).status_code == 303
+    db_session.refresh(rule)
+    assert rule.active is False
+    assert "متوقف" in client.get("/admin/expenses").text
+    assert _post(client, f"/admin/expenses/recurring/{rule.id}/resume", {}, authed).status_code == 303
+    db_session.refresh(rule)
+    assert rule.active is True
+
+    assert _post(client, f"/admin/expenses/recurring/{rule.id}/delete", {}, authed).status_code == 303
+    assert db_session.query(RecurringExpense).count() == 0
+    missing = _post(client, "/admin/expenses/recurring/999999/pause", {}, authed)
+    assert "پیدا نشد" in unquote_plus(missing.headers["location"])
+
+
+def test_due_rules_post_once_per_month_and_stay_traceable(client, db_session, authed):
+    """Lazy generation posts what is due, never twice, and rows point home."""
+    from datetime import datetime, timezone, timedelta
+    from models import BusinessEvent, Expense, RecurringExpense
+    past = datetime.now(timezone.utc) - timedelta(days=40)
+    rule = RecurringExpense(amount=900_000, category="اجاره", expense_type="monthly",
+                            payment_method="cash", day_of_month=past.day, next_due=past)
+    db_session.add(rule)
+    db_session.commit()
+
+    first_visit = client.get("/admin/expenses")
+    assert "۱ هزینه خودکار" in first_visit.text or "هزینه خودکار سررسیده ثبت شد" in first_visit.text
+    rows = db_session.query(Expense).filter(Expense.recurring_rule_id == rule.id).all()
+    assert len(rows) >= 1
+    assert "خودکار" in first_visit.text
+    keys = db_session.query(BusinessEvent.idempotency_key).filter(
+        BusinessEvent.event_type == "ExpenseRecorded",
+        BusinessEvent.idempotency_key.like(f"recurring-expense:{rule.id}:%")).all()
+    assert len(keys) == len(rows)
+
+    # A second visit posts nothing: the month already has its key.
+    client.get("/admin/expenses")
+    assert db_session.query(Expense).filter(Expense.recurring_rule_id == rule.id).count() == len(rows)
+
+    # Paused months never accrue: a paused rule with a past due stays silent.
+    rule.active = False
+    rule.next_due = datetime.now(timezone.utc) - timedelta(days=10)
+    db_session.commit()
+    client.get("/admin/expenses")
+    assert db_session.query(Expense).filter(Expense.recurring_rule_id == rule.id).count() == len(rows)
+
+
+def test_auto_posted_cash_attaches_to_the_open_shift(client, db_session, authed):
+    """An auto row is as shift-aware as a hand-typed one: cash joins the drawer."""
+    from datetime import datetime, timezone, timedelta
+    from models import Expense, RecurringExpense
+    _post(client, "/admin/cashbox/open", {"opening": "2000000"}, authed)
+    past = datetime.now(timezone.utc) - timedelta(days=5)
+    db_session.add(RecurringExpense(amount=120_000, category="قبوض", expense_type="monthly",
+                                    payment_method="cash", day_of_month=past.day, next_due=past))
+    db_session.add(RecurringExpense(amount=130_000, category="اینترنت", expense_type="monthly",
+                                    payment_method="card", day_of_month=past.day, next_due=past))
+    db_session.commit()
+
+    client.get("/admin/expenses")
+    cash_row = db_session.query(Expense).filter(Expense.amount == 120_000).one()
+    card_row = db_session.query(Expense).filter(Expense.amount == 130_000).one()
+    assert cash_row.cash_session_id is not None
+    assert card_row.cash_session_id is None
+
+
+def test_upcoming_occurrence_clamps_without_drifting():
+    """The 31st posts on the 28th in February — and is the 31st again in March."""
+    from datetime import datetime, timezone
+    from services.accounting import upcoming_occurrence
+    jan31 = datetime(2026, 1, 31, 12, tzinfo=timezone.utc)
+    assert upcoming_occurrence(31, jan31) == datetime(2026, 2, 28, tzinfo=timezone.utc)
+    feb1 = datetime(2026, 2, 1, 12, tzinfo=timezone.utc)
+    assert upcoming_occurrence(31, feb1) == datetime(2026, 2, 28, tzinfo=timezone.utc)
+    feb28_noon = datetime(2026, 2, 28, 12, tzinfo=timezone.utc)
+    assert upcoming_occurrence(15, feb28_noon) == datetime(2026, 3, 15, tzinfo=timezone.utc)
