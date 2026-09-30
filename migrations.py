@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 24
+MIGRATION_VERSION = 25
 
 
 def migration_status(engine) -> int:
@@ -238,6 +238,30 @@ def _rebuild_sms_messages(conn) -> None:
 
 
 def _apply_revision(conn, version: int) -> None:
+    if version == 25:
+        # Monthly expense rules: a rule posts itself every month until
+        # stopped, and auto-posted rows point back at their rule. Purely
+        # additive — a database without rules behaves exactly as before, and
+        # `create_all` already builds both for a fresh install.
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS recurring_expenses (
+                id INTEGER PRIMARY KEY,
+                amount INTEGER NOT NULL,
+                category VARCHAR(100),
+                expense_type VARCHAR(20) NOT NULL DEFAULT 'monthly',
+                payment_method VARCHAR(20) NOT NULL DEFAULT 'cash',
+                note TEXT,
+                day_of_month INTEGER NOT NULL,
+                active BOOLEAN NOT NULL DEFAULT 1,
+                next_due DATETIME NOT NULL,
+                created_by_user_id INTEGER REFERENCES staff_users (id),
+                stopped_at DATETIME,
+                created_at DATETIME NOT NULL
+            )
+        """))
+        _add_column_if_missing(conn, "expenses", "recurring_rule_id", "INTEGER")
+        return
+
     if version == 24:
         # Archiving retires a campaign without erasing it: the list hides it
         # and the send audience skips it, while redemptions stay put.

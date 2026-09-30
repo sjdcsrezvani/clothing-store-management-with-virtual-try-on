@@ -1,13 +1,15 @@
 /* ============================================================
-   Raykid Store — expenses behaviour (Phase A)
-   The add form groups the amount as typed (1,500,000) so a missing
-   zero is visible before it posts, then echoes amount, method, type
-   and category back through a shared dialog.js surface before
-   anything posts. Voiding passes its own surface carrying a reason
-   field, which lands in the row form's hidden reason input — without
-   JS both forms post directly and the server still validates, with
-   the void defaulting to its standing reason. A second click while
-   the first POST is in flight is ignored.
+   Raykid Store — expenses behaviour (Phase A/C)
+   Money fields group digits as typed (1,500,000) so a missing zero is
+   visible before it posts; separators are stripped back to raw digits on
+   submit because the server parses digits, not punctuation. Adding echoes
+   amount, method, type and category back through a shared dialog.js surface
+   before anything posts. Voiding passes its own surface carrying a reason
+   field, which lands in the row form's hidden reason input, and stopping a
+   monthly rule passes a third surface with the rule's own words — without
+   JS all forms post directly and the server still validates, with the void
+   defaulting to its standing reason. A second click while the first POST is
+   in flight is ignored.
    ============================================================ */
 (function () {
     'use strict';
@@ -31,18 +33,25 @@
     }
 
     var amountField = document.getElementById('expense-amount');
-    if (amountField) {
-        amountField.addEventListener('input', function () {
-            amountField.value = grouped(amountField.value);
+    // Every money field on the page groups alike — the add form's and the
+    // monthly rule's — because two faces for one kind of figure is how a
+    // missing zero hides.
+    var moneyFields = Array.prototype.slice.call(
+        document.querySelectorAll('input[inputmode="numeric"]'));
+    moneyFields.forEach(function (field) {
+        field.addEventListener('input', function () {
+            field.value = grouped(field.value);
         });
-    }
+    });
 
     // Separators never reach the server: the parser reads digits, and a
     // refusal should blame the figure, never the punctuation.
     document.addEventListener('submit', function (event) {
         var form = event.target;
         if (!form || form.nodeName !== 'FORM') return;
-        if (amountField && form.contains(amountField)) amountField.value = rawDigits(amountField.value);
+        moneyFields.forEach(function (field) {
+            if (form.contains(field)) field.value = rawDigits(field.value);
+        });
     });
 
     var pendingForm = null;
@@ -97,6 +106,32 @@
         });
     });
 
+    // A rule promise moves no money today, so it posts without a modal —
+    // but never twice from one double click.
+    var ruleForm = document.getElementById('recurring-add-form');
+    if (ruleForm) {
+        ruleForm.addEventListener('submit', function (event) {
+            if (submitting) { event.preventDefault(); return; }
+            submitting = true;
+            var send = ruleForm.querySelector('[type="submit"]');
+            if (send) send.setAttribute('disabled', '');
+        });
+    }
+
+    // Stopping a rule is forever, so the rule's own words come back first.
+    document.querySelectorAll('[data-stop-form]').forEach(function (form) {
+        form.addEventListener('submit', function (event) {
+            if (submitting || pendingForm === form) return;
+            if (!window.RaykidDialog) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            pendingForm = form;
+            document.getElementById('recurring-stop-confirm-text').textContent =
+                form.getAttribute('data-confirm') || '';
+            window.RaykidDialog.open('recurring-stop-confirm', document.activeElement);
+        });
+    });
+
     function confirmYes(surfaceId, buttonId, onConfirm) {
         var yes = document.getElementById(buttonId);
         if (!yes) return;
@@ -109,9 +144,9 @@
             submitting = true;
             var send = form.querySelector('[type="submit"]');
             if (send) send.setAttribute('disabled', '');
-            if (amountField && form.contains(amountField)) {
-                amountField.value = rawDigits(amountField.value);
-            }
+            moneyFields.forEach(function (field) {
+                if (form.contains(field)) field.value = rawDigits(field.value);
+            });
             form.submit();
         });
     }
@@ -121,6 +156,7 @@
         var hidden = form.querySelector('[name="reason"]');
         if (hidden && reasonField) hidden.value = reasonField.value.trim();
     });
+    confirmYes('recurring-stop-confirm', 'recurring-stop-confirm-yes');
 
     // A dismissal is a change of mind: the form stays exactly as typed.
     document.addEventListener('click', function (event) {

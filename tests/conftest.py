@@ -52,7 +52,7 @@ def _clean_db(client, db_session):
     from models import (BusinessEvent, StaffUser, CheckReminder, CheckRecord, TagPrintBatchLine, TagPrintBatch, SaleCampaign, SaleItem, Sale, POSTransaction, CheckoutEvent, CheckoutSession, StockReservation, StockMovement, GeneratedImage,
                         SmsMessage, SmsTemplate, SmsDevice, BackgroundJob,
                         Referral, Customer, ProductVariant, Product, CampaignAssignment,
-                        Campaign, Settings, AdminLog, Payment, Expense, CashSessionEntry, Purchase, PurchaseItem, Supplier, Refund, RefundLine, PaymentReversal, FinancialEntry, SalaryPayment, CashSession, CashSessionEntry, SupplierPayment,
+                        Campaign, Settings, AdminLog, Payment, Expense, RecurringExpense, CashSessionEntry, Purchase, PurchaseItem, Supplier, Refund, RefundLine, PaymentReversal, FinancialEntry, SalaryPayment, CashSession, CashSessionEntry, SupplierPayment,
                         VariantImage, ProductImage)
     # The receipt stamp points variants at their purchase: null it before the
     # purchases go, or the foreign key refuses the cleanup itself.
@@ -67,7 +67,7 @@ def _clean_db(client, db_session):
     # exactly as the suite always has — products may still be wearing them.
     for model in (BusinessEvent, TagPrintBatchLine, TagPrintBatch, CheckoutEvent, StockReservation, CheckoutSession, CheckReminder, CheckRecord, RefundLine, FinancialEntry, PaymentReversal, Refund, SalaryPayment, CampaignAssignment, SaleCampaign, SaleItem, StockMovement, POSTransaction, Payment, Sale, GeneratedImage,
                   SmsMessage, SmsTemplate, SmsDevice, BackgroundJob,
-                  Referral, SupplierPayment, PurchaseItem, Purchase, VariantImage, ProductImage, ProductVariant, Product, Expense,
+                  Referral, SupplierPayment, PurchaseItem, Purchase, VariantImage, ProductImage, ProductVariant, Product, Expense, RecurringExpense,
                   Campaign, CashSessionEntry, CashSession, AdminLog, StaffUser, Settings, Customer):
         db_session.query(model).delete()
     db_session.commit()

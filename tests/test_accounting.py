@@ -1052,3 +1052,99 @@ def test_expense_list_names_methods_breakdown_and_voider(client, db_session, aut
     assert "برگشت: کاربر حذف‌شده" not in page.text  # …by a named human
     assert 'data-label="مبلغ"' in page.text       # phone cards are labelled
     assert "جمع هزینه‌های بازه" in page.text
+
+
+def test_recurring_rule_lifecycle_is_validated_and_reversible(client, db_session, authed):
+    """A rule is a promise to spend, so its bounds match a hand-typed expense."""
+    from urllib.parse import unquote_plus
+    from models import RecurringExpense
+    bad_amount = _post(client, "/admin/expenses/recurring/add",
+                       {"amount": "0", "category": "اجاره", "day": "1"}, authed)
+    assert "بیشتر از صفر" in unquote_plus(bad_amount.headers["location"])
+    bad_day = _post(client, "/admin/expenses/recurring/add",
+                    {"amount": "500000", "category": "اجاره", "day": "32"}, authed)
+    assert "۱ تا ۳۱" in unquote_plus(bad_day.headers["location"])
+    assert db_session.query(RecurringExpense).count() == 0
+
+    assert _post(client, "/admin/expenses/recurring/add",
+                 {"amount": "1500000", "category": "اجاره",
+                  "payment_method": "cash", "note": "ماهانه", "day": "1"}, authed).status_code == 303
+    rule = db_session.query(RecurringExpense).one()
+    assert rule.amount == 1_500_000 and rule.active is True
+    assert rule.next_due > rule.created_at
+
+    assert _post(client, f"/admin/expenses/recurring/{rule.id}/pause", {}, authed).status_code == 303
+    db_session.refresh(rule)
+    assert rule.active is False
+    assert "متوقف" in client.get("/admin/expenses").text
+    assert _post(client, f"/admin/expenses/recurring/{rule.id}/resume", {}, authed).status_code == 303
+    db_session.refresh(rule)
+    assert rule.active is True
+
+    assert _post(client, f"/admin/expenses/recurring/{rule.id}/delete", {}, authed).status_code == 303
+    assert db_session.query(RecurringExpense).count() == 0
+    missing = _post(client, "/admin/expenses/recurring/999999/pause", {}, authed)
+    assert "پیدا نشد" in unquote_plus(missing.headers["location"])
+
+
+def test_due_rules_post_once_per_month_and_stay_traceable(client, db_session, authed):
+    """Lazy generation posts what is due, never twice, and rows point home."""
+    from datetime import datetime, timezone, timedelta
+    from models import BusinessEvent, Expense, RecurringExpense
+    past = datetime.now(timezone.utc) - timedelta(days=40)
+    rule = RecurringExpense(amount=900_000, category="اجاره", expense_type="monthly",
+                            payment_method="cash", day_of_month=past.day, next_due=past)
+    db_session.add(rule)
+    db_session.commit()
+
+    first_visit = client.get("/admin/expenses")
+    assert "۱ هزینه خودکار" in first_visit.text or "هزینه خودکار سررسیده ثبت شد" in first_visit.text
+    rows = db_session.query(Expense).filter(Expense.recurring_rule_id == rule.id).all()
+    assert len(rows) >= 1
+    assert "خودکار" in first_visit.text
+    keys = db_session.query(BusinessEvent.idempotency_key).filter(
+        BusinessEvent.event_type == "ExpenseRecorded",
+        BusinessEvent.idempotency_key.like(f"recurring-expense:{rule.id}:%")).all()
+    assert len(keys) == len(rows)
+
+    # A second visit posts nothing: the month already has its key.
+    client.get("/admin/expenses")
+    assert db_session.query(Expense).filter(Expense.recurring_rule_id == rule.id).count() == len(rows)
+
+    # Paused months never accrue: a paused rule with a past due stays silent.
+    rule.active = False
+    rule.next_due = datetime.now(timezone.utc) - timedelta(days=10)
+    db_session.commit()
+    client.get("/admin/expenses")
+    assert db_session.query(Expense).filter(Expense.recurring_rule_id == rule.id).count() == len(rows)
+
+
+def test_auto_posted_cash_attaches_to_the_open_shift(client, db_session, authed):
+    """An auto row is as shift-aware as a hand-typed one: cash joins the drawer."""
+    from datetime import datetime, timezone, timedelta
+    from models import Expense, RecurringExpense
+    _post(client, "/admin/cashbox/open", {"opening": "2000000"}, authed)
+    past = datetime.now(timezone.utc) - timedelta(days=5)
+    db_session.add(RecurringExpense(amount=120_000, category="قبوض", expense_type="monthly",
+                                    payment_method="cash", day_of_month=past.day, next_due=past))
+    db_session.add(RecurringExpense(amount=130_000, category="اینترنت", expense_type="monthly",
+                                    payment_method="card", day_of_month=past.day, next_due=past))
+    db_session.commit()
+
+    client.get("/admin/expenses")
+    cash_row = db_session.query(Expense).filter(Expense.amount == 120_000).one()
+    card_row = db_session.query(Expense).filter(Expense.amount == 130_000).one()
+    assert cash_row.cash_session_id is not None
+    assert card_row.cash_session_id is None
+
+
+def test_upcoming_occurrence_clamps_without_drifting():
+    """The 31st posts on the 28th in February — and is the 31st again in March."""
+    from datetime import datetime, timezone
+    from services.accounting import upcoming_occurrence
+    jan31 = datetime(2026, 1, 31, 12, tzinfo=timezone.utc)
+    assert upcoming_occurrence(31, jan31) == datetime(2026, 2, 28, tzinfo=timezone.utc)
+    feb1 = datetime(2026, 2, 1, 12, tzinfo=timezone.utc)
+    assert upcoming_occurrence(31, feb1) == datetime(2026, 2, 28, tzinfo=timezone.utc)
+    feb28_noon = datetime(2026, 2, 28, 12, tzinfo=timezone.utc)
+    assert upcoming_occurrence(15, feb28_noon) == datetime(2026, 3, 15, tzinfo=timezone.utc)

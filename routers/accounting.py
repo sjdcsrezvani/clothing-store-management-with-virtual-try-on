@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, joinedload
 from database import get_db
 from models import (
     BusinessEvent, Customer, Expense, Payment, ProductVariant, Product, Purchase,
-    PurchaseItem, Sale, SaleItem, SalaryPayment, Settings, StaffUser, Supplier, StockMovement,
+    PurchaseItem, RecurringExpense, Sale, SaleItem, SalaryPayment, Settings, StaffUser, Supplier, StockMovement,
     CashSession, CashSessionEntry, SupplierPayment, FinancialEntry, CheckRecord,
     CheckReminder, PaymentReversal, to_english_digits,
 )
@@ -42,7 +42,8 @@ from services.accounting import (
     purchase_paid_amount, purchase_paid_from_rollup, purchase_payment_rollup,
     purchase_settlement, refresh_purchase_amount_paid,
     add_cash_withdrawal, cash_shift_summary, last_counted_balance,
-    open_cash_session, reverse_cash_withdrawal,
+    open_cash_session, reverse_cash_withdrawal, run_due_recurring_expenses,
+    upcoming_occurrence,
 )
 from services.sms import queue_credit_reminder_sms
 from services.analytics import KNOWN_PERIODS, UnreadableRange, get_date_range, period_range
@@ -2842,6 +2843,12 @@ async def admin_expenses(
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
+    # Lazy recurrence: whatever monthly rules are due posts now, before the
+    # list reads — so there is no scheduler to watch, and the new rows are
+    # already in the figures below. Idempotent per rule per month.
+    generated = run_due_recurring_expenses(db, actor_user_id=guard.id)
+    rules = db.query(RecurringExpense).order_by(
+        RecurringExpense.active.desc(), RecurringExpense.next_due.asc()).all()
     window = period_range(period, start_date or None, end_date or None)
     start, end = window.start, window.end
     search = (q or "").strip()
@@ -3002,6 +3009,8 @@ async def admin_expenses(
         "has_filters": has_filters,
         "export_qs": export_qs,
         "base_qs": base_qs,
+        "recurring_rules": rules,
+        "generated_count": generated,
         # The add form warns when no drawer is open: a cash expense then lands
         # shift-less and is counted by time window, which is correct but worth
         # saying out loud at the moment of recording.
@@ -3113,6 +3122,111 @@ async def admin_expense_delete(expense_id: int, request: Request, db: Session = 
     db.commit()
     log_action(db, "expense_reverse", f"ابطال هزینه {expense.amount:,} تومان ({expense.category or 'بدون دسته'})", request=request, target_type="expense", target_id=expense_id, after={"reversed": True, "operator_user_id": guard.id, "reason": raw_reason or None})
     return RedirectResponse(url="/admin/expenses?msg=هزینه برگشت داده شد.", status_code=303)
+
+
+@router.post("/expenses/recurring/add", response_class=HTMLResponse)
+async def admin_recurring_add(
+    request: Request,
+    amount: str = Form(""),
+    category: str = Form(""),
+    payment_method: str = Form("cash"),
+    note: str = Form(""),
+    day: str = Form("1"),
+    db: Session = Depends(get_db),
+):
+    """Define a monthly expense once; the expenses page posts it while due.
+
+    The same bounds as a hand-typed expense, because a rule is a promise to
+    spend — a zero-amount promise would post zero-تومان rows forever.
+    """
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    try:
+        cleaned = to_english_digits(str(amount or "")).replace(",", "").replace("٬", "").replace(" ", "").strip()
+        amount_int = int(cleaned) if cleaned else 0
+    except (TypeError, ValueError):
+        amount_int = 0
+    if amount_int <= 0:
+        return RedirectResponse(url="/admin/expenses?err=مبلغ قانون ماهانه باید بیشتر از صفر باشد.", status_code=303)
+    if amount_int > 999_999_999_999:
+        return RedirectResponse(url="/admin/expenses?err=مبلغ قانون ماهانه از سقف مجاز بیشتر است.", status_code=303)
+    if payment_method not in EXPENSE_PAYMENT_LABELS:
+        return RedirectResponse(url="/admin/expenses?err=روش پرداخت نامعتبر است.", status_code=303)
+    try:
+        day_int = int(to_english_digits(str(day or "")))
+    except (TypeError, ValueError):
+        day_int = 0
+    if not 1 <= day_int <= 31:
+        return RedirectResponse(url="/admin/expenses?err=روز سررسید باید بین ۱ تا ۳۱ باشد.", status_code=303)
+    rule = RecurringExpense(
+        amount=amount_int,
+        category=(category or "").strip()[:100] or None,
+        expense_type="monthly",
+        payment_method=payment_method,
+        note=(note or "").strip()[:1000] or None,
+        day_of_month=day_int,
+        next_due=upcoming_occurrence(day_int),
+        created_by_user_id=guard.id,
+    )
+    db.add(rule)
+    db.commit()
+    log_action(db, "recurring_expense_add", f"قانون ماهانه {amount_int:,} تومان ({rule.category or 'بدون دسته'})", request=request, target_type="recurring_expense", target_id=rule.id, after={"amount": amount_int, "day": day_int, "payment_method": payment_method})
+    return RedirectResponse(url="/admin/expenses?msg=قانون ماهانه ثبت شد؛ از سررسید بعدی خودش ثبت می‌شود.", status_code=303)
+
+
+def _recurring_rule_or_refuse(db, rule_id: int):
+    rule = db.query(RecurringExpense).filter(RecurringExpense.id == rule_id).first()
+    if rule is None:
+        return None, RedirectResponse(url="/admin/expenses?err=این قانون پیدا نشد.", status_code=303)
+    return rule, None
+
+
+@router.post("/expenses/recurring/{rule_id}/pause", response_class=HTMLResponse)
+async def admin_recurring_pause(request: Request, rule_id: int, db: Session = Depends(get_db)):
+    """Pause a rule: paused months never accrue, they are simply skipped."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    rule, refused = _recurring_rule_or_refuse(db, rule_id)
+    if refused is not None:
+        return refused
+    rule.active = False
+    db.commit()
+    log_action(db, "recurring_expense_pause", f"توقف قانون ماهانه {rule.amount:,} تومان", request=request, target_type="recurring_expense", target_id=rule.id, after={"active": False})
+    return RedirectResponse(url="/admin/expenses?msg=قانون متوقف شد؛ ماه‌های توقف عقب‌افتادگی نمی‌سازند.", status_code=303)
+
+
+@router.post("/expenses/recurring/{rule_id}/resume", response_class=HTMLResponse)
+async def admin_recurring_resume(request: Request, rule_id: int, db: Session = Depends(get_db)):
+    """Resume a rule from the next occurrence — the paused span stays skipped."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    rule, refused = _recurring_rule_or_refuse(db, rule_id)
+    if refused is not None:
+        return refused
+    rule.active = True
+    rule.next_due = upcoming_occurrence(rule.day_of_month)
+    db.commit()
+    log_action(db, "recurring_expense_resume", f"ازسرگیری قانون ماهانه {rule.amount:,} تومان", request=request, target_type="recurring_expense", target_id=rule.id, after={"active": True})
+    return RedirectResponse(url="/admin/expenses?msg=قانون از سر گرفته شد؛ سررسید بعدی دوباره ثبت می‌شود.", status_code=303)
+
+
+@router.post("/expenses/recurring/{rule_id}/delete", response_class=HTMLResponse)
+async def admin_recurring_delete(request: Request, rule_id: int, db: Session = Depends(get_db)):
+    """Stop a rule for good. Rows it already posted keep standing — and keep
+    their «خودکار» badge — because money that left did leave."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    rule, refused = _recurring_rule_or_refuse(db, rule_id)
+    if refused is not None:
+        return refused
+    db.delete(rule)
+    db.commit()
+    log_action(db, "recurring_expense_delete", f"حذف قانون ماهانه {rule.amount:,} تومان", request=request, target_type="recurring_expense", target_id=rule.id, after={"active": False})
+    return RedirectResponse(url="/admin/expenses?msg=قانون حذف شد؛ هزینه‌های ثبت‌شده می‌مانند.", status_code=303)
 
 
 # ── Cash box (the drawer) ────────────────────────────────────────────────────

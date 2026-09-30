@@ -70,6 +70,110 @@
 <section class="card">
     <div class="section-heading-row">
         <div>
+            <h3>هزینه‌های خودکار ماهانه</h3>
+            <p class="muted">یک بار تعریف کنید؛ هر ماه در روز سررسید خودش ثبت می‌شود تا وقتی متوقفش کنید.</p>
+        </div>
+    </div>
+    {% if generated_count %}
+    <div class="alert alert-info" role="status">
+        {{ generated_count }} هزینه خودکار سررسیده ثبت شد و در فهرست پایین است.
+    </div>
+    {% endif %}
+    {% if recurring_rules %}
+    <div class="table-scroll">
+        <table class="data-table expense-table">
+            <thead>
+                <tr>
+                    <th scope="col">دسته</th>
+                    <th scope="col">مبلغ</th>
+                    <th scope="col">روش</th>
+                    <th scope="col">روز سررسید</th>
+                    <th scope="col">سررسید بعدی</th>
+                    <th scope="col">وضعیت</th>
+                    <th scope="col">عملیات</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for rule in recurring_rules %}
+                <tr>
+                    <td data-label="دسته">{{ rule.category or 'بدون دسته' }}</td>
+                    <td class="tnum" data-label="مبلغ"><strong>{{ fmt(rule.amount) }} تومان</strong></td>
+                    <td data-label="روش">{{ expense_payment_labels.get(rule.payment_method, rule.payment_method or '—') }}</td>
+                    <td class="tnum" data-label="روز سررسید">{{ rule.day_of_month }}ام</td>
+                    <td class="tnum" data-label="سررسید بعدی">{{ jalali_str(rule.next_due, false) if rule.active else '—' }}</td>
+                    <td data-label="وضعیت">
+                        {% if rule.active %}<span class="badge badge-available">فعال</span>
+                        {% else %}<span class="badge badge-used">متوقف</span>{% endif %}
+                    </td>
+                    <td data-label="عملیات">
+                        <span class="picked-tools">
+                            {% if rule.active %}
+                            <form method="post" action="/admin/expenses/recurring/{{ rule.id }}/pause">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <button type="submit" class="btn btn-sm btn-ghost">توقف</button>
+                            </form>
+                            {% else %}
+                            <form method="post" action="/admin/expenses/recurring/{{ rule.id }}/resume">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <button type="submit" class="btn btn-sm btn-ghost">ازسرگیری</button>
+                            </form>
+                            {% endif %}
+                            <form method="post" action="/admin/expenses/recurring/{{ rule.id }}/delete"
+                                  data-stop-form
+                                  data-confirm="قانون ماهانه {{ fmt(rule.amount) }} تومان ({{ rule.category or 'بدون دسته' }}) برای همیشه حذف می‌شود؟ هزینه‌هایی که تا حالا ثبت کرده می‌مانند.">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <button type="submit" class="btn btn-sm btn-danger">حذف</button>
+                            </form>
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <h3>قانونی نیست</h3>
+        <p>اجاره و قبض‌های ثابت را از فرم زیر یک بار تعریف کنید تا هر ماه خودشان ثبت شوند.</p>
+    </div>
+    {% endif %}
+    <form method="post" action="/admin/expenses/recurring/add" id="recurring-add-form" class="filter-bar">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label class="filter-field">
+            <span>مبلغ (تومان)</span>
+            <input id="recurring-amount" name="amount" type="text" inputmode="numeric" required placeholder="مثال: 1500000">
+        </label>
+        <label class="filter-field">
+            <span>دسته</span>
+            <input type="text" name="category" list="expense-cats" placeholder="مثلاً اجاره">
+        </label>
+        <label class="filter-field">
+            <span>روش پرداخت</span>
+            <select name="payment_method">
+                <option value="cash">نقدی (از صندوق)</option>
+                <option value="card">کارتی (بدون اثر بر صندوق)</option>
+            </select>
+        </label>
+        <label class="filter-field">
+            <span>روز سررسید</span>
+            <select name="day">
+                {% for d in range(1, 32) %}
+                <option value="{{ d }}" {% if d == 1 %}selected{% endif %}>{{ d }}ام هر ماه</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="filter-field">
+            <span>توضیح</span>
+            <input type="text" name="note" placeholder="مثلاً قبض برق">
+        </label>
+        <button type="submit" class="btn btn-ghost">ثبت قانون ماهانه</button>
+    </form>
+    <p class="field-help">ماه‌های توقف عقب‌افتادگی نمی‌سازند؛ ازسرگیری از سررسید بعدی شروع می‌شود. حذف، هزینه‌های ثبت‌شده را نگه می‌دارد.</p>
+</section>
+
+<section class="card">
+    <div class="section-heading-row">
+        <div>
             <h3>ثبت هزینه جدید</h3>
             <p class="muted">مبلغ به تومان. هزینه کارتی به صندوق دست نمی‌زند؛ برداشت یا واریز بانک را در «صندوق» ثبت کنید نه اینجا.</p>
         </div>
@@ -222,7 +326,7 @@
                         {% else %}<span class="badge badge-available">فعال</span>{% endif %}
                     </td>
                     <td data-label="نوع"><span class="badge {% if e.expense_type == 'monthly' %}badge-info{% else %}badge-used{% endif %}">{{ expense_type_labels.get(e.expense_type, expense_type_labels['one_time']) }}</span></td>
-                    <td data-label="دسته">{{ (e.category or 'بدون دسته')|highlight(search) }}</td>
+                    <td data-label="دسته">{{ (e.category or 'بدون دسته')|highlight(search) }}{% if e.recurring_rule_id %} <span class="badge badge-info">خودکار</span>{% endif %}</td>
                     <td class="tnum num" data-label="مبلغ"><strong>{{ fmt(e.amount) }} تومان</strong></td>
                     <td data-label="روش">{{ expense_payment_labels.get(e.payment_method, e.payment_method or '—') }}</td>
                     <td class="tnum" data-label="شیفت">{% if e.cash_session_id %}<a class="text-link" href="/admin/cashbox/sessions/{{ e.cash_session_id }}">#{{ e.cash_session_id }}</a>{% else %}—{% endif %}</td>
@@ -303,6 +407,17 @@
         </label>
         <div class="confirm-actions">
             <button type="button" class="btn btn-danger" id="expense-void-confirm-yes">برگشت هزینه</button>
+            <button type="button" class="btn btn-ghost" data-dialog-close>انصراف</button>
+        </div>
+    </div>
+</div>
+<div id="recurring-stop-confirm" data-dialog role="alertdialog" aria-modal="true"
+     aria-labelledby="recurring-stop-confirm-title" class="confirm-scrim" tabindex="-1">
+    <div class="t-modal-card confirm-card" role="document">
+        <h3 id="recurring-stop-confirm-title">قانون حذف شود؟</h3>
+        <p class="muted" id="recurring-stop-confirm-text"></p>
+        <div class="confirm-actions">
+            <button type="button" class="btn btn-danger" id="recurring-stop-confirm-yes">حذف قانون</button>
             <button type="button" class="btn btn-ghost" data-dialog-close>انصراف</button>
         </div>
     </div>
