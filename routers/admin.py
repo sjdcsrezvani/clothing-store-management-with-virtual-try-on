@@ -1068,6 +1068,7 @@ SETTINGS_NUMERIC_RULES = {
     "tier_diamond_birthday_discount": (0, None, "تخفیف تولد سطح الماس"),
     "tier_downgrade_months": (0, 120, "ماه‌های عدم خرید"),
     "pos_terminal_port": (1, 65535, "پورت کارت‌خوان"),
+    "check_upcoming_days": (1, 90, "بازه چک‌های نزدیک"),
 }
 
 
@@ -1283,6 +1284,18 @@ async def admin_update_settings(request: Request, db: Session = Depends(get_db))
         raw = str(form.get(key, "")).strip()
         if raw:
             updates[key] = str(int(to_english_digits(raw)))
+    # The cheque reminder days are a list, not a number, so the table above
+    # cannot bound them — but an unreadable list must still be refused rather
+    # than saved and silently falling back to defaults on every read.
+    if "check_default_reminders" in updates:
+        from services.checks import normalize_reminder_days
+        try:
+            days = normalize_reminder_days(updates["check_default_reminders"])
+        except ValueError as error:
+            return RedirectResponse(
+                url=f"/admin/settings?err=روزهای هشدار چک: {error} — مقدار ذخیره نشد.",
+                status_code=303)
+        updates["check_default_reminders"] = ", ".join(str(day) for day in days)
     for key, value in updates.items():
         setting = db.query(Settings).filter(Settings.key == key).first()
         if setting:

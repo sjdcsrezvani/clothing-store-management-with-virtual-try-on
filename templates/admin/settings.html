@@ -249,6 +249,24 @@
             </div>
         </div>
 
+        <h3 class="settings-section">چک‌ها</h3>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="check_default_reminders">روزهای پیش‌فرض هشدار قبل از سررسید</label>
+                <input type="text" id="check_default_reminders" name="check_default_reminders" dir="ltr"
+                       value="{{ settings.get('check_default_reminders', '14, 7, 3') }}" placeholder="14, 7, 3">
+                <small>فقط روی چک‌های جدید اعمال می‌شود؛ هشدار هر چک در صفحه چک‌ها جداگانه قابل تغییر است. خالی یعنی بدون هشدار پیش‌فرض.</small>
+            </div>
+            <div class="form-group">
+                <label for="check_upcoming_days">بازه نمای نزدیک (روز)</label>
+                {{ num('check_upcoming_days', settings.get('check_upcoming_days', '14')) }}
+                <small>نمای نزدیک چک‌هایی را نشان می‌دهد که تا این تعداد روز آینده سررسید می‌شوند (۱ تا ۹۰).</small>
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="checkbox-label"><input type="hidden" name="check_reminders_enabled" value="0"><input type="checkbox" name="check_reminders_enabled" value="1"{% if settings.get('check_reminders_enabled', '1') == '1' %} checked{% endif %}> فعال‌سازی هشدارها</label>
+        </div>
+
         <h3 class="settings-section">کارت‌خوان</h3>
         <div class="form-row">
             <div class="form-group">

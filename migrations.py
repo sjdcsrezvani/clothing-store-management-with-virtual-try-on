@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 25
+MIGRATION_VERSION = 26
 
 
 def migration_status(engine) -> int:
@@ -238,6 +238,12 @@ def _rebuild_sms_messages(conn) -> None:
 
 
 def _apply_revision(conn, version: int) -> None:
+    if version == 26:
+        # A bounced cheque stays flagged until resolved or re-issued.
+        # Purely additive — every existing row starts unflagged.
+        _add_column_if_missing(conn, "issued_checks", "needs_followup", "BOOLEAN DEFAULT 0")
+        return
+
     if version == 25:
         # Monthly expense rules: a rule posts itself every month until
         # stopped, and auto-posted rows point back at their rule. Purely

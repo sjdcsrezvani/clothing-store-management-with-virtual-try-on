@@ -18,7 +18,7 @@ from models import (
     CheckReminder, PaymentReversal, to_english_digits,
 )
 from services._common import (
-    delta, fmt, check_admin, get_setting_int, jalali_str, page_arg, parse_form_date,
+    delta, fmt, check_admin, get_setting_int, gregorian_to_jalali, jalali_str, page_arg, parse_form_date,
     parse_form_date_end, read_date_window, share,
     parse_jalali_input, parse_jalali_input_end,
 )
@@ -70,10 +70,11 @@ from services.checks import (
     check_alert_summary,
     dismiss_reminders,
     get_default_reminder_days,
+    get_upcoming_days,
     normalize_reminder_days,
     parse_amount_rials,
     parse_check_date,
-    reminders_enabled,
+    reminder_days_from_record,
     trigger_due_reminders,
 )
 from services.events import append_event
@@ -114,49 +115,25 @@ CHECK_STATUSES = {
     "all": "همه",
     "issued": "صادرشده",
     "overdue": "سررسیدگذشته",
-    "upcoming": "دو هفته آینده",
+    "upcoming": "نزدیک",
+    "needs_action": "نیازمند پیگیری",
     "paid": "پرداخت‌شده",
     "cancelled": "لغو‌شده",
     "bounced": "برگشتی",
 }
-CHECKS_PAGE_SIZE = 20
-CHECKS_UPCOMING_DAYS = 14
 
 
-@router.get("/checks", response_class=HTMLResponse)
-async def admin_checks(
-    request: Request,
-    q: str = "",
-    status: str = "all",
-    supplier_id: str = "",
-    bank: str = "",
-    start_date: str = "",
-    end_date: str = "",
-    page: str = "1",
-    db: Session = Depends(get_db),
-):
-    guard = require_html_role(request, db, "manager")
-    if not hasattr(guard, "role"):
-        return guard
-
-    triggered_count = trigger_due_reminders(db)
-    if triggered_count:
-        db.commit()
-    now_aware = datetime.now(timezone.utc)
-    now_naive = now_aware.replace(tzinfo=None)
-    upcoming_end = now_aware + timedelta(days=CHECKS_UPCOMING_DAYS)
-    summary = check_alert_summary(db)
-
-    status_filter = status if status in CHECK_STATUSES else "all"
-    search = (q or "").strip()
-    bank_search = (bank or "").strip()
-    page = page_arg(page)
-
+def _check_list_conds(search: str, supplier_id: str, bank_search: str,
+                      start_date: str, end_date: str) -> list:
+    """The filter chain the cheque list reads — one definition for the page
+    and the export, so a file can never answer a different view than the
+    screen that ordered it."""
     conds = []
     if search:
         digits = search.lstrip("#").strip()
         if digits.isdigit():
-            conds.append(CheckRecord.id == int(digits))
+            value = int(digits)
+            conds.append(or_(CheckRecord.id == value, CheckRecord.amount_rials == value))
         else:
             like = f"%{search}%"
             conds.append(or_(
@@ -174,6 +151,66 @@ async def admin_checks(
     end = parse_form_date_end(end_date)
     if end:
         conds.append(CheckRecord.due_at <= end.replace(tzinfo=None))
+    return conds
+
+
+def _apply_check_status(query, status_filter: str, now_naive, upcoming_end):
+    """Narrow a cheque query to one outcome of the status vocabulary."""
+    if status_filter == "issued":
+        return query.filter(CheckRecord.status == "issued")
+    if status_filter == "overdue":
+        return query.filter(CheckRecord.status == "issued",
+                            CheckRecord.due_at < now_naive)
+    if status_filter == "upcoming":
+        return query.filter(
+            CheckRecord.status == "issued",
+            CheckRecord.due_at >= now_naive,
+            CheckRecord.due_at <= upcoming_end.replace(tzinfo=None))
+    if status_filter in {"paid", "cancelled", "bounced"}:
+        return query.filter(CheckRecord.status == status_filter)
+    if status_filter == "needs_action":
+        return query.filter(CheckRecord.needs_followup == True)  # noqa: E712
+    return query
+
+
+@router.get("/checks", response_class=HTMLResponse)
+async def admin_checks(
+    request: Request,
+    q: str = "",
+    status: str = "all",
+    supplier_id: str = "",
+    bank: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    page: str = "1",
+    per_page: str = "25",
+    edit: str = "",
+    reissue: str = "",
+    db: Session = Depends(get_db),
+):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+
+    triggered_count = trigger_due_reminders(db)
+    if triggered_count:
+        db.commit()
+    now_aware = datetime.now(timezone.utc)
+    now_naive = now_aware.replace(tzinfo=None)
+    # The «نزدیک» horizon is the owner's, not a constant: the card and the
+    # filter below both read this figure, so the two cannot disagree.
+    upcoming_days = get_upcoming_days(db)
+    upcoming_end = now_aware + timedelta(days=upcoming_days)
+    upcoming_label = f"{upcoming_days} روز آینده"
+    summary = check_alert_summary(db)
+
+    status_filter = status if status in CHECK_STATUSES else "all"
+    search = (q or "").strip()
+    bank_search = (bank or "").strip()
+    page = page_arg(page)
+    per_page_int = int(per_page) if str(per_page).isdigit() and int(per_page) in (10, 25, 50) else 25
+
+    conds = _check_list_conds(search, supplier_id, bank_search, start_date, end_date)
 
     base = db.query(CheckRecord).filter(*conds)
     issued = [CheckRecord.status == "issued"]
@@ -183,6 +220,7 @@ async def admin_checks(
         "upcoming": issued + [CheckRecord.due_at >= now_naive,
                               CheckRecord.due_at <= upcoming_end.replace(tzinfo=None)],
         "paid": [CheckRecord.status == "paid"],
+        "bounced": [CheckRecord.status == "bounced"],
     }.items():
         count, amount = base.filter(*extra).with_entities(
             func.count(CheckRecord.id),
@@ -195,25 +233,22 @@ async def admin_checks(
             CheckRecord.status == "issued", *conds).scalar() or 0,
     }
 
-    listing = base
-    if status_filter == "issued":
-        listing = listing.filter(CheckRecord.status == "issued")
-    elif status_filter == "overdue":
-        listing = listing.filter(CheckRecord.status == "issued",
-                                 CheckRecord.due_at < now_naive)
-    elif status_filter == "upcoming":
-        listing = listing.filter(
-            CheckRecord.status == "issued",
-            CheckRecord.due_at >= now_naive,
-            CheckRecord.due_at <= upcoming_end.replace(tzinfo=None))
-    elif status_filter in {"paid", "cancelled", "bounced"}:
-        listing = listing.filter(CheckRecord.status == status_filter)
+    listing = _apply_check_status(base, status_filter, now_naive, upcoming_end)
     total_count = listing.count()
-    total_pages = max(1, -(-total_count // CHECKS_PAGE_SIZE))
+    total_pages = max(1, -(-total_count // per_page_int))
     page = min(page, total_pages)
     checks = listing.order_by(CheckRecord.due_at.asc(), CheckRecord.id.asc()) \
-        .offset((page - 1) * CHECKS_PAGE_SIZE).limit(CHECKS_PAGE_SIZE).all()
+        .offset((page - 1) * per_page_int).limit(per_page_int).all()
     suppliers = db.query(Supplier).order_by(Supplier.name.asc()).all()
+    # Suggestion pools for the add form, drawn from what the shop already
+    # wrote — past payees and banks already used — so typing stays free but
+    # repeat business is one tap. Distinct and ordered; the template renders
+    # them as datalists with autocomplete off, so the browser's own history
+    # from same-named fields elsewhere can never join in.
+    past_payees = [row[0] for row in db.query(CheckRecord.provider_name).distinct()
+                   .order_by(CheckRecord.provider_name.asc()).all() if row[0]]
+    past_banks = [row[0] for row in db.query(CheckRecord.bank_name).distinct()
+                  .order_by(CheckRecord.bank_name.asc()).all() if row[0]]
     overdue_ids = {check.id for check in summary["overdue"]}
     operator_names = {u.id: (u.full_name or u.username) for u in db.query(StaffUser).filter(
         StaffUser.id.in_([c.operator_user_id for c in checks])).all()} if checks else {}
@@ -223,6 +258,12 @@ async def admin_checks(
         if due_at is not None and due_at.tzinfo is not None:
             due_at = due_at.replace(tzinfo=None)
         days_left_map[check.id] = (due_at - now_naive).days if due_at is not None else None
+    # The reminder-days figure, worked out once per row: the template used to
+    # operate on the Python list repr with string surgery.
+    reminder_text_map = {
+        check.id: "، ".join(str(day) for day in reminder_days_from_record(check))
+        for check in checks
+    }
     alert_rows = []
     for reminder in summary["triggered"]:
         due_at = reminder.check.due_at if reminder.check else None
@@ -231,19 +272,66 @@ async def admin_checks(
         days_left = (due_at - now_naive).days if due_at is not None else None
         alert_rows.append({"reminder": reminder, "days_left": days_left})
     has_filters = bool(search or status_filter != "all" or supplier_id
-                        or bank_search or start_date or end_date)
+                         or bank_search or start_date or end_date)
+    # One urlencode-built string for the pagination links: raw values
+    # hand-concatenated into an href are how a filter value used to break
+    # out of its quotes, and Persian search text must not travel raw.
+    from urllib.parse import urlencode
+    base_qs = urlencode({
+        **({"q": search} if search else {}),
+        **({"status": status_filter} if status_filter != "all" else {}),
+        **({"supplier_id": supplier_id} if supplier_id else {}),
+        **({"bank": bank_search} if bank_search else {}),
+        **({"start_date": start_date} if start_date else {}),
+        **({"end_date": end_date} if end_date else {}),
+        "per_page": per_page_int,
+    })
+    # Edit mode: the row's words move into an edit card, never its money or
+    # its time. Re-issue mode: a dead cheque's words prefill the add form so
+    # the replacement is one confirmation, and the new row closes the loop.
+    edit_check = None
+    if edit.isdigit():
+        candidate = db.query(CheckRecord).filter(CheckRecord.id == int(edit)).first()
+        if candidate is not None and candidate.status == "issued":
+            edit_check = candidate
+    prefill = {"provider_name": "", "supplier_id": "", "check_number": "",
+               "amount_rials": "", "bank_name": "", "account_reference": "",
+               "note": "", "reissue_id": ""}
+    reissue_of = None
+    if reissue.isdigit():
+        source = db.query(CheckRecord).filter(CheckRecord.id == int(reissue)).first()
+        if source is not None and source.status in {"bounced", "cancelled"}:
+            reissue_of = source
+            prefill.update({
+                "provider_name": source.provider_name,
+                "supplier_id": str(source.supplier_id or ""),
+                "check_number": source.check_number or "",
+                "amount_rials": f"{source.amount_rials:,}",
+                "bank_name": source.bank_name or "",
+                "account_reference": source.account_reference or "",
+                "note": (source.note or "") + " (صدور مجدد)",
+                "reissue_id": str(source.id),
+            })
     return templates.TemplateResponse(request, "admin/checks.html", {
         "checks": checks,
         "suppliers": suppliers,
+        "past_payees": past_payees,
+        "past_banks": past_banks,
+        "edit_check": edit_check,
+        "prefill": prefill,
+        "reissue_of": reissue_of,
         "summary": summary,
         "stats": stats,
         "overdue_ids": overdue_ids,
         "operator_names": operator_names,
         "days_left_map": days_left_map,
+        "reminder_text_map": reminder_text_map,
         "alert_rows": alert_rows,
         "is_owner": role_allows(guard.role, "owner"),
         "status_filter": status_filter,
-        "statuses": CHECK_STATUSES,
+        "statuses": {**CHECK_STATUSES, "upcoming": upcoming_label},
+        "upcoming_days": upcoming_days,
+        "upcoming_label": upcoming_label,
         "search": search,
         "supplier_filter": supplier_id,
         "bank_filter": bank_search,
@@ -252,9 +340,10 @@ async def admin_checks(
         "page": page,
         "total_pages": total_pages,
         "total_count": total_count,
+        "per_page": per_page_int,
+        "per_page_options": (10, 25, 50),
+        "base_qs": base_qs,
         "has_filters": has_filters,
-        "default_reminder_days": get_default_reminder_days(db),
-        "reminders_enabled": reminders_enabled(db),
         # The check form paints its amount floor from the same constant
         # parse_amount_rials refuses below.
         "numeric_rules": {"amount_rials": (CHECK_AMOUNT_MIN, None, "مبلغ چک")},
@@ -279,6 +368,7 @@ async def admin_check_add(
     account_reference: str = Form(""),
     reminder_days: str = Form(""),
     note: str = Form(""),
+    reissue_id: str = Form(""),
     db: Session = Depends(get_db),
 ):
     guard = require_html_role(request, db, "manager")
@@ -308,6 +398,10 @@ async def admin_check_add(
     if not provider_name:
         return RedirectResponse(url="/admin/checks?err=نام دریافت‌کننده چک الزامی است.", status_code=303)
     check_number_clean = check_number.strip()[:100] or None
+    # A cheque without its number cannot be matched to the paper later: the
+    # leaf it was torn from is the only identity a cheque has at the bank.
+    if not check_number_clean:
+        return RedirectResponse(url="/admin/checks?err=شماره چک الزامی است.", status_code=303)
     submitted_at = datetime.now(timezone.utc)
     # Double-submit guard: the same operator recording the identical cheque
     # twice within two minutes is a double-click, not two cheques.
@@ -346,6 +440,13 @@ async def admin_check_add(
     db.add(check)
     db.flush()
     add_reminders(db, check, days)
+    # A re-issue closes the loop: the bounced row it was born from stops
+    # needing follow-up, and the journal says which row replaced which.
+    reissued_from = None
+    if reissue_id.isdigit():
+        reissued_from = db.query(CheckRecord).filter(CheckRecord.id == int(reissue_id)).first()
+        if reissued_from is not None and reissued_from.needs_followup:
+            reissued_from.needs_followup = False
     append_event(
         db,
         "CheckIssued",
@@ -354,47 +455,16 @@ async def admin_check_add(
         idempotency_key=f"check:{check.id}:issued",
         actor_user_id=guard.id,
         request_id=request.headers.get("X-Request-ID"),
-        payload={"provider_name": check.provider_name, "amount_rials": check.amount_rials, "due_at": check.due_at.isoformat(), "reminder_days": days},
+        payload={"provider_name": check.provider_name, "amount_rials": check.amount_rials, "due_at": check.due_at.isoformat(), "reminder_days": days, **({"reissue_of": reissued_from.id} if reissued_from is not None else {})},
         occurred_at=check.created_at,
     )
     db.commit()
     log_action(db, "check_add", f"ثبت چک برای {provider_name}", request=request, target_type="check", target_id=check.id, after={"amount_rials": amount, "due_at": check.due_at.isoformat()})
     if duplicate_number is not None:
         return RedirectResponse(url="/admin/checks?msg=چک ثبت شد. توجه: چک صادرشده دیگری با همین شماره وجود دارد.", status_code=303)
+    if reissued_from is not None:
+        return RedirectResponse(url="/admin/checks?msg=چک جدید ثبت و پیگیری چک قبلی بسته شد.", status_code=303)
     return RedirectResponse(url="/admin/checks?msg=چک ثبت شد.", status_code=303)
-
-
-@router.post("/checks/settings", response_class=HTMLResponse)
-async def admin_check_settings(
-    request: Request,
-    db: Session = Depends(get_db),
-):
-    guard = require_html_role(request, db, "owner")
-    if not hasattr(guard, "role"):
-        return guard
-    form = await request.form()
-    try:
-        days = normalize_reminder_days(str(form.get("reminder_days", "") or "") or get_default_reminder_days(db))
-    except ValueError as error:
-        return RedirectResponse(url=f"/admin/checks?err={error}", status_code=303)
-    # The form posts the checkbox plus a "0" companion, so accept whichever
-    # truthy value arrives; without the companion an unchecked box posts
-    # nothing and the feature could never be switched off.
-    enabled_values = [str(value).strip().lower() for value in form.getlist("enabled")]
-    enabled = any(value in {"on", "1", "true", "yes"} for value in enabled_values)
-    values = {
-        "check_default_reminders": ",".join(str(day) for day in days),
-        "check_reminders_enabled": "1" if enabled else "0",
-    }
-    for key, value in values.items():
-        setting = db.query(Settings).filter(Settings.key == key).first()
-        if setting:
-            setting.value = value
-        else:
-            db.add(Settings(key=key, value=value))
-    db.commit()
-    log_action(db, "check_settings", "تنظیم هشدار چک‌ها", request=request, target_type="settings", after=values)
-    return RedirectResponse(url="/admin/checks?msg=تنظیمات هشدار ذخیره شد.", status_code=303)
 
 
 @router.post("/checks/{check_id}/reminders", response_class=HTMLResponse)
@@ -432,12 +502,121 @@ async def admin_check_status(check_id: int, request: Request, status: str = Form
     check.status = status
     if status == "paid":
         check.paid_at = datetime.now(timezone.utc)
+    # A bounced cheque stays flagged until someone resolves it or re-issues
+    # from it; any other resolution clears a flag it should never have kept.
+    check.needs_followup = (status == "bounced")
     dismiss_reminders(db, check.id)
     event_type = {"paid": "CheckPaid", "cancelled": "CheckCancelled", "bounced": "CheckBounced"}[status]
     append_event(db, event_type, "check", check.id, idempotency_key=f"check:{check.id}:{status}", actor_user_id=guard.id, request_id=request.headers.get("X-Request-ID"), payload={"amount_rials": check.amount_rials})
     db.commit()
     log_action(db, "check_status", f"تغییر وضعیت چک #{check.id}", request=request, target_type="check", target_id=check.id, after={"status": status})
     return RedirectResponse(url="/admin/checks?msg=وضعیت چک به‌روزرسانی شد.", status_code=303)
+
+
+def _check_or_404(db, check_id: int) -> CheckRecord:
+    check = db.query(CheckRecord).filter(CheckRecord.id == check_id).first()
+    if not check:
+        raise HTTPException(status_code=404, detail="چک یافت نشد")
+    return check
+
+
+@router.post("/checks/{check_id}/edit", response_class=HTMLResponse)
+async def admin_check_edit(
+    check_id: int,
+    request: Request,
+    provider_name: str = Form(""),
+    check_number: str = Form(""),
+    supplier_id: str = Form(""),
+    bank_name: str = Form(""),
+    account_reference: str = Form(""),
+    note: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Fix the words on an issued cheque — never its money or its time.
+
+    Amount and dates are the promise itself: a wrong figure or a wrong
+    deadline means cancel-and-re-record, not an edit. Everything else is
+    paperwork and may be corrected while the cheque is still open.
+    """
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    check = _check_or_404(db, check_id)
+    if check.status != "issued":
+        return RedirectResponse(url="/admin/checks?err=فقط چک صادرشده قابل ویرایش است.", status_code=303)
+    provider_name = provider_name.strip()
+    if not provider_name:
+        return RedirectResponse(url="/admin/checks?err=نام دریافت‌کننده چک الزامی است.", status_code=303)
+    number_clean = check_number.strip()[:100]
+    if not number_clean:
+        return RedirectResponse(url="/admin/checks?err=شماره چک الزامی است.", status_code=303)
+    supplier = None
+    if supplier_id.isdigit():
+        supplier = db.query(Supplier).filter(Supplier.id == int(supplier_id)).first()
+    check.provider_name = provider_name[:200]
+    check.check_number = number_clean
+    check.supplier_id = supplier.id if supplier else None
+    check.bank_name = bank_name.strip()[:120] or None
+    check.account_reference = account_reference.strip()[:120] or None
+    check.note = note.strip() or None
+    db.commit()
+    log_action(db, "check_edit", f"ویرایش چک #{check.id}", request=request, target_type="check", target_id=check.id, after={"provider_name": check.provider_name, "check_number": check.check_number})
+    duplicate = db.query(CheckRecord).filter(
+        CheckRecord.check_number == number_clean,
+        CheckRecord.status == "issued",
+        CheckRecord.id != check.id,
+    ).first()
+    if duplicate is not None:
+        return RedirectResponse(url="/admin/checks?msg=چک ویرایش شد. توجه: چک صادرشده دیگری با همین شماره وجود دارد.", status_code=303)
+    return RedirectResponse(url="/admin/checks?msg=چک ویرایش شد.", status_code=303)
+
+
+@router.post("/checks/{check_id}/delete", response_class=HTMLResponse)
+async def admin_check_delete(check_id: int, request: Request, db: Session = Depends(get_db)):
+    """Remove a cheque that never lived: still issued, no reminder ever fired,
+    and no journal entry beyond its own recording.
+
+    Anything that has already happened to the cheque — a fired reminder, a
+    resolution — means cancel, not delete. The audit log keeps the full
+    snapshot, because a row that vanishes without a trace is a hole.
+    """
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    check = _check_or_404(db, check_id)
+    if check.status != "issued":
+        return RedirectResponse(url="/admin/checks?err=فقط چک صادرشده قابل حذف است؛ بقیه لغو می‌شوند.", status_code=303)
+    fired = db.query(CheckReminder).filter(
+        CheckReminder.check_id == check.id,
+        CheckReminder.status == "triggered").count()
+    lived = db.query(BusinessEvent).filter(
+        BusinessEvent.aggregate_type == "check",
+        BusinessEvent.aggregate_id == check.id,
+        BusinessEvent.event_type != "CheckIssued").count()
+    if fired or lived:
+        return RedirectResponse(url="/admin/checks?err=این چک رد پا دارد (هشدار یا رخداد)؛ حذف نمی‌شود، لغو کنید.", status_code=303)
+    snapshot = {"provider_name": check.provider_name, "check_number": check.check_number,
+                "amount_rials": check.amount_rials, "due_at": check.due_at.isoformat()}
+    db.delete(check)
+    db.commit()
+    log_action(db, "check_delete", f"حذف چک ثبت‌اشتباه #{check_id}", request=request, target_type="check", target_id=check_id, after=snapshot)
+    return RedirectResponse(url="/admin/checks?msg=چک حذف شد.", status_code=303)
+
+
+@router.post("/checks/{check_id}/resolve", response_class=HTMLResponse)
+async def admin_check_resolve(check_id: int, request: Request, db: Session = Depends(get_db)):
+    """Mark flagged follow-up handled without re-issuing — the offline part
+    is done and someone signs for it."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    check = _check_or_404(db, check_id)
+    if not check.needs_followup:
+        return RedirectResponse(url="/admin/checks?err=این چک پیگیری بازی ندارد.", status_code=303)
+    check.needs_followup = False
+    db.commit()
+    log_action(db, "check_resolve", f"پایان پیگیری چک #{check.id}", request=request, target_type="check", target_id=check.id, after={"needs_followup": False})
+    return RedirectResponse(url="/admin/checks?msg=پیگیری چک بسته شد.", status_code=303)
 
 
 @router.post("/checks/reminders/{reminder_id}/dismiss", response_class=HTMLResponse)
@@ -451,6 +630,55 @@ async def admin_check_reminder_dismiss(reminder_id: int, request: Request, db: S
         reminder.dismissed_at = datetime.now(timezone.utc)
         db.commit()
     return RedirectResponse(url="/admin/checks?msg=هشدار بسته شد.", status_code=303)
+
+
+@router.get("/checks/export")
+async def admin_checks_export(
+    request: Request,
+    q: str = "",
+    status: str = "all",
+    supplier_id: str = "",
+    bank: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    db: Session = Depends(get_db),
+):
+    """The filtered cheque list as a file, of the rows the screen showed.
+
+    Raw integers for the rial figures — a grouped figure pastes into a
+    spreadsheet as text, while digits stay numbers that sum — and Jalali
+    dates the shop reads.
+    """
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    search = (q or "").strip()
+    bank_search = (bank or "").strip()
+    status_filter = status if status in CHECK_STATUSES else "all"
+    now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+    upcoming_end = datetime.now(timezone.utc) + timedelta(days=get_upcoming_days(db))
+    query = _apply_check_status(
+        db.query(CheckRecord).filter(
+            *_check_list_conds(search, supplier_id, bank_search, start_date, end_date)),
+        status_filter, now_naive, upcoming_end,
+    ).order_by(CheckRecord.due_at.asc(), CheckRecord.id.asc())
+    suppliers = {s.id: s.name for s in db.query(Supplier).all()}
+    status_labels = {**CHECK_STATUSES, "needs_action": "نیازمند پیگیری"}
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    rows = [["ردیف", "دریافت‌کننده", "تأمین‌کننده", "شماره", "مبلغ (ریال)",
+             "صدور", "سررسید", "بانک", "وضعیت", "توضیح"]]
+    for check in query.all():
+        rows.append([
+            check.id, check.provider_name, suppliers.get(check.supplier_id) or "",
+            check.check_number or "",
+            check.amount_rials,
+            jalali_str(check.issue_at, with_time=False),
+            jalali_str(check.due_at, with_time=False),
+            check.bank_name or "",
+            status_labels.get(check.status, check.status),
+            check.note or "",
+        ])
+    return _csv_response(f"checks_{today}.csv", rows)
 
 
 # ── Accounting dashboard (net P&L) ───────────────────────────────────────────

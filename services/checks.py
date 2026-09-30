@@ -127,6 +127,21 @@ def reminders_enabled(db: Session) -> bool:
     return setting is None or setting.value not in {"0", "false", "False", "off"}
 
 
+def get_upcoming_days(db: Session) -> int:
+    """How far ahead the «نزدیک» view looks, in days.
+
+    An owner setting (default 14); anything unreadable falls back rather than
+    narrowing the view to nothing — a horizon of zero would hide every cheque
+    that is not due today.
+    """
+    setting = db.query(Settings).filter(Settings.key == "check_upcoming_days").first()
+    try:
+        days = int(str(setting.value).strip()) if setting and str(setting.value).strip() else 14
+    except (TypeError, ValueError):
+        return 14
+    return days if 1 <= days <= 90 else 14
+
+
 def trigger_due_reminders(db: Session, at: datetime | None = None) -> int:
     """Turn due pending reminders into durable in-app alarms."""
     if not reminders_enabled(db):
