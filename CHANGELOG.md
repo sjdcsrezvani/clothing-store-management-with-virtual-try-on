@@ -1,3 +1,67 @@
+## 2.7.8 — 1405/07/08 (2026-09-30)
+
+### هزینه‌ها: the list becomes a tool, and a fixed bill posts itself
+
+- **A monthly bill is defined once and then posts itself.** A «قانون ماهانه»
+  names an amount, a category, a method and a day of month; from its سررسید it
+  is written as an expense with no one typing it, and every row it posts wears a
+  «خودکار» badge pointing back at the rule that made it.
+- **Nothing has to be scheduled to watch.** Generation is lazy: a manager
+  opening `/admin/expenses` posts whatever is due, and each posting carries the
+  idempotency key of its rule and month, so a second visit in the same minute —
+  or a second manager's visit — posts nothing twice.
+- **A paused month never accrues.** توقف skips the months it covers instead of
+  backfilling them, and ازسرگیری re-anchors the next سررسید, so a rule that was
+  stopped for three months owes nothing for them. روز سررسید ۳۱ clamps to the
+  28th in February and is the 31st again in March, because every step is
+  recomputed from the anchor instead of the clamped date it last produced.
+- **An automatic row is as shift-aware as a hand-typed one.** A cash rule joins
+  the open drawer, a card rule never touches it, and both carry the note and
+  category the rule was given — so the drawer's figures do not depend on who
+  remembered to type what.
+- **A rule is bounded like the expense it repeats.** More than صفر, no more than
+  the ledger's سقف, and a روز سررسید between ۱ and ۳۱, each refusal naming the
+  rule it broke instead of one «معتبر نیست» covering empty, zero and absurd alike.
+- **Stopping a rule is forever and asks first**, in the page's own dialog, in the
+  rule's own words (its amount and category) — and the rows it already posted
+  stay standing, because money that left did leave.
+- **The viewed total says which door the money left through.** نقدی and کارتی
+  are counted beside the total, and «دسته‌ها در همین نما» lists each category's
+  amount and share from the very query that built the table under it, so the
+  breakdown can never answer a different view than the rows.
+- **Adding echoes the figure back before it posts.** A confirmation names the
+  amount, the category, the type and the method, and money fields group their
+  digits as typed (`1500000` reads `1,500,000`) with the separators stripped on
+  submit, so a missing zero shows before it is written rather than in a report
+  later. Without JavaScript every form still posts directly and the server still
+  refuses what it always refused.
+- **Voiding asks why, and the answer is kept.** ابطال opens one shared surface
+  carrying the row's own amount and category, a reason field whose text travels
+  in the form's hidden input and lands on the reversal entry — with the standing
+  «ابطال دستی هزینه» when a reason is not given — and a second click while the
+  first post is in flight is ignored.
+- **A voided row is witnessed.** The list reads who reversed it and when from the
+  same event table that records who entered it, so «برگشت: » names a human
+  rather than a blank, exactly as «ثبت: » already did.
+- **A bare number in the search box is a receipt number or a figure.** Searching
+  `7654321` finds the expense of that amount as well as the one with that id, and
+  `#۱۲` is read as `#12` like every other field that reads Farsi digits.
+- **The list pages on numbered pages.** ۱۰ / ۲۵ / ۵۰ in the page, numbered links
+  with a gap mark instead of a «صفحه ۲ از ۴۱» nobody counts to, an out-of-range
+  page landing on the last page rather than an empty table, and filters, sort and
+  page size kept together through every link — encoded, so Persian search text
+  and a `#` in a query string stop breaking the href they sit in.
+- **Nine columns fit a phone.** Narrow screens stack the row into labelled
+  cards instead of scrolling sideways, a voided row is dimmed but still legible,
+  and the ابطال button meets a thumb at 44 pixels.
+- **The add form says when the drawer is shut.** A cash expense recorded with no
+  open shift is counted by time window rather than by shift — correct, but worth
+  saying out loud at the moment of recording, so the warning is on the form.
+
+**Schema change.** The database moves to revision 25 (a new `recurring_expenses`
+table and an `expenses.recurring_rule_id` column, both additive — a database
+without rules behaves exactly as before).
+
 ## 2.7.7 — 1405/07/08 (2026-09-30)
 
 ### صندوق و بازبینی‌ها: the till counts twice, and every review list becomes workable
