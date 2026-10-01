@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 26
+MIGRATION_VERSION = 27
 
 
 def migration_status(engine) -> int:
@@ -238,6 +238,29 @@ def _rebuild_sms_messages(conn) -> None:
 
 
 def _apply_revision(conn, version: int) -> None:
+    if version == 27:
+        # Junk category spellings — the literal strings "None", "null", "-"
+        # and the like, typed or imported once — collapse to NULL, which
+        # every reading already renders as «بدون دسته». Data repair, not a
+        # schema change: filters keep matching stored values exactly.
+        tables = {row[0] for row in conn.execute(text(
+            "SELECT name FROM sqlite_master WHERE type='table'")).all()}
+        if "products" in tables:
+            conn.execute(text("""
+                UPDATE products
+                   SET category = NULL
+                 WHERE TRIM(category) IN ('None', 'none', 'NONE', 'null', 'Null', 'NULL',
+                                          'nil', 'Nil', '—', '-', '–', '')
+            """))
+        if "expenses" in tables:
+            conn.execute(text("""
+                UPDATE expenses
+                   SET category = NULL
+                 WHERE TRIM(category) IN ('None', 'none', 'NONE', 'null', 'Null', 'NULL',
+                                          'nil', 'Nil', '—', '-', '–', '')
+            """))
+        return
+
     if version == 26:
         # A bounced cheque stays flagged until resolved or re-issued.
         # Purely additive — every existing row starts unflagged.

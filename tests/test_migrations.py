@@ -265,3 +265,31 @@ def test_backup_database_creates_copy(tmp_path):
     assert backup.exists()
     assert backup.read_bytes() == source.read_bytes()
     assert "before-migration" in backup.name
+
+
+def test_revision_27_collapses_junk_category_spellings_to_null(tmp_path):
+    """Typed-once junk ("None", "null", "-") becomes NULL, which every
+    reading already renders as «بدون دسته» — while real names survive."""
+    from sqlalchemy import create_engine
+    from migrations import upgrade
+    engine = create_engine(f"sqlite:///{tmp_path / 'junk.db'}")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE schema_version (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)"))
+        conn.execute(text("INSERT INTO schema_version (id, version) VALUES (1, 26)"))
+        conn.execute(text("""
+            CREATE TABLE products (
+                id INTEGER PRIMARY KEY, name VARCHAR(200), category VARCHAR(100))"""))
+        conn.execute(text("""
+            CREATE TABLE expenses (
+                id INTEGER PRIMARY KEY, amount INTEGER, category VARCHAR(100))"""))
+        conn.execute(text("INSERT INTO products (name, category) VALUES "
+                          "('a', 'None'), ('b', 'null'), ('c', 'پیراهن'), ('d', NULL)"))
+        conn.execute(text("INSERT INTO expenses (amount, category) VALUES "
+                          "(1000, '-'), (2000, 'اجاره')"))
+    assert upgrade(engine) == 27
+    with engine.connect() as conn:
+        assert conn.execute(text(
+            "SELECT name FROM products WHERE category IS NULL ORDER BY name")).scalars().all() == ["a", "b", "d"]
+        assert conn.execute(text("SELECT category FROM products WHERE name = 'c'")).scalar() == "پیراهن"
+        assert conn.execute(text(
+            "SELECT amount FROM expenses WHERE category IS NULL")).scalars().all() == [1000]

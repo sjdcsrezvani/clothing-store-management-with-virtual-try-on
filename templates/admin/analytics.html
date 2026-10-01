@@ -31,6 +31,11 @@
             <button type="submit" class="btn btn-primary btn-sm">اعمال</button>
         </div>
     </form>
+    <form method="post" action="/admin/analytics/digits" class="filter-bar is-inline flush-bottom">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="mode" value="{% if chart_digits == 'latin' %}fa{% else %}latin{% endif %}">
+        <button type="submit" class="btn btn-sm btn-ghost">ارقام {% if chart_digits == 'latin' %}فارسی{% else %}لاتین{% endif %} در نمودارها</button>
+    </form>
 </div>
 
 {# Tab bar: every tab is a real link carrying the current filters, so a tab is
@@ -69,41 +74,116 @@
 <!-- Sales tab -->
 <section class="analytics-tab" data-tab="sales" aria-label="فروش"{% if tab != 'sales' %} hidden{% endif %}>
 <div class="kpi-grid">
-    <div class="kpi-card"><h4>کل فروش <span class="tip-icon" data-tip="جمع کل فروش تأیید شده (غیرمرجوعی) در بازه زمانی انتخابی. این عدد شامل تمام فاکتورهایی است که پرداخت آن‌ها قطعی شده و مرجوع نشده‌اند.">?</span></h4><p class="kpi-value">{{ fmt(summary.total_revenue) }} ت</p></div>
-    <div class="kpi-card"><h4>تعداد فاکتور <span class="tip-icon" data-tip="تعداد کل فاکتورهای تأیید شده در بازه زمانی. هر فاکتور معادل یک سبد خرید یک مشتری است. افزایش تعداد فاکتور نشانه جذب مشتری بیشتر است.">?</span></h4><p class="kpi-value tnum">{{ summary.invoice_count }}</p></div>
-    <div class="kpi-card"><h4>میانگین فاکتور <span class="tip-icon" data-tip="میانگین مبلغ هر فاکتور = فروش کل ÷ تعداد فاکتورها. اگر پایین باشد، مشتریان فقط اقلام ارزان می‌خرند؛ افزایش آن با فروش مکمل و پکیج امکان‌پذیر است.">?</span></h4><p class="kpi-value">{{ fmt(summary.aov) }} ت</p></div>
-    <div class="kpi-card"><h4>اقلام/فاکتور <span class="tip-icon" data-tip="میانگین تعداد اقلام در هر فاکتور. اگر پایین باشد (مثلاً ۱)، مشتریان فقط یک قلم می‌خرند. افزایش آن با پیشنهاد محصولات مکمل (مثلاً ست لباس) امکان‌پذیر است.">?</span></h4><p class="kpi-value tnum">{{ basket.items_per_txn }}</p></div>
+    <div class="kpi-card"><h4>کل فروش <span class="tip-icon" tabindex="0" role="button" data-tip="جمع کل فروش تأیید شده (غیرمرجوعی) در بازه زمانی انتخابی. این عدد شامل تمام فاکتورهایی است که پرداخت آن‌ها قطعی شده و مرجوع نشده‌اند.">?</span></h4><p class="kpi-value">{{ fmt(summary.total_revenue) }} تومان</p></div>
+    <div class="kpi-card"><h4>تعداد فاکتور <span class="tip-icon" tabindex="0" role="button" data-tip="تعداد کل فاکتورهای تأیید شده در بازه زمانی. هر فاکتور معادل یک سبد خرید یک مشتری است. افزایش تعداد فاکتور نشانه جذب مشتری بیشتر است.">?</span></h4><p class="kpi-value tnum">{{ summary.invoice_count }}</p></div>
+    <div class="kpi-card"><h4>میانگین فاکتور <span class="tip-icon" tabindex="0" role="button" data-tip="میانگین مبلغ هر فاکتور = فروش کل ÷ تعداد فاکتورها. اگر پایین باشد، مشتریان فقط اقلام ارزان می‌خرند؛ افزایش آن با فروش مکمل و پکیج امکان‌پذیر است.">?</span></h4><p class="kpi-value">{{ fmt(summary.aov) }} تومان</p></div>
+    <div class="kpi-card"><h4>اقلام/فاکتور <span class="tip-icon" tabindex="0" role="button" data-tip="میانگین تعداد اقلام در هر فاکتور. اگر پایین باشد (مثلاً ۱)، مشتریان فقط یک قلم می‌خرند. افزایش آن با پیشنهاد محصولات مکمل (مثلاً ست لباس) امکان‌پذیر است.">?</span></h4><p class="kpi-value tnum">{{ basket.items_per_txn }}</p></div>
+    <div class="kpi-card"><h4>خرید مجدد <span class="tip-icon" tabindex="0" role="button" data-tip="درصد مشتریانی که در این بازه بیش از یک بار خریده‌اند.">?</span></h4><p class="kpi-value">{{ percent(customer_health.repeat_rate, 0) }}</p></div>
+    <div class="kpi-card"><h4>نرخ مرجوعی <span class="tip-icon" tabindex="0" role="button" data-tip="سهم فاکتورهای برگشتی از کل فاکتورهای بازه — هم تعداد، هم مبلغ.">?</span></h4><p class="kpi-value">{{ percent(return_rate.rate, 1) }}</p></div>
+    {% if goal %}
+    <div class="kpi-card"><h4>هدف ماه</h4><p class="kpi-value">{{ percent(goal.pct, 0) }}</p>
+        <div class="share-meter" role="img" aria-label="پیشرفت هدف ماه: {{ percent(goal.pct, 0) }}">
+            <div class="share-meter-fill" style="width: {{ (goal.pct if goal.pct is not none else 0) if (goal.pct or 0) <= 100 else 100 }}%;"></div>
+        </div>
+        <p class="muted">{{ fmt(goal.revenue) }} تومان از {{ fmt(goal.amount) }} تومان ·
+            {% if goal.revenue >= goal.amount %}هدف محقق شد{% else %}مانده {{ fmt(goal.amount - goal.revenue) }} تومان{% endif %}</p>
+    </div>
+    {% endif %}
 </div>
+{% if goal is none %}
+<div class="card screen-only">
+    <form method="post" action="/admin/analytics/goal" class="filter-bar is-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label class="filter-field">
+            <span>هدف فروش ماه (تومان)</span>
+            <input type="text" name="amount" inputmode="numeric" placeholder="مثال: 50000000">
+        </label>
+        <button type="submit" class="btn btn-ghost">ثبت هدف ماه</button>
+    </form>
+</div>
+{% endif %}
 
 <div class="section-heading-row">
     <div>
         <h3>فروش در بازه</h3>
         <p class="muted">روند روزانه، روزهای هفته، ساعت‌ها و رنج‌های قیمتی.</p>
     </div>
-    <a class="text-link" href="/admin/analytics/export?kind=daily&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}">خروجی فروش روزانه</a>
+    <span class="picked-tools">
+        <a class="btn btn-sm btn-ghost" href="/admin/analytics/export?kind=daily&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-backup"/></svg>روزانه</a>
+        <a class="btn btn-sm btn-ghost" href="/admin/analytics/export?kind=hourly&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-backup"/></svg>ساعتی</a>
+        <a class="btn btn-sm btn-ghost" href="/admin/analytics/export?kind=weekday&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-backup"/></svg>روزهای هفته</a>
+        <a class="btn btn-sm btn-ghost" href="/admin/analytics/export?kind=basket&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-backup"/></svg>سبد</a>
+        <a class="btn btn-sm btn-ghost" href="/admin/analytics/export?kind=staff&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-backup"/></svg>فروشندگان</a>
+        <a class="btn btn-sm btn-ghost" href="/admin/analytics/export?kind=returns&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-backup"/></svg>مرجوعی‌ها</a>
+    </span>
 </div>
 <div class="charts-grid">
-    <div class="card chart-card"><h3>فروش روزانه <span class="tip-icon" data-tip="فروش و سود روزانه، خالص پس از کسر تخفیف و مرجوعی — با سود و زیان همین بازه می‌خواند. روزهای شلوغ و کم‌فروش مشخص می‌شوند. می‌توانید ببینید کدام روزها بیشترین فروش را دارید (مثلاً آخر هفته) تا برنامه‌ریزی کنید.">?</span></h3><p class="chart-note" data-chart="dailyChart">{{ notes.dailyChart }}</p><canvas id="dailyChart" role="img" aria-label="{{ notes.dailyChart }}"></canvas></div>
-    <div class="card chart-card"><h3>فروش روزهای هفته <span class="tip-icon" data-tip="فروش به تفکیک روزهای هفته (شنبه تا جمعه). کدام روزها شلوغ‌تر و کدام کم‌فروش‌ترند؟ برای برنامه‌ریزی نیروی کار و تبلیغات در روزهای کم‌فروش مفید است.">?</span></h3><p class="chart-note" data-chart="weekdayChart">{{ notes.weekdayChart }}</p><canvas id="weekdayChart" role="img" aria-label="{{ notes.weekdayChart }}"></canvas></div>
-    <div class="card chart-card"><h3>فروش ساعتی <span class="tip-icon" data-tip="فروش به تفکیک ساعت (از ۸ صبح تا ۹ شب). ساعت‌های اوج فروش مشخص می‌شوند. می‌توانید در ساعت‌های کم‌فروش تخفیف ویژه بدهید یا نیروی کار را تنظیم کنید.">?</span></h3><p class="chart-note" data-chart="hourChart">{{ notes.hourChart }}</p><canvas id="hourChart" role="img" aria-label="{{ notes.hourChart }}"></canvas></div>
-    <div class="card chart-card"><h3>توزیع قیمت فروش <span class="tip-icon" data-tip="توزیع قیمت‌های فروش واقعی. نشان می‌دهد مشتریان بیشتر در چه رنج قیمتی خرید می‌کنند. اگر قیمت‌های پایین بیشتر باشد، شاید باید روی محصولات بالاتر تمرکز کنید.">?</span></h3><p class="chart-note" data-chart="priceDistChart">{{ notes.priceDistChart }}</p><canvas id="priceDistChart" role="img" aria-label="{{ notes.priceDistChart }}"></canvas></div>
+    <div class="card chart-card"><h3>فروش روزانه <span class="tip-icon" tabindex="0" role="button" data-tip="فروش و سود روزانه، خالص پس از کسر تخفیف و مرجوعی — با سود و زیان همین بازه می‌خواند. روزهای شلوغ و کم‌فروش مشخص می‌شوند. می‌توانید ببینید کدام روزها بیشترین فروش را دارید (مثلاً آخر هفته) تا برنامه‌ریزی کنید.">?</span></h3><p class="chart-note" data-chart="dailyChart">{{ notes.dailyChart }}</p><div class="chart-host" id="dailyChart" role="img" aria-label="{{ notes.dailyChart }}"></div></div>
+    <div class="card chart-card"><h3>فروش روزهای هفته <span class="tip-icon" tabindex="0" role="button" data-tip="فروش به تفکیک روزهای هفته (شنبه تا جمعه). کدام روزها شلوغ‌تر و کدام کم‌فروش‌ترند؟ برای برنامه‌ریزی نیروی کار و تبلیغات در روزهای کم‌فروش مفید است.">?</span></h3><p class="chart-note" data-chart="weekdayChart">{{ notes.weekdayChart }}</p><div class="chart-host" id="weekdayChart" role="img" aria-label="{{ notes.weekdayChart }}"></div></div>
+    <div class="card chart-card"><h3>فروش ساعتی <span class="tip-icon" tabindex="0" role="button" data-tip="فروش به تفکیک ساعت (از ۸ صبح تا ۹ شب). ساعت‌های اوج فروش مشخص می‌شوند. می‌توانید در ساعت‌های کم‌فروش تخفیف ویژه بدهید یا نیروی کار را تنظیم کنید.">?</span></h3><p class="chart-note" data-chart="hourChart">{{ notes.hourChart }}</p><div class="chart-host" id="hourChart" role="img" aria-label="{{ notes.hourChart }}"></div></div>
+    <div class="card chart-card"><h3>توزیع قیمت فروش <span class="tip-icon" tabindex="0" role="button" data-tip="توزیع قیمت‌های فروش واقعی. نشان می‌دهد مشتریان بیشتر در چه رنج قیمتی خرید می‌کنند. اگر قیمت‌های پایین بیشتر باشد، شاید باید روی محصولات بالاتر تمرکز کنید.">?</span></h3><p class="chart-note" data-chart="priceDistChart">{{ notes.priceDistChart }}</p><div class="chart-host" id="priceDistChart" role="img" aria-label="{{ notes.priceDistChart }}"></div></div>
+    <div class="card chart-card"><h3>ترکیب روش پرداخت <span class="tip-icon" tabindex="0" role="button" data-tip="سهم نقدی، کارتی و نسیه از فروش بازه. اگر نسیه بزرگ شود، پول در خیابان است نه در کشو.">?</span></h3><p class="chart-note" data-chart="mixChart">{{ notes.mixChart }}</p><div class="chart-host" id="mixChart" role="img" aria-label="{{ notes.mixChart }}"></div></div>
+    <div class="card chart-card"><h3>فروش صندوقداران <span class="tip-icon" tabindex="0" role="button" data-tip="فروش نقدی ثبت‌شده زیر هر شیفت، به نام بازکننده‌اش. کارتی و بدون‌شیفت نام کسی را ندارد و در ردیف نامشخص می‌ایستد.">?</span></h3><p class="chart-note" data-chart="staffChart">{{ notes.staffChart }}</p><div class="chart-host" id="staffChart" role="img" aria-label="{{ notes.staffChart }}"></div></div>
+</div>
+
+<div class="section-heading-row section-gap">
+    <div>
+        <h3>فروشندگان و مرجوعی‌ها</h3>
+        <p class="muted">چه کسی فروخت، چه چیزی برگشت و به چه دلیلی.</p>
+    </div>
+</div>
+<div class="tables-grid">
+    <div class="card">
+        <h3>عملکرد فروشندگان <span class="tip-icon" tabindex="0" role="button" data-tip="فروش نقدی هر شیفت به نام بازکننده‌اش. ردیف نامشخص، فروش‌هایی است که زیر هیچ شیفتی ثبت نشده‌اند — نه تنبیه، فقط جایی که عدد گم می‌شود.">?</span></h3>
+        <table class="data-table">
+            <thead><tr><th>فروشنده</th><th>فاکتور</th><th>فروش</th></tr></thead>
+            <tbody>
+            {% for row in staff.rows %}
+                <tr><td>{{ row.name }}</td><td class="tnum">{{ row.invoices }}</td><td class="tnum">{{ fmt(row.revenue) }} تومان</td></tr>
+            {% endfor %}
+                <tr><td class="muted">نامشخص (بدون شیفت)</td><td class="tnum">{{ staff.unattributed.invoices }}</td><td class="tnum">{{ fmt(staff.unattributed.revenue) }} تومان</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="card">
+        <h3>مرجوعی‌ها <span class="tip-icon" tabindex="0" role="button" data-tip="کدام تنوع‌ها برمی‌گردند و با چه دلیلی. تکرار یک دلیل یعنی مشکلی در خرید یا معرفی کالا.">?</span></h3>
+        {% if returns.variants %}
+        <table class="data-table">
+            <thead><tr><th>کالا</th><th>تعداد</th><th>مبلغ</th></tr></thead>
+            <tbody>
+            {% for v in returns.variants %}
+                <tr><td>{{ v.name }}{% if v.size or v.color %} <small class="muted">{{ v.size }} {{ v.color }}</small>{% endif %}</td><td class="tnum">{{ v.qty }}</td><td class="tnum">{{ fmt(v.amount) }} تومان</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}<p class="muted">در این بازه مرجوعی ثبت نشده.</p>{% endif %}
+        {% if returns.reasons %}
+        <div class="kv-divider">
+            {% for r in returns.reasons %}
+            <div class="inv-row">
+                <span>{{ r.reason }}</span><span class="tnum">{{ r.count }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
 </div>
 </section>
 
 <!-- Product tab -->
 <section class="analytics-tab" data-tab="product" aria-label="محصول"{% if tab != 'product' %} hidden{% endif %}>
 <div class="kpi-grid">
-    <div class="kpi-card"><h4>نرخ فروش <span class="tip-icon" data-tip="نرخ فروش = تعداد فروش ÷ (فروش + موجودی باقی‌مانده) × ۱۰۰. نشان می‌دهد چقدر سریع موجودی به فروش می‌رسد. در پوشاک ۳۰-۴۰٪ طبیعی است؛ بالای ۵۰٪ عالی است.">?</span></h4><p class="kpi-value">{{ percent(sell_through.pct, 0) }}</p></div>
-    <div class="kpi-card"><h4>کالای مرده <span class="tip-icon" data-tip="تعداد اقلامی که در این بازه هیچ فروشی نداشته‌اند ولی هنوز در انبار هستند. این اقلام سرمایه شما را بی‌استفاده نگه داشته‌اند و باید تخفیف بخورند یا از مجموعه خارج شوند.">?</span></h4><p class="kpi-value tnum">{{ dead_stock.count }} قلم</p></div>
-    <div class="kpi-card"><h4>کل موجودی <span class="tip-icon" data-tip="تعداد کل واحدهای موجود در انبار (مجموع تمام واریانت‌های فعال). شامل اقلامی که هنوز فروخته نشده‌اند می‌شود.">?</span></h4><p class="kpi-value tnum">{{ fmt(sell_through.stock) }}</p></div>
-    <div class="kpi-card"><h4>ارزش انبار <span class="tip-icon" data-tip="ارزش کل موجودی انبار به قیمت فروش. اگر این عدد خیلی بالا باشد یعنی سرمایه زیادی در انبار بلوکه شده؛ اگر خیلی پایین باشد یعنی خطر نایاب شدن کالا دارید.">?</span></h4><p class="kpi-value">{{ fmt(inventory.total_retail) }} ت</p></div>
+    <div class="kpi-card"><h4>نرخ فروش <span class="tip-icon" tabindex="0" role="button" data-tip="نرخ فروش = تعداد فروش ÷ (فروش + موجودی باقی‌مانده) × ۱۰۰. نشان می‌دهد چقدر سریع موجودی به فروش می‌رسد. در پوشاک ۳۰-۴۰٪ طبیعی است؛ بالای ۵۰٪ عالی است.">?</span></h4><p class="kpi-value">{{ percent(sell_through.pct, 0) }}</p></div>
+    <div class="kpi-card"><h4>کالای مرده <span class="tip-icon" tabindex="0" role="button" data-tip="تعداد اقلامی که در این بازه هیچ فروشی نداشته‌اند ولی هنوز در انبار هستند. این اقلام سرمایه شما را بی‌استفاده نگه داشته‌اند و باید تخفیف بخورند یا از مجموعه خارج شوند.">?</span></h4><p class="kpi-value tnum">{{ dead_stock.count }} قلم</p></div>
+    <div class="kpi-card"><h4>کل موجودی <span class="tip-icon" tabindex="0" role="button" data-tip="تعداد کل واحدهای موجود در انبار (مجموع تمام واریانت‌های فعال). شامل اقلامی که هنوز فروخته نشده‌اند می‌شود.">?</span></h4><p class="kpi-value tnum">{{ fmt(sell_through.stock) }}</p></div>
+    <div class="kpi-card"><h4>ارزش انبار <span class="tip-icon" tabindex="0" role="button" data-tip="ارزش کل موجودی انبار به قیمت فروش. اگر این عدد خیلی بالا باشد یعنی سرمایه زیادی در انبار بلوکه شده؛ اگر خیلی پایین باشد یعنی خطر نایاب شدن کالا دارید.">?</span></h4><p class="kpi-value">{{ fmt(inventory.total_retail) }} تومان</p></div>
 </div>
 
 <!-- Product Board: pricing / color / size -->
-<div class="card" style="margin-top: 1.5rem;">
-    <div style="display:flex; align-items:center; gap:0.8rem; flex-wrap:wrap;">
-        <h3 style="margin:0;">بُرد محصول (قیمت‌گذاری واقعی، رنگ، سایز) <span class="tip-icon" data-tip="هسته اصلی تحلیل پوشاک: قیمت فروش واقعی (نه لیست)، بهترین رنگ و سایز، و ماتریس ترکیبی آن‌ها. با فیلتر دسته‌بندی می‌توانید هر گروه محصول را جداگانه بررسی کنید.">?</span></h3>
-        <form method="get" action="/admin/analytics" style="margin:0; flex:1; display:flex; gap:0.5rem; align-items:center;">
+<div class="card section-gap">
+    <div class="board-head">
+        <h3>بُرد محصول (قیمت‌گذاری واقعی، رنگ، سایز) <span class="tip-icon" tabindex="0" role="button" data-tip="هسته اصلی تحلیل پوشاک: قیمت فروش واقعی (نه لیست)، بهترین رنگ و سایز، و ماتریس ترکیبی آن‌ها. با فیلتر دسته‌بندی می‌توانید هر گروه محصول را جداگانه بررسی کنید.">?</span></h3>
+        <form method="get" action="/admin/analytics" class="board-form">
             <input type="hidden" name="tab" value="product">
             <input type="hidden" name="period" value="{{ period }}">
             <input type="hidden" name="start_date" value="{{ start_date }}">
@@ -114,40 +194,67 @@
                 <option value="{{ c }}" {% if c == category %}selected{% endif %}>{{ c }}</option>
                 {% endfor %}
             </select>
-            <label style="color:var(--ink-soft); font-size:0.85rem;">میانگین قیمت: <b>{{ fmt(price_stats.avg_price) }} ت</b> | هزینه: <b>{{ fmt(price_stats.avg_cost) }} ت</b> | سود: <b>{{ fmt(price_stats.avg_profit) }} ت</b></label>
+            <label class="fine-print">میانگین قیمت: <b>{{ fmt(price_stats.avg_price) }} تومان</b> | هزینه: <b>{{ fmt(price_stats.avg_cost) }} تومان</b> | سود: <b>{{ fmt(price_stats.avg_profit) }} تومان</b></label>
         </form>
     </div>
     <div class="charts-grid">
-        <div class="card chart-card"><h3>میانگین قیمت/هزینه/سود <span class="tip-icon" data-tip="میانگین قیمت فروش، هزینه تمام‌شده و سود به ازای هر واحد فروخته‌شده (بر اساس قیمت‌های واقعی فاکتور، نه قیمت لیست). اگر میله سود منفی باشد یعنی زیان می‌دهید.">?</span></h3><p class="chart-note" data-chart="pricingChart">{{ notes.pricingChart }}</p><canvas id="pricingChart" role="img" aria-label="{{ notes.pricingChart }}"></canvas></div>
-        <div class="card chart-card"><h3>پرفروش‌ترین رنگ <span class="tip-icon" data-tip="پرفروش‌ترین رنگ‌ها بر اساس تعداد واحد فروخته‌شده. اگر رنگی بالای لیست باشد یعنی مشتریان آن رنگ را بیشتر می‌خرند — آن را بیشتر موجود کنید.">?</span></h3><p class="chart-note" data-chart="colorChart">{{ notes.colorChart }}</p><canvas id="colorChart" role="img" aria-label="{{ notes.colorChart }}"></canvas></div>
-        <div class="card chart-card"><h3>پرفروش‌ترین سایز <span class="tip-icon" data-tip="پرفروش‌ترین سایزها بر اساس تعداد واحد فروخته‌شده. سایزهای پرفروش را بیشتر سفارش دهید و سایزهای کم‌فروش را کمتر.">?</span></h3><p class="chart-note" data-chart="sizeChart">{{ notes.sizeChart }}</p><canvas id="sizeChart" role="img" aria-label="{{ notes.sizeChart }}"></canvas></div>
+        <div class="card chart-card"><h3>میانگین قیمت/هزینه/سود <span class="tip-icon" tabindex="0" role="button" data-tip="میانگین قیمت فروش، هزینه تمام‌شده و سود به ازای هر واحد فروخته‌شده (بر اساس قیمت‌های واقعی فاکتور، نه قیمت لیست). اگر میله سود منفی باشد یعنی زیان می‌دهید.">?</span></h3><p class="chart-note" data-chart="pricingChart">{{ notes.pricingChart }}</p><div class="chart-host" id="pricingChart" role="img" aria-label="{{ notes.pricingChart }}"></div></div>
+        <div class="card chart-card"><h3>پرفروش‌ترین رنگ <span class="tip-icon" tabindex="0" role="button" data-tip="پرفروش‌ترین رنگ‌ها بر اساس تعداد واحد فروخته‌شده. اگر رنگی بالای لیست باشد یعنی مشتریان آن رنگ را بیشتر می‌خرند — آن را بیشتر موجود کنید.">?</span></h3><p class="chart-note" data-chart="colorChart">{{ notes.colorChart }}</p><div class="chart-host" id="colorChart" role="img" aria-label="{{ notes.colorChart }}"></div></div>
+        <div class="card chart-card"><h3>پرفروش‌ترین سایز <span class="tip-icon" tabindex="0" role="button" data-tip="پرفروش‌ترین سایزها بر اساس تعداد واحد فروخته‌شده. سایزهای پرفروش را بیشتر سفارش دهید و سایزهای کم‌فروش را کمتر.">?</span></h3><p class="chart-note" data-chart="sizeChart">{{ notes.sizeChart }}</p><div class="chart-host" id="sizeChart" role="img" aria-label="{{ notes.sizeChart }}"></div></div>
         <div class="card chart-card">
-            <h3>ماتریس رنگ × سایز (تعداد فروش) <span class="tip-icon" data-tip="ماتریس ترکیب رنگ × سایز: هر خانه تعداد فروش آن ترکیب را نشان می‌دهد. خانه‌های تیره‌تر پرفروش‌ترند. برای تصمیم‌گیری سفارش مجدد ضروری است — مثلاً «مشکی سایز متوسط» بیشتر فروش دارد یا «سفید سایز بزرگ»؟">?</span></h3>
+            <div class="section-heading-row">
+                <h3>ماتریس رنگ × سایز <span class="tip-icon" tabindex="0" role="button" data-tip="ماتریس ترکیب رنگ × سایز: هر خانه آن ترکیب را نشان می‌دهد. خانه‌های تیره‌تر پرفروش‌ترند. برای تصمیم‌گیری سفارش مجدد ضروری است — مثلاً «مشکی سایز متوسط» بیشتر فروش دارد یا «سفید سایز بزرگ»؟">?</span></h3>
+                <span class="picked-tools" role="group" aria-label="حالت ماتریس">
+                    <button type="button" class="btn btn-sm btn-ghost" data-matrix-mode="qty" aria-pressed="true">تعداد</button>
+                    <button type="button" class="btn btn-sm btn-ghost" data-matrix-mode="revenue" aria-pressed="false">مبلغ</button>
+                </span>
+            </div>
             {% if color_size_matrix.colors %}
-            <div style="overflow-x:auto;">
-                <table class="matrix">
+            <div class="table-scroll">
+                <table class="matrix" data-max-revenue="{{ color_size_matrix.max_revenue }}">
                     <thead><tr><th>سایز</th>{% for c in color_size_matrix.colors %}<th>{{ c }}</th>{% endfor %}</tr></thead>
                     <tbody>
                     {% for r in color_size_matrix.rows %}
                     <tr><td><b>{{ r.size }}</b></td>
-                        {% for cell in r.cells %}<td style="background: color-mix(in srgb, var(--candy) {{ (cell.pct * 0.4) | round(1) }}%, transparent); text-align:center;{% if cell.qty and color_size_matrix.max and cell.qty == color_size_matrix.max %} font-weight: 800;{% endif %}" class="tnum">{{ cell.qty }}</td>{% endfor %}
+                        {% for cell in r.cells %}<td data-qty="{{ cell.qty }}" data-revenue="{{ cell.revenue }}" style="background: color-mix(in srgb, var(--candy) {{ (cell.pct * 0.4) | round(1) }}%, transparent); text-align:center;{% if cell.qty and color_size_matrix.max and cell.qty == color_size_matrix.max %} font-weight: 800;{% endif %}" class="tnum">{{ cell.qty }}</td>{% endfor %}
                     </tr>
                     {% endfor %}
                     </tbody>
                 </table>
-            {% else %}<p style="color:var(--ink-soft);">رنگ/سایز برای این محدوده ثبت نشده.</p>{% endif %}
+            {% else %}<p class="muted">رنگ/سایز برای این محدوده ثبت نشده.</p>{% endif %}
         </div>
     </div>
+<script>
+// Quantity or money: the same cells, re-read. Grouped Persian digits either
+// way; the heat stays quantity-scaled so the two modes stay comparable.
+(function () {
+    document.querySelectorAll('[data-matrix-mode]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var table = btn.closest('.chart-card').querySelector('table.matrix');
+            if (!table) return;
+            var mode = btn.getAttribute('data-matrix-mode');
+            btn.parentElement.querySelectorAll('[data-matrix-mode]').forEach(function (other) {
+                other.setAttribute('aria-pressed', other === btn ? 'true' : 'false');
+            });
+            table.querySelectorAll('td[data-qty]').forEach(function (cell) {
+                var raw = parseInt(mode === 'revenue' ? cell.getAttribute('data-revenue') : cell.getAttribute('data-qty'), 10) || 0;
+                cell.textContent = raw.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+                    .replace(/[0-9]/g, function (d) { return '۰۱۲۳۴۵۶۷۸۹'[+d]; }) + (mode === 'revenue' ? ' تومان' : '');
+            });
+        });
+    });
+})();
+</script>
     <div class="charts-grid">
         <div class="card">
-            <h3>ارزش انبار <span class="tip-icon" data-tip="ارزش کل موجودی انبار: سرمایه‌ای که در کالا بلوکه شده (به قیمت خرید) و ارزش فروش بالقوه آن (به قیمت فروش). تفاوت این دو سود ناخالص بالقوه شماست.">?</span></h3>
-            <div class="inv-row"><span>سرمایه انبار</span><b class="tnum">{{ fmt(inventory.total_cost) }} ت</b></div>
-            <div class="inv-row"><span>ارزش فروش انبار</span><b class="tnum">{{ fmt(inventory.total_retail) }} ت</b></div>
+            <h3>ارزش انبار <span class="tip-icon" tabindex="0" role="button" data-tip="ارزش کل موجودی انبار: سرمایه‌ای که در کالا بلوکه شده (به قیمت خرید) و ارزش فروش بالقوه آن (به قیمت فروش). تفاوت این دو سود ناخالص بالقوه شماست.">?</span></h3>
+            <div class="inv-row"><span>سرمایه انبار</span><b class="tnum">{{ fmt(inventory.total_cost) }} تومان</b></div>
+            <div class="inv-row"><span>ارزش فروش انبار</span><b class="tnum">{{ fmt(inventory.total_retail) }} تومان</b></div>
             <div class="inv-row"><span>موجودی کل</span><b class="tnum">{{ fmt(inventory.units) }}</b></div>
-            <div style="margin-top:0.6rem; border-top:1px solid var(--rule); padding-top:0.5rem;">
+            <div class="kv-divider">
                 {% for c in inventory.categories[:8] %}
-                <div style="display:flex; justify-content:space-between; font-size:0.85rem; padding:0.15rem 0;">
-                    <span>{{ c.category }}</span><span class="tnum">{{ fmt(c.cost) }} ت</span>
+                <div class="inv-row">
+                    <span>{{ c.category }}</span><span class="tnum">{{ fmt(c.cost) }} تومان</span>
                 </div>
                 {% endfor %}
             </div>
@@ -155,18 +262,68 @@
     </div>
 </div>
 
-<div class="section-heading-row" style="margin-top: 1.5rem;">
+<div class="section-heading-row section-gap">
     <div>
         <h3>کالاها در بازه</h3>
-        <p class="muted">پارتو، واریانت‌های پرفروش و کالای مرده.</p>
+        <p class="muted">واریانت‌های پرفروش؛ پارتو و کالای مرده در زبانه انبار است.</p>
     </div>
     <a class="text-link" href="/admin/analytics/export?kind=variants&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}">خروجی واریانت‌ها</a>
 </div>
 <div class="tables-grid">
     <div class="card">
-        <h3>تحلیل ABC (Pareto) <span class="tip-icon" data-tip="تحلیل ABC بر اساس اصل پارتو (۸۰/۲۰): کلاس A معدود محصولاتی هستند که ~۸۰٪ درآمد را می‌سازند (هرگز تمام نشوند)، کلاس C دم بلند هستند (تا تقاضا نداشته باشند سفارش ندهید).">?</span></h3>
-        <p style="font-size:0.85rem; color:var(--ink-soft);">محصولات بر اساس ۸۰٪ درآمد (A)، ۱۵٪ (B) و ۵٪ (C) دسته‌بندی شده‌اند.</p>
-        <div style="display:flex; gap:1rem; margin-bottom:0.5rem;">
+        <h3>پرفروش‌ترین واریانت‌ها <span class="tip-icon" tabindex="0" role="button" data-tip="پرفروش‌ترین ترکیب‌های مشخص محصول + سایز + رنگ. این‌ها اقلامی هستند که واقعاً از قفسه پرواز می‌کنند — سفارش مجدد آن‌ها اولویت اول است.">?</span></h3>
+        <table class="data-table">
+            <thead><tr><th>نام</th><th>سایز</th><th>رنگ</th><th>تعداد</th><th>فروش</th></tr></thead>
+            <tbody>
+            {% for v in top_variants %}
+                <tr><td>{{ v.name }}</td><td>{{ v.size }}</td><td>{{ v.color }}</td><td class="tnum">{{ v.qty }}</td><td class="tnum">{{ fmt(v.revenue) }}</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+</section>
+
+<!-- Inventory tab -->
+<section class="analytics-tab" data-tab="inventory" aria-label="انبار"{% if tab != 'inventory' %} hidden{% endif %}>
+<div class="kpi-grid">
+    <div class="kpi-card"><h4>نرخ فروش موجودی <span class="tip-icon" tabindex="0" role="button" data-tip="چقدر از آنچه داشتید فروخته شد. بالا یعنی قفسه می‌چرخد؛ پایین یعنی سرمایه خوابیده.">?</span></h4><p class="kpi-value">{{ percent(sell_through.pct, 0) }}</p></div>
+    <div class="kpi-card"><h4>نیازمند سفارش <span class="tip-icon" tabindex="0" role="button" data-tip="تنوع‌هایی که با آهنگ فروش فعلی کمتر از {{ turnover.threshold }} روز دیگر موجودی دارند.">?</span></h4><p class="kpi-value tnum">{{ turnover.low_count }}</p></div>
+    <div class="kpi-card"><h4>کالای مرده <span class="tip-icon" tabindex="0" role="button" data-tip="اقلامی که در این بازه هیچ فروشی نداشته‌اند ولی هنوز در انبار هستند. سرمایه بلوکه‌شده که باید تخفیف بخورد یا خارج شود.">?</span></h4><p class="kpi-value tnum">{{ dead_stock.count }} قلم</p></div>
+    <div class="kpi-card"><h4>سرمایه انبار <span class="tip-icon" tabindex="0" role="button" data-tip="پولی که همین حالا در قفسه است، به قیمت خرید.">?</span></h4><p class="kpi-value">{{ fmt(inventory.total_cost) }} تومان</p></div>
+</div>
+
+<div class="section-heading-row section-gap">
+    <div>
+        <h3>چقدر مانده</h3>
+        <p class="muted">با آهنگ فروش همین بازه، هر تنوع چند روز دیگر دارد — قرمزها اول سفارش.</p>
+    </div>
+</div>
+<div class="card">
+    {% if turnover.rows %}
+    <div class="table-scroll"><table class="data-table">
+        <thead><tr><th scope="col">کالا</th><th scope="col">موجودی</th><th scope="col">فروش بازه</th><th scope="col">مانده (روز)</th><th scope="col">وضعیت</th></tr></thead>
+        <tbody>
+        {% for row in turnover.rows %}
+            <tr{% if row.reorder %} class="check-overdue"{% endif %}>
+                <td><a href="/admin/products/{{ row.product_id }}">{{ row.name }}</a>{% if row.size or row.color %} <small class="muted">{{ row.size }} {{ row.color }}</small>{% endif %}</td>
+                <td class="tnum">{{ row.stock }}</td>
+                <td class="tnum">{{ row.sold }}</td>
+                <td class="tnum">{{ row.days_left }}</td>
+                <td>{% if row.reorder %}<span class="badge badge-danger">سفارش</span>{% else %}<span class="badge badge-available">کافی</span>{% endif %}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table></div>
+    {% if turnover.omitted %}<p class="muted">+ {{ turnover.omitted }} قلم دیگر با مانده بیشتر.</p>{% endif %}
+    {% else %}<div class="empty-state"><h3>ردی برای شمردن نیست</h3><p>در این بازه فروشی ثبت نشده تا آهنگی از آن خوانده شود.</p></div>{% endif %}
+</div>
+
+<div class="tables-grid section-gap">
+    <div class="card">
+        <h3>تحلیل ABC (Pareto) <span class="tip-icon" tabindex="0" role="button" data-tip="تحلیل ABC بر اساس اصل پارتو (۸۰/۲۰): کلاس A معدود محصولاتی هستند که ~۸۰٪ درآمد را می‌سازند (هرگز تمام نشوند)، کلاس C دم بلند هستند (تا تقاضا نداشته باشند سفارش ندهید).">?</span></h3>
+        <p class="fine-print">محصولات بر اساس ۸۰٪ درآمد (A)، ۱۵٪ (B) و ۵٪ (C) دسته‌بندی شده‌اند.</p>
+        <div class="board-head board-spread">
             <div class="inv-row">A-Class: <b>{{ abc_products.a_count }} محصول</b></div>
             <div class="inv-row">سهم درآمد: <b>{{ abc_products.a_pct }}٪</b></div>
         </div>
@@ -180,29 +337,18 @@
         </table>
     </div>
     <div class="card">
-        <h3>پرفروش‌ترین واریانت‌ها <span class="tip-icon" data-tip="پرفروش‌ترین ترکیب‌های مشخص محصول + سایز + رنگ. این‌ها اقلامی هستند که واقعاً از قفسه پرواز می‌کنند — سفارش مجدد آن‌ها اولویت اول است.">?</span></h3>
-        <table class="data-table">
-            <thead><tr><th>نام</th><th>سایز</th><th>رنگ</th><th>تعداد</th><th>فروش</th></tr></thead>
-            <tbody>
-            {% for v in top_variants %}
-                <tr><td>{{ v.name }}</td><td>{{ v.size }}</td><td>{{ v.color }}</td><td class="tnum">{{ v.qty }}</td><td class="tnum">{{ fmt(v.revenue) }}</td></tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    <div class="card">
-        <h3>کالای مرده (بدون فروش در این دوره) <span class="tip-icon" data-tip="اقلامی که در این بازه هیچ فروشی نداشته‌اند ولی هنوز در انبار هستند. سرمایه شما را بی‌استفاده نگه داشته‌اند. راه‌حل: تخفیف ویژه، بسته‌بندی مجدد، یا حذف از مجموعه.">?</span></h3>
-        <p style="font-size:0.85rem; color:var(--ink-soft);">ارزش کل: <b>{{ fmt(dead_stock.total_value) }} ت</b> — {{ dead_stock.count }} قلم</p>
-        {% if dead_stock.items %}
+        <h3>کالای مرده (بدون فروش در این دوره) <span class="tip-icon" tabindex="0" role="button" data-tip="اقلامی که در این بازه هیچ فروشی نداشته‌اند ولی هنوز در انبار هستند. سرمایه شما را بی‌استفاده نگه داشته‌اند. راه‌حل: تخفیف ویژه، بسته‌بندی مجدد، یا حذف از مجموعه.">?</span></h3>
+        <p class="fine-print">ارزش کل: <b>{{ fmt(dead_stock.total_value) }} تومان</b> — {{ dead_stock.count }} قلم</p>
+        {% if dead_stock.variants %}
         <table class="data-table">
             <thead><tr><th>نام</th><th>سایز</th><th>رنگ</th><th>موجودی</th><th>ارزش</th></tr></thead>
             <tbody>
             {% for d in dead_stock.variants[:10] %}
-                <tr><td>{{ d.name }}</td><td>{{ d.size }}</td><td>{{ d.color }}</td><td class="tnum">{{ d.stock }}</td><td class="tnum">{{ fmt(d.value) }}</td></tr>
+                <tr><td><a href="/admin/products/{{ d.product_id }}">{{ d.name }}</a></td><td>{{ d.size }}</td><td>{{ d.color }}</td><td class="tnum">{{ d.stock }}</td><td class="tnum">{{ fmt(d.value) }} تومان</td></tr>
             {% endfor %}
             </tbody>
         </table>
-        {% else %}<p style="color:var(--ink-soft);">همه اقلام فروش داشته‌اند.</p>{% endif %}
+        {% else %}<p class="muted">همه اقلام فروش داشته‌اند.</p>{% endif %}
     </div>
 </div>
 </section>
@@ -210,8 +356,8 @@
 <!-- Customers tab -->
 <section class="analytics-tab" data-tab="customers" aria-label="مشتریان"{% if tab != 'customers' %} hidden{% endif %}>
 <div class="kpi-grid">
-    <div class="kpi-card"><h4>مشتریان جدید <span class="tip-icon" data-tip="تعداد مشتریانی که اولین خرید خود را در این بازه انجام داده‌اند. رشد این عدد نشانه بازاریابی موفق یا معرفی دهان‌به‌دهان است.">?</span></h4><p class="kpi-value tnum">{{ summary.new_customers }}</p></div>
-    <div class="kpi-card"><h4>نرخ بازگشت <span class="tip-icon" data-tip="درصد مشتریانی که بیش از یک بار خرید کرده‌اند. فروشگاهی که فقط مشتری یک‌بار دارد همیشه در خطر است. نرخ بازگشت بالای ۳۰٪ هدف خوبی است.">?</span></h4><p class="kpi-value">{{ percent(customer_health.repeat_rate, 0) }}</p></div>
+    <div class="kpi-card"><h4>مشتریان جدید <span class="tip-icon" tabindex="0" role="button" data-tip="تعداد مشتریانی که اولین خرید خود را در این بازه انجام داده‌اند. رشد این عدد نشانه بازاریابی موفق یا معرفی دهان‌به‌دهان است.">?</span></h4><p class="kpi-value tnum">{{ summary.new_customers }}</p></div>
+    <div class="kpi-card"><h4>نرخ بازگشت <span class="tip-icon" tabindex="0" role="button" data-tip="درصد مشتریانی که بیش از یک بار خرید کرده‌اند. فروشگاهی که فقط مشتری یک‌بار دارد همیشه در خطر است. نرخ بازگشت بالای ۳۰٪ هدف خوبی است.">?</span></h4><p class="kpi-value">{{ percent(customer_health.repeat_rate, 0) }}</p></div>
 </div>
 
 <div class="section-heading-row">
@@ -222,25 +368,25 @@
     <a class="text-link" href="/admin/analytics/export?kind=customers&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}">خروجی مشتریان برتر</a>
 </div>
 <div class="charts-grid">
-    <div class="card chart-card"><h3>فروش بر اساس سطح <span class="tip-icon" data-tip="فروش به تفکیک سطح وفاداری مشتری (نقره‌ای/طلایی/الماس). اگر مشتریان الماس بیشترین فروش را داشته باشند، برنامه وفاداری شما مؤثر است.">?</span></h3><p class="chart-note" data-chart="tierChart">{{ notes.tierChart }}</p><canvas id="tierChart" role="img" aria-label="{{ notes.tierChart }}"></canvas></div>
+    <div class="card chart-card"><h3>فروش بر اساس سطح <span class="tip-icon" tabindex="0" role="button" data-tip="فروش به تفکیک سطح وفاداری مشتری (نقره‌ای/طلایی/الماس). اگر مشتریان الماس بیشترین فروش را داشته باشند، برنامه وفاداری شما مؤثر است.">?</span></h3><p class="chart-note" data-chart="tierChart">{{ notes.tierChart }}</p><div class="chart-host" id="tierChart" role="img" aria-label="{{ notes.tierChart }}"></div></div>
     <div class="card">
-        <h3>سلامت مشتریان <span class="tip-icon" data-tip="سلامت مشتریان: نرخ بازگشت نشان می‌دهد چند درصد مشتریان دوباره خرید کرده‌اند. نمودار دایره‌ای توزیع درآمد مشتریان را نشان می‌دهد — اگر بیشتر در گروه کم‌خرید باشند، باید برنامه وفاداری را تقویت کنید.">?</span></h3>
+        <h3>سلامت مشتریان <span class="tip-icon" tabindex="0" role="button" data-tip="سلامت مشتریان: نرخ بازگشت نشان می‌دهد چند درصد مشتریان دوباره خرید کرده‌اند. نمودار دایره‌ای توزیع درآمد مشتریان را نشان می‌دهد — اگر بیشتر در گروه کم‌خرید باشند، باید برنامه وفاداری را تقویت کنید.">?</span></h3>
         <div class="inv-row"><span>نرخ خرید مجدد</span><b>{{ percent(customer_health.repeat_rate, 0) }}</b></div>
         <div class="inv-row"><span>مشتریان یک‌بار</span><b>{{ percent(customer_health.one_timer_pct, 0) }}</b></div>
         <div class="inv-row"><span>میانگین سفارش</span><b>{{ customer_health.avg_orders if customer_health.avg_orders is not none else '—' }}</b></div>
-        <div style="margin-top:0.5rem; border-top:1px solid var(--rule); padding-top:0.5rem;">
-            <p class="chart-note" data-chart="customerSegChart">{{ notes.customerSegChart }}</p><canvas id="customerSegChart" role="img" aria-label="{{ notes.customerSegChart }}" style="max-height:180px;"></canvas>
+        <div class="kv-divider">
+            <p class="chart-note" data-chart="customerSegChart">{{ notes.customerSegChart }}</p><div class="chart-host" id="customerSegChart" role="img" aria-label="{{ notes.customerSegChart }}"></div>
         </div>
     </div>
 </div>
 <div class="tables-grid">
     <div class="card">
-        <h3>مشتریان برتر <span class="tip-icon" data-tip="پرخرج‌ترین مشتریان در بازه زمانی. سطح وفاداری (نقره‌ای/طلایی/الماس) و تعداد سفارشات هر کدام مشخص است. این مشتریان ستون فقرات کسب‌وکار شما هستند.">?</span></h3>
+        <h3>مشتریان برتر <span class="tip-icon" tabindex="0" role="button" data-tip="پرخرج‌ترین مشتریان در بازه زمانی. سطح وفاداری (نقره‌ای/طلایی/الماس) و تعداد سفارشات هر کدام مشخص است. این مشتریان ستون فقرات کسب‌وکار شما هستند.">?</span></h3>
         <table class="data-table">
             <thead><tr><th>نام</th><th>تلفن</th><th>سطح</th><th>مجموع خرید</th><th>سفارش</th></tr></thead>
             <tbody>
             {% for c in top_customers %}
-                <tr><td>{{ c.name }}</td><td class="tnum">{{ c.phone }}</td><td><span class="tier-badge tier-{{ c.tier }}">
+                <tr><td>{% if c.id %}<a href="/admin/customers/{{ c.id }}">{{ c.name }}</a>{% else %}{{ c.name }}{% endif %}</td><td class="tnum">{{ c.phone }}</td><td><span class="tier-badge tier-{{ c.tier }}">
                     {% if c.tier == 'diamond' %}الماس{% elif c.tier == 'gold' %}طلایی{% else %}نقره‌ای{% endif %}
                 </span></td><td class="tnum">{{ fmt(c.total_spent) }}</td><td class="tnum">{{ c.orders }}</td></tr>
             {% endfor %}
@@ -253,8 +399,8 @@
 <!-- Profit tab -->
 <section class="analytics-tab" data-tab="profit" aria-label="سود"{% if tab != 'profit' %} hidden{% endif %}>
 <div class="kpi-grid">
-    <div class="kpi-card profit"><h4>سود ناخالص <span class="tip-icon" data-tip="سود ناخالص = فروش کل منهای هزینه کالاهای فروخته‌شده. این عدد قبل از کسر هزینه‌های اجاره، حقوق و سایر هزینه‌های عملیاتی است.">?</span></h4><p class="kpi-value">{{ fmt(summary.gross_profit) }} ت</p></div>
-    <div class="kpi-card margin"><h4>حاشیه سود <span class="tip-icon" data-tip="حاشیه سود ناخالص = (سود ÷ فروش) × ۱۰۰. هرچه بالاتر باشد، به ازای هر تومان فروش سود بیشتری کسب می‌کنید. برای پوشاک بچه‌گانه ۴۰-۶۰٪ طبیعی است.">?</span></h4><p class="kpi-value">{{ percent(summary.margin) }}</p></div>
+    <div class="kpi-card profit"><h4>سود ناخالص <span class="tip-icon" tabindex="0" role="button" data-tip="سود ناخالص = فروش کل منهای هزینه کالاهای فروخته‌شده. این عدد قبل از کسر هزینه‌های اجاره، حقوق و سایر هزینه‌های عملیاتی است.">?</span></h4><p class="kpi-value">{{ fmt(summary.gross_profit) }} تومان</p></div>
+    <div class="kpi-card margin"><h4>حاشیه سود <span class="tip-icon" tabindex="0" role="button" data-tip="حاشیه سود ناخالص = (سود ÷ فروش) × ۱۰۰. هرچه بالاتر باشد، به ازای هر تومان فروش سود بیشتری کسب می‌کنید. برای پوشاک بچه‌گانه ۴۰-۶۰٪ طبیعی است.">?</span></h4><p class="kpi-value">{{ percent(summary.margin) }}</p></div>
 </div>
 
 <div class="section-heading-row">
@@ -262,12 +408,16 @@
         <h3>سود در بازه</h3>
         <p class="muted">حاشیه به تفکیک دسته، جدول دسته‌ها و تخفیف‌ها.</p>
     </div>
-    <a class="text-link" href="/admin/analytics/export?kind=categories&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}">خروجی دسته‌ها</a>
+    <span class="picked-tools">
+        <a class="btn btn-sm btn-ghost" href="/admin/analytics/export?kind=categories&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-backup"/></svg>خروجی دسته‌ها</a>
+        <a class="btn btn-sm btn-ghost" href="/admin/analytics/export?kind=margin&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-backup"/></svg>خروجی حاشیه‌ها</a>
+    </span>
 </div>
 <div class="charts-grid">
-    <div class="card chart-card"><h3>حاشیه سود به تفکیک دسته <span class="tip-icon" data-tip="حاشیه سود ناخالص خالص به ازای هر دسته‌بندی (پس از کسر تخفیف و مرجوعی). رنگ سبز یعنی سودآور، قرمز یعنی زیان‌ده. مهم‌ترین نمودار برای تصمیم‌گیری: کدام دسته را بیشتر تبلیغ کنید و کدام را کمتر سفارش دهید.">?</span></h3><p class="chart-note" data-chart="marginCatChart">{{ notes.marginCatChart }}</p><canvas id="marginCatChart" role="img" aria-label="{{ notes.marginCatChart }}"></canvas></div>
+    <div class="card chart-card"><h3>حاشیه سود به تفکیک دسته <span class="tip-icon" tabindex="0" role="button" data-tip="حاشیه سود ناخالص خالص به ازای هر دسته‌بندی (پس از کسر تخفیف و مرجوعی). رنگ سبز یعنی سودآور، قرمز یعنی زیان‌ده. مهم‌ترین نمودار برای تصمیم‌گیری: کدام دسته را بیشتر تبلیغ کنید و کدام را کمتر سفارش دهید.">?</span></h3><p class="chart-note" data-chart="marginCatChart">{{ notes.marginCatChart }}</p><div class="chart-host" id="marginCatChart" role="img" aria-label="{{ notes.marginCatChart }}"></div></div>
+    <div class="card chart-card"><h3>سهم انواع تخفیف <span class="tip-icon" tabindex="0" role="button" data-tip="کدام نوع تخفیف چقدر از درآمد کم کرده. بزرگ‌ترین برش، اولین جایی است که باید سفت شود.">?</span></h3><p class="chart-note" data-chart="discountChart">{{ notes.discountChart }}</p><div class="chart-host" id="discountChart" role="img" aria-label="{{ notes.discountChart }}"></div></div>
     <div class="card">
-        <h3>دسته‌بندی‌ها <span class="tip-icon" data-tip=" مقایسه دسته‌بندی‌ها: کدام بیشتر می‌فروشد، کدام سودآورتر است و کدام حاشیه سود بهتری دارد. حاشیه سود بالاتر مهم‌تر از فروش بالاتر است — یک دسته کم‌فروش با حاشیه بالا بهتر از دسته پرفروش با حاشیه پایین است.">?</span></h3>
+        <h3>دسته‌بندی‌ها <span class="tip-icon" tabindex="0" role="button" data-tip=" مقایسه دسته‌بندی‌ها: کدام بیشتر می‌فروشد، کدام سودآورتر است و کدام حاشیه سود بهتری دارد. حاشیه سود بالاتر مهم‌تر از فروش بالاتر است — یک دسته کم‌فروش با حاشیه بالا بهتر از دسته پرفروش با حاشیه پایین است.">?</span></h3>
         <table class="data-table">
             <thead><tr><th>دسته</th><th>تعداد</th><th>فروش</th><th>سود</th><th>حاشیه</th></tr></thead>
             <tbody>
@@ -278,7 +428,7 @@
         </table>
     </div>
     <div class="card">
-        <h3>تخفیف‌ها <span class="tip-icon" data-tip="تخفیف‌های اعمال شده در بازه زمانی: کدام نوع تخفیف بیشتر استفاده شده و چه تأثیری روی درآمد داشته. اگر تخفیف خیلی زیاد باشد، ممکن است حاشیه سود را خورده باشد.">?</span></h3>
+        <h3>تخفیف‌ها <span class="tip-icon" tabindex="0" role="button" data-tip="تخفیف‌های اعمال شده در بازه زمانی: کدام نوع تخفیف بیشتر استفاده شده و چه تأثیری روی درآمد داشته. اگر تخفیف خیلی زیاد باشد، ممکن است حاشیه سود را خورده باشد.">?</span></h3>
         {% if discounts %}
         <table class="data-table">
             <thead><tr><th>نوع</th><th>مبلغ کل</th><th>درصد فروش</th></tr></thead>
@@ -288,7 +438,7 @@
             {% endfor %}
             </tbody>
         </table>
-        {% else %}<p style="color: var(--ink-soft);">تخفیفی در این دوره ثبت نشده.</p>{% endif %}
+        {% else %}<p class="muted">تخفیفی در این دوره ثبت نشده.</p>{% endif %}
     </div>
 </div>
 </section>
@@ -300,16 +450,20 @@
         <h3>روند در بازه</h3>
         <p class="muted">دوازده ماه اخیر و سهم دسته‌ها — مستقل از بازه انتخابی.</p>
     </div>
+    <a class="text-link" href="/admin/analytics/export?kind=trend">خروجی روند</a>
 </div>
 <div class="charts-grid">
-    <div class="card chart-card"><h3>روند درآمد (۱۲ ماه) <span class="tip-icon" data-tip="روند درآمد و سود در ۱۲ ماه اخیر. اگر خط بالا برود یعنی رشد دارید، اگر پایین بیاید یعنی افت فروش. الگوهای فصلی (مثلاً شروع مدارس) هم مشخص می‌شوند.">?</span></h3><p class="chart-note" data-chart="trendChart">{{ notes.trendChart }}</p><canvas id="trendChart" role="img" aria-label="{{ notes.trendChart }}"></canvas></div>
-    <div class="card chart-card"><h3>فروش بر اساس دسته‌بندی <span class="tip-icon" data-tip="سهم خالص هر دسته‌بندی از کل فروش پس از کسر تخفیف و مرجوعی (نمودار دایره‌ای). اگر یک دسته بیش از ۵۰٪ فروش را تشکیل دهد، کسب‌وکار شما به آن وابسته است و ریسک دارد.">?</span></h3><p class="chart-note" data-chart="categoryChart">{{ notes.categoryChart }}</p><canvas id="categoryChart" role="img" aria-label="{{ notes.categoryChart }}"></canvas></div>
+    <div class="card chart-card"><h3>روند درآمد (۱۲ ماه) <span class="tip-icon" tabindex="0" role="button" data-tip="روند درآمد و سود در ۱۲ ماه اخیر. اگر خط بالا برود یعنی رشد دارید، اگر پایین بیاید یعنی افت فروش. الگوهای فصلی (مثلاً شروع مدارس) هم مشخص می‌شوند.">?</span></h3><p class="chart-note" data-chart="trendChart">{{ notes.trendChart }}</p><div class="chart-host" id="trendChart" role="img" aria-label="{{ notes.trendChart }}"></div></div>
+    <div class="card chart-card"><h3>فروش بر اساس دسته‌بندی <span class="tip-icon" tabindex="0" role="button" data-tip="سهم خالص هر دسته‌بندی از کل فروش پس از کسر تخفیف و مرجوعی (نمودار دایره‌ای). اگر یک دسته بیش از ۵۰٪ فروش را تشکیل دهد، کسب‌وکار شما به آن وابسته است و ریسک دارد.">?</span></h3><p class="chart-note" data-chart="categoryChart">{{ notes.categoryChart }}</p><div class="chart-host" id="categoryChart" role="img" aria-label="{{ notes.categoryChart }}"></div></div>
+    <div class="card chart-card"><h3>تقویم فروش سال <span class="tip-icon" tabindex="0" role="button" data-tip="هر خانه یک روز از ۳۶۵ روز گذشته است؛ پررنگ‌تر یعنی پرفروش‌تر. فصل‌ها را یک نگاه می‌بینید — عید، تابستان، شروع مدارس — بدون ورق زدن تقویم.">?</span></h3><p class="chart-note" data-chart="heatChart">{{ notes.heatChart }}</p><div class="chart-host" id="heatChart" role="img" aria-label="{{ notes.heatChart }}"></div></div>
 </div>
 </section>
 
 <!-- Global tooltip element (fixed positioning, never clipped) -->
-<div id="globalTip" style="display:none; position:fixed; background:var(--card); color:var(--ink); border:1px solid var(--rule); padding:0.6rem 0.8rem; border-radius:8px; font-size:0.8rem; line-height:1.6; width:max-content; max-width:340px; white-space:normal; pointer-events:none; z-index:9999; box-shadow:var(--shadow-overlay); text-align:right; direction:rtl; font-family:Vazirmatn,sans-serif;"></div>
-
+<!-- Vendored engine + bridge (Phase A1): served by the shop itself, so the
+     page renders with no internet. Only the pilot charts below use it yet. -->
+<script src="/static/vendor/echarts.min.js?v={{ static_version }}"></script>
+<script src="/static/js/analytics-charts.js?v={{ static_version }}"></script>
 <script>
 if (typeof Chart === 'undefined') {
     if (typeof window.renderOfflineCharts === 'function') window.renderOfflineCharts();
@@ -325,124 +479,381 @@ const revenueTrend = {{ revenue_trend|tojson }};
 const priceDist = {{ price_dist|tojson }};
 const marginByCat = {{ margin_by_cat|tojson }};
 const customerHealth = {{ customer_health|tojson }};
+const prevDaily = {{ prev_revenues|tojson }};
+const trendMa = {{ trend_ma|tojson }};
+const paymentMix = {{ payment_mix|tojson }};
+const staffData = {{ staff|tojson }};
+const heatCells = {{ heatmap.cells|tojson }};
+const heatMax = {{ heatmap.max }};
+const heatWeeks = {{ heatmap.weeks }};
+const discountsData = {{ discounts|tojson }};
+window.CHART_DIGITS = '{{ chart_digits }}';
 
-// The chart colours are the active theme's own accents, read from the page, so a
-// chart follows dark and high-contrast instead of staying one palette forever.
-// `valueFormat` is how each chart's own numbers read on its marks (see the
-// renderer in static/js/charts.js), and `window.chartValueText` is the same
-// formatter the page uses for a label it writes itself — one source for both,
-// so an axis tick and a bar's value can never say different things.
-const tone = window.themeTones();
-const palette = tone.palette;
-const baseOpts = (extra={}) => Object.assign({ responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { family: 'Vazirmatn' } } } }, scales: { y: { beginAtZero: true } } }, extra);
-
-new Chart(document.getElementById('dailyChart'), {
-    type: 'bar',
-    data: { labels: dailyData.map(d => d.date), datasets: [
-        { label: 'فروش', data: dailyData.map(d => d.revenue), backgroundColor: tone.candy },
-        { label: 'سود', data: dailyData.map(d => d.profit), backgroundColor: tone.mint }
-    ]},
-    options: baseOpts({ valueFormat: 'money' })
-});
-
-new Chart(document.getElementById('categoryChart'), {
-    type: 'doughnut',
-    data: { labels: categoryData.map(c => c.category), datasets: [{ data: categoryData.map(c => c.revenue), backgroundColor: palette }]},
-    options: { responsive: true, valueFormat: 'money', plugins: { legend: { position: 'bottom', labels: { font: { family: 'Vazirmatn' } } } } }
-});
-
-new Chart(document.getElementById('tierChart'), {
-    type: 'bar',
-    data: { labels: tierData.map(t => t.label), datasets: [{ label: 'فروش', data: tierData.map(t => t.revenue), backgroundColor: [tone.lavender, tone.sunshine, tone.sky] }]},
-    options: baseOpts({ valueFormat: 'money', plugins: { legend: { display: false } } })
-});
-
-new Chart(document.getElementById('pricingChart'), {
-    type: 'bar',
-    data: { labels: ['هزینه', 'قیمت فروش', 'سود'], datasets: [{
-        label: 'به‌ازای هر واحد', data: [priceStats.avg_cost, priceStats.avg_price, priceStats.avg_profit],
-        backgroundColor: [tone.sunshine, tone.sky, tone.mint]
-    }]},
-    options: baseOpts({ valueFormat: 'money', plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } })
-});
-
-new Chart(document.getElementById('colorChart'), {
-    type: 'bar',
-    data: { labels: colorStats.map(c => c.label).slice(0, 12), datasets: [{ label: 'تعداد', data: colorStats.map(c => c.quantity).slice(0, 12), backgroundColor: tone.lavender }]},
-    options: baseOpts({ indexAxis: 'y', valueFormat: 'count', plugins: { legend: { display: false } } })
-});
-
-new Chart(document.getElementById('sizeChart'), {
-    type: 'bar',
-    data: { labels: sizeStats.map(s => s.label).slice(0, 12), datasets: [{ label: 'تعداد', data: sizeStats.map(s => s.quantity).slice(0, 12), backgroundColor: tone.persimmon }]},
-    options: baseOpts({ valueFormat: 'count', plugins: { legend: { display: false } } })
-});
-
-new Chart(document.getElementById('trendChart'), {
-    type: 'line',
-    data: { labels: revenueTrend.map(m => m.month), datasets: [
-        { label: 'درآمد', data: revenueTrend.map(m => m.revenue), borderColor: tone.candy, backgroundColor: window.tintColour(tone.candy, 0.1), fill: true, tension: 0.3 },
-        { label: 'سود', data: revenueTrend.map(m => m.profit), borderColor: tone.mint, backgroundColor: window.tintColour(tone.mint, 0.1), fill: true, tension: 0.3 }
-    ]},
-    options: baseOpts({ valueFormat: 'money' })
-});
-
-new Chart(document.getElementById('weekdayChart'), {
-    type: 'bar',
-    data: { labels: salesPattern.weekdays.map(d => d.day), datasets: [{ label: 'فروش', data: salesPattern.weekdays.map(d => d.revenue), backgroundColor: tone.sky }]},
-    options: baseOpts({ valueFormat: 'money', plugins: { legend: { display: false } } })
-});
-
-new Chart(document.getElementById('hourChart'), {
-    type: 'bar',
-    data: { labels: salesPattern.hours.map(h => h.label), datasets: [{ label: 'فروش', data: salesPattern.hours.map(h => h.revenue), backgroundColor: tone.sunshine }]},
-    options: baseOpts({ valueFormat: 'money', plugins: { legend: { display: false } } })
-});
-
-new Chart(document.getElementById('priceDistChart'), {
-    type: 'bar',
-    data: { labels: priceDist.map(p => window.chartValueText(p.price, 'count') + ' ت'), datasets: [
-        { label: 'تعداد', data: priceDist.map(p => p.quantity), backgroundColor: tone.lavender },
-    ]},
-    options: baseOpts({ valueFormat: 'count', plugins: { legend: { display: false } } })
-});
-
-new Chart(document.getElementById('marginCatChart'), {
-    type: 'bar',
-    data: { labels: marginByCat.map(c => c.category), datasets: [{ label: 'حاشیه سود ٪', data: marginByCat.map(c => c.margin), backgroundColor: marginByCat.map(c => c.margin >= 0 ? tone.mint : tone.candy) }]},
-    options: baseOpts({ indexAxis: 'y', valueFormat: 'percent', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } })
-});
-
-new Chart(document.getElementById('customerSegChart'), {
-    type: 'doughnut',
-    data: { labels: customerHealth.segments.map(s => s.label), datasets: [{ data: customerHealth.segments.map(s => s.count), backgroundColor: [tone.lavender, tone.sunshine, tone.sky, tone.candy] }]},
-    options: { responsive: true, valueFormat: 'count', plugins: { legend: { position: 'bottom', labels: { font: { family: 'Vazirmatn', size: 11 } } } } }
-});
+// `window.chartValueText` is the formatter the page uses for a label it
+// writes itself (price histogram ticks) — one source, so an axis tick and a
+// bar's value can never say different things. Theme tones now flow through
+// the AnalyticsCharts bridge instead of these locals.
+var AC = window.AnalyticsCharts;
+if (window.echarts && AC) {
+    var dailyRevenues = dailyData.map(function (d) { return d.revenue; });
+    var dailyAvg = dailyRevenues.length
+        ? Math.round(dailyRevenues.reduce(function (a, b) { return a + b; }, 0) / dailyRevenues.length)
+        : 0;
+    var dailyChart = AC.create(document.getElementById('dailyChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.tooltip.valueFormatter = function (v) { return AC.money(v); };
+        opt.xAxis = AC.categoryAxis(dailyData.map(function (d) { return d.date; }), paper);
+        opt.yAxis = AC.valueAxis(paper, true);
+        opt.series = [
+            { name: 'فروش', type: 'bar', data: dailyRevenues,
+              itemStyle: { color: T.candy, borderRadius: [3, 3, 0] },
+              markLine: { silent: true, symbol: 'none',
+                label: { formatter: 'میانگین ' + AC.compact(dailyAvg), color: T.inkSoft, fontFamily: 'Vazirmatn' },
+                lineStyle: { color: T.inkSoft, type: 'dashed' },
+                data: [{ yAxis: dailyAvg }] } },
+            { name: 'سود', type: 'bar', data: dailyData.map(function (d) { return d.profit; }),
+              itemStyle: { color: T.mint, borderRadius: [3, 3, 0] } },
+        ];
+        if (prevDaily.length === dailyRevenues.length && dailyRevenues.length) {
+            opt.series.push({ name: 'دوره قبل', type: 'line', smooth: true, symbol: 'none',
+              data: prevDaily, lineStyle: { color: T.inkSoft, type: 'dotted' },
+              itemStyle: { color: T.inkSoft } });
+        }
+        return opt;
+    });
+    // A bar is a day of invoices: clicking one opens the sales list behind it.
+    AC.link(dailyChart, function () { return '/sales/'; });
+    AC.create(document.getElementById('trendChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        var months = revenueTrend.map(function (m) { return AC.monthName(m.month); });
+        opt.tooltip.valueFormatter = function (v) { return AC.money(v); };
+        opt.xAxis = AC.categoryAxis(months, paper);
+        opt.yAxis = AC.valueAxis(paper, true);
+        opt.series = [
+            { name: 'درآمد', type: 'line', smooth: true, data: revenueTrend.map(function (m) { return m.revenue; }),
+              lineStyle: { color: T.candy }, itemStyle: { color: T.candy },
+              areaStyle: { color: T.candy, opacity: 0.1 } },
+            { name: 'سود', type: 'line', smooth: true, data: revenueTrend.map(function (m) { return m.profit; }),
+              lineStyle: { color: T.mint }, itemStyle: { color: T.mint },
+              areaStyle: { color: T.mint, opacity: 0.1 } },
+            { name: 'میانگین ۳ ماهه', type: 'line', smooth: true, symbol: 'none', data: trendMa,
+              lineStyle: { color: T.inkSoft, type: 'dashed' }, itemStyle: { color: T.inkSoft } },
+        ];
+        return opt;
+    });
+    var doughnutLabel = function (p) { return p.name + '\n' + AC.percent(Math.round(p.percent)); };
+    var doughnutTip = function (unit) {
+        return function (p) {
+            var value = unit === 'money' ? AC.money(p.value) : AC.grouped(p.value);
+            return p.name + ': ' + value + ' (' + AC.percent(Math.round(p.percent)) + ')';
+        };
+    };
+    var PALETTE6 = function (T) { return [T.candy, T.sky, T.sunshine, T.mint, T.lavender, T.persimmon]; };
+    var catChart = AC.create(document.getElementById('categoryChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.tooltip.trigger = 'item';
+        opt.tooltip.formatter = doughnutTip('money');
+        opt.series = [{
+            type: 'pie', radius: ['45%', '70%'],
+            data: categoryData.map(function (c) { return { name: c.category, value: c.revenue }; }),
+            itemStyle: { color: function (p) { return PALETTE6(T)[p.dataIndex % 6]; } },
+            label: { formatter: doughnutLabel },
+        }];
+        return opt;
+    });
+    // A slice is a category of the same range: clicking it opens the product
+    // board already filtered to it.
+    AC.link(catChart, function (p) {
+        return '/admin/analytics?tab=product&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}&category=' + encodeURIComponent(p.name);
+    });
+    var tierChart = AC.create(document.getElementById('tierChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.legend = { show: false };
+        opt.tooltip.valueFormatter = function (v) { return AC.money(v); };
+        opt.xAxis = AC.categoryAxis(tierData.map(function (t) { return t.label; }), paper);
+        opt.yAxis = AC.valueAxis(paper, true);
+        opt.series = [{
+            name: 'فروش', type: 'bar',
+            data: tierData.map(function (t) { return t.revenue; }),
+            itemStyle: { color: function (p) { return [T.lavender, T.sunshine, T.sky][p.dataIndex % 3]; }, borderRadius: [3, 3, 0] },
+        }];
+        return opt;
+    });
+    // A tier bar opens its people.
+    AC.link(tierChart, function (p) {
+        var row = tierData[p.dataIndex];
+        return row && row.tier ? '/admin/customers?tier=' + encodeURIComponent(row.tier) : null;
+    });
+    AC.create(document.getElementById('pricingChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.legend = { show: false };
+        opt.tooltip.valueFormatter = function (v) { return AC.money(v); };
+        opt.xAxis = AC.categoryAxis(['هزینه', 'قیمت فروش', 'سود'], paper);
+        opt.yAxis = AC.valueAxis(paper, true);
+        opt.series = [{
+            name: 'به‌ازای هر واحد', type: 'bar',
+            data: [priceStats.avg_cost, priceStats.avg_price, priceStats.avg_profit],
+            itemStyle: { color: function (p) { return [T.sunshine, T.sky, T.mint][p.dataIndex]; }, borderRadius: [3, 3, 0] },
+        }];
+        return opt;
+    });
+    AC.create(document.getElementById('colorChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.legend = { show: false };
+        opt.tooltip.valueFormatter = function (v) { return AC.grouped(v); };
+        opt.xAxis = AC.valueAxis(paper, false);
+        opt.yAxis = AC.categoryAxis(colorStats.map(function (c) { return c.label; }).slice(0, 12), paper);
+        opt.series = [{
+            name: 'تعداد', type: 'bar',
+            data: colorStats.map(function (c) { return c.quantity; }).slice(0, 12),
+            itemStyle: { color: T.lavender, borderRadius: [0, 3, 3, 0] },
+        }];
+        return opt;
+    });
+    AC.create(document.getElementById('sizeChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.legend = { show: false };
+        opt.tooltip.valueFormatter = function (v) { return AC.grouped(v); };
+        opt.xAxis = AC.categoryAxis(sizeStats.map(function (s) { return s.label; }).slice(0, 12), paper);
+        opt.yAxis = AC.valueAxis(paper, false);
+        opt.series = [{
+            name: 'تعداد', type: 'bar',
+            data: sizeStats.map(function (s) { return s.quantity; }).slice(0, 12),
+            itemStyle: { color: T.persimmon, borderRadius: [3, 3, 0] },
+        }];
+        return opt;
+    });
+    AC.create(document.getElementById('weekdayChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.legend = { show: false };
+        opt.tooltip.valueFormatter = function (v) { return AC.money(v); };
+        opt.xAxis = AC.categoryAxis(salesPattern.weekdays.map(function (d) { return d.day; }), paper);
+        opt.yAxis = AC.valueAxis(paper, true);
+        opt.series = [{
+            name: 'فروش', type: 'bar',
+            data: salesPattern.weekdays.map(function (d) { return d.revenue; }),
+            itemStyle: { color: T.sky, borderRadius: [3, 3, 0] },
+        }];
+        return opt;
+    });
+    AC.create(document.getElementById('hourChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.legend = { show: false };
+        opt.tooltip.valueFormatter = function (v) { return AC.money(v); };
+        opt.xAxis = AC.categoryAxis(salesPattern.hours.map(function (h) { return h.label; }), paper);
+        opt.yAxis = AC.valueAxis(paper, true);
+        opt.series = [{
+            name: 'فروش', type: 'bar',
+            data: salesPattern.hours.map(function (h) { return h.revenue; }),
+            itemStyle: { color: T.sunshine, borderRadius: [3, 3, 0] },
+        }];
+        return opt;
+    });
+    AC.create(document.getElementById('priceDistChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.legend = { show: false };
+        opt.tooltip.valueFormatter = function (v) { return AC.grouped(v); };
+        opt.xAxis = AC.categoryAxis(priceDist.map(function (p) { return window.chartValueText(p.price, 'count') + ' تومان'; }), paper);
+        opt.yAxis = AC.valueAxis(paper, false);
+        opt.series = [{
+            name: 'تعداد', type: 'bar',
+            data: priceDist.map(function (p) { return p.quantity; }),
+            itemStyle: { color: T.lavender, borderRadius: [3, 3, 0] },
+        }];
+        return opt;
+    });
+    AC.create(document.getElementById('marginCatChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.legend = { show: false };
+        opt.tooltip.valueFormatter = function (v) { return AC.percent(v); };
+        var xAxis = AC.valueAxis(paper, false);
+        xAxis.axisLabel.formatter = function (v) { return AC.percent(v); };
+        opt.xAxis = xAxis;
+        opt.yAxis = AC.categoryAxis(marginByCat.map(function (c) { return c.category; }), paper);
+        opt.series = [{
+            name: 'حاشیه سود ٪', type: 'bar',
+            data: marginByCat.map(function (c) { return c.margin; }),
+            itemStyle: { color: function (p) { return marginByCat[p.dataIndex].margin >= 0 ? T.mint : T.candy; }, borderRadius: [0, 3, 3, 0] },
+        }];
+        return opt;
+    });
+    AC.create(document.getElementById('customerSegChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.tooltip.trigger = 'item';
+        opt.tooltip.formatter = doughnutTip('count');
+        opt.series = [{
+            type: 'pie', radius: ['45%', '70%'],
+            data: customerHealth.segments.map(function (s) { return { name: s.label, value: s.count }; }),
+            itemStyle: { color: function (p) { return [T.lavender, T.sunshine, T.sky, T.candy][p.dataIndex % 4]; } },
+            label: { formatter: doughnutLabel },
+        }];
+        return opt;
+    });
+    // New visuals are ECharts-only by decision: the fallback path exists for
+    // the twelve migrated charts, and duplicating a heatmap in the custom
+    // renderer would double untested code. Their sentences still read aloud
+    // when the engine is blocked, so the cards never go silent.
+    AC.create(document.getElementById('mixChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.tooltip.trigger = 'item';
+        opt.tooltip.formatter = doughnutTip('money');
+        opt.series = [{
+            type: 'pie', radius: ['45%', '70%'],
+            data: paymentMix.map(function (m) { return { name: m.label, value: m.revenue }; }),
+            itemStyle: { color: function (p) { return [T.mint, T.sky, T.sunshine][p.dataIndex % 3]; } },
+            label: { formatter: doughnutLabel },
+        }];
+        return opt;
+    });
+    AC.create(document.getElementById('staffChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.legend = { show: false };
+        opt.tooltip.valueFormatter = function (v) { return AC.money(v); };
+        var names = staffData.rows.map(function (r) { return r.name; });
+        opt.xAxis = AC.categoryAxis(names.length ? names : ['—'], paper);
+        opt.yAxis = AC.valueAxis(paper, true);
+        opt.series = [{
+            name: 'فروش', type: 'bar',
+            data: names.length ? staffData.rows.map(function (r) { return r.revenue; }) : [0],
+            itemStyle: { color: T.sky, borderRadius: [3, 3, 0] },
+        }];
+        return opt;
+    });
+    AC.create(document.getElementById('discountChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.tooltip.trigger = 'item';
+        opt.tooltip.formatter = doughnutTip('money');
+        opt.series = [{
+            type: 'pie', radius: ['45%', '70%'],
+            data: discountsData.map(function (d) { return { name: d.type, value: d.total_amount }; }),
+            itemStyle: { color: function (p) { return PALETTE6(T)[p.dataIndex % 6]; } },
+            label: { formatter: doughnutLabel },
+        }];
+        return opt;
+    });
+    AC.create(document.getElementById('heatChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.legend = { show: false };
+        opt.tooltip.formatter = function (p) {
+            var cell = heatCells[p.dataIndex];
+            return (cell ? cell.date + ' (' + cell.day_name + ')' : '') + ': ' + AC.money(p.value[2]);
+        };
+        opt.grid = { left: 8, right: 12, top: 8, bottom: 8, containLabel: true };
+        opt.xAxis = { type: 'value', min: 0, max: Math.max(heatWeeks, 1),
+            axisLine: { show: false }, axisTick: { show: false },
+            axisLabel: { show: false }, splitLine: { show: false } };
+        opt.yAxis = { type: 'category', inverse: true,
+            data: ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه'],
+            axisLine: { show: false }, axisTick: { show: false },
+            axisLabel: { color: T.inkSoft, fontFamily: 'Vazirmatn', fontSize: 10 } };
+        opt.visualMap = { show: false, min: 0, max: Math.max(heatMax, 1),
+            inRange: { color: [T.rule, T.sunshine, T.candy] } };
+        opt.series = [{
+            type: 'heatmap',
+            data: heatCells.map(function (c) { return [c.week, c.dow, c.revenue]; }),
+            itemStyle: { borderColor: T.paper, borderWidth: 2, borderRadius: [2, 2, 2, 2] },
+            emphasis: { disabled: false },
+        }];
+        return opt;
+    });
+} else {
+// The custom-renderer fallback was retired once ECharts proved itself in
+// production: sixteen builders, zero fallbacks. The one-line sentences
+// under every card still read aloud when the engine is blocked, so no
+// card ever goes silent.
+}
 }
 </script>
 
+<!-- The one bubble every «?» writes into. It was deleted once by a template
+     edit while 48 triggers kept pointing at it — every tip died silently,
+     because a null bubble throws on first hover. Pinned by test. -->
+<div id="globalTip" style="display:none; position:fixed; background:var(--card); color:var(--ink); border:1px solid var(--rule); padding:0.6rem 0.8rem; border-radius:8px; font-size:0.8rem; line-height:1.6; width:max-content; max-width:340px; white-space:normal; pointer-events:none; z-index:9999; box-shadow:var(--shadow-overlay); text-align:right; direction:rtl; font-family:Vazirmatn,sans-serif;"></div>
+
 <script>
+// One explainer bubble for every «?» on the page: hover shows it on a mouse,
+// tap toggles it on touch, focus shows it for keyboards — Escape or anywhere
+// else hides it. A hover-only bubble is a dead button on a phone, which is
+// exactly what these were.
 (function() {
     var tip = document.getElementById('globalTip');
-    document.querySelectorAll('.tip-icon').forEach(function(el) {
-        el.addEventListener('mouseenter', function(e) {
-            tip.textContent = el.getAttribute('data-tip');
-            tip.style.display = 'block';
-            positionTip(e);
+    var pinned = null;
+    function show(el, x, y) {
+        tip.textContent = el.getAttribute('data-tip');
+        tip.style.display = 'block';
+        positionTip(x, y);
+        el.setAttribute('aria-expanded', 'true');
+    }
+    function hide() {
+        tip.style.display = 'none';
+        pinned = null;
+        document.querySelectorAll('.tip-icon[aria-expanded="true"]').forEach(function (el) {
+            el.setAttribute('aria-expanded', 'false');
         });
-        el.addEventListener('mousemove', positionTip);
+    }
+    document.querySelectorAll('.tip-icon').forEach(function(el) {
+        el.setAttribute('aria-expanded', 'false');
+        el.setAttribute('aria-label', 'توضیح');
+        el.addEventListener('mouseenter', function(e) {
+            if (pinned) return;
+            show(el, e.clientX, e.clientY);
+        });
+        el.addEventListener('mousemove', function(e) {
+            if (pinned) return;
+            positionTip(e.clientX, e.clientY);
+        });
         el.addEventListener('mouseleave', function() {
-            tip.style.display = 'none';
+            if (pinned) return;
+            hide();
+        });
+        el.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (pinned === el) { hide(); return; }
+            pinned = el;
+            var rect = el.getBoundingClientRect();
+            show(el, rect.left + rect.width / 2, rect.top);
+        });
+        el.addEventListener('focus', function() {
+            if (pinned) return;
+            var rect = el.getBoundingClientRect();
+            show(el, rect.left + rect.width / 2, rect.top + rect.height / 2);
+        });
+        el.addEventListener('blur', function() {
+            if (pinned) return;
+            hide();
+        });
+        el.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') { hide(); el.blur(); }
         });
     });
-    function positionTip(e) {
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest || !e.target.closest('.tip-icon')) hide();
+    });
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') hide();
+    });
+    function positionTip(x, y) {
         var pad = 14;
         var tw = tip.offsetWidth;
         var th = tip.offsetHeight;
         var vw = window.innerWidth;
         var vh = window.innerHeight;
-        var x = e.clientX;
-        var y = e.clientY;
         var left = x - tw / 2;
         var top = y - th - pad;
         if (top < 0) top = y + pad;

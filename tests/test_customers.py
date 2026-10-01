@@ -1461,7 +1461,8 @@ def test_points_arithmetic_has_one_definition():
     sources = [root / "main.py"]
     for folder in ("routers", "services", "templates", "static"):
         sources.extend(p for p in (root / folder).rglob("*")
-                       if p.suffix in (".py", ".js", ".html"))
+                       if p.suffix in (".py", ".js", ".html")
+                       and "static/vendor" not in p.as_posix())
     assert len(sources) > 40, "the sweep lost its sources"
 
     canonical_path = root / "services" / "tier.py"

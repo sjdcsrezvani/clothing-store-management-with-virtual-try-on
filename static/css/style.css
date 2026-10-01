@@ -1511,7 +1511,11 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
   margin-bottom: 1.5rem;
 }
 .chart-card { min-height: 280px; overflow: hidden; }
-.chart-card canvas { max-width: 100% !important; max-height: 260px !important; }
+/* ECharts mounts into these host divs (SVG needs a container; a canvas
+   element cannot take children). Explicit height: without one the box
+   collapses and the chart paints into a strip. */
+.chart-host { width: 100% !important; height: 260px !important; display: block; }
+#heatChart { height: 300px !important; }
 .print-heading { display: none; }
 
 /* On paper the report is one column: every chart full width, in reading order,
@@ -1523,7 +1527,7 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
   .kpi-grid { grid-template-columns: repeat(3, 1fr); }
   .charts-grid, .tables-grid { grid-template-columns: 1fr; }
   .chart-card { min-height: 0; overflow: visible; border: 1px solid var(--paper-mid); break-inside: avoid; }
-  .chart-card canvas { max-height: none !important; }
+  .chart-host { height: 280px !important; }
   .kpi-card, .card { border: 0; box-shadow: none; break-inside: avoid; }
   .kpi-card h4, .card h3 { color: var(--paper-ink) !important; }
   .kpi-value, .kpi-card.profit .kpi-value, .kpi-card.margin .kpi-value { color: var(--paper-ink) !important; }
@@ -3730,27 +3734,47 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
 .matrix { border-collapse: collapse; font-size: 0.85rem; }
 .matrix th, .matrix td { border: 1px solid var(--rule); padding: 0.35rem 0.6rem; min-width: 2.8rem; white-space: nowrap; }
 .inv-row { display: flex; justify-content: space-between; padding: 0.25rem 0; }
+/* Analytics rhythm: stacked sections breathe the same, small print reads the
+   same, and key-value rows reuse .inv-row. Data-driven widths and heat stay
+   inline — they are figures, not styling. */
+.section-gap { margin-top: 1.5rem; }
+.fine-print { font-size: 0.85rem; color: var(--ink-soft); }
+.kv-divider { margin-top: 0.6rem; border-top: 1px solid var(--rule); padding-top: 0.5rem; }
+.flush-bottom { margin-bottom: 0 !important; }
+.board-head { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; }
+.board-head h3 { margin: 0; }
+.board-form { margin: 0; flex: 1; display: flex; gap: 0.5rem; align-items: center; }
+.board-spread { gap: 1rem; margin-bottom: 0.5rem; }
+#customerSegChart { height: 220px; }
 
 /* Question mark icon */
 .tip-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 18px;
-    height: 18px;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
     background: var(--rule);
     color: var(--ink-soft);
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 700;
     line-height: 1;
-    cursor: help;
+    cursor: pointer;
     vertical-align: middle;
     margin-inline-start: 4px;
     transition: background 0.15s, color 0.15s;
     font-family: sans-serif;
 }
 .tip-icon:hover {
+    background: var(--brand-fill);
+    color: var(--brand-label);
+}
+.tip-icon:focus-visible {
+    outline: 3px solid var(--ring);
+    outline-offset: 2px;
+}
+.tip-icon[aria-expanded="true"] {
     background: var(--brand-fill);
     color: var(--brand-label);
 }
@@ -3806,9 +3830,9 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
 }
 @media print {
     .tab-card { display: none; }
-    /* Paper shows every tab in reading order: a staple travels with all of
-       the report, not just the tab that happened to be open on screen. */
-    .analytics-tab[hidden] { display: block; }
+    /* Paper shows the open tab only: hidden tabs stay hidden, so the staple
+       carries what the owner was reading — and only canvases the screen
+       actually painted need repainting. */
 }
 
 /* ===================== طرح تگ: paper ===================== */

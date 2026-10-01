@@ -329,6 +329,19 @@ def get_daily_revenue(db: Session, start: datetime, end: datetime) -> list:
         current += timedelta(days=1)
     return results
 
+def _clean_category(category) -> str:
+    """One name for «no category» across every analytics reading.
+
+    Nulls were already mapped, but the string "None" — typed once, imported
+    once — sailed through and printed on doughnuts and tables as a category
+    called None. Empty, null-like and dash-only spellings all fold to one.
+    """
+    text = (category or "").strip()
+    if not text or text.lower() in {"none", "null", "nil", "—", "-", "–"}:
+        return "بدون دسته"
+    return text
+
+
 def _category_totals(db: Session, start: datetime, end: datetime) -> list[dict]:
     """Net revenue, cost and quantity per category — one aggregation both the
     category doughnut and the margin table draw from (see :func:`_net_sale_lines`
@@ -337,7 +350,7 @@ def _category_totals(db: Session, start: datetime, end: datetime) -> list[dict]:
     agg: dict[str, dict] = {}
 
     def _bucket(category):
-        key = category or "بدون دسته"
+        key = _clean_category(category)
         return agg.setdefault(key, {"category": key, "revenue": 0, "cost": 0, "quantity": 0})
 
     for line in item_lines:
@@ -386,7 +399,7 @@ def get_top_products(db: Session, start: datetime, end: datetime, limit: int = 1
         
         products.append({
             "name": r.name,
-            "category": r.category or "—",
+            "category": _clean_category(r.category),
             "qty_sold": r.qty_sold or 0,
             "revenue": revenue,
             "cost": cost,
@@ -498,6 +511,7 @@ def get_discount_impact(db: Session, start: datetime, end: datetime) -> list:
 def get_top_customers(db: Session, start: datetime, end: datetime, limit: int = 10) -> list:
     """Get top customers by spending."""
     results = db.query(
+        Customer.id,
         Customer.first_name,
         Customer.last_name,
         Customer.phone,
@@ -513,7 +527,7 @@ def get_top_customers(db: Session, start: datetime, end: datetime, limit: int = 
      .order_by(func.sum(Sale.final_amount).desc()) \
      .limit(limit).all()
     
-    return [{"name": f"{r.first_name or ''} {r.last_name or ''}".strip() or "—", "phone": r.phone, "tier": r.tier, "total_spent": r.total_spent, "orders": r.orders} for r in results]
+    return [{"id": r.id, "name": f"{r.first_name or ''} {r.last_name or ''}".strip() or "—", "phone": r.phone, "tier": r.tier, "total_spent": r.total_spent, "orders": r.orders} for r in results]
 
 # ----- Garment floor — pricing / color / size / stock -----------------------
 #
@@ -580,6 +594,7 @@ def get_color_size_matrix(db, start, end, category=None):
     rows = db.query(
         ProductVariant.color, ProductVariant.size,
         func.sum(SaleItem.quantity).label("quantity"),
+        func.sum(SaleItem.total_price).label("revenue"),
     ).join(Sale, Sale.id == SaleItem.sale_id) \
      .join(ProductVariant, ProductVariant.id == SaleItem.variant_id) \
      .join(Product, Product.id == SaleItem.product_id) \
@@ -603,24 +618,27 @@ def get_color_size_matrix(db, start, end, category=None):
     rows = rows.group_by(ProductVariant.color, ProductVariant.size)
     cells = {}
     colors, sizes = [], []
-    for color, size, quantity in rows.all():
+    for color, size, quantity, revenue in rows.all():
         if color not in cells:
             cells[color] = {}
             colors.append(color)
         if size not in sizes:
             sizes.append(size)
-        cells[color][size] = quantity or 0
-    max_qty = max((q for cell in cells.values() for q in cell.values()), default=0)
+        cells[color][size] = {"qty": quantity or 0, "revenue": revenue or 0}
+    max_qty = max((cell["qty"] for cell in cells.values() for cell in cell.values()), default=0)
+    max_revenue = max((cell["revenue"] for cell in cells.values() for cell in cell.values()), default=0)
     matrix_rows = []
     for size in sizes:
-        matrix_rows.append({
-            "size": size,
-            "cells": [{
-                "qty": cells.get(color, {}).get(size, 0),
-                "pct": round(cells[color].get(size, 0) / max_qty * 100) if max_qty else 0,
-            } for color in colors],
-        })
-    return {"colors": colors, "rows": matrix_rows, "max": max_qty}
+        row_cells = []
+        for color in colors:
+            cell = cells.get(color, {}).get(size, {"qty": 0, "revenue": 0})
+            row_cells.append({
+                "qty": cell["qty"],
+                "revenue": cell["revenue"],
+                "pct": round(cell["qty"] / max_qty * 100) if max_qty else 0,
+            })
+        matrix_rows.append({"size": size, "cells": row_cells})
+    return {"colors": colors, "rows": matrix_rows, "max": max_qty, "max_revenue": max_revenue}
 
 def get_inventory_value(db):
     """Total stock cost & retail value, and per-category breakdown."""
@@ -632,7 +650,7 @@ def get_inventory_value(db):
     total_retail = sum(v.price * v.stock_quantity for v, _ in variants)
     by_cat = {}
     for v, cat in variants:
-        key = cat or "بدون دسته"
+        key = _clean_category(cat)
         d = by_cat.setdefault(key, {"cost": 0, "retail": 0, "units": 0})
         d["cost"] += v.cost_price * v.stock_quantity
         d["retail"] += v.price * v.stock_quantity
@@ -694,7 +712,7 @@ def get_abc_products(db, start, end):
         cls = "A" if cumulative <= 80 else ("B" if cumulative <= 95 else "C")
         items.append({
             "name": r.name,
-            "category": r.category or "—",
+            "category": _clean_category(r.category),
             "qty": r.qty or 0,
             "revenue": rev,
             "profit": rev - cost,
@@ -733,8 +751,19 @@ def get_sales_pattern(db, start, end):
         # The hour is the shop's clock, not a clock face twice round: «8:00» used
         # to stand for both the morning and the evening on the same axis, so a
         # peak at eight was two different bars with one name between them.
-        "hours": [{"hour": h, "label": f"{h}:00", "revenue": hours[h]} for h in range(8, 22)]
+        # The axis spans only hours that actually sold: dead edges are chart
+        # junk, and an all-night axis lies about when the shop lives.
+        "hours": [{"hour": h, "label": f"{h}:00", "revenue": hours[h]}
+                  for h in range(_hour_span(hours)[0], _hour_span(hours)[1] + 1)]
     }
+
+
+def _hour_span(hours: dict) -> tuple:
+    """First and last hour with sales, falling back to the old 8–21 frame."""
+    live = [h for h, revenue in hours.items() if revenue]
+    if not live:
+        return (8, 21)
+    return (min(live), max(live))
 
 # ----- Expert tier — deep analytics ----------------------------------------
 
@@ -904,8 +933,10 @@ def get_dead_stock(db, start, end, days_threshold=90):
     for v, name, cat in variants:
         if v.id not in sold_set and v.stock_quantity > 0:
             dead.append({
-                "name": name,
-                "category": cat or "—",
+                "variant_id": v.id,
+                "product_id": v.product_id,
+            "name": name,
+            "category": _clean_category(cat),
                 "size": v.size or "",
                 "color": v.color or "",
                 "stock": v.stock_quantity,
@@ -917,7 +948,12 @@ def get_dead_stock(db, start, end, days_threshold=90):
     return {"variants": dead[:20], "total_value": total_dead_value, "count": len(dead)}
 
 def get_price_distribution(db, start, end):
-    """What price points are customers actually paying."""
+    """What price points are customers actually paying.
+
+    Bucket width adapts to the spread: a fixed 100k bucket turns a kids'
+    shop (everything 200–800k) into three bars and a luxury range into
+    noise. Twelve-ish buckets whatever the range.
+    """
     rows = db.query(
         SaleItem.unit_price,
         func.sum(SaleItem.quantity).label("qty"),
@@ -926,9 +962,15 @@ def get_price_distribution(db, start, end):
         Sale.payment_confirmed == True, Sale.is_refunded == False,
         Sale.created_at.between(start, end),
     ).group_by(SaleItem.unit_price).order_by(SaleItem.unit_price).all()
+    prices = [price or 0 for price, _, _ in rows]
+    if not prices:
+        return []
+    spread = max(prices) - min(prices)
+    width = next((w for w in (25000, 50000, 100000, 250000, 500000, 1000000, 5000000)
+                  if spread / w <= 12), 10000000)
     buckets = {}
     for price, qty, rev in rows:
-        bucket = round((price or 0) / 100000) * 100000
+        bucket = (price or 0) // width * width
         if bucket not in buckets:
             buckets[bucket] = {"price": bucket, "quantity": 0, "revenue": 0}
         buckets[bucket]["quantity"] += qty or 0
@@ -959,3 +1001,186 @@ def get_top_selling_variants(db, start, end, limit=10):
         "qty": r.qty or 0,
         "revenue": r.revenue or 0,
         } for r in rows]
+
+
+def get_year_heatmap(db) -> dict:
+    """One cell per day for the last 365 days: Jalali date, weekday, revenue.
+
+    The frontend lays weeks on x and weekdays on y, so seasons read at a
+    glance — Nowruz peaks, summer dips — without a Gregorian calendar
+    component the shop never asked for.
+    """
+    today = jdatetime.date.today()
+    start_greg = (today - jdatetime.timedelta(days=364)).togregorian()
+    rows = db.query(
+        Sale.created_at, func.sum(Sale.final_amount).label("revenue"),
+    ).filter(
+        Sale.payment_confirmed == True,
+        Sale.is_refunded == False,
+        Sale.created_at >= datetime.combine(start_greg, datetime.min.time()).replace(tzinfo=timezone.utc),
+    ).group_by(func.date(Sale.created_at)).all()
+    by_day = {}
+    for created, revenue in rows:
+        if created is None:
+            continue
+        aware = created if created.tzinfo else created.replace(tzinfo=timezone.utc)
+        by_day[jdatetime.datetime.fromtimestamp(aware.timestamp()).date()] = revenue or 0
+    weekday_names = ["شنبه", "یکشنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه"]
+    # jdatetime numbers Monday 0 to Sunday 6 like Gregorian does, so Saturday
+    # is 5 and the shop's week opens there, like the wall calendar.
+    cells = []
+    week = -1
+    cursor = today - jdatetime.timedelta(days=364)
+    cursor -= jdatetime.timedelta(days=(cursor.weekday() - 5) % 7)
+    while cursor <= today:
+        if cursor.weekday() == 5:
+            week += 1
+        if cursor >= today - jdatetime.timedelta(days=364):
+            dow = (cursor.weekday() - 5) % 7
+            cells.append({
+                "date": cursor.strftime("%Y/%m/%d"),
+                "dow": dow,
+                "day_name": weekday_names[dow],
+                "week": week,
+                "revenue": by_day.get(cursor, 0),
+            })
+        cursor += jdatetime.timedelta(days=1)
+    return {"cells": cells, "weeks": week + 1,
+            "max": max((c["revenue"] for c in cells), default=0)}
+
+
+def get_return_rate(db, start, end) -> dict:
+    """Refunded share of confirmed sales: count and money, both honest."""
+    sold = db.query(func.count(Sale.id), func.coalesce(func.sum(Sale.final_amount), 0)).filter(
+        Sale.payment_confirmed == True,
+        Sale.created_at.between(start, end),
+    ).one()
+    back = db.query(func.count(Sale.id), func.coalesce(func.sum(Sale.refund_amount), 0)).filter(
+        Sale.payment_confirmed == True,
+        Sale.is_refunded == True,
+        Sale.created_at.between(start, end),
+    ).one()
+    count, revenue = sold[0] or 0, sold[1] or 0
+    back_count, back_amount = back[0] or 0, back[1] or 0
+    return {"count": back_count, "amount": back_amount,
+            "rate": share(back_count, count)}
+
+
+# Days of stock left below which a variant asks for reorder.
+REORDER_DAYS = 14
+
+
+def get_turnover(db, start, end, limit=50) -> dict:
+    """Days of stock left per selling variant, most urgent first.
+
+    Sell rate comes from the viewed range, stock from the shelf: a variant
+    selling 2 a day with 10 left has 5 days. Variants with no sales in range
+    have no rate and no answer here — the dead-stock list already names them,
+    and dividing by zero would invent one. Capped so the table stays a
+    worklist, with the count of rows left out stated beside it.
+    """
+    days = max((end - start).days, 1)
+    sold = dict(db.query(
+        SaleItem.variant_id, func.sum(SaleItem.quantity),
+    ).join(Sale, Sale.id == SaleItem.sale_id).filter(
+        Sale.payment_confirmed == True,
+        Sale.is_refunded == False,
+        Sale.created_at.between(start, end),
+        SaleItem.variant_id.isnot(None),
+    ).group_by(SaleItem.variant_id).all())
+    variants = db.query(ProductVariant, Product.name).join(Product).filter(
+        ProductVariant.is_active == True,
+        Product.is_active == True,
+        ProductVariant.stock_quantity > 0,
+    ).all()
+    rows = []
+    for variant, name in variants:
+        qty = sold.get(variant.id, 0) or 0
+        if not qty:
+            continue
+        left = (variant.stock_quantity or 0) / (qty / days)
+        rows.append({
+            "variant_id": variant.id,
+            "product_id": variant.product_id,
+            "name": name,
+            "size": variant.size or "",
+            "color": variant.color or "",
+            "stock": variant.stock_quantity or 0,
+            "sold": qty,
+            "days_left": round(left, 1),
+            "reorder": left <= REORDER_DAYS,
+        })
+    rows.sort(key=lambda row: row["days_left"])
+    low = sum(1 for row in rows if row["reorder"])
+    return {"rows": rows[:limit], "total": len(rows),
+            "omitted": max(0, len(rows) - limit),
+            "low_count": low, "threshold": REORDER_DAYS}
+
+
+def get_staff_performance(db, start, end) -> dict:
+    """Revenue and invoices per cashier, read off their shifts.
+
+    Only cash sales recorded under an open drawer carry a cashier, through
+    the shift that counted them — card and shift-less sales name no one, so
+    they stand in their own «نامشخص» row rather than being split by guess.
+    """
+    from models import CashSession, StaffUser
+    rows = db.query(
+        CashSession.cashier_user_id,
+        func.count(Sale.id).label("invoices"),
+        func.coalesce(func.sum(Sale.final_amount), 0).label("revenue"),
+    ).join(Sale, Sale.cash_session_id == CashSession.id).filter(
+        Sale.payment_confirmed == True,
+        Sale.is_refunded == False,
+        Sale.created_at.between(start, end),
+    ).group_by(CashSession.cashier_user_id).all()
+    names = {u.id: (u.full_name or u.username)
+             for u in db.query(StaffUser).filter(
+                 StaffUser.id.in_([r[0] for r in rows if r[0]])).all()} if rows else {}
+    staff = [{"name": names.get(user_id, "کاربر حذف‌شده"),
+              "invoices": invoices or 0, "revenue": revenue or 0}
+             for user_id, invoices, revenue in rows]
+    unattributed = db.query(
+        func.count(Sale.id), func.coalesce(func.sum(Sale.final_amount), 0),
+    ).filter(
+        Sale.payment_confirmed == True,
+        Sale.is_refunded == False,
+        Sale.created_at.between(start, end),
+        Sale.cash_session_id.is_(None),
+    ).one()
+    staff.sort(key=lambda row: row["revenue"], reverse=True)
+    return {"rows": staff,
+            "unattributed": {"invoices": unattributed[0] or 0,
+                             "revenue": unattributed[1] or 0}}
+
+
+def get_returns(db, start, end, limit=10) -> dict:
+    """What came back: top variants by returned units, and the reasons given."""
+    from models import Product
+    items = db.query(
+        Product.name, ProductVariant.size, ProductVariant.color,
+        func.sum(SaleItem.quantity).label("qty"),
+        func.coalesce(func.sum(SaleItem.total_price), 0).label("amount"),
+    ).join(SaleItem, SaleItem.variant_id == ProductVariant.id) \
+     .join(Product, Product.id == SaleItem.product_id) \
+     .join(Sale, Sale.id == SaleItem.sale_id) \
+     .filter(
+        Sale.payment_confirmed == True,
+        Sale.is_refunded == True,
+        Sale.created_at.between(start, end),
+    ).group_by(ProductVariant.id).order_by(func.sum(SaleItem.quantity).desc()) \
+     .limit(limit).all()
+    reasons = db.query(
+        Sale.refund_reason, func.count(Sale.id),
+    ).filter(
+        Sale.payment_confirmed == True,
+        Sale.is_refunded == True,
+        Sale.created_at.between(start, end),
+    ).group_by(Sale.refund_reason).order_by(func.count(Sale.id).desc()).all()
+    return {
+        "variants": [{"name": name or "—", "size": size or "", "color": color or "",
+                      "qty": qty or 0, "amount": amount or 0}
+                     for name, size, color, qty, amount in items],
+        "reasons": [{"reason": reason or "بدون دلیل", "count": count}
+                    for reason, count in reasons],
+    }

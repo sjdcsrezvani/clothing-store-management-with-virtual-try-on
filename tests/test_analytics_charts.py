@@ -142,10 +142,11 @@ def test_every_sentence_is_stated_in_one_line():
 def test_the_sentences_and_the_canvases_are_the_same_set(client, db_session):
     """The page's own markup is what proves no chart can arrive without a caption.
 
-    A new chart is a new ``<canvas id>``, and this fails until the same list gains
+    A new chart is a new host ``div`` (SVG mounts into a container; a canvas
+    element cannot take children), and this fails until the same list gains
     its sentence and the card shows it — as the visible caption *and* as the
-    canvas's accessible name, because a screen reader reads the drawing no better
-    than a printout does.
+    host's accessible name, because a screen reader reads the drawing no
+    better than a printout does.
     """
     from tests.test_roles import _session_as, _staff
 
@@ -153,20 +154,20 @@ def test_the_sentences_and_the_canvases_are_the_same_set(client, db_session):
     _session_as(client, user, password)
     html = client.get("/admin/analytics").text
 
-    canvases = set(re.findall(r'<canvas id="([^"]+)"', html))
+    hosts = set(re.findall(r'<div class="chart-host" id="([^"]+)"', html))
     captions = set(re.findall(r'data-chart="([^"]+)"', html))
-    assert canvases, "the analytics page drew no charts at all"
-    assert canvases == set(CHART_IDS)
-    assert captions == canvases
+    assert hosts, "the analytics page drew no charts at all"
+    assert hosts == set(CHART_IDS)
+    assert captions == hosts
 
-    for canvas in sorted(canvases):
+    for host in sorted(hosts):
         pair = re.search(
-            r'data-chart="%s">([^<]*)</p><canvas id="%s" role="img" aria-label="([^"]*)"' % (canvas, canvas),
+            r'data-chart="%s">([^<]*)</p><div class="chart-host" id="%s" role="img" aria-label="([^"]*)"' % (host, host),
             html,
         )
-        assert pair, f"{canvas} has no sentence beside it"
+        assert pair, f"{host} has no sentence beside it"
         assert pair.group(1).strip() == pair.group(2).strip()
-        assert pair.group(1).strip(), f"{canvas} has an empty sentence"
+        assert pair.group(1).strip(), f"{host} has an empty sentence"
 
     # This shop's database is empty in this test, so every caption says so rather
     # than leaving the owner a chart with no explanation under it.
@@ -822,7 +823,7 @@ def test_the_colour_size_matrix_is_a_matrix_and_adds_up(db_session):
     # …and a period with no sales has no matrix at all, rather than one cell of
     # nothing: the page says the range has no colour or size recorded.
     empty = get_color_size_matrix(db_session, now + timedelta(days=10), now + timedelta(days=11))
-    assert empty == {"colors": [], "rows": [], "max": 0}
+    assert empty == {"colors": [], "rows": [], "max": 0, "max_revenue": 0}
 
 
 @needs_node
@@ -884,3 +885,558 @@ def test_the_report_can_be_printed_from_the_page_itself():
     # block's own hide-list names it (chrome — breadcrumb, admin-nav — is the
     # shell block's business now, so it no longer appears here).
     assert ".filter-bar, .search-form, .tip-icon, .screen-only" in css
+
+
+def test_chart_engine_is_vendored_and_never_a_cdn(client, db_session, authed):
+    """The shop renders charts with no internet: the engine ships with the app.
+
+    A CDN script tag would make every analytics load depend on sanctions,
+    outages and upstream renames — so the page may reference only files the
+    shop itself serves, and the vendored bundle must actually be served.
+    """
+    page = client.get("/admin/analytics")
+    assert page.status_code == 200
+    assert "/static/vendor/echarts.min.js" in page.text
+    assert "/static/js/analytics-charts.js" in page.text
+    assert "cdn.jsdelivr" not in page.text
+    assert "unpkg.com" not in page.text
+    assert "cdn.jsdelivr.net/npm/echarts" not in page.text
+
+    vendor = client.get("/static/vendor/echarts.min.js")
+    assert vendor.status_code == 200
+    assert "echarts" in vendor.text.lower()
+
+
+def test_pilot_charts_mount_through_the_bridge_with_a_fallback(client, db_session, authed):
+    """Daily + trend build ECharts options via the bridge; the custom-renderer
+    fallback is retired, and the one-line sentences still read aloud when the
+    engine is blocked — so no card ever goes silent."""
+    page = client.get("/admin/analytics").text
+    assert "AC.create(document.getElementById('dailyChart')" in page
+    assert "AC.create(document.getElementById('trendChart')" in page
+    assert "valueFormatter" in page  # hover values, the pilot's whole point
+    assert "hostCanvas" not in page
+    assert "fallback was retired" in page
+
+
+@needs_node
+def test_the_bridge_formats_speaks_paper_and_stays_still_on_request(tmp_path):
+    """The ECharts bridge is executed, not just shipped: Persian groupings,
+    RTL axes, a fast entrance that vanishes under reduced-motion, and a paper
+    rebuild that swaps colours without touching data."""
+    script = tmp_path / "bridge.js"
+    script.write_text(
+        "global.window = { addEventListener() {},"
+        " matchMedia: (q) => ({ matches: global.__REDUCED || false }) };\n"
+        "global.document = { documentElement: {} };\n"
+        "global.getComputedStyle = () => ({ getPropertyValue: (n) => ({"
+        " '--candy': '#C65D3A', '--sky': '#3E7CB1', '--sunshine': '#D9A441',"
+        " '--mint': '#3E9B6B', '--lavender': '#7C6BB0', '--persimmon': '#C65D3A',"
+        " '--ink': '#222', '--ink-soft': '#666', '--rule': '#ddd',"
+        " '--paper': '#ffffff', '--paper-ink': '#1a1a1a',"
+        "}[n] || '') });\n"
+        + (ROOT / "static/js/analytics-charts.js").read_text() + "\n"
+        "const AC = global.window.AnalyticsCharts;\n"
+        "const out = { money: AC.money(2500000), compact: AC.compact(2500000), };\n"
+        "const base = AC.base(false);\n"
+        "out.tooltip = base.tooltip.trigger; out.legend = base.legend.bottom;\n"
+        "out.motion = base.animationDuration;\n"
+        "out.xInverse = AC.categoryAxis(['a'], false).inverse;\n"
+        "out.yPosition = AC.valueAxis(false, true).position;\n"
+        "const tones = AC.tones(true);\n"
+        "out.paperInk = tones.ink; out.paperBar = tones.candy;\n"
+        "global.__REDUCED = true;\n"
+        "out.stillMotion = AC.base(false).animationDuration;\n"
+        "console.log(JSON.stringify(out));\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run([shutil.which("node"), str(script)],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    bridge = json.loads(result.stdout)
+    assert bridge["money"] == "۲,۵۰۰,۰۰۰ تومان"
+    assert bridge["compact"] == "۲.۵ م"
+    assert bridge["tooltip"] == "axis"
+    assert bridge["legend"] == 0
+    assert bridge["motion"] == 300
+    assert bridge["stillMotion"] == 0
+    assert bridge["xInverse"] is True
+    assert bridge["yPosition"] == "right"
+    assert bridge["paperInk"] == "rgb(26, 26, 26)"
+    assert bridge["paperBar"] == "#C65D3A"
+
+
+@needs_node
+def test_hidden_hosts_are_never_initialised(tmp_path):
+    """Tab switches are full reloads, so a hidden tab's charts would init at
+    zero size and never be seen — the bridge skips them outright."""
+    script = tmp_path / "lazy.js"
+    script.write_text(
+        "global.window = { addEventListener() {},"
+        " matchMedia: () => ({ matches: false }),"
+        " echarts: { init: () => { global.__INITS = (global.__INITS || 0) + 1; return { setOption() {} }; } } };\n"
+        "global.document = { documentElement: {}, contains: () => true };\n"
+        "global.getComputedStyle = () => ({ getPropertyValue: () => '' });\n"
+        + (ROOT / "static/js/analytics-charts.js").read_text() + "\n"
+        "const AC = global.window.AnalyticsCharts;\n"
+        "const seen = { offsetParent: {}, getClientRects: () => [] };\n"
+        "const hidden = { offsetParent: null, getClientRects: () => [] };\n"
+        "const built = () => ({});\n"
+        "const results = { seen: AC.create(seen, built) !== null,"
+        " hidden: AC.create(hidden, built) === null };\n"
+        "console.log(JSON.stringify(results));\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run([shutil.which("node"), str(script)],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    lazy = json.loads(result.stdout)
+    assert lazy == {"seen": True, "hidden": True}
+
+
+@needs_node
+def test_the_digit_switch_is_one_choke_point_for_every_formatter(tmp_path):
+    """Latin axes on demand: the same formatters, the other script."""
+    script = tmp_path / "digits.js"
+    script.write_text(
+        "global.window = { addEventListener() {}, CHART_DIGITS: 'latin',"
+        " matchMedia: () => ({ matches: false }) };\n"
+        "global.document = { documentElement: {} };\n"
+        "global.getComputedStyle = () => ({ getPropertyValue: () => '' });\n"
+        + (ROOT / "static/js/analytics-charts.js").read_text() + "\n"
+        "const AC = global.window.AnalyticsCharts;\n"
+        "console.log(JSON.stringify({ money: AC.money(2500000),"
+        " grouped: AC.grouped(1234567), percent: AC.percent(42.5) }));\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run([shutil.which("node"), str(script)],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    latin = json.loads(result.stdout)
+    assert latin["money"] == "2,500,000 تومان"
+    assert latin["grouped"] == "1,234,567"
+    assert latin["percent"] == "42.5٪"
+
+
+@needs_node
+def test_the_rendered_config_script_parses(client, db_session, tmp_path):
+    """The ECharts builders the page ships must parse: twelve builders plus
+    twelve fallbacks in one inline script is exactly where a dropped brace
+    would hide, and no eye reviews generated commas."""
+    from tests.test_roles import _session_as, _staff
+
+    user, password = _staff(db_session, "config-owner", "owner")
+    _session_as(client, user, password)
+    html = client.get("/admin/analytics").text
+    blocks = re.findall(r"<script>(.*?)</script>", html, re.DOTALL)
+    config = next(b for b in blocks if "AC.create(document.getElementById" in b)
+    assert config.count("AC.create(document.getElementById") == 16
+    assert "new Chart(" not in config
+    for canvas in ("mixChart", "discountChart", "heatChart", "staffChart"):
+        assert f"getElementById('{canvas}')" in config, canvas
+    script = tmp_path / "analytics-config.js"
+    script.write_text(config, encoding="utf-8")
+    result = subprocess.run([shutil.which("node"), "--check", str(script)],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
+def test_goal_is_set_cleared_and_read_on_the_sales_tab(client, db_session, authed):
+    """A monthly target with nowhere to set it is a wish; the tab states it."""
+    from urllib.parse import unquote_plus
+    from tests.conftest import csrf_token
+    from models import Settings
+    token = csrf_token(client, "/admin/analytics")
+    assert client.post("/admin/analytics/goal", data={"csrf_token": token, "amount": "10000000"},
+                       follow_redirects=False).status_code == 303
+    assert db_session.query(Settings).filter(Settings.key == "sales_goal_amount").one().value == "10000000"
+    page = client.get("/admin/analytics").text
+    assert "هدف ماه" in page
+    assert "10,000,000 تومان" in page
+
+    bad = client.post("/admin/analytics/goal", data={"csrf_token": token, "amount": "-5"},
+                      follow_redirects=False)
+    assert "صفر یا بیشتر" in unquote_plus(bad.headers["location"])
+    assert client.post("/admin/analytics/goal", data={"csrf_token": token, "amount": ""},
+                       follow_redirects=False).status_code == 303
+    assert db_session.query(Settings).filter(Settings.key == "sales_goal_amount").one().value == "0"
+    cleared = client.get("/admin/analytics").text
+    assert "<h4>هدف ماه</h4>" not in cleared
+    assert "ثبت هدف ماه" in cleared
+
+
+def _seed_sale(db_session, amount, days_ago=0):
+    from datetime import datetime, timedelta, timezone
+    from models import Sale
+    sale = Sale(total_amount=amount, final_amount=amount, payment_method="cash",
+                payment_confirmed=True,
+                created_at=datetime.now(timezone.utc) - timedelta(days=days_ago))
+    db_session.add(sale)
+    db_session.commit()
+    return sale
+
+
+def test_new_builders_overlays_and_heatmap_ride_on_real_figures(client, db_session, authed):
+    """Average, overlay, moving average, mix, heat and goal all read the shop."""
+    _seed_sale(db_session, 4_000_000, days_ago=1)
+    _seed_sale(db_session, 6_000_000, days_ago=40)
+    from tests.conftest import csrf_token
+    token = csrf_token(client, "/admin/analytics")
+    client.post("/admin/analytics/goal", data={"csrf_token": token, "amount": "100000000"},
+                follow_redirects=False)
+    page = client.get("/admin/analytics").text
+    assert "markLine" in page and "میانگین" in page
+    assert "دوره قبل" in page
+    assert "میانگین ۳ ماهه" in page
+    assert "ترکیب روش پرداخت" in page
+    assert "سهم انواع تخفیف" in page
+    assert "تقویم فروش سال" in page
+    assert "AC.link(dailyChart" in page
+    assert "AC.link(catChart" in page and "AC.link(tierChart" in page
+    assert "data-matrix-mode" in page
+    assert "هدف ماه" in page
+    # Hour axis spans live hours only; matrix cells carry both readings.
+    assert "heatChart" in page and "heatWeeks" in page
+
+
+def test_heatmap_weeks_open_on_saturday_and_carry_revenue(db_session):
+    """Columns read like the wall calendar: شنبه first, every cell honest."""
+    from services.analytics import get_year_heatmap
+    heat = get_year_heatmap(db_session)
+    assert heat["weeks"] >= 52
+    assert heat["max"] >= 0
+    first_week = [c for c in heat["cells"] if c["week"] == 0]
+    assert first_week and first_week[0]["dow"] == 0
+    assert first_week[0]["day_name"] == "شنبه"
+    assert all(set(c) == {"date", "dow", "day_name", "week", "revenue"} for c in heat["cells"])
+
+
+def test_inventory_tab_holds_turnover_abc_and_dead(client, db_session, authed):
+    """The sixth tab answers «what runs out, what never moves, what matters»."""
+    from models import Product, ProductVariant, Sale, SaleItem
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    product = Product(name="کالای انبار")
+    db_session.add(product)
+    db_session.flush()
+    fast = ProductVariant(product_id=product.id, price=200_000, cost_price=100_000,
+                          stock_quantity=2, size="M", color="مشکی",
+                          barcode="TURN-1", is_active=True)
+    slow = ProductVariant(product_id=product.id, price=200_000, cost_price=100_000,
+                          stock_quantity=60, size="L", color="سفید",
+                          barcode="TURN-2", is_active=True)
+    db_session.add_all([fast, slow])
+    db_session.flush()
+    sale = Sale(total_amount=2_000_000, final_amount=2_000_000, payment_method="cash",
+                payment_confirmed=True, created_at=now)
+    db_session.add(sale)
+    db_session.flush()
+    db_session.add(SaleItem(sale_id=sale.id, product_id=product.id, variant_id=fast.id,
+                            quantity=10, unit_price=200_000, unit_cost=100_000,
+                            total_price=2_000_000))
+    db_session.commit()
+
+    page = client.get("/admin/analytics?tab=inventory").text
+    assert 'data-tab="inventory"' in page
+    assert "چقدر مانده" in page
+    assert '<span class="badge badge-danger">سفارش</span>' in page
+    assert "تحلیل ABC" in page
+    assert "کالای مرده" in page
+    # …while the product tab no longer carries Pareto or the dead.
+    product_page = client.get("/admin/analytics?tab=product").text
+    assert product_page.split('data-tab="inventory"')[0].count("تحلیل ABC") == 0
+
+
+def test_turnover_pace_and_reorder_flag(db_session):
+    """Ten a month with sixty on the shelf is not urgent; one left is."""
+    from datetime import datetime, timedelta, timezone
+    from models import Product, ProductVariant, Sale, SaleItem
+    from services.analytics import get_turnover
+    now = datetime.now(timezone.utc)
+    start, end = now - timedelta(days=30), now
+    product = Product(name="کالای چرخش")
+    db_session.add(product)
+    db_session.flush()
+    urgent = ProductVariant(product_id=product.id, price=100_000, cost_price=50_000,
+                            stock_quantity=2, barcode="PACE-1", is_active=True)
+    calm = ProductVariant(product_id=product.id, price=100_000, cost_price=50_000,
+                          stock_quantity=60, barcode="PACE-2", is_active=True)
+    db_session.add_all([urgent, calm])
+    db_session.flush()
+    for variant, qty in ((urgent, 10), (calm, 10)):
+        sale = Sale(total_amount=100_000 * qty, final_amount=100_000 * qty,
+                    payment_method="cash", payment_confirmed=True, created_at=now)
+        db_session.add(sale)
+        db_session.flush()
+        db_session.add(SaleItem(sale_id=sale.id, product_id=product.id, variant_id=variant.id,
+                                quantity=qty, unit_price=100_000, unit_cost=50_000,
+                                total_price=100_000 * qty))
+    db_session.commit()
+
+    turnover = get_turnover(db_session, start, end)
+    by_barcode = {r["variant_id"]: r for r in turnover["rows"]}
+    assert by_barcode[urgent.id]["reorder"] is True
+    assert by_barcode[calm.id]["reorder"] is False
+    assert by_barcode[urgent.id]["days_left"] == 6.0
+    assert turnover["low_count"] == 1
+    assert turnover["rows"][0]["variant_id"] == urgent.id  # most urgent first
+
+
+def test_each_tab_reads_only_its_own_queries(client, db_session, authed, monkeypatch):
+    """Twenty queries for one visible tab was the waste; a tab switch is a
+    reload, so nothing inactive is ever missed — just read on its own visit."""
+    import services.analytics as analytics_module
+    import routers.analytics as analytics_router
+
+    def _refuse(*args, **kwargs):
+        raise AssertionError("inactive tab query ran")
+
+    monkeypatch.setattr(analytics_module, "get_color_size_matrix", _refuse)
+    monkeypatch.setattr(analytics_module, "get_year_heatmap", _refuse)
+    assert client.get("/admin/analytics?tab=sales").status_code == 200
+
+    monkeypatch.setattr(analytics_module, "get_daily_revenue", _refuse)
+    assert client.get("/admin/analytics?tab=product").status_code == 200
+
+
+def test_staff_names_cashiers_and_parks_the_rest(client, db_session, authed):
+    """Cashiers read off their shifts; the shift-less stand apart, unnamed by guess."""
+    from datetime import datetime, timezone
+    from models import CashSession, Sale, StaffUser
+    from services.analytics import get_staff_performance
+    from tests.conftest import csrf_token
+    from tests.test_roles import _session_as, _staff
+    cashier, password = _session_as_cashier(db_session)
+    _session_as(client, cashier, password)
+    token = csrf_token(client, "/admin/cashbox")
+    client.post("/admin/cashbox/open", data={"opening": "500000", "csrf_token": token},
+                follow_redirects=False)
+    _seed_sale(db_session, 1_000_000)
+    shift = db_session.query(CashSession).filter(CashSession.status == "open").one()
+    sale = db_session.query(Sale).order_by(Sale.id.desc()).first()
+    sale.cash_session_id = shift.id
+    db_session.commit()
+    _seed_sale(db_session, 2_000_000)
+
+    performance = get_staff_performance(db_session,
+                                        datetime.now(timezone.utc).replace(hour=0, minute=0),
+                                        datetime.now(timezone.utc))
+    assert len(performance["rows"]) == 1
+    assert performance["rows"][0]["revenue"] == 1_000_000
+    assert performance["unattributed"]["revenue"] == 2_000_000
+    owner_token = csrf_token(client)
+    client.post("/admin/login", data={"username": "owner", "password": "test-admin-pass",
+                                      "csrf_token": owner_token}, follow_redirects=False)
+    page = client.get("/admin/analytics?tab=sales").text
+    assert "عملکرد فروشندگان" in page
+    assert "نامشخص (بدون شیفت)" in page
+
+
+def _session_as_cashier(db_session):
+    from tests.test_roles import _staff
+    return _staff(db_session, "analytics-cashier", "cashier")
+
+
+def test_returns_name_variants_reasons_and_rate(client, db_session, authed):
+    """What came back, how much, and why — or an honest empty section."""
+    from models import Product, ProductVariant, Sale, SaleItem
+    from datetime import datetime, timezone
+    from tests.conftest import csrf_token
+    now = datetime.now(timezone.utc)
+    product = Product(name="کالای برگشتی")
+    db_session.add(product)
+    db_session.flush()
+    variant = ProductVariant(product_id=product.id, price=300_000, cost_price=150_000,
+                             stock_quantity=5, barcode="RET-1", is_active=True)
+    db_session.add(variant)
+    db_session.flush()
+    db_session.flush()
+    sale = Sale(total_amount=600_000, final_amount=600_000, payment_method="cash",
+                payment_confirmed=True, is_refunded=True, refund_amount=600_000,
+                refund_reason="سایز نشد", created_at=now)
+    db_session.add(sale)
+    db_session.flush()
+    db_session.add(SaleItem(sale_id=sale.id, product_id=product.id, variant_id=variant.id,
+                            quantity=2, unit_price=300_000, unit_cost=150_000,
+                            total_price=600_000))
+    db_session.commit()
+
+    page = client.get("/admin/analytics?tab=sales").text
+    assert "مرجوعی‌ها" in page
+    assert "سایز نشد" in page
+    assert "کالای برگشتی" in page
+
+    for kind in ("hourly", "weekday", "trend", "margin", "basket", "staff", "returns"):
+        response = client.get(f"/admin/analytics/export?kind={kind}")
+        assert response.status_code == 200, kind
+        assert "text/csv" in response.headers["content-type"], kind
+
+
+def test_chart_digits_toggle_is_charts_only_and_sticks(client, db_session, authed):
+    """Latin axes on demand; Persian everywhere else, untouched."""
+    from tests.conftest import csrf_token
+    from models import Settings
+    token = csrf_token(client, "/admin/analytics")
+    assert client.post("/admin/analytics/digits", data={"csrf_token": token, "mode": "latin"},
+                       follow_redirects=False).status_code == 303
+    assert db_session.query(Settings).filter(Settings.key == "chart_digits_latin").one().value == "1"
+    assert "window.CHART_DIGITS = 'latin'" in client.get("/admin/analytics").text
+    assert client.post("/admin/analytics/digits", data={"csrf_token": token, "mode": "fa"},
+                       follow_redirects=False).status_code == 303
+    assert "window.CHART_DIGITS = 'fa'" in client.get("/admin/analytics").text
+
+
+def test_export_doors_are_buttons_and_tips_open_for_everyone(client, db_session, authed):
+    """Six labelled buttons, not six bare links — and «?» works by mouse,
+    touch and keyboard, not by hover alone."""
+    import re
+    page = client.get("/admin/analytics").text
+    for kind in ("daily", "hourly", "weekday", "basket", "staff", "returns"):
+        assert re.search(
+            r'<a class="btn btn-sm btn-ghost" href="/admin/analytics/export\?kind='
+            + kind + r'[^"]*"><svg', page), kind
+    tips = re.findall(r'<span class="tip-icon"[^>]*>', page)
+    assert len(tips) >= 20
+    assert all('tabindex="0"' in tag and 'role="button"' in tag for tag in tips)
+    assert "aria-expanded" in page and "pinned" in page
+    # The bubble every trigger writes into: deleted once by a template edit
+    # while 48 triggers kept pointing at it, killing every tip silently.
+    assert 'id="globalTip"' in page
+
+
+# Fake DOM + assertions wrapping the real tip script (see test below).
+_TIP_FAKE_DOM = """
+function __makeTipEl(tag, cls, tipText) {
+    var listeners = {};
+    return {
+        tagName: tag, className: cls || '',
+        _tip: tipText || null, _expanded: 'false',
+        style: {},
+        getAttribute: function (n) {
+            if (n === 'data-tip') return this._tip;
+            if (n === 'aria-expanded') return this._expanded;
+            return null;
+        },
+        setAttribute: function (n, v) { if (n === 'aria-expanded') this._expanded = v; },
+        addEventListener: function (t, fn) { (listeners[t] = listeners[t] || []).push(fn); },
+        blur: function () { (listeners['blur'] || []).forEach(function (fn) { fn({}); }); },
+        getBoundingClientRect: function () { return { left: 100, top: 200, width: 22, height: 22 }; },
+        _fire: function (t, e) { (listeners[t] || []).forEach(function (fn) { fn(e || {}); }); },
+        closest: function () { return null; },
+    };
+}
+var __tipIcon = __makeTipEl('span', 'tip-icon', 'متن راهنما');
+var __tipBox = { style: {}, textContent: '', offsetWidth: 200, offsetHeight: 60 };
+var __docListeners = {};
+var document = {
+    querySelectorAll: function (sel) {
+        if (sel === '.tip-icon') return [__tipIcon];
+        if (sel === '.tip-icon[aria-expanded="true"]') return __tipIcon._expanded === 'true' ? [__tipIcon] : [];
+        return [];
+    },
+    querySelector: function () { return null; },
+    getElementById: function (id) { return id === 'globalTip' ? __tipBox : null; },
+    addEventListener: function (t, fn) { (__docListeners[t] = __docListeners[t] || []).push(fn); },
+};
+var window = { innerWidth: 1200, innerHeight: 800, addEventListener: function () {} };
+function __fireDoc(t, e) { (__docListeners[t] || []).forEach(function (fn) { fn(e); }); }
+"""
+
+_TIP_ASSERTIONS = """
+var __results = [];
+function __check(name, ok) { __results.push([(ok ? 'PASS' : 'FAIL') + ' ' + name, ok]); }
+__tipIcon._fire('mouseenter', { clientX: 300, clientY: 300 });
+__check('hover shows', __tipBox.style.display === 'block' && __tipBox.textContent === 'متن راهنما');
+__tipIcon._fire('mouseleave', {});
+__check('leave hides', __tipBox.style.display === 'none');
+__tipIcon._fire('click', { stopPropagation: function () {}, target: __tipIcon });
+var __pinnedOpen = __tipBox.style.display === 'block';
+__tipIcon._fire('click', { stopPropagation: function () {}, target: __tipIcon });
+__check('tap toggles', __pinnedOpen && __tipBox.style.display === 'none');
+__tipIcon._fire('click', { stopPropagation: function () {}, target: __tipIcon });
+__fireDoc('click', { target: { closest: function () { return null; } } });
+__check('outside click closes', __tipBox.style.display === 'none');
+__tipIcon._fire('click', { stopPropagation: function () {}, target: __tipIcon });
+__fireDoc('keydown', { key: 'Escape' });
+__check('escape closes', __tipBox.style.display === 'none');
+__tipIcon._fire('focus', {});
+__check('focus shows', __tipBox.style.display === 'block');
+var __failed = 0;
+__results.forEach(function (r) { console.log(r[0]); if (!r[1]) __failed++; });
+if (__failed) throw new Error(__failed + ' tip behaviour(s) broken');
+"""
+
+
+@needs_node
+def test_tip_state_machine_shows_hides_and_toggles(tmp_path):
+    """The shipped explainer script is executed, not trusted: hover shows,
+    leave hides, tap pins, anywhere-else/Escape closes, focus shows."""
+    import re as _re
+    src = (ROOT / "templates/admin/analytics.html").read_text(encoding="utf-8")
+    script = _re.search(r"<script>\n// One explainer bubble.*?</script>", src, _re.DOTALL).group(0)
+    harness = tmp_path / "tip-harness.js"
+    harness.write_text(
+        _TIP_FAKE_DOM + script[len("<script>"):-len("</script>")] + _TIP_ASSERTIONS,
+        encoding="utf-8",
+    )
+    result = subprocess.run([shutil.which("node"), str(harness)],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "FAIL" not in result.stdout
+
+
+def test_junk_category_spellings_read_as_uncategorised():
+    """The string "None" typed once must never print as a category called None."""
+    from services.analytics import _clean_category
+    assert _clean_category(None) == "بدون دسته"
+    assert _clean_category("") == "بدون دسته"
+    assert _clean_category("None") == "بدون دسته"
+    assert _clean_category("  null  ") == "بدون دسته"
+    assert _clean_category("—") == "بدون دسته"
+    assert _clean_category("پیراهن") == "پیراهن"
+    assert _clean_category("  پیراهن  ") == "پیراهن"
+
+
+def test_bridge_names_jalali_months_and_hides_crowded_ticks(tmp_path):
+    """"5/1405" reads «مرداد ۱۴۰۵» on the axis; crowded ticks yield."""
+    script = tmp_path / "months.js"
+    script.write_text(
+        "global.window = { addEventListener() {}, matchMedia: () => ({ matches: false }) };\n"
+        "global.document = { documentElement: {} };\n"
+        "global.getComputedStyle = () => ({ getPropertyValue: () => '' });\n"
+        + (ROOT / "static/js/analytics-charts.js").read_text() + "\n"
+        "const AC = global.window.AnalyticsCharts;\n"
+        "console.log(JSON.stringify({ month: AC.monthName('5/1405'),"
+        " plain: AC.monthName('مرداد'),"
+        " overlap: AC.categoryAxis(['a'], false).axisLabel.hideOverlap }));\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run([shutil.which("node"), str(script)],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    months = json.loads(result.stdout)
+    assert months["month"] == "مرداد ۱۴۰۵"
+    assert months["plain"] == "مرداد"
+    assert months["overlap"] is True
+
+
+def test_charts_render_vector_not_canvas():
+    """Sharpness by construction: the bridge asks for SVG, and the vendored
+    bundle actually ships the SVG painter — canvas needed DPR bookkeeping
+    that blurred on Retina, and zoom reopened it every time."""
+    bridge = (ROOT / "static/js/analytics-charts.js").read_text(encoding="utf-8")
+    assert "{ renderer: 'svg' }" in bridge
+    vendor = (ROOT / "static/vendor/echarts.min.js").read_text(encoding="utf-8")
+    assert "renderToSVGString" in vendor and "CanvasRenderer" not in vendor
+    assert "containLabel: true" in bridge
+
+
+def test_matrix_toggle_sits_in_the_heading_row(client, db_session, authed):
+    """The qty/مبلغ switch belongs to the card's heading, not floating
+    between title and table."""
+    import re
+    page = client.get("/admin/analytics?tab=product").text
+    heading = re.search(
+        r'<div class="section-heading-row">\s*<h3>ماتریس.*?</div>\s*</div>', page, re.DOTALL)
+    assert heading, "matrix heading row with its toggle"
+    assert "data-matrix-mode" in heading.group(0)
