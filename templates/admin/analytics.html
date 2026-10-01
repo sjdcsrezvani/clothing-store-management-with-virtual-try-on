@@ -202,10 +202,12 @@
         <div class="card chart-card"><h3>پرفروش‌ترین رنگ <span class="tip-icon" tabindex="0" role="button" data-tip="پرفروش‌ترین رنگ‌ها بر اساس تعداد واحد فروخته‌شده. اگر رنگی بالای لیست باشد یعنی مشتریان آن رنگ را بیشتر می‌خرند — آن را بیشتر موجود کنید.">?</span></h3><p class="chart-note" data-chart="colorChart">{{ notes.colorChart }}</p><canvas id="colorChart" role="img" aria-label="{{ notes.colorChart }}"></canvas></div>
         <div class="card chart-card"><h3>پرفروش‌ترین سایز <span class="tip-icon" tabindex="0" role="button" data-tip="پرفروش‌ترین سایزها بر اساس تعداد واحد فروخته‌شده. سایزهای پرفروش را بیشتر سفارش دهید و سایزهای کم‌فروش را کمتر.">?</span></h3><p class="chart-note" data-chart="sizeChart">{{ notes.sizeChart }}</p><canvas id="sizeChart" role="img" aria-label="{{ notes.sizeChart }}"></canvas></div>
         <div class="card chart-card">
-            <h3>ماتریس رنگ × سایز <span class="tip-icon" tabindex="0" role="button" data-tip="ماتریس ترکیب رنگ × سایز: هر خانه آن ترکیب را نشان می‌دهد. خانه‌های تیره‌تر پرفروش‌ترند. برای تصمیم‌گیری سفارش مجدد ضروری است — مثلاً «مشکی سایز متوسط» بیشتر فروش دارد یا «سفید سایز بزرگ»؟">?</span></h3>
-            <div class="picked-tools" role="group" aria-label="حالت ماتریس">
-                <button type="button" class="btn btn-sm btn-ghost" data-matrix-mode="qty" aria-pressed="true">تعداد</button>
-                <button type="button" class="btn btn-sm btn-ghost" data-matrix-mode="revenue" aria-pressed="false">مبلغ</button>
+            <div class="section-heading-row">
+                <h3>ماتریس رنگ × سایز <span class="tip-icon" tabindex="0" role="button" data-tip="ماتریس ترکیب رنگ × سایز: هر خانه آن ترکیب را نشان می‌دهد. خانه‌های تیره‌تر پرفروش‌ترند. برای تصمیم‌گیری سفارش مجدد ضروری است — مثلاً «مشکی سایز متوسط» بیشتر فروش دارد یا «سفید سایز بزرگ»؟">?</span></h3>
+                <span class="picked-tools" role="group" aria-label="حالت ماتریس">
+                    <button type="button" class="btn btn-sm btn-ghost" data-matrix-mode="qty" aria-pressed="true">تعداد</button>
+                    <button type="button" class="btn btn-sm btn-ghost" data-matrix-mode="revenue" aria-pressed="false">مبلغ</button>
+                </span>
             </div>
             {% if color_size_matrix.colors %}
             <div style="overflow-x:auto;">
@@ -761,7 +763,7 @@ if (window.echarts && AC) {
             var cell = heatCells[p.dataIndex];
             return (cell ? cell.date + ' (' + cell.day_name + ')' : '') + ': ' + AC.money(p.value[2]);
         };
-        opt.grid = { left: 44, right: 12, top: 8, bottom: 8, containLabel: false };
+        opt.grid = { left: 8, right: 12, top: 8, bottom: 8, containLabel: true };
         opt.xAxis = { type: 'value', min: 0, max: Math.max(heatWeeks, 1),
             axisLine: { show: false }, axisTick: { show: false },
             axisLabel: { show: false }, splitLine: { show: false } };

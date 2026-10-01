@@ -105,12 +105,14 @@
         return { color: t.ink, fontFamily: 'Vazirmatn, sans-serif', fontSize: 11 };
     }
 
-    // Shared skeleton: bottom legend, axis-triggered tooltip, fast entrance
-    // that never plays for reduced-motion readers.
+    // Shared skeleton: bottom legend, axis-triggered tooltip, room for the
+    // right-hand value axis and the legend so labels never clip, fast
+    // entrance that never plays for reduced-motion readers.
     function base(paper) {
         var t = tones(paper);
         return {
             textStyle: textStyle(paper),
+            grid: { left: 8, right: 48, top: 16, bottom: 44, containLabel: true },
             tooltip: {
                 trigger: 'axis',
                 confine: true,
@@ -156,9 +158,11 @@
 
     // Create, track, and keep responsive. `build` receives the paper flag
     // and returns the full option, so print swaps only colours, never data.
+    // Vector renderer: razor-sharp at any DPR or zoom by construction —
+    // canvas needed per-pixel bookkeeping that blurred on Retina.
     function create(el, build) {
         if (!el || !window.echarts) return null;
-        var chart = window.echarts.init(el);
+        var chart = window.echarts.init(el, null, { renderer: 'svg' });
         chart.setOption(build(false));
         registry.push({ chart: chart, build: build, el: el });
         return chart;

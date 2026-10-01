@@ -1389,3 +1389,25 @@ def test_bridge_names_jalali_months_and_hides_crowded_ticks(tmp_path):
     assert months["month"] == "مرداد ۱۴۰۵"
     assert months["plain"] == "مرداد"
     assert months["overlap"] is True
+
+
+def test_charts_render_vector_not_canvas():
+    """Sharpness by construction: the bridge asks for SVG, and the vendored
+    bundle actually ships the SVG painter — canvas needed DPR bookkeeping
+    that blurred on Retina, and zoom reopened it every time."""
+    bridge = (ROOT / "static/js/analytics-charts.js").read_text(encoding="utf-8")
+    assert "{ renderer: 'svg' }" in bridge
+    vendor = (ROOT / "static/vendor/echarts.min.js").read_text(encoding="utf-8")
+    assert "renderToSVGString" in vendor and "CanvasRenderer" not in vendor
+    assert "containLabel: true" in bridge
+
+
+def test_matrix_toggle_sits_in_the_heading_row(client, db_session, authed):
+    """The qty/مبلغ switch belongs to the card's heading, not floating
+    between title and table."""
+    import re
+    page = client.get("/admin/analytics?tab=product").text
+    heading = re.search(
+        r'<div class="section-heading-row">\s*<h3>ماتریس.*?</div>\s*</div>', page, re.DOTALL)
+    assert heading, "matrix heading row with its toggle"
+    assert "data-matrix-mode" in heading.group(0)
