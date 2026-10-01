@@ -884,3 +884,82 @@ def test_the_report_can_be_printed_from_the_page_itself():
     # block's own hide-list names it (chrome — breadcrumb, admin-nav — is the
     # shell block's business now, so it no longer appears here).
     assert ".filter-bar, .search-form, .tip-icon, .screen-only" in css
+
+
+def test_chart_engine_is_vendored_and_never_a_cdn(client, db_session, authed):
+    """The shop renders charts with no internet: the engine ships with the app.
+
+    A CDN script tag would make every analytics load depend on sanctions,
+    outages and upstream renames — so the page may reference only files the
+    shop itself serves, and the vendored bundle must actually be served.
+    """
+    page = client.get("/admin/analytics")
+    assert page.status_code == 200
+    assert "/static/vendor/echarts.min.js" in page.text
+    assert "/static/js/analytics-charts.js" in page.text
+    assert "cdn.jsdelivr" not in page.text
+    assert "unpkg.com" not in page.text
+    assert "cdn.jsdelivr.net/npm/echarts" not in page.text
+
+    vendor = client.get("/static/vendor/echarts.min.js")
+    assert vendor.status_code == 200
+    assert "echarts" in vendor.text.lower()
+
+
+def test_pilot_charts_mount_through_the_bridge_with_a_fallback(client, db_session, authed):
+    """Daily + trend build ECharts options via the bridge, or fall back to the
+    custom renderer when the vendored script is blocked — never a blank canvas."""
+    page = client.get("/admin/analytics").text
+    assert "AC.create(document.getElementById('dailyChart')" in page
+    assert "AC.create(document.getElementById('trendChart')" in page
+    assert "valueFormatter" in page  # hover values, the pilot's whole point
+    # The custom-renderer fallback stays inside the else branch for both.
+    assert page.count("getElementById('dailyChart')") == 2
+    assert page.count("getElementById('trendChart')") == 2
+
+
+@needs_node
+def test_the_bridge_formats_speaks_paper_and_stays_still_on_request(tmp_path):
+    """The ECharts bridge is executed, not just shipped: Persian groupings,
+    RTL axes, a fast entrance that vanishes under reduced-motion, and a paper
+    rebuild that swaps colours without touching data."""
+    script = tmp_path / "bridge.js"
+    script.write_text(
+        "global.window = { addEventListener() {},"
+        " matchMedia: (q) => ({ matches: global.__REDUCED || false }) };\n"
+        "global.document = { documentElement: {} };\n"
+        "global.getComputedStyle = () => ({ getPropertyValue: (n) => ({"
+        " '--candy': '#C65D3A', '--sky': '#3E7CB1', '--sunshine': '#D9A441',"
+        " '--mint': '#3E9B6B', '--lavender': '#7C6BB0', '--persimmon': '#C65D3A',"
+        " '--ink': '#222', '--ink-soft': '#666', '--rule': '#ddd',"
+        " '--paper': '#ffffff', '--paper-ink': '#1a1a1a',"
+        "}[n] || '') });\n"
+        + (ROOT / "static/js/analytics-charts.js").read_text() + "\n"
+        "const AC = global.window.AnalyticsCharts;\n"
+        "const out = { money: AC.money(2500000), compact: AC.compact(2500000), };\n"
+        "const base = AC.base(false);\n"
+        "out.tooltip = base.tooltip.trigger; out.legend = base.legend.bottom;\n"
+        "out.motion = base.animationDuration;\n"
+        "out.xInverse = AC.categoryAxis(['a'], false).inverse;\n"
+        "out.yPosition = AC.valueAxis(false, true).position;\n"
+        "const tones = AC.tones(true);\n"
+        "out.paperInk = tones.ink; out.paperBar = tones.candy;\n"
+        "global.__REDUCED = true;\n"
+        "out.stillMotion = AC.base(false).animationDuration;\n"
+        "console.log(JSON.stringify(out));\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run([shutil.which("node"), str(script)],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    bridge = json.loads(result.stdout)
+    assert bridge["money"] == "۲,۵۰۰,۰۰۰ تومان"
+    assert bridge["compact"] == "۲.۵ م"
+    assert bridge["tooltip"] == "axis"
+    assert bridge["legend"] == 0
+    assert bridge["motion"] == 300
+    assert bridge["stillMotion"] == 0
+    assert bridge["xInverse"] is True
+    assert bridge["yPosition"] == "right"
+    assert bridge["paperInk"] == "rgb(26, 26, 26)"
+    assert bridge["paperBar"] == "#C65D3A"

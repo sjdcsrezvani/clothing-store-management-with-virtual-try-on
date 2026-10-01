@@ -308,8 +308,10 @@
 </section>
 
 <!-- Global tooltip element (fixed positioning, never clipped) -->
-<div id="globalTip" style="display:none; position:fixed; background:var(--card); color:var(--ink); border:1px solid var(--rule); padding:0.6rem 0.8rem; border-radius:8px; font-size:0.8rem; line-height:1.6; width:max-content; max-width:340px; white-space:normal; pointer-events:none; z-index:9999; box-shadow:var(--shadow-overlay); text-align:right; direction:rtl; font-family:Vazirmatn,sans-serif;"></div>
-
+<!-- Vendored engine + bridge (Phase A1): served by the shop itself, so the
+     page renders with no internet. Only the pilot charts below use it yet. -->
+<script src="/static/vendor/echarts.min.js?v={{ static_version }}"></script>
+<script src="/static/js/analytics-charts.js?v={{ static_version }}"></script>
 <script>
 if (typeof Chart === 'undefined') {
     if (typeof window.renderOfflineCharts === 'function') window.renderOfflineCharts();
@@ -336,6 +338,42 @@ const tone = window.themeTones();
 const palette = tone.palette;
 const baseOpts = (extra={}) => Object.assign({ responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { family: 'Vazirmatn' } } } }, scales: { y: { beginAtZero: true } } }, extra);
 
+// Phase A1 pilot: daily + trend ride the vendored engine when it is there —
+// hover values, clickable legends, a fast entrance — and fall back to the
+// custom renderer otherwise, so a blocked script never blanks the page.
+var AC = window.AnalyticsCharts;
+if (window.echarts && AC) {
+    AC.create(document.getElementById('dailyChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.tooltip.valueFormatter = function (v) { return AC.money(v); };
+        opt.xAxis = AC.categoryAxis(dailyData.map(function (d) { return d.date; }), paper);
+        opt.yAxis = AC.valueAxis(paper, true);
+        opt.series = [
+            { name: 'فروش', type: 'bar', data: dailyData.map(function (d) { return d.revenue; }),
+              itemStyle: { color: T.candy, borderRadius: [3, 3, 0] } },
+            { name: 'سود', type: 'bar', data: dailyData.map(function (d) { return d.profit; }),
+              itemStyle: { color: T.mint, borderRadius: [3, 3, 0] } },
+        ];
+        return opt;
+    });
+    AC.create(document.getElementById('trendChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.tooltip.valueFormatter = function (v) { return AC.money(v); };
+        opt.xAxis = AC.categoryAxis(revenueTrend.map(function (m) { return m.month; }), paper);
+        opt.yAxis = AC.valueAxis(paper, true);
+        opt.series = [
+            { name: 'درآمد', type: 'line', smooth: true, data: revenueTrend.map(function (m) { return m.revenue; }),
+              lineStyle: { color: T.candy }, itemStyle: { color: T.candy },
+              areaStyle: { color: T.candy, opacity: 0.1 } },
+            { name: 'سود', type: 'line', smooth: true, data: revenueTrend.map(function (m) { return m.profit; }),
+              lineStyle: { color: T.mint }, itemStyle: { color: T.mint },
+              areaStyle: { color: T.mint, opacity: 0.1 } },
+        ];
+        return opt;
+    });
+} else {
 new Chart(document.getElementById('dailyChart'), {
     type: 'bar',
     data: { labels: dailyData.map(d => d.date), datasets: [
@@ -344,6 +382,15 @@ new Chart(document.getElementById('dailyChart'), {
     ]},
     options: baseOpts({ valueFormat: 'money' })
 });
+new Chart(document.getElementById('trendChart'), {
+    type: 'line',
+    data: { labels: revenueTrend.map(m => m.month), datasets: [
+        { label: 'درآمد', data: revenueTrend.map(m => m.revenue), borderColor: tone.candy, backgroundColor: window.tintColour(tone.candy, 0.1), fill: true, tension: 0.3 },
+        { label: 'سود', data: revenueTrend.map(m => m.profit), borderColor: tone.mint, backgroundColor: window.tintColour(tone.mint, 0.1), fill: true, tension: 0.3 }
+    ]},
+    options: baseOpts({ valueFormat: 'money' })
+});
+}
 
 new Chart(document.getElementById('categoryChart'), {
     type: 'doughnut',
@@ -376,15 +423,6 @@ new Chart(document.getElementById('sizeChart'), {
     type: 'bar',
     data: { labels: sizeStats.map(s => s.label).slice(0, 12), datasets: [{ label: 'تعداد', data: sizeStats.map(s => s.quantity).slice(0, 12), backgroundColor: tone.persimmon }]},
     options: baseOpts({ valueFormat: 'count', plugins: { legend: { display: false } } })
-});
-
-new Chart(document.getElementById('trendChart'), {
-    type: 'line',
-    data: { labels: revenueTrend.map(m => m.month), datasets: [
-        { label: 'درآمد', data: revenueTrend.map(m => m.revenue), borderColor: tone.candy, backgroundColor: window.tintColour(tone.candy, 0.1), fill: true, tension: 0.3 },
-        { label: 'سود', data: revenueTrend.map(m => m.profit), borderColor: tone.mint, backgroundColor: window.tintColour(tone.mint, 0.1), fill: true, tension: 0.3 }
-    ]},
-    options: baseOpts({ valueFormat: 'money' })
 });
 
 new Chart(document.getElementById('weekdayChart'), {
