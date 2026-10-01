@@ -1511,10 +1511,10 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
   margin-bottom: 1.5rem;
 }
 .chart-card { min-height: 280px; overflow: hidden; }
-/* ECharts sizes itself to its element: without an explicit height the canvas
-   collapses to a strip. The old max-only constraints were written for a
-   renderer that set its own pixels. */
-.chart-card canvas { width: 100% !important; height: 260px !important; display: block; }
+/* ECharts mounts into these host divs (SVG needs a container; a canvas
+   element cannot take children). Explicit height: without one the box
+   collapses and the chart paints into a strip. */
+.chart-host { width: 100% !important; height: 260px !important; display: block; }
 #heatChart { height: 300px !important; }
 .print-heading { display: none; }
 
@@ -1527,7 +1527,7 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
   .kpi-grid { grid-template-columns: repeat(3, 1fr); }
   .charts-grid, .tables-grid { grid-template-columns: 1fr; }
   .chart-card { min-height: 0; overflow: visible; border: 1px solid var(--paper-mid); break-inside: avoid; }
-  .chart-card canvas { height: 280px !important; }
+  .chart-host { height: 280px !important; }
   .kpi-card, .card { border: 0; box-shadow: none; break-inside: avoid; }
   .kpi-card h4, .card h3 { color: var(--paper-ink) !important; }
   .kpi-value, .kpi-card.profit .kpi-value, .kpi-card.margin .kpi-value { color: var(--paper-ink) !important; }

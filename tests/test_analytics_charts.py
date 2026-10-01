@@ -142,10 +142,11 @@ def test_every_sentence_is_stated_in_one_line():
 def test_the_sentences_and_the_canvases_are_the_same_set(client, db_session):
     """The page's own markup is what proves no chart can arrive without a caption.
 
-    A new chart is a new ``<canvas id>``, and this fails until the same list gains
+    A new chart is a new host ``div`` (SVG mounts into a container; a canvas
+    element cannot take children), and this fails until the same list gains
     its sentence and the card shows it — as the visible caption *and* as the
-    canvas's accessible name, because a screen reader reads the drawing no better
-    than a printout does.
+    host's accessible name, because a screen reader reads the drawing no
+    better than a printout does.
     """
     from tests.test_roles import _session_as, _staff
 
@@ -153,20 +154,20 @@ def test_the_sentences_and_the_canvases_are_the_same_set(client, db_session):
     _session_as(client, user, password)
     html = client.get("/admin/analytics").text
 
-    canvases = set(re.findall(r'<canvas id="([^"]+)"', html))
+    hosts = set(re.findall(r'<div class="chart-host" id="([^"]+)"', html))
     captions = set(re.findall(r'data-chart="([^"]+)"', html))
-    assert canvases, "the analytics page drew no charts at all"
-    assert canvases == set(CHART_IDS)
-    assert captions == canvases
+    assert hosts, "the analytics page drew no charts at all"
+    assert hosts == set(CHART_IDS)
+    assert captions == hosts
 
-    for canvas in sorted(canvases):
+    for host in sorted(hosts):
         pair = re.search(
-            r'data-chart="%s">([^<]*)</p><canvas id="%s" role="img" aria-label="([^"]*)"' % (canvas, canvas),
+            r'data-chart="%s">([^<]*)</p><div class="chart-host" id="%s" role="img" aria-label="([^"]*)"' % (host, host),
             html,
         )
-        assert pair, f"{canvas} has no sentence beside it"
+        assert pair, f"{host} has no sentence beside it"
         assert pair.group(1).strip() == pair.group(2).strip()
-        assert pair.group(1).strip(), f"{canvas} has an empty sentence"
+        assert pair.group(1).strip(), f"{host} has an empty sentence"
 
     # This shop's database is empty in this test, so every caption says so rather
     # than leaving the owner a chart with no explanation under it.
@@ -908,14 +909,18 @@ def test_chart_engine_is_vendored_and_never_a_cdn(client, db_session, authed):
 
 def test_pilot_charts_mount_through_the_bridge_with_a_fallback(client, db_session, authed):
     """Daily + trend build ECharts options via the bridge, or fall back to the
-    custom renderer when the vendored script is blocked — never a blank canvas."""
+    custom renderer when the vendored script is blocked — never a blank chart.
+    The fallback grows its own canvas inside the host div, carrying the same
+    accessible name, because SVG mounts into a container and a canvas element
+    cannot take children."""
     page = client.get("/admin/analytics").text
     assert "AC.create(document.getElementById('dailyChart')" in page
     assert "AC.create(document.getElementById('trendChart')" in page
     assert "valueFormatter" in page  # hover values, the pilot's whole point
-    # The custom-renderer fallback stays inside the else branch for both.
-    assert page.count("getElementById('dailyChart')") == 2
-    assert page.count("getElementById('trendChart')") == 2
+    # The custom-renderer fallback stays inside the else branch for both,
+    # painting canvases it grows itself.
+    assert "function hostCanvas(id)" in page
+    assert page.count("new Chart(hostCanvas(") == 12
 
 
 @needs_node
@@ -1002,7 +1007,8 @@ def test_the_rendered_config_script_parses(client, db_session, tmp_path):
     blocks = re.findall(r"<script>(.*?)</script>", html, re.DOTALL)
     config = next(b for b in blocks if "AC.create(document.getElementById" in b)
     assert config.count("AC.create(document.getElementById") == 16
-    assert config.count("new Chart(document.getElementById") == 12
+    assert config.count("new Chart(hostCanvas(") == 12
+    assert "function hostCanvas(id)" in config
     for canvas in ("mixChart", "discountChart", "heatChart", "staffChart"):
         assert f"getElementById('{canvas}')" in config, canvas
     script = tmp_path / "analytics-config.js"
