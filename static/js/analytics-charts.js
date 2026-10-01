@@ -160,8 +160,14 @@
     // and returns the full option, so print swaps only colours, never data.
     // Vector renderer: razor-sharp at any DPR or zoom by construction —
     // canvas needed per-pixel bookkeeping that blurred on Retina.
+    // Hidden hosts are skipped outright: tab switches are full reloads, so a
+    // hidden tab's charts would initialise at zero size and never be seen —
+    // pure waste on every visit.
     function create(el, build) {
         if (!el || !window.echarts) return null;
+        var hidden = el.offsetParent === null &&
+            (typeof el.getClientRects !== 'function' || el.getClientRects().length === 0);
+        if (hidden) return null;
         var chart = window.echarts.init(el, null, { renderer: 'svg' });
         chart.setOption(build(false));
         registry.push({ chart: chart, build: build, el: el });

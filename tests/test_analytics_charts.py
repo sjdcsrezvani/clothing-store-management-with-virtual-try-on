@@ -908,19 +908,15 @@ def test_chart_engine_is_vendored_and_never_a_cdn(client, db_session, authed):
 
 
 def test_pilot_charts_mount_through_the_bridge_with_a_fallback(client, db_session, authed):
-    """Daily + trend build ECharts options via the bridge, or fall back to the
-    custom renderer when the vendored script is blocked — never a blank chart.
-    The fallback grows its own canvas inside the host div, carrying the same
-    accessible name, because SVG mounts into a container and a canvas element
-    cannot take children."""
+    """Daily + trend build ECharts options via the bridge; the custom-renderer
+    fallback is retired, and the one-line sentences still read aloud when the
+    engine is blocked — so no card ever goes silent."""
     page = client.get("/admin/analytics").text
     assert "AC.create(document.getElementById('dailyChart')" in page
     assert "AC.create(document.getElementById('trendChart')" in page
     assert "valueFormatter" in page  # hover values, the pilot's whole point
-    # The custom-renderer fallback stays inside the else branch for both,
-    # painting canvases it grows itself.
-    assert "function hostCanvas(id)" in page
-    assert page.count("new Chart(hostCanvas(") == 12
+    assert "hostCanvas" not in page
+    assert "fallback was retired" in page
 
 
 @needs_node
@@ -971,6 +967,34 @@ def test_the_bridge_formats_speaks_paper_and_stays_still_on_request(tmp_path):
 
 
 @needs_node
+def test_hidden_hosts_are_never_initialised(tmp_path):
+    """Tab switches are full reloads, so a hidden tab's charts would init at
+    zero size and never be seen — the bridge skips them outright."""
+    script = tmp_path / "lazy.js"
+    script.write_text(
+        "global.window = { addEventListener() {},"
+        " matchMedia: () => ({ matches: false }),"
+        " echarts: { init: () => { global.__INITS = (global.__INITS || 0) + 1; return { setOption() {} }; } } };\n"
+        "global.document = { documentElement: {}, contains: () => true };\n"
+        "global.getComputedStyle = () => ({ getPropertyValue: () => '' });\n"
+        + (ROOT / "static/js/analytics-charts.js").read_text() + "\n"
+        "const AC = global.window.AnalyticsCharts;\n"
+        "const seen = { offsetParent: {}, getClientRects: () => [] };\n"
+        "const hidden = { offsetParent: null, getClientRects: () => [] };\n"
+        "const built = () => ({});\n"
+        "const results = { seen: AC.create(seen, built) !== null,"
+        " hidden: AC.create(hidden, built) === null };\n"
+        "console.log(JSON.stringify(results));\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run([shutil.which("node"), str(script)],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    lazy = json.loads(result.stdout)
+    assert lazy == {"seen": True, "hidden": True}
+
+
+@needs_node
 def test_the_digit_switch_is_one_choke_point_for_every_formatter(tmp_path):
     """Latin axes on demand: the same formatters, the other script."""
     script = tmp_path / "digits.js"
@@ -1007,8 +1031,7 @@ def test_the_rendered_config_script_parses(client, db_session, tmp_path):
     blocks = re.findall(r"<script>(.*?)</script>", html, re.DOTALL)
     config = next(b for b in blocks if "AC.create(document.getElementById" in b)
     assert config.count("AC.create(document.getElementById") == 16
-    assert config.count("new Chart(hostCanvas(") == 12
-    assert "function hostCanvas(id)" in config
+    assert "new Chart(" not in config
     for canvas in ("mixChart", "discountChart", "heatChart", "staffChart"):
         assert f"getElementById('{canvas}')" in config, canvas
     script = tmp_path / "analytics-config.js"

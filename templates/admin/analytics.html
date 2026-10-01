@@ -31,7 +31,7 @@
             <button type="submit" class="btn btn-primary btn-sm">اعمال</button>
         </div>
     </form>
-    <form method="post" action="/admin/analytics/digits" class="filter-bar is-inline" style="margin-bottom:0;">
+    <form method="post" action="/admin/analytics/digits" class="filter-bar is-inline flush-bottom">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="mode" value="{% if chart_digits == 'latin' %}fa{% else %}latin{% endif %}">
         <button type="submit" class="btn btn-sm btn-ghost">ارقام {% if chart_digits == 'latin' %}فارسی{% else %}لاتین{% endif %} در نمودارها</button>
@@ -126,7 +126,7 @@
     <div class="card chart-card"><h3>فروش صندوقداران <span class="tip-icon" tabindex="0" role="button" data-tip="فروش نقدی ثبت‌شده زیر هر شیفت، به نام بازکننده‌اش. کارتی و بدون‌شیفت نام کسی را ندارد و در ردیف نامشخص می‌ایستد.">?</span></h3><p class="chart-note" data-chart="staffChart">{{ notes.staffChart }}</p><div class="chart-host" id="staffChart" role="img" aria-label="{{ notes.staffChart }}"></div></div>
 </div>
 
-<div class="section-heading-row" style="margin-top: 1.5rem;">
+<div class="section-heading-row section-gap">
     <div>
         <h3>فروشندگان و مرجوعی‌ها</h3>
         <p class="muted">چه کسی فروخت، چه چیزی برگشت و به چه دلیلی.</p>
@@ -156,11 +156,11 @@
             {% endfor %}
             </tbody>
         </table>
-        {% else %}<p style="color:var(--ink-soft);">در این بازه مرجوعی ثبت نشده.</p>{% endif %}
+        {% else %}<p class="muted">در این بازه مرجوعی ثبت نشده.</p>{% endif %}
         {% if returns.reasons %}
-        <div style="margin-top:0.6rem; border-top:1px solid var(--rule); padding-top:0.5rem;">
+        <div class="kv-divider">
             {% for r in returns.reasons %}
-            <div style="display:flex; justify-content:space-between; font-size:0.85rem; padding:0.15rem 0;">
+            <div class="inv-row">
                 <span>{{ r.reason }}</span><span class="tnum">{{ r.count }}</span>
             </div>
             {% endfor %}
@@ -180,10 +180,10 @@
 </div>
 
 <!-- Product Board: pricing / color / size -->
-<div class="card" style="margin-top: 1.5rem;">
-    <div style="display:flex; align-items:center; gap:0.8rem; flex-wrap:wrap;">
-        <h3 style="margin:0;">بُرد محصول (قیمت‌گذاری واقعی، رنگ، سایز) <span class="tip-icon" tabindex="0" role="button" data-tip="هسته اصلی تحلیل پوشاک: قیمت فروش واقعی (نه لیست)، بهترین رنگ و سایز، و ماتریس ترکیبی آن‌ها. با فیلتر دسته‌بندی می‌توانید هر گروه محصول را جداگانه بررسی کنید.">?</span></h3>
-        <form method="get" action="/admin/analytics" style="margin:0; flex:1; display:flex; gap:0.5rem; align-items:center;">
+<div class="card section-gap">
+    <div class="board-head">
+        <h3>بُرد محصول (قیمت‌گذاری واقعی، رنگ، سایز) <span class="tip-icon" tabindex="0" role="button" data-tip="هسته اصلی تحلیل پوشاک: قیمت فروش واقعی (نه لیست)، بهترین رنگ و سایز، و ماتریس ترکیبی آن‌ها. با فیلتر دسته‌بندی می‌توانید هر گروه محصول را جداگانه بررسی کنید.">?</span></h3>
+        <form method="get" action="/admin/analytics" class="board-form">
             <input type="hidden" name="tab" value="product">
             <input type="hidden" name="period" value="{{ period }}">
             <input type="hidden" name="start_date" value="{{ start_date }}">
@@ -194,7 +194,7 @@
                 <option value="{{ c }}" {% if c == category %}selected{% endif %}>{{ c }}</option>
                 {% endfor %}
             </select>
-            <label style="color:var(--ink-soft); font-size:0.85rem;">میانگین قیمت: <b>{{ fmt(price_stats.avg_price) }} تومان</b> | هزینه: <b>{{ fmt(price_stats.avg_cost) }} تومان</b> | سود: <b>{{ fmt(price_stats.avg_profit) }} تومان</b></label>
+            <label class="fine-print">میانگین قیمت: <b>{{ fmt(price_stats.avg_price) }} تومان</b> | هزینه: <b>{{ fmt(price_stats.avg_cost) }} تومان</b> | سود: <b>{{ fmt(price_stats.avg_profit) }} تومان</b></label>
         </form>
     </div>
     <div class="charts-grid">
@@ -210,7 +210,7 @@
                 </span>
             </div>
             {% if color_size_matrix.colors %}
-            <div style="overflow-x:auto;">
+            <div class="table-scroll">
                 <table class="matrix" data-max-revenue="{{ color_size_matrix.max_revenue }}">
                     <thead><tr><th>سایز</th>{% for c in color_size_matrix.colors %}<th>{{ c }}</th>{% endfor %}</tr></thead>
                     <tbody>
@@ -221,7 +221,7 @@
                     {% endfor %}
                     </tbody>
                 </table>
-            {% else %}<p style="color:var(--ink-soft);">رنگ/سایز برای این محدوده ثبت نشده.</p>{% endif %}
+            {% else %}<p class="muted">رنگ/سایز برای این محدوده ثبت نشده.</p>{% endif %}
         </div>
     </div>
 <script>
@@ -251,9 +251,9 @@
             <div class="inv-row"><span>سرمایه انبار</span><b class="tnum">{{ fmt(inventory.total_cost) }} تومان</b></div>
             <div class="inv-row"><span>ارزش فروش انبار</span><b class="tnum">{{ fmt(inventory.total_retail) }} تومان</b></div>
             <div class="inv-row"><span>موجودی کل</span><b class="tnum">{{ fmt(inventory.units) }}</b></div>
-            <div style="margin-top:0.6rem; border-top:1px solid var(--rule); padding-top:0.5rem;">
+            <div class="kv-divider">
                 {% for c in inventory.categories[:8] %}
-                <div style="display:flex; justify-content:space-between; font-size:0.85rem; padding:0.15rem 0;">
+                <div class="inv-row">
                     <span>{{ c.category }}</span><span class="tnum">{{ fmt(c.cost) }} تومان</span>
                 </div>
                 {% endfor %}
@@ -262,7 +262,7 @@
     </div>
 </div>
 
-<div class="section-heading-row" style="margin-top: 1.5rem;">
+<div class="section-heading-row section-gap">
     <div>
         <h3>کالاها در بازه</h3>
         <p class="muted">واریانت‌های پرفروش؛ پارتو و کالای مرده در زبانه انبار است.</p>
@@ -293,7 +293,7 @@
     <div class="kpi-card"><h4>سرمایه انبار <span class="tip-icon" tabindex="0" role="button" data-tip="پولی که همین حالا در قفسه است، به قیمت خرید.">?</span></h4><p class="kpi-value">{{ fmt(inventory.total_cost) }} تومان</p></div>
 </div>
 
-<div class="section-heading-row" style="margin-top: 1.5rem;">
+<div class="section-heading-row section-gap">
     <div>
         <h3>چقدر مانده</h3>
         <p class="muted">با آهنگ فروش همین بازه، هر تنوع چند روز دیگر دارد — قرمزها اول سفارش.</p>
@@ -319,11 +319,11 @@
     {% else %}<div class="empty-state"><h3>ردی برای شمردن نیست</h3><p>در این بازه فروشی ثبت نشده تا آهنگی از آن خوانده شود.</p></div>{% endif %}
 </div>
 
-<div class="tables-grid" style="margin-top: 1.5rem;">
+<div class="tables-grid section-gap">
     <div class="card">
         <h3>تحلیل ABC (Pareto) <span class="tip-icon" tabindex="0" role="button" data-tip="تحلیل ABC بر اساس اصل پارتو (۸۰/۲۰): کلاس A معدود محصولاتی هستند که ~۸۰٪ درآمد را می‌سازند (هرگز تمام نشوند)، کلاس C دم بلند هستند (تا تقاضا نداشته باشند سفارش ندهید).">?</span></h3>
-        <p style="font-size:0.85rem; color:var(--ink-soft);">محصولات بر اساس ۸۰٪ درآمد (A)، ۱۵٪ (B) و ۵٪ (C) دسته‌بندی شده‌اند.</p>
-        <div style="display:flex; gap:1rem; margin-bottom:0.5rem;">
+        <p class="fine-print">محصولات بر اساس ۸۰٪ درآمد (A)، ۱۵٪ (B) و ۵٪ (C) دسته‌بندی شده‌اند.</p>
+        <div class="board-head board-spread">
             <div class="inv-row">A-Class: <b>{{ abc_products.a_count }} محصول</b></div>
             <div class="inv-row">سهم درآمد: <b>{{ abc_products.a_pct }}٪</b></div>
         </div>
@@ -338,7 +338,7 @@
     </div>
     <div class="card">
         <h3>کالای مرده (بدون فروش در این دوره) <span class="tip-icon" tabindex="0" role="button" data-tip="اقلامی که در این بازه هیچ فروشی نداشته‌اند ولی هنوز در انبار هستند. سرمایه شما را بی‌استفاده نگه داشته‌اند. راه‌حل: تخفیف ویژه، بسته‌بندی مجدد، یا حذف از مجموعه.">?</span></h3>
-        <p style="font-size:0.85rem; color:var(--ink-soft);">ارزش کل: <b>{{ fmt(dead_stock.total_value) }} تومان</b> — {{ dead_stock.count }} قلم</p>
+        <p class="fine-print">ارزش کل: <b>{{ fmt(dead_stock.total_value) }} تومان</b> — {{ dead_stock.count }} قلم</p>
         {% if dead_stock.variants %}
         <table class="data-table">
             <thead><tr><th>نام</th><th>سایز</th><th>رنگ</th><th>موجودی</th><th>ارزش</th></tr></thead>
@@ -348,7 +348,7 @@
             {% endfor %}
             </tbody>
         </table>
-        {% else %}<p style="color:var(--ink-soft);">همه اقلام فروش داشته‌اند.</p>{% endif %}
+        {% else %}<p class="muted">همه اقلام فروش داشته‌اند.</p>{% endif %}
     </div>
 </div>
 </section>
@@ -374,8 +374,8 @@
         <div class="inv-row"><span>نرخ خرید مجدد</span><b>{{ percent(customer_health.repeat_rate, 0) }}</b></div>
         <div class="inv-row"><span>مشتریان یک‌بار</span><b>{{ percent(customer_health.one_timer_pct, 0) }}</b></div>
         <div class="inv-row"><span>میانگین سفارش</span><b>{{ customer_health.avg_orders if customer_health.avg_orders is not none else '—' }}</b></div>
-        <div style="margin-top:0.5rem; border-top:1px solid var(--rule); padding-top:0.5rem;">
-            <p class="chart-note" data-chart="customerSegChart">{{ notes.customerSegChart }}</p><div class="chart-host" id="customerSegChart" role="img" aria-label="{{ notes.customerSegChart }}" style="height:220px;"></div>
+        <div class="kv-divider">
+            <p class="chart-note" data-chart="customerSegChart">{{ notes.customerSegChart }}</p><div class="chart-host" id="customerSegChart" role="img" aria-label="{{ notes.customerSegChart }}"></div>
         </div>
     </div>
 </div>
@@ -438,7 +438,7 @@
             {% endfor %}
             </tbody>
         </table>
-        {% else %}<p style="color: var(--ink-soft);">تخفیفی در این دوره ثبت نشده.</p>{% endif %}
+        {% else %}<p class="muted">تخفیفی در این دوره ثبت نشده.</p>{% endif %}
     </div>
 </div>
 </section>
@@ -489,19 +489,10 @@ const heatWeeks = {{ heatmap.weeks }};
 const discountsData = {{ discounts|tojson }};
 window.CHART_DIGITS = '{{ chart_digits }}';
 
-// The chart colours are the active theme's own accents, read from the page, so a
-// chart follows dark and high-contrast instead of staying one palette forever.
-// `valueFormat` is how each chart's own numbers read on its marks (see the
-// renderer in static/js/charts.js), and `window.chartValueText` is the same
-// formatter the page uses for a label it writes itself — one source for both,
-// so an axis tick and a bar's value can never say different things.
-const tone = window.themeTones();
-const palette = tone.palette;
-const baseOpts = (extra={}) => Object.assign({ responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { family: 'Vazirmatn' } } } }, scales: { y: { beginAtZero: true } } }, extra);
-
-// Phase A1 pilot: daily + trend ride the vendored engine when it is there —
-// hover values, clickable legends, a fast entrance — and fall back to the
-// custom renderer otherwise, so a blocked script never blanks the page.
+// `window.chartValueText` is the formatter the page uses for a label it
+// writes itself (price histogram ticks) — one source, so an axis tick and a
+// bar's value can never say different things. Theme tones now flow through
+// the AnalyticsCharts bridge instead of these locals.
 var AC = window.AnalyticsCharts;
 if (window.echarts && AC) {
     var dailyRevenues = dailyData.map(function (d) { return d.revenue; });
@@ -782,88 +773,10 @@ if (window.echarts && AC) {
         return opt;
     });
 } else {
-// Fallback: the custom renderer paints canvases, so each host div grows one
-// carrying the same accessible name — the drawing stays labelled either way.
-function hostCanvas(id) {
-    var host = document.getElementById(id);
-    var c = document.createElement('canvas');
-    var label = host.getAttribute('aria-label');
-    c.setAttribute('role', 'img');
-    if (label) c.setAttribute('aria-label', label);
-    host.appendChild(c);
-    return c;
-}
-new Chart(hostCanvas('dailyChart'), {
-    type: 'bar',
-    data: { labels: dailyData.map(d => d.date), datasets: [
-        { label: 'فروش', data: dailyData.map(d => d.revenue), backgroundColor: tone.candy },
-        { label: 'سود', data: dailyData.map(d => d.profit), backgroundColor: tone.mint }
-    ]},
-    options: baseOpts({ valueFormat: 'money' })
-});
-new Chart(hostCanvas('trendChart'), {
-    type: 'line',
-    data: { labels: revenueTrend.map(m => m.month), datasets: [
-        { label: 'درآمد', data: revenueTrend.map(m => m.revenue), borderColor: tone.candy, backgroundColor: window.tintColour(tone.candy, 0.1), fill: true, tension: 0.3 },
-        { label: 'سود', data: revenueTrend.map(m => m.profit), borderColor: tone.mint, backgroundColor: window.tintColour(tone.mint, 0.1), fill: true, tension: 0.3 }
-    ]},
-    options: baseOpts({ valueFormat: 'money' })
-});
-new Chart(hostCanvas('categoryChart'), {
-    type: 'doughnut',
-    data: { labels: categoryData.map(c => c.category), datasets: [{ data: categoryData.map(c => c.revenue), backgroundColor: palette }]},
-    options: { responsive: true, valueFormat: 'money', plugins: { legend: { position: 'bottom', labels: { font: { family: 'Vazirmatn' } } } } }
-});
-new Chart(hostCanvas('tierChart'), {
-    type: 'bar',
-    data: { labels: tierData.map(t => t.label), datasets: [{ label: 'فروش', data: tierData.map(t => t.revenue), backgroundColor: [tone.lavender, tone.sunshine, tone.sky] }]},
-    options: baseOpts({ valueFormat: 'money', plugins: { legend: { display: false } } })
-});
-new Chart(hostCanvas('pricingChart'), {
-    type: 'bar',
-    data: { labels: ['هزینه', 'قیمت فروش', 'سود'], datasets: [{
-        label: 'به‌ازای هر واحد', data: [priceStats.avg_cost, priceStats.avg_price, priceStats.avg_profit],
-        backgroundColor: [tone.sunshine, tone.sky, tone.mint]
-    }]},
-    options: baseOpts({ valueFormat: 'money', plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } })
-});
-new Chart(hostCanvas('colorChart'), {
-    type: 'bar',
-    data: { labels: colorStats.map(c => c.label).slice(0, 12), datasets: [{ label: 'تعداد', data: colorStats.map(c => c.quantity).slice(0, 12), backgroundColor: tone.lavender }]},
-    options: baseOpts({ indexAxis: 'y', valueFormat: 'count', plugins: { legend: { display: false } } })
-});
-new Chart(hostCanvas('sizeChart'), {
-    type: 'bar',
-    data: { labels: sizeStats.map(s => s.label).slice(0, 12), datasets: [{ label: 'تعداد', data: sizeStats.map(s => s.quantity).slice(0, 12), backgroundColor: tone.persimmon }]},
-    options: baseOpts({ valueFormat: 'count', plugins: { legend: { display: false } } })
-});
-new Chart(hostCanvas('weekdayChart'), {
-    type: 'bar',
-    data: { labels: salesPattern.weekdays.map(d => d.day), datasets: [{ label: 'فروش', data: salesPattern.weekdays.map(d => d.revenue), backgroundColor: tone.sky }]},
-    options: baseOpts({ valueFormat: 'money', plugins: { legend: { display: false } } })
-});
-new Chart(hostCanvas('hourChart'), {
-    type: 'bar',
-    data: { labels: salesPattern.hours.map(h => h.label), datasets: [{ label: 'فروش', data: salesPattern.hours.map(h => h.revenue), backgroundColor: tone.sunshine }]},
-    options: baseOpts({ valueFormat: 'money', plugins: { legend: { display: false } } })
-});
-new Chart(hostCanvas('priceDistChart'), {
-    type: 'bar',
-    data: { labels: priceDist.map(p => window.chartValueText(p.price, 'count') + ' تومان'), datasets: [
-        { label: 'تعداد', data: priceDist.map(p => p.quantity), backgroundColor: tone.lavender },
-    ]},
-    options: baseOpts({ valueFormat: 'count', plugins: { legend: { display: false } } })
-});
-new Chart(hostCanvas('marginCatChart'), {
-    type: 'bar',
-    data: { labels: marginByCat.map(c => c.category), datasets: [{ label: 'حاشیه سود ٪', data: marginByCat.map(c => c.margin), backgroundColor: marginByCat.map(c => c.margin >= 0 ? tone.mint : tone.candy) }]},
-    options: baseOpts({ indexAxis: 'y', valueFormat: 'percent', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } })
-});
-new Chart(hostCanvas('customerSegChart'), {
-    type: 'doughnut',
-    data: { labels: customerHealth.segments.map(s => s.label), datasets: [{ data: customerHealth.segments.map(s => s.count), backgroundColor: [tone.lavender, tone.sunshine, tone.sky, tone.candy] }]},
-    options: { responsive: true, valueFormat: 'count', plugins: { legend: { position: 'bottom', labels: { font: { family: 'Vazirmatn', size: 11 } } } } }
-});
+// The custom-renderer fallback was retired once ECharts proved itself in
+// production: sixteen builders, zero fallbacks. The one-line sentences
+// under every card still read aloud when the engine is blocked, so no
+// card ever goes silent.
 }
 }
 </script>

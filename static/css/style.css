@@ -3734,6 +3734,18 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
 .matrix { border-collapse: collapse; font-size: 0.85rem; }
 .matrix th, .matrix td { border: 1px solid var(--rule); padding: 0.35rem 0.6rem; min-width: 2.8rem; white-space: nowrap; }
 .inv-row { display: flex; justify-content: space-between; padding: 0.25rem 0; }
+/* Analytics rhythm: stacked sections breathe the same, small print reads the
+   same, and key-value rows reuse .inv-row. Data-driven widths and heat stay
+   inline — they are figures, not styling. */
+.section-gap { margin-top: 1.5rem; }
+.fine-print { font-size: 0.85rem; color: var(--ink-soft); }
+.kv-divider { margin-top: 0.6rem; border-top: 1px solid var(--rule); padding-top: 0.5rem; }
+.flush-bottom { margin-bottom: 0 !important; }
+.board-head { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; }
+.board-head h3 { margin: 0; }
+.board-form { margin: 0; flex: 1; display: flex; gap: 0.5rem; align-items: center; }
+.board-spread { gap: 1rem; margin-bottom: 0.5rem; }
+#customerSegChart { height: 220px; }
 
 /* Question mark icon */
 .tip-icon {
