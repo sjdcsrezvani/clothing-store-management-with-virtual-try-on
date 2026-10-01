@@ -329,6 +329,19 @@ def get_daily_revenue(db: Session, start: datetime, end: datetime) -> list:
         current += timedelta(days=1)
     return results
 
+def _clean_category(category) -> str:
+    """One name for «no category» across every analytics reading.
+
+    Nulls were already mapped, but the string "None" — typed once, imported
+    once — sailed through and printed on doughnuts and tables as a category
+    called None. Empty, null-like and dash-only spellings all fold to one.
+    """
+    text = (category or "").strip()
+    if not text or text.lower() in {"none", "null", "nil", "—", "-", "–"}:
+        return "بدون دسته"
+    return text
+
+
 def _category_totals(db: Session, start: datetime, end: datetime) -> list[dict]:
     """Net revenue, cost and quantity per category — one aggregation both the
     category doughnut and the margin table draw from (see :func:`_net_sale_lines`
@@ -337,7 +350,7 @@ def _category_totals(db: Session, start: datetime, end: datetime) -> list[dict]:
     agg: dict[str, dict] = {}
 
     def _bucket(category):
-        key = category or "بدون دسته"
+        key = _clean_category(category)
         return agg.setdefault(key, {"category": key, "revenue": 0, "cost": 0, "quantity": 0})
 
     for line in item_lines:
@@ -386,7 +399,7 @@ def get_top_products(db: Session, start: datetime, end: datetime, limit: int = 1
         
         products.append({
             "name": r.name,
-            "category": r.category or "—",
+            "category": _clean_category(r.category),
             "qty_sold": r.qty_sold or 0,
             "revenue": revenue,
             "cost": cost,
@@ -637,7 +650,7 @@ def get_inventory_value(db):
     total_retail = sum(v.price * v.stock_quantity for v, _ in variants)
     by_cat = {}
     for v, cat in variants:
-        key = cat or "بدون دسته"
+        key = _clean_category(cat)
         d = by_cat.setdefault(key, {"cost": 0, "retail": 0, "units": 0})
         d["cost"] += v.cost_price * v.stock_quantity
         d["retail"] += v.price * v.stock_quantity
@@ -699,7 +712,7 @@ def get_abc_products(db, start, end):
         cls = "A" if cumulative <= 80 else ("B" if cumulative <= 95 else "C")
         items.append({
             "name": r.name,
-            "category": r.category or "—",
+            "category": _clean_category(r.category),
             "qty": r.qty or 0,
             "revenue": rev,
             "profit": rev - cost,
@@ -922,8 +935,8 @@ def get_dead_stock(db, start, end, days_threshold=90):
             dead.append({
                 "variant_id": v.id,
                 "product_id": v.product_id,
-                "name": name,
-                "category": cat or "—",
+            "name": name,
+            "category": _clean_category(cat),
                 "size": v.size or "",
                 "color": v.color or "",
                 "stock": v.stock_quantity,

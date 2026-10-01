@@ -1354,3 +1354,38 @@ def test_tip_state_machine_shows_hides_and_toggles(tmp_path):
                             capture_output=True, text=True)
     assert result.returncode == 0, result.stderr + result.stdout
     assert "FAIL" not in result.stdout
+
+
+def test_junk_category_spellings_read_as_uncategorised():
+    """The string "None" typed once must never print as a category called None."""
+    from services.analytics import _clean_category
+    assert _clean_category(None) == "بدون دسته"
+    assert _clean_category("") == "بدون دسته"
+    assert _clean_category("None") == "بدون دسته"
+    assert _clean_category("  null  ") == "بدون دسته"
+    assert _clean_category("—") == "بدون دسته"
+    assert _clean_category("پیراهن") == "پیراهن"
+    assert _clean_category("  پیراهن  ") == "پیراهن"
+
+
+def test_bridge_names_jalali_months_and_hides_crowded_ticks(tmp_path):
+    """"5/1405" reads «مرداد ۱۴۰۵» on the axis; crowded ticks yield."""
+    script = tmp_path / "months.js"
+    script.write_text(
+        "global.window = { addEventListener() {}, matchMedia: () => ({ matches: false }) };\n"
+        "global.document = { documentElement: {} };\n"
+        "global.getComputedStyle = () => ({ getPropertyValue: () => '' });\n"
+        + (ROOT / "static/js/analytics-charts.js").read_text() + "\n"
+        "const AC = global.window.AnalyticsCharts;\n"
+        "console.log(JSON.stringify({ month: AC.monthName('5/1405'),"
+        " plain: AC.monthName('مرداد'),"
+        " overlap: AC.categoryAxis(['a'], false).axisLabel.hideOverlap }));\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run([shutil.which("node"), str(script)],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    months = json.loads(result.stdout)
+    assert months["month"] == "مرداد ۱۴۰۵"
+    assert months["plain"] == "مرداد"
+    assert months["overlap"] is True

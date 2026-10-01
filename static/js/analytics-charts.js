@@ -128,7 +128,8 @@
     }
 
     // Right-to-left axes: the value axis stands right, categories run
-    // right-to-left, and ticks speak Persian groupings.
+    // right-to-left, and ticks speak Persian groupings. Crowded ticks yield
+    // rather than print on top of each other (trend months on a phone).
     function categoryAxis(data, paper) {
         var t = tones(paper);
         return {
@@ -137,7 +138,7 @@
             inverse: true,
             axisLine: { lineStyle: { color: t.rule } },
             axisTick: { lineStyle: { color: t.rule } },
-            axisLabel: Object.assign({ interval: 'auto' }, textStyle(paper)),
+            axisLabel: Object.assign({ interval: 'auto', hideOverlap: true }, textStyle(paper)),
         };
     }
 
@@ -165,7 +166,11 @@
 
     function repaint(paper) {
         registry.forEach(function (entry) {
-            if (document.contains(entry.el)) entry.chart.setOption(entry.build(paper), true);
+            if (!document.contains(entry.el)) return;
+            // Resize first: print CSS changes the element's own dimensions,
+            // and setOption alone would repaint into the old box.
+            entry.chart.resize();
+            entry.chart.setOption(entry.build(paper), true);
         });
     }
 
@@ -198,6 +203,17 @@
         compact: compact,
         money: function (v) { return grouped(v) + ' تومان'; },
         percent: function (v) { return faDigits(String(v)) + '٪'; },
+        // "5/1405" becomes «مرداد ۱۴۰۵»: the trend backend speaks in numbers,
+        // the axis answers in the shop's own month names.
+        monthName: function (label) {
+            var m = String(label == null ? '' : label).match(/(\d{1,2})\s*\/\s*(\d{3,4})/);
+            if (!m) return String(label);
+            var months = ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور',
+                          'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'];
+            var index = parseInt(m[1], 10);
+            if (index < 1 || index > 12) return String(label);
+            return months[index - 1] + ' ' + faDigits(m[2]);
+        },
         base: base,
         categoryAxis: categoryAxis,
         valueAxis: valueAxis,

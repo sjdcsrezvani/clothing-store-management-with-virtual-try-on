@@ -534,8 +534,9 @@ if (window.echarts && AC) {
     AC.create(document.getElementById('trendChart'), function (paper) {
         var T = AC.tones(paper);
         var opt = AC.base(paper);
+        var months = revenueTrend.map(function (m) { return AC.monthName(m.month); });
         opt.tooltip.valueFormatter = function (v) { return AC.money(v); };
-        opt.xAxis = AC.categoryAxis(revenueTrend.map(function (m) { return m.month; }), paper);
+        opt.xAxis = AC.categoryAxis(months, paper);
         opt.yAxis = AC.valueAxis(paper, true);
         opt.series = [
             { name: 'درآمد', type: 'line', smooth: true, data: revenueTrend.map(function (m) { return m.revenue; }),
