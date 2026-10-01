@@ -6,7 +6,7 @@ from urllib.parse import quote_plus
 from fastapi import APIRouter, Depends, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse, Response
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from database import get_db
 from datetime import datetime, timezone
@@ -72,6 +72,7 @@ from models import to_english_digits, to_persian_digits
 from services.backup import create_backup, list_backups, backup_download_path
 from services.dashboard import dashboard_overview
 from services.pos_reconciliation import unresolved_transactions
+from services.pos_terminal import get_terminal_config
 from services.operations import verify_sqlite_backup
 from services.navigation import home_for
 from services.security import (
@@ -87,6 +88,7 @@ from services.security import (
     hash_password,
     verify_password,
     require_html_role,
+    role_allows,
 )
 from services.store import invalidate_store_cache, get_store
 from services.templating import templates
@@ -1389,9 +1391,31 @@ async def admin_pos_reconciliation(request: Request, db: Session = Depends(get_d
     # from one definition of «still unresolved» instead of two.
     transactions = db.query(POSTransaction).order_by(POSTransaction.created_at.desc()).limit(200).all()
     unresolved_count = unresolved_transactions(db)
+    # The exposure, not just the queue: what the outstanding rows add up to.
+    unresolved_amount = db.query(func.coalesce(func.sum(POSTransaction.amount), 0)).filter(
+        POSTransaction.status.in_(("created", "sent", "uncertain", "approved")),
+        POSTransaction.sale_id.is_(None),
+        POSTransaction.reconciled == False,  # noqa: E712
+    ).scalar() or 0
+    operator_ids = {t.operator_user_id for t in transactions if t.operator_user_id}
+    operator_names = {u.id: (u.full_name or u.username) for u in db.query(StaffUser).filter(
+        StaffUser.id.in_(list(operator_ids))).all()} if operator_ids else {}
+    terminal = get_terminal_config(db)
+    resolutions = {
+        "confirmed_cancelled": "تأیید لغو",
+        "reversed_externally": "برگشت خارجی",
+        "duplicate": "تکراری",
+        "terminal_error": "خطای کارت‌خوان",
+        "provider_investigation": "بررسی ارائه‌دهنده",
+    }
     return templates.TemplateResponse(request, "admin/pos_reconciliation.html", {
         "transactions": transactions,
         "unresolved_count": unresolved_count,
+        "unresolved_amount": unresolved_amount,
+        "operator_names": operator_names,
+        "terminal": terminal,
+        "resolutions": resolutions,
+        "is_owner": role_allows(guard.role, "owner"),
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
         "jalali_str": jalali_str,
@@ -1419,7 +1443,7 @@ async def admin_pos_reconciliation_review(
 
     transaction = db.query(POSTransaction).filter(POSTransaction.id == transaction_id).first()
     if not transaction:
-        raise HTTPException(status_code=404, detail="تراکنش کارت‌خوان یافت نشد")
+        return RedirectResponse(url="/admin/pos-reconciliation?err=تراکنش کارت‌خوان یافت نشد.", status_code=303)
     allowed = {"confirmed_paid", "confirmed_cancelled", "reversed_externally", "duplicate", "terminal_error", "provider_investigation"}
     if not resolution_type and note.strip():
         resolution_type = "terminal_error"
@@ -1430,12 +1454,14 @@ async def admin_pos_reconciliation_review(
     if resolution_type not in allowed or not evidence.strip():
         return RedirectResponse(url="/admin/pos-reconciliation?err=نوع نتیجه و مدرک بررسی الزامی است.", status_code=303)
     if resolution_type == "confirmed_paid":
-        raise HTTPException(status_code=409, detail="تأیید پرداخت باید از مسیر ایجاد فاکتور انجام شود.")
+        # Paid is conferred by an invoice, never by a review: recording it
+        # here would invent money the till never counted.
+        return RedirectResponse(url="/admin/pos-reconciliation?err=تأیید پرداخت فقط از مسیر ایجاد فاکتور انجام می‌شود؛ اینجا فقط ثبت نتیجه بررسی است.", status_code=303)
     if masked_card and not masked_card.startswith("****"):
-        raise HTTPException(status_code=400, detail="فقط اطلاعات کارت ماسک‌شده مجاز است.")
+        return RedirectResponse(url="/admin/pos-reconciliation?err=فقط اطلاعات کارت ماسک‌شده (****) مجاز است.", status_code=303)
 
     if transaction.reconciled:
-        raise HTTPException(status_code=409, detail="این تراکنش قبلاً تطبیق داده شده است.")
+        return RedirectResponse(url="/admin/pos-reconciliation?err=این تراکنش قبلاً تطبیق داده شده است.", status_code=303)
 
     operator = guard
     transaction.provider_reference = provider_reference.strip()[:100] or None

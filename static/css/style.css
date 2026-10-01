@@ -3617,6 +3617,11 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
    just the badge. Small row buttons stay tappable on a phone. */
 .check-table tr.check-overdue { background: color-mix(in srgb, var(--candy) 8%, transparent); }
 .check-table .btn-sm { min-height: 44px; display: inline-flex; align-items: center; }
+/* A terminal row with money taken and no bill borrows the same warning face:
+   the meaning — at risk until a human looks — is identical. */
+.pos-table tr.check-overdue { background: color-mix(in srgb, var(--candy) 8%, transparent); }
+.pos-table .btn-sm { min-height: 44px; display: inline-flex; align-items: center; }
+.pos-table .filter-field { margin-bottom: 0.5rem; }
 /* Triggered alerts read as a worklist, one cheque per row. */
 .check-alert-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.6rem 0; border-bottom: 1px solid var(--rule); }
 .check-alert-row:last-child { border-bottom: none; }
@@ -3663,6 +3668,23 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
     border: none; padding: 0.25rem 0; text-align: start; }
   .expense-table td::before {
     content: attr(data-label); color: var(--ink-soft); font-size: 0.72rem; flex-shrink: 0; }
+}
+/* Terminal rows stack the same way; the review form inside the last cell
+   simply fills its card. */
+@media (max-width: 700px) {
+  .pos-table thead {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .pos-table, .pos-table tbody, .pos-table tr, .pos-table td { display: block; }
+  .pos-table tr {
+    border: 1px solid var(--rule); border-radius: var(--radius-sm);
+    margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; }
+  .pos-table td {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
+    border: none; padding: 0.25rem 0; text-align: start; }
+  .pos-table td::before {
+    content: attr(data-label); color: var(--ink-soft); font-size: 0.72rem; flex-shrink: 0; }
+  .pos-table td:last-child, .pos-table td:last-child::before { display: block; }
+  .pos-table td:last-child::before { margin-bottom: 0.35rem; }
 }
 /* The self-check tables stack the same way: a mismatch read on a phone is
    still label-first, never column-guessing. */

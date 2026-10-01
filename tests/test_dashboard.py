@@ -217,7 +217,7 @@ def test_the_reconciliation_alert_counts_everything_not_just_the_readable_page(
     assert attention_counts(content_only(html))["تراکنش کارتخوان"] == "205"
 
     page = client.get("/admin/pos-reconciliation").text
-    assert stat_values(page)["⚠️ نیازمند بررسی"] == "205"
+    assert stat_values(page)["نیازمند بررسی"] == "205"
     # The page lists fewer than it counts, and has to say so.
     assert "تنها 200 رکورد اخیر" in page
 
