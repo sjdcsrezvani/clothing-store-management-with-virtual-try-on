@@ -854,6 +854,11 @@ new Chart(document.getElementById('customerSegChart'), {
 }
 </script>
 
+<!-- The one bubble every «?» writes into. It was deleted once by a template
+     edit while 48 triggers kept pointing at it — every tip died silently,
+     because a null bubble throws on first hover. Pinned by test. -->
+<div id="globalTip" style="display:none; position:fixed; background:var(--card); color:var(--ink); border:1px solid var(--rule); padding:0.6rem 0.8rem; border-radius:8px; font-size:0.8rem; line-height:1.6; width:max-content; max-width:340px; white-space:normal; pointer-events:none; z-index:9999; box-shadow:var(--shadow-overlay); text-align:right; direction:rtl; font-family:Vazirmatn,sans-serif;"></div>
+
 <script>
 // One explainer bubble for every «?» on the page: hover shows it on a mouse,
 // tap toggles it on touch, focus shows it for keyboards — Escape or anywhere

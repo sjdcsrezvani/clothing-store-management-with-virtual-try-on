@@ -1270,6 +1270,9 @@ def test_export_doors_are_buttons_and_tips_open_for_everyone(client, db_session,
     assert len(tips) >= 20
     assert all('tabindex="0"' in tag and 'role="button"' in tag for tag in tips)
     assert "aria-expanded" in page and "pinned" in page
+    # The bubble every trigger writes into: deleted once by a template edit
+    # while 48 triggers kept pointing at it, killing every tip silently.
+    assert 'id="globalTip"' in page
 
 
 # Fake DOM + assertions wrapping the real tip script (see test below).
