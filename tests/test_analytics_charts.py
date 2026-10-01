@@ -1255,3 +1255,18 @@ def test_chart_digits_toggle_is_charts_only_and_sticks(client, db_session, authe
     assert client.post("/admin/analytics/digits", data={"csrf_token": token, "mode": "fa"},
                        follow_redirects=False).status_code == 303
     assert "window.CHART_DIGITS = 'fa'" in client.get("/admin/analytics").text
+
+
+def test_export_doors_are_buttons_and_tips_open_for_everyone(client, db_session, authed):
+    """Six labelled buttons, not six bare links — and «?» works by mouse,
+    touch and keyboard, not by hover alone."""
+    import re
+    page = client.get("/admin/analytics").text
+    for kind in ("daily", "hourly", "weekday", "basket", "staff", "returns"):
+        assert re.search(
+            r'<a class="btn btn-sm btn-ghost" href="/admin/analytics/export\?kind='
+            + kind + r'[^"]*"><svg', page), kind
+    tips = re.findall(r'<span class="tip-icon"[^>]*>', page)
+    assert len(tips) >= 20
+    assert all('tabindex="0"' in tag and 'role="button"' in tag for tag in tips)
+    assert "aria-expanded" in page and "pinned" in page

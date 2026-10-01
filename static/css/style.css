@@ -3736,21 +3736,29 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 18px;
-    height: 18px;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
     background: var(--rule);
     color: var(--ink-soft);
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 700;
     line-height: 1;
-    cursor: help;
+    cursor: pointer;
     vertical-align: middle;
     margin-inline-start: 4px;
     transition: background 0.15s, color 0.15s;
     font-family: sans-serif;
 }
 .tip-icon:hover {
+    background: var(--brand-fill);
+    color: var(--brand-label);
+}
+.tip-icon:focus-visible {
+    outline: 3px solid var(--ring);
+    outline-offset: 2px;
+}
+.tip-icon[aria-expanded="true"] {
     background: var(--brand-fill);
     color: var(--brand-label);
 }
