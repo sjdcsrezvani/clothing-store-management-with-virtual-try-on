@@ -822,7 +822,7 @@ def test_the_colour_size_matrix_is_a_matrix_and_adds_up(db_session):
     # …and a period with no sales has no matrix at all, rather than one cell of
     # nothing: the page says the range has no colour or size recorded.
     empty = get_color_size_matrix(db_session, now + timedelta(days=10), now + timedelta(days=11))
-    assert empty == {"colors": [], "rows": [], "max": 0}
+    assert empty == {"colors": [], "rows": [], "max": 0, "max_revenue": 0}
 
 
 @needs_node
@@ -977,10 +977,82 @@ def test_the_rendered_config_script_parses(client, db_session, tmp_path):
     html = client.get("/admin/analytics").text
     blocks = re.findall(r"<script>(.*?)</script>", html, re.DOTALL)
     config = next(b for b in blocks if "AC.create(document.getElementById" in b)
-    assert config.count("AC.create(document.getElementById") == 12
+    assert config.count("AC.create(document.getElementById") == 15
     assert config.count("new Chart(document.getElementById") == 12
+    for canvas in ("mixChart", "discountChart", "heatChart"):
+        assert f"getElementById('{canvas}')" in config, canvas
     script = tmp_path / "analytics-config.js"
     script.write_text(config, encoding="utf-8")
     result = subprocess.run([shutil.which("node"), "--check", str(script)],
                             capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def test_goal_is_set_cleared_and_read_on_the_sales_tab(client, db_session, authed):
+    """A monthly target with nowhere to set it is a wish; the tab states it."""
+    from urllib.parse import unquote_plus
+    from tests.conftest import csrf_token
+    from models import Settings
+    token = csrf_token(client, "/admin/analytics")
+    assert client.post("/admin/analytics/goal", data={"csrf_token": token, "amount": "10000000"},
+                       follow_redirects=False).status_code == 303
+    assert db_session.query(Settings).filter(Settings.key == "sales_goal_amount").one().value == "10000000"
+    page = client.get("/admin/analytics").text
+    assert "هدف ماه" in page
+    assert "10,000,000 تومان" in page
+
+    bad = client.post("/admin/analytics/goal", data={"csrf_token": token, "amount": "-5"},
+                      follow_redirects=False)
+    assert "صفر یا بیشتر" in unquote_plus(bad.headers["location"])
+    assert client.post("/admin/analytics/goal", data={"csrf_token": token, "amount": ""},
+                       follow_redirects=False).status_code == 303
+    assert db_session.query(Settings).filter(Settings.key == "sales_goal_amount").one().value == "0"
+    cleared = client.get("/admin/analytics").text
+    assert "<h4>هدف ماه</h4>" not in cleared
+    assert "ثبت هدف ماه" in cleared
+
+
+def _seed_sale(db_session, amount, days_ago=0):
+    from datetime import datetime, timedelta, timezone
+    from models import Sale
+    sale = Sale(total_amount=amount, final_amount=amount, payment_method="cash",
+                payment_confirmed=True,
+                created_at=datetime.now(timezone.utc) - timedelta(days=days_ago))
+    db_session.add(sale)
+    db_session.commit()
+    return sale
+
+
+def test_new_builders_overlays_and_heatmap_ride_on_real_figures(client, db_session, authed):
+    """Average, overlay, moving average, mix, heat and goal all read the shop."""
+    _seed_sale(db_session, 4_000_000, days_ago=1)
+    _seed_sale(db_session, 6_000_000, days_ago=40)
+    from tests.conftest import csrf_token
+    token = csrf_token(client, "/admin/analytics")
+    client.post("/admin/analytics/goal", data={"csrf_token": token, "amount": "100000000"},
+                follow_redirects=False)
+    page = client.get("/admin/analytics").text
+    assert "markLine" in page and "میانگین" in page
+    assert "دوره قبل" in page
+    assert "میانگین ۳ ماهه" in page
+    assert "ترکیب روش پرداخت" in page
+    assert "سهم انواع تخفیف" in page
+    assert "تقویم فروش سال" in page
+    assert "AC.link(dailyChart" in page
+    assert "AC.link(catChart" in page and "AC.link(tierChart" in page
+    assert "data-matrix-mode" in page
+    assert "هدف ماه" in page
+    # Hour axis spans live hours only; matrix cells carry both readings.
+    assert "heatChart" in page and "heatWeeks" in page
+
+
+def test_heatmap_weeks_open_on_saturday_and_carry_revenue(db_session):
+    """Columns read like the wall calendar: شنبه first, every cell honest."""
+    from services.analytics import get_year_heatmap
+    heat = get_year_heatmap(db_session)
+    assert heat["weeks"] >= 52
+    assert heat["max"] >= 0
+    first_week = [c for c in heat["cells"] if c["week"] == 0]
+    assert first_week and first_week[0]["dow"] == 0
+    assert first_week[0]["day_name"] == "شنبه"
+    assert all(set(c) == {"date", "dow", "day_name", "week", "revenue"} for c in heat["cells"])

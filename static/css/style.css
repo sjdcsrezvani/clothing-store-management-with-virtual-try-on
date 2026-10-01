@@ -3806,9 +3806,9 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
 }
 @media print {
     .tab-card { display: none; }
-    /* Paper shows every tab in reading order: a staple travels with all of
-       the report, not just the tab that happened to be open on screen. */
-    .analytics-tab[hidden] { display: block; }
+    /* Paper shows the open tab only: hidden tabs stay hidden, so the staple
+       carries what the owner was reading — and only canvases the screen
+       actually painted need repainting. */
 }
 
 /* ===================== طرح تگ: paper ===================== */

@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from database import get_db
-from services._common import fmt, check_admin, jalali_str, share
-from services.security import require_html_role
+from models import Settings, to_english_digits
+from services._common import fmt, check_admin, get_setting_int, jalali_str, share
+from services.security import log_action, require_html_role
 from services.templating import templates
 from services.reporting import canonical_report
 from services.chart_notes import chart_notes
@@ -16,6 +17,7 @@ from services.analytics import (
     get_sell_through, get_revenue_trend, get_basket_stats,
     get_customer_health, get_margin_by_category, get_dead_stock,
     get_price_distribution, get_top_selling_variants, get_new_customers,
+    get_revenue_by_payment, get_return_rate, get_year_heatmap,
 )
 
 router = APIRouter(prefix="/admin")
@@ -85,6 +87,39 @@ async def admin_analytics(
     dead_stock = get_dead_stock(db, start, end)
     price_dist = get_price_distribution(db, start, end)
     top_variants = get_top_selling_variants(db, start, end)
+    return_rate = get_return_rate(db, start, end)
+
+    # The window before this one, equally long: daily overlays align by day
+    # index, not by date, so «then» reads against «now» point for point.
+    span = end - start
+    prev_daily = get_daily_revenue(db, start - span, start)
+    prev_revenues = [d["revenue"] for d in prev_daily[:len(daily)]]
+
+    # Three-month moving average on the year line: the season still shows,
+    # the noise does not.
+    trend_ma = []
+    trend_revenues = [m["revenue"] for m in revenue_trend]
+    for i, month in enumerate(revenue_trend):
+        window_back = trend_revenues[max(0, i - 2):i + 1]
+        trend_ma.append(round(sum(window_back) / len(window_back)))
+
+    payment_mix = [
+        {"label": {"cash": "نقدی", "card": "کارتی", "credit": "نسیه"}.get(row["method"], row["method"] or "—"),
+         "revenue": row["revenue"], "count": row["count"]}
+        for row in get_revenue_by_payment(db, start, end)
+    ]
+    heatmap = get_year_heatmap(db)
+
+    # The monthly goal, if the owner set one: month-to-date revenue against
+    # it, so the sales tab opens with «where the month stands».
+    goal_amount = get_setting_int(db, "sales_goal_amount", 0)
+    goal = None
+    if goal_amount > 0:
+        month_window = period_range("month")
+        month_report = canonical_report(db, month_window.start, month_window.end)
+        month_revenue = month_report["net_sales"]
+        goal = {"amount": goal_amount, "revenue": month_revenue,
+                "pct": share(month_revenue, goal_amount)}
 
     # One sentence per chart, built from these same figures: a chart that only
     # reads by colour reads as nothing on a printout or to an owner who cannot
@@ -94,7 +129,8 @@ async def admin_analytics(
         daily=daily, categories=categories, tier_revenue=tier_revenue,
         revenue_trend=revenue_trend, sales_pattern=sales_pattern,
         price_dist=price_dist, margin_by_cat=margin_by_cat,
-        customer_health=customer_health,
+        customer_health=customer_health, payment_mix=payment_mix,
+        discounts=discounts, heatmap=heatmap,
     )
 
     return templates.TemplateResponse(request, "admin/analytics.html", {
@@ -122,6 +158,12 @@ async def admin_analytics(
         "dead_stock": dead_stock,
         "price_dist": price_dist,
         "top_variants": top_variants,
+        "prev_revenues": prev_revenues,
+        "trend_ma": trend_ma,
+        "payment_mix": payment_mix,
+        "heatmap": heatmap,
+        "return_rate": return_rate,
+        "goal": goal,
         "notes": notes,
         "summary": summary,
         "daily": daily,
@@ -205,3 +247,29 @@ async def analytics_export(
     for d in get_daily_revenue(db, start, end):
         rows.append([d["date"], d["revenue"], d["profit"], d["count"]])
     return _analytics_csv(f"analytics_daily_{stamp}.csv", rows)
+
+
+@router.post("/analytics/goal", response_class=HTMLResponse)
+async def analytics_goal(request: Request, amount: str = Form(""), db=Depends(get_db)):
+    """Set or clear the monthly revenue goal. Empty clears it; the sales tab
+    goes back to no target rather than holding a stale one."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    try:
+        cleaned = to_english_digits(str(amount or "")).replace(",", "").replace("٬", "").replace(" ", "").strip()
+        amount_int = int(cleaned) if cleaned else 0
+    except (TypeError, ValueError):
+        amount_int = -1
+    if amount_int < 0:
+        return RedirectResponse(url="/admin/analytics?err=مبلغ هدف باید صفر یا بیشتر باشد.", status_code=303)
+    row = db.query(Settings).filter(Settings.key == "sales_goal_amount").first()
+    if row:
+        row.value = str(amount_int)
+    else:
+        db.add(Settings(key="sales_goal_amount", value=str(amount_int)))
+    db.commit()
+    log_action(db, "sales_goal", f"هدف فروش ماهانه {amount_int:,}", request=request, target_type="settings", after={"amount": amount_int})
+    if amount_int:
+        return RedirectResponse(url="/admin/analytics?msg=هدف ماه ثبت شد.", status_code=303)
+    return RedirectResponse(url="/admin/analytics?msg=هدف ماه برداشته شد.", status_code=303)

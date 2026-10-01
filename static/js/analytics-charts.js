@@ -176,6 +176,17 @@
         window.addEventListener('afterprint', function () { repaint(false); });
     }
 
+    // Click-through: a mark opens the list behind it. The builder decides
+    // the destination from the clicked point; nothing happens without one.
+    function link(chart, fn) {
+        if (!chart || !chart.on) return;
+        chart.on('click', function (point) {
+            var url = null;
+            try { url = fn(point); } catch (error) { url = null; }
+            if (url) window.location.href = url;
+        });
+    }
+
     window.AnalyticsCharts = {
         tones: tones,
         grouped: grouped,
@@ -186,5 +197,6 @@
         categoryAxis: categoryAxis,
         valueAxis: valueAxis,
         create: create,
+        link: link,
     };
 })();

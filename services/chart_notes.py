@@ -49,6 +49,9 @@ CHART_IDS = (
     "priceDistChart",
     "marginCatChart",
     "customerSegChart",
+    "mixChart",
+    "discountChart",
+    "heatChart",
 )
 
 
@@ -227,10 +230,42 @@ def _segments(customer_health, span: str = DEFAULT_SPAN) -> str:
     return sentence
 
 
+def _mix(payment_mix, span: str = DEFAULT_SPAN) -> str:
+    rows = [row for row in _rows(payment_mix) if float(row.get("revenue") or 0)]
+    if not rows:
+        return NO_DATA
+    total = sum(float(row.get("revenue") or 0) for row in rows)
+    top = max(rows, key=lambda row: float(row.get("revenue") or 0))
+    return (f"بیشترین فروش {span} {top.get('label')} بوده ({_share(top.get('revenue'), total)}٪)؛ "
+            f"جمع {_money(total)} در {len(rows)} روش پرداخت.")
+
+
+def _discounts(discounts, span: str = DEFAULT_SPAN) -> str:
+    rows = [row for row in _rows(discounts) if float(row.get("total_amount") or 0)]
+    if not rows:
+        return NO_DATA
+    total = sum(float(row.get("total_amount") or 0) for row in rows)
+    top = max(rows, key=lambda row: float(row.get("total_amount") or 0))
+    return (f"تخفیف {span} جمعا {_money(total)} کم کرده؛ «{top.get('type')}» با "
+            f"{_money(top.get('total_amount'))} بیشترین سهم را دارد.")
+
+
+def _heat(heatmap) -> str:
+    heat = heatmap if isinstance(heatmap, dict) else {}
+    cells = [c for c in _rows(heat.get("cells")) if float(c.get("revenue") or 0)]
+    if not cells:
+        return NO_DATA
+    best = max(cells, key=lambda c: float(c.get("revenue") or 0))
+    total = sum(float(c.get("revenue") or 0) for c in cells)
+    return (f"پرفروشترین روز سال {best.get('date')} با {_money(best.get('revenue'))} "
+            f"بوده؛ جمع ۳۶۵ روز {_money(total)}.")
+
+
 def chart_notes(*, price_stats=None, color_stats=None, size_stats=None, daily=None,
                 categories=None, tier_revenue=None, revenue_trend=None,
                 sales_pattern=None, price_dist=None, margin_by_cat=None,
-                customer_health=None, span: str = DEFAULT_SPAN) -> dict[str, str]:
+                customer_health=None, payment_mix=None, discounts=None,
+                heatmap=None, span: str = DEFAULT_SPAN) -> dict[str, str]:
     """One sentence per chart, keyed by the canvas it belongs to.
 
     Every argument is optional and any of them may be empty: an owner looking at a
@@ -254,6 +289,9 @@ def chart_notes(*, price_stats=None, color_stats=None, size_stats=None, daily=No
         "priceDistChart": _price_dist(price_dist, span),
         "marginCatChart": _margin(margin_by_cat, span),
         "customerSegChart": _segments(customer_health, span),
+        "mixChart": _mix(payment_mix, span),
+        "discountChart": _discounts(discounts, span),
+        "heatChart": _heat(heatmap),
     }
     if span != DEFAULT_SPAN:
         # A reader with no charts in front of them is not reading about «این
