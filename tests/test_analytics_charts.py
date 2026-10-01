@@ -1270,3 +1270,84 @@ def test_export_doors_are_buttons_and_tips_open_for_everyone(client, db_session,
     assert len(tips) >= 20
     assert all('tabindex="0"' in tag and 'role="button"' in tag for tag in tips)
     assert "aria-expanded" in page and "pinned" in page
+
+
+# Fake DOM + assertions wrapping the real tip script (see test below).
+_TIP_FAKE_DOM = """
+function __makeTipEl(tag, cls, tipText) {
+    var listeners = {};
+    return {
+        tagName: tag, className: cls || '',
+        _tip: tipText || null, _expanded: 'false',
+        style: {},
+        getAttribute: function (n) {
+            if (n === 'data-tip') return this._tip;
+            if (n === 'aria-expanded') return this._expanded;
+            return null;
+        },
+        setAttribute: function (n, v) { if (n === 'aria-expanded') this._expanded = v; },
+        addEventListener: function (t, fn) { (listeners[t] = listeners[t] || []).push(fn); },
+        blur: function () { (listeners['blur'] || []).forEach(function (fn) { fn({}); }); },
+        getBoundingClientRect: function () { return { left: 100, top: 200, width: 22, height: 22 }; },
+        _fire: function (t, e) { (listeners[t] || []).forEach(function (fn) { fn(e || {}); }); },
+        closest: function () { return null; },
+    };
+}
+var __tipIcon = __makeTipEl('span', 'tip-icon', 'متن راهنما');
+var __tipBox = { style: {}, textContent: '', offsetWidth: 200, offsetHeight: 60 };
+var __docListeners = {};
+var document = {
+    querySelectorAll: function (sel) {
+        if (sel === '.tip-icon') return [__tipIcon];
+        if (sel === '.tip-icon[aria-expanded="true"]') return __tipIcon._expanded === 'true' ? [__tipIcon] : [];
+        return [];
+    },
+    querySelector: function () { return null; },
+    getElementById: function (id) { return id === 'globalTip' ? __tipBox : null; },
+    addEventListener: function (t, fn) { (__docListeners[t] = __docListeners[t] || []).push(fn); },
+};
+var window = { innerWidth: 1200, innerHeight: 800, addEventListener: function () {} };
+function __fireDoc(t, e) { (__docListeners[t] || []).forEach(function (fn) { fn(e); }); }
+"""
+
+_TIP_ASSERTIONS = """
+var __results = [];
+function __check(name, ok) { __results.push([(ok ? 'PASS' : 'FAIL') + ' ' + name, ok]); }
+__tipIcon._fire('mouseenter', { clientX: 300, clientY: 300 });
+__check('hover shows', __tipBox.style.display === 'block' && __tipBox.textContent === 'متن راهنما');
+__tipIcon._fire('mouseleave', {});
+__check('leave hides', __tipBox.style.display === 'none');
+__tipIcon._fire('click', { stopPropagation: function () {}, target: __tipIcon });
+var __pinnedOpen = __tipBox.style.display === 'block';
+__tipIcon._fire('click', { stopPropagation: function () {}, target: __tipIcon });
+__check('tap toggles', __pinnedOpen && __tipBox.style.display === 'none');
+__tipIcon._fire('click', { stopPropagation: function () {}, target: __tipIcon });
+__fireDoc('click', { target: { closest: function () { return null; } } });
+__check('outside click closes', __tipBox.style.display === 'none');
+__tipIcon._fire('click', { stopPropagation: function () {}, target: __tipIcon });
+__fireDoc('keydown', { key: 'Escape' });
+__check('escape closes', __tipBox.style.display === 'none');
+__tipIcon._fire('focus', {});
+__check('focus shows', __tipBox.style.display === 'block');
+var __failed = 0;
+__results.forEach(function (r) { console.log(r[0]); if (!r[1]) __failed++; });
+if (__failed) throw new Error(__failed + ' tip behaviour(s) broken');
+"""
+
+
+@needs_node
+def test_tip_state_machine_shows_hides_and_toggles(tmp_path):
+    """The shipped explainer script is executed, not trusted: hover shows,
+    leave hides, tap pins, anywhere-else/Escape closes, focus shows."""
+    import re as _re
+    src = (ROOT / "templates/admin/analytics.html").read_text(encoding="utf-8")
+    script = _re.search(r"<script>\n// One explainer bubble.*?</script>", src, _re.DOTALL).group(0)
+    harness = tmp_path / "tip-harness.js"
+    harness.write_text(
+        _TIP_FAKE_DOM + script[len("<script>"):-len("</script>")] + _TIP_ASSERTIONS,
+        encoding="utf-8",
+    )
+    result = subprocess.run([shutil.which("node"), str(harness)],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "FAIL" not in result.stdout
