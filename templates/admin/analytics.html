@@ -207,11 +207,61 @@
 <div class="section-heading-row" style="margin-top: 1.5rem;">
     <div>
         <h3>کالاها در بازه</h3>
-        <p class="muted">پارتو، واریانت‌های پرفروش و کالای مرده.</p>
+        <p class="muted">واریانت‌های پرفروش؛ پارتو و کالای مرده در زبانه انبار است.</p>
     </div>
     <a class="text-link" href="/admin/analytics/export?kind=variants&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}">خروجی واریانت‌ها</a>
 </div>
 <div class="tables-grid">
+    <div class="card">
+        <h3>پرفروش‌ترین واریانت‌ها <span class="tip-icon" data-tip="پرفروش‌ترین ترکیب‌های مشخص محصول + سایز + رنگ. این‌ها اقلامی هستند که واقعاً از قفسه پرواز می‌کنند — سفارش مجدد آن‌ها اولویت اول است.">?</span></h3>
+        <table class="data-table">
+            <thead><tr><th>نام</th><th>سایز</th><th>رنگ</th><th>تعداد</th><th>فروش</th></tr></thead>
+            <tbody>
+            {% for v in top_variants %}
+                <tr><td>{{ v.name }}</td><td>{{ v.size }}</td><td>{{ v.color }}</td><td class="tnum">{{ v.qty }}</td><td class="tnum">{{ fmt(v.revenue) }}</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+</section>
+
+<!-- Inventory tab -->
+<section class="analytics-tab" data-tab="inventory" aria-label="انبار"{% if tab != 'inventory' %} hidden{% endif %}>
+<div class="kpi-grid">
+    <div class="kpi-card"><h4>نرخ فروش موجودی <span class="tip-icon" data-tip="چقدر از آنچه داشتید فروخته شد. بالا یعنی قفسه می‌چرخد؛ پایین یعنی سرمایه خوابیده.">?</span></h4><p class="kpi-value">{{ percent(sell_through.pct, 0) }}</p></div>
+    <div class="kpi-card"><h4>نیازمند سفارش <span class="tip-icon" data-tip="تنوع‌هایی که با آهنگ فروش فعلی کمتر از {{ turnover.threshold }} روز دیگر موجودی دارند.">?</span></h4><p class="kpi-value tnum">{{ turnover.low_count }}</p></div>
+    <div class="kpi-card"><h4>کالای مرده <span class="tip-icon" data-tip="اقلامی که در این بازه هیچ فروشی نداشته‌اند ولی هنوز در انبار هستند. سرمایه بلوکه‌شده که باید تخفیف بخورد یا خارج شود.">?</span></h4><p class="kpi-value tnum">{{ dead_stock.count }} قلم</p></div>
+    <div class="kpi-card"><h4>سرمایه انبار <span class="tip-icon" data-tip="پولی که همین حالا در قفسه است، به قیمت خرید.">?</span></h4><p class="kpi-value">{{ fmt(inventory.total_cost) }} تومان</p></div>
+</div>
+
+<div class="section-heading-row" style="margin-top: 1.5rem;">
+    <div>
+        <h3>چقدر مانده</h3>
+        <p class="muted">با آهنگ فروش همین بازه، هر تنوع چند روز دیگر دارد — قرمزها اول سفارش.</p>
+    </div>
+</div>
+<div class="card">
+    {% if turnover.rows %}
+    <div class="table-scroll"><table class="data-table">
+        <thead><tr><th scope="col">کالا</th><th scope="col">موجودی</th><th scope="col">فروش بازه</th><th scope="col">مانده (روز)</th><th scope="col">وضعیت</th></tr></thead>
+        <tbody>
+        {% for row in turnover.rows %}
+            <tr{% if row.reorder %} class="check-overdue"{% endif %}>
+                <td><a href="/admin/products/{{ row.product_id }}">{{ row.name }}</a>{% if row.size or row.color %} <small class="muted">{{ row.size }} {{ row.color }}</small>{% endif %}</td>
+                <td class="tnum">{{ row.stock }}</td>
+                <td class="tnum">{{ row.sold }}</td>
+                <td class="tnum">{{ row.days_left }}</td>
+                <td>{% if row.reorder %}<span class="badge badge-danger">سفارش</span>{% else %}<span class="badge badge-available">کافی</span>{% endif %}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table></div>
+    {% if turnover.omitted %}<p class="muted">+ {{ turnover.omitted }} قلم دیگر با مانده بیشتر.</p>{% endif %}
+    {% else %}<div class="empty-state"><h3>ردی برای شمردن نیست</h3><p>در این بازه فروشی ثبت نشده تا آهنگی از آن خوانده شود.</p></div>{% endif %}
+</div>
+
+<div class="tables-grid" style="margin-top: 1.5rem;">
     <div class="card">
         <h3>تحلیل ABC (Pareto) <span class="tip-icon" data-tip="تحلیل ABC بر اساس اصل پارتو (۸۰/۲۰): کلاس A معدود محصولاتی هستند که ~۸۰٪ درآمد را می‌سازند (هرگز تمام نشوند)، کلاس C دم بلند هستند (تا تقاضا نداشته باشند سفارش ندهید).">?</span></h3>
         <p style="font-size:0.85rem; color:var(--ink-soft);">محصولات بر اساس ۸۰٪ درآمد (A)، ۱۵٪ (B) و ۵٪ (C) دسته‌بندی شده‌اند.</p>
@@ -229,20 +279,9 @@
         </table>
     </div>
     <div class="card">
-        <h3>پرفروش‌ترین واریانت‌ها <span class="tip-icon" data-tip="پرفروش‌ترین ترکیب‌های مشخص محصول + سایز + رنگ. این‌ها اقلامی هستند که واقعاً از قفسه پرواز می‌کنند — سفارش مجدد آن‌ها اولویت اول است.">?</span></h3>
-        <table class="data-table">
-            <thead><tr><th>نام</th><th>سایز</th><th>رنگ</th><th>تعداد</th><th>فروش</th></tr></thead>
-            <tbody>
-            {% for v in top_variants %}
-                <tr><td>{{ v.name }}</td><td>{{ v.size }}</td><td>{{ v.color }}</td><td class="tnum">{{ v.qty }}</td><td class="tnum">{{ fmt(v.revenue) }}</td></tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    <div class="card">
         <h3>کالای مرده (بدون فروش در این دوره) <span class="tip-icon" data-tip="اقلامی که در این بازه هیچ فروشی نداشته‌اند ولی هنوز در انبار هستند. سرمایه شما را بی‌استفاده نگه داشته‌اند. راه‌حل: تخفیف ویژه، بسته‌بندی مجدد، یا حذف از مجموعه.">?</span></h3>
         <p style="font-size:0.85rem; color:var(--ink-soft);">ارزش کل: <b>{{ fmt(dead_stock.total_value) }} تومان</b> — {{ dead_stock.count }} قلم</p>
-        {% if dead_stock.items %}
+        {% if dead_stock.variants %}
         <table class="data-table">
             <thead><tr><th>نام</th><th>سایز</th><th>رنگ</th><th>موجودی</th><th>ارزش</th></tr></thead>
             <tbody>

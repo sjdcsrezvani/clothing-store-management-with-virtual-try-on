@@ -1051,3 +1051,54 @@ def get_return_rate(db, start, end) -> dict:
     back_count, back_amount = back[0] or 0, back[1] or 0
     return {"count": back_count, "amount": back_amount,
             "rate": share(back_count, count)}
+
+
+# Days of stock left below which a variant asks for reorder.
+REORDER_DAYS = 14
+
+
+def get_turnover(db, start, end, limit=50) -> dict:
+    """Days of stock left per selling variant, most urgent first.
+
+    Sell rate comes from the viewed range, stock from the shelf: a variant
+    selling 2 a day with 10 left has 5 days. Variants with no sales in range
+    have no rate and no answer here — the dead-stock list already names them,
+    and dividing by zero would invent one. Capped so the table stays a
+    worklist, with the count of rows left out stated beside it.
+    """
+    days = max((end - start).days, 1)
+    sold = dict(db.query(
+        SaleItem.variant_id, func.sum(SaleItem.quantity),
+    ).join(Sale, Sale.id == SaleItem.sale_id).filter(
+        Sale.payment_confirmed == True,
+        Sale.is_refunded == False,
+        Sale.created_at.between(start, end),
+        SaleItem.variant_id.isnot(None),
+    ).group_by(SaleItem.variant_id).all())
+    variants = db.query(ProductVariant, Product.name).join(Product).filter(
+        ProductVariant.is_active == True,
+        Product.is_active == True,
+        ProductVariant.stock_quantity > 0,
+    ).all()
+    rows = []
+    for variant, name in variants:
+        qty = sold.get(variant.id, 0) or 0
+        if not qty:
+            continue
+        left = (variant.stock_quantity or 0) / (qty / days)
+        rows.append({
+            "variant_id": variant.id,
+            "product_id": variant.product_id,
+            "name": name,
+            "size": variant.size or "",
+            "color": variant.color or "",
+            "stock": variant.stock_quantity or 0,
+            "sold": qty,
+            "days_left": round(left, 1),
+            "reorder": left <= REORDER_DAYS,
+        })
+    rows.sort(key=lambda row: row["days_left"])
+    low = sum(1 for row in rows if row["reorder"])
+    return {"rows": rows[:limit], "total": len(rows),
+            "omitted": max(0, len(rows) - limit),
+            "low_count": low, "threshold": REORDER_DAYS}

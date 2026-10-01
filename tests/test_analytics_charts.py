@@ -1056,3 +1056,91 @@ def test_heatmap_weeks_open_on_saturday_and_carry_revenue(db_session):
     assert first_week and first_week[0]["dow"] == 0
     assert first_week[0]["day_name"] == "شنبه"
     assert all(set(c) == {"date", "dow", "day_name", "week", "revenue"} for c in heat["cells"])
+
+
+def test_inventory_tab_holds_turnover_abc_and_dead(client, db_session, authed):
+    """The sixth tab answers «what runs out, what never moves, what matters»."""
+    from models import Product, ProductVariant, Sale, SaleItem
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    product = Product(name="کالای انبار")
+    db_session.add(product)
+    db_session.flush()
+    fast = ProductVariant(product_id=product.id, price=200_000, cost_price=100_000,
+                          stock_quantity=2, size="M", color="مشکی",
+                          barcode="TURN-1", is_active=True)
+    slow = ProductVariant(product_id=product.id, price=200_000, cost_price=100_000,
+                          stock_quantity=60, size="L", color="سفید",
+                          barcode="TURN-2", is_active=True)
+    db_session.add_all([fast, slow])
+    db_session.flush()
+    sale = Sale(total_amount=2_000_000, final_amount=2_000_000, payment_method="cash",
+                payment_confirmed=True, created_at=now)
+    db_session.add(sale)
+    db_session.flush()
+    db_session.add(SaleItem(sale_id=sale.id, product_id=product.id, variant_id=fast.id,
+                            quantity=10, unit_price=200_000, unit_cost=100_000,
+                            total_price=2_000_000))
+    db_session.commit()
+
+    page = client.get("/admin/analytics?tab=inventory").text
+    assert 'data-tab="inventory"' in page
+    assert "چقدر مانده" in page
+    assert '<span class="badge badge-danger">سفارش</span>' in page
+    assert "تحلیل ABC" in page
+    assert "کالای مرده" in page
+    # …while the product tab no longer carries Pareto or the dead.
+    product_page = client.get("/admin/analytics?tab=product").text
+    assert product_page.split('data-tab="inventory"')[0].count("تحلیل ABC") == 0
+
+
+def test_turnover_pace_and_reorder_flag(db_session):
+    """Ten a month with sixty on the shelf is not urgent; one left is."""
+    from datetime import datetime, timedelta, timezone
+    from models import Product, ProductVariant, Sale, SaleItem
+    from services.analytics import get_turnover
+    now = datetime.now(timezone.utc)
+    start, end = now - timedelta(days=30), now
+    product = Product(name="کالای چرخش")
+    db_session.add(product)
+    db_session.flush()
+    urgent = ProductVariant(product_id=product.id, price=100_000, cost_price=50_000,
+                            stock_quantity=2, barcode="PACE-1", is_active=True)
+    calm = ProductVariant(product_id=product.id, price=100_000, cost_price=50_000,
+                          stock_quantity=60, barcode="PACE-2", is_active=True)
+    db_session.add_all([urgent, calm])
+    db_session.flush()
+    for variant, qty in ((urgent, 10), (calm, 10)):
+        sale = Sale(total_amount=100_000 * qty, final_amount=100_000 * qty,
+                    payment_method="cash", payment_confirmed=True, created_at=now)
+        db_session.add(sale)
+        db_session.flush()
+        db_session.add(SaleItem(sale_id=sale.id, product_id=product.id, variant_id=variant.id,
+                                quantity=qty, unit_price=100_000, unit_cost=50_000,
+                                total_price=100_000 * qty))
+    db_session.commit()
+
+    turnover = get_turnover(db_session, start, end)
+    by_barcode = {r["variant_id"]: r for r in turnover["rows"]}
+    assert by_barcode[urgent.id]["reorder"] is True
+    assert by_barcode[calm.id]["reorder"] is False
+    assert by_barcode[urgent.id]["days_left"] == 6.0
+    assert turnover["low_count"] == 1
+    assert turnover["rows"][0]["variant_id"] == urgent.id  # most urgent first
+
+
+def test_each_tab_reads_only_its_own_queries(client, db_session, authed, monkeypatch):
+    """Twenty queries for one visible tab was the waste; a tab switch is a
+    reload, so nothing inactive is ever missed — just read on its own visit."""
+    import services.analytics as analytics_module
+    import routers.analytics as analytics_router
+
+    def _refuse(*args, **kwargs):
+        raise AssertionError("inactive tab query ran")
+
+    monkeypatch.setattr(analytics_module, "get_color_size_matrix", _refuse)
+    monkeypatch.setattr(analytics_module, "get_year_heatmap", _refuse)
+    assert client.get("/admin/analytics?tab=sales").status_code == 200
+
+    monkeypatch.setattr(analytics_module, "get_daily_revenue", _refuse)
+    assert client.get("/admin/analytics?tab=product").status_code == 200

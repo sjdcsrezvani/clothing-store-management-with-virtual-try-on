@@ -539,7 +539,7 @@ def test_a_category_with_no_revenue_shows_a_dash_in_the_margin_column(client, db
     ])
     db_session.commit()
 
-    html = client.get("/admin/analytics?period=all").text
+    html = client.get("/admin/analytics?tab=profit&period=all").text
     free_row = re.search(r"<tr><td>هدیه</td>.*?</tr>", html, re.S)
     paid_row = re.search(r"<tr><td>فروش</td>.*?</tr>", html, re.S)
     assert free_row and paid_row, "the categories table did not render both rows"
