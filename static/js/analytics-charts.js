@@ -181,6 +181,7 @@
         grouped: grouped,
         compact: compact,
         money: function (v) { return grouped(v) + ' تومان'; },
+        percent: function (v) { return faDigits(String(v)) + '٪'; },
         base: base,
         categoryAxis: categoryAxis,
         valueAxis: valueAxis,

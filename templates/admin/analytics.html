@@ -373,6 +373,154 @@ if (window.echarts && AC) {
         ];
         return opt;
     });
+    var doughnutLabel = function (p) { return p.name + '\n' + AC.percent(Math.round(p.percent)); };
+    var doughnutTip = function (unit) {
+        return function (p) {
+            var value = unit === 'money' ? AC.money(p.value) : AC.grouped(p.value);
+            return p.name + ': ' + value + ' (' + AC.percent(Math.round(p.percent)) + ')';
+        };
+    };
+    var PALETTE6 = function (T) { return [T.candy, T.sky, T.sunshine, T.mint, T.lavender, T.persimmon]; };
+    AC.create(document.getElementById('categoryChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.tooltip.trigger = 'item';
+        opt.tooltip.formatter = doughnutTip('money');
+        opt.series = [{
+            type: 'pie', radius: ['45%', '70%'],
+            data: categoryData.map(function (c) { return { name: c.category, value: c.revenue }; }),
+            itemStyle: { color: function (p) { return PALETTE6(T)[p.dataIndex % 6]; } },
+            label: { formatter: doughnutLabel },
+        }];
+        return opt;
+    });
+    AC.create(document.getElementById('tierChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.legend = { show: false };
+        opt.tooltip.valueFormatter = function (v) { return AC.money(v); };
+        opt.xAxis = AC.categoryAxis(tierData.map(function (t) { return t.label; }), paper);
+        opt.yAxis = AC.valueAxis(paper, true);
+        opt.series = [{
+            name: 'فروش', type: 'bar',
+            data: tierData.map(function (t) { return t.revenue; }),
+            itemStyle: { color: function (p) { return [T.lavender, T.sunshine, T.sky][p.dataIndex % 3]; }, borderRadius: [3, 3, 0] },
+        }];
+        return opt;
+    });
+    AC.create(document.getElementById('pricingChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.legend = { show: false };
+        opt.tooltip.valueFormatter = function (v) { return AC.money(v); };
+        opt.xAxis = AC.categoryAxis(['هزینه', 'قیمت فروش', 'سود'], paper);
+        opt.yAxis = AC.valueAxis(paper, true);
+        opt.series = [{
+            name: 'به‌ازای هر واحد', type: 'bar',
+            data: [priceStats.avg_cost, priceStats.avg_price, priceStats.avg_profit],
+            itemStyle: { color: function (p) { return [T.sunshine, T.sky, T.mint][p.dataIndex]; }, borderRadius: [3, 3, 0] },
+        }];
+        return opt;
+    });
+    AC.create(document.getElementById('colorChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.legend = { show: false };
+        opt.tooltip.valueFormatter = function (v) { return AC.grouped(v); };
+        opt.xAxis = AC.valueAxis(paper, false);
+        opt.yAxis = AC.categoryAxis(colorStats.map(function (c) { return c.label; }).slice(0, 12), paper);
+        opt.series = [{
+            name: 'تعداد', type: 'bar',
+            data: colorStats.map(function (c) { return c.quantity; }).slice(0, 12),
+            itemStyle: { color: T.lavender, borderRadius: [0, 3, 3, 0] },
+        }];
+        return opt;
+    });
+    AC.create(document.getElementById('sizeChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.legend = { show: false };
+        opt.tooltip.valueFormatter = function (v) { return AC.grouped(v); };
+        opt.xAxis = AC.categoryAxis(sizeStats.map(function (s) { return s.label; }).slice(0, 12), paper);
+        opt.yAxis = AC.valueAxis(paper, false);
+        opt.series = [{
+            name: 'تعداد', type: 'bar',
+            data: sizeStats.map(function (s) { return s.quantity; }).slice(0, 12),
+            itemStyle: { color: T.persimmon, borderRadius: [3, 3, 0] },
+        }];
+        return opt;
+    });
+    AC.create(document.getElementById('weekdayChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.legend = { show: false };
+        opt.tooltip.valueFormatter = function (v) { return AC.money(v); };
+        opt.xAxis = AC.categoryAxis(salesPattern.weekdays.map(function (d) { return d.day; }), paper);
+        opt.yAxis = AC.valueAxis(paper, true);
+        opt.series = [{
+            name: 'فروش', type: 'bar',
+            data: salesPattern.weekdays.map(function (d) { return d.revenue; }),
+            itemStyle: { color: T.sky, borderRadius: [3, 3, 0] },
+        }];
+        return opt;
+    });
+    AC.create(document.getElementById('hourChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.legend = { show: false };
+        opt.tooltip.valueFormatter = function (v) { return AC.money(v); };
+        opt.xAxis = AC.categoryAxis(salesPattern.hours.map(function (h) { return h.label; }), paper);
+        opt.yAxis = AC.valueAxis(paper, true);
+        opt.series = [{
+            name: 'فروش', type: 'bar',
+            data: salesPattern.hours.map(function (h) { return h.revenue; }),
+            itemStyle: { color: T.sunshine, borderRadius: [3, 3, 0] },
+        }];
+        return opt;
+    });
+    AC.create(document.getElementById('priceDistChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.legend = { show: false };
+        opt.tooltip.valueFormatter = function (v) { return AC.grouped(v); };
+        opt.xAxis = AC.categoryAxis(priceDist.map(function (p) { return window.chartValueText(p.price, 'count') + ' ت'; }), paper);
+        opt.yAxis = AC.valueAxis(paper, false);
+        opt.series = [{
+            name: 'تعداد', type: 'bar',
+            data: priceDist.map(function (p) { return p.quantity; }),
+            itemStyle: { color: T.lavender, borderRadius: [3, 3, 0] },
+        }];
+        return opt;
+    });
+    AC.create(document.getElementById('marginCatChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.legend = { show: false };
+        opt.tooltip.valueFormatter = function (v) { return AC.percent(v); };
+        var xAxis = AC.valueAxis(paper, false);
+        xAxis.axisLabel.formatter = function (v) { return AC.percent(v); };
+        opt.xAxis = xAxis;
+        opt.yAxis = AC.categoryAxis(marginByCat.map(function (c) { return c.category; }), paper);
+        opt.series = [{
+            name: 'حاشیه سود ٪', type: 'bar',
+            data: marginByCat.map(function (c) { return c.margin; }),
+            itemStyle: { color: function (p) { return marginByCat[p.dataIndex].margin >= 0 ? T.mint : T.candy; }, borderRadius: [0, 3, 3, 0] },
+        }];
+        return opt;
+    });
+    AC.create(document.getElementById('customerSegChart'), function (paper) {
+        var T = AC.tones(paper);
+        var opt = AC.base(paper);
+        opt.tooltip.trigger = 'item';
+        opt.tooltip.formatter = doughnutTip('count');
+        opt.series = [{
+            type: 'pie', radius: ['45%', '70%'],
+            data: customerHealth.segments.map(function (s) { return { name: s.label, value: s.count }; }),
+            itemStyle: { color: function (p) { return [T.lavender, T.sunshine, T.sky, T.candy][p.dataIndex % 4]; } },
+            label: { formatter: doughnutLabel },
+        }];
+        return opt;
+    });
 } else {
 new Chart(document.getElementById('dailyChart'), {
     type: 'bar',
@@ -390,20 +538,16 @@ new Chart(document.getElementById('trendChart'), {
     ]},
     options: baseOpts({ valueFormat: 'money' })
 });
-}
-
 new Chart(document.getElementById('categoryChart'), {
     type: 'doughnut',
     data: { labels: categoryData.map(c => c.category), datasets: [{ data: categoryData.map(c => c.revenue), backgroundColor: palette }]},
     options: { responsive: true, valueFormat: 'money', plugins: { legend: { position: 'bottom', labels: { font: { family: 'Vazirmatn' } } } } }
 });
-
 new Chart(document.getElementById('tierChart'), {
     type: 'bar',
     data: { labels: tierData.map(t => t.label), datasets: [{ label: 'فروش', data: tierData.map(t => t.revenue), backgroundColor: [tone.lavender, tone.sunshine, tone.sky] }]},
     options: baseOpts({ valueFormat: 'money', plugins: { legend: { display: false } } })
 });
-
 new Chart(document.getElementById('pricingChart'), {
     type: 'bar',
     data: { labels: ['هزینه', 'قیمت فروش', 'سود'], datasets: [{
@@ -412,31 +556,26 @@ new Chart(document.getElementById('pricingChart'), {
     }]},
     options: baseOpts({ valueFormat: 'money', plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } })
 });
-
 new Chart(document.getElementById('colorChart'), {
     type: 'bar',
     data: { labels: colorStats.map(c => c.label).slice(0, 12), datasets: [{ label: 'تعداد', data: colorStats.map(c => c.quantity).slice(0, 12), backgroundColor: tone.lavender }]},
     options: baseOpts({ indexAxis: 'y', valueFormat: 'count', plugins: { legend: { display: false } } })
 });
-
 new Chart(document.getElementById('sizeChart'), {
     type: 'bar',
     data: { labels: sizeStats.map(s => s.label).slice(0, 12), datasets: [{ label: 'تعداد', data: sizeStats.map(s => s.quantity).slice(0, 12), backgroundColor: tone.persimmon }]},
     options: baseOpts({ valueFormat: 'count', plugins: { legend: { display: false } } })
 });
-
 new Chart(document.getElementById('weekdayChart'), {
     type: 'bar',
     data: { labels: salesPattern.weekdays.map(d => d.day), datasets: [{ label: 'فروش', data: salesPattern.weekdays.map(d => d.revenue), backgroundColor: tone.sky }]},
     options: baseOpts({ valueFormat: 'money', plugins: { legend: { display: false } } })
 });
-
 new Chart(document.getElementById('hourChart'), {
     type: 'bar',
     data: { labels: salesPattern.hours.map(h => h.label), datasets: [{ label: 'فروش', data: salesPattern.hours.map(h => h.revenue), backgroundColor: tone.sunshine }]},
     options: baseOpts({ valueFormat: 'money', plugins: { legend: { display: false } } })
 });
-
 new Chart(document.getElementById('priceDistChart'), {
     type: 'bar',
     data: { labels: priceDist.map(p => window.chartValueText(p.price, 'count') + ' ت'), datasets: [
@@ -444,18 +583,17 @@ new Chart(document.getElementById('priceDistChart'), {
     ]},
     options: baseOpts({ valueFormat: 'count', plugins: { legend: { display: false } } })
 });
-
 new Chart(document.getElementById('marginCatChart'), {
     type: 'bar',
     data: { labels: marginByCat.map(c => c.category), datasets: [{ label: 'حاشیه سود ٪', data: marginByCat.map(c => c.margin), backgroundColor: marginByCat.map(c => c.margin >= 0 ? tone.mint : tone.candy) }]},
     options: baseOpts({ indexAxis: 'y', valueFormat: 'percent', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } })
 });
-
 new Chart(document.getElementById('customerSegChart'), {
     type: 'doughnut',
     data: { labels: customerHealth.segments.map(s => s.label), datasets: [{ data: customerHealth.segments.map(s => s.count), backgroundColor: [tone.lavender, tone.sunshine, tone.sky, tone.candy] }]},
     options: { responsive: true, valueFormat: 'count', plugins: { legend: { position: 'bottom', labels: { font: { family: 'Vazirmatn', size: 11 } } } } }
 });
+}
 }
 </script>
 

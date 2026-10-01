@@ -963,3 +963,24 @@ def test_the_bridge_formats_speaks_paper_and_stays_still_on_request(tmp_path):
     assert bridge["yPosition"] == "right"
     assert bridge["paperInk"] == "rgb(26, 26, 26)"
     assert bridge["paperBar"] == "#C65D3A"
+
+
+@needs_node
+def test_the_rendered_config_script_parses(client, db_session, tmp_path):
+    """The ECharts builders the page ships must parse: twelve builders plus
+    twelve fallbacks in one inline script is exactly where a dropped brace
+    would hide, and no eye reviews generated commas."""
+    from tests.test_roles import _session_as, _staff
+
+    user, password = _staff(db_session, "config-owner", "owner")
+    _session_as(client, user, password)
+    html = client.get("/admin/analytics").text
+    blocks = re.findall(r"<script>(.*?)</script>", html, re.DOTALL)
+    config = next(b for b in blocks if "AC.create(document.getElementById" in b)
+    assert config.count("AC.create(document.getElementById") == 12
+    assert config.count("new Chart(document.getElementById") == 12
+    script = tmp_path / "analytics-config.js"
+    script.write_text(config, encoding="utf-8")
+    result = subprocess.run([shutil.which("node"), "--check", str(script)],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
