@@ -966,6 +966,30 @@ def test_the_bridge_formats_speaks_paper_and_stays_still_on_request(tmp_path):
 
 
 @needs_node
+def test_the_digit_switch_is_one_choke_point_for_every_formatter(tmp_path):
+    """Latin axes on demand: the same formatters, the other script."""
+    script = tmp_path / "digits.js"
+    script.write_text(
+        "global.window = { addEventListener() {}, CHART_DIGITS: 'latin',"
+        " matchMedia: () => ({ matches: false }) };\n"
+        "global.document = { documentElement: {} };\n"
+        "global.getComputedStyle = () => ({ getPropertyValue: () => '' });\n"
+        + (ROOT / "static/js/analytics-charts.js").read_text() + "\n"
+        "const AC = global.window.AnalyticsCharts;\n"
+        "console.log(JSON.stringify({ money: AC.money(2500000),"
+        " grouped: AC.grouped(1234567), percent: AC.percent(42.5) }));\n",
+        encoding="utf-8",
+    )
+    result = subprocess.run([shutil.which("node"), str(script)],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    latin = json.loads(result.stdout)
+    assert latin["money"] == "2,500,000 تومان"
+    assert latin["grouped"] == "1,234,567"
+    assert latin["percent"] == "42.5٪"
+
+
+@needs_node
 def test_the_rendered_config_script_parses(client, db_session, tmp_path):
     """The ECharts builders the page ships must parse: twelve builders plus
     twelve fallbacks in one inline script is exactly where a dropped brace
@@ -977,9 +1001,9 @@ def test_the_rendered_config_script_parses(client, db_session, tmp_path):
     html = client.get("/admin/analytics").text
     blocks = re.findall(r"<script>(.*?)</script>", html, re.DOTALL)
     config = next(b for b in blocks if "AC.create(document.getElementById" in b)
-    assert config.count("AC.create(document.getElementById") == 15
+    assert config.count("AC.create(document.getElementById") == 16
     assert config.count("new Chart(document.getElementById") == 12
-    for canvas in ("mixChart", "discountChart", "heatChart"):
+    for canvas in ("mixChart", "discountChart", "heatChart", "staffChart"):
         assert f"getElementById('{canvas}')" in config, canvas
     script = tmp_path / "analytics-config.js"
     script.write_text(config, encoding="utf-8")
@@ -1144,3 +1168,90 @@ def test_each_tab_reads_only_its_own_queries(client, db_session, authed, monkeyp
 
     monkeypatch.setattr(analytics_module, "get_daily_revenue", _refuse)
     assert client.get("/admin/analytics?tab=product").status_code == 200
+
+
+def test_staff_names_cashiers_and_parks_the_rest(client, db_session, authed):
+    """Cashiers read off their shifts; the shift-less stand apart, unnamed by guess."""
+    from datetime import datetime, timezone
+    from models import CashSession, Sale, StaffUser
+    from services.analytics import get_staff_performance
+    from tests.conftest import csrf_token
+    from tests.test_roles import _session_as, _staff
+    cashier, password = _session_as_cashier(db_session)
+    _session_as(client, cashier, password)
+    token = csrf_token(client, "/admin/cashbox")
+    client.post("/admin/cashbox/open", data={"opening": "500000", "csrf_token": token},
+                follow_redirects=False)
+    _seed_sale(db_session, 1_000_000)
+    shift = db_session.query(CashSession).filter(CashSession.status == "open").one()
+    sale = db_session.query(Sale).order_by(Sale.id.desc()).first()
+    sale.cash_session_id = shift.id
+    db_session.commit()
+    _seed_sale(db_session, 2_000_000)
+
+    performance = get_staff_performance(db_session,
+                                        datetime.now(timezone.utc).replace(hour=0, minute=0),
+                                        datetime.now(timezone.utc))
+    assert len(performance["rows"]) == 1
+    assert performance["rows"][0]["revenue"] == 1_000_000
+    assert performance["unattributed"]["revenue"] == 2_000_000
+    owner_token = csrf_token(client)
+    client.post("/admin/login", data={"username": "owner", "password": "test-admin-pass",
+                                      "csrf_token": owner_token}, follow_redirects=False)
+    page = client.get("/admin/analytics?tab=sales").text
+    assert "عملکرد فروشندگان" in page
+    assert "نامشخص (بدون شیفت)" in page
+
+
+def _session_as_cashier(db_session):
+    from tests.test_roles import _staff
+    return _staff(db_session, "analytics-cashier", "cashier")
+
+
+def test_returns_name_variants_reasons_and_rate(client, db_session, authed):
+    """What came back, how much, and why — or an honest empty section."""
+    from models import Product, ProductVariant, Sale, SaleItem
+    from datetime import datetime, timezone
+    from tests.conftest import csrf_token
+    now = datetime.now(timezone.utc)
+    product = Product(name="کالای برگشتی")
+    db_session.add(product)
+    db_session.flush()
+    variant = ProductVariant(product_id=product.id, price=300_000, cost_price=150_000,
+                             stock_quantity=5, barcode="RET-1", is_active=True)
+    db_session.add(variant)
+    db_session.flush()
+    db_session.flush()
+    sale = Sale(total_amount=600_000, final_amount=600_000, payment_method="cash",
+                payment_confirmed=True, is_refunded=True, refund_amount=600_000,
+                refund_reason="سایز نشد", created_at=now)
+    db_session.add(sale)
+    db_session.flush()
+    db_session.add(SaleItem(sale_id=sale.id, product_id=product.id, variant_id=variant.id,
+                            quantity=2, unit_price=300_000, unit_cost=150_000,
+                            total_price=600_000))
+    db_session.commit()
+
+    page = client.get("/admin/analytics?tab=sales").text
+    assert "مرجوعی‌ها" in page
+    assert "سایز نشد" in page
+    assert "کالای برگشتی" in page
+
+    for kind in ("hourly", "weekday", "trend", "margin", "basket", "staff", "returns"):
+        response = client.get(f"/admin/analytics/export?kind={kind}")
+        assert response.status_code == 200, kind
+        assert "text/csv" in response.headers["content-type"], kind
+
+
+def test_chart_digits_toggle_is_charts_only_and_sticks(client, db_session, authed):
+    """Latin axes on demand; Persian everywhere else, untouched."""
+    from tests.conftest import csrf_token
+    from models import Settings
+    token = csrf_token(client, "/admin/analytics")
+    assert client.post("/admin/analytics/digits", data={"csrf_token": token, "mode": "latin"},
+                       follow_redirects=False).status_code == 303
+    assert db_session.query(Settings).filter(Settings.key == "chart_digits_latin").one().value == "1"
+    assert "window.CHART_DIGITS = 'latin'" in client.get("/admin/analytics").text
+    assert client.post("/admin/analytics/digits", data={"csrf_token": token, "mode": "fa"},
+                       follow_redirects=False).status_code == 303
+    assert "window.CHART_DIGITS = 'fa'" in client.get("/admin/analytics").text

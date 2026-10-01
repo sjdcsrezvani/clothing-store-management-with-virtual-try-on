@@ -52,6 +52,7 @@ CHART_IDS = (
     "mixChart",
     "discountChart",
     "heatChart",
+    "staffChart",
 )
 
 
@@ -265,7 +266,7 @@ def chart_notes(*, price_stats=None, color_stats=None, size_stats=None, daily=No
                 categories=None, tier_revenue=None, revenue_trend=None,
                 sales_pattern=None, price_dist=None, margin_by_cat=None,
                 customer_health=None, payment_mix=None, discounts=None,
-                heatmap=None, span: str = DEFAULT_SPAN) -> dict[str, str]:
+                heatmap=None, staff=None, span: str = DEFAULT_SPAN) -> dict[str, str]:
     """One sentence per chart, keyed by the canvas it belongs to.
 
     Every argument is optional and any of them may be empty: an owner looking at a
@@ -292,6 +293,7 @@ def chart_notes(*, price_stats=None, color_stats=None, size_stats=None, daily=No
         "mixChart": _mix(payment_mix, span),
         "discountChart": _discounts(discounts, span),
         "heatChart": _heat(heatmap),
+        "staffChart": _staff(staff, span),
     }
     if span != DEFAULT_SPAN:
         # A reader with no charts in front of them is not reading about «این
@@ -300,3 +302,14 @@ def chart_notes(*, price_stats=None, color_stats=None, size_stats=None, daily=No
         notes = {key: (empty if value == NO_DATA else value)
                  for key, value in notes.items()}
     return notes
+
+
+def _staff(staff, span: str = DEFAULT_SPAN) -> str:
+    perf = staff if isinstance(staff, dict) else {}
+    rows = [row for row in _rows(perf.get("rows")) if float(row.get("revenue") or 0)]
+    if not rows:
+        return NO_DATA
+    total = sum(float(row.get("revenue") or 0) for row in rows)
+    top = max(rows, key=lambda row: float(row.get("revenue") or 0))
+    return (f"پرفروشترین صندوقدار {span} «{top.get('name')}» با {_money(top.get('revenue'))} "
+            f"بوده؛ جمع {_money(total)} در {len(rows)} صندوقدار.")

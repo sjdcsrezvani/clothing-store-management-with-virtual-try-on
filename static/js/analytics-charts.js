@@ -12,8 +12,13 @@
 
     var FA_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
 
+    // Chart digit script, set by the page from the owner's toggle: Persian
+    // groupings, or Latin ones for the eyes that read faster that way. One
+    // choke point, so every formatter on every chart follows the same switch.
     function faDigits(text) {
-        return String(text).replace(/[0-9]/g, function (d) { return FA_DIGITS[+d]; });
+        var s = String(text);
+        if (typeof window !== 'undefined' && window.CHART_DIGITS === 'latin') return s;
+        return s.replace(/[0-9]/g, function (d) { return FA_DIGITS[+d]; });
     }
 
     function grouped(value) {

@@ -1102,3 +1102,72 @@ def get_turnover(db, start, end, limit=50) -> dict:
     return {"rows": rows[:limit], "total": len(rows),
             "omitted": max(0, len(rows) - limit),
             "low_count": low, "threshold": REORDER_DAYS}
+
+
+def get_staff_performance(db, start, end) -> dict:
+    """Revenue and invoices per cashier, read off their shifts.
+
+    Only cash sales recorded under an open drawer carry a cashier, through
+    the shift that counted them — card and shift-less sales name no one, so
+    they stand in their own «نامشخص» row rather than being split by guess.
+    """
+    from models import CashSession, StaffUser
+    rows = db.query(
+        CashSession.cashier_user_id,
+        func.count(Sale.id).label("invoices"),
+        func.coalesce(func.sum(Sale.final_amount), 0).label("revenue"),
+    ).join(Sale, Sale.cash_session_id == CashSession.id).filter(
+        Sale.payment_confirmed == True,
+        Sale.is_refunded == False,
+        Sale.created_at.between(start, end),
+    ).group_by(CashSession.cashier_user_id).all()
+    names = {u.id: (u.full_name or u.username)
+             for u in db.query(StaffUser).filter(
+                 StaffUser.id.in_([r[0] for r in rows if r[0]])).all()} if rows else {}
+    staff = [{"name": names.get(user_id, "کاربر حذف‌شده"),
+              "invoices": invoices or 0, "revenue": revenue or 0}
+             for user_id, invoices, revenue in rows]
+    unattributed = db.query(
+        func.count(Sale.id), func.coalesce(func.sum(Sale.final_amount), 0),
+    ).filter(
+        Sale.payment_confirmed == True,
+        Sale.is_refunded == False,
+        Sale.created_at.between(start, end),
+        Sale.cash_session_id.is_(None),
+    ).one()
+    staff.sort(key=lambda row: row["revenue"], reverse=True)
+    return {"rows": staff,
+            "unattributed": {"invoices": unattributed[0] or 0,
+                             "revenue": unattributed[1] or 0}}
+
+
+def get_returns(db, start, end, limit=10) -> dict:
+    """What came back: top variants by returned units, and the reasons given."""
+    from models import Product
+    items = db.query(
+        Product.name, ProductVariant.size, ProductVariant.color,
+        func.sum(SaleItem.quantity).label("qty"),
+        func.coalesce(func.sum(SaleItem.total_price), 0).label("amount"),
+    ).join(SaleItem, SaleItem.variant_id == ProductVariant.id) \
+     .join(Product, Product.id == SaleItem.product_id) \
+     .join(Sale, Sale.id == SaleItem.sale_id) \
+     .filter(
+        Sale.payment_confirmed == True,
+        Sale.is_refunded == True,
+        Sale.created_at.between(start, end),
+    ).group_by(ProductVariant.id).order_by(func.sum(SaleItem.quantity).desc()) \
+     .limit(limit).all()
+    reasons = db.query(
+        Sale.refund_reason, func.count(Sale.id),
+    ).filter(
+        Sale.payment_confirmed == True,
+        Sale.is_refunded == True,
+        Sale.created_at.between(start, end),
+    ).group_by(Sale.refund_reason).order_by(func.count(Sale.id).desc()).all()
+    return {
+        "variants": [{"name": name or "—", "size": size or "", "color": color or "",
+                      "qty": qty or 0, "amount": amount or 0}
+                     for name, size, color, qty, amount in items],
+        "reasons": [{"reason": reason or "بدون دلیل", "count": count}
+                    for reason, count in reasons],
+    }

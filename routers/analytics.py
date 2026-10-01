@@ -17,7 +17,8 @@ from services.analytics import (
     get_sell_through, get_revenue_trend, get_basket_stats,
     get_customer_health, get_margin_by_category, get_dead_stock,
     get_price_distribution, get_top_selling_variants, get_new_customers,
-    get_revenue_by_payment, get_return_rate, get_turnover, get_year_heatmap,
+    get_revenue_by_payment, get_return_rate, get_returns, get_staff_performance,
+    get_turnover, get_year_heatmap,
 )
 
 router = APIRouter(prefix="/admin")
@@ -74,6 +75,9 @@ async def admin_analytics(
         "top_variants": [], "return_rate": {"count": 0, "amount": 0, "rate": None},
         "heatmap": {"cells": [], "weeks": 0, "max": 0},
         "goal": None, "all_categories": [],
+        "staff": {"rows": [], "unattributed": {"invoices": 0, "revenue": 0}},
+        "returns": {"variants": [], "reasons": []},
+        "chart_digits": "latin" if get_setting_int(db, "chart_digits_latin", 0) == 1 else "fa",
         "inventory": {"total_cost": 0, "total_retail": 0, "units": 0,
                       "categories": [], "low_stock": []},
         "abc_products": {"a_count": 0, "a_pct": 0, "products": [], "total_rev": 0, "a_rev": 0},
@@ -112,6 +116,8 @@ async def admin_analytics(
         ]
         data["basket"] = get_basket_stats(db, start, end)
         data["return_rate"] = get_return_rate(db, start, end)
+        data["staff"] = get_staff_performance(db, start, end)
+        data["returns"] = get_returns(db, start, end)
         # The monthly goal, if the owner set one: month-to-date revenue
         # against it, so the sales tab opens with «where the month stands».
         goal_amount = get_setting_int(db, "sales_goal_amount", 0)
@@ -174,6 +180,7 @@ async def admin_analytics(
         price_dist=data["price_dist"], margin_by_cat=data["margin_by_cat"],
         customer_health=data["customer_health"], payment_mix=data["payment_mix"],
         discounts=data["discounts"], heatmap=data["heatmap"],
+        staff=data["staff"],
     )
 
     return templates.TemplateResponse(request, "admin/analytics.html", {
@@ -196,6 +203,9 @@ async def admin_analytics(
         "sell_through": data["sell_through"],
         "revenue_trend": data["revenue_trend"],
         "basket": data["basket"],
+        "staff": data["staff"],
+        "returns": data["returns"],
+        "chart_digits": data["chart_digits"],
         "customer_health": data["customer_health"],
         "margin_by_cat": data["margin_by_cat"],
         "dead_stock": data["dead_stock"],
@@ -286,6 +296,57 @@ async def analytics_export(
             rows.append([row["size"]] + [cell["qty"] for cell in row["cells"]])
         return _analytics_csv(f"analytics_matrix_{stamp}.csv", rows)
 
+    if kind == "hourly":
+        rows = [["ساعت", "فروش"]]
+        for h in get_sales_pattern(db, start, end)["hours"]:
+            rows.append([h["label"], h["revenue"]])
+        return _analytics_csv(f"analytics_hourly_{stamp}.csv", rows)
+
+    if kind == "weekday":
+        rows = [["روز هفته", "فروش"]]
+        for d in get_sales_pattern(db, start, end)["weekdays"]:
+            rows.append([d["day"], d["revenue"]])
+        return _analytics_csv(f"analytics_weekday_{stamp}.csv", rows)
+
+    if kind == "trend":
+        rows = [["ماه", "درآمد", "سود"]]
+        for m in get_revenue_trend(db):
+            rows.append([m["month"], m["revenue"], m["profit"]])
+        return _analytics_csv(f"analytics_trend_{stamp}.csv", rows)
+
+    if kind == "margin":
+        rows = [["دسته", "حاشیه"]]
+        for c in get_margin_by_category(db, start, end):
+            rows.append([c["category"], c["margin"]])
+        return _analytics_csv(f"analytics_margin_{stamp}.csv", rows)
+
+    if kind == "basket":
+        stats = get_basket_stats(db, start, end)
+        rows = [["شاخص", "مقدار"]]
+        for key in ("items_per_txn", "rev_per_item", "total_items"):
+            rows.append([key, stats.get(key, 0)])
+        return _analytics_csv(f"analytics_basket_{stamp}.csv", rows)
+
+    if kind == "staff":
+        performance = get_staff_performance(db, start, end)
+        rows = [["فروشنده", "فاکتور", "فروش"]]
+        for row in performance["rows"]:
+            rows.append([row["name"], row["invoices"], row["revenue"]])
+        rows.append(["نامشخص", performance["unattributed"]["invoices"],
+                     performance["unattributed"]["revenue"]])
+        return _analytics_csv(f"analytics_staff_{stamp}.csv", rows)
+
+    if kind == "returns":
+        refunds = get_returns(db, start, end)
+        rows = [["کالا", "سایز", "رنگ", "تعداد", "مبلغ"]]
+        for v in refunds["variants"]:
+            rows.append([v["name"], v["size"], v["color"], v["qty"], v["amount"]])
+        rows.append([])
+        rows.append(["دلیل", "تعداد"])
+        for r in refunds["reasons"]:
+            rows.append([r["reason"], r["count"]])
+        return _analytics_csv(f"analytics_returns_{stamp}.csv", rows)
+
     # default: daily
     rows = [["تاریخ", "فروش", "سود", "تعداد فاکتور"]]
     for d in get_daily_revenue(db, start, end):
@@ -317,3 +378,23 @@ async def analytics_goal(request: Request, amount: str = Form(""), db=Depends(ge
     if amount_int:
         return RedirectResponse(url="/admin/analytics?msg=هدف ماه ثبت شد.", status_code=303)
     return RedirectResponse(url="/admin/analytics?msg=هدف ماه برداشته شد.", status_code=303)
+
+
+@router.post("/analytics/digits", response_class=HTMLResponse)
+async def analytics_digits(request: Request, mode: str = Form("fa"), db=Depends(get_db)):
+    """Chart digit script, scoped to charts: Persian groupings or Latin ones.
+
+    The standing Latin-kept vote covers inputs and examples; axes are a
+    display surface, so this toggle lives here and nowhere else.
+    """
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    row = db.query(Settings).filter(Settings.key == "chart_digits_latin").first()
+    value = "1" if str(mode or "").strip().lower() == "latin" else "0"
+    if row:
+        row.value = value
+    else:
+        db.add(Settings(key="chart_digits_latin", value=value))
+    db.commit()
+    return RedirectResponse(url="/admin/analytics?msg=ارقام نمودارها تغییر کرد.", status_code=303)
