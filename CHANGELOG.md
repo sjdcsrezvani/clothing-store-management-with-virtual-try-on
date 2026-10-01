@@ -1,3 +1,73 @@
+## 2.8.0 — 1405/07/09 (2026-10-01)
+
+### تحلیل فروش: a sixth tab, a vector engine, and one sentence per chart
+
+- **انبار becomes the sixth tab, and a visit pays only for its own.** The page
+  already had five sections — فروش، محصول، مشتریان، سود، روند — with every query
+  behind all of them running on every load; انبار joins them, and the route
+  now reads only what the open tab draws, so a reader checking فروش no longer
+  waits on turnover, ABC and dead stock behind it.
+- **Every chart is vector now, drawn by a vendored engine.** Apache ECharts
+  6.1.0, built down to Bar, Line, Pie and Heatmap with the SVG renderer, lives
+  in `static/vendor` beside a README carrying the build recipe and its
+  SHA-256 — offline by construction, no CDN, and no new dependency. Sixteen
+  chart cards, twelve of them the ones that used to be canvases.
+- **One bridge speaks the shop's language.** `analytics-charts.js` reads the
+  theme from the page's own tokens — never a literal — sets Vazirmatn type,
+  prints Persian groupings (or Latin, by the charts-only digits toggle), puts
+  values on the right with time flowing right-to-left like the page, names
+  Jalali months on the year line, and sets entrance motion to zero for readers
+  who asked for stillness.
+- **Every card prints its sentence.** Each of the sixteen charts carries a
+  one-line reading built from the very figures it draws, so the page still
+  reads on paper or to an eye that cannot separate the accents, and a card
+  with nothing to show says «داده‌ای نیست» instead of drawing an empty frame.
+  ترکیب پرداخت، سهم تخفیف‌ها، تقویم سال and فروشندگان are the four new ones.
+- **A mark opens what is behind it.** The daily bars open the sales list, a
+  category slice opens تحلیل for that category, a tier slice opens the
+  customers it counts — a chart is a door, not a poster.
+- **The year reads at a glance.** تقویم فروش سال lays the last 365 days as
+  weeks opening on شنبه, so Nowruz, summer and the school season stand out
+  without counting cells; the hourly axis spans only the hours that actually
+  sold; and price buckets size themselves to the shop's own spread instead of
+  a fixed hundred thousand that made three bars out of a kids' shop.
+- **انبار is a worklist, not three tables to compare.** چقدر مانده reads each
+  selling variant's pace against its shelf — روزهای مانده, with a سفارش badge
+  under fourteen — beside ABC (Pareto), کالای مرده and نرخ فروش موجودی, and
+  the rows the list leaves out are counted beside it.
+- **فروشندگان and مرجوعی‌ها are named.** Cash sales are credited to whoever
+  opened the drawer, and everything outside a shift — card sales included —
+  stands in one «نامشخص» row rather than being split by guess; مرجوعی‌ها says
+  what came back, in what size and colour, and why; and the headline carries a
+  نرخ مرجوعی in both count and money.
+- **A month can carry a target.** The sales tab sets or clears هدف ماه and
+  reads the month to date against it, so the tab opens saying where the month
+  stands.
+- **The export doors carry the filters the page is holding.** They read as
+  buttons now — labelled, icon and all — and thirteen exports (روزانه، ساعتی،
+  روزهای هفته، سبد، فروشندگان، مرجوعی‌ها، دسته‌ها، مشتریان، واریانت‌ها، تخفیف‌ها،
+  ماتریس، حاشیه‌ها، روند) are composed from the range and category on screen,
+  each with a BOM so Excel opens the Persian properly.
+- **Every «?» opens for everyone.** The explainers are a real bubble again —
+  a bigger target, a focus ring, `aria-expanded` — opening on hover, tap or
+  keyboard and closing on Escape or anywhere else; the state machine is
+  executed by the test suite rather than trusted.
+- **«None» stops being a category.** A spelling typed or imported once —
+  `None`, `null`, `nil`, a bare dash — folds to «بدون دسته» on every reading:
+  doughnuts, tables, ABC, inventory, dead stock. Revision 27 repairs the rows
+  already stored in products and expenses.
+- **A printed report is the report that was on screen.** Charts repaint in the
+  paper palette before printing and return to the theme after, and the staple
+  now carries the open tab instead of every tab nobody opened.
+- **The page stops carrying its rhythm in inline styles.** Section spacing,
+  small print and key-value rows are named classes now; only figures — a bar's
+  width, a cell's heat — stay inline, where they belong.
+
+**Schema change.** The database moves to revision 27 (junk category spellings
+in `products` and `expenses` collapse to NULL — a data repair, not a new
+column: every reading already renders NULL as «بدون دسته», and filters keep
+matching stored values exactly).
+
 ## 2.7.10 — 1405/07/08 (2026-09-30)
 
 ### سود و زیان و فرم‌ها: the page answers its next question, and the books check themselves
