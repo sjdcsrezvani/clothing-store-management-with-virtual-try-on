@@ -28,6 +28,10 @@
 
 {% if active_tab == 'overview' %}
 <div class="card">
+  <div class="section-heading"><div><span class="eyebrow">قرارداد</span><h3>وضعیت قرارداد</h3></div></div>
+  <p>{% if staff_user.contract_term_months %}{{ contract_terms.get(staff_user.contract_term_months|string, '') }} · {% endif %}از {{ jalali_str(staff_user.hire_date, false) if staff_user.hire_date else '—' }} تا {{ jalali_str(staff_user.contract_end_date, false) if staff_user.contract_end_date else 'نامشخص (باز)' }}{% if contract_days_left is not none %} · <strong>{{ contract_days_left }} روز مانده</strong>{% endif %}</p>
+</div>
+<div class="card">
   <div class="section-heading"><div><span class="eyebrow">عملکرد ماه {{ current_period }}</span><h3>فروش ثبت‌شده با شیفت ایشان</h3></div><span class="appearance-active">{{ performance.invoices }} فاکتور · {{ fmt(performance.revenue) }} تومان</span></div>
   <p class="muted">عملکرد صندوق ایشان در همین ماه؛ فروش کارتی و بدون شیفت در تحلیل فروش می‌ماند.</p>
 </div>
@@ -126,7 +130,7 @@
   <p class="muted">پایه خودکار {{ fmt(staff_user.salary_amount) }} تومان است؛ سطرهای زیر اضافه می‌شوند.</p>
   <form method="post" action="/admin/staff/{{ staff_user.id }}/salary" class="form-row" data-confirm="پرداخت حقوق ثبت و سند هزینه ماهانه ساخته می‌شود. ادامه؟" data-confirm-title="ثبت حقوق؟" data-confirm-ok="ثبت حقوق">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label>ماه پرداخت (شمسی)<input name="period_key" value="{{ current_period }}" placeholder="۱۴۰۵-۰۶" dir="ltr" required><small class="field-help">ماه شمسی؛ مثل ۱۴۰۵-۰۶</small></label>
+    <label>ماه پرداخت (شمسی)<input name="period_key" placeholder="۱۴۰۵-۰۶" dir="ltr" required><small class="field-help">فقط ماه کامل‌شده؛ ماه جاری هنوز حقوق ندارد</small></label>
     <label>روش پرداخت<select name="payment_method"><option value="cash">نقدی</option><option value="card">کارت</option></select></label>
     <div id="salary-items" class="form-span-2"></div>
     <button type="button" class="btn btn-ghost" id="salary-item-add">افزودن قلم</button>

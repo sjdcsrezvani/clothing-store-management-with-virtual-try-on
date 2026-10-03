@@ -49,6 +49,7 @@
       <label class="hire-field">روز پرداخت ماهانه{{ num('salary_payment_day', '', describedby='hire-payday-help') }}<small class="field-help" id="hire-payday-help">۱ تا ۳۱</small></label>
       <label class="hire-field">تاریخ شروع<input class="persian-date-input" name="hire_date" inputmode="numeric" dir="ltr" placeholder="۱۴۰۵/۰۱/۰۱"></label>
       <label class="hire-field">مدت قرارداد<select name="contract_term_months" aria-describedby="hire-term-help"><option value="">باز / بدون مدت</option>{% for months, label in contract_terms.items() %}<option value="{{ months }}">{{ label }}</option>{% endfor %}</select><small class="field-help" id="hire-term-help">شروع + مدت = پایان</small></label>
+      <p class="muted" id="hire-contract-preview" aria-live="polite"></p>
       <label class="hire-field">پایان قرارداد<input class="persian-date-input" name="contract_end_date" inputmode="numeric" dir="ltr" placeholder="۱۴۰۵/۱۲/۲۹"></label>
       <label class="hire-field">برنامه کاری<input name="work_schedule"></label>
       </div>
@@ -185,6 +186,48 @@
             }
         }
     });
+    // Live contract-end preview: Jalali start + term months. Display-only —
+    // the server derives the stored date from the same inputs, so the one
+    // deliberate simplification here (Esfand always clamps to the 29th, even
+    // in leap years) can drift the hint by a day at most, never the record.
+    (function () {
+        var FA = '۰۱۲۳۴۵۶۷۸۹';
+        var hire = form.querySelector('input[name="hire_date"]');
+        var term = form.querySelector('select[name="contract_term_months"]');
+        var out = document.getElementById('hire-contract-preview');
+        if (!hire || !term || !out) return;
+        function en(text) {
+            return (text || '').replace(/[۰-۹]/g, function (d) { return FA.indexOf(d); });
+        }
+        function faNum(n) {
+            return String(n).replace(/\d/g, function (d) { return FA[+d]; });
+        }
+        function pad(n) { return (n < 10 ? '0' : '') + n; }
+        function monthLen(m) {
+            if (m <= 6) return 31;
+            if (m <= 11) return 30;
+            return 29;
+        }
+        function update() {
+            var parts = en(hire.value).replace(/\//g, '-').split('-');
+            var months = parseInt(term.value, 10);
+            if (parts.length !== 3 || !months) {
+                out.textContent = '';
+                return;
+            }
+            var y = +parts[0], m = +parts[1], d = +parts[2];
+            if (!(y > 1300 && y < 1500 && m >= 1 && m <= 12 && d >= 1 && d <= 31)) {
+                out.textContent = '';
+                return;
+            }
+            var total = (m - 1) + months;
+            var ey = y + Math.floor(total / 12), em = total % 12 + 1;
+            var ed = Math.min(d, monthLen(em));
+            out.textContent = 'پایان قرارداد: ' + faNum(ey) + '/' + faNum(pad(em)) + '/' + faNum(pad(ed));
+        }
+        hire.addEventListener('input', update);
+        term.addEventListener('change', update);
+    })();
     paint();
 })();
 </script>
