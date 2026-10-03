@@ -11,36 +11,56 @@
   <div class="section-heading"><div><span class="eyebrow">استخدام</span><h3>افزودن کارمند و حساب ورود</h3></div></div>
   <form method="post" action="/admin/staff" class="form-row">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label>نام کاربری<input name="username" autocomplete="username" required></label>
-    <label>رمز عبور<input name="password" type="password" minlength="6" autocomplete="new-password" required></label>
-    <label>نقش<select name="role"><option value="cashier">صندوقدار</option><option value="manager">مدیر</option><option value="owner">مالک</option></select></label>
-    <h4 class="form-span-2 muted">مشخصات فردی</h4>
-    <label>نام و نام خانوادگی<input name="full_name"></label>
+    <fieldset class="form-span-2 profile-tag-fieldset">
+    <legend>حساب ورود</legend>
+    <div class="form-row">
+    <label>نام کاربری <span class="muted">(الزامی)</span><input name="username" autocomplete="username" dir="ltr" required></label>
+    <label>رمز عبور <span class="muted">(الزامی)</span><input name="password" type="password" minlength="6" autocomplete="new-password" required><small class="field-help">حداقل ۶ کاراکتر</small></label>
+    <label>نقش<select name="role"><option value="cashier" selected>صندوقدار</option><option value="manager">مدیر</option><option value="owner">مالک</option></select></label>
+    </div>
+    </fieldset>
+    <fieldset class="form-span-2 profile-tag-fieldset">
+    <legend>مشخصات فردی</legend>
+    <div class="form-row">
+    <label>نام و نام خانوادگی<input name="full_name" autocomplete="name"></label>
     <label>کد پرسنلی<input name="employee_code"></label>
-    <label>کد ملی<input name="national_id" inputmode="numeric" dir="ltr"></label>
-    <label>تلفن<input name="phone" inputmode="tel" dir="ltr"></label>
-    <label>ایمیل<input name="email" type="email"></label>
-    <label>عنوان شغلی<input name="job_title"></label>
-    <h4 class="form-span-2 muted">همکاری و حقوق</h4>
-    <label>نوع همکاری<select name="employment_type"><option value="full_time">تمام‌وقت</option><option value="part_time">پاره‌وقت</option><option value="contractor">قراردادی</option></select></label>
-    {% from 'partials/numeric_input.html' import num with context %}
-    <label>حقوق ماهانه (تومان){{ num('salary_amount', 0) }}</label>
-    <label>روز پرداخت ماهانه{{ num('salary_payment_day', '') }}</label>
-    <label>تاریخ شروع<input class="persian-date-input" name="hire_date" placeholder="۱۴۰۵/۰۱/۰۱"></label>
-    <label>مدت قرارداد<select name="contract_term_months"><option value="">باز / بدون مدت</option>{% for months, label in contract_terms.items() %}<option value="{{ months }}">{{ label }}</option>{% endfor %}</select><small class="field-help">با تعیین مدت، پایان قرارداد از شروع + مدت ساخته می‌شود</small></label>
-    <label>پایان قرارداد<input class="persian-date-input" name="contract_end_date" placeholder="۱۴۰۵/۱۲/۲۹"></label>
-    <label>تاریخ تولد<input class="persian-date-input" name="birth_date" placeholder="۱۳۷۰/۰۱/۰۱"></label>
+    <label>کد ملی<input name="national_id" inputmode="numeric" dir="ltr"><small class="field-help">۱۰ رقم</small></label>
+    <label>تلفن<input name="phone" type="tel" inputmode="tel" autocomplete="tel" dir="ltr"></label>
+    <label>ایمیل<input name="email" type="email" autocomplete="email" dir="ltr"></label>
+    <label>تاریخ تولد<input class="persian-date-input" name="birth_date" inputmode="numeric" dir="ltr" placeholder="۱۳۷۰/۰۱/۰۱"></label>
     <label>تحصیلات<input name="education"></label>
+    </div>
+    </fieldset>
+    <fieldset class="form-span-2 profile-tag-fieldset">
+    <legend>همکاری و حقوق</legend>
+    <div class="form-row">
+    <label>عنوان شغلی<input name="job_title"></label>
+    <label>نوع همکاری<select name="employment_type"><option value="full_time" selected>تمام‌وقت</option><option value="part_time">پاره‌وقت</option><option value="contractor">قراردادی</option></select></label>
+    {% from 'partials/numeric_input.html' import num with context %}
+    <label>حقوق ماهانه (تومان){{ num('salary_amount', '') }}</label>
+    <label>روز پرداخت ماهانه{{ num('salary_payment_day', '') }}<small class="field-help">۱ تا ۳۱</small></label>
+    <label>تاریخ شروع<input class="persian-date-input" name="hire_date" inputmode="numeric" dir="ltr" placeholder="۱۴۰۵/۰۱/۰۱"></label>
+    <label>مدت قرارداد<select name="contract_term_months"><option value="">باز / بدون مدت</option>{% for months, label in contract_terms.items() %}<option value="{{ months }}">{{ label }}</option>{% endfor %}</select><small class="field-help">با تعیین مدت، پایان قرارداد از شروع + مدت ساخته می‌شود</small></label>
+    <label>پایان قرارداد<input class="persian-date-input" name="contract_end_date" inputmode="numeric" dir="ltr" placeholder="۱۴۰۵/۱۲/۲۹"></label>
     <label>برنامه کاری<input name="work_schedule"></label>
-    <label>حساب بانکی<input name="bank_account" dir="ltr"></label>
-    <h4 class="form-span-2 muted">بانکی و تماس</h4>
-    <label>شبا<input name="iban" dir="ltr"></label>
+    </div>
+    </fieldset>
+    <fieldset class="form-span-2 profile-tag-fieldset">
+    <legend>بانکی و تماس</legend>
+    <div class="form-row">
+    <label>حساب بانکی<input name="bank_account" inputmode="numeric" dir="ltr"></label>
+    <label>شبا<input name="iban" inputmode="numeric" dir="ltr"><small class="field-help">IR و ۲۴ رقم</small></label>
     <label>نام مخاطب اضطراری<input name="emergency_name"></label>
     <label>نسبت<input name="emergency_relation" placeholder="مثلاً همسر، پدر"></label>
-    <label>تلفن اضطراری<input name="emergency_phone" inputmode="tel" dir="ltr"></label>
-    <label class="form-span-2">نشانی<textarea name="address" rows="2"></textarea></label>
+    <label>تلفن اضطراری<input name="emergency_phone" type="tel" inputmode="tel" dir="ltr"></label>
+    <label class="form-span-2">نشانی<textarea name="address" rows="3" autocomplete="street-address"></textarea></label>
     <label class="form-span-2">یادداشت<textarea name="notes" rows="2"></textarea></label>
-    <button class="btn btn-primary" type="submit">ثبت کارمند</button>
+    </div>
+    </fieldset>
+    <div class="form-span-2 staff-actions">
+      <button class="btn btn-primary" type="submit">ثبت کارمند</button>
+      <a class="btn btn-ghost" href="/admin/staff">انصراف</a>
+    </div>
   </form>
 </div>
 {% endblock %}
