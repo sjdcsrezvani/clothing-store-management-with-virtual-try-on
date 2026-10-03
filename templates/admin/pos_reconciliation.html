@@ -57,6 +57,7 @@
             </p>
         </div>
         <div class="list-heading-actions">
+            <a href="/admin/pos-reconciliation/export?q={{ search | urlencode }}&status={{ status_filter }}&sort={{ sort_key }}&dir={{ sort_dir }}" class="btn btn-sm btn-ghost"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-backup"/></svg>خروجی CSV</a>
             <form method="get" action="/admin/pos-reconciliation" class="per-page-form">
                 <input type="hidden" name="q" value="{{ search }}">
                 <input type="hidden" name="status" value="{{ status_filter }}">
@@ -136,6 +137,10 @@
                 <td data-label="فاکتور">
                     {% if transaction.sale_id %}
                         <a href="/sales/invoice/{{ transaction.sale_id }}" class="btn btn-sm btn-ghost">#{{ transaction.sale_id }}</a>
+                    {% elif transaction.status == 'approved' and not transaction.reconciled %}
+                        {# The figure rides along to be rung up, never applied:
+                           the bill is still built item by item at the till. #}
+                        <a href="/sales/new?pos_amount={{ transaction.amount }}&pos_reference={{ (transaction.provider_reference or transaction.terminal_transaction_number or ('#' ~ transaction.id))|urlencode }}" class="btn btn-sm btn-ghost">صدور فاکتور</a>
                     {% else %}—{% endif %}
                 </td>
                 <td data-label="تطبیق">

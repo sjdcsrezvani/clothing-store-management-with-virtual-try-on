@@ -186,3 +186,47 @@ def test_search_hit_is_visible_where_it_matched(client, db_session, authed):
     page = client.get("/admin/pos-reconciliation?q=BANK-REF-991").text
     assert "BANK-REF-991" in page
     assert "<mark>" in page
+
+
+def test_export_files_the_filtered_view_not_the_ledger(client, db_session, authed):
+    """The file answers with the rows the screen showed."""
+    from models import POSTransaction
+    db_session.add(POSTransaction(checkout_nonce="phase4-exp-a", amount=70000,
+                                  host="127.0.0.1", port=8500, status="uncertain"))
+    db_session.add(POSTransaction(checkout_nonce="phase4-exp-b", amount=80000,
+                                  host="127.0.0.1", port=8500, status="declined"))
+    db_session.commit()
+
+    whole = client.get("/admin/pos-reconciliation/export")
+    assert whole.status_code == 200
+    assert "text/csv" in whole.headers["content-type"]
+    assert whole.text.startswith("\ufeff")
+    assert "70000" in whole.text and "80000" in whole.text
+    assert "70,000" not in whole.text                      # raw integers sum in Excel
+
+    filtered = client.get("/admin/pos-reconciliation/export?status=declined")
+    assert "80000" in filtered.text
+    assert "70000" not in filtered.text
+
+    by_amount = client.get("/admin/pos-reconciliation/export?q=70000")
+    assert "70000" in by_amount.text
+    assert "80000" not in by_amount.text
+
+
+def test_approved_row_links_to_the_till_with_its_figure(client, db_session, authed):
+    """The figure rides along to be rung up — displayed, never applied."""
+    from models import POSTransaction
+    row = POSTransaction(checkout_nonce="phase4-till", amount=120000,
+                         host="127.0.0.1", port=8500, status="approved",
+                         provider_reference="BANK-7")
+    db_session.add(row)
+    db_session.commit()
+
+    page = client.get("/admin/pos-reconciliation").text
+    assert f"/sales/new?pos_amount=120000&pos_reference=BANK-7" in page
+
+    till = client.get("/sales/new?pos_amount=120000&pos_reference=BANK-7").text
+    assert "120,000 تومان" in till
+    assert "BANK-7" in till
+    plain = client.get("/sales/new").text
+    assert "کارت‌خوان: مبلغ" not in plain

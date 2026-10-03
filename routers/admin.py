@@ -91,6 +91,7 @@ from services.security import (
     role_allows,
 )
 from services.store import invalidate_store_cache, get_store
+from services.sorting import parse_sort
 from services.templating import templates
 from services.tier import (
     apply_tier_downgrades,
@@ -1379,6 +1380,42 @@ async def admin_backup_download(request: Request, name: str = "", db: Session = 
     return FileResponse(path, filename=Path(name).name)
 
 
+POS_STATUSES = {
+    "all", "unresolved", "resolved", "created", "sent", "uncertain",
+    "approved", "linked_to_sale", "cancelled", "declined",
+}
+
+
+def _pos_list_conds(search: str, status_filter: str) -> list:
+    """The filter chain the terminal list reads — one definition for the page
+    and the export, so a file can never answer a different view than the
+    screen that ordered it."""
+    conds = []
+    if search:
+        digits = search.lstrip("#").strip()
+        if digits.isdigit():
+            value = int(digits)
+            conds.append(or_(POSTransaction.id == value, POSTransaction.amount == value))
+        else:
+            like = f"%{search}%"
+            conds.append(or_(
+                POSTransaction.provider_reference.ilike(like),
+                POSTransaction.terminal_transaction_number.ilike(like),
+                POSTransaction.retrieval_reference_number.ilike(like),
+                POSTransaction.masked_card.ilike(like),
+                POSTransaction.reconciliation_note.ilike(like),
+            ))
+    if status_filter == "unresolved":
+        conds.append(POSTransaction.status.in_(("created", "sent", "uncertain", "approved")))
+        conds.append(POSTransaction.sale_id.is_(None))
+        conds.append(POSTransaction.reconciled == False)  # noqa: E712
+    elif status_filter == "resolved":
+        conds.append(POSTransaction.reconciled == True)  # noqa: E712
+    elif status_filter != "all":
+        conds.append(POSTransaction.status == status_filter)
+    return conds
+
+
 @router.get("/pos-reconciliation", response_class=HTMLResponse)
 async def admin_pos_reconciliation(
     request: Request,
@@ -1395,44 +1432,14 @@ async def admin_pos_reconciliation(
     if not hasattr(guard, "role"):
         return guard
 
-    from services.sorting import parse_sort
     from urllib.parse import urlencode
     search = (q or "").strip()
-    status_filter = status if status in {
-        "all", "unresolved", "resolved", "created", "sent", "uncertain",
-        "approved", "linked_to_sale", "cancelled", "declined",
-    } else "all"
+    status_filter = status if status in POS_STATUSES else "all"
     page_int = page_arg(page)
     per_page_int = int(per_page) if str(per_page).isdigit() and int(per_page) in (10, 25, 50) else 25
     sort_key, sort_dir = parse_sort(request.query_params, {"date": "desc", "amount": "desc"}, "date")
 
-    conds = []
-    if search:
-        digits = search.lstrip("#").strip()
-        if digits.isdigit():
-            # A bare number is a row number or a figure — an id match and an
-            # amount match are both exact, so the row is found either way.
-            value = int(digits)
-            conds.append(or_(POSTransaction.id == value, POSTransaction.amount == value))
-        else:
-            like = f"%{search}%"
-            conds.append(or_(
-                POSTransaction.provider_reference.ilike(like),
-                POSTransaction.terminal_transaction_number.ilike(like),
-                POSTransaction.retrieval_reference_number.ilike(like),
-                POSTransaction.masked_card.ilike(like),
-                POSTransaction.reconciliation_note.ilike(like),
-            ))
-    if status_filter == "unresolved":
-        # The same three clauses the dashboard count reads: a status still
-        # open, no invoice attached, no review recorded.
-        conds.append(POSTransaction.status.in_(("created", "sent", "uncertain", "approved")))
-        conds.append(POSTransaction.sale_id.is_(None))
-        conds.append(POSTransaction.reconciled == False)  # noqa: E712
-    elif status_filter == "resolved":
-        conds.append(POSTransaction.reconciled == True)  # noqa: E712
-    elif status_filter != "all":
-        conds.append(POSTransaction.status == status_filter)
+    conds = _pos_list_conds(search, status_filter)
 
     base = db.query(POSTransaction).filter(*conds)
     order_column = POSTransaction.amount if sort_key == "amount" else POSTransaction.created_at
@@ -1580,6 +1587,60 @@ async def admin_pos_reconciliation_review(
     db.commit()
     log_action(db, "pos_reconciliation", f"تطبیق تراکنش کارت‌خوان #{transaction.id}", request=request, target_type="pos_transaction", target_id=transaction.id, after={"resolution_type": resolution_type, "operator_user_id": operator.id})
     return RedirectResponse(url="/admin/pos-reconciliation?msg=نتیجه تطبیق ثبت شد.", status_code=303)
+
+
+@router.get("/pos-reconciliation/export")
+async def admin_pos_export(
+    request: Request,
+    q: str = "",
+    status: str = "all",
+    sort: str = "date",
+    dir: str = "desc",
+    db: Session = Depends(get_db),
+):
+    """The filtered terminal list as a file: the same rows the screen showed,
+    not the whole ledger. Raw integers for money, Jalali dates the shop reads."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    import csv
+    import io
+    search = (q or "").strip()
+    status_filter = status if status in POS_STATUSES else "all"
+    sort_key, sort_dir = parse_sort(request.query_params, {"date": "desc", "amount": "desc"}, "date")
+    order_column = POSTransaction.amount if sort_key == "amount" else POSTransaction.created_at
+    order = order_column.desc() if sort_dir == "desc" else order_column.asc()
+    rows = db.query(POSTransaction).filter(
+        *_pos_list_conds(search, status_filter)).order_by(order, POSTransaction.id.desc()).all()
+    operator_ids = {t.operator_user_id for t in rows if t.operator_user_id}
+    names = {u.id: (u.full_name or u.username) for u in db.query(StaffUser).filter(
+        StaffUser.id.in_(list(operator_ids))).all()} if operator_ids else {}
+    labels = {
+        "confirmed_cancelled": "تأیید لغو", "reversed_externally": "برگشت خارجی",
+        "duplicate": "تکراری", "terminal_error": "خطای کارت‌خوان",
+        "provider_investigation": "بررسی ارائه‌دهنده",
+    }
+    out = [["شناسه", "زمان", "مبلغ", "وضعیت", "کد پاسخ", "مرجع ارائه‌دهنده",
+            "شماره تراکنش", "شماره پیگیری", "فاکتور", "تعیین‌تکلیف‌شده",
+            "نتیجه", "دلیل", "ثبت‌کننده"]]
+    for t in rows:
+        out.append([
+            t.id, jalali_str(t.created_at), t.amount or 0, t.status,
+            t.response_code or "", t.provider_reference or "",
+            t.terminal_transaction_number or "", t.retrieval_reference_number or "",
+            t.sale_id or "", "بله" if t.reconciled else "خیر",
+            labels.get(t.resolution_type, t.resolution_type or ""),
+            t.resolution_evidence or "", names.get(t.operator_user_id, ""),
+        ])
+    buf = io.StringIO()
+    buf.write("\ufeff")  # BOM so Excel opens Persian correctly
+    csv.writer(buf).writerows(out)
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="pos_reconciliation_{today}.csv"'},
+    )
 
 
 @router.get("/events", response_class=HTMLResponse)
