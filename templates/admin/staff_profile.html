@@ -142,7 +142,26 @@
   <form method="post" action="/admin/staff/{{ staff_user.id }}/salary" data-confirm="پرداخت حقوق ثبت و سند هزینه ماهانه ساخته می‌شود. ادامه؟" data-confirm-title="ثبت حقوق؟" data-confirm-ok="ثبت حقوق">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="hire-grid">
-    <label class="hire-field">ماه پرداخت (شمسی)<input name="period_key" list="salary-months" inputmode="numeric" aria-describedby="prof-period-help" placeholder="1405-06" maxlength="7" dir="ltr" required><datalist id="salary-months">{% for month in closed_months %}<option value="{{ month }}">{% endfor %}</datalist><small class="field-help" id="prof-period-help">سال چهاررقمی، خط‌تیره، ماه دو رقمی — مثل 1405-06. فقط ماه کامل‌شده.</small></label>
+    <label class="hire-field">ماه پرداخت (شمسی)<input name="period_key" id="salary-period-input" inputmode="numeric" aria-describedby="prof-period-help" placeholder="1405-06" maxlength="7" dir="ltr" required><small class="field-help" id="prof-period-help">سال چهاررقمی، خط‌تیره، ماه دو رقمی — مثل 1405-06. فقط ماه کامل‌شده.</small></label>
+    <div class="staff-actions" role="group" aria-label="ماه‌های اخیر">
+      {% for month in closed_months %}
+      <button type="button" class="btn btn-sm btn-ghost" data-salary-month="{{ month }}">{{ month }}</button>
+      {% endfor %}
+    </div>
+    <script>
+    // Month quick-pick: the closed months above fill the field — the list is
+    // rendered fresh on every page view, so it rolls forward on its own.
+    (function () {
+        var input = document.getElementById('salary-period-input');
+        if (!input) return;
+        var bar = input.closest('form').querySelector('[aria-label="ماه‌های اخیر"]');
+        if (!bar) return;
+        bar.addEventListener('click', function (event) {
+            var chip = event.target.closest ? event.target.closest('[data-salary-month]') : null;
+            if (chip) input.value = chip.getAttribute('data-salary-month');
+        });
+    })();
+    </script>
     <label class="hire-field">روش پرداخت<select name="payment_method"><option value="cash">نقدی</option><option value="card">کارت</option></select></label>
     <div id="salary-items" data-base-amount="{{ staff_user.salary_amount or 0 }}" data-base-fmt="{{ fmt(staff_user.salary_amount or 0) }}"></div>
     <button type="button" class="btn btn-ghost" id="salary-item-add">افزودن قلم</button>

@@ -258,7 +258,7 @@ def test_payroll_tab_lists_pickable_closed_months(client, db_session):
     worker.salary_amount = 10_000_000
     db_session.commit()
     page = client.get(f"/admin/staff/{worker.id}?tab=payroll").text
-    assert 'list="salary-months"' in page
+    assert 'data-salary-month=' in page
     assert 'maxlength="7"' in page
     current = current_period_key()
     assert f'value="{current}"' not in page.split('name="period_key"')[1][:400]
