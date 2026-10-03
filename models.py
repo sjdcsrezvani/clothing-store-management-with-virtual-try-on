@@ -60,6 +60,13 @@ class StaffUser(Base):
     notes = Column(Text, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     last_login_at = Column(DateTime, nullable=True)
+    # Per-person capability toggles. NULL means "follow the role default":
+    # a toggle can only narrow what the role grants, never widen it, and
+    # owners bypass toggles entirely (see services/security.effective_cap).
+    can_refund = Column(Boolean, nullable=True)
+    can_discount = Column(Boolean, nullable=True)
+    can_view_payroll = Column(Boolean, nullable=True)
+    can_reconcile_pos = Column(Boolean, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     __table_args__ = (

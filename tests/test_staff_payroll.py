@@ -15,7 +15,7 @@ def test_owner_can_create_staff_profile_and_update_owner_contract_info(client, d
         "role": "cashier",
         "full_name": "کارمند فروش",
         "employee_code": "EMP-7",
-        "national_id": "0012345678",
+        "national_id": "0023456787",
         "phone": "09120000000",
         "job_title": "صندوقدار",
         "employment_type": "full_time",
@@ -25,7 +25,7 @@ def test_owner_can_create_staff_profile_and_update_owner_contract_info(client, d
         "contract_end_date": "1406/06/01",
         "work_schedule": "شنبه تا پنجشنبه",
         "bank_account": "123456789",
-        "iban": "IR000000000000000000000000",
+        "iban": "IR062960000000100324200001",
     }, follow_redirects=False)
     assert response.status_code == 303
 

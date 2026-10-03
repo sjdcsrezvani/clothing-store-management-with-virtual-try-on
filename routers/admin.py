@@ -12,7 +12,7 @@ from database import get_db
 from datetime import datetime, timezone
 from models import (
     Campaign, Customer, Referral, Settings, Sale, SaleItem, SaleCampaign, GeneratedImage, AdminLog, POSTransaction, StockMovement,
-    BusinessEvent, StaffUser, SalaryPayment,
+    BusinessEvent, StaffUser, SalaryPayment, CashSession,
 )
 from config import ADMIN_PASSWORD, API_TOKEN
 from deployment import OWNER_MODE
@@ -89,6 +89,8 @@ from services.security import (
     verify_password,
     require_html_role,
     role_allows,
+    effective_cap,
+    require_cap,
 )
 from services.store import invalidate_store_cache, get_store
 from services.sorting import parse_sort
@@ -745,6 +747,49 @@ def _staff_amount(value: str, default: int = 0, field: str = "مبلغ") -> int:
         raise ValueError(f"{field} معتبر نیست.")
 
 
+def _check_national_id(code: str) -> str | None:
+    """Validate an Iranian national ID (کد ملی), checksum included. Empty stays
+    empty — the field is optional; a filled one must be real."""
+    text = to_english_digits((code or "").strip())
+    if not text:
+        return None
+    if not (text.isdigit() and len(text) == 10) or len(set(text)) == 1:
+        raise ValueError("کد ملی باید ۱۰ رقم باشد.")
+    check = int(text[9])
+    remainder = sum(int(digit) * (10 - index) for index, digit in enumerate(text[:9])) % 11
+    if (remainder if remainder < 2 else 11 - remainder) != check:
+        raise ValueError("کد ملی معتبر نیست.")
+    return text
+
+
+def _check_mobile(phone: str) -> str | None:
+    """Mobile numbers route SMS and password handovers; landlines and
+    fragments silently break both. Empty stays empty."""
+    import re
+    text = to_english_digits((phone or "").strip()).replace(" ", "").replace("-", "")
+    if not text:
+        return None
+    if not re.fullmatch(r"09\d{9}", text):
+        raise ValueError("تلفن همراه باید با ۰۹ شروع شود و ۱۱ رقم باشد.")
+    return text
+
+
+def _check_iban(iban: str) -> str | None:
+    """Validate a Sheba (IR-IBAN): salary lands here, so a typo'd account
+    must refuse at typing time, not at payday. Empty stays empty."""
+    import re
+    text = (iban or "").strip().replace(" ", "").upper()
+    if not text:
+        return None
+    if not re.fullmatch(r"IR\d{24}", text):
+        raise ValueError("شبا باید با IR شروع شود و ۲۴ رقم بعد از آن داشته باشد.")
+    rearranged = text[4:] + text[:4]
+    numeric = "".join(str(ord(ch) - 55) if ch.isalpha() else ch for ch in rearranged)
+    if int(numeric) % 97 != 1:
+        raise ValueError("شبا معتبر نیست.")
+    return text
+
+
 # The staff forms' numeric fields, with the bound the server enforces and the
 # label it refuses by. One table, two readers: the POST validates against it
 # (_staff_profile_data for the two salary fields, the payroll service for
@@ -775,8 +820,8 @@ def _staff_profile_data(form):
     return {
         "full_name": str(form.get("full_name", "")).strip()[:200] or None,
         "employee_code": str(form.get("employee_code", "")).strip()[:50] or None,
-        "national_id": str(form.get("national_id", "")).strip()[:30] or None,
-        "phone": str(form.get("phone", "")).strip()[:30] or None,
+        "national_id": _check_national_id(str(form.get("national_id", ""))[:30]),
+        "phone": _check_mobile(str(form.get("phone", ""))[:30]),
         "email": str(form.get("email", "")).strip()[:150] or None,
         "job_title": str(form.get("job_title", "")).strip()[:100] or None,
         "employment_type": employment_type,
@@ -789,7 +834,7 @@ def _staff_profile_data(form):
         "address": str(form.get("address", "")).strip()[:2000] or None,
         "emergency_contact": str(form.get("emergency_contact", "")).strip()[:200] or None,
         "bank_account": str(form.get("bank_account", "")).strip()[:80] or None,
-        "iban": str(form.get("iban", "")).strip()[:40] or None,
+        "iban": _check_iban(str(form.get("iban", ""))[:40]),
         "salary_amount": salary_amount,
         "notes": str(form.get("notes", "")).strip()[:4000] or None,
     }
@@ -898,10 +943,25 @@ async def admin_staff_profile(staff_id: int, request: Request, tab: str = "overv
     if not staff_user:
         raise HTTPException(status_code=404, detail="کارمند یافت نشد")
     active_tab = tab if tab in {"overview", "permissions", "payroll"} else "overview"
+    # Deactivation impact, computed while the switch is still flippable: an
+    # open drawer in this person's name and an unpaid current month are the
+    # two things closing access would strand.
+    current = current_period_key()
+    open_shift = db.query(CashSession).filter(
+        CashSession.cashier_user_id == staff_user.id,
+        CashSession.status == "open").order_by(CashSession.opened_at.desc()).first()
+    unpaid_month = staff_user.is_active and staff_user.salary_amount > 0 and not db.query(
+        SalaryPayment).filter(SalaryPayment.staff_user_id == staff_user.id,
+                              SalaryPayment.period_key == current).first()
     return templates.TemplateResponse(request, "admin/staff_profile.html", {
         "staff_user": staff_user,
         "active_tab": active_tab,
         "is_self": staff_user.id == guard.id,
+        # What each switch currently answers, after role defaults and the
+        # owner bypass — the toggles paint from the same answer enforcement reads.
+        "staff_caps": {field: effective_cap(staff_user, field) for field in CAP_FIELDS},
+        "open_shift": open_shift,
+        "unpaid_month": current if unpaid_month else "",
         "owner_settings": {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()},
         "current_period": current_period_key(),
         "msg": request.query_params.get("msg", ""),
@@ -980,6 +1040,34 @@ async def admin_staff_update(staff_id: int, request: Request, db: Session = Depe
     return RedirectResponse(url=f"/admin/staff/{user.id}?msg=اطلاعات کارمند ذخیره شد.", status_code=303)
 
 
+CAP_FIELDS = ("can_refund", "can_discount", "can_view_payroll", "can_reconcile_pos")
+
+
+@router.post("/staff/{staff_id}/caps", response_class=HTMLResponse)
+async def admin_staff_caps(staff_id: int, request: Request, db: Session = Depends(get_db)):
+    """Flip one person's capability toggles. Narrow-only: a switch can take
+    away what the role grants, never grant what the role denies, and owners
+    bypass toggles — so an owner row is pinned all-on."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    user = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="کاربر یافت نشد")
+    form = await request.form()
+    before = {field: getattr(user, field) for field in CAP_FIELDS}
+    if user.role == "owner":
+        for field in CAP_FIELDS:
+            setattr(user, field, True)
+    else:
+        for field in CAP_FIELDS:
+            setattr(user, field, str(form.get(field, "")) == "1")
+    db.commit()
+    after = {field: getattr(user, field) for field in CAP_FIELDS}
+    log_action(db, "staff_caps", f"کلیدهای دسترسی {user.username}", request=request, target_type="staff_user", target_id=user.id, before=before, after=after)
+    return RedirectResponse(url=f"/admin/staff/{user.id}?tab=permissions&msg=کلیدهای دسترسی ذخیره شد.", status_code=303)
+
+
 @router.post("/staff/{staff_id}/salary", response_class=HTMLResponse)
 async def admin_staff_salary(staff_id: int, request: Request, db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "owner")
@@ -1032,6 +1120,9 @@ async def admin_salary_receipt(payment_id: int, request: Request, db: Session = 
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
+    cap = require_cap(request, db, "can_view_payroll")
+    if not hasattr(cap, "role"):
+        return cap
     payment = db.query(SalaryPayment).filter(SalaryPayment.id == payment_id).first()
     if not payment:
         raise HTTPException(status_code=404, detail="رسید حقوق یافت نشد")
@@ -1570,6 +1661,9 @@ async def admin_pos_reconciliation(
         "terminal": terminal,
         "resolutions": resolutions,
         "is_owner": role_allows(guard.role, "owner"),
+        # The review forms paint only for whoever may actually resolve; the
+        # POST enforces the same capability.
+        "can_reconcile": effective_cap(guard, "can_reconcile_pos"),
         "search": search,
         "status_filter": status_filter,
         "statuses": {
@@ -1617,6 +1711,9 @@ async def admin_pos_reconciliation_review(
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
+    cap = require_cap(request, db, "can_reconcile_pos")
+    if not hasattr(cap, "role"):
+        return cap
 
     transaction = db.query(POSTransaction).filter(POSTransaction.id == transaction_id).first()
     if not transaction:

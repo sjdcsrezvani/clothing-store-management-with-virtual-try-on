@@ -149,6 +149,7 @@
                         {% if transaction.reconciliation_note %}<br><small class="muted">{{ transaction.reconciliation_note|highlight(search) }}</small>{% endif %}
                         {% if operator_names.get(transaction.operator_user_id) %}<br><small class="muted">ثبت: {{ operator_names.get(transaction.operator_user_id) }}{% if transaction.reconciled_at %} · {{ jalali_str(transaction.reconciled_at, false) }}{% endif %}</small>{% endif %}
                     {% else %}
+                        {% if can_reconcile %}
                         <form method="post" action="/admin/pos-reconciliation/{{ transaction.id }}/review"
                               data-pos-form data-amount="{{ transaction.amount }}">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -183,6 +184,9 @@
                             </label>
                             <button type="submit" class="btn btn-sm btn-primary">ثبت نتیجه</button>
                         </form>
+                        {% else %}
+                        <small class="muted">تطبیق برای حساب شما فعال نیست.</small>
+                        {% endif %}
                     {% endif %}
                 </td>
             </tr>

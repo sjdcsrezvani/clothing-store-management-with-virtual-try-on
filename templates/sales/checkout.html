@@ -212,6 +212,7 @@
 
         <div class="card">
             <h4>تخفیف ویژه</h4>
+            {% if can_discount %}
             <div class="form-row">
                 <div class="form-group">
                     <label for="custom-amount-input">مبلغ (تومان)</label>
@@ -245,7 +246,10 @@
                not on hidden twins — one source per key. #}
             <button type="submit" class="btn btn-primary btn-block">🧮 اعمال تخفیف</button>
         </form>
-    </div>
+            {% else %}
+            <p class="muted">تخفیف دستی برای حساب شما فعال نیست.</p>
+            {% endif %}
+        </div>
 
     <div class="checkout-right">
         {# ── Basket ── #}

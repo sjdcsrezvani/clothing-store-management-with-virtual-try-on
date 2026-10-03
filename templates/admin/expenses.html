@@ -334,8 +334,10 @@
                         {% if reversal_map.get(e.id) %}<br><small class="muted">برگشت: {{ reversal_map.get(e.id).by }} · {{ jalali_str(reversal_map.get(e.id).when, false) }}</small>{% endif %}
                     </td>
                     <td data-label="عملیات">
-                        {% if payroll_id %}
+                        {% if payroll_id and can_view_payroll %}
                         <a class="btn btn-sm btn-ghost" href="/admin/payroll/{{ payroll_id }}/receipt" target="_blank">رسید حقوق</a>
+                        {% elif payroll_id %}
+                        <small class="muted">رسید حقوق</small>
                         {% elif not is_reversed %}
                         <form method="post" action="/admin/expenses/{{ e.id }}/delete"
                               data-void-form

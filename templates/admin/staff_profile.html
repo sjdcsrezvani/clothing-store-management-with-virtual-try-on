@@ -58,7 +58,14 @@
     <button class="btn btn-primary" type="submit">ذخیره اطلاعات</button>
   </form>
   <div class="staff-actions">
-    {% if staff_user.is_active and staff_user.username != 'owner' %}<form method="post" action="/admin/staff/{{ staff_user.id }}/disable" data-confirm="ورود {{ staff_user.full_name or staff_user.username }} بسته می‌شود. ادامه؟" data-confirm-title="بستن دسترسی؟" data-confirm-ok="بستن دسترسی"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-danger" type="submit">غیرفعال‌کردن دسترسی</button></form>{% endif %}
+    {% if staff_user.is_active and staff_user.username != 'owner' %}
+    {% if open_shift or unpaid_month %}
+    <p class="alert alert-warning form-span-2">با بستن دسترسی: {% if open_shift %}شیفت باز #{{ open_shift.id }} به نام ایشان می‌ماند{% endif %}{% if open_shift and unpaid_month %} و {% endif %}{% if unpaid_month %}حقوق ماه {{ unpaid_month }} پرداخت‌نشده می‌ماند{% endif %}.</p>
+    {% else %}
+    <p class="muted form-span-2">شیفت بازی به نام ایشان نیست و حقوق این ماه پرداخت شده است.</p>
+    {% endif %}
+    <form method="post" action="/admin/staff/{{ staff_user.id }}/disable" data-confirm="ورود {{ staff_user.full_name or staff_user.username }} بسته می‌شود. ادامه؟" data-confirm-title="بستن دسترسی؟" data-confirm-ok="بستن دسترسی"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-danger" type="submit">غیرفعال‌کردن دسترسی</button></form>
+    {% endif %}
     {% if not staff_user.is_active %}<form method="post" action="/admin/staff/{{ staff_user.id }}/enable"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-success" type="submit">فعال‌سازی مجدد دسترسی</button></form>{% endif %}
   </div>
 </div>
@@ -71,6 +78,21 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>نقش<select name="role"><option value="cashier" {% if staff_user.role == 'cashier' %}selected{% endif %}>صندوقدار — فروش روزانه</option><option value="manager" {% if staff_user.role == 'manager' %}selected{% endif %}>مدیر — عملیات فروشگاه</option><option value="owner" {% if staff_user.role == 'owner' %}selected{% endif %}>مالک — همه‌چیز</option></select></label>
     <button class="btn btn-primary" type="submit">ذخیره نقش</button>
+  </form>
+</div>
+<div class="card">
+  <div class="section-heading"><div><span class="eyebrow">دسترسی</span><h3>کلیدهای فردی</h3></div></div>
+  <p class="muted">کلید فقط کم می‌کند، اضافه نمی‌کند: خاموش یعنی «حتی با نقش مجاز، نه»؛ روشن هرگز فراتر از نقش نمی‌دهد.{% if staff_user.role == 'owner' %} مالک از کلیدها معاف است — همه روشن و قفل.{% endif %}</p>
+  <form method="post" action="/admin/staff/{{ staff_user.id }}/caps" class="form-row">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <fieldset class="form-span-2">
+    <legend class="muted">کلیدهای این کارمند</legend>
+    {% set cap_defs = [('can_refund', 'ابطال فاکتور', 'بازگرداندن فروش و موجودی'), ('can_discount', 'تخفیف دستی', 'مبلغ و درصد دلخواه روی فاکتور'), ('can_view_payroll', 'مشاهده رسید حقوق', 'رسیدهای حقوقی همه کارکنان'), ('can_reconcile_pos', 'تطبیق کارت‌خوان', 'ثبت نتیجه بررسی تراکنش‌ها')] %}
+    {% for field, title, hint in cap_defs %}
+    <label><input type="checkbox" name="{{ field }}" value="1" {% if staff_caps[field] %}checked{% endif %} {% if staff_user.role == 'owner' %}disabled{% endif %}> {{ title }} <small class="muted">— {{ hint }}</small></label>
+    {% endfor %}
+    </fieldset>
+    {% if staff_user.role != 'owner' %}<button class="btn btn-primary" type="submit">ذخیره کلیدها</button>{% endif %}
   </form>
 </div>
 <div class="card">

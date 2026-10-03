@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 27
+MIGRATION_VERSION = 28
 
 
 def migration_status(engine) -> int:
@@ -238,6 +238,14 @@ def _rebuild_sms_messages(conn) -> None:
 
 
 def _apply_revision(conn, version: int) -> None:
+    if version == 28:
+        # Per-person capability toggles on staff_users. All NULL to start,
+        # which effective_cap reads as "follow the role default" — purely
+        # additive, every existing account behaves exactly as before.
+        for column in ("can_refund", "can_discount", "can_view_payroll", "can_reconcile_pos"):
+            _add_column_if_missing(conn, "staff_users", column, "BOOLEAN")
+        return
+
     if version == 27:
         # Junk category spellings — the literal strings "None", "null", "-"
         # and the like, typed or imported once — collapse to NULL, which

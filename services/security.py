@@ -116,6 +116,66 @@ def role_allows(role: str | None, minimum_role: str) -> bool:
     return ROLE_ORDER.get(role or "", 0) >= ROLE_ORDER.get(minimum_role, 99)
 
 
+# Per-person capability toggles layered on the role ladder. Each entry names
+# the StaffUser column and the minimum role that may hold the capability at
+# all — the toggle narrows, the role gates. Unknown capability: deny.
+CAPABILITIES = {
+    "can_refund": {"column": "can_refund", "minimum_role": "manager"},
+    "can_discount": {"column": "can_discount", "minimum_role": "cashier"},
+    "can_view_payroll": {"column": "can_view_payroll", "minimum_role": "manager"},
+    "can_reconcile_pos": {"column": "can_reconcile_pos", "minimum_role": "manager"},
+}
+
+# What an unset (NULL) toggle reads as, per role. New capabilities resolve
+# through the role alone until the owner says otherwise per person.
+ROLE_CAP_DEFAULTS = {
+    "cashier": {"can_refund": False, "can_discount": False,
+                "can_view_payroll": False, "can_reconcile_pos": False},
+    "manager": {"can_refund": True, "can_discount": True,
+                "can_view_payroll": False, "can_reconcile_pos": True},
+    "owner": {"can_refund": True, "can_discount": True,
+              "can_view_payroll": True, "can_reconcile_pos": True},
+}
+
+
+def effective_cap(user, capability: str) -> bool:
+    """Whether this person may exercise ``capability`` right now.
+
+    Narrow-only intersection: the role must allow the capability's minimum
+    level AND the person's toggle (or their role's default when unset) must
+    be on. A toggle can take away what the role grants; it can never grant
+    what the role denies. Owners bypass toggles so a mis-set switch can
+    never lock the shop's own administrator out.
+    """
+    spec = CAPABILITIES.get(capability)
+    if spec is None or user is None:
+        return False
+    if not getattr(user, "is_active", False):
+        return False
+    if (user.role or "") == "owner":
+        return role_allows(user.role, spec["minimum_role"])
+    if not role_allows(user.role, spec["minimum_role"]):
+        return False
+    toggle = getattr(user, spec["column"], None)
+    if toggle is None:
+        return bool(ROLE_CAP_DEFAULTS.get(user.role or "", {}).get(capability, False))
+    return bool(toggle)
+
+
+def require_cap(request: Request, db, capability: str):
+    """Like :func:`require_html_role` for a capability: return the active user
+    or an HTML response suitable for route guards (login redirect when
+    anonymous, 403 otherwise)."""
+    user = _session_staff_user(db, request)
+    if not user:
+        return RedirectResponse(url="/admin/login", status_code=303)
+    if not effective_cap(user, capability):
+        raise HTTPException(status_code=403, detail=PERMISSION_DENIED_DETAIL)
+    if request.session.get("staff_role") != user.role:
+        request.session["staff_role"] = user.role
+    return user
+
+
 def _session_staff_user(db, request: Request):
     """Return the active staff account for this session, with legacy owner fallback."""
     from models import StaffUser
