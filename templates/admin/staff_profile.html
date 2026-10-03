@@ -102,19 +102,23 @@
 </div>
 <div class="card hire-narrow">
   <div class="section-heading"><div><span class="eyebrow">دسترسی</span><h3>کلیدهای فردی</h3></div></div>
-  <p class="muted">کلید فقط کم می‌کند، اضافه نمی‌کند: خاموش یعنی «حتی با نقش مجاز، نه»؛ روشن هرگز فراتر از نقش نمی‌دهد.{% if staff_user.role == 'owner' %} مالک از کلیدها معاف است — همه روشن و قفل.{% endif %}</p>
+  <p class="muted">کلید یعنی اجازه نقش، برای همین یک نفر: <strong>روشن</strong> همان دسترسی نقش است، <strong>خاموش</strong> یعنی «حتی با نقش مجاز، نه». روشن هرگز فراتر از نقش نمی‌دهد.{% if staff_user.role == 'owner' %} مالک از کلیدها معاف است — همه روشن و قفل.{% endif %}</p>
   <form method="post" action="/admin/staff/{{ staff_user.id }}/caps">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="hire-grid">
-    <fieldset>
+    <fieldset class="hire-fieldset">
     <legend class="muted">کلیدهای این کارمند</legend>
-    {% set cap_defs = [('can_refund', 'ابطال فاکتور', 'بازگرداندن فروش و موجودی'), ('can_discount', 'تخفیف دستی', 'مبلغ و درصد دلخواه روی فاکتور'), ('can_view_payroll', 'مشاهده رسید حقوق', 'رسیدهای حقوقی همه کارکنان'), ('can_reconcile_pos', 'تطبیق کارت‌خوان', 'ثبت نتیجه بررسی تراکنش‌ها')] %}
-    {% for field, title, hint in cap_defs %}
-    <label><input type="checkbox" name="{{ field }}" value="1" {% if staff_caps[field] %}checked{% endif %} {% if staff_user.role == 'owner' %}disabled{% endif %}> {{ title }} <small class="muted">— {{ hint }}</small></label>
+    {% set cap_defs = [
+      ('can_refund', 'ابطال فاکتور', 'خاموش: دکمه ابطال از فاکتور پنهان می‌شود و ثبت مستقیم هم پذیرفته نیست'),
+      ('can_discount', 'تخفیف دستی', 'خاموش: فیلدهای تخفیف در صندوق قفل است؛ سقف مبلغ و درصد زیر همین‌جا'),
+      ('can_view_payroll', 'مشاهده رسید حقوق', 'خاموش: لینک رسیدها ناپدید و باز کردن مستقیم رسید پذیرفته نیست'),
+      ('can_reconcile_pos', 'تطبیق کارت‌خوان', 'خاموش: فرم ثبت نتیجه در مغایرت‌ها نمایش داده نمی‌شود')] %}
+    {% for field, title, consequence in cap_defs %}
+    <div class="cap-row"><label><input type="checkbox" name="{{ field }}" value="1" {% if staff_caps[field] %}checked{% endif %} {% if staff_user.role == 'owner' %}disabled{% endif %} aria-describedby="caphelp-{{ field }}"> <strong>{{ title }}</strong></label><small class="muted" id="caphelp-{{ field }}">{{ consequence }}</small></div>
     {% endfor %}
     </fieldset>
     {% if staff_user.role != 'owner' %}
-    <fieldset>
+    <fieldset class="hire-fieldset">
     <legend class="muted">سقف‌های فردی تخفیف</legend>
     <label class="hire-field">سقف مبلغ تخفیف در هر فاکتور (تومان)<input name="max_discount_amount" inputmode="numeric" aria-describedby="prof-capamt-help" value="{{ staff_user.max_discount_amount if staff_user.max_discount_amount is not none else '' }}" placeholder="پیش‌فرض نقش"><small class="field-help" id="prof-capamt-help">خالی یعنی سقف نقش (<bdi>{{ fmt(role_discount_limits.amount) }} تومان</bdi>)؛ کمتر هم می‌شود، بیشتر نه</small></label>
     <label class="hire-field">سقف درصد تخفیف در هر فاکتور<input name="max_discount_percent" inputmode="numeric" aria-describedby="prof-cappct-help" value="{{ staff_user.max_discount_percent if staff_user.max_discount_percent is not none else '' }}" placeholder="پیش‌فرض نقش"><small class="field-help" id="prof-cappct-help">خالی یعنی سقف نقش (<bdi>{{ role_discount_limits.percent }}٪</bdi>)؛ کمتر هم می‌شود، بیشتر نه</small></label>
@@ -138,10 +142,12 @@
   <form method="post" action="/admin/staff/{{ staff_user.id }}/salary" data-confirm="پرداخت حقوق ثبت و سند هزینه ماهانه ساخته می‌شود. ادامه؟" data-confirm-title="ثبت حقوق؟" data-confirm-ok="ثبت حقوق">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="hire-grid">
-    <label class="hire-field">ماه پرداخت (شمسی)<input name="period_key" aria-describedby="prof-period-help" placeholder="۱۴۰۵-۰۶" dir="ltr" required><small class="field-help" id="prof-period-help">فقط ماه کامل‌شده؛ ماه جاری هنوز حقوق ندارد</small></label>
+    <label class="hire-field">ماه پرداخت (شمسی)<input name="period_key" inputmode="numeric" aria-describedby="prof-period-help" placeholder="۱۴۰۵-۰۶" dir="ltr" required><small class="field-help" id="prof-period-help">فقط ماه کامل‌شده؛ ماه جاری هنوز حقوق ندارد</small></label>
     <label class="hire-field">روش پرداخت<select name="payment_method"><option value="cash">نقدی</option><option value="card">کارت</option></select></label>
-    <div id="salary-items"></div>
+    <div id="salary-items" data-base-amount="{{ staff_user.salary_amount or 0 }}" data-base-fmt="{{ fmt(staff_user.salary_amount or 0) }}"></div>
     <button type="button" class="btn btn-ghost" id="salary-item-add">افزودن قلم</button>
+    <p class="muted">کسورات و پیش‌پرداخت از حقوق کم می‌کند؛ اضافه‌کاری و پاداش به آن اضافه می‌کند.</p>
+    <p class="muted" id="salary-math-preview" aria-live="polite"></p>
     <label class="hire-field">توضیح<input name="note"></label>
     </div>
     <div class="staff-actions"><button class="btn btn-success" type="submit">ثبت حقوق و چاپ رسید</button></div>
@@ -154,7 +160,7 @@
     var host = document.getElementById('salary-items');
     var add = document.getElementById('salary-item-add');
     if (!host || !add) return;
-    var kinds = [['deduction', 'کسورات'], ['advance', 'پیش‌پرداخت'], ['overtime', 'اضافه‌کاری'], ['bonus', 'پاداش']];
+    var kinds = [{label: 'کم می‌کند', options: [['deduction', 'کسورات'], ['advance', 'پیش‌پرداخت']]}, {label: 'اضافه می‌کند', options: [['overtime', 'اضافه‌کاری'], ['bonus', 'پاداش']]}];
     var next = 0;
     add.addEventListener('click', function () {
         if (next >= 12) {
@@ -164,22 +170,26 @@
         }
         var i = next++;
         var row = document.createElement('div');
-        row.className = 'hire-grid';
+        row.className = 'item-row';
+        row.setAttribute('data-item-row', '');
         function wrap(control, text) {
-            var lab = document.createElement('label');
-            lab.className = 'hire-field';
-            lab.appendChild(document.createTextNode(text + ' '));
-            lab.appendChild(control);
-            return lab;
+            control.setAttribute('aria-label', text);
+            control.placeholder = control.placeholder || text;
+            return control;
         }
         var kind = document.createElement('select');
         kind.name = 'item_kind_' + i;
         kind.setAttribute('aria-label', 'نوع قلم');
-        kinds.forEach(function (pair) {
-            var opt = document.createElement('option');
-            opt.value = pair[0];
-            opt.textContent = pair[1];
-            kind.appendChild(opt);
+        kinds.forEach(function (group) {
+            var optgroup = document.createElement('optgroup');
+            optgroup.label = group.label;
+            group.options.forEach(function (pair) {
+                var opt = document.createElement('option');
+                opt.value = pair[0];
+                opt.textContent = pair[1];
+                optgroup.appendChild(opt);
+            });
+            kind.appendChild(optgroup);
         });
         var label = document.createElement('input');
         label.name = 'item_label_' + i;
@@ -194,13 +204,48 @@
         drop.type = 'button';
         drop.className = 'btn btn-sm btn-ghost';
         drop.textContent = 'حذف';
-        drop.addEventListener('click', function () { row.remove(); });
+        drop.addEventListener('click', function () { row.remove(); refreshMath(); });
         row.appendChild(wrap(kind, 'نوع'));
         row.appendChild(wrap(label, 'دلیل'));
         row.appendChild(wrap(amount, 'مبلغ'));
         row.appendChild(drop);
         host.appendChild(row);
+        refreshMath();
     });
+    // Live gross → net preview, same signs as the server: base/overtime/bonus
+    // add, advance/deduction subtract. Display-only; the POST computes truth.
+    var preview = document.getElementById('salary-math-preview');
+    function faDigits(n) {
+        return String(n).replace(/\d/g, function (d) { return '۰۱۲۳۴۵۶۷۸۹'[+d]; }).replace(/,/g, '٬');
+    }
+    function refreshMath() {
+        if (!preview) return;
+        var base = parseInt(host.getAttribute('data-base-amount'), 10) || 0;
+        var add = 0, sub = 0, rows = 0;
+        host.querySelectorAll('[data-item-row]').forEach(function (row) {
+            var kind = row.querySelector('select');
+            var amt = row.querySelector('input[name^="item_amount_"]');
+            var raw = ((amt && amt.value) || '').replace(/[٬,]/g, '');
+            raw = raw.replace(/[۰-۹]/g, function (d) { return '۰۱۲۳۴۵۶۷۸۹'.indexOf(d); });
+            var value = parseInt(raw, 10) || 0;
+            if (value <= 0 || !kind) return;
+            rows++;
+            if (kind.value === 'overtime' || kind.value === 'bonus') {
+                add += value;
+            } else {
+                sub += value;
+            }
+        });
+        if (!rows) {
+            preview.textContent = '';
+            return;
+        }
+        var gross = base + add, net = gross - sub;
+        preview.textContent = 'ناخالص ' + faDigits(gross.toLocaleString('en-US')) +
+            ' · کسورات ' + faDigits(sub.toLocaleString('en-US')) +
+            ' · خالص ' + faDigits(net.toLocaleString('en-US')) + ' تومان';
+    }
+    host.addEventListener('change', refreshMath);
 })();
 </script>
 <script>
@@ -263,7 +308,7 @@
 {% if staff_user.salary_payments %}
 <div class="card hire-narrow">
   <div class="section-heading"><div><span class="eyebrow">حقوق</span><h3>پرداخت‌های ثبت‌شده</h3></div><span class="appearance-active">{{ staff_user.salary_payments|length }} مورد</span></div>
-  <div class="table-scroll"><table class="data-table"><thead><tr><th scope="col">ماه</th><th scope="col">ناخالص (تومان)</th><th scope="col">کسورات (تومان)</th><th scope="col">خالص (تومان)</th><th scope="col">تاریخ</th><th scope="col">وضعیت</th><th scope="col">رسید</th></tr></thead><tbody>{% for payment in staff_user.salary_payments[:12] %}<tr><td>{{ payment.period_key }}</td><td>{{ fmt(payment.gross_amount) }}</td><td>{{ fmt(payment.deductions) }}</td><td>{{ fmt(payment.net_amount) }}</td><td>{{ jalali_str(payment.paid_at) }}</td><td>{% if payment.is_voided %}<span class="badge badge-none">باطل‌شده</span>{% if payment.void_reason %}<br><small class="muted">{{ payment.void_reason }}</small>{% endif %}{% else %}<span class="badge badge-available">پرداخت‌شده</span>{% endif %}</td><td><a class="btn btn-sm btn-ghost" href="/admin/payroll/{{ payment.id }}/receipt" target="_blank" aria-label="چاپ رسید حقوق ماه {{ payment.period_key }}">چاپ</a>{% if not payment.is_voided %} <form method="post" action="/admin/payroll/{{ payment.id }}/void" data-confirm="پرداخت ماه {{ payment.period_key }} باطل و سند هزینه آن برگشت داده می‌شود. ادامه؟" data-confirm-title="ابطال پرداخت؟" data-confirm-ok="ابطال پرداخت"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="text" name="reason" placeholder="دلیل ابطال (الزامی)" aria-label="دلیل ابطال" required maxlength="500"><button class="btn btn-sm btn-danger" type="submit">ابطال</button></form>{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+  <div class="table-scroll"><table class="data-table"><thead><tr><th scope="col">ماه</th><th scope="col">ناخالص (تومان)</th><th scope="col">کسورات (تومان)</th><th scope="col">خالص (تومان)</th><th scope="col">تاریخ</th><th scope="col">وضعیت</th><th scope="col">رسید</th></tr></thead><tbody>{% for payment in staff_user.salary_payments[:12] %}<tr><td>{{ payment.period_key }}</td><td>{{ fmt(payment.gross_amount) }}</td><td>{{ fmt(payment.deductions) }}</td><td>{{ fmt(payment.net_amount) }}</td><td>{{ jalali_str(payment.paid_at) }}</td><td>{% if payment.is_voided %}<span class="badge badge-none">باطل‌شده</span>{% if payment.void_reason %}<br><small class="muted">{{ payment.void_reason }}</small>{% endif %}{% else %}<span class="badge badge-available">پرداخت‌شده</span>{% endif %}</td><td><a class="btn btn-sm btn-ghost" href="/admin/payroll/{{ payment.id }}/receipt" target="_blank" aria-label="چاپ رسید حقوق ماه {{ payment.period_key }}">چاپ</a>{% if not payment.is_voided %}<form method="post" action="/admin/payroll/{{ payment.id }}/void" class="void-form" data-confirm="پرداخت ماه {{ payment.period_key }} باطل و سند هزینه آن برگشت داده می‌شود. ادامه؟" data-confirm-title="ابطال پرداخت؟" data-confirm-ok="ابطال پرداخت"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><label>دلیل ابطال<input type="text" name="reason" placeholder="الزامی" required minlength="3" maxlength="500"></label><button class="btn btn-sm btn-danger" type="submit">ابطال</button></form>{% endif %}</td></tr>{% endfor %}</tbody></table></div>
 </div>
 {% else %}
 <div class="card hire-narrow"><p class="muted">هنوز حقوقی برای این کارمند ثبت نشده است.</p></div>
@@ -292,7 +337,8 @@
 <div class="card hire-narrow">
   <div class="section-heading"><div><span class="eyebrow">حضور</span><h3>ماه {{ attendance_month }}</h3></div><span class="appearance-active">استحقاقی مانده: {{ annual_allowance - annual_used }} روز · استعلاجی امسال: {{ sick_used }} روز</span></div>
   {% if attendance_marks %}
-  <div class="table-scroll"><table class="data-table"><thead><tr><th scope="col">روز</th><th scope="col">وضعیت</th><th scope="col">یادداشت</th></tr></thead><tbody>{% for mark in attendance_marks %}<tr><td>{{ mark.day }}</td><td>{{ mark.status }}</td><td>{{ mark.note }}</td></tr>{% endfor %}</tbody></table></div>
+  <p class="muted">ورود روزانه به‌صورت خودکار «حاضر» ثبت می‌کند؛ مرخصیِ دستی هرگز بازنویسی نمی‌شود. ساعت کاری محاسبه نمی‌شود.</p>
+  <div class="table-scroll"><table class="data-table"><thead><tr><th scope="col">روز</th><th scope="col">وضعیت</th><th scope="col">ثبت</th><th scope="col">یادداشت</th></tr></thead><tbody>{% for mark in attendance_marks %}<tr><td>{{ mark.day }}</td><td>{{ mark.status }}</td><td>{{ mark.source }}</td><td>{{ mark.note }}</td></tr>{% endfor %}</tbody></table></div>
   {% else %}
   <p class="muted">در این ماه هنوز روزی ثبت نشده است.</p>
   {% endif %}

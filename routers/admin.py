@@ -137,6 +137,16 @@ async def admin_login(request: Request, username: str = Form("owner"), password:
         request.session["staff_role"] = user.role
         request.session["api_token"] = API_TOKEN
         user.last_login_at = datetime.now(timezone.utc)
+        # First login of the day marks the person present: the row appears
+        # only when the day is still unmarked, so repeat logins never
+        # duplicate and a hand-marked leave is never overwritten. Presence
+        # only — sessions outlive any work stretch, so hours would lie.
+        today = datetime.now(timezone.utc).date()
+        if not db.query(AttendanceRecord).filter(
+                AttendanceRecord.staff_user_id == user.id,
+                AttendanceRecord.day == today).first():
+            db.add(AttendanceRecord(staff_user_id=user.id, day=today,
+                                    status="present", recorded_by_user_id=None))
         db.commit()
         log_action(db, "login", "ورود موفق", request=request, target_type="staff_user", target_id=user.id)
         # The till for a cashier, the dashboard for everyone above them. Sending
@@ -1156,6 +1166,7 @@ async def admin_staff_profile(staff_id: int, request: Request, tab: str = "overv
                                    tzinfo=timezone.utc), False),
         "status": ATTENDANCE_STATUSES.get(mark.status, mark.status),
         "note": mark.note or "—",
+        "source": "خودکار" if mark.recorded_by_user_id is None else "دستی",
     } for mark in marks]
     year_start, year_end = _jalali_year_bounds(int(attendance_month[:4]))
     leave_used = {"annual_leave": 0, "sick_leave": 0}

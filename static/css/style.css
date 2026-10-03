@@ -513,6 +513,20 @@ button:disabled {
 .hire-field > .field-help { margin-top: 0; }
 .hire-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .hire-fieldset > legend { padding: 0; font-size: 0.95rem; font-weight: 800; margin-bottom: 0.2rem; }
+/* Capability rows: the switch first, then a two-line title + consequence.
+   Horizontal (a switch is not a text field), vertically centered. */
+.cap-row { display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.55rem 0.7rem; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--card); font-size: 0.85rem; }
+.cap-row > label { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; white-space: nowrap; }
+.cap-row:has(input:disabled) { cursor: default; background: var(--surface-soft); }
+.cap-row:has(input:disabled) > label { cursor: default; }
+.cap-row input[type="checkbox"] { width: 1.15rem; height: 1.15rem; min-height: 0; margin-top: 0.15rem; flex-shrink: 0; accent-color: var(--candy); }
+/* The void form lives inside a receipt cell: reason above, button below —
+   never squeezed beside the print link. */
+.void-form { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.4rem; }
+.void-form label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.78rem; font-weight: 700; }
+/* One payroll line: kind, reason, amount and remove share a row instead of
+   stacking four-high inside the single-column flow. */
+.item-row { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 0.5rem; align-items: end; }
 /* The wizard reads as a form, not a spreadsheet: one comfortable column.
    Full-width fields stop looking stretched once the column itself is narrow. */
 .hire-narrow { max-width: 640px; margin-inline: auto; }
