@@ -513,6 +513,9 @@ button:disabled {
 .hire-field > .field-help { margin-top: 0; }
 .hire-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .hire-fieldset > legend { padding: 0; font-size: 0.95rem; font-weight: 800; margin-bottom: 0.2rem; }
+/* The wizard reads as a form, not a spreadsheet: one comfortable column.
+   Full-width fields stop looking stretched once the column itself is narrow. */
+.hire-narrow { max-width: 640px; margin-inline: auto; }
 /* Three fields that belong on one line (name/number/amount rows): without
    this they fall into the two-column grid above and the third wraps alone
    at half width. */
