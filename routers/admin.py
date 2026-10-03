@@ -110,8 +110,8 @@ from services.tier import (
 )
 from services.events import EVENT_LIMIT_RULES, event_history, event_payload, append_event
 from services.payroll import (create_salary_payment, current_period_key,
-                             normalize_period_key, run_monthly_payday,
-                             void_salary_payment)
+                             is_payroll_due, normalize_period_key,
+                             run_monthly_payday, void_salary_payment)
 from services.themes import THEMES, DEFAULT_THEME_ID, THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY, DEFAULT_CUSTOM_PRIMARY, DEFAULT_CUSTOM_SECONDARY, all_theme_previews, validate_hex, contrast_ratio, get_theme, invalidate_theme_cache, migrate_retired_theme
 
 router = APIRouter(prefix="/admin")
@@ -1016,7 +1016,9 @@ async def admin_staff(request: Request, q: str = "", status: str = "all", page: 
         SalaryPayment.period_key == current,
         SalaryPayment.is_voided == False).all()}  # noqa: E712
     unpaid_names = [(person.full_name or person.username)
-                    for person in unpaid_staff if person.id not in paid_ids]
+                    for person in unpaid_staff
+                    if person.id not in paid_ids
+                    and is_payroll_due(person.hire_date, current)]
     base_qs = urlencode({
         **({"q": search} if search else {}),
         **({"status": status_filter} if status_filter != "all" else {}),
@@ -1119,7 +1121,8 @@ async def admin_staff_profile(staff_id: int, request: Request, tab: str = "overv
     open_shift = db.query(CashSession).filter(
         CashSession.cashier_user_id == staff_user.id,
         CashSession.status == "open").order_by(CashSession.opened_at.desc()).first()
-    unpaid_month = staff_user.is_active and staff_user.salary_amount > 0 and not db.query(
+    unpaid_month = staff_user.is_active and staff_user.salary_amount > 0 \
+        and is_payroll_due(staff_user.hire_date, current) and not db.query(
         SalaryPayment).filter(SalaryPayment.staff_user_id == staff_user.id,
                               SalaryPayment.period_key == current).first()
     # Yearly rollups from live payments: the year is the period prefix.
@@ -1495,10 +1498,12 @@ async def admin_payroll_bulk(request: Request, db: Session = Depends(get_db)):
     parts = [f"حقوق {len(report['created'])} نفر ثبت شد"]
     if report["skipped"]:
         parts.append(f"{len(report['skipped'])} نفر قبلاً پرداخت شده بودند")
+    if report["waiting"]:
+        parts.append(f"{len(report['waiting'])} نفر هنوز ماه اولشان تمام نشده")
     if report["failed"]:
         names = "، ".join(item["name"] for item in report["failed"][:5])
         parts.append(f"خطا برای {len(report['failed'])} نفر ({names})")
-    log_action(db, "salary_bulk", f"پرداخت گروهی {report['period']}", request=request, target_type="salary_bulk", after={"created": len(report["created"]), "skipped": len(report["skipped"]), "failed": len(report["failed"])})
+    log_action(db, "salary_bulk", f"پرداخت گروهی {report['period']}", request=request, target_type="salary_bulk", after={"created": len(report["created"]), "skipped": len(report["skipped"]), "waiting": len(report["waiting"]), "failed": len(report["failed"])})
     return RedirectResponse(url=f"/admin/staff?msg={'؛ '.join(parts)}.", status_code=303)
 
 

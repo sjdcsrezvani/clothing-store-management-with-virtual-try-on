@@ -20,6 +20,22 @@ def current_period_key(value: datetime | None = None) -> str:
     return f"{jd.year:04d}-{jd.month:02d}"
 
 
+def is_payroll_due(hire_date, period_key: str) -> bool:
+    """Whether a full month of service precedes ``period_key``: no pay is due
+    for a month the person had not finished working. A missing hire date
+    counts as due — legacy staff must never silently drop off payday."""
+    if hire_date is None:
+        return True
+    try:
+        year, month = int(period_key[:4]), int(period_key[5:7])
+    except (TypeError, ValueError):
+        return True
+    import jdatetime
+    day = hire_date.date() if isinstance(hire_date, datetime) else hire_date
+    jd = jdatetime.date.fromgregorian(date=day)
+    return (jd.year, jd.month) < (year, month)
+
+
 def normalize_period_key(value: str) -> str:
     cleaned = to_english_digits((value or "").strip())
     if not _PERIOD_PATTERN.fullmatch(cleaned):
@@ -216,8 +232,13 @@ def run_monthly_payday(db, operator_user: StaffUser, period_key: str,
     payable = db.query(StaffUser).filter(
         StaffUser.is_active == True,  # noqa: E712
         StaffUser.salary_amount > 0).order_by(StaffUser.id).all()
-    report: dict = {"period": period_key, "created": [], "skipped": [], "failed": []}
+    report: dict = {"period": period_key, "created": [], "skipped": [],
+                    "waiting": [], "failed": []}
     for person in payable:
+        if not is_payroll_due(person.hire_date, period_key):
+            # Hired inside the pay month: the first month is not payable yet.
+            report["waiting"].append(person.full_name or person.username)
+            continue
         try:
             payment = create_salary_payment(
                 db, person, operator_user, period_key,

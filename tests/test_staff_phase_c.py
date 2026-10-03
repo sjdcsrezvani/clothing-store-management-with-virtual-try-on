@@ -211,3 +211,41 @@ def test_revision_29_rebuilds_payments_with_items_and_live_unique(tmp_path):
         assert conn.execute(text(
             "SELECT sql FROM sqlite_master WHERE name = 'uq_salary_payments_staff_period_live'"
         )).scalar() is not None
+
+
+def test_brand_new_hire_is_not_dunned_or_bulk_paid(client, db_session):
+    from datetime import datetime, timezone
+    from services.payroll import current_period_key, is_payroll_due
+    _owner_client(client, db_session, name="phasec-owner-due")
+    rookie, _ = _staff(db_session, "phasec-rookie", "cashier")
+    rookie.full_name = "تازه‌وارد"
+    rookie.salary_amount = 10_000_000
+    rookie.hire_date = datetime.now(timezone.utc)
+    veteran, _ = _staff(db_session, "phasec-vet", "cashier")
+    veteran.full_name = "باسابقه"
+    veteran.salary_amount = 10_000_000
+    db_session.commit()
+
+    assert is_payroll_due(None, "1405-07") is True
+    assert is_payroll_due(rookie.hire_date, current_period_key()) is False
+
+    page = client.get("/admin/staff").text
+    assert "هنوز حقوق نگرفته‌اند" in page
+    import re
+    banner_names = re.search(
+        r"هنوز حقوق نگرفته‌اند</h3></div></div>\s*<p class=\"muted\">(.*?)</p>",
+        page, re.S)
+    assert banner_names is not None
+    assert "باسابقه" in banner_names.group(1)
+    assert "تازه‌وارد" not in banner_names.group(1)
+
+    token = csrf_token(client, "/admin/staff")
+    response = client.post("/admin/payroll/bulk", data={
+        "csrf_token": token, "period_key": current_period_key(),
+        "payment_method": "cash"}, follow_redirects=False)
+    location = unquote(response.headers["location"])
+    assert "ماه اولشان تمام نشده" in location
+    assert db_session.query(SalaryPayment).filter(
+        SalaryPayment.staff_user_id == rookie.id).count() == 0
+    assert db_session.query(SalaryPayment).filter(
+        SalaryPayment.staff_user_id == veteran.id).count() == 1
