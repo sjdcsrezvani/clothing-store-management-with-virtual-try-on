@@ -846,15 +846,23 @@ def _check_national_id(code: str) -> str | None:
     """Validate an Iranian national ID (کد ملی), checksum included. Empty stays
     empty — the field is optional; a filled one must be real. Spacing and
     dashes people copy along (``001 234 5678``) are stripped, not punished."""
+    import logging
     import re
-    text = re.sub(r"[\s\u200c\-/]", "", to_english_digits((code or "").strip()))
+    raw = to_english_digits((code or "").strip())
+    text = re.sub(r"[\s\u200c\-/]", "", raw)
     if not text:
         return None
     if not (text.isdigit() and len(text) == 10) or len(set(text)) == 1:
+        logging.getLogger("raykid.staff").warning(
+            "national-id refused by shape: length=%d all_digits=%s",
+            len(text), text.isdigit())
         raise ValueError("کد ملی باید ۱۰ رقم باشد.")
     check = int(text[9])
     remainder = sum(int(digit) * (10 - index) for index, digit in enumerate(text[:9])) % 11
     if (remainder if remainder < 2 else 11 - remainder) != check:
+        logging.getLogger("raykid.staff").warning(
+            "national-id refused by checksum: length=10 expected_check=%d",
+            remainder if remainder < 2 else 11 - remainder)
         raise ValueError("کد ملی معتبر نیست.")
     return text
 
