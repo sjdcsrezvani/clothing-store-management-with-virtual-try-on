@@ -383,9 +383,10 @@ textarea {
   padding: 0.75rem 1rem;
   /* One hairline, not a frame: the 2px border made every field shout, and
      nine shouting fields is what read as ugly. The focus ring still speaks
-     up when a field owns the keyboard. */
+     up when a field owns the keyboard. Corners wear the card radius, not
+     the small one — fields should feel touchable, not machined. */
   border: 1px solid var(--rule);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   background: var(--field-bg);
   font-family: inherit;
   font-size: 1rem;
@@ -425,7 +426,7 @@ select:not([multiple]):hover { border-color: var(--candy); }
    wears the card look, and both are exactly the field's width. */
 .fancy-wrap { position: relative; display: block; }
 .fancy-wrap > select { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
-.fancy-btn { display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.75rem 1rem; padding-inline-end: 2.4rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); background-color: var(--field-bg); background-image: linear-gradient(45deg, transparent 50%, var(--ink-soft) 50%), linear-gradient(135deg, var(--ink-soft) 50%, transparent 50%); background-position: left 1.15rem center, left 0.8rem center; background-size: 0.45rem 0.45rem; background-repeat: no-repeat; font: inherit; font-size: 1rem; color: var(--ink); cursor: pointer; text-align: start; }
+.fancy-btn { display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.75rem 1rem; padding-inline-end: 2.4rem; border: 1px solid var(--rule); border-radius: var(--radius); background-color: var(--field-bg); background-image: linear-gradient(45deg, transparent 50%, var(--ink-soft) 50%), linear-gradient(135deg, var(--ink-soft) 50%, transparent 50%); background-position: left 1.15rem center, left 0.8rem center; background-size: 0.45rem 0.45rem; background-repeat: no-repeat; font: inherit; font-size: 1rem; color: var(--ink); cursor: pointer; text-align: start; }
 .fancy-btn:hover { border-color: var(--candy); }
 .fancy-btn:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
 .fancy-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
