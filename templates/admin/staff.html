@@ -9,9 +9,23 @@
 <a class="btn btn-ghost" href="/admin/owner-profile">اطلاعات مالک و قرارداد</a>
 {% endset %}
 {% include 'partials/page_header.html' %}
+{% if unpaid_names %}
+<div class="card">
+  <div class="section-heading"><div><span class="eyebrow">حقوق ماه {{ current_period }}</span><h3>{{ unpaid_names|length }} نفر هنوز حقوق نگرفته‌اند</h3></div></div>
+  <p class="muted">{{ unpaid_names[:5]|join('، ') }}{% if unpaid_names|length > 5 %} و {{ unpaid_names|length - 5 }} نفر دیگر{% endif %}</p>
+  <form method="post" action="/admin/payroll/bulk" class="form-row" data-confirm="حقوق پایه همه کارکنان پرداخت‌نشده برای ماه {{ current_period }} ثبت می‌شود. ادامه؟" data-confirm-title="پرداخت گروهی؟" data-confirm-ok="پرداخت گروهی">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="period_key" value="{{ current_period }}">
+    <label>روش پرداخت<select name="payment_method"><option value="cash">نقدی</option><option value="card">کارت</option></select></label>
+    <button class="btn btn-success" type="submit">پرداخت گروهی حقوق {{ current_period }}</button>
+  </form>
+</div>
+{% endif %}
 <div class="card" id="staff-list" data-list-region="staff">
   <div class="section-heading"><div><span class="eyebrow">کارکنان</span><h3 data-list-heading tabindex="-1">فهرست کارکنان</h3></div>{% if total_count %}<span class="appearance-active">{{ total_count }} نفر</span>{% endif %}</div>
   <div class="list-heading-actions">
+    <a class="btn btn-sm btn-ghost" href="/admin/staff/export"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-backup"/></svg>خروجی کارکنان</a>
+    <a class="btn btn-sm btn-ghost" href="/admin/payroll/export"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-backup"/></svg>خروجی حقوق</a>
     <form method="get" action="/admin/staff" class="per-page-form">
       <input type="hidden" name="q" value="{{ search }}">
       <input type="hidden" name="status" value="{{ status_filter }}">
@@ -90,4 +104,49 @@
   <div class="section-heading"><div><span class="eyebrow">سطح دسترسی</span><h3>هر نقش چه کارهایی می‌تواند بکند</h3></div></div>
   {% include 'partials/role_matrix.html' %}
 </div>
+{# One confirm surface for the list: the bulk payday carries its sentence in
+   data-confirm; without JS the form posts directly. Same surface shape as the
+   staff profile page. #}
+<div id="staff-list-confirm" data-dialog role="alertdialog" aria-modal="true"
+     aria-labelledby="staff-list-confirm-title" class="confirm-scrim" tabindex="-1">
+  <div class="t-modal-card confirm-card" role="document">
+    <h3 id="staff-list-confirm-title">مطمئن هستید؟</h3>
+    <p class="muted" id="staff-list-confirm-text"></p>
+    <div class="confirm-actions">
+      <button type="button" class="btn btn-success" id="staff-list-confirm-yes">تأیید</button>
+      <button type="button" class="btn btn-ghost" data-dialog-close>انصراف</button>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+    var pendingForm = null;
+    document.addEventListener('submit', function (event) {
+        var form = event.target.closest ? event.target.closest('form[data-confirm]') : null;
+        if (!form || form === pendingForm) return;
+        if (!window.RaykidDialog) return;
+        event.preventDefault();
+        pendingForm = form;
+        document.getElementById('staff-list-confirm-text').textContent =
+            form.getAttribute('data-confirm');
+        document.getElementById('staff-list-confirm-title').textContent =
+            form.getAttribute('data-confirm-title') || 'مطمئن هستید؟';
+        document.getElementById('staff-list-confirm-yes').textContent =
+            form.getAttribute('data-confirm-ok') || 'تأیید';
+        window.RaykidDialog.open('staff-list-confirm', document.activeElement);
+    });
+    document.getElementById('staff-list-confirm-yes').addEventListener('click', function () {
+        var form = pendingForm;
+        pendingForm = null;
+        window.RaykidDialog.close('staff-list-confirm');
+        if (form) form.submit();
+    });
+    document.getElementById('staff-list-confirm').addEventListener('click', function (event) {
+        if (event.target.closest('[data-dialog-close]')) pendingForm = null;
+    });
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') pendingForm = null;
+    });
+})();
+</script>
 {% endblock %}

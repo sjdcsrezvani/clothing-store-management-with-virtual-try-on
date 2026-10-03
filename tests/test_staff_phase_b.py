@@ -194,7 +194,7 @@ def test_revision_28_adds_null_toggle_columns(tmp_path):
             CREATE TABLE staff_users (
                 id INTEGER PRIMARY KEY, username VARCHAR(100), role VARCHAR(20))"""))
         conn.execute(text("INSERT INTO staff_users (username, role) VALUES ('vet-cashier', 'cashier')"))
-    assert upgrade(engine) == 28
+    assert upgrade(engine) == 29
     with engine.connect() as conn:
         row = conn.execute(text(
             "SELECT can_refund, can_discount, can_view_payroll, can_reconcile_pos"

@@ -52,11 +52,13 @@ def test_salary_sort_orders_by_money(client, db_session):
     high.salary_amount = 50_000_000
     db_session.commit()
 
-    page = client.get("/admin/staff?sort=salary&dir=desc").text
-    assert page.index("phasea-high") < page.index("phasea-low")
+    # Scope to the table body: the payday-nudges banner above also names the
+    # unpaid staff, in id order rather than sort order.
+    body = client.get("/admin/staff?sort=salary&dir=desc").text.split("<tbody>")[1]
+    assert body.index("phasea-high") < body.index("phasea-low")
 
-    page = client.get("/admin/staff?sort=salary&dir=asc").text
-    assert page.index("phasea-low") < page.index("phasea-high")
+    body = client.get("/admin/staff?sort=salary&dir=asc").text.split("<tbody>")[1]
+    assert body.index("phasea-low") < body.index("phasea-high")
 
     bogus = client.get("/admin/staff?sort=banana&dir=sideways")
     assert bogus.status_code == 200                            # unknown sorts degrade

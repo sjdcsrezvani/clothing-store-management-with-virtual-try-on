@@ -108,7 +108,9 @@ from services.tier import (
     TIER_RANK,
 )
 from services.events import EVENT_LIMIT_RULES, event_history, event_payload, append_event
-from services.payroll import create_salary_payment, current_period_key, normalize_period_key
+from services.payroll import (create_salary_payment, current_period_key,
+                             normalize_period_key, run_monthly_payday,
+                             void_salary_payment)
 from services.themes import THEMES, DEFAULT_THEME_ID, THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY, DEFAULT_CUSTOM_PRIMARY, DEFAULT_CUSTOM_SECONDARY, all_theme_previews, validate_hex, contrast_ratio, get_theme, invalidate_theme_cache, migrate_retired_theme
 
 router = APIRouter(prefix="/admin")
@@ -885,6 +887,15 @@ async def admin_staff(request: Request, q: str = "", status: str = "all", page: 
     total_pages = max(1, -(-total_count // per_page_int))
     page_int = min(page_int, total_pages)
     staff_users = query.offset((page_int - 1) * per_page_int).limit(per_page_int).all()
+    current = current_period_key()
+    unpaid_staff = db.query(StaffUser).filter(
+        StaffUser.is_active == True,  # noqa: E712
+        StaffUser.salary_amount > 0).order_by(StaffUser.id).all()
+    paid_ids = {row[0] for row in db.query(SalaryPayment.staff_user_id).filter(
+        SalaryPayment.period_key == current,
+        SalaryPayment.is_voided == False).all()}  # noqa: E712
+    unpaid_names = [(person.full_name or person.username)
+                    for person in unpaid_staff if person.id not in paid_ids]
     base_qs = urlencode({
         **({"q": search} if search else {}),
         **({"status": status_filter} if status_filter != "all" else {}),
@@ -893,7 +904,6 @@ async def admin_staff(request: Request, q: str = "", status: str = "all", page: 
     return templates.TemplateResponse(request, "admin/staff.html", {
         "staff_users": staff_users,
         "owner_settings": {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()},
-        "current_period": current_period_key(),
         "search": search,
         "status_filter": status_filter,
         "has_filters": bool(search or status_filter != "all" or sort_key != "newest"
@@ -910,10 +920,46 @@ async def admin_staff(request: Request, q: str = "", status: str = "all", page: 
         "sort_key": sort_key,
         "sort_dir": sort_dir,
         "base_qs": base_qs,
+        # Payday nudges: active, salaried staff without a live payment for the
+        # current month. The banner names a few and counts the rest.
+        "current_period": current,
+        "unpaid_names": unpaid_names,
         # The staff forms paint their bounds from the same table the POSTs
         # validate against.
         "numeric_rules": STAFF_NUMERIC_RULES,
     })
+
+
+@router.get("/staff/export")
+async def admin_staff_export(request: Request, db: Session = Depends(get_db)):
+    """The staff directory as a file: identity, role, pay and state."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    import csv
+    import io
+    role_labels = {"cashier": "صندوقدار", "manager": "مدیر", "owner": "مالک"}
+    employment_labels = {"full_time": "تمام‌وقت", "part_time": "پاره‌وقت", "contractor": "قراردادی"}
+    out = [["نام", "نام کاربری", "کد پرسنلی", "کد ملی", "تلفن", "عنوان شغلی",
+            "نوع همکاری", "نقش", "حقوق ماهانه", "وضعیت", "تاریخ شروع"]]
+    for user in db.query(StaffUser).order_by(StaffUser.id).all():
+        out.append([
+            user.full_name or "", user.username, user.employee_code or "",
+            user.national_id or "", user.phone or "", user.job_title or "",
+            employment_labels.get(user.employment_type, user.employment_type or ""),
+            role_labels.get(user.role, user.role or ""), user.salary_amount or 0,
+            "فعال" if user.is_active else "غیرفعال",
+            jalali_str(user.hire_date, False) if user.hire_date else "",
+        ])
+    buf = io.StringIO()
+    buf.write("\ufeff")  # BOM so Excel opens Persian correctly
+    csv.writer(buf).writerows(out)
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="staff_{today}.csv"'},
+    )
 
 
 @router.get("/staff/new", response_class=HTMLResponse)
@@ -953,6 +999,18 @@ async def admin_staff_profile(staff_id: int, request: Request, tab: str = "overv
     unpaid_month = staff_user.is_active and staff_user.salary_amount > 0 and not db.query(
         SalaryPayment).filter(SalaryPayment.staff_user_id == staff_user.id,
                               SalaryPayment.period_key == current).first()
+    # Yearly rollups from live payments: the year is the period prefix.
+    year_totals: dict[str, dict] = {}
+    for payment in staff_user.salary_payments:
+        if payment.is_voided:
+            continue
+        year = (payment.period_key or "")[:4]
+        bucket = year_totals.setdefault(
+            year, {"gross": 0, "deductions": 0, "net": 0, "count": 0})
+        bucket["gross"] += payment.gross_amount or 0
+        bucket["deductions"] += payment.deductions or 0
+        bucket["net"] += payment.net_amount or 0
+        bucket["count"] += 1
     return templates.TemplateResponse(request, "admin/staff_profile.html", {
         "staff_user": staff_user,
         "active_tab": active_tab,
@@ -962,6 +1020,7 @@ async def admin_staff_profile(staff_id: int, request: Request, tab: str = "overv
         "staff_caps": {field: effective_cap(staff_user, field) for field in CAP_FIELDS},
         "open_shift": open_shift,
         "unpaid_month": current if unpaid_month else "",
+        "year_totals": dict(sorted(year_totals.items(), reverse=True)),
         "owner_settings": {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()},
         "current_period": current_period_key(),
         "msg": request.query_params.get("msg", ""),
@@ -1083,9 +1142,21 @@ async def admin_staff_salary(staff_id: int, request: Request, db: Session = Depe
         return RedirectResponse(url=f"/admin/staff/{user.id}?tab=payroll&err={error}", status_code=303)
     existing = db.query(SalaryPayment).filter(
         SalaryPayment.staff_user_id == user.id,
-        SalaryPayment.period_key == period).first()
+        SalaryPayment.period_key == period,
+        SalaryPayment.is_voided == False).first()  # noqa: E712
     if existing is not None:
         return RedirectResponse(url=f"/admin/payroll/{existing.id}/receipt?msg=پرداخت حقوق قبلاً ثبت شده بود.", status_code=303)
+    # Itemized lines ride as indexed fields; a voided month re-pays clean.
+    items = []
+    for index in range(12):
+        kind = str(form.get(f"item_kind_{index}", "") or "").strip()
+        if not kind:
+            continue
+        items.append({
+            "kind": kind,
+            "label": str(form.get(f"item_label_{index}", "") or ""),
+            "amount": str(form.get(f"item_amount_{index}", "") or "0"),
+        })
     try:
         payment = create_salary_payment(
             db,
@@ -1096,6 +1167,7 @@ async def admin_staff_salary(staff_id: int, request: Request, db: Session = Depe
             payment_method=str(form.get("payment_method", "cash")),
             note=str(form.get("note", "")),
             request_id=request.headers.get("X-Request-ID"),
+            items=items,
         )
         db.commit()
     except ValueError as error:
@@ -1107,12 +1179,102 @@ async def admin_staff_salary(staff_id: int, request: Request, db: Session = Depe
         db.rollback()
         existing = db.query(SalaryPayment).filter(
             SalaryPayment.staff_user_id == user.id,
-            SalaryPayment.period_key == period).first()
+            SalaryPayment.period_key == period,
+            SalaryPayment.is_voided == False).first()  # noqa: E712
         if existing is None:
             return RedirectResponse(url=f"/admin/staff/{user.id}?tab=payroll&err=حقوق این کارمند برای این ماه قبلاً ثبت شده است.", status_code=303)
         return RedirectResponse(url=f"/admin/payroll/{existing.id}/receipt?msg=پرداخت حقوق قبلاً ثبت شده بود.", status_code=303)
     log_action(db, "salary_payment", f"پرداخت حقوق {user.username} برای {payment.period_key}", request=request, target_type="salary_payment", target_id=payment.id, after={"net_amount": payment.net_amount, "expense_id": payment.expense_id})
     return RedirectResponse(url=f"/admin/payroll/{payment.id}/receipt?msg=پرداخت حقوق ثبت شد.", status_code=303)
+
+
+@router.post("/payroll/{payment_id}/void", response_class=HTMLResponse)
+async def admin_salary_void(payment_id: int, request: Request, db: Session = Depends(get_db)):
+    """Void a salary payment with a reason: the linked salary expense reverses
+    through the ledger, the row stays as voided history, and the freed month
+    may be re-paid fresh from the profile."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    payment = db.query(SalaryPayment).filter(SalaryPayment.id == payment_id).first()
+    if not payment:
+        raise HTTPException(status_code=404, detail="پرداخت حقوق یافت نشد")
+    form = await request.form()
+    try:
+        void_salary_payment(db, payment, guard, str(form.get("reason", "")),
+                            request_id=request.headers.get("X-Request-ID"))
+        db.commit()
+    except ValueError as error:
+        db.rollback()
+        return RedirectResponse(
+            url=f"/admin/staff/{payment.staff_user_id}?tab=payroll&err={error}", status_code=303)
+    log_action(db, "salary_void", f"ابطال حقوق {payment.staff_user.username} برای {payment.period_key}", request=request, target_type="salary_payment", target_id=payment.id, after={"reason": payment.void_reason, "net_amount": payment.net_amount})
+    return RedirectResponse(
+        url=f"/admin/staff/{payment.staff_user_id}?tab=payroll&msg=پرداخت حقوق باطل شد.", status_code=303)
+
+
+@router.post("/payroll/bulk", response_class=HTMLResponse)
+async def admin_payroll_bulk(request: Request, db: Session = Depends(get_db)):
+    """Payday for the whole shop in one press: every active, salaried staffer
+    without a live payment for the month gets base pay; the already-paid are
+    named as skipped, failures name their reason. Idempotent — pressing again
+    only skips."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    form = await request.form()
+    try:
+        report = run_monthly_payday(
+            db, guard, str(form.get("period_key", "")),
+            payment_method=str(form.get("payment_method", "cash")))
+    except ValueError as error:
+        return RedirectResponse(url=f"/admin/staff?err={error}", status_code=303)
+    parts = [f"حقوق {len(report['created'])} نفر ثبت شد"]
+    if report["skipped"]:
+        parts.append(f"{len(report['skipped'])} نفر قبلاً پرداخت شده بودند")
+    if report["failed"]:
+        names = "، ".join(item["name"] for item in report["failed"][:5])
+        parts.append(f"خطا برای {len(report['failed'])} نفر ({names})")
+    log_action(db, "salary_bulk", f"پرداخت گروهی {report['period']}", request=request, target_type="salary_bulk", after={"created": len(report["created"]), "skipped": len(report["skipped"]), "failed": len(report["failed"])})
+    return RedirectResponse(url=f"/admin/staff?msg={'؛ '.join(parts)}.", status_code=303)
+
+
+@router.get("/payroll/export")
+async def admin_payroll_export(request: Request, year: str = "", db: Session = Depends(get_db)):
+    """Every salary payment as a file: who, which month, the figures, voided
+    or live. Optional Jalali-year filter (e.g. ?year=1405)."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    import csv
+    import io
+    query = db.query(SalaryPayment).join(
+        StaffUser, SalaryPayment.staff_user_id == StaffUser.id)
+    year_filter = to_english_digits((year or "").strip())
+    if year_filter:
+        query = query.filter(SalaryPayment.period_key.like(f"{year_filter}-%"))
+    payments = query.order_by(SalaryPayment.period_key.desc(), SalaryPayment.id.desc()).all()
+    out = [["کارمند", "ماه", "ناخالص", "کسورات", "خالص", "روش", "تاریخ پرداخت",
+            "وضعیت", "دلیل ابطال"]]
+    for payment in payments:
+        person = payment.staff_user
+        out.append([
+            person.full_name or person.username, payment.period_key,
+            payment.gross_amount, payment.deductions, payment.net_amount,
+            "نقدی" if payment.payment_method == "cash" else "کارت",
+            jalali_str(payment.paid_at),
+            "باطل‌شده" if payment.is_voided else "پرداخت‌شده",
+            payment.void_reason or "",
+        ])
+    buf = io.StringIO()
+    buf.write("\ufeff")  # BOM so Excel opens Persian correctly
+    csv.writer(buf).writerows(out)
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="payroll_{today}.csv"'},
+    )
 
 
 @router.get("/payroll/{payment_id}/receipt", response_class=HTMLResponse)
@@ -1126,6 +1288,23 @@ async def admin_salary_receipt(payment_id: int, request: Request, db: Session = 
     payment = db.query(SalaryPayment).filter(SalaryPayment.id == payment_id).first()
     if not payment:
         raise HTTPException(status_code=404, detail="رسید حقوق یافت نشد")
+    voided_by = ""
+    if payment.is_voided and payment.voided_by_user_id:
+        actor = db.query(StaffUser).filter(
+            StaffUser.id == payment.voided_by_user_id).first()
+        voided_by = actor.full_name or actor.username if actor else ""
+    # Year-to-date from live payments of the slip's own year.
+    year = (payment.period_key or "")[:4]
+    ytd = {"gross": 0, "deductions": 0, "net": 0}
+    for sibling in db.query(SalaryPayment).filter(
+            SalaryPayment.staff_user_id == payment.staff_user_id,
+            SalaryPayment.period_key.like(f"{year}-%"),
+            SalaryPayment.is_voided == False).all():  # noqa: E712
+        ytd["gross"] += sibling.gross_amount or 0
+        ytd["deductions"] += sibling.deductions or 0
+        ytd["net"] += sibling.net_amount or 0
+    kind_labels = {"base": "حقوق پایه", "advance": "پیش‌پرداخت", "overtime": "اضافه‌کاری",
+                   "bonus": "پاداش", "deduction": "کسورات"}
     return templates.TemplateResponse(request, "admin/salary_receipt.html", {
         "payment": payment,
         "staff_user": payment.staff_user,
@@ -1134,6 +1313,10 @@ async def admin_salary_receipt(payment_id: int, request: Request, db: Session = 
         "msg": request.query_params.get("msg", ""),
         "jalali_str": jalali_str,
         "fmt": fmt,
+        "ytd": ytd,
+        "ytd_year": year,
+        "kind_labels": kind_labels,
+        "voided_by": voided_by,
     })
 
 

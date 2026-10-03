@@ -858,10 +858,18 @@ class SalaryPayment(Base):
     expense_id = Column(Integer, ForeignKey("expenses.id"), nullable=False, unique=True)
     cash_session_id = Column(Integer, ForeignKey("cash_sessions.id"), nullable=True)
     note = Column(Text, nullable=True)
+    # A void never deletes the row: the month stays on the books as voided
+    # with its reason, and a fresh payment may take the freed month. The live
+    # uniqueness below is what frees it — voided rows stop colliding.
+    is_voided = Column(Boolean, nullable=False, default=False)
+    void_reason = Column(Text, nullable=True)
+    voided_at = Column(DateTime, nullable=True)
+    voided_by_user_id = Column(Integer, ForeignKey("staff_users.id"), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     __table_args__ = (
-        UniqueConstraint("staff_user_id", "period_key", name="uq_salary_payments_staff_period"),
+        Index("uq_salary_payments_staff_period_live", "staff_user_id", "period_key",
+              unique=True, sqlite_where=text("is_voided = 0")),
         CheckConstraint("gross_amount > 0", name="ck_salary_gross_positive"),
         CheckConstraint("deductions >= 0 AND deductions < gross_amount", name="ck_salary_deductions_valid"),
         CheckConstraint("net_amount > 0", name="ck_salary_net_positive"),
@@ -872,6 +880,30 @@ class SalaryPayment(Base):
     operator = relationship("StaffUser", foreign_keys=[operator_user_id])
     expense = relationship("Expense")
     cash_session = relationship("CashSession")
+    items = relationship("SalaryPaymentItem", back_populates="payment", cascade="all, delete-orphan",
+                         order_by="SalaryPaymentItem.id")
+
+
+class SalaryPaymentItem(Base):
+    """One auditable line inside a salary payment: base, advance, overtime,
+    bonus or deduction. The header stores the denormalized totals; these rows
+    are the itemized proof. Amounts are always positive — the kind decides
+    the sign: base/overtime/bonus add to gross, advance/deduction subtract."""
+    __tablename__ = "salary_payment_items"
+
+    id = Column(Integer, primary_key=True)
+    salary_payment_id = Column(Integer, ForeignKey("salary_payments.id"), nullable=False, index=True)
+    kind = Column(String(20), nullable=False)
+    label = Column(String(200), nullable=True)
+    amount = Column(Integer, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("kind IN ('base', 'advance', 'overtime', 'bonus', 'deduction')",
+                        name="ck_salary_item_kind"),
+        CheckConstraint("amount > 0", name="ck_salary_item_amount_positive"),
+    )
+
+    payment = relationship("SalaryPayment", back_populates="items")
 
 
 class Payment(Base):
@@ -1314,6 +1346,7 @@ BUSINESS_EVENT_TYPES = (
     "CheckCancelled",
     "CheckBounced",
     "CheckReminderTriggered",
+    "SalaryVoided",
     "DatabaseReset",
 )
 

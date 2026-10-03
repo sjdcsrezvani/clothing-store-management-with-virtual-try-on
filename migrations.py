@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 28
+MIGRATION_VERSION = 29
 
 
 def migration_status(engine) -> int:
@@ -238,6 +238,95 @@ def _rebuild_sms_messages(conn) -> None:
 
 
 def _apply_revision(conn, version: int) -> None:
+    if version == 29:
+        # Salary payments grow void flags and an itemized-lines table, and the
+        # blanket staff+month unique becomes live-only so a voided month can
+        # be re-paid. A table rebuild: the old unique is frozen into the
+        # table definition, which SQLite cannot alter in place. Fresh installs
+        # already carry the new shape and are left untouched. Nothing inbound
+        # references salary_payments by FK (events point by name), so the
+        # copy-drop-rename keeps every row and id.
+        tables = {
+            row[0] for row in conn.execute(text(
+                "SELECT name FROM sqlite_master WHERE type='table'")).all()
+        }
+        if "salary_payments" not in tables:
+            return
+        columns = {
+            row[1] for row in conn.execute(
+                text("PRAGMA table_info(salary_payments)")).all()
+        }
+        # Fresh installs already carry the new shape; only rebuild tables
+        # that predate the void flags.
+        if "is_voided" in columns:
+            return
+        conn.execute(text("DROP INDEX IF EXISTS ix_salary_payments_id"))
+        conn.execute(text("DROP INDEX IF EXISTS ix_salary_payments_staff_user_id"))
+        conn.execute(text("""
+            CREATE TABLE salary_payments_v29 (
+                id INTEGER NOT NULL PRIMARY KEY,
+                staff_user_id INTEGER NOT NULL REFERENCES staff_users (id),
+                period_key VARCHAR(20) NOT NULL,
+                gross_amount INTEGER NOT NULL,
+                deductions INTEGER NOT NULL,
+                net_amount INTEGER NOT NULL,
+                payment_method VARCHAR(20) NOT NULL,
+                paid_at DATETIME NOT NULL,
+                operator_user_id INTEGER NOT NULL REFERENCES staff_users (id),
+                expense_id INTEGER NOT NULL REFERENCES expenses (id),
+                cash_session_id INTEGER REFERENCES cash_sessions (id),
+                note TEXT,
+                is_voided BOOLEAN NOT NULL DEFAULT 0,
+                void_reason TEXT,
+                voided_at DATETIME,
+                voided_by_user_id INTEGER REFERENCES staff_users (id),
+                created_at DATETIME NOT NULL,
+                CONSTRAINT ck_salary_gross_positive CHECK (gross_amount > 0),
+                CONSTRAINT ck_salary_deductions_valid CHECK (deductions >= 0 AND deductions < gross_amount),
+                CONSTRAINT ck_salary_net_positive CHECK (net_amount > 0),
+                CONSTRAINT ck_salary_payment_method CHECK (payment_method IN ('cash', 'card')),
+                UNIQUE (expense_id)
+            )
+        """))
+        conn.execute(text("""
+            INSERT INTO salary_payments_v29 (
+                id, staff_user_id, period_key, gross_amount, deductions,
+                net_amount, payment_method, paid_at, operator_user_id,
+                expense_id, cash_session_id, note, is_voided, created_at
+            )
+            SELECT
+                id, staff_user_id, period_key, gross_amount, deductions,
+                net_amount, payment_method, paid_at, operator_user_id,
+                expense_id, cash_session_id, note, 0, created_at
+            FROM salary_payments
+        """))
+        conn.execute(text("DROP TABLE salary_payments"))
+        conn.execute(text("ALTER TABLE salary_payments_v29 RENAME TO salary_payments"))
+        conn.execute(text("CREATE INDEX ix_salary_payments_id ON salary_payments (id)"))
+        conn.execute(text("CREATE INDEX ix_salary_payments_staff_user_id ON salary_payments (staff_user_id)"))
+        conn.execute(text("""
+            CREATE UNIQUE INDEX uq_salary_payments_staff_period_live
+                ON salary_payments (staff_user_id, period_key) WHERE is_voided = 0
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS salary_payment_items (
+                id INTEGER PRIMARY KEY,
+                salary_payment_id INTEGER NOT NULL REFERENCES salary_payments (id),
+                kind VARCHAR(20) NOT NULL,
+                label VARCHAR(200),
+                amount INTEGER NOT NULL,
+                CONSTRAINT ck_salary_item_kind CHECK (kind IN ('base', 'advance', 'overtime', 'bonus', 'deduction')),
+                CONSTRAINT ck_salary_item_amount_positive CHECK (amount > 0)
+            )
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_salary_payment_items_payment ON salary_payment_items (salary_payment_id)"))
+        # Every historical payment earns its base line, so old rows itemize too.
+        conn.execute(text("""
+            INSERT INTO salary_payment_items (salary_payment_id, kind, label, amount)
+            SELECT id, 'base', 'حقوق پایه', gross_amount FROM salary_payments
+        """))
+        return
+
     if version == 28:
         # Per-person capability toggles on staff_users. All NULL to start,
         # which effective_cap reads as "follow the role default" — purely

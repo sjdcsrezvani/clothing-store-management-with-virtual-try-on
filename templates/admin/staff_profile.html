@@ -105,26 +105,79 @@
 {% if staff_user.is_active and staff_user.salary_amount > 0 %}
 <div class="card salary-box">
   <h4>ثبت پرداخت حقوق</h4>
+  <p class="muted">پایه خودکار {{ fmt(staff_user.salary_amount) }} تومان است؛ سطرهای زیر اضافه می‌شوند.</p>
   <form method="post" action="/admin/staff/{{ staff_user.id }}/salary" class="form-row" data-confirm="پرداخت حقوق ثبت و سند هزینه ماهانه ساخته می‌شود. ادامه؟" data-confirm-title="ثبت حقوق؟" data-confirm-ok="ثبت حقوق">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>ماه پرداخت (شمسی)<input name="period_key" value="{{ current_period }}" placeholder="۱۴۰۵-۰۶" dir="ltr" required><small class="field-help">ماه شمسی؛ مثل ۱۴۰۵-۰۶</small></label>
-    {% from 'partials/numeric_input.html' import num with context %}
-    <label>کسورات (تومان){{ num('deductions', 0) }}</label>
     <label>روش پرداخت<select name="payment_method"><option value="cash">نقدی</option><option value="card">کارت</option></select></label>
+    <div id="salary-items" class="form-span-2"></div>
+    <button type="button" class="btn btn-ghost" id="salary-item-add">افزودن قلم</button>
     <label>توضیح<input name="note"></label>
     <button class="btn btn-success" type="submit">ثبت حقوق و چاپ رسید</button>
   </form>
 </div>
+<script>
+// Itemized payroll lines: each row posts one indexed triple the route folds
+// into SalaryPaymentItem rows. No row, no extra lines — just base pay.
+(function () {
+    var host = document.getElementById('salary-items');
+    var add = document.getElementById('salary-item-add');
+    if (!host || !add) return;
+    var kinds = [['deduction', 'کسورات'], ['advance', 'پیش‌پرداخت'], ['overtime', 'اضافه‌کاری'], ['bonus', 'پاداش']];
+    var next = 0;
+    add.addEventListener('click', function () {
+        if (next >= 12) {
+            add.disabled = true;
+            add.textContent = 'سقف ۱۲ قلم';
+            return;
+        }
+        var i = next++;
+        var row = document.createElement('div');
+        row.className = 'form-row';
+        var kind = document.createElement('select');
+        kind.name = 'item_kind_' + i;
+        kinds.forEach(function (pair) {
+            var opt = document.createElement('option');
+            opt.value = pair[0];
+            opt.textContent = pair[1];
+            kind.appendChild(opt);
+        });
+        var label = document.createElement('input');
+        label.name = 'item_label_' + i;
+        label.placeholder = 'دلیل (برای کسورات الزامی)';
+        var amount = document.createElement('input');
+        amount.name = 'item_amount_' + i;
+        amount.setAttribute('inputmode', 'numeric');
+        amount.placeholder = 'مبلغ (تومان)';
+        var drop = document.createElement('button');
+        drop.type = 'button';
+        drop.className = 'btn btn-sm btn-ghost';
+        drop.textContent = 'حذف';
+        drop.addEventListener('click', function () { row.remove(); });
+        row.appendChild(kind);
+        row.appendChild(label);
+        row.appendChild(amount);
+        row.appendChild(drop);
+        host.appendChild(row);
+    });
+})();
+</script>
 {% else %}
 <div class="card"><p class="muted">{% if not staff_user.is_active %}کارمند غیرفعال است؛ برای ثبت حقوق ابتدا دسترسی را فعال کنید.{% else %}حقوق ماهانه صفر است؛ مبلغ را در بخش مشخصات ثبت کنید تا پرداخت فعال شود.{% endif %}</p></div>
 {% endif %}
 {% if staff_user.salary_payments %}
 <div class="card">
   <div class="section-heading"><div><span class="eyebrow">حقوق</span><h3>پرداخت‌های ثبت‌شده</h3></div><span class="appearance-active">{{ staff_user.salary_payments|length }} مورد</span></div>
-  <div class="table-scroll"><table class="data-table"><thead><tr><th scope="col">ماه</th><th scope="col">ناخالص (تومان)</th><th scope="col">کسورات (تومان)</th><th scope="col">خالص (تومان)</th><th scope="col">تاریخ</th><th scope="col">رسید</th></tr></thead><tbody>{% for payment in staff_user.salary_payments[:12] %}<tr><td>{{ payment.period_key }}</td><td>{{ fmt(payment.gross_amount) }}</td><td>{{ fmt(payment.deductions) }}</td><td>{{ fmt(payment.net_amount) }}</td><td>{{ jalali_str(payment.paid_at) }}</td><td><a class="btn btn-sm btn-ghost" href="/admin/payroll/{{ payment.id }}/receipt" target="_blank" aria-label="چاپ رسید حقوق ماه {{ payment.period_key }}">چاپ</a></td></tr>{% endfor %}</tbody></table></div>
+  <div class="table-scroll"><table class="data-table"><thead><tr><th scope="col">ماه</th><th scope="col">ناخالص (تومان)</th><th scope="col">کسورات (تومان)</th><th scope="col">خالص (تومان)</th><th scope="col">تاریخ</th><th scope="col">وضعیت</th><th scope="col">رسید</th></tr></thead><tbody>{% for payment in staff_user.salary_payments[:12] %}<tr><td>{{ payment.period_key }}</td><td>{{ fmt(payment.gross_amount) }}</td><td>{{ fmt(payment.deductions) }}</td><td>{{ fmt(payment.net_amount) }}</td><td>{{ jalali_str(payment.paid_at) }}</td><td>{% if payment.is_voided %}<span class="badge badge-none">باطل‌شده</span>{% if payment.void_reason %}<br><small class="muted">{{ payment.void_reason }}</small>{% endif %}{% else %}<span class="badge badge-available">پرداخت‌شده</span>{% endif %}</td><td><a class="btn btn-sm btn-ghost" href="/admin/payroll/{{ payment.id }}/receipt" target="_blank" aria-label="چاپ رسید حقوق ماه {{ payment.period_key }}">چاپ</a>{% if not payment.is_voided %} <form method="post" action="/admin/payroll/{{ payment.id }}/void" data-confirm="پرداخت ماه {{ payment.period_key }} باطل و سند هزینه آن برگشت داده می‌شود. ادامه؟" data-confirm-title="ابطال پرداخت؟" data-confirm-ok="ابطال پرداخت"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="text" name="reason" placeholder="دلیل ابطال (الزامی)" required maxlength="500"><button class="btn btn-sm btn-danger" type="submit">ابطال</button></form>{% endif %}</td></tr>{% endfor %}</tbody></table></div>
 </div>
 {% else %}
 <div class="card"><p class="muted">هنوز حقوقی برای این کارمند ثبت نشده است.</p></div>
+{% endif %}
+{% if year_totals %}
+<div class="card">
+  <div class="section-heading"><div><span class="eyebrow">حقوق</span><h3>جمع سالانه</h3></div></div>
+  <div class="table-scroll"><table class="data-table"><thead><tr><th scope="col">سال</th><th scope="col">ناخالص (تومان)</th><th scope="col">کسورات (تومان)</th><th scope="col">خالص (تومان)</th><th scope="col">تعداد ماه</th></tr></thead><tbody>{% for year, totals in year_totals.items() %}<tr><td><a href="/admin/payroll/export?year={{ year }}">{{ year }}</a></td><td>{{ fmt(totals.gross) }}</td><td>{{ fmt(totals.deductions) }}</td><td>{{ fmt(totals.net) }}</td><td>{{ totals.count }}</td></tr>{% endfor %}</tbody></table></div>
+</div>
 {% endif %}
 {% endif %}
 
