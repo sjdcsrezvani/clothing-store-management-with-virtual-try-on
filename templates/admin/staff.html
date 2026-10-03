@@ -70,7 +70,7 @@
       {% for user in staff_users %}
       <tr {% if not user.is_active %}class="staff-row-inactive"{% endif %}>
         <td><a href="/admin/staff/{{ user.id }}"><strong>{{ user.full_name or user.username }}</strong></a><br><span class="muted">{{ user.job_title or 'بدون عنوان' }}{% if user.employee_code %} · {{ user.employee_code }}{% endif %}</span> {% if user.role == 'owner' %}<span class="badge badge-warning">مالک</span>{% elif user.role == 'manager' %}<span class="badge badge-info">مدیر</span>{% else %}<span class="muted">صندوقدار</span>{% endif %}</td>
-        <td>{% if user.is_active %}<span class="badge badge-available">فعال</span>{% else %}<span class="badge badge-none">غیرفعال</span>{% endif %}</td>
+        <td>{% if user.is_active %}<span class="badge badge-available">فعال</span>{% else %}<span class="badge badge-none">غیرفعال</span>{% endif %}{% set cflag = contract_flags.get(user.id) %}{% if cflag %}<br><small class="muted">قرارداد: {{ cflag }}{% if user.contract_end_date %} تا {{ jalali_str(user.contract_end_date, false) }}{% endif %}</small>{% endif %}</td>
         <td class="num">{{ fmt(user.salary_amount) }}</td>
         <td>{% if user.last_login_at %}{{ jalali_str(user.last_login_at) }}{% else %}—{% endif %}</td>
       </tr>

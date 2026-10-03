@@ -1,7 +1,7 @@
 import string
 import random
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, CheckConstraint, UniqueConstraint, Index, text, event as sqlalchemy_event
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Date, ForeignKey, Text, CheckConstraint, UniqueConstraint, Index, text, event as sqlalchemy_event
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -54,8 +54,12 @@ class StaffUser(Base):
     salary_payment_day = Column(Integer, nullable=True)
     address = Column(Text, nullable=True)
     emergency_contact = Column(String(200), nullable=True)
+    emergency_name = Column(String(100), nullable=True)
+    emergency_relation = Column(String(50), nullable=True)
+    emergency_phone = Column(String(30), nullable=True)
     bank_account = Column(String(80), nullable=True)
     iban = Column(String(40), nullable=True)
+    contract_term_months = Column(Integer, nullable=True)
     salary_amount = Column(Integer, nullable=False, default=0)
     notes = Column(Text, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
@@ -904,6 +908,27 @@ class SalaryPaymentItem(Base):
     )
 
     payment = relationship("SalaryPayment", back_populates="items")
+
+
+class AttendanceRecord(Base):
+    """One marked day for one person: present, absent, or on leave. A missing
+    row means unmarked — never assume absent. Leave days are the single source
+    of truth for leave balances (allowance minus marked leave days)."""
+    __tablename__ = "attendance_records"
+
+    id = Column(Integer, primary_key=True)
+    staff_user_id = Column(Integer, ForeignKey("staff_users.id"), nullable=False, index=True)
+    day = Column(Date, nullable=False, index=True)
+    status = Column(String(20), nullable=False)
+    note = Column(String(200), nullable=True)
+    recorded_by_user_id = Column(Integer, ForeignKey("staff_users.id"), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("staff_user_id", "day", name="uq_attendance_staff_day"),
+        CheckConstraint("status IN ('present', 'absent', 'annual_leave', 'sick_leave')",
+                        name="ck_attendance_status"),
+    )
 
 
 class Payment(Base):

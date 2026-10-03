@@ -12,7 +12,7 @@ from database import get_db
 from datetime import datetime, timezone
 from models import (
     Campaign, Customer, Referral, Settings, Sale, SaleItem, SaleCampaign, GeneratedImage, AdminLog, POSTransaction, StockMovement,
-    BusinessEvent, StaffUser, SalaryPayment, CashSession,
+    BusinessEvent, StaffUser, SalaryPayment, CashSession, AttendanceRecord,
 )
 from config import ADMIN_PASSWORD, API_TOKEN
 from deployment import OWNER_MODE
@@ -739,6 +739,83 @@ def _parse_staff_date(value: str):
     return parse_jalali_input(value)
 
 
+# Contract terms in months. Empty means open-ended (or a legacy free date the
+# owner typed before terms existed) — the end date then stays hand-written.
+CONTRACT_TERMS = {"1": "۱ ماهه", "3": "۳ ماهه", "6": "۶ ماهه", "12": "۱۲ ماهه"}
+
+
+def _add_jalali_months(base, months: int):
+    """hire_date + term, in the calendar the shop reads. Day clamps to the
+    target month (a 31st landing in a 29-day Esfand becomes the 29th)."""
+    import jdatetime
+    jd = jdatetime.date.fromgregorian(date=base.date())
+    total = (jd.month - 1) + months
+    year, month = jd.year + total // 12, total % 12 + 1
+    day = jd.day
+    while day > 28:
+        try:
+            jdatetime.date(year, month, day)
+            break
+        except ValueError:
+            day -= 1
+    gregorian = jdatetime.date(year, month, day).togregorian()
+    return datetime(gregorian.year, gregorian.month, gregorian.day,
+                    tzinfo=timezone.utc)
+
+
+def _contract_days_left(user, today=None):
+    """Whole days until the contract ends, negative when past. None when the
+    contract is open-ended — nothing to count down to."""
+    if not user.contract_end_date:
+        return None
+    if today is None:
+        today = datetime.now(timezone.utc).date()
+    return (user.contract_end_date.date() - today).days
+
+
+def _contract_flag(days):
+    if days is None:
+        return ""
+    if days < 0:
+        return "پایان‌یافته"
+    if days <= 7:
+        return "رو به پایان"
+    return ""
+
+
+# Annual leave allowance in days, per Iranian labour law (one month). Sick
+# leave is tracked without an allowance — counted, never capped.
+ANNUAL_LEAVE_ALLOWANCE = 26
+
+ATTENDANCE_STATUSES = {
+    "present": "حاضر",
+    "absent": "غایب",
+    "annual_leave": "مرخصی استحقاقی",
+    "sick_leave": "مرخصی استعلاجی",
+}
+
+
+def _jalali_month_bounds(period_key: str):
+    """Gregorian UTC bounds of a Jalali YYYY-MM month, for range queries."""
+    import jdatetime
+    year, month = int(period_key[:4]), int(period_key[5:7])
+    start = jdatetime.date(year, month, 1).togregorian()
+    if month == 12:
+        end = jdatetime.date(year + 1, 1, 1).togregorian()
+    else:
+        end = jdatetime.date(year, month + 1, 1).togregorian()
+    return (datetime(start.year, start.month, start.day, tzinfo=timezone.utc),
+            datetime(end.year, end.month, end.day, tzinfo=timezone.utc))
+
+
+def _jalali_year_bounds(jyear: int):
+    import jdatetime
+    start = jdatetime.date(jyear, 1, 1).togregorian()
+    end = jdatetime.date(jyear + 1, 1, 1).togregorian()
+    return (datetime(start.year, start.month, start.day, tzinfo=timezone.utc),
+            datetime(end.year, end.month, end.day, tzinfo=timezone.utc))
+
+
 def _staff_amount(value: str, default: int = 0, field: str = "مبلغ") -> int:
     text = to_english_digits((value or "").replace(",", "").strip())
     if not text:
@@ -810,6 +887,17 @@ def _staff_profile_data(form):
     salary_amount = _staff_amount(str(form.get("salary_amount", "0")), field="حقوق ماهانه")
     if salary_amount < STAFF_NUMERIC_RULES["salary_amount"][0]:
         raise ValueError("حقوق ماهانه نمی‌تواند منفی باشد.")
+    hire_date = _parse_staff_date(str(form.get("hire_date", "")))
+    contract_term = to_english_digits(str(form.get("contract_term_months", "") or "").strip())
+    if contract_term and contract_term not in CONTRACT_TERMS:
+        raise ValueError("مدت قرارداد نامعتبر است.")
+    if contract_term and not hire_date:
+        raise ValueError("برای قرارداد مدت‌دار، تاریخ شروع الزامی است.")
+    # A set term governs the end date: derived from start + term, never
+    # hand-typed beside it. Open terms keep the legacy free date.
+    contract_end_date = (_add_jalali_months(hire_date, int(contract_term))
+                         if contract_term else
+                         _parse_staff_date(str(form.get("contract_end_date", ""))))
     salary_day_value = to_english_digits(str(form.get("salary_payment_day", "")).strip())
     salary_day = None
     if salary_day_value:
@@ -827,14 +915,18 @@ def _staff_profile_data(form):
         "email": str(form.get("email", "")).strip()[:150] or None,
         "job_title": str(form.get("job_title", "")).strip()[:100] or None,
         "employment_type": employment_type,
-        "hire_date": _parse_staff_date(str(form.get("hire_date", ""))),
+        "hire_date": hire_date,
         "birth_date": _parse_staff_date(str(form.get("birth_date", ""))),
-        "contract_end_date": _parse_staff_date(str(form.get("contract_end_date", ""))),
+        "contract_term_months": int(contract_term) if contract_term else None,
+        "contract_end_date": contract_end_date,
         "education": str(form.get("education", "")).strip()[:200] or None,
         "work_schedule": str(form.get("work_schedule", "")).strip()[:200] or None,
         "salary_payment_day": salary_day,
         "address": str(form.get("address", "")).strip()[:2000] or None,
         "emergency_contact": str(form.get("emergency_contact", "")).strip()[:200] or None,
+        "emergency_name": str(form.get("emergency_name", "")).strip()[:100] or None,
+        "emergency_relation": str(form.get("emergency_relation", "")).strip()[:50] or None,
+        "emergency_phone": _check_mobile(str(form.get("emergency_phone", ""))[:30]),
         "bank_account": str(form.get("bank_account", "")).strip()[:80] or None,
         "iban": _check_iban(str(form.get("iban", ""))[:40]),
         "salary_amount": salary_amount,
@@ -887,6 +979,9 @@ async def admin_staff(request: Request, q: str = "", status: str = "all", page: 
     total_pages = max(1, -(-total_count // per_page_int))
     page_int = min(page_int, total_pages)
     staff_users = query.offset((page_int - 1) * per_page_int).limit(per_page_int).all()
+    today = datetime.now(timezone.utc).date()
+    contract_flags = {person.id: _contract_flag(_contract_days_left(person, today))
+                      for person in staff_users}
     current = current_period_key()
     unpaid_staff = db.query(StaffUser).filter(
         StaffUser.is_active == True,  # noqa: E712
@@ -924,6 +1019,7 @@ async def admin_staff(request: Request, q: str = "", status: str = "all", page: 
         # current month. The banner names a few and counts the rest.
         "current_period": current,
         "unpaid_names": unpaid_names,
+        "contract_flags": contract_flags,
         # The staff forms paint their bounds from the same table the POSTs
         # validate against.
         "numeric_rules": STAFF_NUMERIC_RULES,
@@ -972,6 +1068,7 @@ async def admin_staff_new(request: Request, db: Session = Depends(get_db)):
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
         "fmt": fmt,
+        "contract_terms": CONTRACT_TERMS,
         # The staff forms paint their bounds from the same table the POSTs
         # validate against.
         "numeric_rules": STAFF_NUMERIC_RULES,
@@ -988,7 +1085,7 @@ async def admin_staff_profile(staff_id: int, request: Request, tab: str = "overv
     staff_user = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
     if not staff_user:
         raise HTTPException(status_code=404, detail="کارمند یافت نشد")
-    active_tab = tab if tab in {"overview", "permissions", "payroll"} else "overview"
+    active_tab = tab if tab in {"overview", "permissions", "payroll", "attendance", "history"} else "overview"
     # Deactivation impact, computed while the switch is still flippable: an
     # open drawer in this person's name and an unpaid current month are the
     # two things closing access would strand.
@@ -1011,6 +1108,51 @@ async def admin_staff_profile(staff_id: int, request: Request, tab: str = "overv
         bucket["deductions"] += payment.deductions or 0
         bucket["net"] += payment.net_amount or 0
         bucket["count"] += 1
+    # Attendance month on display (query ?month=YYYY-MM, default current) with
+    # leave balances derived from marked days of its Jalali year.
+    from services.payroll import normalize_period_key as _normalize_month
+    try:
+        attendance_month = _normalize_month(
+            str(request.query_params.get("month", "") or current))
+    except ValueError:
+        attendance_month = current
+    month_start, month_end = _jalali_month_bounds(attendance_month)
+    marks = db.query(AttendanceRecord).filter(
+        AttendanceRecord.staff_user_id == staff_user.id,
+        AttendanceRecord.day >= month_start.date(),
+        AttendanceRecord.day < month_end.date()).order_by(
+        AttendanceRecord.day).all()
+    attendance_rows = [{
+        "day": jalali_str(datetime(mark.day.year, mark.day.month, mark.day.day,
+                                   tzinfo=timezone.utc), False),
+        "status": ATTENDANCE_STATUSES.get(mark.status, mark.status),
+        "note": mark.note or "—",
+    } for mark in marks]
+    year_start, year_end = _jalali_year_bounds(int(attendance_month[:4]))
+    leave_used = {"annual_leave": 0, "sick_leave": 0}
+    for (status,) in db.query(AttendanceRecord.status).filter(
+            AttendanceRecord.staff_user_id == staff_user.id,
+            AttendanceRecord.day >= year_start.date(),
+            AttendanceRecord.day < year_end.date(),
+            AttendanceRecord.status.in_(("annual_leave", "sick_leave"))).all():
+        leave_used[status] = leave_used.get(status, 0) + 1
+    # This month's sales performance, attributed by shift like analytics.
+    from services.analytics import get_staff_performance
+    performance = {"invoices": 0, "revenue": 0}
+    try:
+        staff_name = staff_user.full_name or staff_user.username
+        for row in get_staff_performance(db, month_start, month_end).get("rows", []):
+            if row.get("name") == staff_name:
+                performance = {"invoices": row.get("invoices", 0),
+                               "revenue": row.get("revenue", 0)}
+                break
+    except Exception:  # noqa: BLE001 — performance is garnish, never a blocker
+        pass
+    # The person's paper trail: every admin-log entry aimed at them.
+    timeline = db.query(AdminLog).filter(
+        AdminLog.target_type == "staff_user",
+        AdminLog.target_id == staff_user.id).order_by(
+        AdminLog.id.desc()).limit(30).all()
     return templates.TemplateResponse(request, "admin/staff_profile.html", {
         "staff_user": staff_user,
         "active_tab": active_tab,
@@ -1021,6 +1163,18 @@ async def admin_staff_profile(staff_id: int, request: Request, tab: str = "overv
         "open_shift": open_shift,
         "unpaid_month": current if unpaid_month else "",
         "year_totals": dict(sorted(year_totals.items(), reverse=True)),
+        "contract_days_left": _contract_days_left(staff_user),
+        "contract_flag": _contract_flag(_contract_days_left(staff_user)),
+        "contract_terms": CONTRACT_TERMS,
+        "attendance_statuses": ATTENDANCE_STATUSES,
+        "attendance_month": attendance_month,
+        "attendance_marks": attendance_rows,
+        "annual_allowance": ANNUAL_LEAVE_ALLOWANCE,
+        "annual_used": leave_used["annual_leave"],
+        "sick_used": leave_used["sick_leave"],
+        "performance": performance,
+        "timeline": timeline,
+        "today_jalali": jalali_str(datetime.now(timezone.utc), False),
         "owner_settings": {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()},
         "current_period": current_period_key(),
         "msg": request.query_params.get("msg", ""),
@@ -1125,6 +1279,52 @@ async def admin_staff_caps(staff_id: int, request: Request, db: Session = Depend
     after = {field: getattr(user, field) for field in CAP_FIELDS}
     log_action(db, "staff_caps", f"کلیدهای دسترسی {user.username}", request=request, target_type="staff_user", target_id=user.id, before=before, after=after)
     return RedirectResponse(url=f"/admin/staff/{user.id}?tab=permissions&msg=کلیدهای دسترسی ذخیره شد.", status_code=303)
+
+
+@router.post("/staff/{staff_id}/attendance", response_class=HTMLResponse)
+async def admin_staff_attendance(staff_id: int, request: Request, db: Session = Depends(get_db)):
+    """Mark one day present/absent/on-leave. Upsert by person-day: marking
+    twice rewrites, never duplicates. A missing day stays unmarked."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    user = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="کاربر یافت نشد")
+    form = await request.form()
+    status = str(form.get("status", "") or "").strip()
+    if status not in ATTENDANCE_STATUSES:
+        return RedirectResponse(
+            url=f"/admin/staff/{user.id}?tab=attendance&err=وضعیت حضور نامعتبر است.",
+            status_code=303)
+    day_value = _parse_staff_date(str(form.get("day", "")))
+    if not day_value:
+        return RedirectResponse(
+            url=f"/admin/staff/{user.id}?tab=attendance&err=تاریخ معتبر نیست.",
+            status_code=303)
+    day = day_value.date()
+    record = db.query(AttendanceRecord).filter(
+        AttendanceRecord.staff_user_id == user.id,
+        AttendanceRecord.day == day).first()
+    before = {"status": record.status if record else None}
+    if record is None:
+        record = AttendanceRecord(staff_user_id=user.id, day=day, status=status,
+                                  recorded_by_user_id=guard.id)
+        db.add(record)
+    else:
+        record.status = status
+        record.recorded_by_user_id = guard.id
+    record.note = str(form.get("note", "") or "").strip()[:200] or None
+    db.commit()
+    log_action(db, "attendance_mark", f"حضور {user.username} در {day.isoformat()}",
+               request=request, target_type="staff_user", target_id=user.id,
+               before=before, after={"status": status})
+    import jdatetime
+    jd = jdatetime.date.fromgregorian(date=day)
+    month = f"{jd.year:04d}-{jd.month:02d}"
+    return RedirectResponse(
+        url=f"/admin/staff/{user.id}?tab=attendance&month={month}&msg=حضور ثبت شد.",
+        status_code=303)
 
 
 @router.post("/staff/{staff_id}/salary", response_class=HTMLResponse)

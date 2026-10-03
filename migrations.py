@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 29
+MIGRATION_VERSION = 30
 
 
 def migration_status(engine) -> int:
@@ -238,6 +238,33 @@ def _rebuild_sms_messages(conn) -> None:
 
 
 def _apply_revision(conn, version: int) -> None:
+    if version == 30:
+        # People intelligence: contract terms in months (NULL = open-ended or
+        # legacy free date), structured emergency contact, and one marked day
+        # per person. Purely additive — existing staff keep their free
+        # contract dates until the owner edits them.
+        _add_column_if_missing(conn, "staff_users", "contract_term_months", "INTEGER")
+        _add_column_if_missing(conn, "staff_users", "emergency_name", "VARCHAR(100)")
+        _add_column_if_missing(conn, "staff_users", "emergency_relation", "VARCHAR(50)")
+        _add_column_if_missing(conn, "staff_users", "emergency_phone", "VARCHAR(30)")
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS attendance_records (
+                id INTEGER PRIMARY KEY,
+                staff_user_id INTEGER NOT NULL REFERENCES staff_users (id),
+                day DATE NOT NULL,
+                status VARCHAR(20) NOT NULL,
+                note VARCHAR(200),
+                recorded_by_user_id INTEGER REFERENCES staff_users (id),
+                created_at DATETIME NOT NULL,
+                CONSTRAINT uq_attendance_staff_day UNIQUE (staff_user_id, day),
+                CONSTRAINT ck_attendance_status CHECK (
+                    status IN ('present', 'absent', 'annual_leave', 'sick_leave'))
+            )
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_attendance_staff ON attendance_records (staff_user_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_attendance_day ON attendance_records (day)"))
+        return
+
     if version == 29:
         # Salary payments grow void flags and an itemized-lines table, and the
         # blanket staff+month unique becomes live-only so a voided month can

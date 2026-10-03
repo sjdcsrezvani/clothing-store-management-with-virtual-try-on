@@ -2,6 +2,7 @@
 from urllib.parse import unquote
 
 from models import AdminLog, CashSession, StaffUser
+from migrations import MIGRATION_VERSION
 from services.security import effective_cap
 from tests.conftest import csrf_token
 from tests.test_roles import _session_as, _staff
@@ -194,7 +195,7 @@ def test_revision_28_adds_null_toggle_columns(tmp_path):
             CREATE TABLE staff_users (
                 id INTEGER PRIMARY KEY, username VARCHAR(100), role VARCHAR(20))"""))
         conn.execute(text("INSERT INTO staff_users (username, role) VALUES ('vet-cashier', 'cashier')"))
-    assert upgrade(engine) == 29
+    assert upgrade(engine) == MIGRATION_VERSION
     with engine.connect() as conn:
         row = conn.execute(text(
             "SELECT can_refund, can_discount, can_view_payroll, can_reconcile_pos"

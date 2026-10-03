@@ -2,6 +2,7 @@
 from urllib.parse import unquote
 
 from models import AdminLog, Expense, SalaryPayment, SalaryPaymentItem
+from migrations import MIGRATION_VERSION
 from tests.conftest import csrf_token
 from tests.test_roles import _session_as, _staff
 from tests.test_staff_phase_b import _owner_client
@@ -201,7 +202,7 @@ def test_revision_29_rebuilds_payments_with_items_and_live_unique(tmp_path):
                 expense_id, note, created_at)
             VALUES (1, '1405-06', 10000000, 1000000, 9000000, 'cash',
                 '2026-09-01 00:00:00', 1, 1, NULL, '2026-09-01 00:00:00')"""))
-    assert upgrade(engine) == 29
+    assert upgrade(engine) == MIGRATION_VERSION
     with engine.connect() as conn:
         cols = {row[1] for row in conn.execute(text("PRAGMA table_info(salary_payments)")).all()}
         assert {"is_voided", "void_reason", "voided_at", "voided_by_user_id"} <= cols

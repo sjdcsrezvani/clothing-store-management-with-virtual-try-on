@@ -17,8 +17,8 @@
     <h4 class="form-span-2 muted">مشخصات فردی</h4>
     <label>نام و نام خانوادگی<input name="full_name"></label>
     <label>کد پرسنلی<input name="employee_code"></label>
-    <label>کد ملی<input name="national_id" inputmode="numeric"></label>
-    <label>تلفن<input name="phone" inputmode="tel"></label>
+    <label>کد ملی<input name="national_id" inputmode="numeric" dir="ltr"></label>
+    <label>تلفن<input name="phone" inputmode="tel" dir="ltr"></label>
     <label>ایمیل<input name="email" type="email"></label>
     <label>عنوان شغلی<input name="job_title"></label>
     <h4 class="form-span-2 muted">همکاری و حقوق</h4>
@@ -27,6 +27,7 @@
     <label>حقوق ماهانه (تومان){{ num('salary_amount', 0) }}</label>
     <label>روز پرداخت ماهانه{{ num('salary_payment_day', '') }}</label>
     <label>تاریخ شروع<input class="persian-date-input" name="hire_date" placeholder="۱۴۰۵/۰۱/۰۱"></label>
+    <label>مدت قرارداد<select name="contract_term_months"><option value="">باز / بدون مدت</option>{% for months, label in contract_terms.items() %}<option value="{{ months }}">{{ label }}</option>{% endfor %}</select><small class="field-help">با تعیین مدت، پایان قرارداد از شروع + مدت ساخته می‌شود</small></label>
     <label>پایان قرارداد<input class="persian-date-input" name="contract_end_date" placeholder="۱۴۰۵/۱۲/۲۹"></label>
     <label>تاریخ تولد<input class="persian-date-input" name="birth_date" placeholder="۱۳۷۰/۰۱/۰۱"></label>
     <label>تحصیلات<input name="education"></label>
@@ -34,7 +35,9 @@
     <label>حساب بانکی<input name="bank_account" dir="ltr"></label>
     <h4 class="form-span-2 muted">بانکی و تماس</h4>
     <label>شبا<input name="iban" dir="ltr"></label>
-    <label>مخاطب اضطراری<input name="emergency_contact"></label>
+    <label>نام مخاطب اضطراری<input name="emergency_name"></label>
+    <label>نسبت<input name="emergency_relation" placeholder="مثلاً همسر، پدر"></label>
+    <label>تلفن اضطراری<input name="emergency_phone" inputmode="tel" dir="ltr"></label>
     <label class="form-span-2">نشانی<textarea name="address" rows="2"></textarea></label>
     <label class="form-span-2">یادداشت<textarea name="notes" rows="2"></textarea></label>
     <button class="btn btn-primary" type="submit">ثبت کارمند</button>

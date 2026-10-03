@@ -68,7 +68,8 @@ def test_new_page_renders_full_hire_form(client, db_session):
     _owner_client(client, db_session, name="phasea-owner-new")
     page = client.get("/admin/staff/new").text
     for field in ("username", "password", "role", "full_name", "national_id",
-                  "iban", "birth_date", "salary_payment_day", "emergency_contact"):
+                  "iban", "birth_date", "salary_payment_day", "emergency_name",
+                  "emergency_relation", "emergency_phone", "contract_term_months"):
         assert f'name="{field}"' in page
 
 

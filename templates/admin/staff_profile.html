@@ -14,16 +14,23 @@
     <h3>{{ staff_user.full_name or staff_user.username }}</h3>
     {% if staff_user.role == 'owner' %}<span class="badge badge-warning">مالک</span>{% elif staff_user.role == 'manager' %}<span class="badge badge-info">مدیر</span>{% else %}<span class="badge badge-none">صندوقدار</span>{% endif %}
     {% if staff_user.is_active %}<span class="badge badge-available">فعال</span>{% else %}<span class="badge badge-none">غیرفعال</span>{% endif %}
+    {% if contract_flag %}<span class="muted">قرارداد: {{ contract_flag }}{% if staff_user.contract_end_date %} تا {{ jalali_str(staff_user.contract_end_date, false) }}{% endif %}</span>{% endif %}
     <span class="muted">{{ staff_user.phone or 'بدون تلفن' }} · {{ fmt(staff_user.salary_amount) }} تومان</span>
   </div>
   <div class="view-toggle" role="group" aria-label="بخش‌های پرونده">
     <a class="btn btn-sm {% if active_tab == 'overview' %}btn-primary{% else %}btn-ghost{% endif %}" {% if active_tab == 'overview' %}aria-current="page"{% endif %} href="/admin/staff/{{ staff_user.id }}?tab=overview">مشخصات</a>
     <a class="btn btn-sm {% if active_tab == 'permissions' %}btn-primary{% else %}btn-ghost{% endif %}" {% if active_tab == 'permissions' %}aria-current="page"{% endif %} href="/admin/staff/{{ staff_user.id }}?tab=permissions">دسترسی</a>
     <a class="btn btn-sm {% if active_tab == 'payroll' %}btn-primary{% else %}btn-ghost{% endif %}" {% if active_tab == 'payroll' %}aria-current="page"{% endif %} href="/admin/staff/{{ staff_user.id }}?tab=payroll">حقوق</a>
+    <a class="btn btn-sm {% if active_tab == 'attendance' %}btn-primary{% else %}btn-ghost{% endif %}" {% if active_tab == 'attendance' %}aria-current="page"{% endif %} href="/admin/staff/{{ staff_user.id }}?tab=attendance">حضور</a>
+    <a class="btn btn-sm {% if active_tab == 'history' %}btn-primary{% else %}btn-ghost{% endif %}" {% if active_tab == 'history' %}aria-current="page"{% endif %} href="/admin/staff/{{ staff_user.id }}?tab=history">سابقه</a>
   </div>
 </div>
 
 {% if active_tab == 'overview' %}
+<div class="card">
+  <div class="section-heading"><div><span class="eyebrow">عملکرد ماه {{ current_period }}</span><h3>فروش ثبت‌شده با شیفت ایشان</h3></div><span class="appearance-active">{{ performance.invoices }} فاکتور · {{ fmt(performance.revenue) }} تومان</span></div>
+  <p class="muted">عملکرد صندوق ایشان در همین ماه؛ فروش کارتی و بدون شیفت در تحلیل فروش می‌ماند.</p>
+</div>
 <div class="card">
   <div class="section-heading"><div><span class="eyebrow">مشخصات</span><h3>اطلاعات پرسنلی</h3></div></div>
   <form method="post" action="/admin/staff/{{ staff_user.id }}" class="form-row">
@@ -35,8 +42,8 @@
     <h4 class="form-span-2 muted">مشخصات فردی</h4>
     <label>نام کامل<input name="full_name" value="{{ staff_user.full_name or '' }}"></label>
     <label>کد پرسنلی<input name="employee_code" value="{{ staff_user.employee_code or '' }}"></label>
-    <label>کد ملی<input name="national_id" value="{{ staff_user.national_id or '' }}" inputmode="numeric"></label>
-    <label>تلفن<input name="phone" value="{{ staff_user.phone or '' }}" inputmode="tel"></label>
+    <label>کد ملی<input name="national_id" value="{{ staff_user.national_id or '' }}" inputmode="numeric" dir="ltr"></label>
+    <label>تلفن<input name="phone" value="{{ staff_user.phone or '' }}" inputmode="tel" dir="ltr"></label>
     <label>ایمیل<input name="email" type="email" value="{{ staff_user.email or '' }}"></label>
     <label>عنوان شغلی<input name="job_title" value="{{ staff_user.job_title or '' }}"></label>
     <h4 class="form-span-2 muted">همکاری و حقوق</h4>
@@ -45,6 +52,7 @@
     <label>حقوق ماهانه (تومان){{ num('salary_amount', staff_user.salary_amount or 0) }}</label>
     <label>روز پرداخت ماهانه{{ num('salary_payment_day', staff_user.salary_payment_day or '') }}</label>
     <label>تاریخ شروع<input class="persian-date-input" id="hire_date_{{ staff_user.id }}" name="hire_date" data-pdp-pair="#contract_end_date_{{ staff_user.id }}" placeholder="۱۴۰۵/۰۱/۰۱" value="{{ jalali_str(staff_user.hire_date, with_time=False) if staff_user.hire_date else '' }}"></label>
+    <label>مدت قرارداد<select name="contract_term_months"><option value="">باز / بدون مدت</option>{% for months, label in contract_terms.items() %}<option value="{{ months }}" {% if staff_user.contract_term_months|string == months %}selected{% endif %}>{{ label }}</option>{% endfor %}</select><small class="field-help">با تعیین مدت، پایان قرارداد از شروع + مدت ساخته می‌شود{% if contract_days_left is not none %}؛ {{ contract_days_left }} روز مانده{% endif %}</small></label>
     <label>پایان قرارداد<input class="persian-date-input" id="contract_end_date_{{ staff_user.id }}" name="contract_end_date" placeholder="۱۴۰۵/۱۲/۲۹" value="{{ jalali_str(staff_user.contract_end_date, with_time=False) if staff_user.contract_end_date else '' }}"></label>
     <label>تاریخ تولد<input class="persian-date-input" name="birth_date" placeholder="۱۳۷۰/۰۱/۰۱" value="{{ jalali_str(staff_user.birth_date, with_time=False) if staff_user.birth_date else '' }}"></label>
     <label>تحصیلات<input name="education" value="{{ staff_user.education or '' }}"></label>
@@ -52,7 +60,10 @@
     <label>حساب بانکی<input name="bank_account" value="{{ staff_user.bank_account or '' }}" dir="ltr"></label>
     <h4 class="form-span-2 muted">بانکی و تماس</h4>
     <label>شبا<input name="iban" value="{{ staff_user.iban or '' }}" dir="ltr"></label>
-    <label>مخاطب اضطراری<input name="emergency_contact" value="{{ staff_user.emergency_contact or '' }}"></label>
+    <label>نام مخاطب اضطراری<input name="emergency_name" value="{{ staff_user.emergency_name or '' }}"></label>
+    <label>نسبت<input name="emergency_relation" value="{{ staff_user.emergency_relation or '' }}" placeholder="مثلاً همسر، پدر"></label>
+    <label>تلفن اضطراری<input name="emergency_phone" value="{{ staff_user.emergency_phone or '' }}" inputmode="tel" dir="ltr"></label>
+    {% if staff_user.emergency_contact and not staff_user.emergency_name %}<p class="muted form-span-2">مخاطب قدیمی: {{ staff_user.emergency_contact }}</p>{% endif %}
     <label class="form-span-2">نشانی<textarea name="address" rows="2">{{ staff_user.address or '' }}</textarea></label>
     <label class="form-span-2">یادداشت<textarea name="notes" rows="2">{{ staff_user.notes or '' }}</textarea></label>
     <button class="btn btn-primary" type="submit">ذخیره اطلاعات</button>
@@ -136,6 +147,7 @@
         row.className = 'form-row';
         var kind = document.createElement('select');
         kind.name = 'item_kind_' + i;
+        kind.setAttribute('aria-label', 'نوع قلم');
         kinds.forEach(function (pair) {
             var opt = document.createElement('option');
             opt.value = pair[0];
@@ -144,9 +156,11 @@
         });
         var label = document.createElement('input');
         label.name = 'item_label_' + i;
+        label.setAttribute('aria-label', 'دلیل قلم');
         label.placeholder = 'دلیل (برای کسورات الزامی)';
         var amount = document.createElement('input');
         amount.name = 'item_amount_' + i;
+        amount.setAttribute('aria-label', 'مبلغ قلم (تومان)');
         amount.setAttribute('inputmode', 'numeric');
         amount.placeholder = 'مبلغ (تومان)';
         var drop = document.createElement('button');
@@ -168,7 +182,7 @@
 {% if staff_user.salary_payments %}
 <div class="card">
   <div class="section-heading"><div><span class="eyebrow">حقوق</span><h3>پرداخت‌های ثبت‌شده</h3></div><span class="appearance-active">{{ staff_user.salary_payments|length }} مورد</span></div>
-  <div class="table-scroll"><table class="data-table"><thead><tr><th scope="col">ماه</th><th scope="col">ناخالص (تومان)</th><th scope="col">کسورات (تومان)</th><th scope="col">خالص (تومان)</th><th scope="col">تاریخ</th><th scope="col">وضعیت</th><th scope="col">رسید</th></tr></thead><tbody>{% for payment in staff_user.salary_payments[:12] %}<tr><td>{{ payment.period_key }}</td><td>{{ fmt(payment.gross_amount) }}</td><td>{{ fmt(payment.deductions) }}</td><td>{{ fmt(payment.net_amount) }}</td><td>{{ jalali_str(payment.paid_at) }}</td><td>{% if payment.is_voided %}<span class="badge badge-none">باطل‌شده</span>{% if payment.void_reason %}<br><small class="muted">{{ payment.void_reason }}</small>{% endif %}{% else %}<span class="badge badge-available">پرداخت‌شده</span>{% endif %}</td><td><a class="btn btn-sm btn-ghost" href="/admin/payroll/{{ payment.id }}/receipt" target="_blank" aria-label="چاپ رسید حقوق ماه {{ payment.period_key }}">چاپ</a>{% if not payment.is_voided %} <form method="post" action="/admin/payroll/{{ payment.id }}/void" data-confirm="پرداخت ماه {{ payment.period_key }} باطل و سند هزینه آن برگشت داده می‌شود. ادامه؟" data-confirm-title="ابطال پرداخت؟" data-confirm-ok="ابطال پرداخت"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="text" name="reason" placeholder="دلیل ابطال (الزامی)" required maxlength="500"><button class="btn btn-sm btn-danger" type="submit">ابطال</button></form>{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+  <div class="table-scroll"><table class="data-table"><thead><tr><th scope="col">ماه</th><th scope="col">ناخالص (تومان)</th><th scope="col">کسورات (تومان)</th><th scope="col">خالص (تومان)</th><th scope="col">تاریخ</th><th scope="col">وضعیت</th><th scope="col">رسید</th></tr></thead><tbody>{% for payment in staff_user.salary_payments[:12] %}<tr><td>{{ payment.period_key }}</td><td>{{ fmt(payment.gross_amount) }}</td><td>{{ fmt(payment.deductions) }}</td><td>{{ fmt(payment.net_amount) }}</td><td>{{ jalali_str(payment.paid_at) }}</td><td>{% if payment.is_voided %}<span class="badge badge-none">باطل‌شده</span>{% if payment.void_reason %}<br><small class="muted">{{ payment.void_reason }}</small>{% endif %}{% else %}<span class="badge badge-available">پرداخت‌شده</span>{% endif %}</td><td><a class="btn btn-sm btn-ghost" href="/admin/payroll/{{ payment.id }}/receipt" target="_blank" aria-label="چاپ رسید حقوق ماه {{ payment.period_key }}">چاپ</a>{% if not payment.is_voided %} <form method="post" action="/admin/payroll/{{ payment.id }}/void" data-confirm="پرداخت ماه {{ payment.period_key }} باطل و سند هزینه آن برگشت داده می‌شود. ادامه؟" data-confirm-title="ابطال پرداخت؟" data-confirm-ok="ابطال پرداخت"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="text" name="reason" placeholder="دلیل ابطال (الزامی)" aria-label="دلیل ابطال" required maxlength="500"><button class="btn btn-sm btn-danger" type="submit">ابطال</button></form>{% endif %}</td></tr>{% endfor %}</tbody></table></div>
 </div>
 {% else %}
 <div class="card"><p class="muted">هنوز حقوقی برای این کارمند ثبت نشده است.</p></div>
@@ -179,6 +193,47 @@
   <div class="table-scroll"><table class="data-table"><thead><tr><th scope="col">سال</th><th scope="col">ناخالص (تومان)</th><th scope="col">کسورات (تومان)</th><th scope="col">خالص (تومان)</th><th scope="col">تعداد ماه</th></tr></thead><tbody>{% for year, totals in year_totals.items() %}<tr><td><a href="/admin/payroll/export?year={{ year }}">{{ year }}</a></td><td>{{ fmt(totals.gross) }}</td><td>{{ fmt(totals.deductions) }}</td><td>{{ fmt(totals.net) }}</td><td>{{ totals.count }}</td></tr>{% endfor %}</tbody></table></div>
 </div>
 {% endif %}
+{% endif %}
+
+{% if active_tab == 'attendance' %}
+<div class="card">
+  <div class="section-heading"><div><span class="eyebrow">حضور</span><h3>ثبت روز</h3></div></div>
+  <form method="post" action="/admin/staff/{{ staff_user.id }}/attendance" class="form-row">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>روز<input class="persian-date-input" name="day" placeholder="۱۴۰۵/۰۱/۰۱" value="{{ today_jalali }}"></label>
+    <label>وضعیت<select name="status">{% for value, label in attendance_statuses.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
+    <label>یادداشت<input name="note" maxlength="200"></label>
+    <button class="btn btn-primary" type="submit">ثبت حضور</button>
+  </form>
+</div>
+<div class="card">
+  <div class="section-heading"><div><span class="eyebrow">حضور</span><h3>ماه {{ attendance_month }}</h3></div><span class="appearance-active">استحقاقی مانده: {{ annual_allowance - annual_used }} روز · استعلاجی امسال: {{ sick_used }} روز</span></div>
+  {% if attendance_marks %}
+  <div class="table-scroll"><table class="data-table"><thead><tr><th scope="col">روز</th><th scope="col">وضعیت</th><th scope="col">یادداشت</th></tr></thead><tbody>{% for mark in attendance_marks %}<tr><td>{{ mark.day }}</td><td>{{ mark.status }}</td><td>{{ mark.note }}</td></tr>{% endfor %}</tbody></table></div>
+  {% else %}
+  <p class="muted">در این ماه هنوز روزی ثبت نشده است.</p>
+  {% endif %}
+  <form method="get" action="/admin/staff/{{ staff_user.id }}" class="search-form purchase-filter-form">
+    <input type="hidden" name="tab" value="attendance">
+    <div class="form-group">
+      <label class="sr-only" for="attendance-month">ماه</label>
+      <input type="text" id="attendance-month" name="month" value="{{ attendance_month }}" placeholder="۱۴۰۵-۰۶" dir="ltr">
+    </div>
+    <button type="submit" class="btn btn-primary">نمایش ماه</button>
+  </form>
+</div>
+{% endif %}
+
+{% if active_tab == 'history' %}
+<div class="card">
+  <div class="section-heading"><div><span class="eyebrow">سابقه</span><h3>تغییرات این پرونده</h3></div></div>
+  {% if timeline %}
+  {% set action_labels = {'staff_create': 'استخدام', 'staff_update': 'ویرایش پرونده', 'staff_caps': 'تغییر کلیدها', 'staff_disable': 'بستن دسترسی', 'staff_enable': 'بازگشایی دسترسی', 'salary_payment': 'پرداخت حقوق', 'salary_void': 'ابطال حقوق', 'salary_bulk': 'پرداخت گروهی', 'attendance_mark': 'ثبت حضور', 'login': 'ورود', 'logout': 'خروج'} %}
+  <div class="table-scroll"><table class="data-table"><thead><tr><th scope="col">زمان</th><th scope="col">رویداد</th><th scope="col">جزئیات</th></tr></thead><tbody>{% for entry in timeline %}<tr><td>{{ jalali_str(entry.created_at) }}</td><td>{{ action_labels.get(entry.action, entry.action) }}</td><td>{{ entry.detail or '—' }}</td></tr>{% endfor %}</tbody></table></div>
+  {% else %}
+  <p class="muted">هنوز رویدادی برای این کارمند ثبت نشده است.</p>
+  {% endif %}
+</div>
 {% endif %}
 
 {# One confirm surface for the profile: disable-access and the monthly salary
