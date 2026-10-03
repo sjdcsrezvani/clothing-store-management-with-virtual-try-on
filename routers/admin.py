@@ -827,6 +827,19 @@ def _jalali_year_bounds(jyear: int):
             datetime(end.year, end.month, end.day, tzinfo=timezone.utc))
 
 
+def _closed_periods(current: str, count: int) -> list:
+    """The ``count`` Jalali months before ``current``, newest first — the
+    pickable salary periods. The current (open) month is never payable."""
+    year, month = int(current[:4]), int(current[5:7])
+    periods = []
+    for _ in range(count):
+        month -= 1
+        if month == 0:
+            month, year = 12, year - 1
+        periods.append(f"{year:04d}-{month:02d}")
+    return periods
+
+
 def _staff_amount(value: str, default: int = 0, field: str = "مبلغ") -> int:
     text = to_english_digits((value or "").replace(",", "").strip())
     if not text:
@@ -1236,6 +1249,9 @@ async def admin_staff_profile(staff_id: int, request: Request, tab: str = "overv
         "timeline": timeline,
         "history_kind": history_kind,
         "today_jalali": jalali_str(datetime.now(timezone.utc), False),
+        # The last closed months, newest first: pickable salary periods so
+        # the month format never has to be recalled from memory.
+        "closed_months": _closed_periods(current, 6),
         "owner_settings": {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()},
         "current_period": current_period_key(),
         "msg": request.query_params.get("msg", ""),

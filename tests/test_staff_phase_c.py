@@ -249,3 +249,16 @@ def test_brand_new_hire_is_not_dunned_or_bulk_paid(client, db_session):
         SalaryPayment.staff_user_id == rookie.id).count() == 0
     assert db_session.query(SalaryPayment).filter(
         SalaryPayment.staff_user_id == veteran.id).count() == 1
+
+
+def test_payroll_tab_lists_pickable_closed_months(client, db_session):
+    from services.payroll import current_period_key
+    _owner_client(client, db_session, name="phasec-owner-months")
+    worker, _ = _staff(db_session, "phasec-months", "cashier")
+    worker.salary_amount = 10_000_000
+    db_session.commit()
+    page = client.get(f"/admin/staff/{worker.id}?tab=payroll").text
+    assert 'list="salary-months"' in page
+    assert 'maxlength="7"' in page
+    current = current_period_key()
+    assert f'value="{current}"' not in page.split('name="period_key"')[1][:400]
