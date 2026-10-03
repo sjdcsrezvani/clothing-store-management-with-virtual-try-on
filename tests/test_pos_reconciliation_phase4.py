@@ -145,3 +145,44 @@ def test_page_names_risk_witnesses_alarm_and_terminal(client, db_session, authed
     witnessed = client.get("/admin/pos-reconciliation").text
     assert "ثبت:" in witnessed
     assert "bank slip 7" in witnessed
+
+
+def test_list_pages_searches_filters_and_sorts(client, db_session, authed):
+    """The wall becomes a list: numbered pages, search, filters, sorting."""
+    from models import POSTransaction
+    for index in range(30):
+        db_session.add(POSTransaction(checkout_nonce=f"phase4-list-{index}", amount=10_000 + index,
+                                      host="127.0.0.1", port=8500, status="sent"))
+    db_session.commit()
+
+    first = client.get("/admin/pos-reconciliation?per_page=10")
+    assert "30 مورد" in first.text
+    assert 'aria-label="صفحه 3"' in first.text
+    assert 'aria-current="page">3<' in client.get("/admin/pos-reconciliation?per_page=10&page=9").text
+
+    by_amount = client.get("/admin/pos-reconciliation?q=10029")
+    assert 'data-label="مبلغ"' in by_amount.text
+    assert by_amount.text.count('data-label="شناسه"') == 1
+
+    by_status = client.get("/admin/pos-reconciliation?status=resolved")
+    assert "تراکنشی با این فیلترها پیدا نشد" in by_status.text
+    assert "پاک‌کردن فیلتر" in by_status.text
+
+    asc = client.get("/admin/pos-reconciliation?sort=amount&dir=asc&per_page=50").text
+    desc = client.get("/admin/pos-reconciliation?sort=amount&dir=desc&per_page=50").text
+    assert asc.index("10,000 تومان") < asc.index("10,029 تومان")
+    assert desc.index("10,029 تومان") < desc.index("10,000 تومان")
+
+
+def test_search_hit_is_visible_where_it_matched(client, db_session, authed):
+    """A reference match prints the reference: no invisible hits."""
+    from models import POSTransaction
+    row = POSTransaction(checkout_nonce="phase4-ref", amount=50000,
+                         host="127.0.0.1", port=8500, status="uncertain",
+                         provider_reference="BANK-REF-991")
+    db_session.add(row)
+    db_session.commit()
+
+    page = client.get("/admin/pos-reconciliation?q=BANK-REF-991").text
+    assert "BANK-REF-991" in page
+    assert "<mark>" in page

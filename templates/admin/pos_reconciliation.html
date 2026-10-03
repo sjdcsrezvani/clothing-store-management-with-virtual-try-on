@@ -44,22 +44,53 @@
 })();
 </script>
 
-{# The count is the shop's real outstanding total, which the table below cannot
-   always list: it is windowed to the newest 200 so a person can read it. Say so
-   rather than letting the two numbers silently disagree. #}
-{% if unresolved_count > transactions|length %}
-<div class="alert alert-warning" role="status">
-    از {{ unresolved_count }} مورد نیازمند بررسی، تنها {{ transactions|length }} رکورد اخیر در جدول زیر آمده است.
-</div>
-{% endif %}
+{# The count is the shop's real outstanding total; the numbered pages below
+   list whatever the filters ask for, so the two can never silently disagree
+   the way a fixed window once did. #}
 
 <div class="card" data-list-region="pos">
     <div class="section-heading-row">
         <div>
             <h3 data-list-heading tabindex="-1">تراکنش‌ها</h3>
-            <p class="muted">{{ transactions|length }} رکورد اخیر</p>
+            <p class="muted">
+                {{ total_count }} مورد{% if has_filters %} با همین فیلترها{% endif %}
+            </p>
+        </div>
+        <div class="list-heading-actions">
+            <form method="get" action="/admin/pos-reconciliation" class="per-page-form">
+                <input type="hidden" name="q" value="{{ search }}">
+                <input type="hidden" name="status" value="{{ status_filter }}">
+                <input type="hidden" name="sort" value="{{ sort_key }}">
+                <input type="hidden" name="dir" value="{{ sort_dir }}">
+                <label class="sr-only" for="pos-per-page">تعداد در صفحه</label>
+                <select name="per_page" id="pos-per-page" onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}" aria-label="تعداد در صفحه">
+                    {% for option in per_page_options %}
+                    <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }} در صفحه</option>
+                    {% endfor %}
+                </select>
+            </form>
         </div>
     </div>
+
+    <form method="get" action="/admin/pos-reconciliation" class="search-form purchase-filter-form">
+        <input type="hidden" name="per_page" value="{{ per_page }}">
+        <input type="hidden" name="sort" value="{{ sort_key }}">
+        <input type="hidden" name="dir" value="{{ sort_dir }}">
+        <div class="form-group">
+            <label class="sr-only" for="pos-q">جست‌وجو</label>
+            <input type="text" id="pos-q" name="q" value="{{ search }}" dir="auto" autocomplete="off" placeholder="شماره، مبلغ، مرجع یا ته‌کارت">
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="pos-status">وضعیت</label>
+            <select name="status" id="pos-status" onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}">
+                {% for value, label in statuses.items() %}
+                <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary">اعمال فیلتر</button>
+        {% if has_filters %}<a href="/admin/pos-reconciliation" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
+    </form>
 
     {% if transactions %}
     <div class="table-scroll">
@@ -67,8 +98,8 @@
         <thead>
             <tr>
                 <th scope="col">شناسه</th>
-                <th scope="col">زمان</th>
-                <th scope="col">مبلغ</th>
+                <th scope="col" aria-sort="{{ 'descending' if sort_key == 'date' and sort_dir == 'desc' else 'ascending' if sort_key == 'date' else 'none' }}"><a class="sort-link" href="/admin/pos-reconciliation?page=1&{{ base_qs }}&sort=date&dir={{ 'asc' if sort_key == 'date' and sort_dir == 'desc' else 'desc' }}">زمان</a></th>
+                <th scope="col" class="num" aria-sort="{{ 'descending' if sort_key == 'amount' and sort_dir == 'desc' else 'ascending' if sort_key == 'amount' else 'none' }}"><a class="sort-link" href="/admin/pos-reconciliation?page=1&{{ base_qs }}&sort=amount&dir={{ 'asc' if sort_key == 'amount' and sort_dir == 'desc' else 'desc' }}">مبلغ</a></th>
                 <th scope="col">وضعیت کارت‌خوان</th>
                 <th scope="col">کد پاسخ</th>
                 <th scope="col">فاکتور</th>
@@ -81,7 +112,13 @@
                row on this page that must shout instead of sitting quietly. #}
             {% set alarming = transaction.status == 'approved' and not transaction.sale_id and not transaction.reconciled %}
             <tr{% if alarming %} class="check-overdue"{% endif %}>
-                <td class="tnum" data-label="شناسه"><strong>#{{ transaction.id }}</strong></td>
+                <td class="tnum" data-label="شناسه"><strong>#{{ transaction.id }}</strong>
+                    {# The references the search reads have nowhere else to be
+                       seen: a match with no visible hit reads as a wrong list. #}
+                    {% if transaction.provider_reference %}<br><small class="muted" dir="ltr">{{ transaction.provider_reference|highlight(search) }}</small>{% endif %}
+                    {% if transaction.terminal_transaction_number %}<br><small class="muted" dir="ltr">{{ transaction.terminal_transaction_number|highlight(search) }}</small>{% endif %}
+                    {% if transaction.retrieval_reference_number %}<br><small class="muted" dir="ltr">{{ transaction.retrieval_reference_number|highlight(search) }}</small>{% endif %}
+                </td>
                 <td class="tnum" data-label="زمان">{{ jalali_str(transaction.created_at) }}</td>
                 <td class="tnum" data-label="مبلغ"><strong>{{ fmt(transaction.amount) }} تومان</strong></td>
                 <td data-label="وضعیت کارت‌خوان">
@@ -95,7 +132,7 @@
                     {% if alarming %}<br><span class="badge badge-danger">بدون فاکتور</span>{% endif %}
                     {% if transaction.response_label %}<br><small class="muted">{{ transaction.response_label }}</small>{% endif %}
                 </td>
-                <td dir="ltr" class="tnum" data-label="کد پاسخ">{{ transaction.response_code or '—' }}</td>
+                <td dir="ltr" class="tnum" data-label="کد پاسخ">{{ (transaction.response_code or '—')|highlight(search) }}</td>
                 <td data-label="فاکتور">
                     {% if transaction.sale_id %}
                         <a href="/sales/invoice/{{ transaction.sale_id }}" class="btn btn-sm btn-ghost">#{{ transaction.sale_id }}</a>
@@ -104,7 +141,7 @@
                 <td data-label="تطبیق">
                     {% if transaction.reconciled %}
                         <span class="badge badge-available">ثبت شده</span>
-                        {% if transaction.reconciliation_note %}<br><small class="muted">{{ transaction.reconciliation_note }}</small>{% endif %}
+                        {% if transaction.reconciliation_note %}<br><small class="muted">{{ transaction.reconciliation_note|highlight(search) }}</small>{% endif %}
                         {% if operator_names.get(transaction.operator_user_id) %}<br><small class="muted">ثبت: {{ operator_names.get(transaction.operator_user_id) }}{% if transaction.reconciled_at %} · {{ jalali_str(transaction.reconciled_at, false) }}{% endif %}</small>{% endif %}
                     {% else %}
                         <form method="post" action="/admin/pos-reconciliation/{{ transaction.id }}/review"
@@ -150,9 +187,24 @@
     </div>
     {% else %}
     <div class="empty-state">
-        <h3>تراکنش باز یا بسته‌ای نیست</h3>
-        <p>هنوز هیچ تلاش کارت‌خوانی ثبت نشده، یا همه تعیین تکلیف شده‌اند.</p>
+        <h3>{% if has_filters %}تراکنشی با این فیلترها پیدا نشد{% else %}تراکنش باز یا بسته‌ای نیست{% endif %}</h3>
+        <p>{% if has_filters %}فیلترها را تغییر دهید یا بازه دیگری را ببینید.
+        {% else %}هنوز هیچ تلاش کارت‌خوانی ثبت نشده، یا همه تعیین تکلیف شده‌اند.{% endif %}</p>
+        {% if has_filters %}<a href="/admin/pos-reconciliation" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
     </div>
+    {% endif %}
+    {% if total_pages > 1 %}
+    <nav class="product-pagination" aria-label="صفحه‌بندی تراکنش‌ها">
+        {% set qs_tail = base_qs ~ "&sort=" ~ sort_key ~ "&dir=" ~ sort_dir %}
+        {% if page > 1 %}<a class="btn btn-sm btn-ghost" href="?page={{ page - 1 }}&{{ qs_tail }}">صفحه قبل</a>{% endif %}
+        {% for p in range(1, total_pages + 1) %}
+        {% if p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+        {% if p == page %}<span class="page-current" aria-current="page">{{ p }}</span>
+        {% else %}<a class="btn btn-sm btn-ghost" href="?page={{ p }}&{{ qs_tail }}" aria-label="صفحه {{ p }}">{{ p }}</a>{% endif %}
+        {% elif p == 2 or p == total_pages - 1 %}<span class="page-gap" aria-hidden="true">…</span>{% endif %}
+        {% endfor %}
+        {% if page < total_pages %}<a class="btn btn-sm btn-ghost" href="?page={{ page + 1 }}&{{ qs_tail }}">صفحه بعد</a>{% endif %}
+    </nav>
     {% endif %}
 </div>
 {# The confirmation echoes the figure and the row before anything posts.

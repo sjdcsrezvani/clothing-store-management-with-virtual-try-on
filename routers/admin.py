@@ -1380,16 +1380,70 @@ async def admin_backup_download(request: Request, name: str = "", db: Session = 
 
 
 @router.get("/pos-reconciliation", response_class=HTMLResponse)
-async def admin_pos_reconciliation(request: Request, db: Session = Depends(get_db)):
+async def admin_pos_reconciliation(
+    request: Request,
+    q: str = "",
+    status: str = "all",
+    page: str = "1",
+    per_page: str = "25",
+    sort: str = "date",
+    dir: str = "desc",
+    db: Session = Depends(get_db),
+):
     """Show terminal attempts that need local reconciliation."""
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
-    # The list is windowed because a person has to read it; the count is not,
-    # because it has to be the same number the dashboard shows. Both now come
-    # from one definition of «still unresolved» instead of two.
-    transactions = db.query(POSTransaction).order_by(POSTransaction.created_at.desc()).limit(200).all()
+    from services.sorting import parse_sort
+    from urllib.parse import urlencode
+    search = (q or "").strip()
+    status_filter = status if status in {
+        "all", "unresolved", "resolved", "created", "sent", "uncertain",
+        "approved", "linked_to_sale", "cancelled", "declined",
+    } else "all"
+    page_int = page_arg(page)
+    per_page_int = int(per_page) if str(per_page).isdigit() and int(per_page) in (10, 25, 50) else 25
+    sort_key, sort_dir = parse_sort(request.query_params, {"date": "desc", "amount": "desc"}, "date")
+
+    conds = []
+    if search:
+        digits = search.lstrip("#").strip()
+        if digits.isdigit():
+            # A bare number is a row number or a figure — an id match and an
+            # amount match are both exact, so the row is found either way.
+            value = int(digits)
+            conds.append(or_(POSTransaction.id == value, POSTransaction.amount == value))
+        else:
+            like = f"%{search}%"
+            conds.append(or_(
+                POSTransaction.provider_reference.ilike(like),
+                POSTransaction.terminal_transaction_number.ilike(like),
+                POSTransaction.retrieval_reference_number.ilike(like),
+                POSTransaction.masked_card.ilike(like),
+                POSTransaction.reconciliation_note.ilike(like),
+            ))
+    if status_filter == "unresolved":
+        # The same three clauses the dashboard count reads: a status still
+        # open, no invoice attached, no review recorded.
+        conds.append(POSTransaction.status.in_(("created", "sent", "uncertain", "approved")))
+        conds.append(POSTransaction.sale_id.is_(None))
+        conds.append(POSTransaction.reconciled == False)  # noqa: E712
+    elif status_filter == "resolved":
+        conds.append(POSTransaction.reconciled == True)  # noqa: E712
+    elif status_filter != "all":
+        conds.append(POSTransaction.status == status_filter)
+
+    base = db.query(POSTransaction).filter(*conds)
+    order_column = POSTransaction.amount if sort_key == "amount" else POSTransaction.created_at
+    order = order_column.desc() if sort_dir == "desc" else order_column.asc()
+    total_count = base.count()
+    total_pages = max(1, -(-total_count // per_page_int))
+    page_int = min(page_int, total_pages)
+    transactions = base.order_by(order, POSTransaction.id.desc()) \
+        .offset((page_int - 1) * per_page_int).limit(per_page_int).all()
+    # The KPI stays the shop-wide outstanding the dashboard shows, whatever
+    # the list is filtered to — the heading above the table names the view.
     unresolved_count = unresolved_transactions(db)
     # The exposure, not just the queue: what the outstanding rows add up to.
     unresolved_amount = db.query(func.coalesce(func.sum(POSTransaction.amount), 0)).filter(
@@ -1408,6 +1462,13 @@ async def admin_pos_reconciliation(request: Request, db: Session = Depends(get_d
         "terminal_error": "خطای کارت‌خوان",
         "provider_investigation": "بررسی ارائه‌دهنده",
     }
+    has_filters = bool(search or status_filter != "all")
+    from urllib.parse import urlencode
+    base_qs = urlencode({
+        **({"q": search} if search else {}),
+        **({"status": status_filter} if status_filter != "all" else {}),
+        "per_page": per_page_int,
+    })
     return templates.TemplateResponse(request, "admin/pos_reconciliation.html", {
         "transactions": transactions,
         "unresolved_count": unresolved_count,
@@ -1416,6 +1477,29 @@ async def admin_pos_reconciliation(request: Request, db: Session = Depends(get_d
         "terminal": terminal,
         "resolutions": resolutions,
         "is_owner": role_allows(guard.role, "owner"),
+        "search": search,
+        "status_filter": status_filter,
+        "statuses": {
+            "all": "همه",
+            "unresolved": "حل‌نشده",
+            "resolved": "تعیین‌تکلیف‌شده",
+            "created": "ایجادشده",
+            "sent": "ارسال‌شده",
+            "uncertain": "نامشخص",
+            "approved": "تأییدشده",
+            "linked_to_sale": "متصل به فاکتور",
+            "cancelled": "لغوشده",
+            "declined": "ردشده",
+        },
+        "page": page_int,
+        "total_pages": total_pages,
+        "total_count": total_count,
+        "per_page": per_page_int,
+        "per_page_options": (10, 25, 50),
+        "sort_key": sort_key,
+        "sort_dir": sort_dir,
+        "base_qs": base_qs,
+        "has_filters": has_filters,
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
         "jalali_str": jalali_str,
