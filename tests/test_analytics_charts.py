@@ -1101,14 +1101,27 @@ def test_new_builders_overlays_and_heatmap_ride_on_real_figures(client, db_sessi
 
 def test_heatmap_weeks_open_on_saturday_and_carry_revenue(db_session):
     """Columns read like the wall calendar: شنبه first, every cell honest."""
+    from jdatetime import datetime as jdt
     from services.analytics import get_year_heatmap
     heat = get_year_heatmap(db_session)
     assert heat["weeks"] >= 52
     assert heat["max"] >= 0
-    first_week = [c for c in heat["cells"] if c["week"] == 0]
-    assert first_week and first_week[0]["dow"] == 0
-    assert first_week[0]["day_name"] == "شنبه"
+    assert len(heat["cells"]) == 365
     assert all(set(c) == {"date", "dow", "day_name", "week", "revenue"} for c in heat["cells"])
+    names = ["شنبه", "یکشنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه"]
+    # The date decides the day: a cell may only name the weekday it really is,
+    # whichever of the seven the shop happens to be standing on today.
+    for cell in heat["cells"]:
+        real = jdt.strptime(cell["date"], "%Y/%m/%d").weekday()
+        assert cell["dow"] == real
+        assert cell["day_name"] == names[real]
+    # And the week only ever turns on شنبه — never mid-column.
+    for earlier, later in zip(heat["cells"], heat["cells"][1:]):
+        if later["week"] == earlier["week"]:
+            assert later["dow"] == earlier["dow"] + 1
+        else:
+            assert (later["week"], later["dow"]) == (earlier["week"] + 1, 0)
+            assert earlier["dow"] == 6
 
 
 def test_inventory_tab_holds_turnover_abc_and_dead(client, db_session, authed):

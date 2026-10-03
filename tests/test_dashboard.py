@@ -217,9 +217,9 @@ def test_the_reconciliation_alert_counts_everything_not_just_the_readable_page(
     assert attention_counts(content_only(html))["تراکنش کارتخوان"] == "205"
 
     page = client.get("/admin/pos-reconciliation").text
-    assert stat_values(page)["⚠️ نیازمند بررسی"] == "205"
-    # The page lists fewer than it counts, and has to say so.
-    assert "تنها 200 رکورد اخیر" in page
+    assert stat_values(page)["نیازمند بررسی"] == "205"
+    # The page numbers instead of windowing: 205 rows at 25 per page.
+    assert 'aria-label="صفحه 9"' in page
 
 
 def test_the_follow_up_review_page_and_its_dashboard_card_agree(client, db_session):

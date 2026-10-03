@@ -1026,17 +1026,18 @@ def get_year_heatmap(db) -> dict:
         aware = created if created.tzinfo else created.replace(tzinfo=timezone.utc)
         by_day[jdatetime.datetime.fromtimestamp(aware.timestamp()).date()] = revenue or 0
     weekday_names = ["شنبه", "یکشنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه"]
-    # jdatetime numbers Monday 0 to Sunday 6 like Gregorian does, so Saturday
-    # is 5 and the shop's week opens there, like the wall calendar.
+    # jdatetime opens its week on the shop's first day: Saturday is 0 through
+    # Friday 6, not Monday 0 like Gregorian — so the weekday is already the
+    # row, and every column break falls on شنبه with no offset to subtract.
     cells = []
     week = -1
     cursor = today - jdatetime.timedelta(days=364)
-    cursor -= jdatetime.timedelta(days=(cursor.weekday() - 5) % 7)
+    cursor -= jdatetime.timedelta(days=cursor.weekday())
     while cursor <= today:
-        if cursor.weekday() == 5:
+        if cursor.weekday() == 0:
             week += 1
         if cursor >= today - jdatetime.timedelta(days=364):
-            dow = (cursor.weekday() - 5) % 7
+            dow = cursor.weekday()
             cells.append({
                 "date": cursor.strftime("%Y/%m/%d"),
                 "dow": dow,

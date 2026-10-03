@@ -7,6 +7,13 @@
 {% if message %}<div class="toaster-flash" data-toast data-toast-type="success" role="status">✅ {{ message }}</div>{% endif %}
 {% if error %}<div class="toaster-flash" data-toast data-toast-type="error" role="alert">⚠️ {{ error }}</div>{% endif %}
 {% if success %}<div class="toaster-flash" data-toast data-toast-type="success" role="status">✅ {{ success }}</div>{% endif %}
+{% if pos_hint %}
+{# A terminal row's figure, carried by link: shown so the cashier rings it up,
+   never applied — the bill is still built item by item. #}
+<div class="alert alert-info" role="status">
+    کارت‌خوان: مبلغ {{ fmt(pos_hint.amount) }} تومان{% if pos_hint.reference %} ({{ pos_hint.reference }}){% endif %} — فاکتور را ثبت کنید.
+</div>
+{% endif %}
 
 {% if step == "customer" %}
 {# ─── STEP 1: Phone entry ─── #}

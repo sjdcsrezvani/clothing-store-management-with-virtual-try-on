@@ -378,12 +378,25 @@ async def sales_new(request: Request, db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
+    # A terminal row can send the till its figure and reference — displayed,
+    # never applied: money joins a bill by being rung up, not by arriving
+    # in a query string.
+    pos_hint = None
+    try:
+        pos_amount = int(to_english_digits(
+            str(request.query_params.get("pos_amount") or "")).replace(",", "").replace("٬", "").replace(" ", "") or 0)
+    except (TypeError, ValueError):
+        pos_amount = 0
+    if pos_amount > 0:
+        pos_hint = {"amount": pos_amount,
+                    "reference": (request.query_params.get("pos_reference") or "").strip()[:100] or None}
     return templates.TemplateResponse(request, "sales/checkout.html", {
         "step": "customer",
         "basket": [],
         "basket_json": "[]",
         "total_amount": 0,
         "customer": None,
+        "pos_hint": pos_hint,
         "fmt": fmt,
     })
 

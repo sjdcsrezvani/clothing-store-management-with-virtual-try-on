@@ -6,7 +6,7 @@ from urllib.parse import quote_plus
 from fastapi import APIRouter, Depends, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse, Response
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from database import get_db
 from datetime import datetime, timezone
@@ -72,6 +72,7 @@ from models import to_english_digits, to_persian_digits
 from services.backup import create_backup, list_backups, backup_download_path
 from services.dashboard import dashboard_overview
 from services.pos_reconciliation import unresolved_transactions
+from services.pos_terminal import get_terminal_config
 from services.operations import verify_sqlite_backup
 from services.navigation import home_for
 from services.security import (
@@ -87,8 +88,10 @@ from services.security import (
     hash_password,
     verify_password,
     require_html_role,
+    role_allows,
 )
 from services.store import invalidate_store_cache, get_store
+from services.sorting import parse_sort
 from services.templating import templates
 from services.tier import (
     apply_tier_downgrades,
@@ -1377,21 +1380,133 @@ async def admin_backup_download(request: Request, name: str = "", db: Session = 
     return FileResponse(path, filename=Path(name).name)
 
 
+POS_STATUSES = {
+    "all", "unresolved", "resolved", "created", "sent", "uncertain",
+    "approved", "linked_to_sale", "cancelled", "declined",
+}
+
+
+def _pos_list_conds(search: str, status_filter: str) -> list:
+    """The filter chain the terminal list reads — one definition for the page
+    and the export, so a file can never answer a different view than the
+    screen that ordered it."""
+    conds = []
+    if search:
+        digits = search.lstrip("#").strip()
+        if digits.isdigit():
+            value = int(digits)
+            conds.append(or_(POSTransaction.id == value, POSTransaction.amount == value))
+        else:
+            like = f"%{search}%"
+            conds.append(or_(
+                POSTransaction.provider_reference.ilike(like),
+                POSTransaction.terminal_transaction_number.ilike(like),
+                POSTransaction.retrieval_reference_number.ilike(like),
+                POSTransaction.masked_card.ilike(like),
+                POSTransaction.reconciliation_note.ilike(like),
+            ))
+    if status_filter == "unresolved":
+        conds.append(POSTransaction.status.in_(("created", "sent", "uncertain", "approved")))
+        conds.append(POSTransaction.sale_id.is_(None))
+        conds.append(POSTransaction.reconciled == False)  # noqa: E712
+    elif status_filter == "resolved":
+        conds.append(POSTransaction.reconciled == True)  # noqa: E712
+    elif status_filter != "all":
+        conds.append(POSTransaction.status == status_filter)
+    return conds
+
+
 @router.get("/pos-reconciliation", response_class=HTMLResponse)
-async def admin_pos_reconciliation(request: Request, db: Session = Depends(get_db)):
+async def admin_pos_reconciliation(
+    request: Request,
+    q: str = "",
+    status: str = "all",
+    page: str = "1",
+    per_page: str = "25",
+    sort: str = "date",
+    dir: str = "desc",
+    db: Session = Depends(get_db),
+):
     """Show terminal attempts that need local reconciliation."""
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
-    # The list is windowed because a person has to read it; the count is not,
-    # because it has to be the same number the dashboard shows. Both now come
-    # from one definition of «still unresolved» instead of two.
-    transactions = db.query(POSTransaction).order_by(POSTransaction.created_at.desc()).limit(200).all()
+    from urllib.parse import urlencode
+    search = (q or "").strip()
+    status_filter = status if status in POS_STATUSES else "all"
+    page_int = page_arg(page)
+    per_page_int = int(per_page) if str(per_page).isdigit() and int(per_page) in (10, 25, 50) else 25
+    sort_key, sort_dir = parse_sort(request.query_params, {"date": "desc", "amount": "desc"}, "date")
+
+    conds = _pos_list_conds(search, status_filter)
+
+    base = db.query(POSTransaction).filter(*conds)
+    order_column = POSTransaction.amount if sort_key == "amount" else POSTransaction.created_at
+    order = order_column.desc() if sort_dir == "desc" else order_column.asc()
+    total_count = base.count()
+    total_pages = max(1, -(-total_count // per_page_int))
+    page_int = min(page_int, total_pages)
+    transactions = base.order_by(order, POSTransaction.id.desc()) \
+        .offset((page_int - 1) * per_page_int).limit(per_page_int).all()
+    # The KPI stays the shop-wide outstanding the dashboard shows, whatever
+    # the list is filtered to — the heading above the table names the view.
     unresolved_count = unresolved_transactions(db)
+    # The exposure, not just the queue: what the outstanding rows add up to.
+    unresolved_amount = db.query(func.coalesce(func.sum(POSTransaction.amount), 0)).filter(
+        POSTransaction.status.in_(("created", "sent", "uncertain", "approved")),
+        POSTransaction.sale_id.is_(None),
+        POSTransaction.reconciled == False,  # noqa: E712
+    ).scalar() or 0
+    operator_ids = {t.operator_user_id for t in transactions if t.operator_user_id}
+    operator_names = {u.id: (u.full_name or u.username) for u in db.query(StaffUser).filter(
+        StaffUser.id.in_(list(operator_ids))).all()} if operator_ids else {}
+    terminal = get_terminal_config(db)
+    resolutions = {
+        "confirmed_cancelled": "تأیید لغو",
+        "reversed_externally": "برگشت خارجی",
+        "duplicate": "تکراری",
+        "terminal_error": "خطای کارت‌خوان",
+        "provider_investigation": "بررسی ارائه‌دهنده",
+    }
+    has_filters = bool(search or status_filter != "all")
+    from urllib.parse import urlencode
+    base_qs = urlencode({
+        **({"q": search} if search else {}),
+        **({"status": status_filter} if status_filter != "all" else {}),
+        "per_page": per_page_int,
+    })
     return templates.TemplateResponse(request, "admin/pos_reconciliation.html", {
         "transactions": transactions,
         "unresolved_count": unresolved_count,
+        "unresolved_amount": unresolved_amount,
+        "operator_names": operator_names,
+        "terminal": terminal,
+        "resolutions": resolutions,
+        "is_owner": role_allows(guard.role, "owner"),
+        "search": search,
+        "status_filter": status_filter,
+        "statuses": {
+            "all": "همه",
+            "unresolved": "حل‌نشده",
+            "resolved": "تعیین‌تکلیف‌شده",
+            "created": "ایجادشده",
+            "sent": "ارسال‌شده",
+            "uncertain": "نامشخص",
+            "approved": "تأییدشده",
+            "linked_to_sale": "متصل به فاکتور",
+            "cancelled": "لغوشده",
+            "declined": "ردشده",
+        },
+        "page": page_int,
+        "total_pages": total_pages,
+        "total_count": total_count,
+        "per_page": per_page_int,
+        "per_page_options": (10, 25, 50),
+        "sort_key": sort_key,
+        "sort_dir": sort_dir,
+        "base_qs": base_qs,
+        "has_filters": has_filters,
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
         "jalali_str": jalali_str,
@@ -1419,7 +1534,7 @@ async def admin_pos_reconciliation_review(
 
     transaction = db.query(POSTransaction).filter(POSTransaction.id == transaction_id).first()
     if not transaction:
-        raise HTTPException(status_code=404, detail="تراکنش کارت‌خوان یافت نشد")
+        return RedirectResponse(url="/admin/pos-reconciliation?err=تراکنش کارت‌خوان یافت نشد.", status_code=303)
     allowed = {"confirmed_paid", "confirmed_cancelled", "reversed_externally", "duplicate", "terminal_error", "provider_investigation"}
     if not resolution_type and note.strip():
         resolution_type = "terminal_error"
@@ -1430,12 +1545,14 @@ async def admin_pos_reconciliation_review(
     if resolution_type not in allowed or not evidence.strip():
         return RedirectResponse(url="/admin/pos-reconciliation?err=نوع نتیجه و مدرک بررسی الزامی است.", status_code=303)
     if resolution_type == "confirmed_paid":
-        raise HTTPException(status_code=409, detail="تأیید پرداخت باید از مسیر ایجاد فاکتور انجام شود.")
+        # Paid is conferred by an invoice, never by a review: recording it
+        # here would invent money the till never counted.
+        return RedirectResponse(url="/admin/pos-reconciliation?err=تأیید پرداخت فقط از مسیر ایجاد فاکتور انجام می‌شود؛ اینجا فقط ثبت نتیجه بررسی است.", status_code=303)
     if masked_card and not masked_card.startswith("****"):
-        raise HTTPException(status_code=400, detail="فقط اطلاعات کارت ماسک‌شده مجاز است.")
+        return RedirectResponse(url="/admin/pos-reconciliation?err=فقط اطلاعات کارت ماسک‌شده (****) مجاز است.", status_code=303)
 
     if transaction.reconciled:
-        raise HTTPException(status_code=409, detail="این تراکنش قبلاً تطبیق داده شده است.")
+        return RedirectResponse(url="/admin/pos-reconciliation?err=این تراکنش قبلاً تطبیق داده شده است.", status_code=303)
 
     operator = guard
     transaction.provider_reference = provider_reference.strip()[:100] or None
@@ -1470,6 +1587,60 @@ async def admin_pos_reconciliation_review(
     db.commit()
     log_action(db, "pos_reconciliation", f"تطبیق تراکنش کارت‌خوان #{transaction.id}", request=request, target_type="pos_transaction", target_id=transaction.id, after={"resolution_type": resolution_type, "operator_user_id": operator.id})
     return RedirectResponse(url="/admin/pos-reconciliation?msg=نتیجه تطبیق ثبت شد.", status_code=303)
+
+
+@router.get("/pos-reconciliation/export")
+async def admin_pos_export(
+    request: Request,
+    q: str = "",
+    status: str = "all",
+    sort: str = "date",
+    dir: str = "desc",
+    db: Session = Depends(get_db),
+):
+    """The filtered terminal list as a file: the same rows the screen showed,
+    not the whole ledger. Raw integers for money, Jalali dates the shop reads."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    import csv
+    import io
+    search = (q or "").strip()
+    status_filter = status if status in POS_STATUSES else "all"
+    sort_key, sort_dir = parse_sort(request.query_params, {"date": "desc", "amount": "desc"}, "date")
+    order_column = POSTransaction.amount if sort_key == "amount" else POSTransaction.created_at
+    order = order_column.desc() if sort_dir == "desc" else order_column.asc()
+    rows = db.query(POSTransaction).filter(
+        *_pos_list_conds(search, status_filter)).order_by(order, POSTransaction.id.desc()).all()
+    operator_ids = {t.operator_user_id for t in rows if t.operator_user_id}
+    names = {u.id: (u.full_name or u.username) for u in db.query(StaffUser).filter(
+        StaffUser.id.in_(list(operator_ids))).all()} if operator_ids else {}
+    labels = {
+        "confirmed_cancelled": "تأیید لغو", "reversed_externally": "برگشت خارجی",
+        "duplicate": "تکراری", "terminal_error": "خطای کارت‌خوان",
+        "provider_investigation": "بررسی ارائه‌دهنده",
+    }
+    out = [["شناسه", "زمان", "مبلغ", "وضعیت", "کد پاسخ", "مرجع ارائه‌دهنده",
+            "شماره تراکنش", "شماره پیگیری", "فاکتور", "تعیین‌تکلیف‌شده",
+            "نتیجه", "دلیل", "ثبت‌کننده"]]
+    for t in rows:
+        out.append([
+            t.id, jalali_str(t.created_at), t.amount or 0, t.status,
+            t.response_code or "", t.provider_reference or "",
+            t.terminal_transaction_number or "", t.retrieval_reference_number or "",
+            t.sale_id or "", "بله" if t.reconciled else "خیر",
+            labels.get(t.resolution_type, t.resolution_type or ""),
+            t.resolution_evidence or "", names.get(t.operator_user_id, ""),
+        ])
+    buf = io.StringIO()
+    buf.write("\ufeff")  # BOM so Excel opens Persian correctly
+    csv.writer(buf).writerows(out)
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="pos_reconciliation_{today}.csv"'},
+    )
 
 
 @router.get("/events", response_class=HTMLResponse)
