@@ -37,7 +37,7 @@
 </div>
 <div class="card">
   <div class="section-heading"><div><span class="eyebrow">مشخصات</span><h3>اطلاعات پرسنلی</h3></div></div>
-  <form method="post" action="/admin/staff/{{ staff_user.id }}" class="form-row">
+  <form method="post" action="/admin/staff/{{ staff_user.id }}" class="form-row" id="staff-overview-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="role" value="{{ staff_user.role }}">
     <h4 class="form-span-2 muted">حساب ورود</h4>
@@ -57,6 +57,7 @@
     <label>روز پرداخت ماهانه{{ num('salary_payment_day', staff_user.salary_payment_day or '') }}</label>
     <label>تاریخ شروع<input class="persian-date-input" id="hire_date_{{ staff_user.id }}" name="hire_date" data-pdp-pair="#contract_end_date_{{ staff_user.id }}" placeholder="۱۴۰۵/۰۱/۰۱" value="{{ jalali_str(staff_user.hire_date, with_time=False) if staff_user.hire_date else '' }}"></label>
     <label>مدت قرارداد<select name="contract_term_months"><option value="">باز / بدون مدت</option>{% for months, label in contract_terms.items() %}<option value="{{ months }}" {% if staff_user.contract_term_months|string == months %}selected{% endif %}>{{ label }}</option>{% endfor %}</select><small class="field-help">با تعیین مدت، پایان قرارداد از شروع + مدت ساخته می‌شود{% if contract_days_left is not none %}؛ {{ contract_days_left }} روز مانده{% endif %}</small></label>
+    <p class="muted form-span-2" id="profile-contract-preview" aria-live="polite"></p>
     <label>پایان قرارداد<input class="persian-date-input" id="contract_end_date_{{ staff_user.id }}" name="contract_end_date" placeholder="۱۴۰۵/۱۲/۲۹" value="{{ jalali_str(staff_user.contract_end_date, with_time=False) if staff_user.contract_end_date else '' }}"></label>
     <label>تاریخ تولد<input class="persian-date-input" name="birth_date" placeholder="۱۳۷۰/۰۱/۰۱" value="{{ jalali_str(staff_user.birth_date, with_time=False) if staff_user.birth_date else '' }}"></label>
     <label>تحصیلات<input name="education" value="{{ staff_user.education or '' }}"></label>
@@ -185,6 +186,60 @@
         row.appendChild(drop);
         host.appendChild(row);
     });
+})();
+</script>
+<script>
+// Contract-end autofill on the overview form: picking a start and a term
+// fills the end date (and locks it while a term governs it), mirroring the
+// hire wizard. Display aid only — the server derives the stored date.
+(function () {
+    var form = document.getElementById('staff-overview-form');
+    if (!form) return;
+    var FA = '۰۱۲۳۴۵۶۷۸۹';
+    var hire = form.querySelector('input[name="hire_date"]');
+    var term = form.querySelector('select[name="contract_term_months"]');
+    var endInput = form.querySelector('input[name="contract_end_date"]');
+    var out = document.getElementById('profile-contract-preview');
+    if (!hire || !term || !endInput) return;
+    function en(text) {
+        return (text || '').replace(/[۰-۹]/g, function (d) { return FA.indexOf(d); });
+    }
+    function faNum(n) {
+        return String(n).replace(/\d/g, function (d) { return FA[+d]; });
+    }
+    function pad(n) { return (n < 10 ? '0' : '') + n; }
+    function monthLen(m) {
+        if (m <= 6) return 31;
+        if (m <= 11) return 30;
+        return 29;
+    }
+    function update() {
+        var parts = en(hire.value).replace(/\//g, '-').split('-');
+        var months = parseInt(term.value, 10);
+        if (months) {
+            endInput.setAttribute('readonly', '');
+        } else {
+            endInput.removeAttribute('readonly');
+        }
+        if (parts.length !== 3 || !months) {
+            if (out) out.textContent = '';
+            return;
+        }
+        var y = +parts[0], m = +parts[1], d = +parts[2];
+        if (!(y > 1300 && y < 1500 && m >= 1 && m <= 12 && d >= 1 && d <= 31)) {
+            if (out) out.textContent = '';
+            return;
+        }
+        var total = (m - 1) + months;
+        var ey = y + Math.floor(total / 12), em = total % 12 + 1;
+        var ed = Math.min(d, monthLen(em));
+        var text = faNum(ey) + '/' + faNum(pad(em)) + '/' + faNum(pad(ed));
+        if (out) out.textContent = 'پایان قرارداد: ' + text;
+        endInput.value = text;
+    }
+    hire.addEventListener('input', update);
+    term.addEventListener('change', update);
+    update();
 })();
 </script>
 {% else %}

@@ -31,7 +31,7 @@
       <div class="hire-grid">
       <label class="hire-field">نام و نام خانوادگی<input name="full_name" autocomplete="name"></label>
       <label class="hire-field">کد پرسنلی<input name="employee_code"></label>
-      <label class="hire-field">کد ملی<input name="national_id" inputmode="numeric" dir="ltr" maxlength="10" minlength="10" aria-describedby="hire-nid-help"><small class="field-help" id="hire-nid-help">۱۰ رقم</small></label>
+      <label class="hire-field">کد ملی<input name="national_id" inputmode="numeric" dir="ltr" minlength="10" aria-describedby="hire-nid-help"><small class="field-help" id="hire-nid-help">۱۰ رقم</small></label>
       <label class="hire-field">تلفن<input name="phone" type="tel" inputmode="tel" autocomplete="tel" dir="ltr" maxlength="11"></label>
       <label class="hire-field">ایمیل<input name="email" type="email" autocomplete="email" dir="ltr"></label>
       <label class="hire-field">تاریخ تولد<input class="persian-date-input" name="birth_date" inputmode="numeric" dir="ltr" placeholder="۱۳۷۰/۰۱/۰۱"></label>
@@ -194,6 +194,7 @@
         var FA = '۰۱۲۳۴۵۶۷۸۹';
         var hire = form.querySelector('input[name="hire_date"]');
         var term = form.querySelector('select[name="contract_term_months"]');
+        var endInput = form.querySelector('input[name="contract_end_date"]');
         var out = document.getElementById('hire-contract-preview');
         if (!hire || !term || !out) return;
         function en(text) {
@@ -211,6 +212,14 @@
         function update() {
             var parts = en(hire.value).replace(/\//g, '-').split('-');
             var months = parseInt(term.value, 10);
+            // No term, no automation: the end date stays hand-written.
+            if (endInput) {
+                if (months) {
+                    endInput.setAttribute('readonly', '');
+                } else {
+                    endInput.removeAttribute('readonly');
+                }
+            }
             if (parts.length !== 3 || !months) {
                 out.textContent = '';
                 return;
@@ -223,7 +232,9 @@
             var total = (m - 1) + months;
             var ey = y + Math.floor(total / 12), em = total % 12 + 1;
             var ed = Math.min(d, monthLen(em));
-            out.textContent = 'پایان قرارداد: ' + faNum(ey) + '/' + faNum(pad(em)) + '/' + faNum(pad(ed));
+            var text = faNum(ey) + '/' + faNum(pad(em)) + '/' + faNum(pad(ed));
+            out.textContent = 'پایان قرارداد: ' + text;
+            if (endInput) endInput.value = text;
         }
         hire.addEventListener('input', update);
         term.addEventListener('change', update);

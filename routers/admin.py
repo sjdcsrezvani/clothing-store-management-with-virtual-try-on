@@ -844,8 +844,10 @@ def _staff_limit(form, field: str, label: str):
 
 def _check_national_id(code: str) -> str | None:
     """Validate an Iranian national ID (کد ملی), checksum included. Empty stays
-    empty — the field is optional; a filled one must be real."""
-    text = to_english_digits((code or "").strip())
+    empty — the field is optional; a filled one must be real. Spacing and
+    dashes people copy along (``001 234 5678``) are stripped, not punished."""
+    import re
+    text = re.sub(r"[\s\u200c\-/]", "", to_english_digits((code or "").strip()))
     if not text:
         return None
     if not (text.isdigit() and len(text) == 10) or len(set(text)) == 1:

@@ -122,3 +122,17 @@ def test_revision_30_adds_terms_emergency_and_attendance(tmp_path):
         assert conn.execute(text(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='attendance_records'"
         )).scalar() == "attendance_records"
+
+
+def test_national_id_tolerates_spacing_and_term_rules_the_end(client, db_session):
+    _owner_client(client, db_session, name="phased-owner-id2")
+    response = _hire(client, db_session, "phased-spaced",
+                     national_id="002 345 6787",
+                     hire_date="1405/01/01", contract_term_months="6",
+                     contract_end_date="1400/01/01")
+    assert response.status_code == 303
+    user = db_session.query(StaffUser).filter(
+        StaffUser.username == "phased-spaced").one()
+    assert user.national_id == "0023456787"                  # spacers stripped
+    assert (user.contract_end_date.year, user.contract_end_date.month,
+            user.contract_end_date.day) == (2026, 9, 23)      # term wins
