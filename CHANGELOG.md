@@ -1,3 +1,75 @@
+## 2.8.1 — 1405/07/11 (2026-10-03)
+
+### تطبیق کارت‌خوان: the wall becomes a list, files itself, and confirms before it resolves
+
+- **The newest-200 window is gone; the wall is a list now.** Numbered pages
+  of 10, 25 or 50 walk the whole ledger, زمان and مبلغ sort either way with
+  `aria-sort` naming the column being read, and the heading counts exactly
+  what the filters ask for — while the KPI above it keeps the shop-wide
+  outstanding the dashboard shows, so the two can never silently disagree
+  the way a fixed window did.
+- **A search shows where it hit.** شناسه، مبلغ، مرجع ارائه‌دهنده، شماره
+  تراکنش، شماره پیگیری، ته‌کارت and the reconciliation note all answer a
+  query, and a match prints the text it matched under its row, highlighted —
+  a hit with nowhere to look reads as a wrong list.
+- **Every status is a door.** The ten options filter the page (همه، حل‌نشده،
+  تعیین‌تکلیف‌شده، ایجادشده، ارسال‌شده، نامشخص، تأییدشده، متصل به فاکتور،
+  لغو شده، رد شده), and a result the filters emptied says so and offers to
+  clear them instead of claiming the shop has no transactions.
+- **The heading counts money as well as rows.** نیازمند بررسی prints the
+  exposure beside the count — the sum of every outstanding row — so a queue
+  reads as the money the till cannot yet explain, not only its length.
+- **A row that took money with no bill shouts.** Approved with no invoice
+  and no reconciliation wears the cheque page's warning face and a
+  «بدون فاکتور» badge instead of sitting quietly among the others.
+- **The form that could never post now posts.** Every POST on the site is
+  checked for the session's CSRF token, and this one was sent without it:
+  from a browser each submission came back a raw 403 body, while the tests —
+  which inject the token themselves — kept passing. The token is in the form
+  now.
+- **Confirmation echoes the decision about to be made.** Before a review
+  posts, the dialog reads back the chosen outcome and the row's own figure
+  («نتیجه «تکراری» برای تراکنش ۲۵۰,۰۰۰ تومان ثبت می‌شود؟»); a second click
+  while the first is in flight is ignored, and a dismissal leaves the form
+  exactly as typed. Without JavaScript the form posts directly and the
+  server still guards every rule.
+- **Every refusal is a sentence.** A missing row, «تأیید پرداخت» attempted
+  from the review instead of an invoice, an unmasked card, a result already
+  recorded — each is now a redirect back to the list carrying a Persian line
+  to read, not a raw status code.
+- **A resolved row names its witnesses.** The evidence, who recorded it and
+  the day they did print beside the note; the fields are labelled in the
+  shop's own words (نتیجه بررسی، دلیل و مدرک، مرجع ارائه‌دهنده…); and a note
+  posted on its own is recorded as a خطای کارت‌خوان with itself as evidence
+  instead of being turned away.
+- **The list files itself.** خروجی CSV carries the filters the screen is
+  holding — the same rows in the same order, raw integers Excel can sum,
+  Jalali dates the shop reads, thirteen columns from شناسه to ثبت‌کننده, and
+  a BOM so the Persian opens.
+- **An approved row walks its figure to the till.** صدور فاکتور links to
+  فروش جدید with its amount and reference, where the cashier sees
+  «کارت‌خوان: مبلغ ۱۲۰,۰۰۰ تومان (BANK-7)» to ring up — displayed, never
+  applied: money joins a bill by being rung up, not by arriving in a query
+  string.
+- **Reachability is read live, never baked in.** The terminal's pill probes
+  for its answer after the page has already opened, so a dark terminal
+  cannot hold up the one visit that needed it most; owners get the door to
+  its settings beside it.
+- **The list reads like every other admin list now.** It joins the list
+  family — heading, per-page select, pagination, filters — stacks
+  label-first under 700px, opens with a فروش جدید action, and drops its
+  emoji for words and badge tones.
+- **The year heatmap tells the truth about which day it is.** jdatetime
+  opens its week on شنبه (Saturday is 0 through Friday, unlike Gregorian's
+  Monday), but the calendar subtracted a two-day offset built on the wrong
+  assumption: every Saturday sat in دوشنبه's row and columns began on
+  Thursday. A cell now names the weekday its own date really is and the
+  week turns on شنبه, exactly as the card has always promised — and the
+  check asks every cell against its date, so it holds on all seven days
+  instead of passing only on a Thursday.
+
+**Schema change.** None — the database stays on revision 27.
+
 ## 2.8.0 — 1405/07/09 (2026-10-01)
 
 ### تحلیل فروش: a sixth tab, a vector engine, and one sentence per chart
