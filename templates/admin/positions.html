@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+{% set page_title %}سمت‌های سازمانی{% endset %}
+{% set page_description %}
+سمت‌های سازمانی فروشگاه: عنوان‌هایی که در قرارداد استخدام چاپ می‌شود.
+{% endset %}
+{% set page_actions %}
+<a class="btn btn-ghost" href="/admin/staff">بازگشت به کارکنان</a>
+{% endset %}
+{% include 'partials/page_header.html' %}
+<div class="card hire-narrow">
+  <div class="section-heading"><div><span class="eyebrow">سمت‌ها</span><h3>افزودن سمت</h3></div></div>
+  <form method="post" action="/admin/positions">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="hire-grid">
+    <label class="hire-field">عنوان سمت<input name="title" maxlength="100" placeholder="مثلاً فروشنده ارشد" required></label>
+    </div>
+    <div class="staff-actions"><button class="btn btn-primary" type="submit">ثبت سمت</button></div>
+  </form>
+</div>
+<div class="card">
+  <div class="section-heading"><div><span class="eyebrow">فهرست</span><h3>سمت‌های ثبت‌شده</h3></div></div>
+  {% if positions %}
+  <div class="table-scroll"><table class="data-table"><thead><tr><th scope="col">عنوان</th><th scope="col">دارندگان</th><th scope="col">وضعیت</th><th scope="col">عملیات</th></tr></thead><tbody>
+  {% for position in positions %}
+  <tr>
+    <td>{{ position.title }}</td>
+    <td>{{ holder_counts.get(position.id, 0) }} نفر</td>
+    <td>{% if position.is_active %}<span class="badge badge-available">فعال</span>{% else %}<span class="badge badge-none">بازنشسته</span>{% endif %}</td>
+    <td><details><summary class="btn btn-sm btn-ghost">ویرایش</summary><form method="post" action="/admin/positions/{{ position.id }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% if holder_counts.get(position.id, 0) %}<p class="muted">{{ holder_counts.get(position.id) }} نفر این سمت را دارند؛ بازنشستگی، قراردادهای چاپ‌شده را عوض نمی‌کند.</p>{% endif %}
+      <label class="hire-field">عنوان جدید<input name="title" maxlength="100" value="{{ position.title }}"></label>
+      <label class="check-row"><input type="checkbox" name="is_active" value="1" {% if position.is_active %}checked{% endif %}> فعال</label>
+      <div class="staff-actions"><button class="btn btn-sm btn-ghost" type="submit">ذخیره</button></div>
+    </form></details></td>
+  </tr>
+  {% endfor %}
+  </tbody></table></div>
+  {% else %}
+  <p class="muted">هنوز سمتی ثبت نشده است.</p>
+  {% endif %}
+</div>
+{% endblock %}

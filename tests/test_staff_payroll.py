@@ -26,6 +26,7 @@ def test_owner_can_create_staff_profile_and_update_owner_contract_info(client, d
         "work_schedule": "شنبه تا پنجشنبه",
         "bank_account": "123456789",
         "iban": "IR062960000000100324200001",
+        "address": "تهران، خیابان نمونه",
     }, follow_redirects=False)
     assert response.status_code == 303
 
@@ -52,13 +53,25 @@ def test_owner_can_create_staff_profile_and_update_owner_contract_info(client, d
 
 
 def test_salary_payment_creates_monthly_expense_and_printable_documents(client, db_session):
+    from datetime import datetime, timezone
     owner, password = _staff(db_session, "salary-owner", "owner")
     employee, _ = _staff(db_session, "salary-cashier", "cashier")
     employee.full_name = "کارمند حقوقی"
     employee.employee_code = "EMP-9"
     employee.salary_amount = 10_000_000
+    employee.national_id = "0023456787"
+    employee.address = "تهران، خیابان نمونه"
+    employee.job_title = "صندوقدار"
+    employee.hire_date = datetime(2026, 3, 21, tzinfo=timezone.utc)
     db_session.commit()
     _session_as(client, owner, password)
+    token = csrf_token(client, "/admin/owner-profile")
+    client.post("/admin/owner-profile", data={
+        "csrf_token": token,
+        "owner_full_name": "مالک فروشگاه",
+        "owner_business_name": "رای کیدز",
+        "owner_address": "تهران",
+    }, follow_redirects=False)
 
     token = csrf_token(client, "/admin/staff")
     response = client.post(f"/admin/staff/{employee.id}/salary", data={
@@ -92,5 +105,5 @@ def test_salary_payment_creates_monthly_expense_and_printable_documents(client, 
 
     contract = client.get(f"/admin/staff/{employee.id}/contract")
     assert contract.status_code == 200
-    assert "قرارداد همکاری و استخدام" in contract.text
+    assert "قرارداد کار" in contract.text
     assert "کارمند حقوقی" in contract.text

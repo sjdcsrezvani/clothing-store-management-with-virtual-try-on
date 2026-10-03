@@ -46,11 +46,15 @@
     <label class="hire-field">رمز جدید<input name="password" type="password" minlength="6" autocomplete="new-password" placeholder="بدون تغییر"></label>
     <h4 class="form-span-2 muted">مشخصات فردی</h4>
     <label class="hire-field">نام کامل<input name="full_name" value="{{ staff_user.full_name or '' }}"></label>
+    <label class="hire-field">جنسیت<select name="gender"><option value="">انتخاب کنید</option><option value="male" {% if staff_user.gender == 'male' %}selected{% endif %}>مرد</option><option value="female" {% if staff_user.gender == 'female' %}selected{% endif %}>زن</option></select></label>
     <label class="hire-field">کد پرسنلی<input name="employee_code" value="{{ staff_user.employee_code or '' }}"></label>
     <label class="hire-field">کد ملی<input name="national_id" value="{{ staff_user.national_id or '' }}" inputmode="numeric" dir="ltr"></label>
     <label class="hire-field">تلفن<input name="phone" value="{{ staff_user.phone or '' }}" inputmode="tel" dir="ltr"></label>
     <label class="hire-field">ایمیل<input name="email" type="email" value="{{ staff_user.email or '' }}" dir="ltr"></label>
     <label class="hire-field">عنوان شغلی<input name="job_title" value="{{ staff_user.job_title or '' }}"></label>
+    <label class="hire-field">سمت سازمانی<select name="position_id"><option value="">—</option>{% for position in positions %}<option value="{{ position.id }}" {% if staff_user.position_id == position.id %}selected{% endif %}>{{ position.title }}</option>{% endfor %}</select><small class="field-help">در قرارداد چاپ می‌شود · <a href="/admin/positions">مدیریت سمت‌ها</a></small></label>
+    <label class="check-row"><input type="checkbox" name="insured" value="1" {% if staff_user.insured %}checked{% endif %}> بیمه تأمین اجتماعی</label>
+    <input type="hidden" name="insured_present" value="1">
     <h4 class="form-span-2 muted">همکاری و حقوق</h4>
     <label class="hire-field">نوع همکاری<select name="employment_type"><option value="full_time" {% if staff_user.employment_type == 'full_time' %}selected{% endif %}>تمام‌وقت</option><option value="part_time" {% if staff_user.employment_type == 'part_time' %}selected{% endif %}>پاره‌وقت</option><option value="contractor" {% if staff_user.employment_type == 'contractor' %}selected{% endif %}>قراردادی</option></select></label>
     {% from 'partials/numeric_input.html' import num with context %}

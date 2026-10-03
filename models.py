@@ -60,6 +60,9 @@ class StaffUser(Base):
     bank_account = Column(String(80), nullable=True)
     iban = Column(String(40), nullable=True)
     contract_term_months = Column(Integer, nullable=True)
+    gender = Column(String(10), nullable=True)
+    insured = Column(Boolean, nullable=True)
+    position_id = Column(Integer, ForeignKey("job_positions.id"), nullable=True)
     salary_amount = Column(Integer, nullable=False, default=0)
     notes = Column(Text, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
@@ -85,6 +88,7 @@ class StaffUser(Base):
     )
 
     salary_payments = relationship("SalaryPayment", foreign_keys="SalaryPayment.staff_user_id", back_populates="staff_user", order_by="SalaryPayment.paid_at.desc()")
+    position = relationship("JobPosition")
 
 
 class Customer(Base):
@@ -933,6 +937,18 @@ class AttendanceRecord(Base):
         CheckConstraint("status IN ('present', 'absent', 'annual_leave', 'sick_leave')",
                         name="ck_attendance_status"),
     )
+
+
+class JobPosition(Base):
+    """A company position (سمت سازمانی) managed in settings and assigned per
+    staff: the title the employment contract prints. Deactivation retires it
+    from new assignments; holders keep history."""
+    __tablename__ = "job_positions"
+
+    id = Column(Integer, primary_key=True)
+    title = Column(String(100), nullable=False, unique=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
 
 class Payment(Base):

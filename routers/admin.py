@@ -12,7 +12,7 @@ from database import get_db
 from datetime import datetime, timezone
 from models import (
     Campaign, Customer, Referral, Settings, Sale, SaleItem, SaleCampaign, GeneratedImage, AdminLog, POSTransaction, StockMovement,
-    BusinessEvent, StaffUser, SalaryPayment, CashSession, AttendanceRecord,
+    BusinessEvent, StaffUser, SalaryPayment, CashSession, AttendanceRecord, JobPosition,
 )
 from config import ADMIN_PASSWORD, API_TOKEN
 from deployment import OWNER_MODE
@@ -36,6 +36,7 @@ from services._common import (
     get_setting_int as get_discount_setting,
     jalali_age,
     jalali_str,
+    amount_to_words,
     page_arg,
     int_arg,
     parse_jalali_input,
@@ -929,7 +930,7 @@ STAFF_NUMERIC_RULES = {
 }
 
 
-def _staff_profile_data(form):
+def _staff_profile_data(form, db=None):
     employment_type = str(form.get("employment_type", "full_time")).strip()
     if employment_type not in {"full_time", "part_time", "contractor"}:
         raise ValueError("نوع همکاری نامعتبر است.")
@@ -947,6 +948,19 @@ def _staff_profile_data(form):
     contract_end_date = (_add_jalali_months(hire_date, int(contract_term))
                          if contract_term else
                          _parse_staff_date(str(form.get("contract_end_date", ""))))
+    gender = str(form.get("gender", "") or "").strip()
+    if gender and gender not in {"male", "female"}:
+        raise ValueError("جنسیت نامعتبر است.")
+    position_id = None
+    position_raw = to_english_digits(str(form.get("position_id", "") or "").strip())
+    if position_raw:
+        try:
+            position_id = int(position_raw)
+        except (TypeError, ValueError):
+            raise ValueError("سمت سازمانی نامعتبر است.")
+        if db is not None and not db.query(JobPosition).filter(
+                JobPosition.id == position_id).first():
+            raise ValueError("سمت سازمانی نامعتبر است.")
     salary_day_value = to_english_digits(str(form.get("salary_payment_day", "")).strip())
     salary_day = None
     if salary_day_value:
@@ -963,6 +977,9 @@ def _staff_profile_data(form):
         "phone": _check_mobile(str(form.get("phone", ""))[:30]),
         "email": str(form.get("email", "")).strip()[:150] or None,
         "job_title": str(form.get("job_title", "")).strip()[:100] or None,
+        "position_id": position_id,
+        "gender": gender or None,
+        "insured": str(form.get("insured", "") or "") == "1",
         "employment_type": employment_type,
         "hire_date": hire_date,
         "birth_date": _parse_staff_date(str(form.get("birth_date", ""))),
@@ -1120,6 +1137,7 @@ async def admin_staff_new(request: Request, db: Session = Depends(get_db)):
         "err": request.query_params.get("err", ""),
         "fmt": fmt,
         "contract_terms": CONTRACT_TERMS,
+        "positions": db.query(JobPosition).filter(JobPosition.is_active == True).order_by(JobPosition.id).all(),  # noqa: E712
         # The staff forms paint their bounds from the same table the POSTs
         # validate against.
         "numeric_rules": STAFF_NUMERIC_RULES,
@@ -1233,6 +1251,7 @@ async def admin_staff_profile(staff_id: int, request: Request, tab: str = "overv
         "staff_caps": {field: effective_cap(staff_user, field) for field in CAP_FIELDS},
         # The ceilings the limit inputs narrow: one source, painted and enforced.
         "role_discount_limits": ROLE_DISCOUNT_LIMITS.get(staff_user.role or "", {}),
+        "positions": db.query(JobPosition).filter(JobPosition.is_active == True).order_by(JobPosition.id).all(),  # noqa: E712
         "open_shift": open_shift,
         "unpaid_month": current if unpaid_month else "",
         "year_totals": dict(sorted(year_totals.items(), reverse=True)),
@@ -1278,7 +1297,7 @@ async def admin_staff_create(request: Request, db: Session = Depends(get_db)):
     if db.query(StaffUser).filter(StaffUser.username == username).first():
         return RedirectResponse(url="/admin/staff/new?err=نام کاربری تکراری است.", status_code=303)
     try:
-        profile = _staff_profile_data(form)
+        profile = _staff_profile_data(form, db)
     except ValueError as error:
         return RedirectResponse(url=f"/admin/staff/new?err={error}", status_code=303)
     user = StaffUser(username=username, password_hash=hash_password(password), role=role, **profile)
@@ -1309,7 +1328,7 @@ async def admin_staff_update(staff_id: int, request: Request, db: Session = Depe
         if remaining_owners == 0:
             return RedirectResponse(url=f"/admin/staff/{user.id}?tab=permissions&err=نمی‌توانید نقش آخرین مالک فعال را تغییر دهید.", status_code=303)
     try:
-        profile = _staff_profile_data(form)
+        profile = _staff_profile_data(form, db)
     except ValueError as error:
         return RedirectResponse(url=f"/admin/staff/{user.id}?tab=overview&err={error}", status_code=303)
     before = {"role": user.role, "full_name": user.full_name,
@@ -1317,7 +1336,9 @@ async def admin_staff_update(staff_id: int, request: Request, db: Session = Depe
               "job_title": user.job_title, "employment_type": user.employment_type,
               "hire_date": user.hire_date.isoformat() if user.hire_date else None,
               "contract_term_months": user.contract_term_months,
-              "contract_end_date": user.contract_end_date.isoformat() if user.contract_end_date else None}
+              "contract_end_date": user.contract_end_date.isoformat() if user.contract_end_date else None,
+              "gender": user.gender, "insured": user.insured,
+              "position_id": user.position_id}
     user.role = role
     # A partial form (the permissions tab posts only the role) must not wipe
     # the fields it omits: merge what arrived, leave the rest standing.
@@ -1325,13 +1346,17 @@ async def admin_staff_update(staff_id: int, request: Request, db: Session = Depe
     for key, value in profile.items():
         if key in posted:
             setattr(user, key, value)
+    # Checkboxes post nothing when cleared: the marker says the form owned
+    # the switch, so absence means off rather than untouched.
+    if "insured_present" in posted:
+        user.insured = "insured" in posted
     password = str(form.get("password", ""))
     if password:
         if len(password) < 6:
             return RedirectResponse(url=f"/admin/staff/{user.id}?tab=overview&err=رمز عبور باید حداقل ۶ کاراکتر باشد.", status_code=303)
         user.password_hash = hash_password(password)
     db.commit()
-    log_action(db, "staff_update", f"ویرایش کاربر {user.username}", request=request, target_type="staff_user", target_id=user.id, before=before, after={"role": user.role, "full_name": user.full_name, "salary_amount": user.salary_amount, "is_active": user.is_active, "job_title": user.job_title, "employment_type": user.employment_type, "hire_date": user.hire_date.isoformat() if user.hire_date else None, "contract_term_months": user.contract_term_months, "contract_end_date": user.contract_end_date.isoformat() if user.contract_end_date else None})
+    log_action(db, "staff_update", f"ویرایش کاربر {user.username}", request=request, target_type="staff_user", target_id=user.id, before=before, after={"role": user.role, "full_name": user.full_name, "salary_amount": user.salary_amount, "is_active": user.is_active, "job_title": user.job_title, "employment_type": user.employment_type, "hire_date": user.hire_date.isoformat() if user.hire_date else None, "contract_term_months": user.contract_term_months, "contract_end_date": user.contract_end_date.isoformat() if user.contract_end_date else None, "gender": user.gender, "insured": user.insured, "position_id": user.position_id})
     return RedirectResponse(url=f"/admin/staff/{user.id}?msg=اطلاعات کارمند ذخیره شد.", status_code=303)
 
 
@@ -1372,6 +1397,69 @@ async def admin_staff_caps(staff_id: int, request: Request, db: Session = Depend
                   "max_discount_percent": user.max_discount_percent})
     log_action(db, "staff_caps", f"کلیدهای دسترسی {user.username}", request=request, target_type="staff_user", target_id=user.id, before=before, after=after)
     return RedirectResponse(url=f"/admin/staff/{user.id}?tab=permissions&msg=کلیدهای دسترسی ذخیره شد.", status_code=303)
+
+
+@router.get("/positions", response_class=HTMLResponse)
+async def admin_positions(request: Request, db: Session = Depends(get_db)):
+    """The company positions directory: titles the contract prints."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    positions = db.query(JobPosition).order_by(JobPosition.is_active.desc(), JobPosition.id).all()
+    counts = {row[0]: row[1] for row in db.query(
+        StaffUser.position_id, func.count(StaffUser.id)).filter(
+        StaffUser.position_id.isnot(None)).group_by(StaffUser.position_id).all()}
+    return templates.TemplateResponse(request, "admin/positions.html", {
+        "positions": positions,
+        "holder_counts": counts,
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
+    })
+
+
+@router.post("/positions", response_class=HTMLResponse)
+async def admin_position_add(request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    form = await request.form()
+    title = str(form.get("title", "") or "").strip()[:100]
+    if not title:
+        return RedirectResponse(url="/admin/positions?err=عنوان سمت الزامی است.", status_code=303)
+    if db.query(JobPosition).filter(JobPosition.title == title).first():
+        return RedirectResponse(url="/admin/positions?err=این سمت قبلاً ثبت شده است.", status_code=303)
+    position = JobPosition(title=title)
+    db.add(position)
+    db.commit()
+    log_action(db, "position_add", f"سمت سازمانی {title}", request=request,
+               target_type="job_position", target_id=position.id, after={"title": title})
+    return RedirectResponse(url="/admin/positions?msg=سمت ثبت شد.", status_code=303)
+
+
+@router.post("/positions/{position_id}", response_class=HTMLResponse)
+async def admin_position_update(position_id: int, request: Request, db: Session = Depends(get_db)):
+    """Rename or retire a position. Retiring keeps holders' history — the
+    contract of record already printed their title."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    position = db.query(JobPosition).filter(JobPosition.id == position_id).first()
+    if not position:
+        raise HTTPException(status_code=404, detail="سمت یافت نشد")
+    form = await request.form()
+    before = {"title": position.title, "is_active": position.is_active}
+    title = str(form.get("title", "") or "").strip()[:100]
+    if title and title != position.title:
+        if db.query(JobPosition).filter(JobPosition.title == title,
+                                        JobPosition.id != position.id).first():
+            return RedirectResponse(url="/admin/positions?err=این عنوان تکراری است.", status_code=303)
+        position.title = title
+    position.is_active = str(form.get("is_active", "") or "") == "1"
+    db.commit()
+    log_action(db, "position_update", f"سمت {position.title}", request=request,
+               target_type="job_position", target_id=position.id,
+               before=before, after={"title": position.title, "is_active": position.is_active})
+    return RedirectResponse(url="/admin/positions?msg=سمت ذخیره شد.", status_code=303)
 
 
 @router.post("/staff/{staff_id}/attendance", response_class=HTMLResponse)
@@ -1623,12 +1711,44 @@ async def admin_staff_contract(staff_id: int, request: Request, db: Session = De
     staff_user = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
     if not staff_user:
         raise HTTPException(status_code=404, detail="کارمند یافت نشد")
+    owner_settings = {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()}
+    # A contract with blanks is not a contract: refuse the print and name
+    # every missing field with where it gets filled.
+    missing = []
+    if not owner_settings.get("owner_full_name"):
+        missing.append(("نام مالک", "/admin/owner-profile"))
+    if not owner_settings.get("owner_business_name"):
+        missing.append(("نام کسب‌وکار", "/admin/owner-profile"))
+    if not owner_settings.get("owner_address"):
+        missing.append(("نشانی کسب‌وکار", "/admin/owner-profile"))
+    if not staff_user.full_name:
+        missing.append(("نام و نام خانوادگی کارمند", f"/admin/staff/{staff_user.id}"))
+    if not staff_user.national_id:
+        missing.append(("کد ملی کارمند", f"/admin/staff/{staff_user.id}"))
+    if not staff_user.address:
+        missing.append(("نشانی کارمند", f"/admin/staff/{staff_user.id}"))
+    position_title = None
+    if staff_user.position_id:
+        position = db.query(JobPosition).filter(JobPosition.id == staff_user.position_id).first()
+        position_title = position.title if position else None
+    if not (position_title or staff_user.job_title):
+        missing.append(("سمت سازمانی یا عنوان شغلی", f"/admin/staff/{staff_user.id}"))
+    if not staff_user.salary_amount or staff_user.salary_amount <= 0:
+        missing.append(("حقوق ماهانه", f"/admin/staff/{staff_user.id}"))
+    if not staff_user.hire_date:
+        missing.append(("تاریخ شروع همکاری", f"/admin/staff/{staff_user.id}"))
     return templates.TemplateResponse(request, "admin/employment_contract.html", {
         "staff_user": staff_user,
-        "owner_settings": {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()},
+        "owner_settings": owner_settings,
         "store": get_store(db),
         "jalali_str": jalali_str,
         "fmt": fmt,
+        "amount_to_words": amount_to_words,
+        "missing": missing,
+        "position_title": position_title,
+        "employee_address": ("جناب آقای " if staff_user.gender == "male" else
+                             "سرکار خانم " if staff_user.gender == "female" else "") + (
+                             staff_user.full_name or staff_user.username),
     })
 
 

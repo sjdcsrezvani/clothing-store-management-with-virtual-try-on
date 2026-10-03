@@ -513,6 +513,9 @@ button:disabled {
 .hire-field > .field-help { margin-top: 0; }
 .hire-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .hire-fieldset > legend { padding: 0; font-size: 0.95rem; font-weight: 800; margin-bottom: 0.2rem; }
+/* A checkbox with its sentence stays on one line, inside stacked flows too. */
+.check-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+.check-row input[type="checkbox"] { width: 1.1rem; height: 1.1rem; min-height: 0; flex-shrink: 0; accent-color: var(--candy); }
 /* Capability rows: the switch first, then a two-line title + consequence.
    Horizontal (a switch is not a text field), vertically centered. */
 .cap-row { display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.55rem 0.7rem; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--card); font-size: 0.85rem; }

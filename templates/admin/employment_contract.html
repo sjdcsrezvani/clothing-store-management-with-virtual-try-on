@@ -4,22 +4,46 @@
 {# A document the shop prints and files, but a page in the staff record too: the
    trail says whose contract this is. Hidden in print, like the rest of the shell. #}
 {% set page_title %}قرارداد استخدام{% endset %}
+<h1 class="sr-only">قرارداد استخدام {{ staff_user.full_name or staff_user.username }}</h1>
 <div class="screen-only document-trail">
     {% include 'partials/breadcrumb.html' %}
 </div>
-<div class="document-actions"><button class="btn btn-primary" onclick="window.print()">چاپ قرارداد</button><a class="btn btn-ghost" href="/admin/staff">بازگشت</a></div>
-<div class="print-document">
-  <div class="print-document-header"><h1>{{ owner_settings.get('owner_business_name', store.name) }}</h1><h2>قرارداد همکاری و استخدام</h2><div class="print-document-meta"><span>تاریخ تنظیم: {{ jalali_str(staff_user.hire_date or staff_user.created_at, with_time=False) }}</span><span>کد قرارداد: {{ staff_user.employee_code or staff_user.id }}</span></div></div>
-  <p>این قرارداد بین <strong>{{ owner_settings.get('owner_full_name', '—') }}</strong> به نمایندگی از {{ owner_settings.get('owner_business_name', store.name) }}، به عنوان {{ owner_settings.get('owner_signatory_title', 'کارفرما') }}، و آقای/خانم <strong>{{ staff_user.full_name or staff_user.username }}</strong> منعقد می‌شود.</p>
-  <h3>۱. مشخصات طرف دوم</h3>
-  <p>کد ملی: {{ staff_user.national_id or '—' }} · تلفن: {{ staff_user.phone or '—' }} · نشانی: {{ staff_user.address or '—' }}</p>
-  <h3>۲. سمت و مدت همکاری</h3>
-  <p>سمت: <strong>{{ staff_user.job_title or 'کارمند فروشگاه' }}</strong> · نوع همکاری: <strong>{{ {'full_time':'تمام‌وقت','part_time':'پاره‌وقت','contractor':'قراردادی'}.get(staff_user.employment_type, staff_user.employment_type) }}</strong> · تاریخ شروع: {{ jalali_str(staff_user.hire_date, with_time=False) if staff_user.hire_date else '—' }} · پایان: {{ jalali_str(staff_user.contract_end_date, with_time=False) if staff_user.contract_end_date else 'نامحدود' }}</p>
-  <h3>۳. حقوق و مزایا</h3>
-  <p>حقوق ماهانه توافق‌شده: <strong>{{ fmt(staff_user.salary_amount) }} تومان</strong>. روز پرداخت: {{ staff_user.salary_payment_day or 'توافقی' }}. برنامه کاری: {{ staff_user.work_schedule or 'طبق برنامه فروشگاه' }}.</p>
-  <h3>۴. تعهدات</h3>
-  <p>کارمند متعهد است وظایف محوله، محرمانگی اطلاعات مشتریان و موجودی فروشگاه، و دستورالعمل‌های عملیاتی را رعایت کند. جزئیات تکمیلی می‌تواند در یادداشت‌های پرسنلی ثبت شود.</p>
-  {% if staff_user.notes %}<p>یادداشت: {{ staff_user.notes }}</p>{% endif %}
-  <div class="document-signatures"><div>امضای کارمند<br>{{ staff_user.full_name or staff_user.username }}</div><div>امضای {{ owner_settings.get('owner_signatory_title', 'کارفرما') }}<br>{{ owner_settings.get('owner_full_name', '—') }}</div></div>
+<div class="document-actions"><a class="btn btn-ghost" href="/admin/staff/{{ staff_user.id }}">بازگشت به پرونده</a>{% if not missing %}<button type="button" class="btn btn-primary" onclick="window.print()">چاپ قرارداد (دو نسخه — یکی برای هر طرف)</button>{% endif %}</div>
+{% if missing %}
+<div class="card hire-narrow">
+  <div class="section-heading"><div><span class="eyebrow">قرارداد ناقص</span><h3>پیش از چاپ، این موارد را کامل کنید</h3></div></div>
+  <p class="muted">قراردادی که جای خالی دارد سند نیست؛ تا همه بندها پر نشود چاپ نمی‌شود.</p>
+  <ul>
+  {% for label, link in missing %}
+    <li><a href="{{ link }}">{{ label }}</a></li>
+  {% endfor %}
+  </ul>
 </div>
+{% else %}
+<div class="print-document">
+  <div class="print-document-header"><h1>{{ owner_settings.get('owner_business_name', store.name) }}</h1><h2>قرارداد کار {{ 'مدت معین' if staff_user.contract_end_date else 'غیرمعین (دائم)' }}</h2><div class="print-document-meta"><span>شماره قرارداد: {{ staff_user.employee_code or staff_user.id }}/{{ (jalali_str(staff_user.hire_date, with_time=False) or '')[:4] }}</span><span>تاریخ تنظیم: {{ jalali_str(staff_user.hire_date or staff_user.created_at, with_time=False) }}</span></div></div>
+  <h3>ماده ۱ — طرفین قرارداد</h3>
+  <p><strong>کارفرما:</strong> {{ owner_settings.get('owner_full_name', '') }} به نمایندگی از {{ owner_settings.get('owner_business_name', store.name) }}{% if owner_settings.get('owner_business_registration') %} به شماره ثبت {{ owner_settings.get('owner_business_registration') }}{% endif %} به نشانی {{ owner_settings.get('owner_address', '') }}{% if owner_settings.get('owner_phone') %}، تلفن {{ owner_settings.get('owner_phone') }}{% endif %}.</p>
+  <p><strong>کارگر:</strong> {{ employee_address }}، دارای کد ملی {{ staff_user.national_id }}{% if staff_user.birth_date %}، متولد {{ jalali_str(staff_user.birth_date, with_time=False) }}{% endif %}{% if staff_user.phone %}، تلفن {{ staff_user.phone }}{% endif %}، ساکن {{ staff_user.address }}.</p>
+  <h3>ماده ۲ — موضوع قرارداد و سمت</h3>
+  <p>موضوع این قرارداد، اشتغال کارگر نزد کارفرما با سمت <strong>{{ position_title or staff_user.job_title }}</strong> به صورت <strong>{{ {'full_time':'تمام‌وقت','part_time':'پاره‌وقت','contractor':'قراردادی'}.get(staff_user.employment_type, staff_user.employment_type) }}</strong> و انجام وظایف مرتبط با آن سمت طبق شرح وظایف و دستورالعمل‌های کارفرما است. محل انجام کار، نشانی کارفرما در ماده ۱ است مگر آنکه کتباً تغییر کند.</p>
+  <h3>ماده ۳ — مدت قرارداد و دوره آزمایشی</h3>
+  <p>شروع همکاری از تاریخ {{ jalali_str(staff_user.hire_date, with_time=False) }} است{% if staff_user.contract_end_date %} و پایان آن {{ jalali_str(staff_user.contract_end_date, with_time=False) }} می‌باشد{% else %} و قرارداد از نوع غیرمعین (دائم) است{% endif %}.</p>
+  <p>یک ماه نخست همکاری دوره آزمایشی است؛ در این مدت هر یک از طرفین می‌تواند بدون نیاز به ذکر دلیل و با اعلام کتبی، به همکاری پایان دهد و تسویه‌حساب روزهای کارکرد انجام می‌شود.</p>
+  <h3>ماده ۴ — حقوق و مزایا</h3>
+  <p>حقوق ماهانه توافق‌شده مبلغ <strong>{{ fmt(staff_user.salary_amount) }} تومان ({{ amount_to_words(staff_user.salary_amount) }} تومان)</strong> است که حداکثر تا روز {{ staff_user.salary_payment_day or 'توافقی' }} هر ماه پرداخت می‌شود. برنامه کاری: {{ staff_user.work_schedule or 'طبق برنامه اعلامی فروشگاه' }}.</p>
+  {% if staff_user.insured %}
+  <p>کارفرما متعهد است کارگر را از تاریخ شروع همکاری نزد سازمان تأمین اجتماعی بیمه نماید و حق‌بیمه سهم کارفرما را بپردازد.</p>
+  {% endif %}
+  <h3>ماده ۵ — تعهدات کارگر</h3>
+  <p>کارگر متعهد است وظایف محوله را با دقت و امانت انجام دهد، اطلاعات مشتریان، موجودی و امور داخلی فروشگاه را محرمانه نگه دارد، دستورالعمل‌های عملیاتی و انضباطی کارفرما را رعایت کند و از اموال و وجوه فروشگاه محافظت نماید.</p>
+  <h3>ماده ۶ — پایان همکاری و تسویه‌حساب</h3>
+  <p>هر یک از طرفین می‌تواند با اعلام کتبی حداقل یک ماه پیش‌تر به همکاری پایان دهد. کارگر موظف است پیش از خروج، امور محوله، کلیدها، اسناد و اموال در اختیار را تحویل دهد. تسویه‌حساب نهایی (حقوق روزهای کارکرد و مطالبات قانونی) حداکثر ظرف یک هفته پس از پایان همکاری انجام می‌شود.</p>
+  <h3>ماده ۷ — حل اختلاف</h3>
+  <p>هرگونه اختلاف ناشی از تفسیر یا اجرای این قرارداد نخست از طریق مذاکره مستقیم حل می‌شود و در صورت عدم توافق، مرجع صالح قانونی (هیأت‌های حل اختلاف اداره تعاون، کار و رفاه اجتماعی) رسیدگی خواهد کرد.</p>
+  <h3>ماده ۸ — نسخ قرارداد</h3>
+  <p>این قرارداد در دو نسخه هم‌ارزش تنظیم شد که یک نسخه نزد هر یک از طرفین باقی می‌ماند و هر دو نسخه حکم واحد را دارند.</p>
+  <div class="document-signatures"><div>نام و امضای کارمند<br><strong>{{ staff_user.full_name }}</strong><br><br>امضا: ....................<br>تاریخ: ....................</div><div>نام و امضای {{ owner_settings.get('owner_signatory_title', 'کارفرما') }}<br><strong>{{ owner_settings.get('owner_full_name', '') }}</strong><br><br>امضا: ....................<br>تاریخ: ....................</div></div>
+</div>
+{% endif %}
 {% endblock %}

@@ -52,7 +52,7 @@ def _clean_db(client, db_session):
     from models import (BusinessEvent, StaffUser, CheckReminder, CheckRecord, TagPrintBatchLine, TagPrintBatch, SaleCampaign, SaleItem, Sale, POSTransaction, CheckoutEvent, CheckoutSession, StockReservation, StockMovement, GeneratedImage,
                         SmsMessage, SmsTemplate, SmsDevice, BackgroundJob,
                         Referral, Customer, ProductVariant, Product, CampaignAssignment,
-                        Campaign, Settings, AdminLog, Payment, Expense, RecurringExpense, CashSessionEntry, Purchase, PurchaseItem, Supplier, Refund, RefundLine, PaymentReversal, FinancialEntry, SalaryPayment, SalaryPaymentItem, AttendanceRecord, CashSession, CashSessionEntry, SupplierPayment,
+                        Campaign, Settings, AdminLog, Payment, Expense, RecurringExpense, CashSessionEntry, Purchase, PurchaseItem, Supplier, Refund, RefundLine, PaymentReversal, FinancialEntry, SalaryPayment, SalaryPaymentItem, AttendanceRecord, JobPosition, CashSession, CashSessionEntry, SupplierPayment,
                         VariantImage, ProductImage)
     # The receipt stamp points variants at their purchase: null it before the
     # purchases go, or the foreign key refuses the cleanup itself.
@@ -68,7 +68,7 @@ def _clean_db(client, db_session):
     for model in (BusinessEvent, TagPrintBatchLine, TagPrintBatch, CheckoutEvent, StockReservation, CheckoutSession, CheckReminder, CheckRecord, RefundLine, FinancialEntry, PaymentReversal, Refund, SalaryPaymentItem, SalaryPayment, AttendanceRecord, CampaignAssignment, SaleCampaign, SaleItem, StockMovement, POSTransaction, Payment, Sale, GeneratedImage,
                   SmsMessage, SmsTemplate, SmsDevice, BackgroundJob,
                   Referral, SupplierPayment, PurchaseItem, Purchase, VariantImage, ProductImage, ProductVariant, Product, Expense, RecurringExpense,
-                  Campaign, CashSessionEntry, CashSession, AdminLog, StaffUser, Settings, Customer):
+                  Campaign, CashSessionEntry, CashSession, AdminLog, StaffUser, JobPosition, Settings, Customer):
         db_session.query(model).delete()
     db_session.commit()
     db_session.expire_all()  # drop stale identity-map entries

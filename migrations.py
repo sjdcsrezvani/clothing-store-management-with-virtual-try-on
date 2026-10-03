@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 31
+MIGRATION_VERSION = 32
 
 
 def migration_status(engine) -> int:
@@ -238,6 +238,23 @@ def _rebuild_sms_messages(conn) -> None:
 
 
 def _apply_revision(conn, version: int) -> None:
+    if version == 32:
+        # Contract-grade identity: gender, insurance flag and a company
+        # position per staff, plus the positions directory itself. All NULL /
+        # empty to start — existing staff read exactly as before.
+        _add_column_if_missing(conn, "staff_users", "gender", "VARCHAR(10)")
+        _add_column_if_missing(conn, "staff_users", "insured", "BOOLEAN")
+        _add_column_if_missing(conn, "staff_users", "position_id", "INTEGER")
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS job_positions (
+                id INTEGER PRIMARY KEY,
+                title VARCHAR(100) NOT NULL UNIQUE,
+                is_active BOOLEAN NOT NULL DEFAULT 1,
+                created_at DATETIME NOT NULL
+            )
+        """))
+        return
+
     if version == 31:
         # Per-invoice discount ceilings per person. NULL everywhere to start,
         # which the helper reads as "follow the role default" — purely
