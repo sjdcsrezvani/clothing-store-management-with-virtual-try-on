@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+{% set page_description %}
+حساب ورود و پرونده پرسنلی کارمند جدید را یکجا ثبت کنید.
+{% endset %}
+{% set page_actions %}
+<a class="btn btn-ghost" href="/admin/staff">بازگشت به فهرست کارکنان</a>
+{% endset %}
+{% include 'partials/page_header.html' %}
+<div class="card">
+  <div class="section-heading"><div><span class="eyebrow">استخدام</span><h3>افزودن کارمند و حساب ورود</h3></div></div>
+  <form method="post" action="/admin/staff" class="form-row">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>نام کاربری<input name="username" autocomplete="username" required></label>
+    <label>رمز عبور<input name="password" type="password" minlength="6" autocomplete="new-password" required></label>
+    <label>نقش<select name="role"><option value="cashier">صندوقدار</option><option value="manager">مدیر</option><option value="owner">مالک</option></select></label>
+    <h4 class="form-span-2 muted">مشخصات فردی</h4>
+    <label>نام و نام خانوادگی<input name="full_name"></label>
+    <label>کد پرسنلی<input name="employee_code"></label>
+    <label>کد ملی<input name="national_id" inputmode="numeric"></label>
+    <label>تلفن<input name="phone" inputmode="tel"></label>
+    <label>ایمیل<input name="email" type="email"></label>
+    <label>عنوان شغلی<input name="job_title"></label>
+    <h4 class="form-span-2 muted">همکاری و حقوق</h4>
+    <label>نوع همکاری<select name="employment_type"><option value="full_time">تمام‌وقت</option><option value="part_time">پاره‌وقت</option><option value="contractor">قراردادی</option></select></label>
+    {% from 'partials/numeric_input.html' import num with context %}
+    <label>حقوق ماهانه (تومان){{ num('salary_amount', 0) }}</label>
+    <label>روز پرداخت ماهانه{{ num('salary_payment_day', '') }}</label>
+    <label>تاریخ شروع<input class="persian-date-input" name="hire_date" placeholder="۱۴۰۵/۰۱/۰۱"></label>
+    <label>پایان قرارداد<input class="persian-date-input" name="contract_end_date" placeholder="۱۴۰۵/۱۲/۲۹"></label>
+    <label>تاریخ تولد<input class="persian-date-input" name="birth_date" placeholder="۱۳۷۰/۰۱/۰۱"></label>
+    <label>تحصیلات<input name="education"></label>
+    <label>برنامه کاری<input name="work_schedule"></label>
+    <label>حساب بانکی<input name="bank_account" dir="ltr"></label>
+    <h4 class="form-span-2 muted">بانکی و تماس</h4>
+    <label>شبا<input name="iban" dir="ltr"></label>
+    <label>مخاطب اضطراری<input name="emergency_contact"></label>
+    <label class="form-span-2">نشانی<textarea name="address" rows="2"></textarea></label>
+    <label class="form-span-2">یادداشت<textarea name="notes" rows="2"></textarea></label>
+    <button class="btn btn-primary" type="submit">ثبت کارمند</button>
+  </form>
+</div>
+{% endblock %}

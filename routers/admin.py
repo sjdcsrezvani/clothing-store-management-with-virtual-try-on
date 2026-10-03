@@ -795,14 +795,25 @@ def _staff_profile_data(form):
     }
 
 
+# The staff list's sort keys, with each key's own default direction. Names
+# ascend, money descends — the same rule the ledger lists follow.
+STAFF_SORTS = {"newest": "desc", "name": "asc", "salary": "desc"}
+
+
 @router.get("/staff", response_class=HTMLResponse)
-async def admin_staff(request: Request, q: str = "", status: str = "all", db: Session = Depends(get_db)):
+async def admin_staff(request: Request, q: str = "", status: str = "all", page: str = "1",
+                      per_page: str = "10", sort: str = "newest", dir: str = "desc",
+                      db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "owner")
     if not hasattr(guard, "role"):
         return guard
+    from urllib.parse import urlencode
     search = (q or "").strip()
     status_filter = status if status in {"active", "inactive"} else "all"
-    query = db.query(StaffUser).order_by(StaffUser.created_at.desc())
+    page_int = page_arg(page)
+    per_page_int = int(per_page) if str(per_page).isdigit() and int(per_page) in (10, 25, 50) else 10
+    sort_key, sort_dir = parse_sort(request.query_params, STAFF_SORTS, "newest")
+    query = db.query(StaffUser)
     if search:
         like = f"%{search}%"
         query = query.filter(or_(
@@ -814,14 +825,85 @@ async def admin_staff(request: Request, q: str = "", status: str = "all", db: Se
         query = query.filter(StaffUser.is_active == True)  # noqa: E712
     elif status_filter == "inactive":
         query = query.filter(StaffUser.is_active == False)  # noqa: E712
-    staff_users = query.all()
+    if sort_key == "name":
+        query = query.order_by(
+            func.coalesce(StaffUser.full_name, StaffUser.username).asc()
+            if sort_dir == "asc" else
+            func.coalesce(StaffUser.full_name, StaffUser.username).desc())
+    elif sort_key == "salary":
+        query = query.order_by(
+            StaffUser.salary_amount.desc() if sort_dir == "desc" else StaffUser.salary_amount.asc())
+    else:
+        query = query.order_by(StaffUser.created_at.desc())
+    query = query.order_by(StaffUser.id.desc()) if sort_key != "newest" else query
+    total_count = query.count()
+    total_pages = max(1, -(-total_count // per_page_int))
+    page_int = min(page_int, total_pages)
+    staff_users = query.offset((page_int - 1) * per_page_int).limit(per_page_int).all()
+    base_qs = urlencode({
+        **({"q": search} if search else {}),
+        **({"status": status_filter} if status_filter != "all" else {}),
+        "per_page": per_page_int,
+    })
     return templates.TemplateResponse(request, "admin/staff.html", {
         "staff_users": staff_users,
         "owner_settings": {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()},
         "current_period": current_period_key(),
         "search": search,
         "status_filter": status_filter,
-        "has_filters": bool(search or status_filter != "all"),
+        "has_filters": bool(search or status_filter != "all" or sort_key != "newest"
+                            or sort_dir != STAFF_SORTS[sort_key] or per_page_int != 10),
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
+        "fmt": fmt,
+        "jalali_str": jalali_str,
+        "page": page_int,
+        "per_page": per_page_int,
+        "per_page_options": (10, 25, 50),
+        "total_count": total_count,
+        "total_pages": total_pages,
+        "sort_key": sort_key,
+        "sort_dir": sort_dir,
+        "base_qs": base_qs,
+        # The staff forms paint their bounds from the same table the POSTs
+        # validate against.
+        "numeric_rules": STAFF_NUMERIC_RULES,
+    })
+
+
+@router.get("/staff/new", response_class=HTMLResponse)
+async def admin_staff_new(request: Request, db: Session = Depends(get_db)):
+    """The full hire form on its own page — the list stays a list."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    return templates.TemplateResponse(request, "admin/staff_new.html", {
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
+        "fmt": fmt,
+        # The staff forms paint their bounds from the same table the POSTs
+        # validate against.
+        "numeric_rules": STAFF_NUMERIC_RULES,
+    })
+
+
+@router.get("/staff/{staff_id}", response_class=HTMLResponse)
+async def admin_staff_profile(staff_id: int, request: Request, tab: str = "overview",
+                              db: Session = Depends(get_db)):
+    """One person's whole file: header, tabbed edit/permissions/payroll."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    staff_user = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
+    if not staff_user:
+        raise HTTPException(status_code=404, detail="کارمند یافت نشد")
+    active_tab = tab if tab in {"overview", "permissions", "payroll"} else "overview"
+    return templates.TemplateResponse(request, "admin/staff_profile.html", {
+        "staff_user": staff_user,
+        "active_tab": active_tab,
+        "is_self": staff_user.id == guard.id,
+        "owner_settings": {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()},
+        "current_period": current_period_key(),
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
         "fmt": fmt,
@@ -842,18 +924,18 @@ async def admin_staff_create(request: Request, db: Session = Depends(get_db)):
     password = str(form.get("password", ""))
     role = str(form.get("role", "cashier")).strip()
     if not username or len(password) < 6 or role not in {"cashier", "manager", "owner"}:
-        return RedirectResponse(url="/admin/staff?err=اطلاعات ورود کاربر نامعتبر است.", status_code=303)
+        return RedirectResponse(url="/admin/staff/new?err=اطلاعات ورود کاربر نامعتبر است.", status_code=303)
     if db.query(StaffUser).filter(StaffUser.username == username).first():
-        return RedirectResponse(url="/admin/staff?err=نام کاربری تکراری است.", status_code=303)
+        return RedirectResponse(url="/admin/staff/new?err=نام کاربری تکراری است.", status_code=303)
     try:
         profile = _staff_profile_data(form)
     except ValueError as error:
-        return RedirectResponse(url=f"/admin/staff?err={error}", status_code=303)
+        return RedirectResponse(url=f"/admin/staff/new?err={error}", status_code=303)
     user = StaffUser(username=username, password_hash=hash_password(password), role=role, **profile)
     db.add(user)
     db.commit()
     log_action(db, "staff_create", f"ایجاد کاربر {username}", request=request, target_type="staff_user", target_id=user.id, after={"username": username, "role": role, "full_name": user.full_name, "salary_amount": user.salary_amount})
-    return RedirectResponse(url="/admin/staff?msg=کاربر و اطلاعات پرسنلی ثبت شد.", status_code=303)
+    return RedirectResponse(url=f"/admin/staff/{user.id}?msg=کاربر و اطلاعات پرسنلی ثبت شد.", status_code=303)
 
 
 @router.post("/staff/{staff_id}", response_class=HTMLResponse)
@@ -867,31 +949,35 @@ async def admin_staff_update(staff_id: int, request: Request, db: Session = Depe
     form = await request.form()
     role = str(form.get("role", user.role)).strip()
     if role not in {"cashier", "manager", "owner"}:
-        return RedirectResponse(url="/admin/staff?err=نقش کاربر نامعتبر است.", status_code=303)
+        return RedirectResponse(url=f"/admin/staff/{user.id}?tab=permissions&err=نقش کاربر نامعتبر است.", status_code=303)
     if user.role == "owner" and role != "owner":
         if user.id == guard.id:
-            return RedirectResponse(url="/admin/staff?err=نمی‌توانید نقش خودتان را از مالک تغییر دهید.", status_code=303)
+            return RedirectResponse(url=f"/admin/staff/{user.id}?tab=permissions&err=نمی‌توانید نقش خودتان را از مالک تغییر دهید.", status_code=303)
         remaining_owners = db.query(StaffUser).filter(
             StaffUser.role == "owner", StaffUser.is_active == True,  # noqa: E712
             StaffUser.id != user.id).count()
         if remaining_owners == 0:
-            return RedirectResponse(url="/admin/staff?err=نمی‌توانید نقش آخرین مالک فعال را تغییر دهید.", status_code=303)
+            return RedirectResponse(url=f"/admin/staff/{user.id}?tab=permissions&err=نمی‌توانید نقش آخرین مالک فعال را تغییر دهید.", status_code=303)
     try:
         profile = _staff_profile_data(form)
     except ValueError as error:
-        return RedirectResponse(url=f"/admin/staff?err={error}", status_code=303)
+        return RedirectResponse(url=f"/admin/staff/{user.id}?tab=overview&err={error}", status_code=303)
     before = {"role": user.role, "full_name": user.full_name, "salary_amount": user.salary_amount, "is_active": user.is_active}
     user.role = role
+    # A partial form (the permissions tab posts only the role) must not wipe
+    # the fields it omits: merge what arrived, leave the rest standing.
+    posted = set(form.keys())
     for key, value in profile.items():
-        setattr(user, key, value)
+        if key in posted:
+            setattr(user, key, value)
     password = str(form.get("password", ""))
     if password:
         if len(password) < 6:
-            return RedirectResponse(url="/admin/staff?err=رمز عبور باید حداقل ۶ کاراکتر باشد.", status_code=303)
+            return RedirectResponse(url=f"/admin/staff/{user.id}?tab=overview&err=رمز عبور باید حداقل ۶ کاراکتر باشد.", status_code=303)
         user.password_hash = hash_password(password)
     db.commit()
     log_action(db, "staff_update", f"ویرایش کاربر {user.username}", request=request, target_type="staff_user", target_id=user.id, before=before, after={"role": user.role, "full_name": user.full_name, "salary_amount": user.salary_amount, "is_active": user.is_active})
-    return RedirectResponse(url="/admin/staff?msg=اطلاعات کارمند ذخیره شد.", status_code=303)
+    return RedirectResponse(url=f"/admin/staff/{user.id}?msg=اطلاعات کارمند ذخیره شد.", status_code=303)
 
 
 @router.post("/staff/{staff_id}/salary", response_class=HTMLResponse)
@@ -906,7 +992,7 @@ async def admin_staff_salary(staff_id: int, request: Request, db: Session = Depe
     try:
         period = normalize_period_key(str(form.get("period_key", "")))
     except ValueError as error:
-        return RedirectResponse(url=f"/admin/staff?err={error}", status_code=303)
+        return RedirectResponse(url=f"/admin/staff/{user.id}?tab=payroll&err={error}", status_code=303)
     existing = db.query(SalaryPayment).filter(
         SalaryPayment.staff_user_id == user.id,
         SalaryPayment.period_key == period).first()
@@ -926,7 +1012,7 @@ async def admin_staff_salary(staff_id: int, request: Request, db: Session = Depe
         db.commit()
     except ValueError as error:
         db.rollback()
-        return RedirectResponse(url=f"/admin/staff?err={error}", status_code=303)
+        return RedirectResponse(url=f"/admin/staff/{user.id}?tab=payroll&err={error}", status_code=303)
     except IntegrityError:
         # A race for the same staff and month: the record already exists, so
         # land on its receipt instead of erroring.
@@ -935,7 +1021,7 @@ async def admin_staff_salary(staff_id: int, request: Request, db: Session = Depe
             SalaryPayment.staff_user_id == user.id,
             SalaryPayment.period_key == period).first()
         if existing is None:
-            return RedirectResponse(url="/admin/staff?err=حقوق این کارمند برای این ماه قبلاً ثبت شده است.", status_code=303)
+            return RedirectResponse(url=f"/admin/staff/{user.id}?tab=payroll&err=حقوق این کارمند برای این ماه قبلاً ثبت شده است.", status_code=303)
         return RedirectResponse(url=f"/admin/payroll/{existing.id}/receipt?msg=پرداخت حقوق قبلاً ثبت شده بود.", status_code=303)
     log_action(db, "salary_payment", f"پرداخت حقوق {user.username} برای {payment.period_key}", request=request, target_type="salary_payment", target_id=payment.id, after={"net_amount": payment.net_amount, "expense_id": payment.expense_id})
     return RedirectResponse(url=f"/admin/payroll/{payment.id}/receipt?msg=پرداخت حقوق ثبت شد.", status_code=303)
@@ -1019,14 +1105,14 @@ async def admin_staff_disable(staff_id: int, request: Request, db: Session = Dep
     if not user:
         raise HTTPException(status_code=404, detail="کاربر یافت نشد")
     if user.id == guard.id:
-        return RedirectResponse(url="/admin/staff?err=نمی‌توانید دسترسی خودتان را ببندید.", status_code=303)
+        return RedirectResponse(url=f"/admin/staff/{user.id}?err=نمی‌توانید دسترسی خودتان را ببندید.", status_code=303)
     if user.username == "owner":
-        return RedirectResponse(url="/admin/staff?err=کاربر مالک اصلی را نمی‌توان غیرفعال کرد.", status_code=303)
+        return RedirectResponse(url=f"/admin/staff/{user.id}?err=کاربر مالک اصلی را نمی‌توان غیرفعال کرد.", status_code=303)
     before = {"is_active": user.is_active}
     user.is_active = False
     db.commit()
     log_action(db, "staff_disable", f"غیرفعال‌سازی کاربر {user.username}", request=request, target_type="staff_user", target_id=user.id, before=before, after={"is_active": False})
-    return RedirectResponse(url="/admin/staff?msg=کاربر غیرفعال شد.", status_code=303)
+    return RedirectResponse(url=f"/admin/staff/{user.id}?msg=کاربر غیرفعال شد.", status_code=303)
 
 
 @router.post("/staff/{staff_id}/enable", response_class=HTMLResponse)
@@ -1041,7 +1127,7 @@ async def admin_staff_enable(staff_id: int, request: Request, db: Session = Depe
     user.is_active = True
     db.commit()
     log_action(db, "staff_enable", f"فعال‌سازی کاربر {user.username}", request=request, target_type="staff_user", target_id=user.id, before=before, after={"is_active": True})
-    return RedirectResponse(url="/admin/staff?msg=کاربر فعال شد.", status_code=303)
+    return RedirectResponse(url=f"/admin/staff/{user.id}?msg=کاربر فعال شد.", status_code=303)
 
 
 # Every numeric field the settings form posts, with the bounds the server

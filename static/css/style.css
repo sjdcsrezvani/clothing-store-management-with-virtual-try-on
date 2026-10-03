@@ -1687,6 +1687,12 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 .staff-record-body { padding: 1rem; border-top: 1px solid var(--rule); }
 .form-span-2 { grid-column: 1 / -1; }
 .staff-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.9rem; }
+/* Inactive staff read at full contrast: only the row wash dims, the words
+   never do — status rides on the explicit badge, not on brightness. */
+.staff-row-inactive > td { background: var(--surface-soft); }
+.staff-profile-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem; margin-bottom: 1rem; }
+.staff-profile-head h3 { margin: 0; }
+.role-matrix td:first-child, .role-matrix th:first-child { text-align: start; }
 .salary-box { margin-top: 1rem; padding: 1rem; border: 1px solid color-mix(in srgb, var(--mint) 35%, var(--rule)); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--mint) 5%, var(--card)); }
 .salary-box h4 { margin-bottom: 0.7rem; }
 .print-document { max-width: 820px; margin: 1.5rem auto; background: var(--card); padding: 2rem; box-shadow: var(--shadow-hover); border-radius: var(--radius); }

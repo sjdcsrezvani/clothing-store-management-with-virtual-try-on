@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block content %}
+{% set role_labels = {'cashier': 'صندوقدار', 'manager': 'مدیر', 'owner': 'مالک'} %}
+{% set page_description %}
+پرونده کامل {{ staff_user.full_name or staff_user.username }}
+{% endset %}
+{% set page_actions %}
+<a class="btn btn-ghost" href="/admin/staff">بازگشت به فهرست کارکنان</a>
+<a class="btn btn-ghost" href="/admin/staff/{{ staff_user.id }}/contract" target="_blank" rel="noopener">چاپ قرارداد</a>
+{% endset %}
+{% include 'partials/page_header.html' %}
+<div class="card">
+  <div class="staff-profile-head">
+    <h3>{{ staff_user.full_name or staff_user.username }}</h3>
+    {% if staff_user.role == 'owner' %}<span class="badge badge-warning">مالک</span>{% elif staff_user.role == 'manager' %}<span class="badge badge-info">مدیر</span>{% else %}<span class="badge badge-none">صندوقدار</span>{% endif %}
+    {% if staff_user.is_active %}<span class="badge badge-available">فعال</span>{% else %}<span class="badge badge-none">غیرفعال</span>{% endif %}
+    <span class="muted">{{ staff_user.phone or 'بدون تلفن' }} · {{ fmt(staff_user.salary_amount) }} تومان</span>
+  </div>
+  <div class="view-toggle" role="group" aria-label="بخش‌های پرونده">
+    <a class="btn btn-sm {% if active_tab == 'overview' %}btn-primary{% else %}btn-ghost{% endif %}" {% if active_tab == 'overview' %}aria-current="page"{% endif %} href="/admin/staff/{{ staff_user.id }}?tab=overview">مشخصات</a>
+    <a class="btn btn-sm {% if active_tab == 'permissions' %}btn-primary{% else %}btn-ghost{% endif %}" {% if active_tab == 'permissions' %}aria-current="page"{% endif %} href="/admin/staff/{{ staff_user.id }}?tab=permissions">دسترسی</a>
+    <a class="btn btn-sm {% if active_tab == 'payroll' %}btn-primary{% else %}btn-ghost{% endif %}" {% if active_tab == 'payroll' %}aria-current="page"{% endif %} href="/admin/staff/{{ staff_user.id }}?tab=payroll">حقوق</a>
+  </div>
+</div>
+
+{% if active_tab == 'overview' %}
+<div class="card">
+  <div class="section-heading"><div><span class="eyebrow">مشخصات</span><h3>اطلاعات پرسنلی</h3></div></div>
+  <form method="post" action="/admin/staff/{{ staff_user.id }}" class="form-row">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="role" value="{{ staff_user.role }}">
+    <h4 class="form-span-2 muted">حساب ورود</h4>
+    <label>نام کاربری<input value="{{ staff_user.username }}" disabled></label>
+    <label>رمز جدید<input name="password" type="password" minlength="6" autocomplete="new-password" placeholder="بدون تغییر"></label>
+    <h4 class="form-span-2 muted">مشخصات فردی</h4>
+    <label>نام کامل<input name="full_name" value="{{ staff_user.full_name or '' }}"></label>
+    <label>کد پرسنلی<input name="employee_code" value="{{ staff_user.employee_code or '' }}"></label>
+    <label>کد ملی<input name="national_id" value="{{ staff_user.national_id or '' }}" inputmode="numeric"></label>
+    <label>تلفن<input name="phone" value="{{ staff_user.phone or '' }}" inputmode="tel"></label>
+    <label>ایمیل<input name="email" type="email" value="{{ staff_user.email or '' }}"></label>
+    <label>عنوان شغلی<input name="job_title" value="{{ staff_user.job_title or '' }}"></label>
+    <h4 class="form-span-2 muted">همکاری و حقوق</h4>
+    <label>نوع همکاری<select name="employment_type"><option value="full_time" {% if staff_user.employment_type == 'full_time' %}selected{% endif %}>تمام‌وقت</option><option value="part_time" {% if staff_user.employment_type == 'part_time' %}selected{% endif %}>پاره‌وقت</option><option value="contractor" {% if staff_user.employment_type == 'contractor' %}selected{% endif %}>قراردادی</option></select></label>
+    {% from 'partials/numeric_input.html' import num with context %}
+    <label>حقوق ماهانه (تومان){{ num('salary_amount', staff_user.salary_amount or 0) }}</label>
+    <label>روز پرداخت ماهانه{{ num('salary_payment_day', staff_user.salary_payment_day or '') }}</label>
+    <label>تاریخ شروع<input class="persian-date-input" id="hire_date_{{ staff_user.id }}" name="hire_date" data-pdp-pair="#contract_end_date_{{ staff_user.id }}" placeholder="۱۴۰۵/۰۱/۰۱" value="{{ jalali_str(staff_user.hire_date, with_time=False) if staff_user.hire_date else '' }}"></label>
+    <label>پایان قرارداد<input class="persian-date-input" id="contract_end_date_{{ staff_user.id }}" name="contract_end_date" placeholder="۱۴۰۵/۱۲/۲۹" value="{{ jalali_str(staff_user.contract_end_date, with_time=False) if staff_user.contract_end_date else '' }}"></label>
+    <label>تاریخ تولد<input class="persian-date-input" name="birth_date" placeholder="۱۳۷۰/۰۱/۰۱" value="{{ jalali_str(staff_user.birth_date, with_time=False) if staff_user.birth_date else '' }}"></label>
+    <label>تحصیلات<input name="education" value="{{ staff_user.education or '' }}"></label>
+    <label>برنامه کاری<input name="work_schedule" value="{{ staff_user.work_schedule or '' }}"></label>
+    <label>حساب بانکی<input name="bank_account" value="{{ staff_user.bank_account or '' }}" dir="ltr"></label>
+    <h4 class="form-span-2 muted">بانکی و تماس</h4>
+    <label>شبا<input name="iban" value="{{ staff_user.iban or '' }}" dir="ltr"></label>
+    <label>مخاطب اضطراری<input name="emergency_contact" value="{{ staff_user.emergency_contact or '' }}"></label>
+    <label class="form-span-2">نشانی<textarea name="address" rows="2">{{ staff_user.address or '' }}</textarea></label>
+    <label class="form-span-2">یادداشت<textarea name="notes" rows="2">{{ staff_user.notes or '' }}</textarea></label>
+    <button class="btn btn-primary" type="submit">ذخیره اطلاعات</button>
+  </form>
+  <div class="staff-actions">
+    {% if staff_user.is_active and staff_user.username != 'owner' %}<form method="post" action="/admin/staff/{{ staff_user.id }}/disable" data-confirm="ورود {{ staff_user.full_name or staff_user.username }} بسته می‌شود. ادامه؟" data-confirm-title="بستن دسترسی؟" data-confirm-ok="بستن دسترسی"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-danger" type="submit">غیرفعال‌کردن دسترسی</button></form>{% endif %}
+    {% if not staff_user.is_active %}<form method="post" action="/admin/staff/{{ staff_user.id }}/enable"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-success" type="submit">فعال‌سازی مجدد دسترسی</button></form>{% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% if active_tab == 'permissions' %}
+<div class="card">
+  <div class="section-heading"><div><span class="eyebrow">دسترسی</span><h3>نقش کاربر</h3></div></div>
+  <form method="post" action="/admin/staff/{{ staff_user.id }}" class="form-row">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>نقش<select name="role"><option value="cashier" {% if staff_user.role == 'cashier' %}selected{% endif %}>صندوقدار — فروش روزانه</option><option value="manager" {% if staff_user.role == 'manager' %}selected{% endif %}>مدیر — عملیات فروشگاه</option><option value="owner" {% if staff_user.role == 'owner' %}selected{% endif %}>مالک — همه‌چیز</option></select></label>
+    <button class="btn btn-primary" type="submit">ذخیره نقش</button>
+  </form>
+</div>
+<div class="card">
+  <div class="section-heading"><div><span class="eyebrow">سطح دسترسی</span><h3>هر نقش چه کارهایی می‌تواند بکند</h3></div></div>
+  {% include 'partials/role_matrix.html' %}
+</div>
+{% endif %}
+
+{% if active_tab == 'payroll' %}
+{% if staff_user.is_active and staff_user.salary_amount > 0 %}
+<div class="card salary-box">
+  <h4>ثبت پرداخت حقوق</h4>
+  <form method="post" action="/admin/staff/{{ staff_user.id }}/salary" class="form-row" data-confirm="پرداخت حقوق ثبت و سند هزینه ماهانه ساخته می‌شود. ادامه؟" data-confirm-title="ثبت حقوق؟" data-confirm-ok="ثبت حقوق">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>ماه پرداخت (شمسی)<input name="period_key" value="{{ current_period }}" placeholder="۱۴۰۵-۰۶" dir="ltr" required><small class="field-help">ماه شمسی؛ مثل ۱۴۰۵-۰۶</small></label>
+    {% from 'partials/numeric_input.html' import num with context %}
+    <label>کسورات (تومان){{ num('deductions', 0) }}</label>
+    <label>روش پرداخت<select name="payment_method"><option value="cash">نقدی</option><option value="card">کارت</option></select></label>
+    <label>توضیح<input name="note"></label>
+    <button class="btn btn-success" type="submit">ثبت حقوق و چاپ رسید</button>
+  </form>
+</div>
+{% else %}
+<div class="card"><p class="muted">{% if not staff_user.is_active %}کارمند غیرفعال است؛ برای ثبت حقوق ابتدا دسترسی را فعال کنید.{% else %}حقوق ماهانه صفر است؛ مبلغ را در بخش مشخصات ثبت کنید تا پرداخت فعال شود.{% endif %}</p></div>
+{% endif %}
+{% if staff_user.salary_payments %}
+<div class="card">
+  <div class="section-heading"><div><span class="eyebrow">حقوق</span><h3>پرداخت‌های ثبت‌شده</h3></div><span class="appearance-active">{{ staff_user.salary_payments|length }} مورد</span></div>
+  <div class="table-scroll"><table class="data-table"><thead><tr><th scope="col">ماه</th><th scope="col">ناخالص (تومان)</th><th scope="col">کسورات (تومان)</th><th scope="col">خالص (تومان)</th><th scope="col">تاریخ</th><th scope="col">رسید</th></tr></thead><tbody>{% for payment in staff_user.salary_payments[:12] %}<tr><td>{{ payment.period_key }}</td><td>{{ fmt(payment.gross_amount) }}</td><td>{{ fmt(payment.deductions) }}</td><td>{{ fmt(payment.net_amount) }}</td><td>{{ jalali_str(payment.paid_at) }}</td><td><a class="btn btn-sm btn-ghost" href="/admin/payroll/{{ payment.id }}/receipt" target="_blank" aria-label="چاپ رسید حقوق ماه {{ payment.period_key }}">چاپ</a></td></tr>{% endfor %}</tbody></table></div>
+</div>
+{% else %}
+<div class="card"><p class="muted">هنوز حقوقی برای این کارمند ثبت نشده است.</p></div>
+{% endif %}
+{% endif %}
+
+{# One confirm surface for the profile: disable-access and the monthly salary
+   post carry their sentence in data-confirm; without JS every form posts
+   directly. Same surface shape as the SMS manager page. #}
+<div id="staff-confirm" data-dialog role="alertdialog" aria-modal="true"
+     aria-labelledby="staff-confirm-title" class="confirm-scrim" tabindex="-1">
+  <div class="t-modal-card confirm-card" role="document">
+    <h3 id="staff-confirm-title">مطمئن هستید؟</h3>
+    <p class="muted" id="staff-confirm-text"></p>
+    <div class="confirm-actions">
+      <button type="button" class="btn btn-danger" id="staff-confirm-yes">تأیید</button>
+      <button type="button" class="btn btn-ghost" data-dialog-close>انصراف</button>
+    </div>
+  </div>
+</div>
+<script>
+// Submit gate, bound once per document. form.submit() skips the submit
+// listener, so confirming never loops back into the dialog.
+(function () {
+    var pendingForm = null;
+    document.addEventListener('submit', function (event) {
+        var form = event.target.closest ? event.target.closest('form[data-confirm]') : null;
+        if (!form || form === pendingForm) return;
+        if (!window.RaykidDialog) return; // no helper, no gate: post directly
+        event.preventDefault();
+        pendingForm = form;
+        document.getElementById('staff-confirm-text').textContent =
+            form.getAttribute('data-confirm');
+        document.getElementById('staff-confirm-title').textContent =
+            form.getAttribute('data-confirm-title') || 'مطمئن هستید؟';
+        document.getElementById('staff-confirm-yes').textContent =
+            form.getAttribute('data-confirm-ok') || 'تأیید';
+        window.RaykidDialog.open('staff-confirm', document.activeElement);
+    });
+    document.getElementById('staff-confirm-yes').addEventListener('click', function () {
+        var form = pendingForm;
+        pendingForm = null;
+        window.RaykidDialog.close('staff-confirm');
+        if (form) form.submit();
+    });
+    document.getElementById('staff-confirm').addEventListener('click', function (event) {
+        if (event.target.closest('[data-dialog-close]')) pendingForm = null;
+    });
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') pendingForm = null;
+    });
+})();
+</script>
+{% endblock %}
