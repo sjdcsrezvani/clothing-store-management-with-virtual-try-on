@@ -91,6 +91,7 @@ from services.security import (
     role_allows,
     effective_cap,
     require_cap,
+    ROLE_DISCOUNT_LIMITS,
 )
 from services.store import invalidate_store_cache, get_store
 from services.sorting import parse_sort
@@ -826,6 +827,21 @@ def _staff_amount(value: str, default: int = 0, field: str = "مبلغ") -> int:
         raise ValueError(f"{field} معتبر نیست.")
 
 
+def _staff_limit(form, field: str, label: str):
+    """An optional per-person ceiling: blank means NULL (follow the role
+    default), otherwise a non-negative integer."""
+    text = to_english_digits(str(form.get(field, "") or "").replace(",", "").strip())
+    if not text:
+        return None
+    try:
+        value = int(text)
+    except (TypeError, ValueError):
+        raise ValueError(f"{label} معتبر نیست.")
+    if value < 0:
+        raise ValueError(f"{label} نمی‌تواند منفی باشد.")
+    return value
+
+
 def _check_national_id(code: str) -> str | None:
     """Validate an Iranian national ID (کد ملی), checksum included. Empty stays
     empty — the field is optional; a filled one must be real."""
@@ -1148,11 +1164,29 @@ async def admin_staff_profile(staff_id: int, request: Request, tab: str = "overv
                 break
     except Exception:  # noqa: BLE001 — performance is garnish, never a blocker
         pass
-    # The person's paper trail: every admin-log entry aimed at them.
-    timeline = db.query(AdminLog).filter(
+    # The person's paper trail: every admin-log entry aimed at them, with an
+    # optional contract-and-pay lens. Unknown kinds degrade to the full feed.
+    history_kind = str(request.query_params.get("kind", "") or "").strip()
+    timeline_query = db.query(AdminLog).filter(
         AdminLog.target_type == "staff_user",
-        AdminLog.target_id == staff_user.id).order_by(
-        AdminLog.id.desc()).limit(30).all()
+        AdminLog.target_id == staff_user.id)
+    if history_kind == "contract":
+        timeline_query = timeline_query.filter(AdminLog.action.in_(
+            ("staff_update", "staff_caps", "salary_void", "attendance_mark")))
+        # Salary payments aim at the payment row, not the person — pull this
+        # person's own pay events in and merge chronologically.
+        staff_payment_ids = [row[0] for row in db.query(SalaryPayment.id).filter(
+            SalaryPayment.staff_user_id == staff_user.id).all()]
+        pay_events = db.query(AdminLog).filter(
+            AdminLog.target_type == "salary_payment",
+            AdminLog.target_id.in_(staff_payment_ids)).order_by(
+            AdminLog.id.desc()).limit(30).all() if staff_payment_ids else []
+        timeline = sorted(list(timeline_query.order_by(
+            AdminLog.id.desc()).limit(30).all()) + pay_events,
+            key=lambda entry: entry.id, reverse=True)[:30]
+    else:
+        history_kind = "all"
+        timeline = timeline_query.order_by(AdminLog.id.desc()).limit(30).all()
     return templates.TemplateResponse(request, "admin/staff_profile.html", {
         "staff_user": staff_user,
         "active_tab": active_tab,
@@ -1160,6 +1194,8 @@ async def admin_staff_profile(staff_id: int, request: Request, tab: str = "overv
         # What each switch currently answers, after role defaults and the
         # owner bypass — the toggles paint from the same answer enforcement reads.
         "staff_caps": {field: effective_cap(staff_user, field) for field in CAP_FIELDS},
+        # The ceilings the limit inputs narrow: one source, painted and enforced.
+        "role_discount_limits": ROLE_DISCOUNT_LIMITS.get(staff_user.role or "", {}),
         "open_shift": open_shift,
         "unpaid_month": current if unpaid_month else "",
         "year_totals": dict(sorted(year_totals.items(), reverse=True)),
@@ -1174,6 +1210,7 @@ async def admin_staff_profile(staff_id: int, request: Request, tab: str = "overv
         "sick_used": leave_used["sick_leave"],
         "performance": performance,
         "timeline": timeline,
+        "history_kind": history_kind,
         "today_jalali": jalali_str(datetime.now(timezone.utc), False),
         "owner_settings": {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()},
         "current_period": current_period_key(),
@@ -1235,7 +1272,12 @@ async def admin_staff_update(staff_id: int, request: Request, db: Session = Depe
         profile = _staff_profile_data(form)
     except ValueError as error:
         return RedirectResponse(url=f"/admin/staff/{user.id}?tab=overview&err={error}", status_code=303)
-    before = {"role": user.role, "full_name": user.full_name, "salary_amount": user.salary_amount, "is_active": user.is_active}
+    before = {"role": user.role, "full_name": user.full_name,
+              "salary_amount": user.salary_amount, "is_active": user.is_active,
+              "job_title": user.job_title, "employment_type": user.employment_type,
+              "hire_date": user.hire_date.isoformat() if user.hire_date else None,
+              "contract_term_months": user.contract_term_months,
+              "contract_end_date": user.contract_end_date.isoformat() if user.contract_end_date else None}
     user.role = role
     # A partial form (the permissions tab posts only the role) must not wipe
     # the fields it omits: merge what arrived, leave the rest standing.
@@ -1249,7 +1291,7 @@ async def admin_staff_update(staff_id: int, request: Request, db: Session = Depe
             return RedirectResponse(url=f"/admin/staff/{user.id}?tab=overview&err=رمز عبور باید حداقل ۶ کاراکتر باشد.", status_code=303)
         user.password_hash = hash_password(password)
     db.commit()
-    log_action(db, "staff_update", f"ویرایش کاربر {user.username}", request=request, target_type="staff_user", target_id=user.id, before=before, after={"role": user.role, "full_name": user.full_name, "salary_amount": user.salary_amount, "is_active": user.is_active})
+    log_action(db, "staff_update", f"ویرایش کاربر {user.username}", request=request, target_type="staff_user", target_id=user.id, before=before, after={"role": user.role, "full_name": user.full_name, "salary_amount": user.salary_amount, "is_active": user.is_active, "job_title": user.job_title, "employment_type": user.employment_type, "hire_date": user.hire_date.isoformat() if user.hire_date else None, "contract_term_months": user.contract_term_months, "contract_end_date": user.contract_end_date.isoformat() if user.contract_end_date else None})
     return RedirectResponse(url=f"/admin/staff/{user.id}?msg=اطلاعات کارمند ذخیره شد.", status_code=303)
 
 
@@ -1269,14 +1311,25 @@ async def admin_staff_caps(staff_id: int, request: Request, db: Session = Depend
         raise HTTPException(status_code=404, detail="کاربر یافت نشد")
     form = await request.form()
     before = {field: getattr(user, field) for field in CAP_FIELDS}
+    before.update({"max_discount_amount": user.max_discount_amount,
+                   "max_discount_percent": user.max_discount_percent})
     if user.role == "owner":
         for field in CAP_FIELDS:
             setattr(user, field, True)
     else:
         for field in CAP_FIELDS:
             setattr(user, field, str(form.get(field, "")) == "1")
+        try:
+            user.max_discount_amount = _staff_limit(form, "max_discount_amount", "سقف مبلغ تخفیف")
+            user.max_discount_percent = _staff_limit(form, "max_discount_percent", "سقف درصد تخفیف")
+        except ValueError as error:
+            db.rollback()
+            return RedirectResponse(
+                url=f"/admin/staff/{user.id}?tab=permissions&err={error}", status_code=303)
     db.commit()
     after = {field: getattr(user, field) for field in CAP_FIELDS}
+    after.update({"max_discount_amount": user.max_discount_amount,
+                  "max_discount_percent": user.max_discount_percent})
     log_action(db, "staff_caps", f"کلیدهای دسترسی {user.username}", request=request, target_type="staff_user", target_id=user.id, before=before, after=after)
     return RedirectResponse(url=f"/admin/staff/{user.id}?tab=permissions&msg=کلیدهای دسترسی ذخیره شد.", status_code=303)
 

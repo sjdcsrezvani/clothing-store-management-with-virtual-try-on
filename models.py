@@ -71,6 +71,10 @@ class StaffUser(Base):
     can_discount = Column(Boolean, nullable=True)
     can_view_payroll = Column(Boolean, nullable=True)
     can_reconcile_pos = Column(Boolean, nullable=True)
+    # Per-invoice manual-discount ceilings. NULL means "follow the role
+    # default" like the toggles; enforced as min(person, role) per unit.
+    max_discount_amount = Column(Integer, nullable=True)
+    max_discount_percent = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     __table_args__ = (

@@ -34,7 +34,7 @@ from services.campaigns import (
     resolve_campaign_code,
     restore_campaign_after_refund,
 )
-from services.security import log_action, require_html_role, effective_cap, require_cap, current_staff_user
+from services.security import log_action, require_html_role, effective_cap, require_cap, current_staff_user, discount_allowed
 from services.tier import (
     update_customer_after_purchase, get_tier_config, check_tier_upgrade,
     tier_up_marker_key, TIER_RANK,
@@ -519,8 +519,10 @@ async def sales_apply_discount(
 
     basket = json.loads(basket_json)
     total_amount = sum(item["total_price"] for item in basket)
-    if (_discount_int(custom_discount_amount) or _discount_int(custom_discount_percent)) \
-            and not effective_cap(guard, "can_discount"):
+    allowed, limit_error = discount_allowed(
+        guard, _discount_int(custom_discount_amount),
+        _discount_int(custom_discount_percent))
+    if not allowed:
         return _render_scan(
             request, customer, basket, total_amount, db,
             referrer_code=referrer_code,
@@ -529,7 +531,7 @@ async def sales_apply_discount(
             custom_discount_amount=0,
             custom_discount_percent=0,
             campaign_code=campaign_code,
-            error="تخفیف دستی برای حساب شما فعال نیست.",
+            error=limit_error,
         )
 
     return _render_scan(
@@ -867,10 +869,12 @@ async def sales_confirm(
         raise HTTPException(status_code=400, detail="روش پرداخت نامعتبر است.")
     # The money moment for manual discounts: preview endpoints refuse too,
     # but a forged POST straight here must meet the same answer.
-    if (_discount_int(custom_discount_amount) or _discount_int(custom_discount_percent)) \
-            and not effective_cap(guard, "can_discount"):
+    allowed, limit_error = discount_allowed(
+        guard, _discount_int(custom_discount_amount),
+        _discount_int(custom_discount_percent))
+    if not allowed:
         return _render_scan(request, None, [], 0, db, campaign_code=campaign_code,
-                            error="تخفیف دستی برای حساب شما فعال نیست.")
+                            error=limit_error)
 
     checkout = get_checkout(db, checkout_nonce) if checkout_nonce else None
     if not checkout:

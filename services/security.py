@@ -176,6 +176,64 @@ def require_cap(request: Request, db, capability: str):
     return user
 
 
+# Per-invoice manual-discount ceilings per role, in the same narrow-only
+# spirit as the toggles: a personal ceiling can only sit at or under the
+# role's. None means unbounded (the owner answers to nobody here).
+ROLE_DISCOUNT_LIMITS = {
+    "cashier": {"amount": 0, "percent": 0},
+    "manager": {"amount": 200_000, "percent": 10},
+    "owner": {"amount": None, "percent": None},
+}
+
+
+def discount_limit(user, unit: str):
+    """The effective ceiling for ``unit`` (``amount`` or ``percent``):
+    personal value clamped to the role's, role default when unset, None when
+    unbounded. Unknown unit or person: the strictest answer, zero."""
+    if unit not in ("amount", "percent"):
+        return 0
+    role_default = ROLE_DISCOUNT_LIMITS.get(user.role if user else "", {}).get(unit, 0)
+    personal = getattr(user, f"max_discount_{unit}", None) if user else None
+    if personal is None:
+        return role_default
+    if role_default is None:
+        return personal
+    return min(personal, role_default)
+
+
+def discount_allowed(user, amount=0, percent=0) -> tuple[bool, str]:
+    """Whether this person may grant this manual discount on one invoice.
+
+    Zero discounts pass without a key; otherwise the toggle gates first,
+    then each unit is checked against its own ceiling, whichever hits first
+    refusing with its own sentence. Owners bypass ceilings the way they
+    bypass toggles.
+    """
+    if user is not None and (user.role or "") == "owner":
+        return True, ""
+    try:
+        amount = int(amount or 0)
+    except (TypeError, ValueError):
+        amount = 0
+    try:
+        percent = int(percent or 0)
+    except (TypeError, ValueError):
+        percent = 0
+    # Granting nothing needs no key: every till posts zero discounts by
+    # default, and refusing those would lock honest cashiers out of sales.
+    if amount <= 0 and percent <= 0:
+        return True, ""
+    if not effective_cap(user, "can_discount"):
+        return False, "تخفیف دستی برای حساب شما فعال نیست."
+    amount_limit = discount_limit(user, "amount")
+    if amount_limit is not None and amount > amount_limit:
+        return False, f"تخفیف مبلغی از سقف {amount_limit:,} تومان شما بیشتر است."
+    percent_limit = discount_limit(user, "percent")
+    if percent_limit is not None and percent > percent_limit:
+        return False, f"تخفیف درصدی از سقف {percent_limit}٪ شما بیشتر است."
+    return True, ""
+
+
 def _session_staff_user(db, request: Request):
     """Return the active staff account for this session, with legacy owner fallback."""
     from models import StaffUser

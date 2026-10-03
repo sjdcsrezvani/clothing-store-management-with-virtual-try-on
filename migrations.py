@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 30
+MIGRATION_VERSION = 31
 
 
 def migration_status(engine) -> int:
@@ -238,6 +238,14 @@ def _rebuild_sms_messages(conn) -> None:
 
 
 def _apply_revision(conn, version: int) -> None:
+    if version == 31:
+        # Per-invoice discount ceilings per person. NULL everywhere to start,
+        # which the helper reads as "follow the role default" — purely
+        # additive, every existing account behaves exactly as before.
+        _add_column_if_missing(conn, "staff_users", "max_discount_amount", "INTEGER")
+        _add_column_if_missing(conn, "staff_users", "max_discount_percent", "INTEGER")
+        return
+
     if version == 30:
         # People intelligence: contract terms in months (NULL = open-ended or
         # legacy free date), structured emergency contact, and one marked day

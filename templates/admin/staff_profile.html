@@ -103,6 +103,13 @@
     <label><input type="checkbox" name="{{ field }}" value="1" {% if staff_caps[field] %}checked{% endif %} {% if staff_user.role == 'owner' %}disabled{% endif %}> {{ title }} <small class="muted">— {{ hint }}</small></label>
     {% endfor %}
     </fieldset>
+    {% if staff_user.role != 'owner' %}
+    <fieldset class="form-span-2">
+    <legend class="muted">سقف‌های فردی تخفیف</legend>
+    <label>سقف مبلغ تخفیف در هر فاکتور (تومان)<input name="max_discount_amount" inputmode="numeric" value="{{ staff_user.max_discount_amount if staff_user.max_discount_amount is not none else '' }}" placeholder="پیش‌فرض نقش"><small class="field-help">خالی یعنی سقف نقش (<bdi>{{ fmt(role_discount_limits.amount) }} تومان</bdi>)؛ کمتر هم می‌شود، بیشتر نه</small></label>
+    <label>سقف درصد تخفیف در هر فاکتور<input name="max_discount_percent" inputmode="numeric" value="{{ staff_user.max_discount_percent if staff_user.max_discount_percent is not none else '' }}" placeholder="پیش‌فرض نقش"><small class="field-help">خالی یعنی سقف نقش (<bdi>{{ role_discount_limits.percent }}٪</bdi>)؛ کمتر هم می‌شود، بیشتر نه</small></label>
+    </fieldset>
+    {% endif %}
     {% if staff_user.role != 'owner' %}<button class="btn btn-primary" type="submit">ذخیره کلیدها</button>{% endif %}
   </form>
 </div>
@@ -227,11 +234,16 @@
 {% if active_tab == 'history' %}
 <div class="card">
   <div class="section-heading"><div><span class="eyebrow">سابقه</span><h3>تغییرات این پرونده</h3></div></div>
+  <div class="view-toggle" role="group" aria-label="نوع رویداد">
+    <a class="btn btn-sm {% if history_kind == 'all' %}btn-primary{% else %}btn-ghost{% endif %}" {% if history_kind == 'all' %}aria-current="page"{% endif %} href="/admin/staff/{{ staff_user.id }}?tab=history&kind=all">همه</a>
+    <a class="btn btn-sm {% if history_kind == 'contract' %}btn-primary{% else %}btn-ghost{% endif %}" {% if history_kind == 'contract' %}aria-current="page"{% endif %} href="/admin/staff/{{ staff_user.id }}?tab=history&kind=contract">قرارداد و حقوق</a>
+  </div>
+  <p class="muted">نمای قرارداد و حقوق: ویرایش پرونده، کلیدها، پرداخت و ابطال حقوق، ثبت حضور.</p>
   {% if timeline %}
   {% set action_labels = {'staff_create': 'استخدام', 'staff_update': 'ویرایش پرونده', 'staff_caps': 'تغییر کلیدها', 'staff_disable': 'بستن دسترسی', 'staff_enable': 'بازگشایی دسترسی', 'salary_payment': 'پرداخت حقوق', 'salary_void': 'ابطال حقوق', 'salary_bulk': 'پرداخت گروهی', 'attendance_mark': 'ثبت حضور', 'login': 'ورود', 'logout': 'خروج'} %}
   <div class="table-scroll"><table class="data-table"><thead><tr><th scope="col">زمان</th><th scope="col">رویداد</th><th scope="col">جزئیات</th></tr></thead><tbody>{% for entry in timeline %}<tr><td>{{ jalali_str(entry.created_at) }}</td><td>{{ action_labels.get(entry.action, entry.action) }}</td><td>{{ entry.detail or '—' }}</td></tr>{% endfor %}</tbody></table></div>
   {% else %}
-  <p class="muted">هنوز رویدادی برای این کارمند ثبت نشده است.</p>
+  <p class="muted">{% if history_kind == 'contract' %}در نمای قرارداد و حقوق رویدادی نیست.{% else %}هنوز رویدادی برای این کارمند ثبت نشده است.{% endif %}</p>
   {% endif %}
 </div>
 {% endif %}

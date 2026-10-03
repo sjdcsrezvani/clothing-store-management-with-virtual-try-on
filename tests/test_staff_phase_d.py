@@ -2,6 +2,7 @@
 from urllib.parse import unquote
 
 from models import AdminLog, AttendanceRecord, StaffUser
+from migrations import MIGRATION_VERSION
 from tests.conftest import csrf_token
 from tests.test_roles import _session_as, _staff
 from tests.test_staff_phase_b import _owner_client
@@ -113,7 +114,7 @@ def test_revision_30_adds_terms_emergency_and_attendance(tmp_path):
         conn.execute(text("CREATE TABLE schema_version (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)"))
         conn.execute(text("INSERT INTO schema_version (id, version) VALUES (1, 29)"))
         conn.execute(text("CREATE TABLE staff_users (id INTEGER PRIMARY KEY, username VARCHAR(100))"))
-    assert upgrade(engine) == 30
+    assert upgrade(engine) == MIGRATION_VERSION
     with engine.connect() as conn:
         cols = {row[1] for row in conn.execute(text("PRAGMA table_info(staff_users)")).all()}
         assert {"contract_term_months", "emergency_name", "emergency_relation",
