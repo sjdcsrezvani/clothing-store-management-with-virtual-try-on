@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 {% set page_description %}
-حساب ورود و پرونده پرسنلی کارمند جدید را یکجا ثبت کنید.
+حساب ورود و پرونده پرسنلی کارمند جدید را مرحله‌به‌مرحله ثبت کنید.
 {% endset %}
 {% set page_actions %}
 <a class="btn btn-ghost" href="/admin/staff">بازگشت به فهرست کارکنان</a>
@@ -9,58 +9,183 @@
 {% include 'partials/page_header.html' %}
 <div class="card">
   <div class="section-heading"><div><span class="eyebrow">استخدام</span><h3>افزودن کارمند و حساب ورود</h3></div></div>
-  <form method="post" action="/admin/staff" class="form-row">
+  {# Staged hire: one form, four sections, no reload between stages. Without
+     JS the wizard cannot advance, so a notice stands in for the form. #}
+  <noscript><p class="alert alert-warning">ثبت مرحله‌ای کارمند به جاوااسکریپت نیاز دارد؛ لطفاً آن را روشن کنید.</p></noscript>
+  <div class="wizard-timeline" aria-label="مراحل استخدام" id="hire-timeline">
+    <button type="button" class="timeline-step" data-hire-goto="0" aria-current="step">۱ حساب ورود</button><span class="timeline-line" aria-hidden="true"></span><button type="button" class="timeline-step" data-hire-goto="1" disabled>۲ مشخصات فردی</button><span class="timeline-line" aria-hidden="true"></span><button type="button" class="timeline-step" data-hire-goto="2" disabled>۳ همکاری و حقوق</button><span class="timeline-line" aria-hidden="true"></span><button type="button" class="timeline-step" data-hire-goto="3" disabled>۴ بانکی و تماس</button>
+  </div>
+  <form method="post" action="/admin/staff" id="hire-form" novalidate>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <fieldset class="form-span-2 profile-tag-fieldset">
-    <legend>حساب ورود</legend>
-    <div class="form-row">
-    <label>نام کاربری <span class="muted">(الزامی)</span><input name="username" autocomplete="username" dir="ltr" required></label>
-    <label>رمز عبور <span class="muted">(الزامی)</span><input name="password" type="password" minlength="6" autocomplete="new-password" required><small class="field-help">حداقل ۶ کاراکتر</small></label>
-    <label>نقش<select name="role"><option value="cashier" selected>صندوقدار</option><option value="manager">مدیر</option><option value="owner">مالک</option></select></label>
-    </div>
-    </fieldset>
-    <fieldset class="form-span-2 profile-tag-fieldset">
-    <legend>مشخصات فردی</legend>
-    <div class="form-row">
-    <label>نام و نام خانوادگی<input name="full_name" autocomplete="name"></label>
-    <label>کد پرسنلی<input name="employee_code"></label>
-    <label>کد ملی<input name="national_id" inputmode="numeric" dir="ltr"><small class="field-help">۱۰ رقم</small></label>
-    <label>تلفن<input name="phone" type="tel" inputmode="tel" autocomplete="tel" dir="ltr"></label>
-    <label>ایمیل<input name="email" type="email" autocomplete="email" dir="ltr"></label>
-    <label>تاریخ تولد<input class="persian-date-input" name="birth_date" inputmode="numeric" dir="ltr" placeholder="۱۳۷۰/۰۱/۰۱"></label>
-    <label>تحصیلات<input name="education"></label>
-    </div>
-    </fieldset>
-    <fieldset class="form-span-2 profile-tag-fieldset">
-    <legend>همکاری و حقوق</legend>
-    <div class="form-row">
-    <label>عنوان شغلی<input name="job_title"></label>
-    <label>نوع همکاری<select name="employment_type"><option value="full_time" selected>تمام‌وقت</option><option value="part_time">پاره‌وقت</option><option value="contractor">قراردادی</option></select></label>
-    {% from 'partials/numeric_input.html' import num with context %}
-    <label>حقوق ماهانه (تومان){{ num('salary_amount', '') }}</label>
-    <label>روز پرداخت ماهانه{{ num('salary_payment_day', '') }}<small class="field-help">۱ تا ۳۱</small></label>
-    <label>تاریخ شروع<input class="persian-date-input" name="hire_date" inputmode="numeric" dir="ltr" placeholder="۱۴۰۵/۰۱/۰۱"></label>
-    <label>مدت قرارداد<select name="contract_term_months"><option value="">باز / بدون مدت</option>{% for months, label in contract_terms.items() %}<option value="{{ months }}">{{ label }}</option>{% endfor %}</select><small class="field-help">با تعیین مدت، پایان قرارداد از شروع + مدت ساخته می‌شود</small></label>
-    <label>پایان قرارداد<input class="persian-date-input" name="contract_end_date" inputmode="numeric" dir="ltr" placeholder="۱۴۰۵/۱۲/۲۹"></label>
-    <label>برنامه کاری<input name="work_schedule"></label>
-    </div>
-    </fieldset>
-    <fieldset class="form-span-2 profile-tag-fieldset">
-    <legend>بانکی و تماس</legend>
-    <div class="form-row">
-    <label>حساب بانکی<input name="bank_account" inputmode="numeric" dir="ltr"></label>
-    <label>شبا<input name="iban" inputmode="numeric" dir="ltr"><small class="field-help">IR و ۲۴ رقم</small></label>
-    <label>نام مخاطب اضطراری<input name="emergency_name"></label>
-    <label>نسبت<input name="emergency_relation" placeholder="مثلاً همسر، پدر"></label>
-    <label>تلفن اضطراری<input name="emergency_phone" type="tel" inputmode="tel" dir="ltr"></label>
-    <label class="form-span-2">نشانی<textarea name="address" rows="3" autocomplete="street-address"></textarea></label>
-    <label class="form-span-2">یادداشت<textarea name="notes" rows="2"></textarea></label>
-    </div>
-    </fieldset>
-    <div class="form-span-2 staff-actions">
-      <button class="btn btn-primary" type="submit">ثبت کارمند</button>
-      <a class="btn btn-ghost" href="/admin/staff">انصراف</a>
-    </div>
+    <section data-hire-step="0" aria-labelledby="hire-step-title-0">
+      <h4 id="hire-step-title-0" tabindex="-1">مرحله ۱ — حساب ورود</h4>
+      <div class="form-row">
+      <label>نام کاربری <span class="muted">(الزامی)</span><input name="username" autocomplete="username" dir="ltr" required></label>
+      <label>رمز عبور <span class="muted">(الزامی)</span><input name="password" type="password" minlength="6" autocomplete="new-password" required aria-describedby="hire-pass-help"><small class="field-help" id="hire-pass-help">حداقل ۶ کاراکتر</small></label>
+      <label>نقش<select name="role"><option value="cashier" selected>صندوقدار</option><option value="manager">مدیر</option><option value="owner">مالک</option></select></label>
+      </div>
+      <div class="staff-actions"><button type="button" class="btn btn-primary" data-hire-next>مرحله بعد</button></div>
+    </section>
+    <section data-hire-step="1" hidden aria-labelledby="hire-step-title-1">
+      <h4 id="hire-step-title-1" tabindex="-1">مرحله ۲ — مشخصات فردی</h4>
+      <div class="form-row">
+      <label>نام و نام خانوادگی<input name="full_name" autocomplete="name"></label>
+      <label>کد پرسنلی<input name="employee_code"></label>
+      <label>کد ملی<input name="national_id" inputmode="numeric" dir="ltr" maxlength="10" aria-describedby="hire-nid-help"><small class="field-help" id="hire-nid-help">۱۰ رقم</small></label>
+      <label>تلفن<input name="phone" type="tel" inputmode="tel" autocomplete="tel" dir="ltr" maxlength="11"></label>
+      <label>ایمیل<input name="email" type="email" autocomplete="email" dir="ltr"></label>
+      <label>تاریخ تولد<input class="persian-date-input" name="birth_date" inputmode="numeric" dir="ltr" placeholder="۱۳۷۰/۰۱/۰۱"></label>
+      <label>تحصیلات<input name="education"></label>
+      </div>
+      <div class="staff-actions"><button type="button" class="btn btn-ghost" data-hire-prev>مرحله قبل</button><button type="button" class="btn btn-primary" data-hire-next>مرحله بعد</button></div>
+    </section>
+    <section data-hire-step="2" hidden aria-labelledby="hire-step-title-2">
+      <h4 id="hire-step-title-2" tabindex="-1">مرحله ۳ — همکاری و حقوق</h4>
+      <div class="form-row">
+      <label>عنوان شغلی<input name="job_title"></label>
+      <label>نوع همکاری<select name="employment_type"><option value="full_time" selected>تمام‌وقت</option><option value="part_time">پاره‌وقت</option><option value="contractor">قراردادی</option></select></label>
+      {% from 'partials/numeric_input.html' import num with context %}
+      <label>حقوق ماهانه (تومان){{ num('salary_amount', '') }}</label>
+      <label>روز پرداخت ماهانه{{ num('salary_payment_day', '') }}<small class="field-help">۱ تا ۳۱</small></label>
+      <label>تاریخ شروع<input class="persian-date-input" name="hire_date" inputmode="numeric" dir="ltr" placeholder="۱۴۰۵/۰۱/۰۱"></label>
+      <label>مدت قرارداد<select name="contract_term_months"><option value="">باز / بدون مدت</option>{% for months, label in contract_terms.items() %}<option value="{{ months }}">{{ label }}</option>{% endfor %}</select><small class="field-help">با تعیین مدت، پایان قرارداد از شروع + مدت ساخته می‌شود</small></label>
+      <label>پایان قرارداد<input class="persian-date-input" name="contract_end_date" inputmode="numeric" dir="ltr" placeholder="۱۴۰۵/۱۲/۲۹"></label>
+      <label>برنامه کاری<input name="work_schedule"></label>
+      </div>
+      <div class="staff-actions"><button type="button" class="btn btn-ghost" data-hire-prev>مرحله قبل</button><button type="button" class="btn btn-primary" data-hire-next>مرحله بعد</button></div>
+    </section>
+    <section data-hire-step="3" hidden aria-labelledby="hire-step-title-3">
+      <h4 id="hire-step-title-3" tabindex="-1">مرحله ۴ — بانکی و تماس</h4>
+      <div class="form-row">
+      <label>حساب بانکی<input name="bank_account" inputmode="numeric" dir="ltr"></label>
+      <label>شبا<input name="iban" inputmode="numeric" dir="ltr" aria-describedby="hire-iban-help"><small class="field-help" id="hire-iban-help">IR و ۲۴ رقم</small></label>
+      <label>نام مخاطب اضطراری<input name="emergency_name"></label>
+      <label>نسبت<input name="emergency_relation" placeholder="مثلاً همسر، پدر"></label>
+      <label>تلفن اضطراری<input name="emergency_phone" type="tel" inputmode="tel" dir="ltr"></label>
+      <label class="form-span-2">نشانی<textarea name="address" rows="3" autocomplete="street-address"></textarea></label>
+      <label class="form-span-2">یادداشت<textarea name="notes" rows="2"></textarea></label>
+      </div>
+      <div class="staff-actions"><button type="button" class="btn btn-ghost" data-hire-prev>مرحله قبل</button><button class="btn btn-primary" type="submit">ثبت کارمند</button></div>
+    </section>
   </form>
 </div>
+<script>
+// Staged hire, no reload: one form, four sections, Next gated on the current
+// section's native validity. Timeline buttons revisit completed stages only —
+// values live in the single form, so nothing is ever lost going back.
+(function () {
+    var form = document.getElementById('hire-form');
+    var timeline = document.getElementById('hire-timeline');
+    if (!form || !timeline) return;
+    var sections = Array.prototype.slice.call(
+        form.querySelectorAll('[data-hire-step]'));
+    var dots = Array.prototype.slice.call(
+        timeline.querySelectorAll('[data-hire-goto]'));
+    var current = 0;
+    var reached = 0;
+
+    function paint() {
+        sections.forEach(function (section, index) {
+            var open = index === current;
+            if (open) {
+                section.removeAttribute('hidden');
+            } else {
+                section.setAttribute('hidden', '');
+            }
+            section.setAttribute('aria-hidden', open ? 'false' : 'true');
+        });
+        dots.forEach(function (dot, index) {
+            dot.classList.toggle('active', index === current);
+            if (index <= reached) {
+                dot.removeAttribute('disabled');
+            } else {
+                dot.setAttribute('disabled', '');
+            }
+            if (index === current) {
+                dot.setAttribute('aria-current', 'step');
+            } else {
+                dot.removeAttribute('aria-current');
+            }
+        });
+    }
+
+    function go(index) {
+        if (index < 0 || index >= sections.length) return;
+        if (index > reached) return; // forward only through validation
+        current = index;
+        paint();
+        var heading = sections[index].querySelector('h4');
+        if (heading) heading.focus();
+    }
+
+    function valid(section) {
+        var fields = section.querySelectorAll('input, select, textarea');
+        for (var i = 0; i < fields.length; i++) {
+            if (!fields[i].checkValidity()) {
+                fields[i].reportValidity();
+                return false;
+            }
+        }
+        return true;
+    }
+
+    form.addEventListener('click', function (event) {
+        var next = event.target.closest ? event.target.closest('[data-hire-next]') : null;
+        if (next) {
+            advance();
+            return;
+        }
+        var prev = event.target.closest ? event.target.closest('[data-hire-prev]') : null;
+        if (prev) {
+            go(current - 1);
+        }
+    });
+    function advance() {
+        if (!valid(sections[current])) return;
+        reached = Math.max(reached, current + 1);
+        go(current + 1);
+    }
+    // Enter inside a text field means Next on steps with one, never a blind
+    // submit from a hidden stage: without this the implicit submission fires
+    // the faraway final button and yanks the user across stages.
+    form.addEventListener('keydown', function (event) {
+        if (event.key !== 'Enter') return;
+        var target = event.target;
+        var tag = target && target.tagName ? target.tagName.toLowerCase() : '';
+        if (tag !== 'input') return;
+        var nextBtn = sections[current].querySelector('[data-hire-next]');
+        if (!nextBtn) return;
+        event.preventDefault();
+        advance();
+    });
+    dots.forEach(function (dot) {
+        dot.addEventListener('click', function () {
+            go(parseInt(dot.getAttribute('data-hire-goto'), 10));
+        });
+    });
+    // The final submit carries its own validity: browsers check the whole
+    // form, including sections hidden with [hidden] skipped — so re-validate
+    // every section here rather than trusting the stepper path.
+    form.addEventListener('submit', function (event) {
+        for (var i = 0; i < sections.length; i++) {
+            var fields = sections[i].querySelectorAll('input, select, textarea');
+            var bad = null;
+            for (var j = 0; j < fields.length; j++) {
+                if (!fields[j].checkValidity()) {
+                    bad = fields[j];
+                    break;
+                }
+            }
+            if (bad) {
+                event.preventDefault();
+                reached = Math.max(reached, i);
+                go(i);
+                bad.reportValidity();
+                return;
+            }
+        }
+    });
+    paint();
+})();
+</script>
 {% endblock %}

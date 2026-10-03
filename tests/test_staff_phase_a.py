@@ -71,6 +71,11 @@ def test_new_page_renders_full_hire_form(client, db_session):
                   "iban", "birth_date", "salary_payment_day", "emergency_name",
                   "emergency_relation", "emergency_phone", "contract_term_months"):
         assert f'name="{field}"' in page
+    # Staged wizard: one form, four sections, timeline, no-JS notice.
+    assert page.count("data-hire-step=") == 4
+    assert page.count("data-hire-goto=") == 4
+    assert page.count('action="/admin/staff"') == 1
+    assert "<noscript>" in page
 
 
 def test_create_lands_on_the_new_profile(client, db_session):
