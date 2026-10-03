@@ -491,6 +491,10 @@ button:disabled {
   /* column-gap only: each .form-group already carries its own bottom margin,
      so a row gap here doubled the space between stacked fields to 2rem. */
   column-gap: 1rem;
+  /* A help line under one field must not drag its neighbour down with it:
+     cells align to their own tops, and bare-label rows still breathe. */
+  row-gap: 1rem;
+  align-items: start;
 }
 /* Three fields that belong on one line (name/number/amount rows): without
    this they fall into the two-column grid above and the third wraps alone
