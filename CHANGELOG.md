@@ -1,3 +1,130 @@
+## 2.8.2 — 1405/07/12 (2026-10-04)
+
+### کارکنان و هویت کسب‌وکار: the roster becomes a hub, the contract becomes a document, and the shop signs its own name
+
+- **The staff list is a directory again.** The expanding edit rows are gone;
+  a table of ten, twenty-five or fifty per page walks the whole roster,
+  کارمند and حقوق ماهانه sort either way with `aria-sort` naming the column,
+  search answers نام، نام کاربری and کد پرسنلی, and the status filter
+  narrows to active or inactive. Each row opens the person's file, prints
+  their last login, and flags a contract رو به پایان (seven days or fewer)
+  or پایانیافته beside the badge — a person leaving access washes their row
+  but never fades the words.
+- **Payday names the unpaid and can settle them in one press.** A banner
+  above the list counts whoever is still unpaid for the open month and names
+  them; پرداخت گروهی posts base pay for every payable person in one form and
+  reports who was paid, who was already paid, who still has not finished their
+  first month of service, and — by name and reason — who failed. Pressing
+  again only ever skips, and one line lands in the log either way.
+- **Hiring is a four-step wizard.** حساب ورود، مشخصات فردی، همکاری و حقوق،
+  بانکی و تماس — one form, four stages, no reload between them. Forward
+  steps wait on the current section's native validity, back always works,
+  and the stage timeline can revisit any completed step; without JavaScript
+  the wizard says so instead of pretending, and the same form still posts.
+- **Each person has a file with five doors.** The profile opens on مشخصات —
+  the full personnel form on the stacked field system, the contract with its
+  days remaining, this month's sales through their own shifts, and what
+  closing access would strand (an open till shift, an unpaid month) — and
+  carries دسترسی، حقوق، حضور and سابقه beside it.
+- **Capabilities become switches that only ever narrow.** ابطال فاکتور،
+  تخفیف دستی، مشاهده رسید حقوق and تطبیق کارتخوان each get a per-person
+  on/off beside the role ladder that gates them; the page explains the
+  consequence under every switch, a switch can take away what the role
+  grants but never grant what it denies, and owners stay pinned all-on so a
+  mis-set switch can never lock the shop's own administrator out. The same
+  answer is read by the refund route, the till's discount card, the payroll
+  receipts and the reconciliation form — and the role matrix becomes a
+  plain-language table of what each role can do.
+- **Discount ceilings are per person, clamped under the role's.** A manager
+  may be narrowed below the role's ۲۰۰,۰۰۰ تومان / ۱۰٪, never widened above
+  it; the till refuses at preview and again at confirm, each with its own
+  sentence («تخفیف مبلغی از سقف … تومان شما بیشتر است»), the discount card
+  hides from whoever may not grant one, and a zero discount always posts
+  without a key.
+- **A month of pay is a column of lines now, not one number.** Base pay is
+  automatic; اضافه‌کاری and پاداش add to it, پیش‌پرداخت and کسورات subtract
+  from it — a subtraction refuses without a reason, and a live preview shows
+  the gross-to-net math before anything posts. The old کسورات field still
+  works — it lands as one line — so nothing that paid before pays
+  differently.
+- **A wrong payment voids instead of vanishing.** ابطال asks for a reason,
+  reverses the linked salary expense through the ledger's own immutable
+  reversal, keeps the row on the books as باطل‌شده, and frees the month for
+  a fresh payment. The receipt prints that it is void and cannot be signed,
+  names who voided it and when, and the year totals skip what no longer
+  stands.
+- **The receipt grew into a statement.** Every line prints with its +/-
+  sign and its reason, then ناخالص، کسورات، خالص and روش پرداخت, and a جمع
+  سال running total to this month; the business's logo heads it, its
+  signatory signs it, and its bank account and شبا print below.
+- **Pay months are picked from the closed ones, not remembered.** The
+  payroll tab lists the last six closed months as chips that fill the field,
+  and a person hired inside the pay month is never dunned or bulk-paid
+  before a full month of service — the report says «هنوز ماه اولشان تمام
+  نشده» instead.
+- **Attendance is marked, counted, and mostly writes itself.** A day can be
+  حاضر، غایب، مرخصی استحقاقی or مرخصی استعلاجی with a note; the first login
+  of the day marks حاضر once, never duplicating and never overwriting a
+  hand-marked leave, and the table says which rows were خودکار. Balances
+  are read from the marked days of the Jalali year against the statutory
+  ۲۶-day annual allowance, and the month under view is one query away.
+- **A person's own trail got a lens.** The سابقه tab is their admin-log
+  history, and the قرارداد و حقوق filter narrows it to contract and pay
+  events — merging the salary payments that aim at the payment row rather
+  than at the person into one chronological feed.
+- **The contract is a document now, not a printout.** هشت ماده — طرفین
+  قرارداد، موضوع و سمت، مدت و دوره آزمایشی، حقوق و مزایا، تعهدات کارگر،
+  پایان همکاری و تسویه‌حساب، حل اختلاف، نسخ قرارداد — with the amount
+  written in
+  Persian words beside the digits, the insurance undertaking when the person
+  is insured, the company position as the سمت, a gender-aware salutation in
+  the worker's clause, a contract number built from the personnel code and
+  the start year, and three signature blocks (employee, employer, seal).
+  One shared definition of «complete» gates the print — the same answer the
+  business page reads — and what is missing is listed with a link to the
+  page that fixes it, so a contract that would print a blank line refuses
+  instead. Printed in two copies: one for each side.
+- **A contract term governs its own end date.** Choosing ۱، ۳، ۶ or ۱۲
+  ماهه derives the end from the start in the Jalali calendar (a 31st landing
+  in a short month clamps to its last day), a live preview shows the derived
+  date before saving, and a free date still stands wherever no term is set;
+  the directory and the file flag a contract رو به پایان or پایانیافته as
+  the day approaches.
+- **The owner page becomes هویت کسب‌وکار.** The employer side of every
+  document gets its own page: owner name and کد ملی (checksum checked),
+  phone, business name, registration number, address, bank account and شبای
+  کسب‌وکار (mod-97 checked), website, Instagram, a logo upload that
+  validates its bytes and replaces or removes the old file, and a picker
+  for the staffer who signs the papers — their name and signature sit on
+  contracts and receipts. A readiness panel lists the three identity items
+  a printable contract needs, reading the very same definition the contract
+  gate enforces, so the two views can never disagree — and the page ends
+  with the recent changes feed: who touched the identity, and what.
+- **Positions become a directory the contract prints from.** سمت‌های
+  سازمانی are added, renamed and retired on their own page; the contract
+  prints the position's title, retirement only removes it from new
+  assignments, holders keep the history their printed contracts carry — and
+  a holder count sits beside every row.
+- **Small refusals happen at typing time.** کد ملی must pass its ten-digit
+  checksum (the spacing and dashes people copy along are stripped, not
+  punished, and refusals are logged by shape for support), تلفن همراه must
+  be ۰۹ with eleven digits, شبا must pass mod-97 — and the emergency
+  contact becomes structured (نام، نسبت، تلفن) instead of one free line.
+- **Two exports leave the hub.** خروجی کارکنان is the directory as a file —
+  identity, role, pay and state, the start date in Jalali, a BOM so Excel
+  opens the Persian — and خروجی حقوق is the whole salary ledger, voided
+  rows included with their reasons, filterable by Jalali year.
+
+**Schema change.** Revisions 28 through 32. The database gains four
+per-person capability toggles; discount ceilings; contract terms, structured
+emergency contacts and an attendance ledger; gender, insurance and a
+position per staff member plus the positions directory; and salary voids
+with itemized lines — a table rebuild that keeps every row and id, gives each
+historical payment its «حقوق پایه» line, and swaps the staff-and-month
+unique for a live-only one so a voided month frees its slot. Everything else
+is additive: existing staff read exactly as before until the owner edits
+them.
+
 ## 2.8.1 — 1405/07/11 (2026-10-03)
 
 ### تطبیق کارت‌خوان: the wall becomes a list, files itself, and confirms before it resolves
