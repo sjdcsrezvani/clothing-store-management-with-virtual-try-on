@@ -1741,6 +1741,7 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 .print-document-header h1 { margin: 0 0 0.35rem; }
 .print-document-meta { display: flex; justify-content: space-between; gap: 1rem; color: var(--ink-soft); font-size: 0.85rem; }
 .document-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; margin-top: 4rem; text-align: center; }
+.document-signatures.is-3col { grid-template-columns: 1fr 1fr 1fr; gap: 2rem; }
 .document-signatures div { border-top: 1px solid var(--ink); padding-top: 0.5rem; }
 .document-actions { display: flex; justify-content: center; gap: 0.6rem; margin: 1rem auto; }
 @media (max-width: 700px) { .staff-record > summary { align-items: flex-start; flex-direction: column; } .form-span-2 { grid-column: auto; } .document-signatures { gap: 1.5rem; } }

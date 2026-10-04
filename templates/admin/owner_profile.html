@@ -23,7 +23,7 @@
   <p><span class="badge badge-available">آماده چاپ</span> <span class="muted">هر سه قلم هویتی کامل است.</span></p>
   {% endif %}
 </div>
-<form method="post" action="/admin/owner-profile">
+<form method="post" action="/admin/owner-profile" enctype="multipart/form-data">
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 <div class="card hire-narrow">
   <div class="section-heading"><div><span class="eyebrow">هویت</span><h3>مشخصات مالک</h3></div></div>
@@ -37,8 +37,16 @@
 <div class="card hire-narrow">
   <div class="section-heading"><div><span class="eyebrow">کسب‌وکار</span><h3>مشخصات فروشگاه</h3></div></div>
   <div class="hire-grid">
-  <label class="hire-field">نام کسب‌وکار <span class="muted">(الزامی برای قرارداد)</span><input name="owner_business_name" autocomplete="organization" value="{{ owner_settings.get('owner_business_name', store.name) }}"></label>
+  {% if owner_settings.get('owner_logo_path') %}
+  <p class="form-span-2"><img src="{{ owner_settings.get('owner_logo_path') }}" alt="لوگوی فروشگاه" style="max-height: 72px;"><br><label class="check-row"><input type="checkbox" name="remove_logo" value="1"> حذف لوگو</label></p>
+  {% endif %}
+  <label class="hire-field">لوگوی فروشگاه<input type="file" name="logo" accept="image/png,image/jpeg,image/webp"><small class="field-help">در سربرگ قرارداد و رسید چاپ می‌شود؛ اختیاری</small></label>
+  <label class="hire-field">نام کسب‌وکار <span class="muted">(الزامی برای قرارداد)</span><input name="owner_business_name" value="{{ owner_settings.get('owner_business_name', store.name) }}"></label>
   <label class="hire-field">شماره ثبت کسب‌وکار<input name="owner_business_registration" value="{{ owner_settings.get('owner_business_registration', '') }}" dir="ltr"></label>
+  <label class="hire-field">حساب بانکی کسب‌وکار<input name="owner_bank_account" value="{{ owner_settings.get('owner_bank_account', '') }}" dir="ltr" inputmode="numeric"></label>
+  <label class="hire-field">شبای کسب‌وکار<input name="owner_bank_iban" value="{{ owner_settings.get('owner_bank_iban', '') }}" dir="ltr" inputmode="numeric"></label>
+  <label class="hire-field">وب‌سایت<input name="owner_website" value="{{ owner_settings.get('owner_website', '') }}" dir="ltr" inputmode="url" placeholder="example.com"></label>
+  <label class="hire-field">اینستاگرام<input name="owner_instagram" value="{{ owner_settings.get('owner_instagram', '') }}" dir="ltr" placeholder="raykid_store"></label>
   <label class="hire-field">نشانی مالک / کسب‌وکار <span class="muted">(الزامی برای قرارداد)</span><textarea name="owner_address" rows="3">{{ owner_settings.get('owner_address', '') }}</textarea></label>
   </div>
 </div>

@@ -1832,11 +1832,54 @@ async def admin_owner_profile_update(request: Request, db: Session = Depends(get
         if not signatory_id.isdigit() or not db.query(StaffUser).filter(
                 StaffUser.id == int(signatory_id)).first():
             return RedirectResponse(url="/admin/owner-profile?err=امضاکننده نامعتبر است.", status_code=303)
+    bank_iban = str(form.get("owner_bank_iban", "") or "").strip()[:40]
+    if bank_iban:
+        try:
+            bank_iban = _check_iban(bank_iban)
+        except ValueError as error:
+            return RedirectResponse(url=f"/admin/owner-profile?err={error}", status_code=303)
+    website = str(form.get("owner_website", "") or "").strip()[:200]
+    if website and (" " in website or "." not in website):
+        return RedirectResponse(url="/admin/owner-profile?err=نشانی وب‌سایت معتبر نیست.", status_code=303)
+    instagram = str(form.get("owner_instagram", "") or "").strip().lstrip("@")[:100]
+    # Logo: validated raster bytes under static/uploads/business, old file
+    # removed on replace. Optional forever — never blocks the gate.
+    from services.tags import validate_tag_image
+    logo_upload = form.get("logo")
+    logo_path = None
+    if logo_upload is not None and getattr(logo_upload, "filename", ""):
+        try:
+            raw = await logo_upload.read()
+            extension = validate_tag_image(raw, logo_upload.filename or "",
+                                           logo_upload.content_type)
+        except ValueError as error:
+            return RedirectResponse(url=f"/admin/owner-profile?err={error}", status_code=303)
+        import uuid as _uuid
+        from pathlib import Path as _Path
+        directory = _Path("static/uploads/business")
+        directory.mkdir(parents=True, exist_ok=True)
+        old = db.query(Settings).filter(Settings.key == "owner_logo_path").first()
+        if old and old.value:
+            try:
+                _Path(old.value.lstrip("/")).unlink(missing_ok=True)
+            except OSError:
+                pass
+        target = directory / f"logo-{_uuid.uuid4().hex}.{extension}"
+        target.write_bytes(raw)
+        logo_path = f"/static/uploads/business/{target.name}"
     allowed = {"owner_full_name", "owner_phone", "owner_email", "owner_address", "owner_business_name", "owner_business_registration", "owner_signatory_title"}
     updates = {key: str(form.get(key, "")).strip()[:1000] for key in allowed}
     updates["owner_national_id"] = national_id or ""
     updates["owner_phone"] = phone or ""
     updates["owner_signatory_user_id"] = signatory_id
+    updates["owner_bank_account"] = str(form.get("owner_bank_account", "") or "").strip()[:80]
+    updates["owner_bank_iban"] = bank_iban or ""
+    updates["owner_website"] = website
+    updates["owner_instagram"] = instagram
+    if logo_path is not None:
+        updates["owner_logo_path"] = logo_path
+    elif str(form.get("remove_logo", "") or "") == "1":
+        updates["owner_logo_path"] = ""
     for key, value in updates.items():
         setting = db.query(Settings).filter(Settings.key == key).first()
         if setting:

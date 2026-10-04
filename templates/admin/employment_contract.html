@@ -21,7 +21,7 @@
 </div>
 {% else %}
 <div class="print-document">
-  <div class="print-document-header"><h1>{{ owner_settings.get('owner_business_name', store.name) }}</h1><h2>قرارداد کار {{ 'مدت معین' if staff_user.contract_end_date else 'غیرمعین (دائم)' }}</h2><div class="print-document-meta"><span>شماره قرارداد: {{ staff_user.employee_code or staff_user.id }}/{{ (jalali_str(staff_user.hire_date, with_time=False) or '')[:4] }}</span><span>تاریخ تنظیم: {{ jalali_str(staff_user.hire_date or staff_user.created_at, with_time=False) }}</span></div></div>
+  <div class="print-document-header">{% if owner_settings.get('owner_logo_path') %}<img src="{{ owner_settings.get('owner_logo_path') }}" alt="" style="max-height: 72px;">{% endif %}<h1>{{ owner_settings.get('owner_business_name', store.name) }}</h1><h2>قرارداد کار {{ 'مدت معین' if staff_user.contract_end_date else 'غیرمعین (دائم)' }}</h2><div class="print-document-meta"><span>شماره قرارداد: {{ staff_user.employee_code or staff_user.id }}/{{ (jalali_str(staff_user.hire_date, with_time=False) or '')[:4] }}</span><span>تاریخ تنظیم: {{ jalali_str(staff_user.hire_date or staff_user.created_at, with_time=False) }}</span></div></div>
   <h3>ماده ۱ — طرفین قرارداد</h3>
   <p><strong>کارفرما:</strong> {{ owner_settings.get('owner_full_name', '') }} به نمایندگی از {{ owner_settings.get('owner_business_name', store.name) }}{% if owner_settings.get('owner_business_registration') %} به شماره ثبت {{ owner_settings.get('owner_business_registration') }}{% endif %} به نشانی {{ owner_settings.get('owner_address', '') }}{% if owner_settings.get('owner_phone') %}، تلفن {{ owner_settings.get('owner_phone') }}{% endif %}.</p>
   <p><strong>کارگر:</strong> {{ employee_address }}، دارای کد ملی {{ staff_user.national_id }}{% if staff_user.birth_date %}، متولد {{ jalali_str(staff_user.birth_date, with_time=False) }}{% endif %}{% if staff_user.phone %}، تلفن {{ staff_user.phone }}{% endif %}، ساکن {{ staff_user.address }}.</p>
@@ -43,7 +43,10 @@
   <p>هرگونه اختلاف ناشی از تفسیر یا اجرای این قرارداد نخست از طریق مذاکره مستقیم حل می‌شود و در صورت عدم توافق، مرجع صالح قانونی (هیأت‌های حل اختلاف اداره تعاون، کار و رفاه اجتماعی) رسیدگی خواهد کرد.</p>
   <h3>ماده ۸ — نسخ قرارداد</h3>
   <p>این قرارداد در دو نسخه هم‌ارزش تنظیم شد که یک نسخه نزد هر یک از طرفین باقی می‌ماند و هر دو نسخه حکم واحد را دارند.</p>
-  <div class="document-signatures"><div>نام و امضای کارمند<br><strong>{{ staff_user.full_name }}</strong><br><br>امضا: ....................<br>تاریخ: ....................</div><div>نام و امضای {{ owner_settings.get('owner_signatory_title', 'کارفرما') }}<br><strong>{{ signatory_name }}</strong><br><br>امضا: ....................<br>تاریخ: ....................</div></div>
+  <div class="document-signatures is-3col"><div>نام و امضای کارمند<br><strong>{{ staff_user.full_name }}</strong><br><br>امضا: ....................<br>تاریخ: ....................</div><div>نام و امضای {{ owner_settings.get('owner_signatory_title', 'کارفرما') }}<br><strong>{{ signatory_name }}</strong><br><br>امضا: ....................<br>تاریخ: ....................</div><div>مهر شرکت<br><br><br>....................</div></div>
+  {% if owner_settings.get('owner_website') or owner_settings.get('owner_instagram') %}
+  <p class="muted" style="text-align: center;">{% if owner_settings.get('owner_website') %}<span dir="ltr">{{ owner_settings.get('owner_website') }}</span>{% endif %}{% if owner_settings.get('owner_website') and owner_settings.get('owner_instagram') %} · {% endif %}{% if owner_settings.get('owner_instagram') %}اینستاگرام: <span dir="ltr">@{{ owner_settings.get('owner_instagram') }}</span>{% endif %}</p>
+  {% endif %}
 </div>
 {% endif %}
 {% endblock %}
