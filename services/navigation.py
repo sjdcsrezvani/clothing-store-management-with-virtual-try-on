@@ -80,7 +80,7 @@ NAV_SECTIONS: tuple[dict, ...] = (
         _item("/admin/backups", "پشتیبان‌ها", "backup", "backups", "owner"),
         _item("/admin/events", "دفتر رویدادها", "calendar", "events", "owner"),
         _item("/admin/logs", "گزارش عملیات", "logs", "logs", "owner"),
-        _item("/admin/owner-profile", "اطلاعات مالک", "crown", "owner-profile", "owner"),
+        _item("/admin/owner-profile", "هویت کسب‌وکار", "crown", "owner-profile", "owner"),
     )},
 )
 

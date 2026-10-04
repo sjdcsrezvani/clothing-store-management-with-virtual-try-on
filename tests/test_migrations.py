@@ -286,7 +286,7 @@ def test_revision_27_collapses_junk_category_spellings_to_null(tmp_path):
                           "('a', 'None'), ('b', 'null'), ('c', 'پیراهن'), ('d', NULL)"))
         conn.execute(text("INSERT INTO expenses (amount, category) VALUES "
                           "(1000, '-'), (2000, 'اجاره')"))
-    assert upgrade(engine) == 27
+    assert upgrade(engine) == MIGRATION_VERSION
     with engine.connect() as conn:
         assert conn.execute(text(
             "SELECT name FROM products WHERE category IS NULL ORDER BY name")).scalars().all() == ["a", "b", "d"]

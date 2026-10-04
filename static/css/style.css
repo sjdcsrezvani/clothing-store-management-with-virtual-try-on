@@ -383,9 +383,10 @@ textarea {
   padding: 0.75rem 1rem;
   /* One hairline, not a frame: the 2px border made every field shout, and
      nine shouting fields is what read as ugly. The focus ring still speaks
-     up when a field owns the keyboard. */
+     up when a field owns the keyboard. Corners wear the card radius, not
+     the small one — fields should feel touchable, not machined. */
   border: 1px solid var(--rule);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   background: var(--field-bg);
   font-family: inherit;
   font-size: 1rem;
@@ -425,7 +426,7 @@ select:not([multiple]):hover { border-color: var(--candy); }
    wears the card look, and both are exactly the field's width. */
 .fancy-wrap { position: relative; display: block; }
 .fancy-wrap > select { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
-.fancy-btn { display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.75rem 1rem; padding-inline-end: 2.4rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); background-color: var(--field-bg); background-image: linear-gradient(45deg, transparent 50%, var(--ink-soft) 50%), linear-gradient(135deg, var(--ink-soft) 50%, transparent 50%); background-position: left 1.15rem center, left 0.8rem center; background-size: 0.45rem 0.45rem; background-repeat: no-repeat; font: inherit; font-size: 1rem; color: var(--ink); cursor: pointer; text-align: start; }
+.fancy-btn { display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.75rem 1rem; padding-inline-end: 2.4rem; border: 1px solid var(--rule); border-radius: var(--radius); background-color: var(--field-bg); background-image: linear-gradient(45deg, transparent 50%, var(--ink-soft) 50%), linear-gradient(135deg, var(--ink-soft) 50%, transparent 50%); background-position: left 1.15rem center, left 0.8rem center; background-size: 0.45rem 0.45rem; background-repeat: no-repeat; font: inherit; font-size: 1rem; color: var(--ink); cursor: pointer; text-align: start; }
 .fancy-btn:hover { border-color: var(--candy); }
 .fancy-btn:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
 .fancy-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -487,15 +488,55 @@ button:disabled {
 
 .form-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* minmax(0,…) — not bare 1fr: grid items default min-width:auto, so one
+     long Persian label used to force its column wider than half and the
+     whole grid stopped aligning. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   /* column-gap only: each .form-group already carries its own bottom margin,
      so a row gap here doubled the space between stacked fields to 2rem. */
   column-gap: 1rem;
+  /* A help line under one field must not drag its neighbour down with it:
+     cells align to their own tops, and bare-label rows still breathe. */
+  row-gap: 1rem;
+  align-items: start;
 }
+/* A fieldset refuses to shrink inside grids unless told otherwise
+   (min-inline-size:min-content is the default): without this, grouped
+   fields overflow their column instead of wrapping inside it. */
+.form-row fieldset, .form-span-2 fieldset { min-width: 0; }
+/* Hire-first field system: one field, three slots — label text, control,
+   help — stacked on a strict beat. Other forms migrate here one page at a
+   time; nothing outside the hire wizard uses these classes yet. */
+.hire-grid { display: grid; grid-template-columns: minmax(0, 1fr); row-gap: 1.1rem; }
+.hire-field { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; font-size: 0.85rem; font-weight: 600; }
+.hire-field > .muted { font-weight: 400; }
+.hire-field > .field-help { margin-top: 0; }
+.hire-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.hire-fieldset > legend { padding: 0; font-size: 0.95rem; font-weight: 800; margin-bottom: 0.2rem; }
+/* A checkbox with its sentence stays on one line, inside stacked flows too. */
+.check-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+.check-row input[type="checkbox"] { width: 1.1rem; height: 1.1rem; min-height: 0; flex-shrink: 0; accent-color: var(--candy); }
+/* Capability rows: the switch first, then a two-line title + consequence.
+   Horizontal (a switch is not a text field), vertically centered. */
+.cap-row { display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.55rem 0.7rem; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--card); font-size: 0.85rem; }
+.cap-row > label { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; white-space: nowrap; }
+.cap-row:has(input:disabled) { cursor: default; background: var(--surface-soft); }
+.cap-row:has(input:disabled) > label { cursor: default; }
+.cap-row input[type="checkbox"] { width: 1.15rem; height: 1.15rem; min-height: 0; margin-top: 0.15rem; flex-shrink: 0; accent-color: var(--candy); }
+/* The void form lives inside a receipt cell: reason above, button below —
+   never squeezed beside the print link. */
+.void-form { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.4rem; }
+.void-form label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.78rem; font-weight: 700; }
+/* One payroll line: kind, reason, amount and remove share a row instead of
+   stacking four-high inside the single-column flow. */
+.item-row { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 0.5rem; align-items: end; }
+/* The wizard reads as a form, not a spreadsheet: one comfortable column.
+   Full-width fields stop looking stretched once the column itself is narrow. */
+.hire-narrow { max-width: 640px; margin-inline: auto; }
 /* Three fields that belong on one line (name/number/amount rows): without
    this they fall into the two-column grid above and the third wraps alone
    at half width. */
-.form-row.is-3col { grid-template-columns: 1fr 1fr 1fr; }
+.form-row.is-3col { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 
 /* ===================== Buttons — iconic ===================== */
 
@@ -947,7 +988,7 @@ tbody tr:last-child td { border-bottom: none; }
 .btn-confirm { font-size: 1.1rem; padding: 1.1rem; margin-top: 0.8rem; }
 /* The wizard's own rhythm (try-on mirrors the till): timeline breathing room,
    the pairing subsection inside step 1, the scan row, the generate button. */
-.wizard-timeline { margin-bottom: 1.5rem; }
+.wizard-timeline { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
 .tryon-pairing {
   margin-top: 1rem;
   padding-top: 1rem;
@@ -1687,6 +1728,12 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 .staff-record-body { padding: 1rem; border-top: 1px solid var(--rule); }
 .form-span-2 { grid-column: 1 / -1; }
 .staff-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.9rem; }
+/* Inactive staff read at full contrast: only the row wash dims, the words
+   never do — status rides on the explicit badge, not on brightness. */
+.staff-row-inactive > td { background: var(--surface-soft); }
+.staff-profile-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem; margin-bottom: 1rem; }
+.staff-profile-head h3 { margin: 0; }
+.role-matrix td:first-child, .role-matrix th:first-child { text-align: start; }
 .salary-box { margin-top: 1rem; padding: 1rem; border: 1px solid color-mix(in srgb, var(--mint) 35%, var(--rule)); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--mint) 5%, var(--card)); }
 .salary-box h4 { margin-bottom: 0.7rem; }
 .print-document { max-width: 820px; margin: 1.5rem auto; background: var(--card); padding: 2rem; box-shadow: var(--shadow-hover); border-radius: var(--radius); }
@@ -1694,6 +1741,7 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 .print-document-header h1 { margin: 0 0 0.35rem; }
 .print-document-meta { display: flex; justify-content: space-between; gap: 1rem; color: var(--ink-soft); font-size: 0.85rem; }
 .document-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; margin-top: 4rem; text-align: center; }
+.document-signatures.is-3col { grid-template-columns: 1fr 1fr 1fr; gap: 2rem; }
 .document-signatures div { border-top: 1px solid var(--ink); padding-top: 0.5rem; }
 .document-actions { display: flex; justify-content: center; gap: 0.6rem; margin: 1rem auto; }
 @media (max-width: 700px) { .staff-record > summary { align-items: flex-start; flex-direction: column; } .form-span-2 { grid-column: auto; } .document-signatures { gap: 1.5rem; } }

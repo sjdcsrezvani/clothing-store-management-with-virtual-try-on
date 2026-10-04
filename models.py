@@ -1,7 +1,7 @@
 import string
 import random
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, CheckConstraint, UniqueConstraint, Index, text, event as sqlalchemy_event
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Date, ForeignKey, Text, CheckConstraint, UniqueConstraint, Index, text, event as sqlalchemy_event
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -54,12 +54,30 @@ class StaffUser(Base):
     salary_payment_day = Column(Integer, nullable=True)
     address = Column(Text, nullable=True)
     emergency_contact = Column(String(200), nullable=True)
+    emergency_name = Column(String(100), nullable=True)
+    emergency_relation = Column(String(50), nullable=True)
+    emergency_phone = Column(String(30), nullable=True)
     bank_account = Column(String(80), nullable=True)
     iban = Column(String(40), nullable=True)
+    contract_term_months = Column(Integer, nullable=True)
+    gender = Column(String(10), nullable=True)
+    insured = Column(Boolean, nullable=True)
+    position_id = Column(Integer, ForeignKey("job_positions.id"), nullable=True)
     salary_amount = Column(Integer, nullable=False, default=0)
     notes = Column(Text, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     last_login_at = Column(DateTime, nullable=True)
+    # Per-person capability toggles. NULL means "follow the role default":
+    # a toggle can only narrow what the role grants, never widen it, and
+    # owners bypass toggles entirely (see services/security.effective_cap).
+    can_refund = Column(Boolean, nullable=True)
+    can_discount = Column(Boolean, nullable=True)
+    can_view_payroll = Column(Boolean, nullable=True)
+    can_reconcile_pos = Column(Boolean, nullable=True)
+    # Per-invoice manual-discount ceilings. NULL means "follow the role
+    # default" like the toggles; enforced as min(person, role) per unit.
+    max_discount_amount = Column(Integer, nullable=True)
+    max_discount_percent = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     __table_args__ = (
@@ -70,6 +88,7 @@ class StaffUser(Base):
     )
 
     salary_payments = relationship("SalaryPayment", foreign_keys="SalaryPayment.staff_user_id", back_populates="staff_user", order_by="SalaryPayment.paid_at.desc()")
+    position = relationship("JobPosition")
 
 
 class Customer(Base):
@@ -851,10 +870,18 @@ class SalaryPayment(Base):
     expense_id = Column(Integer, ForeignKey("expenses.id"), nullable=False, unique=True)
     cash_session_id = Column(Integer, ForeignKey("cash_sessions.id"), nullable=True)
     note = Column(Text, nullable=True)
+    # A void never deletes the row: the month stays on the books as voided
+    # with its reason, and a fresh payment may take the freed month. The live
+    # uniqueness below is what frees it — voided rows stop colliding.
+    is_voided = Column(Boolean, nullable=False, default=False)
+    void_reason = Column(Text, nullable=True)
+    voided_at = Column(DateTime, nullable=True)
+    voided_by_user_id = Column(Integer, ForeignKey("staff_users.id"), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     __table_args__ = (
-        UniqueConstraint("staff_user_id", "period_key", name="uq_salary_payments_staff_period"),
+        Index("uq_salary_payments_staff_period_live", "staff_user_id", "period_key",
+              unique=True, sqlite_where=text("is_voided = 0")),
         CheckConstraint("gross_amount > 0", name="ck_salary_gross_positive"),
         CheckConstraint("deductions >= 0 AND deductions < gross_amount", name="ck_salary_deductions_valid"),
         CheckConstraint("net_amount > 0", name="ck_salary_net_positive"),
@@ -865,6 +892,63 @@ class SalaryPayment(Base):
     operator = relationship("StaffUser", foreign_keys=[operator_user_id])
     expense = relationship("Expense")
     cash_session = relationship("CashSession")
+    items = relationship("SalaryPaymentItem", back_populates="payment", cascade="all, delete-orphan",
+                         order_by="SalaryPaymentItem.id")
+
+
+class SalaryPaymentItem(Base):
+    """One auditable line inside a salary payment: base, advance, overtime,
+    bonus or deduction. The header stores the denormalized totals; these rows
+    are the itemized proof. Amounts are always positive — the kind decides
+    the sign: base/overtime/bonus add to gross, advance/deduction subtract."""
+    __tablename__ = "salary_payment_items"
+
+    id = Column(Integer, primary_key=True)
+    salary_payment_id = Column(Integer, ForeignKey("salary_payments.id"), nullable=False, index=True)
+    kind = Column(String(20), nullable=False)
+    label = Column(String(200), nullable=True)
+    amount = Column(Integer, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("kind IN ('base', 'advance', 'overtime', 'bonus', 'deduction')",
+                        name="ck_salary_item_kind"),
+        CheckConstraint("amount > 0", name="ck_salary_item_amount_positive"),
+    )
+
+    payment = relationship("SalaryPayment", back_populates="items")
+
+
+class AttendanceRecord(Base):
+    """One marked day for one person: present, absent, or on leave. A missing
+    row means unmarked — never assume absent. Leave days are the single source
+    of truth for leave balances (allowance minus marked leave days)."""
+    __tablename__ = "attendance_records"
+
+    id = Column(Integer, primary_key=True)
+    staff_user_id = Column(Integer, ForeignKey("staff_users.id"), nullable=False, index=True)
+    day = Column(Date, nullable=False, index=True)
+    status = Column(String(20), nullable=False)
+    note = Column(String(200), nullable=True)
+    recorded_by_user_id = Column(Integer, ForeignKey("staff_users.id"), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("staff_user_id", "day", name="uq_attendance_staff_day"),
+        CheckConstraint("status IN ('present', 'absent', 'annual_leave', 'sick_leave')",
+                        name="ck_attendance_status"),
+    )
+
+
+class JobPosition(Base):
+    """A company position (سمت سازمانی) managed in settings and assigned per
+    staff: the title the employment contract prints. Deactivation retires it
+    from new assignments; holders keep history."""
+    __tablename__ = "job_positions"
+
+    id = Column(Integer, primary_key=True)
+    title = Column(String(100), nullable=False, unique=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
 
 class Payment(Base):
@@ -1307,6 +1391,7 @@ BUSINESS_EVENT_TYPES = (
     "CheckCancelled",
     "CheckBounced",
     "CheckReminderTriggered",
+    "SalaryVoided",
     "DatabaseReset",
 )
 

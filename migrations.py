@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 27
+MIGRATION_VERSION = 32
 
 
 def migration_status(engine) -> int:
@@ -238,6 +238,155 @@ def _rebuild_sms_messages(conn) -> None:
 
 
 def _apply_revision(conn, version: int) -> None:
+    if version == 32:
+        # Contract-grade identity: gender, insurance flag and a company
+        # position per staff, plus the positions directory itself. All NULL /
+        # empty to start — existing staff read exactly as before.
+        _add_column_if_missing(conn, "staff_users", "gender", "VARCHAR(10)")
+        _add_column_if_missing(conn, "staff_users", "insured", "BOOLEAN")
+        _add_column_if_missing(conn, "staff_users", "position_id", "INTEGER")
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS job_positions (
+                id INTEGER PRIMARY KEY,
+                title VARCHAR(100) NOT NULL UNIQUE,
+                is_active BOOLEAN NOT NULL DEFAULT 1,
+                created_at DATETIME NOT NULL
+            )
+        """))
+        return
+
+    if version == 31:
+        # Per-invoice discount ceilings per person. NULL everywhere to start,
+        # which the helper reads as "follow the role default" — purely
+        # additive, every existing account behaves exactly as before.
+        _add_column_if_missing(conn, "staff_users", "max_discount_amount", "INTEGER")
+        _add_column_if_missing(conn, "staff_users", "max_discount_percent", "INTEGER")
+        return
+
+    if version == 30:
+        # People intelligence: contract terms in months (NULL = open-ended or
+        # legacy free date), structured emergency contact, and one marked day
+        # per person. Purely additive — existing staff keep their free
+        # contract dates until the owner edits them.
+        _add_column_if_missing(conn, "staff_users", "contract_term_months", "INTEGER")
+        _add_column_if_missing(conn, "staff_users", "emergency_name", "VARCHAR(100)")
+        _add_column_if_missing(conn, "staff_users", "emergency_relation", "VARCHAR(50)")
+        _add_column_if_missing(conn, "staff_users", "emergency_phone", "VARCHAR(30)")
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS attendance_records (
+                id INTEGER PRIMARY KEY,
+                staff_user_id INTEGER NOT NULL REFERENCES staff_users (id),
+                day DATE NOT NULL,
+                status VARCHAR(20) NOT NULL,
+                note VARCHAR(200),
+                recorded_by_user_id INTEGER REFERENCES staff_users (id),
+                created_at DATETIME NOT NULL,
+                CONSTRAINT uq_attendance_staff_day UNIQUE (staff_user_id, day),
+                CONSTRAINT ck_attendance_status CHECK (
+                    status IN ('present', 'absent', 'annual_leave', 'sick_leave'))
+            )
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_attendance_staff ON attendance_records (staff_user_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_attendance_day ON attendance_records (day)"))
+        return
+
+    if version == 29:
+        # Salary payments grow void flags and an itemized-lines table, and the
+        # blanket staff+month unique becomes live-only so a voided month can
+        # be re-paid. A table rebuild: the old unique is frozen into the
+        # table definition, which SQLite cannot alter in place. Fresh installs
+        # already carry the new shape and are left untouched. Nothing inbound
+        # references salary_payments by FK (events point by name), so the
+        # copy-drop-rename keeps every row and id.
+        tables = {
+            row[0] for row in conn.execute(text(
+                "SELECT name FROM sqlite_master WHERE type='table'")).all()
+        }
+        if "salary_payments" not in tables:
+            return
+        columns = {
+            row[1] for row in conn.execute(
+                text("PRAGMA table_info(salary_payments)")).all()
+        }
+        # Fresh installs already carry the new shape; only rebuild tables
+        # that predate the void flags.
+        if "is_voided" in columns:
+            return
+        conn.execute(text("DROP INDEX IF EXISTS ix_salary_payments_id"))
+        conn.execute(text("DROP INDEX IF EXISTS ix_salary_payments_staff_user_id"))
+        conn.execute(text("""
+            CREATE TABLE salary_payments_v29 (
+                id INTEGER NOT NULL PRIMARY KEY,
+                staff_user_id INTEGER NOT NULL REFERENCES staff_users (id),
+                period_key VARCHAR(20) NOT NULL,
+                gross_amount INTEGER NOT NULL,
+                deductions INTEGER NOT NULL,
+                net_amount INTEGER NOT NULL,
+                payment_method VARCHAR(20) NOT NULL,
+                paid_at DATETIME NOT NULL,
+                operator_user_id INTEGER NOT NULL REFERENCES staff_users (id),
+                expense_id INTEGER NOT NULL REFERENCES expenses (id),
+                cash_session_id INTEGER REFERENCES cash_sessions (id),
+                note TEXT,
+                is_voided BOOLEAN NOT NULL DEFAULT 0,
+                void_reason TEXT,
+                voided_at DATETIME,
+                voided_by_user_id INTEGER REFERENCES staff_users (id),
+                created_at DATETIME NOT NULL,
+                CONSTRAINT ck_salary_gross_positive CHECK (gross_amount > 0),
+                CONSTRAINT ck_salary_deductions_valid CHECK (deductions >= 0 AND deductions < gross_amount),
+                CONSTRAINT ck_salary_net_positive CHECK (net_amount > 0),
+                CONSTRAINT ck_salary_payment_method CHECK (payment_method IN ('cash', 'card')),
+                UNIQUE (expense_id)
+            )
+        """))
+        conn.execute(text("""
+            INSERT INTO salary_payments_v29 (
+                id, staff_user_id, period_key, gross_amount, deductions,
+                net_amount, payment_method, paid_at, operator_user_id,
+                expense_id, cash_session_id, note, is_voided, created_at
+            )
+            SELECT
+                id, staff_user_id, period_key, gross_amount, deductions,
+                net_amount, payment_method, paid_at, operator_user_id,
+                expense_id, cash_session_id, note, 0, created_at
+            FROM salary_payments
+        """))
+        conn.execute(text("DROP TABLE salary_payments"))
+        conn.execute(text("ALTER TABLE salary_payments_v29 RENAME TO salary_payments"))
+        conn.execute(text("CREATE INDEX ix_salary_payments_id ON salary_payments (id)"))
+        conn.execute(text("CREATE INDEX ix_salary_payments_staff_user_id ON salary_payments (staff_user_id)"))
+        conn.execute(text("""
+            CREATE UNIQUE INDEX uq_salary_payments_staff_period_live
+                ON salary_payments (staff_user_id, period_key) WHERE is_voided = 0
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS salary_payment_items (
+                id INTEGER PRIMARY KEY,
+                salary_payment_id INTEGER NOT NULL REFERENCES salary_payments (id),
+                kind VARCHAR(20) NOT NULL,
+                label VARCHAR(200),
+                amount INTEGER NOT NULL,
+                CONSTRAINT ck_salary_item_kind CHECK (kind IN ('base', 'advance', 'overtime', 'bonus', 'deduction')),
+                CONSTRAINT ck_salary_item_amount_positive CHECK (amount > 0)
+            )
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_salary_payment_items_payment ON salary_payment_items (salary_payment_id)"))
+        # Every historical payment earns its base line, so old rows itemize too.
+        conn.execute(text("""
+            INSERT INTO salary_payment_items (salary_payment_id, kind, label, amount)
+            SELECT id, 'base', 'حقوق پایه', gross_amount FROM salary_payments
+        """))
+        return
+
+    if version == 28:
+        # Per-person capability toggles on staff_users. All NULL to start,
+        # which effective_cap reads as "follow the role default" — purely
+        # additive, every existing account behaves exactly as before.
+        for column in ("can_refund", "can_discount", "can_view_payroll", "can_reconcile_pos"):
+            _add_column_if_missing(conn, "staff_users", column, "BOOLEAN")
+        return
+
     if version == 27:
         # Junk category spellings — the literal strings "None", "null", "-"
         # and the like, typed or imported once — collapse to NULL, which

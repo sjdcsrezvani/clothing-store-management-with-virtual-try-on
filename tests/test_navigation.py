@@ -338,7 +338,7 @@ def test_a_manager_keeps_their_doors_and_loses_the_owners(client, db_session):
                   "پیامک", "صندوق", "هزینه‌ها", "چک‌ها", "سود و زیان", "تطبیق کارت‌خوان"):
         assert label in sidebar, label
     for label in ("تحلیل فروش", "پشتیبان‌ها", "گزارش عملیات", "تنظیمات", "کارکنان و حقوق",
-                  "اطلاعات مالک", "دفتر رویدادها"):
+                  "هویت کسب‌وکار", "دفتر رویدادها"):
         assert label not in sidebar, label
 
 

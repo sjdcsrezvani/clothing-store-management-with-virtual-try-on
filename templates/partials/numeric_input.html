@@ -7,10 +7,13 @@
    type=text + inputmode=numeric (not type=number): the fa keyboard stays up,
    Persian digits are accepted and parsed server-side via to_english_digits,
    and there is no spinner chrome to remove. #}
-{% macro num(field, value, required=False, input_id='') %}
+{% macro num(field, value, required=False, input_id='', describedby='') %}
 {% set rule = numeric_rules.get(field) %}
-<input type="text" inputmode="numeric" id="{{ input_id or field }}" name="{{ field }}"
+{# Digits read left-to-right in every locale: the caret stays put instead of
+   jumping across the RTL boundary while Persian digits are typed. #}
+<input type="text" inputmode="numeric" dir="ltr" id="{{ input_id or field }}" name="{{ field }}"
        {% if rule %}min="{{ rule[0] }}"{% if rule[1] is not none %} max="{{ rule[1] }}"{% endif %}{% else %}data-unbounded="1"{% endif %}
        {% if required %}required{% endif %}
+       {% if describedby %}aria-describedby="{{ describedby }}"{% endif %}
        value="{{ value }}">
 {% endmacro %}

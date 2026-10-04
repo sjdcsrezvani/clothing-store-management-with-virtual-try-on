@@ -47,7 +47,7 @@ from services.accounting import (
 )
 from services.sms import queue_credit_reminder_sms
 from services.analytics import KNOWN_PERIODS, UnreadableRange, get_date_range, get_inventory_value, period_range
-from services.security import log_action, require_html_role, role_allows
+from services.security import log_action, require_html_role, role_allows, effective_cap
 from services.sorting import parse_sort
 from services.templating import templates
 from services.tier import TIER_LABELS
@@ -3293,6 +3293,9 @@ async def admin_expenses(
         "salary_map": salary_map,
         "actor_map": actor_map,
         "reversal_map": reversal_map,
+        # The salary-receipt links paint only for whoever may open them; the
+        # receipt route enforces the same capability.
+        "can_view_payroll": effective_cap(guard, "can_view_payroll"),
         "period": window.period,
         "start_date": start_date,
         "end_date": end_date,

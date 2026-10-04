@@ -34,7 +34,7 @@ from services.campaigns import (
     resolve_campaign_code,
     restore_campaign_after_refund,
 )
-from services.security import log_action, require_html_role
+from services.security import log_action, require_html_role, effective_cap, require_cap, current_staff_user, discount_allowed
 from services.tier import (
     update_customer_after_purchase, get_tier_config, check_tier_upgrade,
     tier_up_marker_key, TIER_RANK,
@@ -331,6 +331,9 @@ def _render_scan(request, customer, basket, total_amount, db,
         "error": error,
         "success": success,
         "fmt": fmt,
+        # The till paints its manual-discount fields only for whoever may
+        # actually grant one; the POSTs enforce the same capability.
+        "can_discount": effective_cap(current_staff_user(db, request), "can_discount"),
     })
 
 
@@ -516,6 +519,20 @@ async def sales_apply_discount(
 
     basket = json.loads(basket_json)
     total_amount = sum(item["total_price"] for item in basket)
+    allowed, limit_error = discount_allowed(
+        guard, _discount_int(custom_discount_amount),
+        _discount_int(custom_discount_percent))
+    if not allowed:
+        return _render_scan(
+            request, customer, basket, total_amount, db,
+            referrer_code=referrer_code,
+            referrer_phone=referrer_phone,
+            use_referrer_discount=use_referrer_discount,
+            custom_discount_amount=0,
+            custom_discount_percent=0,
+            campaign_code=campaign_code,
+            error=limit_error,
+        )
 
     return _render_scan(
         request, customer, basket, total_amount, db,
@@ -850,6 +867,14 @@ async def sales_confirm(
         return guard
     if payment_method not in ALLOWED_PAYMENT_METHODS:
         raise HTTPException(status_code=400, detail="روش پرداخت نامعتبر است.")
+    # The money moment for manual discounts: preview endpoints refuse too,
+    # but a forged POST straight here must meet the same answer.
+    allowed, limit_error = discount_allowed(
+        guard, _discount_int(custom_discount_amount),
+        _discount_int(custom_discount_percent))
+    if not allowed:
+        return _render_scan(request, None, [], 0, db, campaign_code=campaign_code,
+                            error=limit_error)
 
     checkout = get_checkout(db, checkout_nonce) if checkout_nonce else None
     if not checkout:
@@ -1116,6 +1141,7 @@ async def sales_confirm(
         "fmt": fmt,
         "jalali_str": jalali_str,
         "points_earned": points_earned,
+        "can_refund": effective_cap(guard, "can_refund"),
     })
 
 
@@ -1157,6 +1183,7 @@ async def sales_invoice_view(sale_id: int, request: Request, db: Session = Depen
         "fmt": fmt,
         "jalali_str": jalali_str,
         "points_earned": sale.points_earned,
+        "can_refund": effective_cap(guard, "can_refund"),
     })
 
 
@@ -1193,6 +1220,9 @@ async def sale_refund(sale_id: int, request: Request, refund_reason: str = Form(
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
+    cap = require_cap(request, db, "can_refund")
+    if not hasattr(cap, "role"):
+        return cap
     sale = db.query(Sale).filter(Sale.id == sale_id).first()
     if not sale:
         raise HTTPException(status_code=404, detail="فاکتور یافت نشد")

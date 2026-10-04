@@ -135,6 +135,56 @@ def fmt(amount: int) -> str:
     return f"{amount:,}"
 
 
+_FA_ONES = ["", "یک", "دو", "سه", "چهار", "پنج", "شش", "هفت", "هشت", "نه",
+            "ده", "یازده", "دوازده", "سیزده", "چهارده", "پانزده", "شانزده",
+            "هفده", "هجده", "نوزده"]
+_FA_TENS = ["", "", "بیست", "سی", "چهل", "پنجاه", "شصت", "هفتاد", "هشتاد", "نود"]
+_FA_HUNDREDS = ["", "یکصد", "دویست", "سیصد", "چهارصد", "پانصد", "ششصد",
+                "هفتصد", "هشتصد", "نهصد"]
+_FA_SCALES = ["", "هزار", "میلیون", "میلیارد"]
+
+
+def amount_to_words(amount: int) -> str:
+    """An integer amount in Persian words («ده میلیون تومان» writes itself).
+
+    Printed on legal documents beside the digits so a figure cannot be
+    altered with a pen stroke. Zero and negatives have no words here —
+    money on paper is always positive.
+    """
+    try:
+        number = int(amount or 0)
+    except (TypeError, ValueError):
+        return ""
+    if number <= 0:
+        return ""
+
+    def three_digits(part: int) -> str:
+        bits = []
+        hundreds, rest = divmod(part, 100)
+        if hundreds:
+            bits.append(_FA_HUNDREDS[hundreds])
+        if rest < 20 and rest > 0:
+            bits.append(_FA_ONES[rest])
+        elif rest >= 20:
+            tens, ones = divmod(rest, 10)
+            bits.append(_FA_TENS[tens])
+            if ones:
+                bits.append(_FA_ONES[ones])
+        return " و ".join(bits)
+
+    groups = []
+    scale = 0
+    while number > 0:
+        number, chunk = divmod(number, 1000)
+        if chunk:
+            words = three_digits(chunk)
+            if _FA_SCALES[scale]:
+                words += " " + _FA_SCALES[scale]
+            groups.append(words)
+        scale += 1
+    return " و ".join(reversed(groups))
+
+
 def share(part, whole, digits: int = 1):
     """A share of a whole as a number, or ``None`` when there is no whole.
 

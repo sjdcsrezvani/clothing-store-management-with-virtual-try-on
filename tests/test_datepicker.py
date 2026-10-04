@@ -290,9 +290,9 @@ def test_campaign_route_stores_a_jalali_date_as_the_same_gregorian_day(client, d
     ("admin/analytics.html", 'data-pdp-pair="#analytics-end"'),
     ("admin/purchases.html", 'data-pdp-pair="#filter-end"'),
     ("admin/inventory_movements.html", 'data-pdp-pair="#filter-end"'),
-    ("admin/checks.html", 'data-pdp-pair="#due_date"'),        # The staff page renders one record per employee, so the pair ids are
-        # parametrized by the record — the pin follows the template's shape.
-        ("admin/staff.html", 'data-pdp-pair="#contract_end_date_{{ user.id }}"'),
+    ("admin/checks.html", 'data-pdp-pair="#due_date"'),        # The staff edit form lives on the person's profile page now, so the
+        # pair ids carry that page's own record — the pin follows the move.
+        ("admin/staff_profile.html", 'data-pdp-pair="#contract_end_date_{{ staff_user.id }}"'),
     ("admin/campaign_form.html", 'data-pdp-pair="#end_date"'),
 ])
 def test_range_pairs_are_declared_once(template, fragment):

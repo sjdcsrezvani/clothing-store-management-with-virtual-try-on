@@ -116,6 +116,124 @@ def role_allows(role: str | None, minimum_role: str) -> bool:
     return ROLE_ORDER.get(role or "", 0) >= ROLE_ORDER.get(minimum_role, 99)
 
 
+# Per-person capability toggles layered on the role ladder. Each entry names
+# the StaffUser column and the minimum role that may hold the capability at
+# all — the toggle narrows, the role gates. Unknown capability: deny.
+CAPABILITIES = {
+    "can_refund": {"column": "can_refund", "minimum_role": "manager"},
+    "can_discount": {"column": "can_discount", "minimum_role": "cashier"},
+    "can_view_payroll": {"column": "can_view_payroll", "minimum_role": "manager"},
+    "can_reconcile_pos": {"column": "can_reconcile_pos", "minimum_role": "manager"},
+}
+
+# What an unset (NULL) toggle reads as, per role. New capabilities resolve
+# through the role alone until the owner says otherwise per person.
+ROLE_CAP_DEFAULTS = {
+    "cashier": {"can_refund": False, "can_discount": False,
+                "can_view_payroll": False, "can_reconcile_pos": False},
+    "manager": {"can_refund": True, "can_discount": True,
+                "can_view_payroll": False, "can_reconcile_pos": True},
+    "owner": {"can_refund": True, "can_discount": True,
+              "can_view_payroll": True, "can_reconcile_pos": True},
+}
+
+
+def effective_cap(user, capability: str) -> bool:
+    """Whether this person may exercise ``capability`` right now.
+
+    Narrow-only intersection: the role must allow the capability's minimum
+    level AND the person's toggle (or their role's default when unset) must
+    be on. A toggle can take away what the role grants; it can never grant
+    what the role denies. Owners bypass toggles so a mis-set switch can
+    never lock the shop's own administrator out.
+    """
+    spec = CAPABILITIES.get(capability)
+    if spec is None or user is None:
+        return False
+    if not getattr(user, "is_active", False):
+        return False
+    if (user.role or "") == "owner":
+        return role_allows(user.role, spec["minimum_role"])
+    if not role_allows(user.role, spec["minimum_role"]):
+        return False
+    toggle = getattr(user, spec["column"], None)
+    if toggle is None:
+        return bool(ROLE_CAP_DEFAULTS.get(user.role or "", {}).get(capability, False))
+    return bool(toggle)
+
+
+def require_cap(request: Request, db, capability: str):
+    """Like :func:`require_html_role` for a capability: return the active user
+    or an HTML response suitable for route guards (login redirect when
+    anonymous, 403 otherwise)."""
+    user = _session_staff_user(db, request)
+    if not user:
+        return RedirectResponse(url="/admin/login", status_code=303)
+    if not effective_cap(user, capability):
+        raise HTTPException(status_code=403, detail=PERMISSION_DENIED_DETAIL)
+    if request.session.get("staff_role") != user.role:
+        request.session["staff_role"] = user.role
+    return user
+
+
+# Per-invoice manual-discount ceilings per role, in the same narrow-only
+# spirit as the toggles: a personal ceiling can only sit at or under the
+# role's. None means unbounded (the owner answers to nobody here).
+ROLE_DISCOUNT_LIMITS = {
+    "cashier": {"amount": 0, "percent": 0},
+    "manager": {"amount": 200_000, "percent": 10},
+    "owner": {"amount": None, "percent": None},
+}
+
+
+def discount_limit(user, unit: str):
+    """The effective ceiling for ``unit`` (``amount`` or ``percent``):
+    personal value clamped to the role's, role default when unset, None when
+    unbounded. Unknown unit or person: the strictest answer, zero."""
+    if unit not in ("amount", "percent"):
+        return 0
+    role_default = ROLE_DISCOUNT_LIMITS.get(user.role if user else "", {}).get(unit, 0)
+    personal = getattr(user, f"max_discount_{unit}", None) if user else None
+    if personal is None:
+        return role_default
+    if role_default is None:
+        return personal
+    return min(personal, role_default)
+
+
+def discount_allowed(user, amount=0, percent=0) -> tuple[bool, str]:
+    """Whether this person may grant this manual discount on one invoice.
+
+    Zero discounts pass without a key; otherwise the toggle gates first,
+    then each unit is checked against its own ceiling, whichever hits first
+    refusing with its own sentence. Owners bypass ceilings the way they
+    bypass toggles.
+    """
+    if user is not None and (user.role or "") == "owner":
+        return True, ""
+    try:
+        amount = int(amount or 0)
+    except (TypeError, ValueError):
+        amount = 0
+    try:
+        percent = int(percent or 0)
+    except (TypeError, ValueError):
+        percent = 0
+    # Granting nothing needs no key: every till posts zero discounts by
+    # default, and refusing those would lock honest cashiers out of sales.
+    if amount <= 0 and percent <= 0:
+        return True, ""
+    if not effective_cap(user, "can_discount"):
+        return False, "تخفیف دستی برای حساب شما فعال نیست."
+    amount_limit = discount_limit(user, "amount")
+    if amount_limit is not None and amount > amount_limit:
+        return False, f"تخفیف مبلغی از سقف {amount_limit:,} تومان شما بیشتر است."
+    percent_limit = discount_limit(user, "percent")
+    if percent_limit is not None and percent > percent_limit:
+        return False, f"تخفیف درصدی از سقف {percent_limit}٪ شما بیشتر است."
+    return True, ""
+
+
 def _session_staff_user(db, request: Request):
     """Return the active staff account for this session, with legacy owner fallback."""
     from models import StaffUser

@@ -12,7 +12,7 @@ from database import get_db
 from datetime import datetime, timezone
 from models import (
     Campaign, Customer, Referral, Settings, Sale, SaleItem, SaleCampaign, GeneratedImage, AdminLog, POSTransaction, StockMovement,
-    BusinessEvent, StaffUser, SalaryPayment,
+    BusinessEvent, StaffUser, SalaryPayment, CashSession, AttendanceRecord, JobPosition,
 )
 from config import ADMIN_PASSWORD, API_TOKEN
 from deployment import OWNER_MODE
@@ -36,6 +36,7 @@ from services._common import (
     get_setting_int as get_discount_setting,
     jalali_age,
     jalali_str,
+    amount_to_words,
     page_arg,
     int_arg,
     parse_jalali_input,
@@ -89,6 +90,9 @@ from services.security import (
     verify_password,
     require_html_role,
     role_allows,
+    effective_cap,
+    require_cap,
+    ROLE_DISCOUNT_LIMITS,
 )
 from services.store import invalidate_store_cache, get_store
 from services.sorting import parse_sort
@@ -106,7 +110,9 @@ from services.tier import (
     TIER_RANK,
 )
 from services.events import EVENT_LIMIT_RULES, event_history, event_payload, append_event
-from services.payroll import create_salary_payment, current_period_key, normalize_period_key
+from services.payroll import (create_salary_payment, current_period_key,
+                             is_payroll_due, normalize_period_key,
+                             run_monthly_payday, void_salary_payment)
 from services.themes import THEMES, DEFAULT_THEME_ID, THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY, DEFAULT_CUSTOM_PRIMARY, DEFAULT_CUSTOM_SECONDARY, all_theme_previews, validate_hex, contrast_ratio, get_theme, invalidate_theme_cache, migrate_retired_theme
 
 router = APIRouter(prefix="/admin")
@@ -132,6 +138,16 @@ async def admin_login(request: Request, username: str = Form("owner"), password:
         request.session["staff_role"] = user.role
         request.session["api_token"] = API_TOKEN
         user.last_login_at = datetime.now(timezone.utc)
+        # First login of the day marks the person present: the row appears
+        # only when the day is still unmarked, so repeat logins never
+        # duplicate and a hand-marked leave is never overwritten. Presence
+        # only — sessions outlive any work stretch, so hours would lie.
+        today = datetime.now(timezone.utc).date()
+        if not db.query(AttendanceRecord).filter(
+                AttendanceRecord.staff_user_id == user.id,
+                AttendanceRecord.day == today).first():
+            db.add(AttendanceRecord(staff_user_id=user.id, day=today,
+                                    status="present", recorded_by_user_id=None))
         db.commit()
         log_action(db, "login", "ورود موفق", request=request, target_type="staff_user", target_id=user.id)
         # The till for a cashier, the dashboard for everyone above them. Sending
@@ -735,6 +751,96 @@ def _parse_staff_date(value: str):
     return parse_jalali_input(value)
 
 
+# Contract terms in months. Empty means open-ended (or a legacy free date the
+# owner typed before terms existed) — the end date then stays hand-written.
+CONTRACT_TERMS = {"1": "۱ ماهه", "3": "۳ ماهه", "6": "۶ ماهه", "12": "۱۲ ماهه"}
+
+
+def _add_jalali_months(base, months: int):
+    """hire_date + term, in the calendar the shop reads. Day clamps to the
+    target month (a 31st landing in a 29-day Esfand becomes the 29th)."""
+    import jdatetime
+    jd = jdatetime.date.fromgregorian(date=base.date())
+    total = (jd.month - 1) + months
+    year, month = jd.year + total // 12, total % 12 + 1
+    day = jd.day
+    while day > 28:
+        try:
+            jdatetime.date(year, month, day)
+            break
+        except ValueError:
+            day -= 1
+    gregorian = jdatetime.date(year, month, day).togregorian()
+    return datetime(gregorian.year, gregorian.month, gregorian.day,
+                    tzinfo=timezone.utc)
+
+
+def _contract_days_left(user, today=None):
+    """Whole days until the contract ends, negative when past. None when the
+    contract is open-ended — nothing to count down to."""
+    if not user.contract_end_date:
+        return None
+    if today is None:
+        today = datetime.now(timezone.utc).date()
+    return (user.contract_end_date.date() - today).days
+
+
+def _contract_flag(days):
+    if days is None:
+        return ""
+    if days < 0:
+        return "پایان‌یافته"
+    if days <= 7:
+        return "رو به پایان"
+    return ""
+
+
+# Annual leave allowance in days, per Iranian labour law (one month). Sick
+# leave is tracked without an allowance — counted, never capped.
+ANNUAL_LEAVE_ALLOWANCE = 26
+
+ATTENDANCE_STATUSES = {
+    "present": "حاضر",
+    "absent": "غایب",
+    "annual_leave": "مرخصی استحقاقی",
+    "sick_leave": "مرخصی استعلاجی",
+}
+
+
+def _jalali_month_bounds(period_key: str):
+    """Gregorian UTC bounds of a Jalali YYYY-MM month, for range queries."""
+    import jdatetime
+    year, month = int(period_key[:4]), int(period_key[5:7])
+    start = jdatetime.date(year, month, 1).togregorian()
+    if month == 12:
+        end = jdatetime.date(year + 1, 1, 1).togregorian()
+    else:
+        end = jdatetime.date(year, month + 1, 1).togregorian()
+    return (datetime(start.year, start.month, start.day, tzinfo=timezone.utc),
+            datetime(end.year, end.month, end.day, tzinfo=timezone.utc))
+
+
+def _jalali_year_bounds(jyear: int):
+    import jdatetime
+    start = jdatetime.date(jyear, 1, 1).togregorian()
+    end = jdatetime.date(jyear + 1, 1, 1).togregorian()
+    return (datetime(start.year, start.month, start.day, tzinfo=timezone.utc),
+            datetime(end.year, end.month, end.day, tzinfo=timezone.utc))
+
+
+def _closed_periods(current: str, count: int) -> list:
+    """The ``count`` Jalali months before ``current``, newest first — the
+    pickable salary periods. The current (open) month is never payable."""
+    year, month = int(current[:4]), int(current[5:7])
+    periods = []
+    for _ in range(count):
+        month -= 1
+        if month == 0:
+            month, year = 12, year - 1
+        periods.append(f"{year:04d}-{month:02d}")
+    return periods
+
+
 def _staff_amount(value: str, default: int = 0, field: str = "مبلغ") -> int:
     text = to_english_digits((value or "").replace(",", "").strip())
     if not text:
@@ -743,6 +849,74 @@ def _staff_amount(value: str, default: int = 0, field: str = "مبلغ") -> int:
         return int(text)
     except (TypeError, ValueError):
         raise ValueError(f"{field} معتبر نیست.")
+
+
+def _staff_limit(form, field: str, label: str):
+    """An optional per-person ceiling: blank means NULL (follow the role
+    default), otherwise a non-negative integer."""
+    text = to_english_digits(str(form.get(field, "") or "").replace(",", "").strip())
+    if not text:
+        return None
+    try:
+        value = int(text)
+    except (TypeError, ValueError):
+        raise ValueError(f"{label} معتبر نیست.")
+    if value < 0:
+        raise ValueError(f"{label} نمی‌تواند منفی باشد.")
+    return value
+
+
+def _check_national_id(code: str) -> str | None:
+    """Validate an Iranian national ID (کد ملی), checksum included. Empty stays
+    empty — the field is optional; a filled one must be real. Spacing and
+    dashes people copy along (``001 234 5678``) are stripped, not punished."""
+    import logging
+    import re
+    raw = to_english_digits((code or "").strip())
+    text = re.sub(r"[\s\u200c\-/]", "", raw)
+    if not text:
+        return None
+    if not (text.isdigit() and len(text) == 10) or len(set(text)) == 1:
+        logging.getLogger("raykid.staff").warning(
+            "national-id refused by shape: length=%d all_digits=%s",
+            len(text), text.isdigit())
+        raise ValueError("کد ملی باید ۱۰ رقم باشد.")
+    check = int(text[9])
+    remainder = sum(int(digit) * (10 - index) for index, digit in enumerate(text[:9])) % 11
+    if (remainder if remainder < 2 else 11 - remainder) != check:
+        logging.getLogger("raykid.staff").warning(
+            "national-id refused by checksum: length=10 expected_check=%d",
+            remainder if remainder < 2 else 11 - remainder)
+        raise ValueError("کد ملی معتبر نیست.")
+    return text
+
+
+def _check_mobile(phone: str) -> str | None:
+    """Mobile numbers route SMS and password handovers; landlines and
+    fragments silently break both. Empty stays empty."""
+    import re
+    text = to_english_digits((phone or "").strip()).replace(" ", "").replace("-", "")
+    if not text:
+        return None
+    if not re.fullmatch(r"09\d{9}", text):
+        raise ValueError("تلفن همراه باید با ۰۹ شروع شود و ۱۱ رقم باشد.")
+    return text
+
+
+def _check_iban(iban: str) -> str | None:
+    """Validate a Sheba (IR-IBAN): salary lands here, so a typo'd account
+    must refuse at typing time, not at payday. Empty stays empty."""
+    import re
+    text = (iban or "").strip().replace(" ", "").upper()
+    if not text:
+        return None
+    if not re.fullmatch(r"IR\d{24}", text):
+        raise ValueError("شبا باید با IR شروع شود و ۲۴ رقم بعد از آن داشته باشد.")
+    rearranged = text[4:] + text[:4]
+    numeric = "".join(str(ord(ch) - 55) if ch.isalpha() else ch for ch in rearranged)
+    if int(numeric) % 97 != 1:
+        raise ValueError("شبا معتبر نیست.")
+    return text
 
 
 # The staff forms' numeric fields, with the bound the server enforces and the
@@ -756,13 +930,37 @@ STAFF_NUMERIC_RULES = {
 }
 
 
-def _staff_profile_data(form):
+def _staff_profile_data(form, db=None):
     employment_type = str(form.get("employment_type", "full_time")).strip()
     if employment_type not in {"full_time", "part_time", "contractor"}:
         raise ValueError("نوع همکاری نامعتبر است.")
     salary_amount = _staff_amount(str(form.get("salary_amount", "0")), field="حقوق ماهانه")
     if salary_amount < STAFF_NUMERIC_RULES["salary_amount"][0]:
         raise ValueError("حقوق ماهانه نمی‌تواند منفی باشد.")
+    hire_date = _parse_staff_date(str(form.get("hire_date", "")))
+    contract_term = to_english_digits(str(form.get("contract_term_months", "") or "").strip())
+    if contract_term and contract_term not in CONTRACT_TERMS:
+        raise ValueError("مدت قرارداد نامعتبر است.")
+    if contract_term and not hire_date:
+        raise ValueError("برای قرارداد مدت‌دار، تاریخ شروع الزامی است.")
+    # A set term governs the end date: derived from start + term, never
+    # hand-typed beside it. Open terms keep the legacy free date.
+    contract_end_date = (_add_jalali_months(hire_date, int(contract_term))
+                         if contract_term else
+                         _parse_staff_date(str(form.get("contract_end_date", ""))))
+    gender = str(form.get("gender", "") or "").strip()
+    if gender and gender not in {"male", "female"}:
+        raise ValueError("جنسیت نامعتبر است.")
+    position_id = None
+    position_raw = to_english_digits(str(form.get("position_id", "") or "").strip())
+    if position_raw:
+        try:
+            position_id = int(position_raw)
+        except (TypeError, ValueError):
+            raise ValueError("سمت سازمانی نامعتبر است.")
+        if db is not None and not db.query(JobPosition).filter(
+                JobPosition.id == position_id).first():
+            raise ValueError("سمت سازمانی نامعتبر است.")
     salary_day_value = to_english_digits(str(form.get("salary_payment_day", "")).strip())
     salary_day = None
     if salary_day_value:
@@ -775,34 +973,52 @@ def _staff_profile_data(form):
     return {
         "full_name": str(form.get("full_name", "")).strip()[:200] or None,
         "employee_code": str(form.get("employee_code", "")).strip()[:50] or None,
-        "national_id": str(form.get("national_id", "")).strip()[:30] or None,
-        "phone": str(form.get("phone", "")).strip()[:30] or None,
+        "national_id": _check_national_id(str(form.get("national_id", ""))[:30]),
+        "phone": _check_mobile(str(form.get("phone", ""))[:30]),
         "email": str(form.get("email", "")).strip()[:150] or None,
         "job_title": str(form.get("job_title", "")).strip()[:100] or None,
+        "position_id": position_id,
+        "gender": gender or None,
+        "insured": str(form.get("insured", "") or "") == "1",
         "employment_type": employment_type,
-        "hire_date": _parse_staff_date(str(form.get("hire_date", ""))),
+        "hire_date": hire_date,
         "birth_date": _parse_staff_date(str(form.get("birth_date", ""))),
-        "contract_end_date": _parse_staff_date(str(form.get("contract_end_date", ""))),
+        "contract_term_months": int(contract_term) if contract_term else None,
+        "contract_end_date": contract_end_date,
         "education": str(form.get("education", "")).strip()[:200] or None,
         "work_schedule": str(form.get("work_schedule", "")).strip()[:200] or None,
         "salary_payment_day": salary_day,
         "address": str(form.get("address", "")).strip()[:2000] or None,
         "emergency_contact": str(form.get("emergency_contact", "")).strip()[:200] or None,
+        "emergency_name": str(form.get("emergency_name", "")).strip()[:100] or None,
+        "emergency_relation": str(form.get("emergency_relation", "")).strip()[:50] or None,
+        "emergency_phone": _check_mobile(str(form.get("emergency_phone", ""))[:30]),
         "bank_account": str(form.get("bank_account", "")).strip()[:80] or None,
-        "iban": str(form.get("iban", "")).strip()[:40] or None,
+        "iban": _check_iban(str(form.get("iban", ""))[:40]),
         "salary_amount": salary_amount,
         "notes": str(form.get("notes", "")).strip()[:4000] or None,
     }
 
 
+# The staff list's sort keys, with each key's own default direction. Names
+# ascend, money descends — the same rule the ledger lists follow.
+STAFF_SORTS = {"newest": "desc", "name": "asc", "salary": "desc"}
+
+
 @router.get("/staff", response_class=HTMLResponse)
-async def admin_staff(request: Request, q: str = "", status: str = "all", db: Session = Depends(get_db)):
+async def admin_staff(request: Request, q: str = "", status: str = "all", page: str = "1",
+                      per_page: str = "10", sort: str = "newest", dir: str = "desc",
+                      db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "owner")
     if not hasattr(guard, "role"):
         return guard
+    from urllib.parse import urlencode
     search = (q or "").strip()
     status_filter = status if status in {"active", "inactive"} else "all"
-    query = db.query(StaffUser).order_by(StaffUser.created_at.desc())
+    page_int = page_arg(page)
+    per_page_int = int(per_page) if str(per_page).isdigit() and int(per_page) in (10, 25, 50) else 10
+    sort_key, sort_dir = parse_sort(request.query_params, STAFF_SORTS, "newest")
+    query = db.query(StaffUser)
     if search:
         like = f"%{search}%"
         query = query.filter(or_(
@@ -814,14 +1030,249 @@ async def admin_staff(request: Request, q: str = "", status: str = "all", db: Se
         query = query.filter(StaffUser.is_active == True)  # noqa: E712
     elif status_filter == "inactive":
         query = query.filter(StaffUser.is_active == False)  # noqa: E712
-    staff_users = query.all()
+    if sort_key == "name":
+        query = query.order_by(
+            func.coalesce(StaffUser.full_name, StaffUser.username).asc()
+            if sort_dir == "asc" else
+            func.coalesce(StaffUser.full_name, StaffUser.username).desc())
+    elif sort_key == "salary":
+        query = query.order_by(
+            StaffUser.salary_amount.desc() if sort_dir == "desc" else StaffUser.salary_amount.asc())
+    else:
+        query = query.order_by(StaffUser.created_at.desc())
+    query = query.order_by(StaffUser.id.desc()) if sort_key != "newest" else query
+    total_count = query.count()
+    total_pages = max(1, -(-total_count // per_page_int))
+    page_int = min(page_int, total_pages)
+    staff_users = query.offset((page_int - 1) * per_page_int).limit(per_page_int).all()
+    today = datetime.now(timezone.utc).date()
+    contract_flags = {person.id: _contract_flag(_contract_days_left(person, today))
+                      for person in staff_users}
+    current = current_period_key()
+    unpaid_staff = db.query(StaffUser).filter(
+        StaffUser.is_active == True,  # noqa: E712
+        StaffUser.salary_amount > 0).order_by(StaffUser.id).all()
+    paid_ids = {row[0] for row in db.query(SalaryPayment.staff_user_id).filter(
+        SalaryPayment.period_key == current,
+        SalaryPayment.is_voided == False).all()}  # noqa: E712
+    unpaid_names = [(person.full_name or person.username)
+                    for person in unpaid_staff
+                    if person.id not in paid_ids
+                    and is_payroll_due(person.hire_date, current)]
+    base_qs = urlencode({
+        **({"q": search} if search else {}),
+        **({"status": status_filter} if status_filter != "all" else {}),
+        "per_page": per_page_int,
+    })
     return templates.TemplateResponse(request, "admin/staff.html", {
         "staff_users": staff_users,
         "owner_settings": {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()},
-        "current_period": current_period_key(),
         "search": search,
         "status_filter": status_filter,
-        "has_filters": bool(search or status_filter != "all"),
+        "has_filters": bool(search or status_filter != "all" or sort_key != "newest"
+                            or sort_dir != STAFF_SORTS[sort_key] or per_page_int != 10),
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
+        "fmt": fmt,
+        "jalali_str": jalali_str,
+        "page": page_int,
+        "per_page": per_page_int,
+        "per_page_options": (10, 25, 50),
+        "total_count": total_count,
+        "total_pages": total_pages,
+        "sort_key": sort_key,
+        "sort_dir": sort_dir,
+        "base_qs": base_qs,
+        # Payday nudges: active, salaried staff without a live payment for the
+        # current month. The banner names a few and counts the rest.
+        "current_period": current,
+        "unpaid_names": unpaid_names,
+        "contract_flags": contract_flags,
+        # The staff forms paint their bounds from the same table the POSTs
+        # validate against.
+        "numeric_rules": STAFF_NUMERIC_RULES,
+    })
+
+
+@router.get("/staff/export")
+async def admin_staff_export(request: Request, db: Session = Depends(get_db)):
+    """The staff directory as a file: identity, role, pay and state."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    import csv
+    import io
+    role_labels = {"cashier": "صندوقدار", "manager": "مدیر", "owner": "مالک"}
+    employment_labels = {"full_time": "تمام‌وقت", "part_time": "پاره‌وقت", "contractor": "قراردادی"}
+    out = [["نام", "نام کاربری", "کد پرسنلی", "کد ملی", "تلفن", "عنوان شغلی",
+            "نوع همکاری", "نقش", "حقوق ماهانه", "وضعیت", "تاریخ شروع"]]
+    for user in db.query(StaffUser).order_by(StaffUser.id).all():
+        out.append([
+            user.full_name or "", user.username, user.employee_code or "",
+            user.national_id or "", user.phone or "", user.job_title or "",
+            employment_labels.get(user.employment_type, user.employment_type or ""),
+            role_labels.get(user.role, user.role or ""), user.salary_amount or 0,
+            "فعال" if user.is_active else "غیرفعال",
+            jalali_str(user.hire_date, False) if user.hire_date else "",
+        ])
+    buf = io.StringIO()
+    buf.write("\ufeff")  # BOM so Excel opens Persian correctly
+    csv.writer(buf).writerows(out)
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="staff_{today}.csv"'},
+    )
+
+
+@router.get("/staff/new", response_class=HTMLResponse)
+async def admin_staff_new(request: Request, db: Session = Depends(get_db)):
+    """The full hire form on its own page — the list stays a list."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    return templates.TemplateResponse(request, "admin/staff_new.html", {
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
+        "fmt": fmt,
+        "contract_terms": CONTRACT_TERMS,
+        "positions": db.query(JobPosition).filter(JobPosition.is_active == True).order_by(JobPosition.id).all(),  # noqa: E712
+        # The staff forms paint their bounds from the same table the POSTs
+        # validate against.
+        "numeric_rules": STAFF_NUMERIC_RULES,
+    })
+
+
+@router.get("/staff/{staff_id}", response_class=HTMLResponse)
+async def admin_staff_profile(staff_id: int, request: Request, tab: str = "overview",
+                              db: Session = Depends(get_db)):
+    """One person's whole file: header, tabbed edit/permissions/payroll."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    staff_user = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
+    if not staff_user:
+        raise HTTPException(status_code=404, detail="کارمند یافت نشد")
+    active_tab = tab if tab in {"overview", "permissions", "payroll", "attendance", "history"} else "overview"
+    # Deactivation impact, computed while the switch is still flippable: an
+    # open drawer in this person's name and an unpaid current month are the
+    # two things closing access would strand.
+    current = current_period_key()
+    open_shift = db.query(CashSession).filter(
+        CashSession.cashier_user_id == staff_user.id,
+        CashSession.status == "open").order_by(CashSession.opened_at.desc()).first()
+    unpaid_month = staff_user.is_active and staff_user.salary_amount > 0 \
+        and is_payroll_due(staff_user.hire_date, current) and not db.query(
+        SalaryPayment).filter(SalaryPayment.staff_user_id == staff_user.id,
+                              SalaryPayment.period_key == current).first()
+    # Yearly rollups from live payments: the year is the period prefix.
+    year_totals: dict[str, dict] = {}
+    for payment in staff_user.salary_payments:
+        if payment.is_voided:
+            continue
+        year = (payment.period_key or "")[:4]
+        bucket = year_totals.setdefault(
+            year, {"gross": 0, "deductions": 0, "net": 0, "count": 0})
+        bucket["gross"] += payment.gross_amount or 0
+        bucket["deductions"] += payment.deductions or 0
+        bucket["net"] += payment.net_amount or 0
+        bucket["count"] += 1
+    # Attendance month on display (query ?month=YYYY-MM, default current) with
+    # leave balances derived from marked days of its Jalali year.
+    from services.payroll import normalize_period_key as _normalize_month
+    try:
+        attendance_month = _normalize_month(
+            str(request.query_params.get("month", "") or current))
+    except ValueError:
+        attendance_month = current
+    month_start, month_end = _jalali_month_bounds(attendance_month)
+    marks = db.query(AttendanceRecord).filter(
+        AttendanceRecord.staff_user_id == staff_user.id,
+        AttendanceRecord.day >= month_start.date(),
+        AttendanceRecord.day < month_end.date()).order_by(
+        AttendanceRecord.day).all()
+    attendance_rows = [{
+        "day": jalali_str(datetime(mark.day.year, mark.day.month, mark.day.day,
+                                   tzinfo=timezone.utc), False),
+        "status": ATTENDANCE_STATUSES.get(mark.status, mark.status),
+        "note": mark.note or "—",
+        "source": "خودکار" if mark.recorded_by_user_id is None else "دستی",
+    } for mark in marks]
+    year_start, year_end = _jalali_year_bounds(int(attendance_month[:4]))
+    leave_used = {"annual_leave": 0, "sick_leave": 0}
+    for (status,) in db.query(AttendanceRecord.status).filter(
+            AttendanceRecord.staff_user_id == staff_user.id,
+            AttendanceRecord.day >= year_start.date(),
+            AttendanceRecord.day < year_end.date(),
+            AttendanceRecord.status.in_(("annual_leave", "sick_leave"))).all():
+        leave_used[status] = leave_used.get(status, 0) + 1
+    # This month's sales performance, attributed by shift like analytics.
+    from services.analytics import get_staff_performance
+    performance = {"invoices": 0, "revenue": 0}
+    try:
+        staff_name = staff_user.full_name or staff_user.username
+        for row in get_staff_performance(db, month_start, month_end).get("rows", []):
+            if row.get("name") == staff_name:
+                performance = {"invoices": row.get("invoices", 0),
+                               "revenue": row.get("revenue", 0)}
+                break
+    except Exception:  # noqa: BLE001 — performance is garnish, never a blocker
+        pass
+    # The person's paper trail: every admin-log entry aimed at them, with an
+    # optional contract-and-pay lens. Unknown kinds degrade to the full feed.
+    history_kind = str(request.query_params.get("kind", "") or "").strip()
+    timeline_query = db.query(AdminLog).filter(
+        AdminLog.target_type == "staff_user",
+        AdminLog.target_id == staff_user.id)
+    if history_kind == "contract":
+        timeline_query = timeline_query.filter(AdminLog.action.in_(
+            ("staff_update", "staff_caps", "salary_void", "attendance_mark")))
+        # Salary payments aim at the payment row, not the person — pull this
+        # person's own pay events in and merge chronologically.
+        staff_payment_ids = [row[0] for row in db.query(SalaryPayment.id).filter(
+            SalaryPayment.staff_user_id == staff_user.id).all()]
+        pay_events = db.query(AdminLog).filter(
+            AdminLog.target_type == "salary_payment",
+            AdminLog.target_id.in_(staff_payment_ids)).order_by(
+            AdminLog.id.desc()).limit(30).all() if staff_payment_ids else []
+        timeline = sorted(list(timeline_query.order_by(
+            AdminLog.id.desc()).limit(30).all()) + pay_events,
+            key=lambda entry: entry.id, reverse=True)[:30]
+    else:
+        history_kind = "all"
+        timeline = timeline_query.order_by(AdminLog.id.desc()).limit(30).all()
+    return templates.TemplateResponse(request, "admin/staff_profile.html", {
+        "staff_user": staff_user,
+        "active_tab": active_tab,
+        "is_self": staff_user.id == guard.id,
+        # What each switch currently answers, after role defaults and the
+        # owner bypass — the toggles paint from the same answer enforcement reads.
+        "staff_caps": {field: effective_cap(staff_user, field) for field in CAP_FIELDS},
+        # The ceilings the limit inputs narrow: one source, painted and enforced.
+        "role_discount_limits": ROLE_DISCOUNT_LIMITS.get(staff_user.role or "", {}),
+        "positions": db.query(JobPosition).filter(JobPosition.is_active == True).order_by(JobPosition.id).all(),  # noqa: E712
+        "open_shift": open_shift,
+        "unpaid_month": current if unpaid_month else "",
+        "year_totals": dict(sorted(year_totals.items(), reverse=True)),
+        "contract_days_left": _contract_days_left(staff_user),
+        "contract_flag": _contract_flag(_contract_days_left(staff_user)),
+        "contract_terms": CONTRACT_TERMS,
+        "attendance_statuses": ATTENDANCE_STATUSES,
+        "attendance_month": attendance_month,
+        "attendance_marks": attendance_rows,
+        "annual_allowance": ANNUAL_LEAVE_ALLOWANCE,
+        "annual_used": leave_used["annual_leave"],
+        "sick_used": leave_used["sick_leave"],
+        "performance": performance,
+        "timeline": timeline,
+        "history_kind": history_kind,
+        "today_jalali": jalali_str(datetime.now(timezone.utc), False),
+        # The last closed months, newest first: pickable salary periods so
+        # the month format never has to be recalled from memory.
+        "closed_months": _closed_periods(current, 6),
+        "owner_settings": {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()},
+        "current_period": current_period_key(),
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
         "fmt": fmt,
@@ -842,18 +1293,18 @@ async def admin_staff_create(request: Request, db: Session = Depends(get_db)):
     password = str(form.get("password", ""))
     role = str(form.get("role", "cashier")).strip()
     if not username or len(password) < 6 or role not in {"cashier", "manager", "owner"}:
-        return RedirectResponse(url="/admin/staff?err=اطلاعات ورود کاربر نامعتبر است.", status_code=303)
+        return RedirectResponse(url="/admin/staff/new?err=اطلاعات ورود کاربر نامعتبر است.", status_code=303)
     if db.query(StaffUser).filter(StaffUser.username == username).first():
-        return RedirectResponse(url="/admin/staff?err=نام کاربری تکراری است.", status_code=303)
+        return RedirectResponse(url="/admin/staff/new?err=نام کاربری تکراری است.", status_code=303)
     try:
-        profile = _staff_profile_data(form)
+        profile = _staff_profile_data(form, db)
     except ValueError as error:
-        return RedirectResponse(url=f"/admin/staff?err={error}", status_code=303)
+        return RedirectResponse(url=f"/admin/staff/new?err={error}", status_code=303)
     user = StaffUser(username=username, password_hash=hash_password(password), role=role, **profile)
     db.add(user)
     db.commit()
     log_action(db, "staff_create", f"ایجاد کاربر {username}", request=request, target_type="staff_user", target_id=user.id, after={"username": username, "role": role, "full_name": user.full_name, "salary_amount": user.salary_amount})
-    return RedirectResponse(url="/admin/staff?msg=کاربر و اطلاعات پرسنلی ثبت شد.", status_code=303)
+    return RedirectResponse(url=f"/admin/staff/{user.id}?msg=کاربر و اطلاعات پرسنلی ثبت شد.", status_code=303)
 
 
 @router.post("/staff/{staff_id}", response_class=HTMLResponse)
@@ -867,31 +1318,194 @@ async def admin_staff_update(staff_id: int, request: Request, db: Session = Depe
     form = await request.form()
     role = str(form.get("role", user.role)).strip()
     if role not in {"cashier", "manager", "owner"}:
-        return RedirectResponse(url="/admin/staff?err=نقش کاربر نامعتبر است.", status_code=303)
+        return RedirectResponse(url=f"/admin/staff/{user.id}?tab=permissions&err=نقش کاربر نامعتبر است.", status_code=303)
     if user.role == "owner" and role != "owner":
         if user.id == guard.id:
-            return RedirectResponse(url="/admin/staff?err=نمی‌توانید نقش خودتان را از مالک تغییر دهید.", status_code=303)
+            return RedirectResponse(url=f"/admin/staff/{user.id}?tab=permissions&err=نمی‌توانید نقش خودتان را از مالک تغییر دهید.", status_code=303)
         remaining_owners = db.query(StaffUser).filter(
             StaffUser.role == "owner", StaffUser.is_active == True,  # noqa: E712
             StaffUser.id != user.id).count()
         if remaining_owners == 0:
-            return RedirectResponse(url="/admin/staff?err=نمی‌توانید نقش آخرین مالک فعال را تغییر دهید.", status_code=303)
+            return RedirectResponse(url=f"/admin/staff/{user.id}?tab=permissions&err=نمی‌توانید نقش آخرین مالک فعال را تغییر دهید.", status_code=303)
     try:
-        profile = _staff_profile_data(form)
+        profile = _staff_profile_data(form, db)
     except ValueError as error:
-        return RedirectResponse(url=f"/admin/staff?err={error}", status_code=303)
-    before = {"role": user.role, "full_name": user.full_name, "salary_amount": user.salary_amount, "is_active": user.is_active}
+        return RedirectResponse(url=f"/admin/staff/{user.id}?tab=overview&err={error}", status_code=303)
+    before = {"role": user.role, "full_name": user.full_name,
+              "salary_amount": user.salary_amount, "is_active": user.is_active,
+              "job_title": user.job_title, "employment_type": user.employment_type,
+              "hire_date": user.hire_date.isoformat() if user.hire_date else None,
+              "contract_term_months": user.contract_term_months,
+              "contract_end_date": user.contract_end_date.isoformat() if user.contract_end_date else None,
+              "gender": user.gender, "insured": user.insured,
+              "position_id": user.position_id}
     user.role = role
+    # A partial form (the permissions tab posts only the role) must not wipe
+    # the fields it omits: merge what arrived, leave the rest standing.
+    posted = set(form.keys())
     for key, value in profile.items():
-        setattr(user, key, value)
+        if key in posted:
+            setattr(user, key, value)
+    # Checkboxes post nothing when cleared: the marker says the form owned
+    # the switch, so absence means off rather than untouched.
+    if "insured_present" in posted:
+        user.insured = "insured" in posted
     password = str(form.get("password", ""))
     if password:
         if len(password) < 6:
-            return RedirectResponse(url="/admin/staff?err=رمز عبور باید حداقل ۶ کاراکتر باشد.", status_code=303)
+            return RedirectResponse(url=f"/admin/staff/{user.id}?tab=overview&err=رمز عبور باید حداقل ۶ کاراکتر باشد.", status_code=303)
         user.password_hash = hash_password(password)
     db.commit()
-    log_action(db, "staff_update", f"ویرایش کاربر {user.username}", request=request, target_type="staff_user", target_id=user.id, before=before, after={"role": user.role, "full_name": user.full_name, "salary_amount": user.salary_amount, "is_active": user.is_active})
-    return RedirectResponse(url="/admin/staff?msg=اطلاعات کارمند ذخیره شد.", status_code=303)
+    log_action(db, "staff_update", f"ویرایش کاربر {user.username}", request=request, target_type="staff_user", target_id=user.id, before=before, after={"role": user.role, "full_name": user.full_name, "salary_amount": user.salary_amount, "is_active": user.is_active, "job_title": user.job_title, "employment_type": user.employment_type, "hire_date": user.hire_date.isoformat() if user.hire_date else None, "contract_term_months": user.contract_term_months, "contract_end_date": user.contract_end_date.isoformat() if user.contract_end_date else None, "gender": user.gender, "insured": user.insured, "position_id": user.position_id})
+    return RedirectResponse(url=f"/admin/staff/{user.id}?msg=اطلاعات کارمند ذخیره شد.", status_code=303)
+
+
+CAP_FIELDS = ("can_refund", "can_discount", "can_view_payroll", "can_reconcile_pos")
+
+
+@router.post("/staff/{staff_id}/caps", response_class=HTMLResponse)
+async def admin_staff_caps(staff_id: int, request: Request, db: Session = Depends(get_db)):
+    """Flip one person's capability toggles. Narrow-only: a switch can take
+    away what the role grants, never grant what the role denies, and owners
+    bypass toggles — so an owner row is pinned all-on."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    user = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="کاربر یافت نشد")
+    form = await request.form()
+    before = {field: getattr(user, field) for field in CAP_FIELDS}
+    before.update({"max_discount_amount": user.max_discount_amount,
+                   "max_discount_percent": user.max_discount_percent})
+    if user.role == "owner":
+        for field in CAP_FIELDS:
+            setattr(user, field, True)
+    else:
+        for field in CAP_FIELDS:
+            setattr(user, field, str(form.get(field, "")) == "1")
+        try:
+            user.max_discount_amount = _staff_limit(form, "max_discount_amount", "سقف مبلغ تخفیف")
+            user.max_discount_percent = _staff_limit(form, "max_discount_percent", "سقف درصد تخفیف")
+        except ValueError as error:
+            db.rollback()
+            return RedirectResponse(
+                url=f"/admin/staff/{user.id}?tab=permissions&err={error}", status_code=303)
+    db.commit()
+    after = {field: getattr(user, field) for field in CAP_FIELDS}
+    after.update({"max_discount_amount": user.max_discount_amount,
+                  "max_discount_percent": user.max_discount_percent})
+    log_action(db, "staff_caps", f"کلیدهای دسترسی {user.username}", request=request, target_type="staff_user", target_id=user.id, before=before, after=after)
+    return RedirectResponse(url=f"/admin/staff/{user.id}?tab=permissions&msg=کلیدهای دسترسی ذخیره شد.", status_code=303)
+
+
+@router.get("/positions", response_class=HTMLResponse)
+async def admin_positions(request: Request, db: Session = Depends(get_db)):
+    """The company positions directory: titles the contract prints."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    positions = db.query(JobPosition).order_by(JobPosition.is_active.desc(), JobPosition.id).all()
+    counts = {row[0]: row[1] for row in db.query(
+        StaffUser.position_id, func.count(StaffUser.id)).filter(
+        StaffUser.position_id.isnot(None)).group_by(StaffUser.position_id).all()}
+    return templates.TemplateResponse(request, "admin/positions.html", {
+        "positions": positions,
+        "holder_counts": counts,
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
+    })
+
+
+@router.post("/positions", response_class=HTMLResponse)
+async def admin_position_add(request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    form = await request.form()
+    title = str(form.get("title", "") or "").strip()[:100]
+    if not title:
+        return RedirectResponse(url="/admin/positions?err=عنوان سمت الزامی است.", status_code=303)
+    if db.query(JobPosition).filter(JobPosition.title == title).first():
+        return RedirectResponse(url="/admin/positions?err=این سمت قبلاً ثبت شده است.", status_code=303)
+    position = JobPosition(title=title)
+    db.add(position)
+    db.commit()
+    log_action(db, "position_add", f"سمت سازمانی {title}", request=request,
+               target_type="job_position", target_id=position.id, after={"title": title})
+    return RedirectResponse(url="/admin/positions?msg=سمت ثبت شد.", status_code=303)
+
+
+@router.post("/positions/{position_id}", response_class=HTMLResponse)
+async def admin_position_update(position_id: int, request: Request, db: Session = Depends(get_db)):
+    """Rename or retire a position. Retiring keeps holders' history — the
+    contract of record already printed their title."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    position = db.query(JobPosition).filter(JobPosition.id == position_id).first()
+    if not position:
+        raise HTTPException(status_code=404, detail="سمت یافت نشد")
+    form = await request.form()
+    before = {"title": position.title, "is_active": position.is_active}
+    title = str(form.get("title", "") or "").strip()[:100]
+    if title and title != position.title:
+        if db.query(JobPosition).filter(JobPosition.title == title,
+                                        JobPosition.id != position.id).first():
+            return RedirectResponse(url="/admin/positions?err=این عنوان تکراری است.", status_code=303)
+        position.title = title
+    position.is_active = str(form.get("is_active", "") or "") == "1"
+    db.commit()
+    log_action(db, "position_update", f"سمت {position.title}", request=request,
+               target_type="job_position", target_id=position.id,
+               before=before, after={"title": position.title, "is_active": position.is_active})
+    return RedirectResponse(url="/admin/positions?msg=سمت ذخیره شد.", status_code=303)
+
+
+@router.post("/staff/{staff_id}/attendance", response_class=HTMLResponse)
+async def admin_staff_attendance(staff_id: int, request: Request, db: Session = Depends(get_db)):
+    """Mark one day present/absent/on-leave. Upsert by person-day: marking
+    twice rewrites, never duplicates. A missing day stays unmarked."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    user = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="کاربر یافت نشد")
+    form = await request.form()
+    status = str(form.get("status", "") or "").strip()
+    if status not in ATTENDANCE_STATUSES:
+        return RedirectResponse(
+            url=f"/admin/staff/{user.id}?tab=attendance&err=وضعیت حضور نامعتبر است.",
+            status_code=303)
+    day_value = _parse_staff_date(str(form.get("day", "")))
+    if not day_value:
+        return RedirectResponse(
+            url=f"/admin/staff/{user.id}?tab=attendance&err=تاریخ معتبر نیست.",
+            status_code=303)
+    day = day_value.date()
+    record = db.query(AttendanceRecord).filter(
+        AttendanceRecord.staff_user_id == user.id,
+        AttendanceRecord.day == day).first()
+    before = {"status": record.status if record else None}
+    if record is None:
+        record = AttendanceRecord(staff_user_id=user.id, day=day, status=status,
+                                  recorded_by_user_id=guard.id)
+        db.add(record)
+    else:
+        record.status = status
+        record.recorded_by_user_id = guard.id
+    record.note = str(form.get("note", "") or "").strip()[:200] or None
+    db.commit()
+    log_action(db, "attendance_mark", f"حضور {user.username} در {day.isoformat()}",
+               request=request, target_type="staff_user", target_id=user.id,
+               before=before, after={"status": status})
+    import jdatetime
+    jd = jdatetime.date.fromgregorian(date=day)
+    month = f"{jd.year:04d}-{jd.month:02d}"
+    return RedirectResponse(
+        url=f"/admin/staff/{user.id}?tab=attendance&month={month}&msg=حضور ثبت شد.",
+        status_code=303)
 
 
 @router.post("/staff/{staff_id}/salary", response_class=HTMLResponse)
@@ -906,12 +1520,24 @@ async def admin_staff_salary(staff_id: int, request: Request, db: Session = Depe
     try:
         period = normalize_period_key(str(form.get("period_key", "")))
     except ValueError as error:
-        return RedirectResponse(url=f"/admin/staff?err={error}", status_code=303)
+        return RedirectResponse(url=f"/admin/staff/{user.id}?tab=payroll&err={error}", status_code=303)
     existing = db.query(SalaryPayment).filter(
         SalaryPayment.staff_user_id == user.id,
-        SalaryPayment.period_key == period).first()
+        SalaryPayment.period_key == period,
+        SalaryPayment.is_voided == False).first()  # noqa: E712
     if existing is not None:
         return RedirectResponse(url=f"/admin/payroll/{existing.id}/receipt?msg=پرداخت حقوق قبلاً ثبت شده بود.", status_code=303)
+    # Itemized lines ride as indexed fields; a voided month re-pays clean.
+    items = []
+    for index in range(12):
+        kind = str(form.get(f"item_kind_{index}", "") or "").strip()
+        if not kind:
+            continue
+        items.append({
+            "kind": kind,
+            "label": str(form.get(f"item_label_{index}", "") or ""),
+            "amount": str(form.get(f"item_amount_{index}", "") or "0"),
+        })
     try:
         payment = create_salary_payment(
             db,
@@ -922,23 +1548,116 @@ async def admin_staff_salary(staff_id: int, request: Request, db: Session = Depe
             payment_method=str(form.get("payment_method", "cash")),
             note=str(form.get("note", "")),
             request_id=request.headers.get("X-Request-ID"),
+            items=items,
         )
         db.commit()
     except ValueError as error:
         db.rollback()
-        return RedirectResponse(url=f"/admin/staff?err={error}", status_code=303)
+        return RedirectResponse(url=f"/admin/staff/{user.id}?tab=payroll&err={error}", status_code=303)
     except IntegrityError:
         # A race for the same staff and month: the record already exists, so
         # land on its receipt instead of erroring.
         db.rollback()
         existing = db.query(SalaryPayment).filter(
             SalaryPayment.staff_user_id == user.id,
-            SalaryPayment.period_key == period).first()
+            SalaryPayment.period_key == period,
+            SalaryPayment.is_voided == False).first()  # noqa: E712
         if existing is None:
-            return RedirectResponse(url="/admin/staff?err=حقوق این کارمند برای این ماه قبلاً ثبت شده است.", status_code=303)
+            return RedirectResponse(url=f"/admin/staff/{user.id}?tab=payroll&err=حقوق این کارمند برای این ماه قبلاً ثبت شده است.", status_code=303)
         return RedirectResponse(url=f"/admin/payroll/{existing.id}/receipt?msg=پرداخت حقوق قبلاً ثبت شده بود.", status_code=303)
     log_action(db, "salary_payment", f"پرداخت حقوق {user.username} برای {payment.period_key}", request=request, target_type="salary_payment", target_id=payment.id, after={"net_amount": payment.net_amount, "expense_id": payment.expense_id})
     return RedirectResponse(url=f"/admin/payroll/{payment.id}/receipt?msg=پرداخت حقوق ثبت شد.", status_code=303)
+
+
+@router.post("/payroll/{payment_id}/void", response_class=HTMLResponse)
+async def admin_salary_void(payment_id: int, request: Request, db: Session = Depends(get_db)):
+    """Void a salary payment with a reason: the linked salary expense reverses
+    through the ledger, the row stays as voided history, and the freed month
+    may be re-paid fresh from the profile."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    payment = db.query(SalaryPayment).filter(SalaryPayment.id == payment_id).first()
+    if not payment:
+        raise HTTPException(status_code=404, detail="پرداخت حقوق یافت نشد")
+    form = await request.form()
+    try:
+        void_salary_payment(db, payment, guard, str(form.get("reason", "")),
+                            request_id=request.headers.get("X-Request-ID"))
+        db.commit()
+    except ValueError as error:
+        db.rollback()
+        return RedirectResponse(
+            url=f"/admin/staff/{payment.staff_user_id}?tab=payroll&err={error}", status_code=303)
+    log_action(db, "salary_void", f"ابطال حقوق {payment.staff_user.username} برای {payment.period_key}", request=request, target_type="salary_payment", target_id=payment.id, after={"reason": payment.void_reason, "net_amount": payment.net_amount})
+    return RedirectResponse(
+        url=f"/admin/staff/{payment.staff_user_id}?tab=payroll&msg=پرداخت حقوق باطل شد.", status_code=303)
+
+
+@router.post("/payroll/bulk", response_class=HTMLResponse)
+async def admin_payroll_bulk(request: Request, db: Session = Depends(get_db)):
+    """Payday for the whole shop in one press: every active, salaried staffer
+    without a live payment for the month gets base pay; the already-paid are
+    named as skipped, failures name their reason. Idempotent — pressing again
+    only skips."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    form = await request.form()
+    try:
+        report = run_monthly_payday(
+            db, guard, str(form.get("period_key", "")),
+            payment_method=str(form.get("payment_method", "cash")))
+    except ValueError as error:
+        return RedirectResponse(url=f"/admin/staff?err={error}", status_code=303)
+    parts = [f"حقوق {len(report['created'])} نفر ثبت شد"]
+    if report["skipped"]:
+        parts.append(f"{len(report['skipped'])} نفر قبلاً پرداخت شده بودند")
+    if report["waiting"]:
+        parts.append(f"{len(report['waiting'])} نفر هنوز ماه اولشان تمام نشده")
+    if report["failed"]:
+        names = "، ".join(item["name"] for item in report["failed"][:5])
+        parts.append(f"خطا برای {len(report['failed'])} نفر ({names})")
+    log_action(db, "salary_bulk", f"پرداخت گروهی {report['period']}", request=request, target_type="salary_bulk", after={"created": len(report["created"]), "skipped": len(report["skipped"]), "waiting": len(report["waiting"]), "failed": len(report["failed"])})
+    return RedirectResponse(url=f"/admin/staff?msg={'؛ '.join(parts)}.", status_code=303)
+
+
+@router.get("/payroll/export")
+async def admin_payroll_export(request: Request, year: str = "", db: Session = Depends(get_db)):
+    """Every salary payment as a file: who, which month, the figures, voided
+    or live. Optional Jalali-year filter (e.g. ?year=1405)."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    import csv
+    import io
+    query = db.query(SalaryPayment).join(
+        StaffUser, SalaryPayment.staff_user_id == StaffUser.id)
+    year_filter = to_english_digits((year or "").strip())
+    if year_filter:
+        query = query.filter(SalaryPayment.period_key.like(f"{year_filter}-%"))
+    payments = query.order_by(SalaryPayment.period_key.desc(), SalaryPayment.id.desc()).all()
+    out = [["کارمند", "ماه", "ناخالص", "کسورات", "خالص", "روش", "تاریخ پرداخت",
+            "وضعیت", "دلیل ابطال"]]
+    for payment in payments:
+        person = payment.staff_user
+        out.append([
+            person.full_name or person.username, payment.period_key,
+            payment.gross_amount, payment.deductions, payment.net_amount,
+            "نقدی" if payment.payment_method == "cash" else "کارت",
+            jalali_str(payment.paid_at),
+            "باطل‌شده" if payment.is_voided else "پرداخت‌شده",
+            payment.void_reason or "",
+        ])
+    buf = io.StringIO()
+    buf.write("\ufeff")  # BOM so Excel opens Persian correctly
+    csv.writer(buf).writerows(out)
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="payroll_{today}.csv"'},
+    )
 
 
 @router.get("/payroll/{payment_id}/receipt", response_class=HTMLResponse)
@@ -946,18 +1665,95 @@ async def admin_salary_receipt(payment_id: int, request: Request, db: Session = 
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
+    cap = require_cap(request, db, "can_view_payroll")
+    if not hasattr(cap, "role"):
+        return cap
     payment = db.query(SalaryPayment).filter(SalaryPayment.id == payment_id).first()
     if not payment:
         raise HTTPException(status_code=404, detail="رسید حقوق یافت نشد")
+    voided_by = ""
+    if payment.is_voided and payment.voided_by_user_id:
+        actor = db.query(StaffUser).filter(
+            StaffUser.id == payment.voided_by_user_id).first()
+        voided_by = actor.full_name or actor.username if actor else ""
+    # Year-to-date from live payments of the slip's own year.
+    year = (payment.period_key or "")[:4]
+    ytd = {"gross": 0, "deductions": 0, "net": 0}
+    for sibling in db.query(SalaryPayment).filter(
+            SalaryPayment.staff_user_id == payment.staff_user_id,
+            SalaryPayment.period_key.like(f"{year}-%"),
+            SalaryPayment.is_voided == False).all():  # noqa: E712
+        ytd["gross"] += sibling.gross_amount or 0
+        ytd["deductions"] += sibling.deductions or 0
+        ytd["net"] += sibling.net_amount or 0
+    kind_labels = {"base": "حقوق پایه", "advance": "پیش‌پرداخت", "overtime": "اضافه‌کاری",
+                   "bonus": "پاداش", "deduction": "کسورات"}
+    receipt_owner = {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()}
     return templates.TemplateResponse(request, "admin/salary_receipt.html", {
         "payment": payment,
         "staff_user": payment.staff_user,
-        "owner_settings": {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()},
+        "owner_settings": receipt_owner,
         "store": get_store(db),
         "msg": request.query_params.get("msg", ""),
         "jalali_str": jalali_str,
         "fmt": fmt,
+        "ytd": ytd,
+        "ytd_year": year,
+        "kind_labels": kind_labels,
+        "voided_by": voided_by,
+        "signatory_name": contract_signatory_name(db, receipt_owner),
     })
+
+
+def contract_missing(db, owner_settings: dict, staff_user=None) -> list:
+    """The single answer to «what blocks a printable contract», read by both
+    the contract gate and the business page preview — one definition, or the
+    two views will disagree about what «complete» means. With no staffer, only
+    the business side is judged."""
+    missing = []
+    if not owner_settings.get("owner_full_name"):
+        missing.append(("نام مالک", "/admin/owner-profile"))
+    if not owner_settings.get("owner_business_name"):
+        missing.append(("نام کسب‌وکار", "/admin/owner-profile"))
+    if not owner_settings.get("owner_address"):
+        missing.append(("نشانی کسب‌وکار", "/admin/owner-profile"))
+    if staff_user is None:
+        return missing
+    if not staff_user.full_name:
+        missing.append(("نام و نام خانوادگی کارمند", f"/admin/staff/{staff_user.id}"))
+    if not staff_user.national_id:
+        missing.append(("کد ملی کارمند", f"/admin/staff/{staff_user.id}"))
+    if not staff_user.address:
+        missing.append(("نشانی کارمند", f"/admin/staff/{staff_user.id}"))
+    position_title = None
+    if staff_user.position_id:
+        position = db.query(JobPosition).filter(JobPosition.id == staff_user.position_id).first()
+        position_title = position.title if position else None
+    if not (position_title or staff_user.job_title):
+        missing.append(("سمت سازمانی یا عنوان شغلی", f"/admin/staff/{staff_user.id}"))
+    if not staff_user.salary_amount or staff_user.salary_amount <= 0:
+        missing.append(("حقوق ماهانه", f"/admin/staff/{staff_user.id}"))
+    if not staff_user.hire_date:
+        missing.append(("تاریخ شروع همکاری", f"/admin/staff/{staff_user.id}"))
+    return missing
+
+
+def contract_position_title(db, staff_user) -> str | None:
+    if staff_user.position_id:
+        position = db.query(JobPosition).filter(JobPosition.id == staff_user.position_id).first()
+        if position:
+            return position.title
+    return None
+
+
+def contract_signatory_name(db, owner_settings: dict) -> str:
+    """Who signs employer-side: the picked staffer, else the named owner."""
+    signatory_id = (owner_settings.get("owner_signatory_user_id") or "").strip()
+    if signatory_id.isdigit():
+        signer = db.query(StaffUser).filter(StaffUser.id == int(signatory_id)).first()
+        if signer:
+            return signer.full_name or signer.username
+    return owner_settings.get("owner_full_name", "")
 
 
 @router.get("/staff/{staff_id}/contract", response_class=HTMLResponse)
@@ -968,12 +1764,23 @@ async def admin_staff_contract(staff_id: int, request: Request, db: Session = De
     staff_user = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
     if not staff_user:
         raise HTTPException(status_code=404, detail="کارمند یافت نشد")
+    owner_settings = {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()}
+    missing = contract_missing(db, owner_settings, staff_user)
+    position_title = contract_position_title(db, staff_user)
+    signatory_name = contract_signatory_name(db, owner_settings)
     return templates.TemplateResponse(request, "admin/employment_contract.html", {
         "staff_user": staff_user,
-        "owner_settings": {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()},
+        "owner_settings": owner_settings,
         "store": get_store(db),
         "jalali_str": jalali_str,
         "fmt": fmt,
+        "amount_to_words": amount_to_words,
+        "missing": missing,
+        "position_title": position_title,
+        "signatory_name": signatory_name,
+        "employee_address": ("جناب آقای " if staff_user.gender == "male" else
+                             "سرکار خانم " if staff_user.gender == "female" else "") + (
+                             staff_user.full_name or staff_user.username),
     })
 
 
@@ -983,9 +1790,20 @@ async def admin_owner_profile(request: Request, db: Session = Depends(get_db)):
     if not hasattr(guard, "role"):
         return guard
     settings = {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()}
+    staffers = db.query(StaffUser).filter(StaffUser.is_active == True).order_by(  # noqa: E712
+        StaffUser.full_name, StaffUser.username).all()
+    feed = db.query(AdminLog).filter(AdminLog.action == "owner_profile_update").order_by(
+        AdminLog.id.desc()).limit(5).all()
+    actors = {user.id: (user.full_name or user.username) for user in db.query(StaffUser).filter(
+        StaffUser.id.in_([entry.staff_user_id for entry in feed if entry.staff_user_id])).all()} if feed else {}
     return templates.TemplateResponse(request, "admin/owner_profile.html", {
         "owner_settings": settings,
         "store": get_store(db),
+        "staffers": staffers,
+        "business_missing": contract_missing(db, settings),
+        "feed": feed,
+        "actor_names": actors,
+        "jalali_str": jalali_str,
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
     })
@@ -997,8 +1815,71 @@ async def admin_owner_profile_update(request: Request, db: Session = Depends(get
     if not hasattr(guard, "role"):
         return guard
     form = await request.form()
-    allowed = {"owner_full_name", "owner_national_id", "owner_phone", "owner_email", "owner_address", "owner_business_name", "owner_business_registration", "owner_signatory_title"}
+    national_id = str(form.get("owner_national_id", "") or "").strip()[:30]
+    if national_id:
+        try:
+            national_id = _check_national_id(national_id)
+        except ValueError as error:
+            return RedirectResponse(url=f"/admin/owner-profile?err={error}", status_code=303)
+    phone = str(form.get("owner_phone", "") or "").strip()[:30]
+    if phone:
+        try:
+            phone = _check_mobile(phone)
+        except ValueError as error:
+            return RedirectResponse(url=f"/admin/owner-profile?err={error}", status_code=303)
+    signatory_id = to_english_digits(str(form.get("owner_signatory_user_id", "") or "").strip())
+    if signatory_id:
+        if not signatory_id.isdigit() or not db.query(StaffUser).filter(
+                StaffUser.id == int(signatory_id)).first():
+            return RedirectResponse(url="/admin/owner-profile?err=امضاکننده نامعتبر است.", status_code=303)
+    bank_iban = str(form.get("owner_bank_iban", "") or "").strip()[:40]
+    if bank_iban:
+        try:
+            bank_iban = _check_iban(bank_iban)
+        except ValueError as error:
+            return RedirectResponse(url=f"/admin/owner-profile?err={error}", status_code=303)
+    website = str(form.get("owner_website", "") or "").strip()[:200]
+    if website and (" " in website or "." not in website):
+        return RedirectResponse(url="/admin/owner-profile?err=نشانی وب‌سایت معتبر نیست.", status_code=303)
+    instagram = str(form.get("owner_instagram", "") or "").strip().lstrip("@")[:100]
+    # Logo: validated raster bytes under static/uploads/business, old file
+    # removed on replace. Optional forever — never blocks the gate.
+    from services.tags import validate_tag_image
+    logo_upload = form.get("logo")
+    logo_path = None
+    if logo_upload is not None and getattr(logo_upload, "filename", ""):
+        try:
+            raw = await logo_upload.read()
+            extension = validate_tag_image(raw, logo_upload.filename or "",
+                                           logo_upload.content_type)
+        except ValueError as error:
+            return RedirectResponse(url=f"/admin/owner-profile?err={error}", status_code=303)
+        import uuid as _uuid
+        from pathlib import Path as _Path
+        directory = _Path("static/uploads/business")
+        directory.mkdir(parents=True, exist_ok=True)
+        old = db.query(Settings).filter(Settings.key == "owner_logo_path").first()
+        if old and old.value:
+            try:
+                _Path(old.value.lstrip("/")).unlink(missing_ok=True)
+            except OSError:
+                pass
+        target = directory / f"logo-{_uuid.uuid4().hex}.{extension}"
+        target.write_bytes(raw)
+        logo_path = f"/static/uploads/business/{target.name}"
+    allowed = {"owner_full_name", "owner_phone", "owner_email", "owner_address", "owner_business_name", "owner_business_registration", "owner_signatory_title"}
     updates = {key: str(form.get(key, "")).strip()[:1000] for key in allowed}
+    updates["owner_national_id"] = national_id or ""
+    updates["owner_phone"] = phone or ""
+    updates["owner_signatory_user_id"] = signatory_id
+    updates["owner_bank_account"] = str(form.get("owner_bank_account", "") or "").strip()[:80]
+    updates["owner_bank_iban"] = bank_iban or ""
+    updates["owner_website"] = website
+    updates["owner_instagram"] = instagram
+    if logo_path is not None:
+        updates["owner_logo_path"] = logo_path
+    elif str(form.get("remove_logo", "") or "") == "1":
+        updates["owner_logo_path"] = ""
     for key, value in updates.items():
         setting = db.query(Settings).filter(Settings.key == key).first()
         if setting:
@@ -1006,8 +1887,8 @@ async def admin_owner_profile_update(request: Request, db: Session = Depends(get
         else:
             db.add(Settings(key=key, value=value))
     db.commit()
-    log_action(db, "owner_profile_update", "به‌روزرسانی اطلاعات مالک و قرارداد", request=request, target_type="owner_profile")
-    return RedirectResponse(url="/admin/owner-profile?msg=اطلاعات مالک ذخیره شد.", status_code=303)
+    log_action(db, "owner_profile_update", "به‌روزرسانی هویت کسب‌وکار", request=request, target_type="owner_profile")
+    return RedirectResponse(url="/admin/owner-profile?msg=هویت کسب‌وکار ذخیره شد.", status_code=303)
 
 
 @router.post("/staff/{staff_id}/disable", response_class=HTMLResponse)
@@ -1019,14 +1900,14 @@ async def admin_staff_disable(staff_id: int, request: Request, db: Session = Dep
     if not user:
         raise HTTPException(status_code=404, detail="کاربر یافت نشد")
     if user.id == guard.id:
-        return RedirectResponse(url="/admin/staff?err=نمی‌توانید دسترسی خودتان را ببندید.", status_code=303)
+        return RedirectResponse(url=f"/admin/staff/{user.id}?err=نمی‌توانید دسترسی خودتان را ببندید.", status_code=303)
     if user.username == "owner":
-        return RedirectResponse(url="/admin/staff?err=کاربر مالک اصلی را نمی‌توان غیرفعال کرد.", status_code=303)
+        return RedirectResponse(url=f"/admin/staff/{user.id}?err=کاربر مالک اصلی را نمی‌توان غیرفعال کرد.", status_code=303)
     before = {"is_active": user.is_active}
     user.is_active = False
     db.commit()
     log_action(db, "staff_disable", f"غیرفعال‌سازی کاربر {user.username}", request=request, target_type="staff_user", target_id=user.id, before=before, after={"is_active": False})
-    return RedirectResponse(url="/admin/staff?msg=کاربر غیرفعال شد.", status_code=303)
+    return RedirectResponse(url=f"/admin/staff/{user.id}?msg=کاربر غیرفعال شد.", status_code=303)
 
 
 @router.post("/staff/{staff_id}/enable", response_class=HTMLResponse)
@@ -1041,7 +1922,7 @@ async def admin_staff_enable(staff_id: int, request: Request, db: Session = Depe
     user.is_active = True
     db.commit()
     log_action(db, "staff_enable", f"فعال‌سازی کاربر {user.username}", request=request, target_type="staff_user", target_id=user.id, before=before, after={"is_active": True})
-    return RedirectResponse(url="/admin/staff?msg=کاربر فعال شد.", status_code=303)
+    return RedirectResponse(url=f"/admin/staff/{user.id}?msg=کاربر فعال شد.", status_code=303)
 
 
 # Every numeric field the settings form posts, with the bounds the server
@@ -1484,6 +2365,9 @@ async def admin_pos_reconciliation(
         "terminal": terminal,
         "resolutions": resolutions,
         "is_owner": role_allows(guard.role, "owner"),
+        # The review forms paint only for whoever may actually resolve; the
+        # POST enforces the same capability.
+        "can_reconcile": effective_cap(guard, "can_reconcile_pos"),
         "search": search,
         "status_filter": status_filter,
         "statuses": {
@@ -1531,6 +2415,9 @@ async def admin_pos_reconciliation_review(
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
+    cap = require_cap(request, db, "can_reconcile_pos")
+    if not hasattr(cap, "role"):
+        return cap
 
     transaction = db.query(POSTransaction).filter(POSTransaction.id == transaction_id).first()
     if not transaction:
