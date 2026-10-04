@@ -19,7 +19,7 @@
   </tbody></table>
   {% if payment.note %}<p>توضیح: {{ payment.note }}</p>{% endif %}
   {% if not payment.is_voided %}
-  <div class="document-signatures"><div>امضای کارمند<br>{{ staff_user.full_name or staff_user.username }}</div><div>امضای {{ owner_settings.get('owner_signatory_title', 'کارفرما') }}<br>{{ owner_settings.get('owner_full_name', '—') }}</div></div>
+  <div class="document-signatures"><div>امضای کارمند<br>{{ staff_user.full_name or staff_user.username }}</div><div>امضای {{ owner_settings.get('owner_signatory_title', 'کارفرما') }}<br>{{ signatory_name or owner_settings.get('owner_full_name', '—') }}</div></div>
   {% else %}
   <p class="muted">این رسید باطل شده و قابل امضا نیست.{% if voided_by %} ابطال‌کننده: {{ voided_by }}{% endif %}{% if payment.voided_at %} · {{ jalali_str(payment.voided_at) }}{% endif %}</p>
   {% endif %}

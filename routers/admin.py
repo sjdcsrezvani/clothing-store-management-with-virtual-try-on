@@ -1688,10 +1688,11 @@ async def admin_salary_receipt(payment_id: int, request: Request, db: Session = 
         ytd["net"] += sibling.net_amount or 0
     kind_labels = {"base": "حقوق پایه", "advance": "پیش‌پرداخت", "overtime": "اضافه‌کاری",
                    "bonus": "پاداش", "deduction": "کسورات"}
+    receipt_owner = {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()}
     return templates.TemplateResponse(request, "admin/salary_receipt.html", {
         "payment": payment,
         "staff_user": payment.staff_user,
-        "owner_settings": {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()},
+        "owner_settings": receipt_owner,
         "store": get_store(db),
         "msg": request.query_params.get("msg", ""),
         "jalali_str": jalali_str,
@@ -1700,20 +1701,15 @@ async def admin_salary_receipt(payment_id: int, request: Request, db: Session = 
         "ytd_year": year,
         "kind_labels": kind_labels,
         "voided_by": voided_by,
+        "signatory_name": contract_signatory_name(db, receipt_owner),
     })
 
 
-@router.get("/staff/{staff_id}/contract", response_class=HTMLResponse)
-async def admin_staff_contract(staff_id: int, request: Request, db: Session = Depends(get_db)):
-    guard = require_html_role(request, db, "owner")
-    if not hasattr(guard, "role"):
-        return guard
-    staff_user = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
-    if not staff_user:
-        raise HTTPException(status_code=404, detail="کارمند یافت نشد")
-    owner_settings = {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()}
-    # A contract with blanks is not a contract: refuse the print and name
-    # every missing field with where it gets filled.
+def contract_missing(db, owner_settings: dict, staff_user=None) -> list:
+    """The single answer to «what blocks a printable contract», read by both
+    the contract gate and the business page preview — one definition, or the
+    two views will disagree about what «complete» means. With no staffer, only
+    the business side is judged."""
     missing = []
     if not owner_settings.get("owner_full_name"):
         missing.append(("نام مالک", "/admin/owner-profile"))
@@ -1721,6 +1717,8 @@ async def admin_staff_contract(staff_id: int, request: Request, db: Session = De
         missing.append(("نام کسب‌وکار", "/admin/owner-profile"))
     if not owner_settings.get("owner_address"):
         missing.append(("نشانی کسب‌وکار", "/admin/owner-profile"))
+    if staff_user is None:
+        return missing
     if not staff_user.full_name:
         missing.append(("نام و نام خانوادگی کارمند", f"/admin/staff/{staff_user.id}"))
     if not staff_user.national_id:
@@ -1737,6 +1735,39 @@ async def admin_staff_contract(staff_id: int, request: Request, db: Session = De
         missing.append(("حقوق ماهانه", f"/admin/staff/{staff_user.id}"))
     if not staff_user.hire_date:
         missing.append(("تاریخ شروع همکاری", f"/admin/staff/{staff_user.id}"))
+    return missing
+
+
+def contract_position_title(db, staff_user) -> str | None:
+    if staff_user.position_id:
+        position = db.query(JobPosition).filter(JobPosition.id == staff_user.position_id).first()
+        if position:
+            return position.title
+    return None
+
+
+def contract_signatory_name(db, owner_settings: dict) -> str:
+    """Who signs employer-side: the picked staffer, else the named owner."""
+    signatory_id = (owner_settings.get("owner_signatory_user_id") or "").strip()
+    if signatory_id.isdigit():
+        signer = db.query(StaffUser).filter(StaffUser.id == int(signatory_id)).first()
+        if signer:
+            return signer.full_name or signer.username
+    return owner_settings.get("owner_full_name", "")
+
+
+@router.get("/staff/{staff_id}/contract", response_class=HTMLResponse)
+async def admin_staff_contract(staff_id: int, request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    staff_user = db.query(StaffUser).filter(StaffUser.id == staff_id).first()
+    if not staff_user:
+        raise HTTPException(status_code=404, detail="کارمند یافت نشد")
+    owner_settings = {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()}
+    missing = contract_missing(db, owner_settings, staff_user)
+    position_title = contract_position_title(db, staff_user)
+    signatory_name = contract_signatory_name(db, owner_settings)
     return templates.TemplateResponse(request, "admin/employment_contract.html", {
         "staff_user": staff_user,
         "owner_settings": owner_settings,
@@ -1746,6 +1777,7 @@ async def admin_staff_contract(staff_id: int, request: Request, db: Session = De
         "amount_to_words": amount_to_words,
         "missing": missing,
         "position_title": position_title,
+        "signatory_name": signatory_name,
         "employee_address": ("جناب آقای " if staff_user.gender == "male" else
                              "سرکار خانم " if staff_user.gender == "female" else "") + (
                              staff_user.full_name or staff_user.username),
@@ -1758,9 +1790,20 @@ async def admin_owner_profile(request: Request, db: Session = Depends(get_db)):
     if not hasattr(guard, "role"):
         return guard
     settings = {row.key: row.value for row in db.query(Settings).filter(Settings.key.like("owner_%")).all()}
+    staffers = db.query(StaffUser).filter(StaffUser.is_active == True).order_by(  # noqa: E712
+        StaffUser.full_name, StaffUser.username).all()
+    feed = db.query(AdminLog).filter(AdminLog.action == "owner_profile_update").order_by(
+        AdminLog.id.desc()).limit(5).all()
+    actors = {user.id: (user.full_name or user.username) for user in db.query(StaffUser).filter(
+        StaffUser.id.in_([entry.staff_user_id for entry in feed if entry.staff_user_id])).all()} if feed else {}
     return templates.TemplateResponse(request, "admin/owner_profile.html", {
         "owner_settings": settings,
         "store": get_store(db),
+        "staffers": staffers,
+        "business_missing": contract_missing(db, settings),
+        "feed": feed,
+        "actor_names": actors,
+        "jalali_str": jalali_str,
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
     })
@@ -1772,8 +1815,28 @@ async def admin_owner_profile_update(request: Request, db: Session = Depends(get
     if not hasattr(guard, "role"):
         return guard
     form = await request.form()
-    allowed = {"owner_full_name", "owner_national_id", "owner_phone", "owner_email", "owner_address", "owner_business_name", "owner_business_registration", "owner_signatory_title"}
+    national_id = str(form.get("owner_national_id", "") or "").strip()[:30]
+    if national_id:
+        try:
+            national_id = _check_national_id(national_id)
+        except ValueError as error:
+            return RedirectResponse(url=f"/admin/owner-profile?err={error}", status_code=303)
+    phone = str(form.get("owner_phone", "") or "").strip()[:30]
+    if phone:
+        try:
+            phone = _check_mobile(phone)
+        except ValueError as error:
+            return RedirectResponse(url=f"/admin/owner-profile?err={error}", status_code=303)
+    signatory_id = to_english_digits(str(form.get("owner_signatory_user_id", "") or "").strip())
+    if signatory_id:
+        if not signatory_id.isdigit() or not db.query(StaffUser).filter(
+                StaffUser.id == int(signatory_id)).first():
+            return RedirectResponse(url="/admin/owner-profile?err=امضاکننده نامعتبر است.", status_code=303)
+    allowed = {"owner_full_name", "owner_phone", "owner_email", "owner_address", "owner_business_name", "owner_business_registration", "owner_signatory_title"}
     updates = {key: str(form.get(key, "")).strip()[:1000] for key in allowed}
+    updates["owner_national_id"] = national_id or ""
+    updates["owner_phone"] = phone or ""
+    updates["owner_signatory_user_id"] = signatory_id
     for key, value in updates.items():
         setting = db.query(Settings).filter(Settings.key == key).first()
         if setting:
@@ -1781,8 +1844,8 @@ async def admin_owner_profile_update(request: Request, db: Session = Depends(get
         else:
             db.add(Settings(key=key, value=value))
     db.commit()
-    log_action(db, "owner_profile_update", "به‌روزرسانی اطلاعات مالک و قرارداد", request=request, target_type="owner_profile")
-    return RedirectResponse(url="/admin/owner-profile?msg=اطلاعات مالک ذخیره شد.", status_code=303)
+    log_action(db, "owner_profile_update", "به‌روزرسانی هویت کسب‌وکار", request=request, target_type="owner_profile")
+    return RedirectResponse(url="/admin/owner-profile?msg=هویت کسب‌وکار ذخیره شد.", status_code=303)
 
 
 @router.post("/staff/{staff_id}/disable", response_class=HTMLResponse)

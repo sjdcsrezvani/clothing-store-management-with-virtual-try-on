@@ -43,7 +43,7 @@
   <p>هرگونه اختلاف ناشی از تفسیر یا اجرای این قرارداد نخست از طریق مذاکره مستقیم حل می‌شود و در صورت عدم توافق، مرجع صالح قانونی (هیأت‌های حل اختلاف اداره تعاون، کار و رفاه اجتماعی) رسیدگی خواهد کرد.</p>
   <h3>ماده ۸ — نسخ قرارداد</h3>
   <p>این قرارداد در دو نسخه هم‌ارزش تنظیم شد که یک نسخه نزد هر یک از طرفین باقی می‌ماند و هر دو نسخه حکم واحد را دارند.</p>
-  <div class="document-signatures"><div>نام و امضای کارمند<br><strong>{{ staff_user.full_name }}</strong><br><br>امضا: ....................<br>تاریخ: ....................</div><div>نام و امضای {{ owner_settings.get('owner_signatory_title', 'کارفرما') }}<br><strong>{{ owner_settings.get('owner_full_name', '') }}</strong><br><br>امضا: ....................<br>تاریخ: ....................</div></div>
+  <div class="document-signatures"><div>نام و امضای کارمند<br><strong>{{ staff_user.full_name }}</strong><br><br>امضا: ....................<br>تاریخ: ....................</div><div>نام و امضای {{ owner_settings.get('owner_signatory_title', 'کارفرما') }}<br><strong>{{ signatory_name }}</strong><br><br>امضا: ....................<br>تاریخ: ....................</div></div>
 </div>
 {% endif %}
 {% endblock %}
