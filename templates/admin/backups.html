@@ -1,44 +1,143 @@
 {% extends "base.html" %}
 {% block content %}
 
+{% set page_description %}
+هر چند روز یک‌بار، یک نسخه کامل خودکار ساخته می‌شود — دستی هم هر وقت بخواهید.
+{% endset %}
 {% set page_actions %}
-<form method="post" action="/admin/backup">
-        <button type="submit" class="btn btn-primary">💾 پشتیبان‌گیری الآن</button>
-    </form>
+<a class="btn btn-ghost" href="/admin/backups/download-all" title="{{ shelf_count }} نسخه · {{ shelf_size }}"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-backup"/></svg>دانلود همه</a>
 {% endset %}
 {% include 'partials/page_header.html' %}
 
+<div class="card">
+    <div class="section-heading"><div><span class="eyebrow">وضعیت پشتیبان‌گیری</span><h3>{% if last_backup %}آخرین نسخه: {{ last_backup }} ({{ last_age }}){% else %}هنوز نسخه‌ای ساخته نشده{% endif %}</h3></div></div>
+    <p class="muted">خودکار هر {{ every_days_fa }} روز (اجرای بعدی: {{ next_run }}) · {{ shelf_count }} نسخه · {{ shelf_size }}</p>
+    <div class="list-heading-actions">
+        <form method="post" action="/admin/backup">
+            <button type="submit" class="btn btn-primary"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-backup"/></svg>پشتیبان‌گیری الآن</button>
+        </form>
+    </div>
+    <form method="post" action="/admin/backups/schedule" class="form-row">
+        <label>هر چند روز
+            <select name="backup_every_days">
+                {% for value, label in every_options %}
+                <option value="{{ value }}"{% if value == every_days %} selected{% endif %}>{{ label }} روز</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>نگه‌داشتن
+            <select name="backup_keep_count">
+                {% for value, label in keep_options %}
+                <option value="{{ value }}"{% if value == keep_count %} selected{% endif %}>{{ label }} نسخه اخیر</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="switch-inline"><input type="checkbox" name="restore_snapshot" value="1"{% if restore_snapshot %} checked{% endif %}> پیش از بازیابی، نسخه امن بگیر</label>
+        <button class="btn btn-ghost" type="submit">ذخیره زمان‌بندی</button>
+    </form>
+</div>
 
 <div class="card">
-    <p style="color: var(--ink-soft); font-size: 0.9rem; margin-bottom: 1rem;">
-        یک نسخه پشتیبان هر شب به‌صورت خودکار ساخته می‌شود (۳۰ نسخه اخیر نگه داشته می‌شود).
-        برای بازیابی، فایل پشتیبان را دانلود کنید و محتوای آن را جایگزین فایل
-        <code>referral.db</code> کنید (قبل از جایگزینی، دیتابیس فعلی را حتماً یک‌جا کپی کنید).
-    </p>
+    <div class="section-heading"><div><span class="eyebrow">نسخه‌ها</span><h3>فایل‌های پشتیبان</h3></div></div>
     {% if backups %}
-    <table class="data-table">
-        <thead>
-            <tr>
-                <th>📄 نام فایل</th>
-                <th>📦 حجم</th>
-                <th>🕐 تاریخ</th>
-                <th>🔎 وضعیت</th>
-                <th>⬇️ دانلود</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for b in backups %}
-            <tr>
-                <td style="direction: ltr; text-align: right; font-family: monospace;">{{ b.name }}</td>
-                <td class="tnum">{{ '{:,}'.format(b.size) }} بایت</td>
-                <td class="tnum">{{ jalali_str(b.mtime, false) }}</td>
-                <td>{% if b.verified %}✅ تأیید شده{% else %}⚠️ بررسی نشده{% endif %}</td>
-                <td><a href="/admin/backups/download?name={{ b.name }}" class="btn btn-sm btn-ghost">⬇️ دانلود</a></td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="table-scroll">
+        <table class="data-table backups-table">
+            <thead>
+                <tr>
+                    <th scope="col">نام فایل</th>
+                    <th scope="col">حجم</th>
+                    <th scope="col">تاریخ</th>
+                    <th scope="col">وضعیت</th>
+                    <th scope="col">عملیات</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for b in backups %}
+                <tr>
+                    <td data-label="نام فایل" dir="ltr" class="tnum" title="{{ b.name }}">{{ b.name }}</td>
+                    <td data-label="حجم" class="tnum">{{ b.size_fa }}{% if b.uploads_size_fa %}<br><small class="muted">+ فایل‌ها: {{ b.uploads_size_fa }}</small>{% else %}<br><small class="muted">بدون فایل‌پیوست</small>{% endif %}</td>
+                    <td data-label="تاریخ" class="tnum">{{ jalali_str(b.mtime, false) }}</td>
+                    <td data-label="وضعیت">{% if b.verified %}<span class="badge badge-success">تأیید شده</span>{% else %}<span class="badge badge-warning">بررسی نشده</span>{% endif %}{% if b.schema_newer %} <span class="badge badge-warning">نسخه جدیدتر</span>{% endif %}
+                        <form method="post" action="/admin/backups/recheck" class="inline-form">
+                            <input type="hidden" name="name" value="{{ b.name }}">
+                            <button type="submit" class="text-link">بررسی مجدد</button>
+                        </form>
+                    </td>
+                    <td data-label="عملیات">
+                        <a href="/admin/backups/download?name={{ b.name }}" class="btn btn-sm btn-ghost">دانلود</a>
+                        <form method="post" action="/admin/backups/restore" class="inline-form" data-confirm="بازیابی از «{{ b.name }}»؟ کل اطلاعات فعلی جایگزین می‌شود.{% if b.schema_newer %} توجه: ساختار این نسخه جدیدتر از برنامه است.{% endif %}" data-confirm-title="بازیابی فروشگاه؟" data-confirm-ok="بازیابی">
+                            <input type="hidden" name="name" value="{{ b.name }}">
+                            <button type="submit" class="btn btn-sm btn-danger-quiet">بازیابی</button>
+                        </form>
+                        <form method="post" action="/admin/backups/delete" class="inline-form" data-confirm="پشتیبان «{{ b.name }}» حذف شود؟" data-confirm-title="حذف پشتیبان؟" data-confirm-ok="حذف">
+                            <input type="hidden" name="name" value="{{ b.name }}">
+                            <button type="submit" class="btn btn-sm btn-danger-quiet">حذف</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
     {% else %}
-    <p style="text-align: center; color: var(--ink-soft); padding: 2rem;">هنوز پشتیبان‌گیری انجام نشده است.</p>
+    <p class="empty-state">هنوز پشتیبان‌گیری انجام نشده است.</p>
+    <div class="tag-pagination"><form method="post" action="/admin/backup"><button type="submit" class="btn btn-primary">اولین پشتیبان‌گیری</button></form></div>
     {% endif %}
-</div>{% endblock %}
+</div>
+
+<div class="card danger-zone">
+    <div class="section-heading"><div><span class="eyebrow">ناحیه خطر</span><h3>بازیابی فروشگاه</h3></div></div>
+    <ol class="restore-steps">
+        <li>ردیف نسخه موردنظر را پیدا کنید — یا فایل را از جای دیگر بیاورید.</li>
+        <li>«بازیابی» را بزنید و در گفت‌وگو تأیید کنید.</li>
+        <li>برنامه روی همان نسخه بالا می‌آید؛ نیازی به کاری نیست.</li>
+    </ol>
+    <p class="muted">بازیابی کل اطلاعات فعلی را جایگزین می‌کند — دیتابیس و فایل‌های پیوستش با هم. پیش از هر بازیابی یک نسخه امن گرفته می‌شود (در زمان‌بندی بالا قابل تغییر است).</p>
+    <form method="post" action="/admin/backups/upload" enctype="multipart/form-data" class="form-row">
+        <label>فایل پشتیبان از جای دیگر
+            <input type="file" name="backup_file" accept=".db" required aria-describedby="backup-upload-help">
+            <small class="field-help" id="backup-upload-help">فقط ‎.db‎، حداکثر ۲۰۰ مگابایت</small>
+        </label>
+        <button class="btn btn-ghost" type="submit">بارگذاری در قفسه</button>
+    </form>
+</div>
+
+{# One confirm surface for the whole page: destructive forms carry their
+   sentence in data-confirm, the dialog reads it back, and the confirm
+   button finishes that form's own submit. Without JS the forms post directly. #}
+<div id="backup-confirm" data-dialog role="alertdialog" aria-modal="true"
+     aria-labelledby="backup-confirm-title" aria-describedby="backup-confirm-text" class="confirm-scrim" tabindex="-1">
+    <div class="t-modal-card confirm-card" role="document">
+        <h3 id="backup-confirm-title">مطمئن هستید؟</h3>
+        <p class="muted" id="backup-confirm-text"></p>
+        <div class="confirm-actions">
+            <button type="button" class="btn btn-danger" id="backup-confirm-yes">تأیید</button>
+            <button type="button" class="btn btn-ghost" data-dialog-close>انصراف</button>
+        </div>
+    </div>
+</div>
+<script>
+(function () {
+    var pendingForm = null;
+    document.addEventListener('submit', function (event) {
+        var form = event.target.closest ? event.target.closest('form[data-confirm]') : null;
+        if (!form || form === pendingForm) return;
+        if (!window.RaykidDialog) return; // no helper, no gate: post directly
+        event.preventDefault();
+        pendingForm = form;
+        document.getElementById('backup-confirm-text').textContent =
+            form.getAttribute('data-confirm');
+        window.RaykidDialog.open('backup-confirm', document.activeElement);
+    });
+    document.getElementById('backup-confirm-yes').addEventListener('click', function () {
+        var form = pendingForm;
+        pendingForm = null;
+        window.RaykidDialog.close('backup-confirm');
+        if (form) form.submit();
+    });
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') pendingForm = null;
+    });
+})();
+</script>
+{% endblock %}

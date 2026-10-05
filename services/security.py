@@ -379,6 +379,8 @@ def log_action(db, action: str, detail: str = "", request: Request | None = None
 ADMIN_ACTION_LABELS = {
     "attendance_mark": "ثبت حضور",
     "backup": "پشتیبان‌گیری",
+    "backup_delete": "حذف پشتیبان",
+    "backup_schedule": "تنظیم زمان‌بندی پشتیبان",
     "birthday_sms": "پیامک تولد",
     "campaign_archive": "بایگانی کمپین",
     "campaign_delete": "حذف کمپین",

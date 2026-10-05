@@ -3953,3 +3953,15 @@ button.text-link { background: none; border: none; padding: 0; font: inherit; cu
   .logs-dayrow td { justify-content: center; }
   .logs-dayrow td::before { content: none; }
 }
+
+/* ===================== Backup shelf =====================
+   On phones the shelf stacks into cards the same way the customer, credit
+   and audit tables do — data-labels name each cell. */
+.restore-steps { margin: 0 0 0.8rem; padding-inline-start: 1.4rem; display: flex; flex-direction: column; gap: 0.3rem; }
+@media (max-width: 700px) {
+  .backups-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .backups-table, .backups-table tbody, .backups-table tr, .backups-table td { display: block; }
+  .backups-table tr { border: 1px solid var(--rule); border-radius: var(--radius-sm); margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; }
+  .backups-table td { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; border: none; padding: 0.25rem 0; text-align: start; }
+  .backups-table td::before { content: attr(data-label); color: var(--ink-soft); font-size: 0.72rem; flex-shrink: 0; }
+}

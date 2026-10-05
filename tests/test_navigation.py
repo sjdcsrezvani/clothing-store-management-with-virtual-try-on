@@ -322,7 +322,7 @@ def test_a_cashier_is_not_offered_a_manager_or_owner_door(client, db_session):
     sidebar = _sidebar(client.get("/sales/new").text)
 
     assert "تاریخچه فروش" in sidebar
-    for label in ("تنظیمات", "تحلیل فروش", "پشتیبان‌ها", "گزارش عملیات", "مشتریان",
+    for label in ("تنظیمات", "تحلیل فروش", "پشتیبان‌گیری و بازیابی", "گزارش عملیات", "مشتریان",
                   "محصولات و موجودی", "داشبورد", "کارکنان و حقوق", "تطبیق کارت‌خوان",
                   "حساب نسیه", "پرو مجازی", "تأمین‌کنندگان"):
         assert label not in sidebar, label
@@ -337,7 +337,7 @@ def test_a_manager_keeps_their_doors_and_loses_the_owners(client, db_session):
                   "تأمین‌کنندگان", "دفتر انبار", "مشتریان", "حساب نسیه", "کمپین پیامکی",
                   "پیامک", "صندوق", "هزینه‌ها", "چک‌ها", "سود و زیان", "تطبیق کارت‌خوان"):
         assert label in sidebar, label
-    for label in ("تحلیل فروش", "پشتیبان‌ها", "گزارش عملیات", "تنظیمات", "کارکنان و حقوق",
+    for label in ("تحلیل فروش", "پشتیبان‌گیری و بازیابی", "گزارش عملیات", "تنظیمات", "کارکنان و حقوق",
                   "هویت کسب‌وکار"):
         assert label not in sidebar, label
 
@@ -520,14 +520,14 @@ def test_a_role_change_reaches_the_sidebar_without_a_new_login(client, db_sessio
     """
     user, password = _staff(db_session, "nav-promote", "cashier")
     _session_as(client, user, password)
-    assert "پشتیبان‌ها" not in _sidebar(client.get("/sales/new").text)
+    assert "پشتیبان‌گیری و بازیابی" not in _sidebar(client.get("/sales/new").text)
 
     user.role = "owner"
     db_session.commit()
 
     page = client.get("/sales/new").text
     assert "topbar-admin" in page
-    assert "پشتیبان‌ها" in _sidebar(page)
+    assert "پشتیبان‌گیری و بازیابی" in _sidebar(page)
 
 
 # ── the refusal is a page ────────────────────────────────────────────────────
