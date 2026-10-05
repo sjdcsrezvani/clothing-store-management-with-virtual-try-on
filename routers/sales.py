@@ -338,17 +338,30 @@ def _render_scan(request, customer, basket, total_amount, db,
 
 
 @router.get("/", response_class=HTMLResponse)
-async def sales_list(request: Request, search: str = "", page: str = "1", db: Session = Depends(get_db)):
+async def sales_list(request: Request, search: str = "", page: str = "1",
+                     method: str = "all", refunded: str = "all",
+                     per_page: str = "25", db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
     page = page_arg(page)
+    if method not in ("card", "cash", "credit"):
+        method = "all"
+    if refunded not in ("yes", "no"):
+        refunded = "all"
+    per_page_int = int(per_page) if str(per_page).isdigit() and int(per_page) in (10, 25, 50) else 25
     query = db.query(Sale).filter(Sale.payment_confirmed == True)
 
     if search:
         query = query.join(Customer, Sale.customer_id == Customer.id, isouter=True).filter(
             Customer.phone.contains(search) | Customer.first_name.contains(search) | Customer.last_name.contains(search)
         )
+    if method != "all":
+        query = query.filter(Sale.payment_method == method)
+    if refunded == "yes":
+        query = query.filter(Sale.is_refunded == True)  # noqa: E712
+    elif refunded == "no":
+        query = query.filter(Sale.is_refunded == False)  # noqa: E712
 
     # Ledger sorting: date or final amount, direction toggled from the header.
     # Anything unknown answers the default newest-first list, never an error.
@@ -358,15 +371,19 @@ async def sales_list(request: Request, search: str = "", page: str = "1", db: Se
     order_column = Sale.final_amount if sort_key == "amount" else Sale.created_at
     order = order_column.desc() if sort_dir == "desc" else order_column.asc()
 
-    per_page = 15
     total = query.count()
-    sales = query.order_by(order, Sale.id.desc()).offset((page - 1) * per_page).limit(per_page).all()
-    total_pages = max(1, (total + per_page - 1) // per_page)
+    sales = query.order_by(order, Sale.id.desc()).offset((page - 1) * per_page_int).limit(per_page_int).all()
+    total_pages = max(1, (total + per_page_int - 1) // per_page_int)
     page = min(max(page, 1), total_pages)
 
     return templates.TemplateResponse(request, "admin/sales.html", {
         "sales": sales,
         "search": search,
+        "method": method,
+        "refunded": refunded,
+        "per_page": per_page_int,
+        "per_page_options": (10, 25, 50),
+        "filters_active": bool(search or method != "all" or refunded != "all"),
         "page": page,
         "total_pages": total_pages,
         "sort_key": sort_key,

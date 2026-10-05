@@ -4005,3 +4005,15 @@ html[data-density="compact"] .card { padding: 1rem; }
 html[data-density="compact"] .form-row { row-gap: 0.6rem; }
 html[data-density="compact"] .form-group { margin-bottom: 0.6rem; }
 html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
+
+/* ===================== Sales ledger =====================
+   The discount figure reads green without shouting; on phones the ledger
+   stacks into cards like the customer, credit and audit tables. */
+.discount-figure { color: var(--success-ink); }
+@media (max-width: 700px) {
+  .sales-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .sales-table, .sales-table tbody, .sales-table tr, .sales-table td { display: block; }
+  .sales-table tr { border: 1px solid var(--rule); border-radius: var(--radius-sm); margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; }
+  .sales-table td { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; border: none; padding: 0.25rem 0; text-align: start; }
+  .sales-table td::before { content: attr(data-label); color: var(--ink-soft); font-size: 0.72rem; flex-shrink: 0; }
+}
