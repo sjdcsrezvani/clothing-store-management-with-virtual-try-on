@@ -4017,3 +4017,20 @@ html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
   .sales-table td { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; border: none; padding: 0.25rem 0; text-align: start; }
   .sales-table td::before { content: attr(data-label); color: var(--ink-soft); font-size: 0.72rem; flex-shrink: 0; }
 }
+
+/* ===================== Till phase 2 =====================
+   Compact customer hero, last-scanned strip, row steppers, a timeline that
+   reports state (done steps wear the active voice), and classed credit copy
+   instead of inline styles. */
+.hero-compact { padding-top: 1.2rem; padding-bottom: 1.2rem; }
+.hero-compact h1 { font-size: 1.3rem; }
+.till-brand { margin-top: 1rem; font-size: 0.8rem; color: var(--ink-soft); }
+.scan-last { margin: 0.6rem 0 0; font-size: 0.85rem; color: var(--success-ink); font-weight: 700; }
+.basket-stepper { display: inline-flex; gap: 0.25rem; }
+.btn-step { min-width: 2rem; min-height: 2rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--card); color: var(--ink); font-size: 1rem; font-weight: 800; cursor: pointer; line-height: 1; }
+.btn-step:hover { border-color: var(--candy); color: var(--candy); }
+.timeline-step.done { color: var(--link-hover); border-color: var(--candy); font-weight: 700; }
+.credit-note { font-size: 0.8rem; color: var(--ink-soft); margin-top: 0.4rem; }
+.credit-blocked { color: var(--persimmon); font-weight: 700; }
+.empty-title { font-size: 1.1rem; margin: 0 0 0.4rem; }
+.terminal-indicator { margin-bottom: 0.4rem; }

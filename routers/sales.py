@@ -219,7 +219,7 @@ def _render_scan(request, customer, basket, total_amount, db,
                  referrer_code="", referrer_phone="",
                  use_referrer_discount="1", custom_discount_amount=0,
                  custom_discount_percent=0, campaign_code="",
-                 error=None, success=None):
+                 error=None, success=None, just_added=None):
     staff_id = request.session.get("staff_user_id")
     active_nonce = request.session.get("checkout_nonce")
     checkout = get_checkout(db, active_nonce) if active_nonce else None
@@ -334,6 +334,7 @@ def _render_scan(request, customer, basket, total_amount, db,
         # The till paints its manual-discount fields only for whoever may
         # actually grant one; the POSTs enforce the same capability.
         "can_discount": effective_cap(current_staff_user(db, request), "can_discount"),
+        "just_added": just_added,
     })
 
 
@@ -583,7 +584,8 @@ async def sales_add_to_basket(
     basket = json.loads(basket_json)
     total_amount = sum(item["total_price"] for item in basket)
 
-    def _scan_step(error: str | None = None, success: str | None = None):
+    def _scan_step(error: str | None = None, success: str | None = None,
+                   just_added: str | None = None):
         return _render_scan(
             request, customer, basket, total_amount, db,
             referrer_code=referrer_code,
@@ -594,6 +596,7 @@ async def sales_add_to_basket(
             campaign_code=campaign_code,
             error=error,
             success=success,
+            just_added=just_added,
         )
 
     # Look up variant by barcode (variants have unique barcodes)
@@ -629,7 +632,8 @@ async def sales_add_to_basket(
         })
 
     total_amount = sum(item["total_price"] for item in basket)
-    return _scan_step(success=f"محصول {variant.display_name} به سبد خرید اضافه شد.")
+    return _scan_step(success=f"محصول {variant.display_name} به سبد خرید اضافه شد.",
+                      just_added=variant.display_name)
 
 
 @router.post("/remove-from-basket", response_class=HTMLResponse)
@@ -661,6 +665,66 @@ async def sales_remove_from_basket(
         custom_discount_percent=_discount_int(custom_discount_percent),
         campaign_code=campaign_code,
     )
+
+
+@router.post("/set-quantity", response_class=HTMLResponse)
+async def sales_set_quantity(
+    request: Request,
+    customer_id: int = Form(0),
+    variant_id: int = Form(...),
+    delta: int = Form(...),
+    basket_json: str = Form("[]"),
+    referrer_code: str = Form(""),
+    referrer_phone: str = Form(""),
+    use_referrer_discount: str = Form("1"),
+    custom_discount_amount: str = Form(""),
+    custom_discount_percent: str = Form(""),
+    campaign_code: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Step a basket row's quantity up or down, clamped to stock on hand.
+
+    Zero or less removes the row — one control instead of two. Totals are
+    recomputed from the database price on render, never trusted from the form.
+    """
+    customer = _resolve_customer(customer_id, db)
+
+    basket = json.loads(basket_json)
+    total_amount = sum(item["total_price"] for item in basket)
+
+    def _step(error: str | None = None):
+        return _render_scan(
+            request, customer, basket, total_amount, db,
+            referrer_code=referrer_code,
+            referrer_phone=referrer_phone,
+            use_referrer_discount=use_referrer_discount,
+            custom_discount_amount=_discount_int(custom_discount_amount),
+            custom_discount_percent=_discount_int(custom_discount_percent),
+            campaign_code=campaign_code,
+            error=error,
+        )
+
+    item = next((it for it in basket if it["variant_id"] == int(variant_id)), None)
+    if item is None:
+        return _step()
+    variant = db.query(ProductVariant).filter(
+        ProductVariant.id == int(variant_id),
+        ProductVariant.is_active == True  # noqa: E712
+    ).first()
+    if variant is None:
+        return _step(error="این کالا دیگر فعال نیست.")
+    new_quantity = item["quantity"] + (1 if delta >= 0 else -1)
+    if new_quantity <= 0:
+        basket = [it for it in basket if it["variant_id"] != int(variant_id)]
+    else:
+        if new_quantity > variant.stock_quantity:
+            return _step(error=f"موجودی {variant.display_name} کافی نیست.")
+        item["quantity"] = new_quantity
+        item["unit_price"] = variant.price
+        item["total_price"] = new_quantity * variant.price
+
+    total_amount = sum(item["total_price"] for item in basket)
+    return _step()
 
 
 @router.get("/terminal-status", response_class=JSONResponse)
