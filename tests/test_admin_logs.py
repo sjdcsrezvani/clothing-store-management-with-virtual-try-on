@@ -116,7 +116,7 @@ def test_target_links_ip_truncation_and_diff_dialog(client, db_session):
     assert "1.2.3.4" in page
     assert "<details" in page and "تغییرات" in page  # long detail + diff button
     assert f'id="logdiff-action-{row.id}"' in page and "data-dialog" in page
-    assert "&#34;a&#34;: 1" in page  # pretty JSON, still HTML-escaped
+    assert "فیلد" in page and "قبل" in page  # field-level table, not raw dumps
 
 
 def test_unmapped_targets_stay_plain(client, db_session):
@@ -207,3 +207,47 @@ def test_archive_files_then_deletes_old_rows(client, db_session):
     finally:
         for stale in files:
             stale.unlink()
+
+
+def test_position_line_counts_and_rejects_reversed_range(client, db_session):
+    _owner_client(client, db_session, name="logs-owner-pos")
+    db_session.query(AdminLog).delete()
+    db_session.commit()
+    _log(db_session, "logout", "ردیف تنها")
+    page = client.get("/admin/logs").text
+    assert "نمایش ۱ تا ۱ از ۱" in page
+
+    bad = client.get("/admin/logs?from=1405/02/01&to=1405/01/01",
+                     follow_redirects=False)
+    assert bad.status_code == 303
+    from urllib.parse import unquote
+    assert "پیش از" in unquote(bad.headers["location"])
+
+
+def test_detail_search_filters_and_highlights(client, db_session):
+    _owner_client(client, db_session, name="logs-owner-search")
+    _log(db_session, "logout", "پرداخت حقوق ماهانه صادر شد")
+    _log(db_session, "login", "ورود معمولی")
+    page = client.get("/admin/logs?q=حقوق").text
+    assert "پرداخت حقوق ماهانه" not in page  # raw text is now marked up
+    assert "<mark>حقوق</mark>" in page
+    assert "ورود معمولی" not in page
+
+
+def test_field_diff_prefers_table_and_raw_fallback(client, db_session):
+    from services.security import admin_log_diff_fields
+    assert admin_log_diff_fields('{"role": "x"}', '{"role": "y"}') == [
+        ("role", "x", "y")]
+    assert admin_log_diff_fields('{"a": 1}', '{"a": 1}') is None
+    assert admin_log_diff_fields("not-json", "{}") is None
+
+
+def test_retired_events_bookmarks_keep_their_filters(client, db_session):
+    _owner_client(client, db_session, name="logs-owner-retire")
+    res = client.get("/admin/events?aggregate_type=sale&event_type=SaleCompleted",
+                     follow_redirects=False)
+    assert res.status_code == 303
+    location = res.headers["location"]
+    assert "source=events" in location
+    assert "aggregate_type=sale" in location
+    assert "event_type=SaleCompleted" in location

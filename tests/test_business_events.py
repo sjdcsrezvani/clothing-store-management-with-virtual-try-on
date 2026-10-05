@@ -66,10 +66,12 @@ def test_owner_can_view_business_event_history(client, db_session, authed):
     )
     db_session.commit()
 
-    response = client.get("/admin/events")
+    response = client.get("/admin/events", follow_redirects=False)
 
-    assert response.status_code == 200
-    assert "CashSessionClosed" in response.text
+    assert response.status_code == 303  # retired into the merged timeline
+    assert "source=events" in response.headers["location"]
+    page = client.get("/admin/logs?source=events").text
+    assert "CashSessionClosed" in page
 
 
 def test_business_event_cannot_be_updated(db_session):

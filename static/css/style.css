@@ -1879,7 +1879,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .stock-chip:hover { color: var(--link-hover); border-color: var(--candy); text-decoration: none; }
 .stock-chip.is-active { color: var(--ink); background: var(--card); border-color: var(--candy); }
 /* Search-term highlight: a tint of sunshine over the ink, never a new colour. */
-.product-list-table mark { background: color-mix(in srgb, var(--sunshine) 45%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+.product-list-table mark, .logs-table mark, details.unpaid-details mark { background: color-mix(in srgb, var(--sunshine) 45%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
 /* Bulk archive: the bar is a form of its own — rows point at it with
    form="bulk-archive-form" because a form inside a form is not a form. */
 .bulk-cell { width: 2.2rem; }
@@ -3934,6 +3934,8 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
    On phones the log table stacks into cards the same way the customer and
    credit tables do — data-labels name each cell. */
 .log-diff { direction: ltr; text-align: left; max-block-size: 12rem; overflow: auto; background: var(--surface-soft); border: 1px solid var(--rule); border-radius: var(--radius-sm); padding: 0.6rem 0.8rem; font-size: 0.75rem; }
+/* The global sticky header is transparent — rows would read through it. */
+.logs-table thead th { background: var(--card); }
 @media (max-width: 700px) {
   .logs-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .logs-table, .logs-table tbody, .logs-table tr, .logs-table td { display: block; }

@@ -44,6 +44,7 @@ from services._common import (
     parse_jalali_input_end,
     rel_time,
     jalali_day_label,
+    highlight,
 )
 from services.customers import (
     ACTIVE_DAYS,
@@ -101,6 +102,7 @@ from services.security import (
     admin_action_tone,
     admin_target_link,
     admin_log_diff,
+    admin_log_diff_fields,
 )
 from services.store import invalidate_store_cache, get_store
 from services.sorting import parse_sort
@@ -118,7 +120,7 @@ from services.tier import (
     TIER_RANK,
 )
 from services.events import (
-    EVENT_LIMIT_RULES, event_history, event_payload, append_event,
+    event_payload, append_event,
     BUSINESS_EVENT_LABELS, business_event_tone,
 )
 from services.payroll import (create_salary_payment, current_period_key,
@@ -2550,25 +2552,21 @@ async def admin_events(
     limit: int = 200,
     db: Session = Depends(get_db),
 ):
+    """Retired: the domain-event stream lives in the merged audit timeline.
+
+    Old bookmarks and the `limit` box land on the events tab with their
+    filters intact — `limit` has no counterpart there (fixed 100 + show
+    more), so only it is dropped.
+    """
     guard = require_html_role(request, db, "owner")
     if not hasattr(guard, "role"):
         return guard
-    events = event_history(
-        db,
-        aggregate_type=aggregate_type.strip() or None,
-        event_type=event_type.strip() or None,
-        limit=limit,
-    )
-    return templates.TemplateResponse(request, "admin/events.html", {
-        "events": events,
-        "event_payload": event_payload,
-        "aggregate_type": aggregate_type,
-        "event_type": event_type,
-        "limit": limit,
-        # The filter's limit box paints its bounds from the same rules the
-        # query clamps with — one definition in services/events.py.
-        "numeric_rules": {"limit": (EVENT_LIMIT_RULES["min"], EVENT_LIMIT_RULES["max"], "تعداد رویدادها")},
-    })
+    target = "/admin/logs?source=events"
+    if aggregate_type.strip():
+        target += f"&aggregate_type={quote_plus(aggregate_type.strip())}"
+    if event_type.strip():
+        target += f"&event_type={quote_plus(event_type.strip())}"
+    return RedirectResponse(url=target, status_code=303)
 
 
 # One screen of audit rows; "show more" appends the next screen via ?offset=.
@@ -2593,6 +2591,7 @@ def _logs_filter_values(request: Request, db: Session) -> dict:
     date_to_raw = (qp.get("to") or "").strip()
     aggregate_type = (qp.get("aggregate_type") or "").strip()[:50]
     event_type = (qp.get("event_type") or "").strip()[:60]
+    search = (qp.get("q") or "").strip()[:100]
     try:
         offset = max(int(qp.get("offset") or 0), 0)
     except ValueError:
@@ -2613,7 +2612,7 @@ def _logs_filter_values(request: Request, db: Session) -> dict:
         date_to_raw = ""
     return {
         "source": source, "action": action, "actor": actor,
-        "known_actions": known_actions,
+        "known_actions": known_actions, "search": search,
         "aggregate_type": aggregate_type, "event_type": event_type,
         "date_from": date_from, "date_from_raw": date_from_raw,
         "date_to": date_to, "date_to_raw": date_to_raw, "offset": offset,
@@ -2630,6 +2629,10 @@ def _logs_base_query(db: Session, filters: dict):
         query = query.filter(AdminLog.action == filters["action"])
     if filters["actor"] is not None:
         query = query.filter(AdminLog.staff_user_id == filters["actor"].id)
+    if filters["search"]:
+        like = "%" + filters["search"].replace("\\", "\\\\").replace(
+            "%", "\\%").replace("_", "\\_") + "%"
+        query = query.filter(AdminLog.detail.like(like, escape="\\"))
     if filters["date_from"] is not None:
         query = query.filter(AdminLog.created_at >= filters["date_from"])
     if filters["date_to"] is not None:
@@ -2647,6 +2650,10 @@ def _events_base_query(db: Session, filters: dict):
         query = query.filter(BusinessEvent.aggregate_type == filters["aggregate_type"])
     if filters["event_type"]:
         query = query.filter(BusinessEvent.event_type == filters["event_type"])
+    if filters["search"]:
+        like = "%" + filters["search"].replace("\\", "\\\\").replace(
+            "%", "\\%").replace("_", "\\_") + "%"
+        query = query.filter(BusinessEvent.payload.like(like, escape="\\"))
     if filters["date_from"] is not None:
         query = query.filter(BusinessEvent.occurred_at >= filters["date_from"])
     if filters["date_to"] is not None:
@@ -2670,6 +2677,7 @@ def _action_item(row: AdminLog) -> dict:
         "ip": row.ip_address or "",
         "detail": row.detail or "",
         "diff": admin_log_diff(row.before_json, row.after_json),
+        "fields": admin_log_diff_fields(row.before_json, row.after_json),
     }
 
 
@@ -2712,9 +2720,15 @@ async def admin_logs(request: Request, db: Session = Depends(get_db)):
 
     filters = _logs_filter_values(request, db)
     source = filters["source"]
+    if (filters["date_from"] is not None and filters["date_to"] is not None
+            and filters["date_from"] > filters["date_to"]):
+        return RedirectResponse(
+            url=f"/admin/logs?source={source}&err=«از تاریخ» باید پیش از «تا تاریخ» باشد.",
+            status_code=303)
     offset = filters["offset"]
     items: list[dict] = []
     has_more = False
+    total: int | None = None
     # Replay carries the active filters into the paging, export and way-back
     # links — one definition, so a file can never answer a different view
     # than the screen that ordered it.
@@ -2727,13 +2741,17 @@ async def admin_logs(request: Request, db: Session = Depends(get_db)):
         replay["aggregate_type"] = filters["aggregate_type"]
     if filters["event_type"]:
         replay["event_type"] = filters["event_type"]
+    if filters["search"]:
+        replay["q"] = filters["search"]
     if filters["date_from_raw"]:
         replay["from"] = filters["date_from_raw"]
     if filters["date_to_raw"]:
         replay["to"] = filters["date_to_raw"]
 
     if source == "events":
-        rows = _events_base_query(db, filters).offset(offset).limit(
+        base = _events_base_query(db, filters)
+        total = base.count()
+        rows = base.offset(offset).limit(
             LOGS_PAGE_SIZE + 1).all()
         has_more = len(rows) > LOGS_PAGE_SIZE
         items = [_event_item(row) for row in rows[:LOGS_PAGE_SIZE]]
@@ -2749,7 +2767,9 @@ async def admin_logs(request: Request, db: Session = Depends(get_db)):
             key=lambda item: (item["created_at"], item["row_id"]),
             reverse=True)[:LOGS_PAGE_SIZE]
     else:
-        rows = _logs_base_query(db, filters).offset(offset).limit(
+        base = _logs_base_query(db, filters)
+        total = base.count()
+        rows = base.offset(offset).limit(
             LOGS_PAGE_SIZE + 1).all()
         has_more = len(rows) > LOGS_PAGE_SIZE
         items = [_action_item(row) for row in rows[:LOGS_PAGE_SIZE]]
@@ -2778,12 +2798,21 @@ async def admin_logs(request: Request, db: Session = Depends(get_db)):
     if replay:
         poll_url += "?" + "&".join(
             f"{key}={quote_plus(str(value))}" for key, value in replay.items())
+    position_line = ""
+    if total is not None and items:
+        start = offset + 1
+        end = offset + len(items)
+        fa = to_persian_digits
+        position_line = (f"نمایش {fa(str(start))} تا {fa(str(end))}"
+                         f" از {fa(str(total))}")
 
     return templates.TemplateResponse(request, "admin/logs.html", {
         "groups": groups,
         "has_rows": bool(items),
         "show_source": source == "all",
         "source": source,
+        "search": filters["search"],
+        "hl": highlight,
         "action_labels": ADMIN_ACTION_LABELS,
         "jalali_str": jalali_str,
         "rel_time": rel_time,
@@ -2798,6 +2827,7 @@ async def admin_logs(request: Request, db: Session = Depends(get_db)):
         "filters_active": bool(
             filters["action"] or filters["actor"] is not None
             or filters["aggregate_type"] or filters["event_type"]
+            or filters["search"]
             or filters["date_from_raw"] or filters["date_to_raw"]),
         "offset": offset,
         "has_more": has_more,
@@ -2805,6 +2835,7 @@ async def admin_logs(request: Request, db: Session = Depends(get_db)):
         "export_url": export_url,
         "back_url": back_url,
         "poll_url": poll_url,
+        "position_line": position_line,
         "first_action_id": next(
             (item["row_id"] for item in items if item["source"] == "action"), 0),
         "first_event_id": next(

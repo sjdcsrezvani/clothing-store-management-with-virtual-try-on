@@ -504,6 +504,39 @@ def admin_target_link(target_type: str | None, target_id: int | None) -> tuple[s
     return (template.format(id=target_id), f"{noun} #{target_id}")
 
 
+def admin_log_diff_fields(before_json: str | None, after_json: str | None) -> list | None:
+    """Changed-field rows for the change dialog: [(field, before, after)].
+
+    Falls back to None when either side is not a JSON object, or when
+    nothing actually changed — the dialog then shows the raw dumps, or no
+    button at all, instead of an empty table.
+    """
+    try:
+        before = json.loads(before_json) if before_json else {}
+        after = json.loads(after_json) if after_json else {}
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        return None
+
+    def _text(value) -> str:
+        if value is None:
+            return "—"
+        if isinstance(value, str):
+            return value
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except (ValueError, TypeError):
+            return str(value)
+
+    rows = []
+    for key in list(before) + [k for k in after if k not in before]:
+        old, new = before.get(key), after.get(key)
+        if old != new:
+            rows.append((str(key), _text(old), _text(new)))
+    return rows or None
+
+
 def admin_log_diff(before_json: str | None, after_json: str | None) -> tuple[str, str] | None:
     """(before, after) pretty text for the change dialog, or None if neither."""
     if not before_json and not after_json:

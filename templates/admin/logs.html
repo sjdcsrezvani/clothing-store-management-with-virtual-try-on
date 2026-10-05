@@ -45,8 +45,11 @@
     <label>تا تاریخ
         <input class="persian-date-input" name="to" value="{{ date_to }}" inputmode="numeric" dir="ltr" placeholder="۱۴۰۵/۱۲/۲۹">
     </label>
+    <label>جست‌وجو در جزئیات
+        <input name="q" value="{{ search }}" maxlength="100" placeholder="بخشی از متن">
+    </label>
     <button class="btn btn-primary" type="submit">فیلتر</button>
-    {% if filters_active %}<a class="btn" href="/admin/logs?source={{ source }}">پاک کردن فیلترها</a>{% elif offset %}<a class="btn" href="{{ back_url }}">۱۰۰ ردیف اول</a>{% endif %}
+    {% if filters_active %}<a class="btn" href="/admin/logs?source={{ source }}">پاک کردن فیلترها</a>{% endif %}{% if offset %}<a class="btn" href="{{ back_url }}">۱۰۰ ردیف اول</a>{% endif %}
 </form>
 
 {% if archivable > 0 %}
@@ -64,6 +67,7 @@
 <div class="card" id="logs-card" data-poll-url="{{ poll_url }}" data-first-action="{{ first_action_id }}" data-first-event="{{ first_event_id }}">
     <p class="empty-state" id="logs-fresh" hidden><button class="btn btn-primary" type="button" id="logs-fresh-btn">ردیف‌های تازه — نمایش</button></p>
     {% if has_rows %}
+    {% if position_line %}<p class="muted">{{ position_line }}</p>{% endif %}
     {% for group in groups %}
     <p class="eyebrow">{{ group.label }}</p>
     <div class="table-scroll">
@@ -88,21 +92,32 @@
                     <td data-label="کننده">{% if item.actor_url %}<a href="{{ item.actor_url }}">{{ item.actor_name }}</a>{% else %}{{ item.actor_name }}{% endif %}</td>
                     <td data-label="پیوند">{% if item.link %}<a href="{{ item.link[0] }}">{{ item.link[1] }}</a>{% else %}—{% endif %}</td>
                     <td data-label="آی‌پی" dir="ltr">{{ item.ip or '—' }}</td>
-                    <td data-label="جزئیات">{% if item.detail and item.detail|length > 80 %}<details class="unpaid-details"><summary>{{ item.detail[:80] }}…</summary><div><pre class="log-diff" dir="ltr">{{ item.detail }}</pre></div></details>{% else %}{{ item.detail or '—' }}{% endif %}{% if item.diff %} <button type="button" class="btn btn-sm" data-dialog-open="logdiff-{{ item.source }}-{{ item.row_id }}">تغییرات</button>{% endif %}</td>
+                    <td data-label="جزئیات">{% if item.detail and item.detail|length > 80 %}<details class="unpaid-details"><summary>{{ hl(item.detail[:80], search) }}…</summary><div><pre class="log-diff" dir="ltr">{{ hl(item.detail, search) }}</pre></div></details>{% else %}{{ hl(item.detail, search) or '—' }}{% endif %}{% if item.fields or item.diff %} <button type="button" class="btn btn-sm" data-dialog-open="logdiff-{{ item.source }}-{{ item.row_id }}">تغییرات</button>{% endif %}</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
     {% for item in group["items"] %}
-    {% if item.diff %}
+    {% if item.fields or item.diff %}
     <div id="logdiff-{{ item.source }}-{{ item.row_id }}" data-dialog role="dialog" aria-modal="true" aria-labelledby="logdiff-title-{{ item.source }}-{{ item.row_id }}" class="confirm-scrim" tabindex="-1">
         <div class="t-modal-card confirm-card" role="document">
             <h3 id="logdiff-title-{{ item.source }}-{{ item.row_id }}">تغییرات ثبت‌شده</h3>
+            {% if item.fields %}
+            <table class="data-table">
+                <thead><tr><th scope="col">فیلد</th><th scope="col">قبل</th><th scope="col">بعد</th></tr></thead>
+                <tbody>
+                    {% for field in item.fields %}
+                    <tr><td><code dir="ltr">{{ field[0] }}</code></td><td>{{ field[1] }}</td><td>{{ field[2] }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
             <h4>قبل</h4>
             <pre class="log-diff" dir="ltr">{{ item.diff[0] }}</pre>
             <h4>بعد</h4>
             <pre class="log-diff" dir="ltr">{{ item.diff[1] }}</pre>
+            {% endif %}
             <div class="confirm-actions">
                 <button type="button" class="btn btn-ghost" data-dialog-close>بستن</button>
             </div>

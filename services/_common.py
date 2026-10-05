@@ -1,6 +1,8 @@
 """Shared helpers — single source of truth for cross-router utilities."""
+import re
 from datetime import datetime, timezone
 from fastapi import Request
+from markupsafe import Markup, escape
 from sqlalchemy.orm import Session
 import jdatetime
 from models import Settings, to_english_digits as _to_en
@@ -116,6 +118,22 @@ def jalali_day_label(value: datetime | None) -> tuple[str, str]:
     if delta == 1:
         return (key, "دیروز")
     return (key, _to_persian_digits(key))
+
+
+def highlight(text: str | None, query: str | None):
+    """Wrap query matches in <mark>, everything else HTML-escaped.
+
+    Returned as Markup so templates print it raw; without a query it reads
+    exactly like the autoescaped text it replaces.
+    """
+    if not text:
+        return ""
+    if not query:
+        return escape(text)
+    parts = re.split(f"({re.escape(query)})", text, flags=re.IGNORECASE)
+    return Markup("".join(
+        f"<mark>{escape(part)}</mark>" if i % 2 else escape(part)
+        for i, part in enumerate(parts)))
 
 
 # Jalali years never reach 1900, so a form value starting with one can only be a
