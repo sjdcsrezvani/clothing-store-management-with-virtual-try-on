@@ -1386,3 +1386,17 @@ def test_the_shell_theme_read_is_one_query_and_the_cache_saves_the_rest(db_sessi
     assert cold == 1, f"expected one query for theme + custom colours, made {cold}"
     assert warm == 0, f"the warm cache must answer without the database, made {warm}"
     invalidate_theme_cache()
+
+
+def test_appearance_page_has_no_emoji_and_names_themes_in_persian(client, db_session):
+    from tests.test_roles import _staff, _session_as
+    owner, password = _staff(db_session, "theme-names", "owner")
+    _session_as(client, owner, password)
+    page = client.get("/admin/settings/appearance").text
+    for emoji in ("⚙️", "🎨"):
+        assert emoji not in page
+    for name in ("کاشی", "بوتیک کودک", "صندوق", "کنتراست بالا", "برند اختصاصی"):
+        assert name in page
+    assert "Warm sand paper" not in page
+    assert 'id="appearance-revert"' in page
+    assert "پیش‌نمایش می‌دهد" in page

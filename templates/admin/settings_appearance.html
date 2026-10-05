@@ -5,12 +5,12 @@
 تم و رنگ‌بندی پنل را برای همه کاربران فروشگاه انتخاب کنید.
 {% endset %}
 {% set page_actions %}
-<a href="/admin/settings" class="btn btn-ghost">⚙️ تنظیمات سیستم</a>
+<a href="/admin/settings" class="btn btn-ghost"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-settings"/></svg>تنظیمات سیستم</a>
 {% endset %}
 {% include 'partials/page_header.html' %}
 
 {% if retired_theme_id %}
-<div class="alert alert-info" role="status">🎨 تم «{{ retired_theme_id }}» بازنشسته شد و فروشگاه شما به «{{ retired_theme_home }}» منتقل شد — اگر ظاهر دیگری می‌خواهید، از گالری زیر انتخاب و ذخیره کنید.</div>
+<div class="alert alert-info" role="status"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-palette"/></svg> تم «{{ retired_theme_id }}» بازنشسته شد و فروشگاه شما به «{{ retired_theme_home }}» منتقل شد — اگر ظاهر دیگری می‌خواهید، از گالری زیر انتخاب و ذخیره کنید.</div>
 {% endif %}
 
 
@@ -24,6 +24,7 @@
                 </div>
                 <span class="appearance-active" id="appearance-active">{{ active_theme_id }}</span>
             </div>
+            <p class="appearance-intro">کلیک، ظاهر را بلافاصله پیش‌نمایش می‌دهد؛ «اعمال» آن را قطعی می‌کند. «بازگشت» به ذخیره‌شده برمی‌گردد.</p>
             <div class="theme-gallery" role="radiogroup" aria-label="تم‌های فروشگاه">
                 {% for theme in themes %}
                 <button type="button" class="theme-option{% if theme.id == active_theme_id %} is-selected{% endif %}" data-theme-id="{{ theme.id }}" data-theme-mode="{{ theme.mode }}" data-theme-style="{{ theme.inline_style }}" role="radio" aria-checked="{{ 'true' if theme.id == active_theme_id else 'false' }}">
@@ -48,7 +49,10 @@
                     <div class="form-group"><label for="theme_custom_secondary">رنگ دوم</label><input type="color" id="theme_custom_secondary" name="theme_custom_secondary" value="{{ settings.get('theme_custom_secondary') or default_custom_secondary }}"><small>برای ناوبری و عناصر کمکی</small></div>
                 </div>
             </div>
-            <button type="submit" class="btn btn-primary appearance-apply"><span class="icon-check" aria-hidden="true"></span> اعمال ظاهر انتخاب‌شده</button>
+            <div class="settings-savebar">
+                <button type="submit" class="btn btn-primary appearance-apply"><span class="icon-check" aria-hidden="true"></span> اعمال ظاهر انتخاب‌شده</button>
+                <button type="button" class="btn btn-ghost" id="appearance-revert">بازگشت به ذخیره‌شده</button>
+            </div>
         </section>
     </form>
 </div>
@@ -85,6 +89,27 @@
             option.setAttribute('aria-checked', 'true');
             applyOption(option);
         });
+    });
+    // Back to saved: re-clicking the stored card restores the input and the
+    // shell through the same path a manual click takes — no second definition.
+    var savedId = input ? input.value : '';
+    var savedPrimary = document.getElementById('theme_custom_primary');
+    var savedSecondary = document.getElementById('theme_custom_secondary');
+    savedPrimary = savedPrimary ? savedPrimary.value : '';
+    savedSecondary = savedSecondary ? savedSecondary.value : '';
+    var revert = document.getElementById('appearance-revert');
+    if (revert) revert.addEventListener('click', function () {
+        var primary = document.getElementById('theme_custom_primary');
+        var secondary = document.getElementById('theme_custom_secondary');
+        if (primary) primary.value = savedPrimary;
+        if (secondary) secondary.value = savedSecondary;
+        var cards = document.querySelectorAll('.theme-option');
+        for (var i = 0; i < cards.length; i++) {
+            if (cards[i].getAttribute('data-theme-id') === savedId) {
+                cards[i].click();
+                break;
+            }
+        }
     });
     ['theme_custom_primary', 'theme_custom_secondary'].forEach(function (id) {
         var field = document.getElementById(id);
