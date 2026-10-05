@@ -1,3 +1,90 @@
+## 2.8.5 — 1405/07/14 (2026-10-05)
+
+### تنظیمات، بخش‌بخش: the settings page stops being one long page
+
+- **Eight panels, each with its own save.** «فروشگاه»، «فروش و صندوق»،
+  «تخفیف و مشتریان»، «نسیه و چک»، «دستگاه‌ها»، «پیامک و هوش مصنوعی»،
+  «پیشرفته» and «حساب من» each wear a pill of their own, open from a plain
+  link, and keep their own form — so a save writes that panel's fields and
+  nothing else. The pills are links, not script: without JavaScript every
+  panel still opens, and «?tab=» is the whole deep-link story.
+- **A dirty dot, a confirm, and a save bar that stays put.** Typing marks
+  the pill; leaving an unsaved panel asks first — «اول ذخیره کن» or «بی‌خیال،
+  برو» — and the save bar rides the bottom of a long panel so it never hides
+  the button that stores it.
+- **A refused number walks back to its own field.** An out-of-range or
+  unparsable value reopens the panel that owns it with the caret on the
+  field and a red line around it, rather than the first panel in the row.
+- **The page says which way it opens.** The description counts its panels
+  from the same table the pill row is built from, so it cannot drift when a
+  panel is added.
+
+### هر فیلد، با واحد و راهنمای خودش: the field reads as a field
+
+- **Units ride the input.** «تومان»، «روز»، «ماه»، «نفر»، «رقم»، «ساعت» and
+  «٪» sit in a docked chip against their numbers, so a bare 500 is never a
+  question.
+- **Labels step back, guides step in.** Field labels became small eyebrow
+  lines and the paragraph under each input folded into a «؟» toggle wearing
+  the analytics tip-icon — and the shared rule hands the analytics tips a
+  working reveal on the way.
+- **A switch wears its consequence.** «این فروشگاه اطلاعات فرزند را ثبت
+  می‌کند» and «فعال‌سازی هشدارها» are stacked cards that write what
+  un-ticking does, instead of a checkbox and a footnote.
+
+### صندوق، فاکتور و کم‌موجودی: three settings the shop asked for by name
+
+- **The low-stock line is the owner's.** «آستانه کم‌موجودی» is a setting
+  now, read by the products filter and the dashboard alert alike, so one
+  number answers «کم‌موجود» everywhere instead of a constant only one page
+  could see.
+- **The receipt says what the shop wants to say.** «یادداشت پایین فاکتور»
+  prints one line under the invoice — on the confirmation and on every later
+  look at it — and empty means no line at all.
+- **The till's opening float has a home.** «موجودی پیش‌فرض صندوق» sits
+  beside the receipt note, on the same key the till itself writes.
+
+### ظاهر، با پیش‌نمایش و راه برگشت: choosing a theme stops being a leap
+
+- **Every palette has a Persian name.** «کاشی»، «بوتیک کودک»، «عملیات
+  روشن»، «صندوق»، «مادرانه»، «کهربایی»، «نیمه‌شب»، «بازار شب»، «جنگل»،
+  «کنتراست بالا» and «برند اختصاصی» — eleven cards in the shop's own
+  words, with the emoji gone from the header and from the retired-theme
+  notice, which wears the sprite instead.
+- **Select marks, «پیش‌نمایش» shows, «اعمال» keeps.** Choosing a card no
+  longer repaints the shop behind the owner's back: the shell moves when
+  asked and not before, and «بازگشت به ذخیره‌شده» puts every input and the
+  shell back to what is on disk.
+- **A brand can have a dark side.** «حالت برند» adds a second pair of
+  colours, held to the same contrast floors as the light ones, and the dark
+  side is derived from the midnight shelf so elevation and state colours are
+  right for darkness rather than borrowed from daylight.
+- **Font and corners belong to the brand too.** «قلم» and «گوشه‌ها» reach the
+  shell as tokens, and the whole shop reads at «کوچک»، «معمولی» or «بزرگ»
+  and «راحت» or «فشرده» — worn as root attributes, so every page follows
+  without a component knowing.
+- **A retired theme can be kept.** The notice no longer only explains where
+  the shop moved: «همین بماند» stores the theme it was moved to, carrying
+  the rest of the appearance settings along with it.
+
+### پیوند و دروازه: the links and the gates catch up with the move
+
+- **Five in-bound links stopped lying.** Splitting the page left seventeen
+  links on the bare address, which now opens the shop panel alone. The five
+  that promised a setting by name — «تنظیمات چک‌ها»، «تنظیمات کارت‌خوان»،
+  «تنظیمات پیامک» and the downgrade and reminder notes — each land on the
+  panel that holds their field, and a gate now reads every one of them out
+  of its template and asks that panel to render the field in question.
+- **The visual gates follow the catalogue.** The hover and button probes
+  ran a hand-written list of ten palettes, so the jungle card was never
+  rendered, hovered or measured once; the list is read from the theme
+  catalogue now, and the jungle cells are green.
+- **The prose stopped counting.** Comments claiming ten palettes, a settings
+  description claiming seven panels and a tab list in a constant nothing
+  read all described a world one release old.
+
+**Schema change.** None — the database stays on revision 32.
+
 ## 2.8.4 — 1405/07/13 (2026-10-05)
 
 ### زمان‌بندی از آن شماست: the cadence becomes a choice, not a cron
