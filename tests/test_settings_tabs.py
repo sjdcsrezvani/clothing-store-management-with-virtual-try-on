@@ -1,5 +1,9 @@
 """Settings tabs: eight panels, one template, ?tab= deep-linking."""
 from urllib.parse import unquote
+from pathlib import Path
+import re
+
+import pytest
 
 from models import Settings
 from routers.admin import SETTINGS_TABS
@@ -8,6 +12,7 @@ from tests.test_staff_phase_b import _owner_client
 
 # The order the pill row must wear, read from the router's own table so a
 # panel added there cannot slip past this file.
+ROOT = Path(__file__).resolve().parents[1]
 TABS = tuple(tab_id for tab_id, _title, _icon in SETTINGS_TABS)
 TAB_FIELD = {
     "shop": 'name="store_name"',
@@ -125,3 +130,30 @@ def test_messaging_tab_shows_gateway_status(client, db_session):
     _owner_client(client, db_session, name="tabs-owner-gw")
     page = client.get("/admin/settings?tab=messaging").text
     assert "درگاه" in page and "/admin/sms" in page
+
+
+# A link that promises one thing and lands on another is worse than no link:
+# the owner follows «تنظیمات چک‌ها», finds the shop panel, and concludes the
+# setting is gone. Each row below is a real link, the panel it must name, and a
+# field that panel has to render — so a field that moves again takes its
+# in-bound links with it, loudly.
+ANCHOR = re.compile(r"<a\b[^>]*?href=\"([^\"]+)\"[^>]*>([^<]*)</a>", re.S)
+INBOUND_LINKS = (
+    ("templates/admin/checks.html", "تنظیمات چک‌ها", "advanced", "check_default_reminders"),
+    ("templates/admin/pos_reconciliation.html", "تنظیمات کارت‌خوان", "devices", "pos_terminal_host"),
+    ("templates/admin/tier_downgrades.html", "⚙️ تنظیمات", "discounts", "tier_downgrade_months"),
+    ("templates/admin/tier_up.html", "تنظیمات پیامک", "messaging", "tryon_daily_limit"),
+    ("templates/admin/credit.html", "در تنظیمات", "credit", "credit_terms_days"),
+)
+
+
+@pytest.mark.parametrize("path,label,tab,field", INBOUND_LINKS)
+def test_a_link_promising_a_setting_lands_on_the_panel_that_has_it(client, db_session, path, label, tab, field):
+    source = (ROOT / path).read_text()
+    anchors = [m for m in ANCHOR.finditer(source) if label in m.group(2)]
+    assert anchors, f"{label} not found in {path}"
+    for match in anchors:
+        assert match.group(1) == f"/admin/settings?tab={tab}", (path, label, match.group(1))
+    _owner_client(client, db_session, name="tabs-owner-inbound")
+    page = client.get(f"/admin/settings?tab={tab}").text
+    assert f'name="{field}"' in page, (tab, field)
