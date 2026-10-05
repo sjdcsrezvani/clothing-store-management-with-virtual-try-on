@@ -75,9 +75,33 @@ PROBE = ROOT / "tools" / "visual_probe.mjs"
 SEED_IMAGE = "/static/uploads/generated/probe-seed.png"
 
 
+def _bright_png(width: int = 64, height: int = 64) -> bytes:
+    """A small opaque, bright PNG built with the stdlib alone: the stage must
+    carry lit pixels, never a transparent file the scrim shows through."""
+    import struct
+    import zlib
+
+    row = b"\x00" + bytes((255, 240, 170)) * width
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        return (struct.pack(">I", len(data)) + tag + data
+                + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF))
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr)
+            + chunk(b"IDAT", zlib.compress(row * height)) + chunk(b"IEND", b""))
+
+
 def _seed_saved_tryon() -> None:
     """One saved try-on row pointing at a real static file, so the gallery has
-    an opener to click and the stage holds actual content."""
+    an opener to click and the stage holds actual content.
+
+    The photo is (re)written whenever it is missing: static/uploads is not in
+    the repo, so a fresh clone — or a restore that round-tripped the tree
+    without it — must not leave the stage measuring an empty box.
+    """
+    seed = ROOT / "static" / "uploads" / "generated" / "probe-seed.png"
+    if not seed.is_file():
+        seed.parent.mkdir(parents=True, exist_ok=True)
+        seed.write_bytes(_bright_png())
     with SessionLocal() as db:
         Base.metadata.create_all(bind=engine)
         if not db.query(GeneratedImage).filter(GeneratedImage.image_path == SEED_IMAGE).first():
