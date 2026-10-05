@@ -3976,8 +3976,9 @@ button.text-link { background: none; border: none; padding: 0; font: inherit; cu
 .settings-savebar { position: sticky; bottom: 0; background: var(--card); padding: 0.75rem 0 0.25rem; border-top: 1px solid var(--rule); margin-top: 1rem; }
 .settings-note { margin: 0; }
 .form-group.is-error input, .form-group.is-error select { border-color: var(--danger); }
-.field-tip { display: inline-flex; align-items: center; justify-content: center; width: 1.1rem; height: 1.1rem; border-radius: 50%; border: 1px solid var(--rule); background: var(--surface-soft); color: var(--ink-soft); font-size: 0.7rem; font-weight: 800; cursor: help; padding: 0; position: relative; vertical-align: baseline; }
-.field-tip:hover::after, .field-tip:focus-visible::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 0.4rem); inset-inline-start: 0; width: max-content; max-width: 16rem; white-space: normal; background: var(--card); color: var(--ink); border: 1px solid var(--rule); border-radius: var(--radius-sm); padding: 0.5rem 0.7rem; font-size: 0.78rem; font-weight: 400; z-index: 5; box-shadow: var(--shadow-overlay); }
+.tip-icon:hover::after, .tip-icon:focus-visible::after, .field-tip:hover::after, .field-tip:focus-visible::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 0.4rem); inset-inline-start: 0; width: max-content; max-width: 16rem; white-space: normal; background: var(--card); color: var(--ink); border: 1px solid var(--rule); border-radius: var(--radius-sm); padding: 0.5rem 0.7rem; font-size: 0.78rem; font-weight: 400; z-index: 5; box-shadow: var(--shadow-overlay); }
+.tip-icon { position: relative; }
+.settings-card .tip-icon { margin-inline-start: auto; flex-shrink: 0; }
 
 /* Optional owner line under the printed invoice. */
 .invoice-foot { text-align: center; margin: 0.75rem 0 0; }
@@ -3987,8 +3988,6 @@ button.text-link { background: none; border: none; padding: 0; font: inherit; cu
    after numeric inputs, docked help toggles, stacked capability boxes. */
 .settings-card .form-group > label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.72rem; font-weight: 800; color: var(--ink-soft); letter-spacing: 0.02em; }
 .settings-card h4 { border-top: 1px solid var(--rule); padding-top: 0.9rem; margin-top: 1.2rem; }
-.field-tip { width: 1.35rem; height: 1.35rem; font-size: 0.8rem; margin-inline-start: auto; flex-shrink: 0; }
-.field-tip:hover { border-color: var(--candy); color: var(--candy); }
 .field-unit { display: flex; align-items: stretch; }
 .field-unit input { flex: 1; min-width: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: 0; }
 .field-unit > span { display: inline-flex; align-items: center; padding: 0 0.8rem; background: var(--surface-soft); border: 1px solid var(--rule); border-top-right-radius: 0; border-bottom-right-radius: 0; color: var(--ink-soft); font-size: 0.82rem; font-weight: 700; white-space: nowrap; }

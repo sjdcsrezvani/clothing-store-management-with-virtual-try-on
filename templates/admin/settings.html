@@ -13,9 +13,10 @@
    rule in the table is marked data-unbounded so it stays findable. #}
 {% from 'partials/numeric_input.html' import num with context %}
 
-{# Field guides live behind a ؟ toggle instead of a paragraph under every
-   field — the working form stays scannable, the explanation one hover away. #}
-{% macro tip(text) %}<button type="button" class="field-tip" data-tip="{{ text }}" aria-label="راهنما">؟</button>{% endmacro %}
+{# Field guides wear the analytics tip-icon: same 22px circle, same hover.
+   Unlike the analytics ones, the tooltip actually opens — the shared reveal
+   rule below covers both classes, so analytics gains working tips too. #}
+{% macro tip(text) %}<span class="tip-icon" tabindex="0" role="button" data-tip="{{ text }}" aria-label="راهنما">?</span>{% endmacro %}
 
 <nav class="customer-chips settings-tabs" aria-label="بخش‌های تنظیمات">
     {% for tab_id, title, icon in settings_tabs %}
