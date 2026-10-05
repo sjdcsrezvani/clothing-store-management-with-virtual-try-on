@@ -1982,11 +1982,62 @@ SETTINGS_NUMERIC_RULES = {
 }
 
 
+# The settings tabs, in order: (id, title, icon). One template paints every
+# panel so the num()↔rules self-check below keeps seeing all of them.
+SETTINGS_TABS = (
+    ("shop", "فروشگاه", "box"),
+    ("discounts", "تخفیف و مشتریان", "users"),
+    ("credit", "نسیه و چک", "credit"),
+    ("devices", "دستگاه‌ها", "terminal"),
+    ("messaging", "پیامک و هوش مصنوعی", "sms"),
+    ("advanced", "پیشرفته", "settings"),
+    ("account", "حساب من", "staff"),
+)
+
+# Which tab owns a field, so a validation error reopens the right panel.
+_SETTINGS_FIELD_TABS = {
+    "barcode_code_length": "shop",
+    "store_name": "shop", "store_instagram": "shop",
+    "store_tagline": "shop", "store_footer": "shop",
+    "default_referrer_discount": "discounts",
+    "default_referred_discount": "discounts",
+    "min_purchase_for_discount": "discounts",
+    "monthly_referral_limit": "discounts",
+    "birthday_sms_days_before": "discounts",
+    "birthday_target": "discounts", "child_profile_enabled": "discounts",
+    "tryon_daily_limit": "messaging",
+    "credit_terms_days": "credit",
+    "credit_reminder_min_hours": "credit",
+    "default_credit_limit": "credit",
+    "credit_surcharge_percent": "credit",
+    "pos_terminal_host": "devices", "pos_terminal_port": "devices",
+    "check_default_reminders": "advanced",
+    "check_upcoming_days": "advanced",
+    "check_reminders_enabled": "advanced",
+}
+for _tier_key in list(SETTINGS_NUMERIC_RULES):
+    if _tier_key.startswith("tier_"):
+        _SETTINGS_FIELD_TABS.setdefault(_tier_key, "discounts")
+
+
+def _settings_tab_for(key: str) -> str:
+    """The panel owning a field — unknown fields open the first tab."""
+    return _SETTINGS_FIELD_TABS.get(key, "shop")
+
+
+def _settings_tab(request: Request) -> str:
+    """The requested tab, or the first one for garbage — never a KeyError."""
+    wanted = (request.query_params.get("tab") or "").strip()
+    known = {tab_id for tab_id, _title, _icon in SETTINGS_TABS}
+    return wanted if wanted in known else "shop"
+
+
 @router.get("/settings", response_class=HTMLResponse)
 async def admin_settings(request: Request, db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "owner")
     if not hasattr(guard, "role"):
         return guard
+    active_tab = _settings_tab(request)
 
     # The form and the table are checked against each other on every render, so
     # a template that hard-codes a bound the table lacks — or a numeric field
@@ -2000,6 +2051,7 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
         return templates.TemplateResponse(request, "admin/settings.html", {
             "settings": {}, "tier_config": {}, "downgrade_rule": tier_downgrade_rule(db),
             "numeric_rules": {}, "store": get_store(db),
+            "settings_tabs": SETTINGS_TABS, "active_tab": active_tab,
             "msg": "",
             "err": "خطای قالب: «" + "، ".join(missing) + "» در جدول قواعد نیست — صفحه از ذخیره‌سازی محافظت می‌کند.",
         })
@@ -2008,6 +2060,7 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
         return templates.TemplateResponse(request, "admin/settings.html", {
             "settings": {}, "tier_config": {}, "downgrade_rule": tier_downgrade_rule(db),
             "numeric_rules": {}, "store": get_store(db),
+            "settings_tabs": SETTINGS_TABS, "active_tab": active_tab,
             "msg": "",
             "err": "خطای قالب: «" + "، ".join(orphans) + "» در فرم نیست — یک قاعده بی‌میدان.",
         })
@@ -2021,6 +2074,7 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
         "tier_config": get_tier_config(db),
         "downgrade_rule": tier_downgrade_rule(db),
         "numeric_rules": SETTINGS_NUMERIC_RULES,
+        "settings_tabs": SETTINGS_TABS, "active_tab": active_tab,
         "store": get_store(db), "msg": "", "err": "",
     }
     for processor in templates.context_processors:
@@ -2046,12 +2100,16 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
         return templates.TemplateResponse(request, "admin/settings.html", {
             "settings": {}, "tier_config": {}, "downgrade_rule": tier_downgrade_rule(db),
             "numeric_rules": {}, "store": get_store(db),
+            "settings_tabs": SETTINGS_TABS, "active_tab": active_tab,
             "msg": "",
             "err": "خطای قالب: «" + "، ".join(hard_bounds) + "» مرز خودش را نوشته — از جدول قواعد استفاده کنید.",
         })
 
     settings = {s.key: s.value for s in db.query(Settings).all()}
     tier_config = get_tier_config(db)
+    error_field = (request.query_params.get("field", "") or "").strip()
+    if not re.fullmatch(r"[a-z_]+", error_field):
+        error_field = ""
     return templates.TemplateResponse(request, "admin/settings.html", {
         "settings": settings,
         "tier_config": tier_config,
@@ -2060,6 +2118,8 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
         "downgrade_rule": tier_downgrade_rule(db),
         "numeric_rules": SETTINGS_NUMERIC_RULES,
         "store": get_store(db),
+        "settings_tabs": SETTINGS_TABS, "active_tab": active_tab,
+        "error_field": error_field,
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
     })
@@ -2141,11 +2201,14 @@ async def admin_update_settings(request: Request, db: Session = Depends(get_db))
         return guard
 
     form = await request.form()
+    posted_tab = str(form.get("tab") or "shop").strip()
+    if posted_tab not in {tab_id for tab_id, _t, _i in SETTINGS_TABS}:
+        posted_tab = "shop"
     updates = {}
     # Later values win, which is what makes an unchecked checkbox work: the form
     # posts a hidden companion (0) before the box itself (1).
     for key, value in form.items():
-        if key in {"csrf_token", THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY}:
+        if key in {"csrf_token", "tab", THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY}:
             continue
         updates[key] = str(value)
     # A birthday target that names a module the store switched off would
@@ -2176,7 +2239,7 @@ async def admin_update_settings(request: Request, db: Session = Depends(get_db))
             number = int(to_english_digits(raw))
         except (TypeError, ValueError):
             return RedirectResponse(
-                url=f"/admin/settings?err=«{label}» باید یک عدد باشد — «{raw}» ذخیره نشد.",
+                url=f"/admin/settings?tab={_settings_tab_for(key)}&field={key}&err=«{label}» باید یک عدد باشد — «{raw}» ذخیره نشد.",
                 status_code=303)
         if number < low or (high is not None and number > high):
             if low > 0:
@@ -2185,7 +2248,7 @@ async def admin_update_settings(request: Request, db: Session = Depends(get_db))
                 band = f"حداکثر {to_persian_digits(high)}" if high is not None else ""
             tail = f" {band}" if band else ""
             return RedirectResponse(
-                url=f"/admin/settings?err=«{label}»{tail} — مقدار ذخیره نشد.",
+                url=f"/admin/settings?tab={_settings_tab_for(key)}&field={key}&err=«{label}»{tail} — مقدار ذخیره نشد.",
                 status_code=303)
     # A validated numeric setting is stored normalised: the owner typed
     # Persian digits, but every reader (`get_barcode_code_length`, the tier
@@ -2203,7 +2266,7 @@ async def admin_update_settings(request: Request, db: Session = Depends(get_db))
             days = normalize_reminder_days(updates["check_default_reminders"])
         except ValueError as error:
             return RedirectResponse(
-                url=f"/admin/settings?err=روزهای هشدار چک: {error} — مقدار ذخیره نشد.",
+                url=f"/admin/settings?tab=advanced&field=check_default_reminders&err=روزهای هشدار چک: {error} — مقدار ذخیره نشد.",
                 status_code=303)
         updates["check_default_reminders"] = ", ".join(str(day) for day in days)
     for key, value in updates.items():
@@ -2217,7 +2280,7 @@ async def admin_update_settings(request: Request, db: Session = Depends(get_db))
     invalidate_customer_cache()
     log_action(db, "settings_update", "به‌روزرسانی تنظیمات", request=request, target_type="settings")
 
-    return RedirectResponse(url="/admin/settings?msg=تنظیمات ذخیره شد.", status_code=303)
+    return RedirectResponse(url=f"/admin/settings?tab={posted_tab}&msg=تنظیمات ذخیره شد.", status_code=303)
 
 
 @router.post("/change-password", response_class=HTMLResponse)
@@ -2233,16 +2296,16 @@ async def admin_change_password(
         return guard
 
     if not verify_password(current_password, guard.password_hash):
-        return RedirectResponse(url="/admin/settings?err=رمز عبور فعلی اشتباه است.", status_code=303)
+        return RedirectResponse(url="/admin/settings?tab=account&err=رمز عبور فعلی اشتباه است.", status_code=303)
     if len(new_password) < 6:
-        return RedirectResponse(url="/admin/settings?err=رمز جدید باید حداقل ۶ کاراکتر باشد.", status_code=303)
+        return RedirectResponse(url="/admin/settings?tab=account&err=رمز جدید باید حداقل ۶ کاراکتر باشد.", status_code=303)
     if new_password != new_password_confirm:
-        return RedirectResponse(url="/admin/settings?err=رمز جدید و تکرار آن یکسان نیستند.", status_code=303)
+        return RedirectResponse(url="/admin/settings?tab=account&err=رمز جدید و تکرار آن یکسان نیستند.", status_code=303)
 
     guard.password_hash = hash_password(new_password)
     db.commit()
     log_action(db, "change_password", f"تغییر رمز ورود {guard.username}", request=request, target_type="staff_user", target_id=guard.id)
-    return RedirectResponse(url="/admin/settings?msg=رمز عبور با موفقیت تغییر کرد.", status_code=303)
+    return RedirectResponse(url="/admin/settings?tab=account&msg=رمز عبور با موفقیت تغییر کرد.", status_code=303)
 
 
 @router.post("/backup", response_class=HTMLResponse)
