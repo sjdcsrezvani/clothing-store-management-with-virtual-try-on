@@ -1,29 +1,67 @@
 {% extends "base.html" %}
 {% block content %}
-
+{% set page_description %}
+چه کسی، چه کاری انجام داد — تازه‌ترین‌ها اول.
+{% endset %}
 {% include 'partials/page_header.html' %}
+
+<form method="get" action="/admin/logs" class="card form-row">
+    <label>عملیات
+        <select name="action">
+            <option value="">همه عملیات‌ها</option>
+            {% for code in known_actions %}
+            <option value="{{ code }}"{% if code == action %} selected{% endif %}>{{ action_labels.get(code, code) }}</option>
+            {% endfor %}
+        </select>
+    </label>
+    <label>کننده
+        <select name="actor">
+            <option value="">همه کاربران</option>
+            {% for person in actors %}
+            <option value="{{ person.id }}"{% if person.id == actor_id %} selected{% endif %}>{{ person.full_name or person.username }}</option>
+            {% endfor %}
+        </select>
+    </label>
+    <label>از تاریخ
+        <input class="persian-date-input" name="from" value="{{ date_from }}" inputmode="numeric" dir="ltr" placeholder="۱۴۰۵/۰۱/۰۱">
+    </label>
+    <label>تا تاریخ
+        <input class="persian-date-input" name="to" value="{{ date_to }}" inputmode="numeric" dir="ltr" placeholder="۱۴۰۵/۱۲/۲۹">
+    </label>
+    <button class="btn btn-primary" type="submit">فیلتر</button>
+    {% if filters_active %}<a class="btn" href="/admin/logs">پاک کردن فیلترها</a>{% endif %}
+</form>
 
 <div class="card">
     {% if logs %}
-    <table class="data-table">
-        <thead>
-            <tr>
-                <th>🕐 زمان</th>
-                <th>🔧 عملیات</th>
-                <th>📝 جزئیات</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for log in logs %}
-            <tr>
-                <td class="tnum">{{ jalali_str(log.created_at) }}</td>
-                <td><code>{{ log.action }}</code></td>
-                <td>{{ log.detail or '—' }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="table-scroll">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th scope="col">زمان</th>
+                    <th scope="col">عملیات</th>
+                    <th scope="col">کننده</th>
+                    <th scope="col">جزئیات</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr>
+                    <td class="tnum">{{ jalali_str(log.created_at) }}</td>
+                    <td><span class="badge{% if action_tone(log.action) == 'danger' %} badge-danger{% else %} badge-none{% endif %}">{{ action_labels.get(log.action, log.action) }}</span> <code>{{ log.action }}</code></td>
+                    <td>{% if log.staff_user %}<a href="/admin/staff/{{ log.staff_user.id }}">{{ log.staff_user.full_name or log.staff_user.username }}</a>{% else %}سیستم{% endif %}</td>
+                    <td>{{ log.detail or '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if has_more %}
+    <div class="tag-pagination"><a class="btn" href="{{ more_url }}">نمایش ۱۰۰ ردیف بعدی</a></div>
+    {% endif %}
+    {% elif filters_active %}
+    <p class="empty-state">با این فیلترها چیزی ثبت نشده است. <a href="/admin/logs">پاک کردن فیلترها</a></p>
     {% else %}
-    <p style="text-align: center; color: var(--ink-soft); padding: 2rem;">هنوز عملیاتی ثبت نشده است.</p>
+    <p class="empty-state">هنوز عملیاتی ثبت نشده است.</p>
     {% endif %}
 </div>{% endblock %}

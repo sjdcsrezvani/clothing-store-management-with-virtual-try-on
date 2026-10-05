@@ -371,6 +371,108 @@ def log_action(db, action: str, detail: str = "", request: Request | None = None
         logger.warning("log_action failed: %s", e)
 
 
+# ── Admin action labels ───────────────────────────────────────────────────
+
+# One Persian ledger-voice label per audit action, painted wherever an
+# AdminLog row surfaces (logs page, staff timeline). Unknown codes fall back
+# to the raw code — the audit trail never hides a row for want of a label.
+ADMIN_ACTION_LABELS = {
+    "attendance_mark": "ثبت حضور",
+    "backup": "پشتیبان‌گیری",
+    "birthday_sms": "پیامک تولد",
+    "campaign_archive": "بایگانی کمپین",
+    "campaign_delete": "حذف کمپین",
+    "campaign_unarchive": "بازگشت کمپین از بایگانی",
+    "capture_pair": "جفت‌سازی گوشی عکاسی",
+    "capture_unpair": "قطع گوشی عکاسی",
+    "cash_session_close": "بستن صندوق",
+    "cash_session_open": "باز کردن صندوق",
+    "cash_session_withdrawal": "برداشت از صندوق",
+    "cash_session_withdrawal_reverse": "برگشت برداشت صندوق",
+    "change_password": "تغییر گذرواژه",
+    "check_add": "ثبت چک",
+    "check_delete": "حذف چک",
+    "check_edit": "ویرایش چک",
+    "check_resolve": "پایان پیگیری چک",
+    "check_status": "تغییر وضعیت چک",
+    "credit_due_dates": "ثبت سررسیدها",
+    "credit_limit": "تعیین سقف اعتبار",
+    "credit_payment": "دریافت طلب",
+    "customer_bulk_tag": "برچسب گروهی مشتری",
+    "customer_delete": "حذف مشتری",
+    "customer_discount": "اعمال تخفیف مشتری",
+    "expense_add": "ثبت هزینه",
+    "expense_reverse": "ابطال هزینه",
+    "follow_up_sms": "پیامک پیگیری",
+    "login": "ورود",
+    "login_blocked": "مسدودی ورود",
+    "login_failed": "ورود ناموفق",
+    "logout": "خروج",
+    "owner_profile_update": "به‌روزرسانی هویت کسب‌وکار",
+    "payment_reverse": "برگشت دریافت",
+    "pos_reconciliation": "تطبیق کارت‌خوان",
+    "position_add": "افزودن سمت سازمانی",
+    "position_update": "ویرایش سمت سازمانی",
+    "purchase_reverse": "برگشت خرید",
+    "recurring_expense_add": "افزودن هزینه ماهانه",
+    "recurring_expense_delete": "حذف هزینه ماهانه",
+    "recurring_expense_pause": "توقف هزینه ماهانه",
+    "recurring_expense_resume": "ازسرگیری هزینه ماهانه",
+    "refund": "ابطال فاکتور",
+    "salary_bulk": "پرداخت گروهی",
+    "salary_payment": "پرداخت حقوق",
+    "salary_void": "ابطال حقوق",
+    "sales_goal": "تعیین هدف فروش",
+    "settings_update": "به‌روزرسانی تنظیمات",
+    "setup_complete": "راه‌اندازی اولیه",
+    "sms_audience_delete": "حذف مخاطبان",
+    "sms_config": "تنظیم درگاه پیامک",
+    "sms_digest_resend": "ارسال مجدد گزارش",
+    "sms_digest_send_now": "ارسال فوری گزارش",
+    "sms_gateway_pair": "جفت‌سازی درگاه پیامک",
+    "sms_gateway_unpair": "قطع درگاه پیامک",
+    "sms_retry": "تلاش مجدد پیامک",
+    "sms_template_create": "ساخت قالب پیامک",
+    "sms_template_delete": "حذف قالب پیامک",
+    "sms_template_duplicate": "کپی قالب پیامک",
+    "sms_template_test": "تست قالب پیامک",
+    "sms_template_toggle": "تغییر وضعیت قالب پیامک",
+    "sms_template_update": "ویرایش قالب پیامک",
+    "staff_caps": "تغییر کلیدها",
+    "staff_create": "استخدام",
+    "staff_disable": "بستن دسترسی",
+    "staff_enable": "بازگشایی دسترسی",
+    "staff_update": "ویرایش پرونده",
+    "supplier_add": "افزودن تأمین‌کننده",
+    "supplier_delete": "حذف تأمین‌کننده",
+    "supplier_edit": "ویرایش تأمین‌کننده",
+    "supplier_payment": "پرداخت به تأمین‌کننده",
+    "tag_settings_update": "به‌روزرسانی طرح تگ",
+    "tag_template_update": "به‌روزرسانی قالب تگ",
+    "theme_update": "به‌روزرسانی ظاهر فروشگاه",
+    "tier_downgrade": "تنزل سطح مشتری",
+    "tier_up_sms": "پیامک ارتقا",
+    "variant_demand_reset": "صفر کردن تقاضا",
+    "variant_demand_up": "ثبت تقاضا",
+    "variant_update": "ویرایش تنوع",
+}
+
+# Destructive actions paint danger; everything else stays neutral. Suffixes,
+# not a second list — a new `*_delete` tomorrow is red without a code change.
+_ADMIN_ACTION_DANGER_SUFFIXES = (
+    "_delete", "_void", "_failed", "_blocked", "_reverse",
+    "_disable", "_unpair", "_downgrade",
+)
+_ADMIN_ACTION_DANGER_EXACT = {"refund"}
+
+
+def admin_action_tone(action: str) -> str:
+    """Badge tone for an audit action: 'danger' or '' (neutral)."""
+    code = str(action or "")
+    if code in _ADMIN_ACTION_DANGER_EXACT or code.endswith(_ADMIN_ACTION_DANGER_SUFFIXES):
+        return "danger"
+    return ""
+
 # ── CSRF protection ───────────────────────────────────────────────────────────
 
 # /api/* endpoints are protected by the API token (or admin session), not CSRF,

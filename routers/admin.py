@@ -5,7 +5,7 @@ from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse, Response
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from database import get_db
@@ -40,6 +40,7 @@ from services._common import (
     page_arg,
     int_arg,
     parse_jalali_input,
+    parse_jalali_input_end,
 )
 from services.customers import (
     ACTIVE_DAYS,
@@ -93,6 +94,8 @@ from services.security import (
     effective_cap,
     require_cap,
     ROLE_DISCOUNT_LIMITS,
+    ADMIN_ACTION_LABELS,
+    admin_action_tone,
 )
 from services.store import invalidate_store_cache, get_store
 from services.sorting import parse_sort
@@ -1267,6 +1270,7 @@ async def admin_staff_profile(staff_id: int, request: Request, tab: str = "overv
         "performance": performance,
         "timeline": timeline,
         "history_kind": history_kind,
+        "action_labels": ADMIN_ACTION_LABELS,
         "today_jalali": jalali_str(datetime.now(timezone.utc), False),
         # The last closed months, newest first: pickable salary periods so
         # the month format never has to be recalled from memory.
@@ -2559,16 +2563,83 @@ async def admin_events(
     })
 
 
+# One screen of audit rows; "show more" appends the next screen via ?offset=.
+LOGS_PAGE_SIZE = 100
+
+
 @router.get("/logs", response_class=HTMLResponse)
 async def admin_logs(request: Request, db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "owner")
     if not hasattr(guard, "role"):
         return guard
 
-    logs = db.query(AdminLog).order_by(AdminLog.created_at.desc()).limit(100).all()
+    qp = request.query_params
+    action = (qp.get("action") or "").strip()
+    actor_raw = (qp.get("actor") or "").strip()
+    date_from_raw = (qp.get("from") or "").strip()
+    date_to_raw = (qp.get("to") or "").strip()
+    try:
+        offset = max(int(qp.get("offset") or 0), 0)
+    except ValueError:
+        offset = 0
+
+    # Unknown filter values degrade to "no filter" — the trail never shows
+    # an empty page for a stale bookmark, and the form repaints clean.
+    known_actions = sorted(row[0] for row in db.query(AdminLog.action).distinct().all())
+    if action not in known_actions:
+        action = ""
+    actor = None
+    if actor_raw.isdigit():
+        actor = db.query(StaffUser).filter(StaffUser.id == int(actor_raw)).first()
+    date_from = parse_jalali_input(date_from_raw)
+    if date_from is None:
+        date_from_raw = ""
+    date_to = parse_jalali_input_end(date_to_raw)
+    if date_to is None:
+        date_to_raw = ""
+
+    query = (db.query(AdminLog)
+             .options(joinedload(AdminLog.staff_user))
+             .order_by(AdminLog.id.desc()))
+    if action:
+        query = query.filter(AdminLog.action == action)
+    if actor is not None:
+        query = query.filter(AdminLog.staff_user_id == actor.id)
+    if date_from is not None:
+        query = query.filter(AdminLog.created_at >= date_from)
+    if date_to is not None:
+        query = query.filter(AdminLog.created_at <= date_to)
+    rows = query.offset(offset).limit(LOGS_PAGE_SIZE + 1).all()
+    has_more = len(rows) > LOGS_PAGE_SIZE
+    # The "show more" link replays the active filters — one definition, the
+    # same values the query just read, so the next screen never drifts.
+    more_params = {"offset": offset + LOGS_PAGE_SIZE}
+    if action:
+        more_params["action"] = action
+    if actor is not None:
+        more_params["actor"] = actor.id
+    if date_from_raw:
+        more_params["from"] = date_from_raw
+    if date_to_raw:
+        more_params["to"] = date_to_raw
+    more_url = "/admin/logs?" + "&".join(
+        f"{key}={quote_plus(str(value))}" for key, value in more_params.items())
+
     return templates.TemplateResponse(request, "admin/logs.html", {
-        "logs": logs,
+        "logs": rows[:LOGS_PAGE_SIZE],
         "jalali_str": jalali_str,
+        "action_labels": ADMIN_ACTION_LABELS,
+        "action_tone": admin_action_tone,
+        "known_actions": known_actions,
+        "actors": db.query(StaffUser).order_by(StaffUser.id).all(),
+        "action": action,
+        "actor_id": actor.id if actor is not None else "",
+        "date_from": date_from_raw,
+        "date_to": date_to_raw,
+        "filters_active": bool(action or actor is not None or date_from_raw or date_to_raw),
+        "offset": offset,
+        "has_more": has_more,
+        "more_url": more_url,
     })
 
 
