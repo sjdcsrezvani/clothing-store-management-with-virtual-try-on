@@ -72,7 +72,7 @@ def test_custom_brand_rejects_invalid_or_low_contrast_colors():
 # Values the shell needs before any theme is applied, and that no theme varies:
 # the sidebar's width and the minimum touch target. They live in `:root` alone, so
 # they are the only properties a theme is allowed to leave out — everything else
-# the stylesheet reads bare has to be in all ten.
+# the stylesheet reads bare has to be in every palette.
 #
 # They are also the only properties a *page* may read without its theme defining
 # them, and only while that page loads the stylesheet: `:root` is a rule in
@@ -764,7 +764,7 @@ def _filled_addresses(ids: dict[str, object]) -> list[tuple[str, str]]:
 
 
 def _activate_theme(db, theme_id: str) -> None:
-    """Put the shop on one of the ten palettes, the way the appearance page does."""
+    """Put the shop on one palette, the way the appearance page does."""
     from models import Settings
 
     from services.themes import invalidate_theme_cache
@@ -1070,7 +1070,7 @@ def test_the_matrix_still_finds_the_pages_it_was_written_for():
 
 
 def test_every_page_the_shell_serves_reads_only_colours_its_theme_defines(client, db_session):
-    """Every address, as every role, on each of the ten palettes.
+    """Every address, as every role, on each palette.
 
     Nothing is sampled and nothing is inferred: each cell of the matrix is a real
     request to the real page. A page is drawn with the theme that was asked for,
@@ -1126,7 +1126,7 @@ def test_every_page_the_shell_serves_reads_only_colours_its_theme_defines(client
 # The palettes a *state* walk visits. Its question is about the shop's records —
 # what a page does with none of them — not about its colours, so it does not need
 # the full matrix: every built-in theme is derived through the same `_complete`,
-# which makes the ten token *name* sets identical, and what differs between them
+# which makes every token *name* set identical, and what differs between them
 # is the derivation the tokens go through. One theme per mode is what that
 # derivation can actually change — light, dark, dark-shell, high-contrast — plus
 # the one theme whose tokens a shop chooses: `custom-brand` computes its colours
@@ -1296,7 +1296,7 @@ def test_every_page_survives_an_empty_shop(client, db_session):
     nobody renders. What this asks of it is what the matrix asks of the other: a
     page (never a 5xx), the palette it was loaded with, and no word on it that the
     renderer should have kept to itself. The palettes are the per-mode sample,
-    `STATE_THEMES` — the full ten run in the matrix above, and the guard beside
+    `STATE_THEMES` — the full run in the matrix above, and the guard beside
     the sample keeps it covering every derivation mode.
     """
     from tests.test_roles import _staff
