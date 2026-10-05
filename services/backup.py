@@ -21,6 +21,12 @@ BACKUP_DIR = Path("backups")
 KEEP_COUNT = 30
 _BACKUP_RE = re.compile(r"^referral_\d{8}_\d{6}(?:_\d+)?\.db$")
 
+# Every database backup pairs with an uploads tarball of the same stem:
+# referral_20240101_020000.db <-> referral_20240101_020000_uploads.tar.gz
+# A backup without its tarball (older rows, bare uploads) restores DB-only.
+UPLOADS_DIR = Path("static/uploads")
+_UPLOADS_TARBALL_SUFFIX = "_uploads.tar.gz"
+
 # The owner picks the cadence, not the clock: automatic backups run every
 # N days (at the 2 AM UTC pass), keeping the newest K files.
 BACKUP_EVERY_OPTIONS = (10, 20, 30)
@@ -71,6 +77,9 @@ def create_backup(keep_count: int | None = None) -> str | None:
         metadata = verify_sqlite_backup(dest)
         logger.info("Backup verified: size=%s checksum=%s", metadata["size"], metadata["checksum"])
         _remember_verified(dest, metadata)
+        pair = archive_uploads(dest)
+        if pair is None:
+            logger.warning("Backup %s has no uploads tarball", dest.name)
         _prune(keep_count)
         logger.info("Backup created: %s", dest)
         return str(dest)
@@ -87,6 +96,21 @@ def _prune(keep_count: int | None = None) -> None:
             old.unlink()
         except OSError:
             pass
+        pair = uploads_tarball_for(old.name)
+        if pair is not None:
+            try:
+                pair.unlink()
+            except OSError:
+                pass
+    # Orphaned tarballs (their database row is gone) own nothing — sweep them.
+    live_stems = {path.stem for path in BACKUP_DIR.glob("referral_*.db")}
+    for tarball in BACKUP_DIR.glob(f"referral_*{_UPLOADS_TARBALL_SUFFIX}"):
+        stem = tarball.name[: -len(_UPLOADS_TARBALL_SUFFIX)]
+        if stem not in live_stems:
+            try:
+                tarball.unlink()
+            except OSError:
+                pass
 
 
 def list_backups() -> list[dict]:
@@ -257,7 +281,10 @@ def forget_verified(name: str) -> None:
 
 
 def delete_backup(name: str) -> bool:
-    """Delete one backup file by name. False when the name is not a backup."""
+    """Delete one backup file by name, with its uploads tarball if paired.
+
+    False when the name is not a backup.
+    """
     path = backup_download_path(name)
     if path is None:
         return False
@@ -265,12 +292,18 @@ def delete_backup(name: str) -> bool:
         path.unlink()
     except OSError:
         return False
+    pair = uploads_tarball_for(name)
+    if pair is not None:
+        try:
+            pair.unlink()
+        except OSError:
+            pass
     forget_verified(name)
     return True
 
 
 def backups_storage() -> tuple[int, int]:
-    """(file count, total bytes) of the backup shelf."""
+    """(file count, total bytes) of the backup shelf, tarballs included."""
     count, total = 0, 0
     for path in BACKUP_DIR.glob("referral_*.db"):
         if not _BACKUP_RE.match(path.name):
@@ -278,6 +311,11 @@ def backups_storage() -> tuple[int, int]:
         try:
             total += path.stat().st_size
             count += 1
+        except OSError:
+            continue
+    for path in BACKUP_DIR.glob(f"referral_*{_UPLOADS_TARBALL_SUFFIX}"):
+        try:
+            total += path.stat().st_size
         except OSError:
             continue
     return count, total
@@ -292,6 +330,9 @@ def download_all_bytes() -> tuple[bytes, str]:
         for path in sorted(BACKUP_DIR.glob("referral_*.db"), reverse=True):
             if _BACKUP_RE.match(path.name):
                 archive.write(path, arcname=path.name)
+        for path in sorted(
+                BACKUP_DIR.glob(f"referral_*{_UPLOADS_TARBALL_SUFFIX}"), reverse=True):
+            archive.write(path, arcname=path.name)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return buf.getvalue(), f"backups_{stamp}.zip"
 
@@ -307,6 +348,71 @@ def recheck_backup(name: str) -> dict | None:
     fresh = verify_sqlite_backup(path)
     _remember_verified(path, fresh)
     return fresh
+
+
+def uploads_tarball_for(db_name: str) -> Path | None:
+    """The uploads tarball paired with a database backup, if it is on disk."""
+    if not _BACKUP_RE.match(db_name):
+        return None
+    stem = db_name[: -len(".db")]
+    candidate = BACKUP_DIR / f"{stem}{_UPLOADS_TARBALL_SUFFIX}"
+    return candidate if candidate.is_file() else None
+
+
+def archive_uploads(db_dest: str | Path) -> Path | None:
+    """Tarball static/uploads/ next to a database backup. None when there is
+    nothing to archive — the backup stands alone and restores DB-only."""
+    db_dest = Path(db_dest)
+    if not UPLOADS_DIR.is_dir():
+        return None
+    dest = BACKUP_DIR / f"{db_dest.stem}{_UPLOADS_TARBALL_SUFFIX}"
+    try:
+        import tarfile
+        BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        with tarfile.open(dest, "w:gz") as archive:
+            archive.add(UPLOADS_DIR, arcname="uploads")
+        return dest
+    except OSError as error:
+        logger.warning("Uploads archive failed: %s", error)
+        try:
+            dest.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return None
+
+
+def restore_uploads_from(tarball: str | Path) -> tuple[bool, str]:
+    """Replace static/uploads/ with a paired tarball's content.
+
+    The current tree is only touched after the whole archive reads clean,
+    and the pre-restore snapshot already holds its tarball — so a failed
+    extract keeps the old files, never half of each.
+    """
+    import shutil
+    import tarfile
+    try:
+        with tarfile.open(tarball, "r:gz") as archive:
+            members = archive.getmembers()
+    except (tarfile.TarError, OSError) as error:
+        logger.error("Uploads tarball unreadable: %s", error)
+        return False, "بایگانی فایل‌ها خراب است."
+    try:
+        UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+        for child in UPLOADS_DIR.iterdir():
+            if child.is_dir() and not child.is_symlink():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+        # The tarball's root is "uploads" (see archive_uploads), so it lands
+        # back exactly where it came from: static/uploads/ itself.
+        with tarfile.open(tarball, "r:gz") as archive:
+            archive.extractall(UPLOADS_DIR.parent, filter="data")
+    except (tarfile.TarError, OSError) as error:
+        logger.error("Uploads restore failed: %s", error)
+        return False, "بازیابی فایل‌ها ناموفق بود."
+    if not UPLOADS_DIR.is_dir():
+        return False, "بایگانی فایل‌ها ساختار نامشخصی دارد."
+    return True, "ok"
 
 
 def backup_schema_version(path: str | Path) -> int | None:
@@ -365,9 +471,10 @@ def restore_live_from(backup_path: str | Path, *, make_snapshot: bool = True,
                       keep_count: int | None = None) -> tuple[bool, str]:
     """Replace the live database content with a backup file — no restart.
 
-    Validates first, snapshots the current shop next (unless asked not to),
-    then copies page-by-page through SQLite's own online-backup API, migrates
-    an older schema forward in place, and re-verifies. Returns (ok, message).
+    Validates first, snapshots the present next (unless asked not to), then
+    copies page-by-page through SQLite's own online-backup API, migrates an
+    older schema forward in place, swaps the paired uploads tarball when one
+    rides along, and re-verifies. Returns (ok, message).
     """
     from database import engine
     target = Path(backup_path)
@@ -411,9 +518,16 @@ def restore_live_from(backup_path: str | Path, *, make_snapshot: bool = True,
             return False, "به‌روزرسانی ساختار ناموفق بود."
         if not verify_sqlite_backup(live).get("verified"):
             return False, "راستی‌آزمایی پس از بازیابی ناموفق بود."
+        message = f"بازیابی شد از {target.name}."
+        pair = uploads_tarball_for(target.name)
+        if pair is not None:
+            files_ok, files_message = restore_uploads_from(pair)
+            if not files_ok:
+                return False, files_message + " دیتابیس برگشت، فایل‌ها نه."
+            message += " فایل‌ها هم برگشت."
         try:
             from services.store import invalidate_store_cache
             invalidate_store_cache()
         except Exception:  # noqa: BLE001 — caches rebuild themselves
             pass
-        return True, f"بازیابی شد از {target.name}."
+        return True, message

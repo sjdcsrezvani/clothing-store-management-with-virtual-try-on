@@ -197,3 +197,97 @@ def test_newer_schema_backup_warns_but_stays(client, db_session):
         assert "ساختار این نسخه جدیدتر" in page  # inside the restore confirm
     finally:
         _clean()
+
+
+def _pair_of(db_name):
+    from services.backup import uploads_tarball_for
+    return uploads_tarball_for(db_name)
+
+
+def test_backup_pairs_uploads_tarball(client, db_session):
+    from pathlib import Path as _Path
+    _owner_client(client, db_session, name="bk-owner-pair")
+    _clean()
+    marker = _Path("static/uploads/bk_pair_marker.txt")
+    try:
+        marker.write_text("pair-me")
+        _backup_now(client)
+        name = _shelf_names()[-1]
+        pair = _pair_of(name)
+        assert pair is not None and pair.is_file()
+        import tarfile
+        with tarfile.open(pair, "r:gz") as archive:
+            names = archive.getnames()
+        assert any(n.endswith("bk_pair_marker.txt") for n in names)
+        page = client.get("/admin/backups").text
+        assert "+ فایل‌ها:" in page
+    finally:
+        try:
+            marker.unlink()
+        except OSError:
+            pass
+        _clean()
+
+
+def test_restore_swaps_uploads_too(client, db_session):
+    from pathlib import Path as _Path
+    _owner_client(client, db_session, name="bk-owner-pair-restore")
+    _clean()
+    marker = _Path("static/uploads/bk_restore_marker.txt")
+    try:
+        marker.write_text("before")
+        _backup_now(client)
+        name = _shelf_names()[-1]
+        marker.write_text("after")
+        res = client.post("/admin/backups/restore", data={
+            "csrf_token": csrf_token(client, "/admin/backups"), "name": name,
+        }, follow_redirects=False)
+        assert res.status_code == 303
+        assert marker.read_text() == "before"
+    finally:
+        try:
+            marker.unlink()
+        except OSError:
+            pass
+        _clean()
+
+
+def test_pairless_backup_restores_db_only(client, db_session):
+    _owner_client(client, db_session, name="bk-owner-nopair")
+    _clean()
+    try:
+        _backup_now(client)
+        name = _shelf_names()[-1]
+        _pair_of(name).unlink()
+        assert "بدون فایل‌پیوست" in client.get("/admin/backups").text
+        res = client.post("/admin/backups/restore", data={
+            "csrf_token": csrf_token(client, "/admin/backups"), "name": name,
+        }, follow_redirects=False)
+        assert res.status_code == 303
+        from urllib.parse import unquote
+        location = unquote(res.headers["location"])
+        assert "بازیابی شد از" in location and "فایل‌ها" not in location
+    finally:
+        _clean()
+
+
+def test_delete_and_prune_drop_the_pair(client, db_session):
+    from services.backup import _prune
+    _owner_client(client, db_session, name="bk-owner-pair-prune")
+    _clean()
+    try:
+        _backup_now(client)
+        import time
+        time.sleep(1.05)  # distinct filename stems, one second apart
+        _backup_now(client)
+        names = _shelf_names()
+        assert len(names) == 2 and all(_pair_of(n) for n in names)
+        _prune(keep_count=1)
+        names = _shelf_names()
+        assert len(names) == 1
+        assert _pair_of(names[0]) is not None
+        from pathlib import Path as _Path
+        orphans = list(BACKUP_DIR.glob("*_uploads.tar.gz"))
+        assert len(orphans) == 1  # only the survivor's pair stands
+    finally:
+        _clean()

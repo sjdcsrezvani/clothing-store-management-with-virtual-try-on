@@ -55,7 +55,7 @@
                 {% for b in backups %}
                 <tr>
                     <td data-label="نام فایل" dir="ltr" class="tnum" title="{{ b.name }}">{{ b.name }}</td>
-                    <td data-label="حجم" class="tnum">{{ b.size_fa }}</td>
+                    <td data-label="حجم" class="tnum">{{ b.size_fa }}{% if b.uploads_size_fa %}<br><small class="muted">+ فایل‌ها: {{ b.uploads_size_fa }}</small>{% else %}<br><small class="muted">بدون فایل‌پیوست</small>{% endif %}</td>
                     <td data-label="تاریخ" class="tnum">{{ jalali_str(b.mtime, false) }}</td>
                     <td data-label="وضعیت">{% if b.verified %}<span class="badge badge-success">تأیید شده</span>{% else %}<span class="badge badge-warning">بررسی نشده</span>{% endif %}{% if b.schema_newer %} <span class="badge badge-warning">نسخه جدیدتر</span>{% endif %}
                         <form method="post" action="/admin/backups/recheck" class="inline-form">
@@ -92,7 +92,7 @@
         <li>«بازیابی» را بزنید و در گفت‌وگو تأیید کنید.</li>
         <li>برنامه روی همان نسخه بالا می‌آید؛ نیازی به کاری نیست.</li>
     </ol>
-    <p class="muted">بازیابی کل اطلاعات فعلی را جایگزین می‌کند. پیش از هر بازیابی یک نسخه امن گرفته می‌شود (در زمان‌بندی بالا قابل تغییر است).</p>
+    <p class="muted">بازیابی کل اطلاعات فعلی را جایگزین می‌کند — دیتابیس و فایل‌های پیوستش با هم. پیش از هر بازیابی یک نسخه امن گرفته می‌شود (در زمان‌بندی بالا قابل تغییر است).</p>
     <form method="post" action="/admin/backups/upload" enctype="multipart/form-data" class="form-row">
         <label>فایل پشتیبان از جای دیگر
             <input type="file" name="backup_file" accept=".db" required aria-describedby="backup-upload-help">

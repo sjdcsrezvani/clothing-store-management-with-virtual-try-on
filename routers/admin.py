@@ -85,7 +85,7 @@ from services.backup import (
     backup_download_path, backup_schema_version, backups_storage,
     create_backup, delete_backup, download_all_bytes, latest_backup,
     list_backups, normalize_every_days, normalize_keep_count, recheck_backup,
-    restore_live_from, verify_cached,
+    restore_live_from, uploads_tarball_for, verify_cached,
 )
 from services.dashboard import dashboard_overview
 from services.pos_reconciliation import unresolved_transactions
@@ -2272,6 +2272,13 @@ async def admin_backups(request: Request, db: Session = Depends(get_db)):
     for backup in list_backups():
         row = {**backup, **verify_cached(Path("backups") / backup["name"])}
         row["size_fa"] = format_bytes_fa(row.get("size", 0))
+        pair = uploads_tarball_for(backup["name"])
+        try:
+            pair_size = pair.stat().st_size if pair else None
+        except OSError:
+            pair_size = None
+        row["uploads_size_fa"] = (
+            format_bytes_fa(pair_size) if pair_size is not None else "")
         version = backup_schema_version(Path("backups") / backup["name"])
         row["schema_newer"] = version is not None and version > MIGRATION_VERSION
         backups.append(row)
