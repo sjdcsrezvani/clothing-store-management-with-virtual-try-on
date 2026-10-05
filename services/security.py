@@ -408,6 +408,7 @@ ADMIN_ACTION_LABELS = {
     "login_blocked": "مسدودی ورود",
     "login_failed": "ورود ناموفق",
     "logout": "خروج",
+    "logs_archive": "بایگانی گزارش",
     "owner_profile_update": "به‌روزرسانی هویت کسب‌وکار",
     "payment_reverse": "برگشت دریافت",
     "pos_reconciliation": "تطبیق کارت‌خوان",

@@ -47,6 +47,66 @@ _SENSITIVE_KEY_PARTS = (
 )
 
 
+# One Persian ledger-voice label per domain event, painted wherever a
+# BusinessEvent row surfaces. Unknown codes fall back to the raw code.
+BUSINESS_EVENT_LABELS = {
+    "CheckoutCreated": "ایجاد تسویه",
+    "StockReserved": "رزرو موجودی",
+    "StockReleased": "آزادسازی رزرو",
+    "StockReservationConsumed": "مصرف رزرو",
+    "StockDecremented": "کاهش موجودی",
+    "StockReceived": "دریافت موجودی",
+    "StockReturned": "برگشت موجودی",
+    "StockAdjusted": "اصلاح موجودی",
+    "StockCostAdjusted": "اصلاح بهای موجودی",
+    "PaymentRequested": "درخواست پرداخت",
+    "PaymentApproved": "تأیید پرداخت",
+    "PaymentCancelled": "لغو پرداخت",
+    "PaymentDeclined": "رد پرداخت",
+    "PaymentUncertain": "پرداخت نامشخص",
+    "POSReconciled": "تطبیق کارت‌خوان",
+    "CheckoutExpired": "انقضای تسویه",
+    "SaleCompleted": "ثبت فروش",
+    "RefundIssued": "صدور استرداد",
+    "CheckoutRefunded": "استرداد تسویه",
+    "TagBatchPrinted": "چاپ دسته تگ",
+    "CampaignRedeemed": "مصرف کمپین",
+    "CreditSaleIssued": "فروش نسیه",
+    "CreditPaymentRecorded": "ثبت دریافت نسیه",
+    "PaymentReversed": "برگشت پرداخت",
+    "ExpenseRecorded": "ثبت هزینه",
+    "ExpenseReversed": "ابطال هزینه",
+    "PurchaseRecorded": "ثبت خرید",
+    "PurchaseReversed": "برگشت خرید",
+    "SupplierPaymentRecorded": "پرداخت تأمین‌کننده",
+    "SalaryPaid": "پرداخت حقوق",
+    "LoyaltyUpdated": "به‌روزرسانی وفاداری",
+    "CashSessionOpened": "باز کردن صندوق",
+    "CashSessionClosed": "بستن صندوق",
+    "CashSessionEntryRecorded": "ثبت حرکت صندوق",
+    "CashSessionEntryReversed": "برگشت حرکت صندوق",
+    "CheckIssued": "صدور چک",
+    "CheckPaid": "پرداخت چک",
+    "CheckCancelled": "ابطال چک",
+    "CheckBounced": "برگشت چک",
+    "CheckReminderTriggered": "یادآور چک",
+    "SalaryVoided": "ابطال حقوق",
+    "DatabaseReset": "بازنشانی پایگاه‌داده",
+}
+
+# Domain events that undo or destroy paint danger; the rest stay neutral.
+_BUSINESS_EVENT_DANGER = {
+    "PaymentReversed", "ExpenseReversed", "PurchaseReversed", "RefundIssued",
+    "CheckoutRefunded", "PaymentDeclined", "PaymentCancelled", "CheckBounced",
+    "CheckCancelled", "SalaryVoided", "DatabaseReset", "CashSessionEntryReversed",
+}
+
+
+def business_event_tone(event_type: str) -> str:
+    """Badge tone for a domain event: 'danger' or '' (neutral)."""
+    return "danger" if str(event_type or "") in _BUSINESS_EVENT_DANGER else ""
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 

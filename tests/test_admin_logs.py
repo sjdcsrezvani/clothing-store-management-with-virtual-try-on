@@ -115,7 +115,7 @@ def test_target_links_ip_truncation_and_diff_dialog(client, db_session):
     assert 'href="/admin/invoice/7"' in page and "فاکتور #7" in page
     assert "1.2.3.4" in page
     assert "<details" in page and "تغییرات" in page  # long detail + diff button
-    assert f'id="logdiff-{row.id}"' in page and "data-dialog" in page
+    assert f'id="logdiff-action-{row.id}"' in page and "data-dialog" in page
     assert "&#34;a&#34;: 1" in page  # pretty JSON, still HTML-escaped
 
 
@@ -143,3 +143,67 @@ def test_csv_export_matches_filtered_screen(client, db_session):
     page = client.get("/admin/logs?action=logout").text
     assert "export%3Faction%3Dlogout" not in page  # sanity: link is plain
     assert "/admin/logs/export?action=logout" in page
+
+
+def test_source_tabs_switch_streams(client, db_session):
+    from services.events import append_event
+    owner, _ = _owner_client(client, db_session, name="logs-owner-tabs")
+    _log(db_session, "logout", "ردیف عملیات")
+    append_event(db_session, "SaleCompleted", "sale", aggregate_id=9,
+                 actor_user_id=owner.id, payload={"total": 5})
+    db_session.commit()
+
+    actions = client.get("/admin/logs").text
+    assert "عملیات کاربران" in actions and "رویدادهای فروشگاه" in actions
+    assert "ردیف عملیات" in actions and "ثبت فروش" not in actions
+
+    events = client.get("/admin/logs?source=events").text
+    assert "ثبت فروش" in events and "SaleCompleted" in events
+    assert f"/admin/staff/{owner.id}" in events  # event actor links too
+    assert 'href="/admin/invoice/9"' in events  # aggregate reuses target map
+    assert "ردیف عملیات" not in events
+
+    merged = client.get("/admin/logs?source=all").text
+    assert "ردیف عملیات" in merged and "ثبت فروش" in merged
+    assert "۱۰۰ ردیف آخر" in merged  # merged depth is capped, honestly said
+    assert "نمایش ۱۰۰ ردیف بعدی" not in merged
+
+
+def test_latest_endpoint_reports_per_stream_max(client, db_session):
+    from services.events import append_event
+    _owner_client(client, db_session, name="logs-owner-latest")
+    row = _log(db_session, "logout", "ردیف سقف")
+    db_session.commit()
+    data = client.get("/admin/logs/latest").json()
+    assert data["actions_max"] == row.id and data["events_max"] == 0
+
+
+def test_archive_files_then_deletes_old_rows(client, db_session):
+    from pathlib import Path
+    from tests.conftest import csrf_token
+    _owner_client(client, db_session, name="logs-owner-archive")
+    old = _log(db_session, "logout", "ردیف کهنه",
+               created_at=datetime.now(timezone.utc) - timedelta(days=400))
+    fresh = _log(db_session, "logout", "ردیف تازه")
+    db_session.commit()
+    old_id, fresh_id = old.id, fresh.id
+
+    assert "بایگانی و حذف" in client.get("/admin/logs").text
+    res = client.post("/admin/logs/archive",
+                      data={"csrf_token": csrf_token(client, "/admin/logs")},
+                      follow_redirects=False)
+    assert res.status_code == 303
+    files = sorted(Path("backups").glob("logs_archive_*.csv"))
+    assert files, "archive file must land before rows go"
+    try:
+        body = files[-1].read_text(encoding="utf-8-sig")
+        assert "ردیف کهنه" in body
+        assert db_session.query(AdminLog).filter(
+            AdminLog.id == old_id).count() == 0
+        assert db_session.query(AdminLog).filter(
+            AdminLog.id == fresh_id).count() == 1
+        assert db_session.query(AdminLog).filter(
+            AdminLog.action == "logs_archive").count() == 1
+    finally:
+        for stale in files:
+            stale.unlink()

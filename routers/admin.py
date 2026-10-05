@@ -1,4 +1,5 @@
 import re
+import json
 from pathlib import Path
 
 from urllib.parse import quote_plus
@@ -9,7 +10,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from database import get_db
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from models import (
     Campaign, Customer, Referral, Settings, Sale, SaleItem, SaleCampaign, GeneratedImage, AdminLog, POSTransaction, StockMovement,
     BusinessEvent, StaffUser, SalaryPayment, CashSession, AttendanceRecord, JobPosition,
@@ -73,7 +74,7 @@ from services.customers import (
     update_customer_meta,
 )
 from models import to_english_digits, to_persian_digits
-from services.backup import create_backup, list_backups, backup_download_path
+from services.backup import BACKUP_DIR, create_backup, list_backups, backup_download_path
 from services.dashboard import dashboard_overview
 from services.pos_reconciliation import unresolved_transactions
 from services.pos_terminal import get_terminal_config
@@ -116,7 +117,10 @@ from services.tier import (
     TIER_LABELS,
     TIER_RANK,
 )
-from services.events import EVENT_LIMIT_RULES, event_history, event_payload, append_event
+from services.events import (
+    EVENT_LIMIT_RULES, event_history, event_payload, append_event,
+    BUSINESS_EVENT_LABELS, business_event_tone,
+)
 from services.payroll import (create_salary_payment, current_period_key,
                              is_payroll_due, normalize_period_key,
                              run_monthly_payday, void_salary_payment)
@@ -2581,9 +2585,14 @@ def _logs_filter_values(request: Request, db: Session) -> dict:
     page for a stale bookmark, and the form repaints clean.
     """
     qp = request.query_params
+    source = (qp.get("source") or "actions").strip()
+    if source not in ("actions", "events", "all"):
+        source = "actions"
     action = (qp.get("action") or "").strip()
     date_from_raw = (qp.get("from") or "").strip()
     date_to_raw = (qp.get("to") or "").strip()
+    aggregate_type = (qp.get("aggregate_type") or "").strip()[:50]
+    event_type = (qp.get("event_type") or "").strip()[:60]
     try:
         offset = max(int(qp.get("offset") or 0), 0)
     except ValueError:
@@ -2603,7 +2612,9 @@ def _logs_filter_values(request: Request, db: Session) -> dict:
     if date_to is None:
         date_to_raw = ""
     return {
-        "action": action, "actor": actor, "known_actions": known_actions,
+        "source": source, "action": action, "actor": actor,
+        "known_actions": known_actions,
+        "aggregate_type": aggregate_type, "event_type": event_type,
         "date_from": date_from, "date_from_raw": date_from_raw,
         "date_to": date_to, "date_to_raw": date_to_raw, "offset": offset,
     }
@@ -2626,6 +2637,73 @@ def _logs_base_query(db: Session, filters: dict):
     return query
 
 
+def _events_base_query(db: Session, filters: dict):
+    """The filtered domain-event query, newest first — the audit twin of the
+    staff-action query above, so the merged view reads both the same way."""
+    query = (db.query(BusinessEvent)
+             .options(joinedload(BusinessEvent.actor_user))
+             .order_by(BusinessEvent.occurred_at.desc(), BusinessEvent.id.desc()))
+    if filters["aggregate_type"]:
+        query = query.filter(BusinessEvent.aggregate_type == filters["aggregate_type"])
+    if filters["event_type"]:
+        query = query.filter(BusinessEvent.event_type == filters["event_type"])
+    if filters["date_from"] is not None:
+        query = query.filter(BusinessEvent.occurred_at >= filters["date_from"])
+    if filters["date_to"] is not None:
+        query = query.filter(BusinessEvent.occurred_at <= filters["date_to"])
+    return query
+
+
+def _action_item(row: AdminLog) -> dict:
+    """One staff-action row in the timeline's shared shape."""
+    user = row.staff_user
+    return {
+        "source": "action",
+        "row_id": row.id,
+        "created_at": row.created_at,
+        "title": ADMIN_ACTION_LABELS.get(row.action, row.action),
+        "code": row.action,
+        "tone": admin_action_tone(row.action),
+        "actor_name": (user.full_name or user.username) if user else "سیستم",
+        "actor_url": f"/admin/staff/{user.id}" if user else "",
+        "link": admin_target_link(row.target_type, row.target_id),
+        "ip": row.ip_address or "",
+        "detail": row.detail or "",
+        "diff": admin_log_diff(row.before_json, row.after_json),
+    }
+
+
+def _event_item(event: BusinessEvent) -> dict:
+    """One domain event in the same shape — payload reads as the detail."""
+    user = event.actor_user
+    payload = event_payload(event)
+    detail = json.dumps(payload, ensure_ascii=False) if payload else ""
+    return {
+        "source": "event",
+        "row_id": event.id,
+        "created_at": event.occurred_at,
+        "title": BUSINESS_EVENT_LABELS.get(event.event_type, event.event_type),
+        "code": event.event_type,
+        "tone": business_event_tone(event.event_type),
+        "actor_name": (user.full_name or user.username) if user else "سیستم",
+        "actor_url": f"/admin/staff/{user.id}" if user else "",
+        "link": admin_target_link(event.aggregate_type, event.aggregate_id),
+        "ip": "",
+        "detail": detail,
+        "diff": None,
+    }
+
+
+# Audit rows older than this are offered for archive, never auto-deleted.
+LOGS_ARCHIVE_DAYS = 365
+LOGS_ARCHIVE_KEEP = 12
+
+
+def _logs_archivable_count(db: Session) -> int:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=LOGS_ARCHIVE_DAYS)
+    return db.query(AdminLog).filter(AdminLog.created_at < cutoff).count()
+
+
 @router.get("/logs", response_class=HTMLResponse)
 async def admin_logs(request: Request, db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "owner")
@@ -2633,31 +2711,58 @@ async def admin_logs(request: Request, db: Session = Depends(get_db)):
         return guard
 
     filters = _logs_filter_values(request, db)
+    source = filters["source"]
     offset = filters["offset"]
-    rows = _logs_base_query(db, filters).offset(offset).limit(LOGS_PAGE_SIZE + 1).all()
-    has_more = len(rows) > LOGS_PAGE_SIZE
-    rows = rows[:LOGS_PAGE_SIZE]
-    # Day groups, newest day first: the screen's rows already arrive newest
-    # first, so first-seen order is chronological with no re-sort.
-    groups = []
-    for row in rows:
-        key, label = jalali_day_label(row.created_at)
-        if groups and groups[-1]["key"] == key:
-            groups[-1]["rows"].append(row)
-        else:
-            groups.append({"key": key, "label": label, "rows": [row]})
-    # The "show more" and "export" links replay the active filters — one
-    # definition, the same values the query just read, so the next screen
-    # and the file never drift from what the owner sees.
-    replay = {}
+    items: list[dict] = []
+    has_more = False
+    # Replay carries the active filters into the paging, export and way-back
+    # links — one definition, so a file can never answer a different view
+    # than the screen that ordered it.
+    replay = {"source": source} if source != "actions" else {}
     if filters["action"]:
         replay["action"] = filters["action"]
     if filters["actor"] is not None:
         replay["actor"] = filters["actor"].id
+    if filters["aggregate_type"]:
+        replay["aggregate_type"] = filters["aggregate_type"]
+    if filters["event_type"]:
+        replay["event_type"] = filters["event_type"]
     if filters["date_from_raw"]:
         replay["from"] = filters["date_from_raw"]
     if filters["date_to_raw"]:
         replay["to"] = filters["date_to_raw"]
+
+    if source == "events":
+        rows = _events_base_query(db, filters).offset(offset).limit(
+            LOGS_PAGE_SIZE + 1).all()
+        has_more = len(rows) > LOGS_PAGE_SIZE
+        items = [_event_item(row) for row in rows[:LOGS_PAGE_SIZE]]
+    elif source == "all":
+        # The merged view reads the newest screen of each stream and weaves
+        # them — deep paging lives in the single-source views, where an
+        # offset means one thing.
+        action_rows = _logs_base_query(db, filters).limit(LOGS_PAGE_SIZE).all()
+        event_rows = _events_base_query(db, filters).limit(LOGS_PAGE_SIZE).all()
+        items = sorted(
+            [_action_item(row) for row in action_rows]
+            + [_event_item(row) for row in event_rows],
+            key=lambda item: (item["created_at"], item["row_id"]),
+            reverse=True)[:LOGS_PAGE_SIZE]
+    else:
+        rows = _logs_base_query(db, filters).offset(offset).limit(
+            LOGS_PAGE_SIZE + 1).all()
+        has_more = len(rows) > LOGS_PAGE_SIZE
+        items = [_action_item(row) for row in rows[:LOGS_PAGE_SIZE]]
+
+    # Day groups, newest day first: the items already arrive newest first,
+    # so first-seen order is chronological with no re-sort.
+    groups = []
+    for item in items:
+        key, label = jalali_day_label(item["created_at"])
+        if groups and groups[-1]["key"] == key:
+            groups[-1]["items"].append(item)
+        else:
+            groups.append({"key": key, "label": label, "items": [item]})
     more_params = dict(replay, offset=offset + LOGS_PAGE_SIZE)
     more_url = "/admin/logs?" + "&".join(
         f"{key}={quote_plus(str(value))}" for key, value in more_params.items())
@@ -2669,29 +2774,42 @@ async def admin_logs(request: Request, db: Session = Depends(get_db)):
     if replay:
         back_url += "?" + "&".join(
             f"{key}={quote_plus(str(value))}" for key, value in replay.items())
+    poll_url = "/admin/logs/latest"
+    if replay:
+        poll_url += "?" + "&".join(
+            f"{key}={quote_plus(str(value))}" for key, value in replay.items())
 
     return templates.TemplateResponse(request, "admin/logs.html", {
         "groups": groups,
-        "has_rows": bool(rows),
+        "has_rows": bool(items),
+        "show_source": source == "all",
+        "source": source,
+        "action_labels": ADMIN_ACTION_LABELS,
         "jalali_str": jalali_str,
         "rel_time": rel_time,
-        "action_labels": ADMIN_ACTION_LABELS,
-        "action_tone": admin_action_tone,
-        "target_link": admin_target_link,
-        "log_diff": lambda row: admin_log_diff(row.before_json, row.after_json),
         "known_actions": filters["known_actions"],
         "actors": db.query(StaffUser).order_by(StaffUser.id).all(),
         "action": filters["action"],
         "actor_id": filters["actor"].id if filters["actor"] is not None else "",
+        "aggregate_type": filters["aggregate_type"],
+        "event_type": filters["event_type"],
         "date_from": filters["date_from_raw"],
         "date_to": filters["date_to_raw"],
-        "filters_active": bool(filters["action"] or filters["actor"] is not None
-                              or filters["date_from_raw"] or filters["date_to_raw"]),
+        "filters_active": bool(
+            filters["action"] or filters["actor"] is not None
+            or filters["aggregate_type"] or filters["event_type"]
+            or filters["date_from_raw"] or filters["date_to_raw"]),
         "offset": offset,
         "has_more": has_more,
         "more_url": more_url,
         "export_url": export_url,
         "back_url": back_url,
+        "poll_url": poll_url,
+        "first_action_id": next(
+            (item["row_id"] for item in items if item["source"] == "action"), 0),
+        "first_event_id": next(
+            (item["row_id"] for item in items if item["source"] == "event"), 0),
+        "archivable": _logs_archivable_count(db),
     })
 
 
@@ -2704,17 +2822,28 @@ async def admin_logs_export(request: Request, db: Session = Depends(get_db)):
     import csv
     import io
     filters = _logs_filter_values(request, db)
+    source = filters["source"]
+    if source == "events":
+        items = [_event_item(row) for row in _events_base_query(db, filters).all()]
+    elif source == "all":
+        items = sorted(
+            [_action_item(row) for row in _logs_base_query(db, filters).limit(
+                LOGS_PAGE_SIZE).all()]
+            + [_event_item(row) for row in _events_base_query(db, filters).limit(
+                LOGS_PAGE_SIZE).all()],
+            key=lambda item: (item["created_at"], item["row_id"]),
+            reverse=True)
+    else:
+        items = [_action_item(row) for row in _logs_base_query(db, filters).all()]
     out = [LOGS_CSV_HEADERS]
-    for row in _logs_base_query(db, filters).all():
-        link = admin_target_link(row.target_type, row.target_id)
+    for item in items:
         out.append([
-            jalali_str(row.created_at),
-            ADMIN_ACTION_LABELS.get(row.action, row.action),
-            (row.staff_user.full_name or row.staff_user.username)
-            if row.staff_user else "سیستم",
-            link[0] if link else "",
-            row.ip_address or "",
-            row.detail or "",
+            jalali_str(item["created_at"]),
+            item["title"],
+            item["actor_name"],
+            item["link"][0] if item["link"] else "",
+            item["ip"],
+            item["detail"],
         ])
     buf = io.StringIO()
     buf.write("\ufeff")  # BOM so Excel opens Persian correctly
@@ -2725,6 +2854,78 @@ async def admin_logs_export(request: Request, db: Session = Depends(get_db)):
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="logs_{today}.csv"'},
     )
+
+
+@router.get("/logs/latest")
+async def admin_logs_latest(request: Request, db: Session = Depends(get_db)):
+    """The newest row id per stream under the active filters — the poller asks
+    this, not the page, so a quiet check never renders a thing."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    filters = _logs_filter_values(request, db)
+    latest_action = _logs_base_query(db, filters).order_by(
+        AdminLog.id.desc()).limit(1).first()
+    latest_event = _events_base_query(db, filters).order_by(
+        BusinessEvent.id.desc()).limit(1).first()
+    return JSONResponse({
+        "actions_max": latest_action.id if latest_action else 0,
+        "events_max": latest_event.id if latest_event else 0,
+    })
+
+
+@router.post("/logs/archive")
+async def admin_logs_archive(request: Request, db: Session = Depends(get_db)):
+    """File rows older than a year as CSV into backups/, then delete them.
+
+    Owner-triggered, never automatic: the audit trail shrinks only when the
+    owner says so, and the file lands before a single row is deleted.
+    """
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    import csv
+    cutoff = datetime.now(timezone.utc) - timedelta(days=LOGS_ARCHIVE_DAYS)
+    old_rows = db.query(AdminLog).options(joinedload(AdminLog.staff_user)).filter(
+        AdminLog.created_at < cutoff).order_by(AdminLog.id).all()
+    if not old_rows:
+        return RedirectResponse(url="/admin/logs?msg=ردیف قدیمی برای بایگانی نیست.",
+                                status_code=303)
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    dest = BACKUP_DIR / f"logs_archive_{stamp}.csv"
+    try:
+        with dest.open("w", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(LOGS_CSV_HEADERS)
+            for row in old_rows:
+                link = admin_target_link(row.target_type, row.target_id)
+                writer.writerow([
+                    jalali_str(row.created_at),
+                    ADMIN_ACTION_LABELS.get(row.action, row.action),
+                    (row.staff_user.full_name or row.staff_user.username)
+                    if row.staff_user else "سیستم",
+                    link[0] if link else "",
+                    row.ip_address or "",
+                    row.detail or "",
+                ])
+    except OSError:
+        return RedirectResponse(url="/admin/logs?err=نوشتن فایل بایگانی ناموفق بود.",
+                                status_code=303)
+    # The file is on disk before any row goes — a failed delete keeps both.
+    for row in old_rows:
+        db.delete(row)
+    db.commit()
+    for stale in sorted(BACKUP_DIR.glob("logs_archive_*.csv"))[:-LOGS_ARCHIVE_KEEP]:
+        try:
+            stale.unlink()
+        except OSError:
+            pass
+    log_action(db, "logs_archive", f"بایگانی {len(old_rows)} ردیف قدیمی در {dest.name}",
+               request=request, target_type="backup")
+    return RedirectResponse(
+        url=f"/admin/logs?msg={len(old_rows)} ردیف قدیمی بایگانی شد.",
+        status_code=303)
 
 
 def _birthday_marker(db: Session, customer, occasion: str) -> Settings | None:

@@ -6,7 +6,22 @@
 {% set page_actions %}<a class="btn" href="{{ export_url }}">خروجی CSV</a>{% endset %}
 {% include 'partials/page_header.html' %}
 
+<div class="card form-row" role="tablist" aria-label="منبع گزارش">
+    <a class="btn btn-sm {% if source == 'actions' %}btn-primary{% else %}btn-ghost{% endif %}" role="tab" {% if source == 'actions' %}aria-selected="true"{% endif %} href="/admin/logs">عملیات کاربران</a>
+    <a class="btn btn-sm {% if source == 'events' %}btn-primary{% else %}btn-ghost{% endif %}" role="tab" {% if source == 'events' %}aria-selected="true"{% endif %} href="/admin/logs?source=events">رویدادهای فروشگاه</a>
+    <a class="btn btn-sm {% if source == 'all' %}btn-primary{% else %}btn-ghost{% endif %}" role="tab" {% if source == 'all' %}aria-selected="true"{% endif %} href="/admin/logs?source=all">همه با هم</a>
+</div>
+
 <form method="get" action="/admin/logs" class="card form-row">
+    <input type="hidden" name="source" value="{{ source }}">
+    {% if source == 'events' %}
+    <label>نوع موجودیت
+        <input name="aggregate_type" value="{{ aggregate_type }}" maxlength="50" placeholder="sale" dir="ltr">
+    </label>
+    <label>نوع رویداد
+        <input name="event_type" value="{{ event_type }}" maxlength="60" placeholder="SaleCompleted" dir="ltr">
+    </label>
+    {% elif source == 'actions' %}
     <label>عملیات
         <select name="action">
             <option value="">همه عملیات‌ها</option>
@@ -23,6 +38,7 @@
             {% endfor %}
         </select>
     </label>
+    {% endif %}
     <label>از تاریخ
         <input class="persian-date-input" name="from" value="{{ date_from }}" inputmode="numeric" dir="ltr" placeholder="۱۴۰۵/۰۱/۰۱">
     </label>
@@ -30,19 +46,33 @@
         <input class="persian-date-input" name="to" value="{{ date_to }}" inputmode="numeric" dir="ltr" placeholder="۱۴۰۵/۱۲/۲۹">
     </label>
     <button class="btn btn-primary" type="submit">فیلتر</button>
-    {% if filters_active %}<a class="btn" href="/admin/logs">پاک کردن فیلترها</a>{% elif offset %}<a class="btn" href="{{ back_url }}">۱۰۰ ردیف اول</a>{% endif %}
+    {% if filters_active %}<a class="btn" href="/admin/logs?source={{ source }}">پاک کردن فیلترها</a>{% elif offset %}<a class="btn" href="{{ back_url }}">۱۰۰ ردیف اول</a>{% endif %}
 </form>
 
+{% if archivable > 0 %}
 <div class="card">
+    <details class="unpaid-details">
+        <summary>{{ archivable }} ردیف قدیمی‌تر از یک سال — بایگانی و حذف؟</summary>
+        <p>اول یک فایل CSV در پوشه پشتیبان‌ها نوشته می‌شود، بعد ردیف‌ها حذف می‌شوند. این کار برنمی‌گردد.</p>
+        <form method="post" action="/admin/logs/archive">
+            <button class="btn btn-danger" type="submit">بایگانی قطعی و حذف</button>
+        </form>
+    </details>
+</div>
+{% endif %}
+
+<div class="card" id="logs-card" data-poll-url="{{ poll_url }}" data-first-action="{{ first_action_id }}" data-first-event="{{ first_event_id }}">
+    <p class="empty-state" id="logs-fresh" hidden><button class="btn btn-primary" type="button" id="logs-fresh-btn">ردیف‌های تازه — نمایش</button></p>
     {% if has_rows %}
     {% for group in groups %}
     <p class="eyebrow">{{ group.label }}</p>
     <div class="table-scroll">
-        <table class="data-table logs-table">
+        <table class="data-table logs-table" aria-label="ردیف‌های {{ group.label }}">
             <thead>
                 <tr>
                     <th scope="col">زمان</th>
-                    <th scope="col">عملیات</th>
+                    <th scope="col">عنوان</th>
+                    {% if show_source %}<th scope="col">منبع</th>{% endif %}
                     <th scope="col">کننده</th>
                     <th scope="col">پیوند</th>
                     <th scope="col">آی‌پی</th>
@@ -50,31 +80,29 @@
                 </tr>
             </thead>
             <tbody>
-                {% for log in group.rows %}
-                {% set link = target_link(log.target_type, log.target_id) %}
-                {% set diff = log_diff(log) %}
+                {% for item in group["items"] %}
                 <tr>
-                    <td class="tnum" data-label="زمان">{{ jalali_str(log.created_at) }}{% if rel_time(log.created_at) %}<br><small class="muted">{{ rel_time(log.created_at) }}</small>{% endif %}</td>
-                    <td data-label="عملیات"><span class="badge{% if action_tone(log.action) == 'danger' %} badge-danger{% else %} badge-none{% endif %}">{{ action_labels.get(log.action, log.action) }}</span> <code>{{ log.action }}</code></td>
-                    <td data-label="کننده">{% if log.staff_user %}<a href="/admin/staff/{{ log.staff_user.id }}">{{ log.staff_user.full_name or log.staff_user.username }}</a>{% else %}سیستم{% endif %}</td>
-                    <td data-label="پیوند">{% if link %}<a href="{{ link[0] }}">{{ link[1] }}</a>{% else %}—{% endif %}</td>
-                    <td data-label="آی‌پی" dir="ltr">{{ log.ip_address or '—' }}</td>
-                    <td data-label="جزئیات">{% if log.detail and log.detail|length > 80 %}<details class="unpaid-details"><summary>{{ log.detail[:80] }}…</summary><p>{{ log.detail }}</p></details>{% else %}{{ log.detail or '—' }}{% endif %}{% if diff %} <button type="button" class="btn btn-sm" data-dialog-open="logdiff-{{ log.id }}">تغییرات</button>{% endif %}</td>
+                    <td class="tnum" data-label="زمان">{{ jalali_str(item.created_at) }}{% if rel_time(item.created_at) %}<br><small class="muted">{{ rel_time(item.created_at) }}</small>{% endif %}</td>
+                    <td data-label="عنوان"><span class="badge{% if item.tone == 'danger' %} badge-danger{% else %} badge-none{% endif %}">{{ item.title }}</span> <code dir="ltr">{{ item.code }}</code></td>
+                    {% if show_source %}<td data-label="منبع">{% if item.source == 'action' %}عملیات{% else %}رویداد{% endif %}</td>{% endif %}
+                    <td data-label="کننده">{% if item.actor_url %}<a href="{{ item.actor_url }}">{{ item.actor_name }}</a>{% else %}{{ item.actor_name }}{% endif %}</td>
+                    <td data-label="پیوند">{% if item.link %}<a href="{{ item.link[0] }}">{{ item.link[1] }}</a>{% else %}—{% endif %}</td>
+                    <td data-label="آی‌پی" dir="ltr">{{ item.ip or '—' }}</td>
+                    <td data-label="جزئیات">{% if item.detail and item.detail|length > 80 %}<details class="unpaid-details"><summary>{{ item.detail[:80] }}…</summary><div><pre class="log-diff" dir="ltr">{{ item.detail }}</pre></div></details>{% else %}{{ item.detail or '—' }}{% endif %}{% if item.diff %} <button type="button" class="btn btn-sm" data-dialog-open="logdiff-{{ item.source }}-{{ item.row_id }}">تغییرات</button>{% endif %}</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
-    {% for log in group.rows %}
-    {% set diff = log_diff(log) %}
-    {% if diff %}
-    <div id="logdiff-{{ log.id }}" data-dialog role="dialog" aria-modal="true" aria-labelledby="logdiff-title-{{ log.id }}" class="confirm-scrim" tabindex="-1">
+    {% for item in group["items"] %}
+    {% if item.diff %}
+    <div id="logdiff-{{ item.source }}-{{ item.row_id }}" data-dialog role="dialog" aria-modal="true" aria-labelledby="logdiff-title-{{ item.source }}-{{ item.row_id }}" class="confirm-scrim" tabindex="-1">
         <div class="t-modal-card confirm-card" role="document">
-            <h3 id="logdiff-title-{{ log.id }}">تغییرات ثبت‌شده</h3>
+            <h3 id="logdiff-title-{{ item.source }}-{{ item.row_id }}">تغییرات ثبت‌شده</h3>
             <h4>قبل</h4>
-            <pre class="log-diff" dir="ltr">{{ diff[0] }}</pre>
+            <pre class="log-diff" dir="ltr">{{ item.diff[0] }}</pre>
             <h4>بعد</h4>
-            <pre class="log-diff" dir="ltr">{{ diff[1] }}</pre>
+            <pre class="log-diff" dir="ltr">{{ item.diff[1] }}</pre>
             <div class="confirm-actions">
                 <button type="button" class="btn btn-ghost" data-dialog-close>بستن</button>
             </div>
@@ -85,10 +113,14 @@
     {% endfor %}
     {% if has_more %}
     <div class="tag-pagination"><a class="btn" href="{{ more_url }}">نمایش ۱۰۰ ردیف بعدی</a></div>
+    {% elif source == 'all' %}
+    <div class="tag-pagination"><span class="muted">حالت ترکیبی ۱۰۰ ردیف آخر را نشان می‌دهد — برای بیشتر، یک منبع را انتخاب کنید.</span></div>
     {% endif %}
     {% elif filters_active %}
-    <p class="empty-state">با این فیلترها چیزی ثبت نشده است. <a href="/admin/logs">پاک کردن فیلترها</a></p>
+    <p class="empty-state">با این فیلترها چیزی ثبت نشده است. <a href="/admin/logs?source={{ source }}">پاک کردن فیلترها</a></p>
     {% else %}
     <p class="empty-state">هنوز عملیاتی ثبت نشده است.</p>
     {% endif %}
-</div>{% endblock %}
+</div>
+<script src="/static/js/logs_poll.js?v={{ static_version }}"></script>
+{% endblock %}
