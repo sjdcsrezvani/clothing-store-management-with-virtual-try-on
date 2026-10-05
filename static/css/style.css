@@ -3957,6 +3957,7 @@ button.text-link { background: none; border: none; padding: 0; font: inherit; cu
 /* ===================== Backup shelf =====================
    On phones the shelf stacks into cards the same way the customer, credit
    and audit tables do — data-labels name each cell. */
+.restore-steps { margin: 0 0 0.8rem; padding-inline-start: 1.4rem; display: flex; flex-direction: column; gap: 0.3rem; }
 @media (max-width: 700px) {
   .backups-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .backups-table, .backups-table tbody, .backups-table tr, .backups-table td { display: block; }

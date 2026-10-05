@@ -32,6 +32,7 @@
                 {% endfor %}
             </select>
         </label>
+        <label class="switch-inline"><input type="checkbox" name="restore_snapshot" value="1"{% if restore_snapshot %} checked{% endif %}> پیش از بازیابی، نسخه امن بگیر</label>
         <button class="btn btn-ghost" type="submit">ذخیره زمان‌بندی</button>
     </form>
 </div>
@@ -56,7 +57,7 @@
                     <td data-label="نام فایل" dir="ltr" class="tnum" title="{{ b.name }}">{{ b.name }}</td>
                     <td data-label="حجم" class="tnum">{{ b.size_fa }}</td>
                     <td data-label="تاریخ" class="tnum">{{ jalali_str(b.mtime, false) }}</td>
-                    <td data-label="وضعیت">{% if b.verified %}<span class="badge badge-success">تأیید شده</span>{% else %}<span class="badge badge-warning">بررسی نشده</span>{% endif %}
+                    <td data-label="وضعیت">{% if b.verified %}<span class="badge badge-success">تأیید شده</span>{% else %}<span class="badge badge-warning">بررسی نشده</span>{% endif %}{% if b.schema_newer %} <span class="badge badge-warning">نسخه جدیدتر</span>{% endif %}
                         <form method="post" action="/admin/backups/recheck" class="inline-form">
                             <input type="hidden" name="name" value="{{ b.name }}">
                             <button type="submit" class="text-link">بررسی مجدد</button>
@@ -64,6 +65,10 @@
                     </td>
                     <td data-label="عملیات">
                         <a href="/admin/backups/download?name={{ b.name }}" class="btn btn-sm btn-ghost">دانلود</a>
+                        <form method="post" action="/admin/backups/restore" class="inline-form" data-confirm="بازیابی از «{{ b.name }}»؟ کل اطلاعات فعلی جایگزین می‌شود.{% if b.schema_newer %} توجه: ساختار این نسخه جدیدتر از برنامه است.{% endif %}" data-confirm-title="بازیابی فروشگاه؟" data-confirm-ok="بازیابی">
+                            <input type="hidden" name="name" value="{{ b.name }}">
+                            <button type="submit" class="btn btn-sm btn-danger-quiet">بازیابی</button>
+                        </form>
                         <form method="post" action="/admin/backups/delete" class="inline-form" data-confirm="پشتیبان «{{ b.name }}» حذف شود؟" data-confirm-title="حذف پشتیبان؟" data-confirm-ok="حذف">
                             <input type="hidden" name="name" value="{{ b.name }}">
                             <button type="submit" class="btn btn-sm btn-danger-quiet">حذف</button>
@@ -80,11 +85,28 @@
     {% endif %}
 </div>
 
+<div class="card danger-zone">
+    <div class="section-heading"><div><span class="eyebrow">ناحیه خطر</span><h3>بازیابی فروشگاه</h3></div></div>
+    <ol class="restore-steps">
+        <li>ردیف نسخه موردنظر را پیدا کنید — یا فایل را از جای دیگر بیاورید.</li>
+        <li>«بازیابی» را بزنید و در گفت‌وگو تأیید کنید.</li>
+        <li>برنامه روی همان نسخه بالا می‌آید؛ نیازی به کاری نیست.</li>
+    </ol>
+    <p class="muted">بازیابی کل اطلاعات فعلی را جایگزین می‌کند. پیش از هر بازیابی یک نسخه امن گرفته می‌شود (در زمان‌بندی بالا قابل تغییر است).</p>
+    <form method="post" action="/admin/backups/upload" enctype="multipart/form-data" class="form-row">
+        <label>فایل پشتیبان از جای دیگر
+            <input type="file" name="backup_file" accept=".db" required aria-describedby="backup-upload-help">
+            <small class="field-help" id="backup-upload-help">فقط ‎.db‎، حداکثر ۲۰۰ مگابایت</small>
+        </label>
+        <button class="btn btn-ghost" type="submit">بارگذاری در قفسه</button>
+    </form>
+</div>
+
 {# One confirm surface for the whole page: destructive forms carry their
    sentence in data-confirm, the dialog reads it back, and the confirm
    button finishes that form's own submit. Without JS the forms post directly. #}
 <div id="backup-confirm" data-dialog role="alertdialog" aria-modal="true"
-     aria-labelledby="backup-confirm-title" class="confirm-scrim" tabindex="-1">
+     aria-labelledby="backup-confirm-title" aria-describedby="backup-confirm-text" class="confirm-scrim" tabindex="-1">
     <div class="t-modal-card confirm-card" role="document">
         <h3 id="backup-confirm-title">مطمئن هستید؟</h3>
         <p class="muted" id="backup-confirm-text"></p>

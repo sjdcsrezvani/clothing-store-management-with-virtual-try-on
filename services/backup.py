@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 BACKUP_DIR = Path("backups")
 KEEP_COUNT = 30
-_BACKUP_RE = re.compile(r"^referral_\d{8}_\d{6}\.db$")
+_BACKUP_RE = re.compile(r"^referral_\d{8}_\d{6}(?:_\d+)?\.db$")
 
 # The owner picks the cadence, not the clock: automatic backups run every
 # N days (at the 2 AM UTC pass), keeping the newest K files.
@@ -48,6 +48,12 @@ def create_backup(keep_count: int | None = None) -> str | None:
         BACKUP_DIR.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         dest = BACKUP_DIR / f"referral_{ts}.db"
+        # Two backups inside one second (a manual run plus its snapshot)
+        # must not share a name — suffix until the shelf has room.
+        n = 0
+        while dest.exists():
+            n += 1
+            dest = BACKUP_DIR / f"referral_{ts}_{n}.db"
         import sqlite3
         con = sqlite3.connect(str(src))
         try:
@@ -301,3 +307,113 @@ def recheck_backup(name: str) -> dict | None:
     fresh = verify_sqlite_backup(path)
     _remember_verified(path, fresh)
     return fresh
+
+
+def backup_schema_version(path: str | Path) -> int | None:
+    """The migration version stamped inside a backup file, if any.
+
+    Read-only and dependency-free: the stamp lives in the file itself, so
+    the shelf can warn about newer-schema files without opening them.
+    """
+    try:
+        with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as connection:
+            tables = {row[0] for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+            if "schema_version" not in tables:
+                return None
+            row = connection.execute(
+                "SELECT version FROM schema_version WHERE id=1").fetchone()
+            return int(row[0]) if row and row[0] is not None else None
+    except (sqlite3.Error, ValueError, TypeError, OSError):
+        return None
+
+
+_RESTORE_LOCK = None
+
+
+def _restore_lock():
+    import threading
+    global _RESTORE_LOCK
+    if _RESTORE_LOCK is None:
+        _RESTORE_LOCK = threading.Lock()
+    return _RESTORE_LOCK
+
+
+def _quiesce_live(live: Path) -> None:
+    """Drain the live database to a state a file copy can replace.
+
+    Checkpoints WAL back into the main file, drops the pooled connections,
+    then removes the (now empty) sidecar files — with no open handles a
+    leftover -wal would resurrect stale pages over the restored content.
+    """
+    from database import engine
+    staging = sqlite3.connect(str(live), timeout=30)
+    try:
+        staging.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        staging.commit()
+    finally:
+        staging.close()
+    engine.dispose()
+    for suffix in ("-wal", "-shm", "-journal"):
+        try:
+            (live.parent / (live.name + suffix)).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def restore_live_from(backup_path: str | Path, *, make_snapshot: bool = True,
+                      keep_count: int | None = None) -> tuple[bool, str]:
+    """Replace the live database content with a backup file — no restart.
+
+    Validates first, snapshots the current shop next (unless asked not to),
+    then copies page-by-page through SQLite's own online-backup API, migrates
+    an older schema forward in place, and re-verifies. Returns (ok, message).
+    """
+    from database import engine
+    target = Path(backup_path)
+    if not target.is_file():
+        return False, "فایل یافت نشد."
+    live = _db_path()
+    if live is None or not live.exists():
+        return False, "دیتابیس فعلی یافت نشد."
+    try:
+        if target.resolve() == live.resolve():
+            return False, "این همان دیتابیس فعلی است."
+    except OSError:
+        return False, "فایل یافت نشد."
+    lock = _restore_lock()
+    if lock.locked():
+        return False, "عملیات دیگری در جریان است؛ کمی بعد دوباره تلاش کنید."
+    with lock:
+        version = backup_schema_version(target)
+        if make_snapshot and not create_backup(keep_count):
+            return False, "نسخه امن ساخته نشد؛ بازیابی لغو شد."
+        try:
+            _quiesce_live(live)
+            source = sqlite3.connect(f"file:{target}?mode=ro", uri=True, timeout=60)
+            try:
+                dest = sqlite3.connect(str(live), timeout=60)
+                try:
+                    source.backup(dest)
+                finally:
+                    dest.close()
+            finally:
+                source.close()
+        except sqlite3.Error as error:
+            logger.error("Restore copy failed: %s", error)
+            return False, "کپی اطلاعات ناموفق بود؛ چیزی عوض نشد."
+        try:
+            from migrations import MIGRATION_VERSION, upgrade
+            if version is None or version <= MIGRATION_VERSION:
+                upgrade(engine)
+        except Exception as error:  # noqa: BLE001 — schema state must surface
+            logger.error("Post-restore migrate failed: %s", error)
+            return False, "به‌روزرسانی ساختار ناموفق بود."
+        if not verify_sqlite_backup(live).get("verified"):
+            return False, "راستی‌آزمایی پس از بازیابی ناموفق بود."
+        try:
+            from services.store import invalidate_store_cache
+            invalidate_store_cache()
+        except Exception:  # noqa: BLE001 — caches rebuild themselves
+            pass
+        return True, f"بازیابی شد از {target.name}."

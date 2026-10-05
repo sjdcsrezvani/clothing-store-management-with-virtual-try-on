@@ -108,3 +108,92 @@ def test_schedule_helpers():
     assert backup_due(30) in (True, False)  # runs against the real shelf
     assert format_bytes_fa(13002342) == "۱۲٫۴ مگابایت"
     assert format_bytes_fa(512) == "۵۱۲ بایت"
+
+
+def _shelf_names():
+    return sorted(path.name for path in _shelf())
+
+
+def test_restore_brings_back_pre_backup_state(client, db_session):
+    from models import Settings as SettingsModel
+    _owner_client(client, db_session, name="bk-owner-restore")
+    _clean()
+    try:
+        db_session.add(SettingsModel(key="bk_probe", value="1"))
+        db_session.commit()
+        _backup_now(client)
+        db_session.query(SettingsModel).filter(
+            SettingsModel.key == "bk_probe").delete()
+        db_session.commit()
+        name = _shelf_names()[-1]
+        res = client.post("/admin/backups/restore", data={
+            "csrf_token": csrf_token(client, "/admin/backups"), "name": name,
+        }, follow_redirects=False)
+        assert res.status_code == 303
+        assert res.headers["location"].startswith("/admin/?msg=")
+        db_session.rollback()
+        db_session.expire_all()
+        assert db_session.query(SettingsModel).filter(
+            SettingsModel.key == "bk_probe").count() == 1
+        dash = client.get(res.headers["location"]).text
+        assert "بازیابی شد از" in dash
+    finally:
+        db_session.query(SettingsModel).filter(
+            SettingsModel.key == "bk_probe").delete()
+        db_session.commit()
+        _clean()
+
+
+def test_upload_validates_and_shelves(client, db_session):
+    import io
+    import sqlite3
+    _owner_client(client, db_session, name="bk-owner-upload")
+    _clean()
+    try:
+        buf = io.BytesIO()
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE sales (id INTEGER PRIMARY KEY)")
+        conn.execute("CREATE TABLE customers (id INTEGER PRIMARY KEY)")
+        conn.commit()
+        dest = BACKUP_DIR / ".probe_src.db"
+        target = sqlite3.connect(str(dest))
+        conn.backup(target)
+        target.close()
+        conn.close()
+        raw = dest.read_bytes()
+        dest.unlink()
+
+        bad = client.post("/admin/backups/upload", data={
+            "csrf_token": csrf_token(client, "/admin/backups"),
+        }, files={"backup_file": ("ext.txt", b"not a database",
+                                  "text/plain")}, follow_redirects=False)
+        assert bad.status_code == 303
+
+        good = client.post("/admin/backups/upload", data={
+            "csrf_token": csrf_token(client, "/admin/backups"),
+        }, files={"backup_file": ("ext.db", raw,
+                                  "application/x-sqlite3")},
+            follow_redirects=False)
+        assert good.status_code == 303
+        assert len(_shelf()) == 1
+        assert "ناحیه خطر" in client.get("/admin/backups").text
+    finally:
+        _clean()
+
+
+def test_newer_schema_backup_warns_but_stays(client, db_session):
+    import sqlite3
+    _owner_client(client, db_session, name="bk-owner-newer")
+    _clean()
+    try:
+        dest = BACKUP_DIR / "referral_20990101_000000.db"
+        conn = sqlite3.connect(str(dest))
+        conn.execute("CREATE TABLE schema_version (id INTEGER PRIMARY KEY, version INTEGER)")
+        conn.execute("INSERT INTO schema_version VALUES (1, 9999)")
+        conn.commit()
+        conn.close()
+        page = client.get("/admin/backups").text
+        assert "نسخه جدیدتر" in page
+        assert "ساختار این نسخه جدیدتر" in page  # inside the restore confirm
+    finally:
+        _clean()
