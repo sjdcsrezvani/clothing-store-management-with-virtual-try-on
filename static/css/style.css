@@ -3936,10 +3936,21 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
 .log-diff { direction: ltr; text-align: left; max-block-size: 12rem; overflow: auto; background: var(--surface-soft); border: 1px solid var(--rule); border-radius: var(--radius-sm); padding: 0.6rem 0.8rem; font-size: 0.75rem; }
 /* The global sticky header is transparent — rows would read through it. */
 .logs-table thead th { background: var(--card); }
+/* One table, day divider rows instead of a header per group. Tight cells:
+   time, title, actor and link never wrap; only the detail breathes. */
+.logs-dayrow td { background: var(--surface-soft); color: var(--ink-soft); font-size: 0.75rem; font-weight: 800; padding: 0.3rem 0.75rem; }
+.logs-table td.logs-cell { white-space: nowrap; }
+.logs-table .badge { white-space: nowrap; }
+.log-details summary { cursor: pointer; color: var(--ink-soft); }
+.log-details summary:hover { color: var(--link-hover); }
+.log-details > div { margin-top: 0.35rem; }
+button.text-link { background: none; border: none; padding: 0; font: inherit; cursor: pointer; }
 @media (max-width: 700px) {
   .logs-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .logs-table, .logs-table tbody, .logs-table tr, .logs-table td { display: block; }
   .logs-table tr { border: 1px solid var(--rule); border-radius: var(--radius-sm); margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; }
   .logs-table td { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; border: none; padding: 0.25rem 0; text-align: start; }
   .logs-table td::before { content: attr(data-label); color: var(--ink-soft); font-size: 0.72rem; flex-shrink: 0; }
+  .logs-dayrow td { justify-content: center; }
+  .logs-dayrow td::before { content: none; }
 }

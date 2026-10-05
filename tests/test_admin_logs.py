@@ -104,7 +104,7 @@ def test_day_groups_and_relative_time(client, db_session):
     assert "دقیقه پیش" in page  # relative tail under the fresh stamp
 
 
-def test_target_links_ip_truncation_and_diff_dialog(client, db_session):
+def test_target_links_truncation_and_diff_dialog(client, db_session):
     owner, _ = _owner_client(client, db_session, name="logs-owner-links")
     row = _log(db_session, "refund", "x" * 120, user=owner,
                target_type="sale", target_id=7,
@@ -113,10 +113,12 @@ def test_target_links_ip_truncation_and_diff_dialog(client, db_session):
     db_session.commit()
     page = client.get("/admin/logs").text
     assert 'href="/admin/invoice/7"' in page and "فاکتور #7" in page
-    assert "1.2.3.4" in page
-    assert "<details" in page and "تغییرات" in page  # long detail + diff button
+    assert "1.2.3.4" not in page and "آی‌پی" not in page  # forensics, not scan
+    assert "<details" in page and "تغییرات" in page  # long detail + diff link
     assert f'id="logdiff-action-{row.id}"' in page and "data-dialog" in page
     assert "فیلد" in page and "قبل" in page  # field-level table, not raw dumps
+    body = client.get("/admin/logs/export").content.decode("utf-8-sig")
+    assert "1.2.3.4" in body  # the file keeps what the screen drops
 
 
 def test_unmapped_targets_stay_plain(client, db_session):
@@ -251,3 +253,14 @@ def test_retired_events_bookmarks_keep_their_filters(client, db_session):
     assert "source=events" in location
     assert "aggregate_type=sale" in location
     assert "event_type=SaleCompleted" in location
+
+
+def test_redesign_contract_pills_single_table_no_codes(client, db_session):
+    _owner_client(client, db_session, name="logs-owner-look")
+    _log(db_session, "salary_void", "ردیف نمایشی")
+    page = client.get("/admin/logs").text
+    assert "source-chip" in page and "btn-sm" not in page.split("logs-fresh")[0]
+    assert page.count("<thead>") == 1  # one table, day divider rows
+    assert "logs-dayrow" in page
+    assert "<code>salary_void</code>" not in page
+    assert 'title="salary_void"' in page  # code demoted to tooltip
