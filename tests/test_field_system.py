@@ -66,13 +66,20 @@ def test_buttons_wear_one_variant():
 
 def test_icon_metaphors_are_unique():
     base = (ROOT / "templates" / "base.html").read_text()
-    assert 'id="icon-calendar"' in base
+    assert 'id="icon-backup"' in base
     assert 'id="icon-crown"' in base
     nav = (ROOT / "services" / "navigation.py").read_text()
-    assert '"calendar"' in nav and '"crown"' in nav
+    assert '"backup"' in nav and '"crown"' in nav
     style = (ROOT / "static" / "css" / "style.css").read_text()
-    assert ".icon-calendar::before" in style and ".icon-crown::before" in style
-    assert 'content: "📅"' in style and 'content: "👑"' in style
+    assert ".icon-backup::before" in style and ".icon-crown::before" in style
+    assert 'content: "💾"' in style and 'content: "👑"' in style
+    # «دفتر رویدادها» was the calendar metaphor's only home; when it retired
+    # into the merged audit timeline the sprite, its rule and its theme emoji
+    # went with it — none of the three may come back half-wired.
+    assert 'id="icon-calendar"' not in base
+    assert '"calendar"' not in nav
+    assert ".icon-calendar::before" not in style
+    assert 'content: "📅"' not in style
 
 
 def test_discount_mirrors_submit_without_js():
