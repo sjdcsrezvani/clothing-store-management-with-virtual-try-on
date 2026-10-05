@@ -3981,3 +3981,17 @@ button.text-link { background: none; border: none; padding: 0; font: inherit; cu
 
 /* Optional owner line under the printed invoice. */
 .invoice-foot { text-align: center; margin: 0.75rem 0 0; }
+
+/* ===================== Settings field beauty =====================
+   Scoped to the settings card: eyebrow labels, ruled subheads, unit chips
+   after numeric inputs, docked help toggles, stacked capability boxes. */
+.settings-card .form-group > label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.72rem; font-weight: 800; color: var(--ink-soft); letter-spacing: 0.02em; }
+.settings-card h4 { border-top: 1px solid var(--rule); padding-top: 0.9rem; margin-top: 1.2rem; }
+.field-tip { width: 1.35rem; height: 1.35rem; font-size: 0.8rem; margin-inline-start: auto; flex-shrink: 0; }
+.field-tip:hover { border-color: var(--candy); color: var(--candy); }
+.field-unit { display: flex; align-items: stretch; }
+.field-unit input { flex: 1; min-width: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: 0; }
+.field-unit > span { display: inline-flex; align-items: center; padding: 0 0.8rem; background: var(--surface-soft); border: 1px solid var(--rule); border-top-right-radius: 0; border-bottom-right-radius: 0; color: var(--ink-soft); font-size: 0.82rem; font-weight: 700; white-space: nowrap; }
+.settings-cap { flex-direction: column; align-items: stretch; gap: 0.3rem; }
+.settings-cap > label { white-space: normal; }
+.settings-cap .muted { margin: 0; font-size: 0.8rem; }

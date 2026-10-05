@@ -38,7 +38,7 @@
         <div class="form-row">
             <div class="form-group">
                 <label for="barcode_code_length">تعداد رقم کد بارکد جدید {{ tip('برای تنوع‌های جدیدی که بارکد دستی ندارند، کد با این تعداد رقم ساخته می‌شود (۴ تا ۱۲ رقم). کدهای موجود تغییر نمی‌کنند و تصویر بارکد همیشه دقیقاً از همان کد تولید می‌شود.') }}</label>
-                {{ num('barcode_code_length', settings.get('barcode_code_length', '5')) }}
+                <span class="field-unit">{{ num('barcode_code_length', settings.get('barcode_code_length', '5')) }}<span class="unit">رقم</span></span>
             </div>
         </div>
 
@@ -77,12 +77,12 @@
         <input type="hidden" name="tab" value="sales">
         <div class="form-row">
             <div class="form-group">
-                <label for="cash_opening_balance">موجودی پیش‌فرض صندوق (تومان) {{ tip('مبلغی که باز کردن صندوق بعدی پیشنهاد می‌دهد، وقتی شمارش قبلی نیست. همان کلیدی که صفحه صندوق می‌نویسد.') }}</label>
-                {{ num('cash_opening_balance', settings.get('cash_opening_balance', '0')) }}
+                <label for="cash_opening_balance">موجودی پیش‌فرض صندوق {{ tip('مبلغی که باز کردن صندوق بعدی پیشنهاد می‌دهد، وقتی شمارش قبلی نیست. همان کلیدی که صفحه صندوق می‌نویسد.') }}</label>
+                <span class="field-unit">{{ num('cash_opening_balance', settings.get('cash_opening_balance', '0')) }}<span class="unit">تومان</span></span>
             </div>
             <div class="form-group">
-                <label for="low_stock_threshold">آستانه کم‌موجودی (عدد) {{ tip('کالایی با موجودی کمتر یا مساوی این عدد «کم‌موجود» حساب می‌شود.') }}</label>
-                {{ num('low_stock_threshold', settings.get('low_stock_threshold', '2')) }}
+                <label for="low_stock_threshold">آستانه کم‌موجودی {{ tip('کالایی با موجودی کمتر یا مساوی این عدد «کم‌موجود» حساب می‌شود.') }}</label>
+                <span class="field-unit">{{ num('low_stock_threshold', settings.get('low_stock_threshold', '2')) }}<span class="unit">عدد</span></span>
             </div>
         </div>
         <div class="form-row">
@@ -101,22 +101,22 @@
         <h4>تنظیمات تخفیف</h4>
         <div class="form-row">
             <div class="form-group">
-                <label for="default_referrer_discount">مبلغ تخفیف معرف (تومان) {{ tip('مبلغی که معرف به ازای هر معرفی دریافت می‌کند') }}</label>
-                {{ num('default_referrer_discount', settings.get('default_referrer_discount', '50000')) }}
+                <label for="default_referrer_discount">مبلغ تخفیف معرف {{ tip('مبلغی که معرف به ازای هر معرفی دریافت می‌کند') }}</label>
+                <span class="field-unit">{{ num('default_referrer_discount', settings.get('default_referrer_discount', '50000')) }}<span class="unit">تومان</span></span>
             </div>
             <div class="form-group">
-                <label for="default_referred_discount">مبلغ تخفیف معرفی‌شده (تومان) {{ tip('مبلغ تخفیف برای مشتری جدید (فقط اولین خرید)') }}</label>
-                {{ num('default_referred_discount', settings.get('default_referred_discount', '30000')) }}
+                <label for="default_referred_discount">مبلغ تخفیف معرفی‌شده {{ tip('مبلغ تخفیف برای مشتری جدید (فقط اولین خرید)') }}</label>
+                <span class="field-unit">{{ num('default_referred_discount', settings.get('default_referred_discount', '30000')) }}<span class="unit">تومان</span></span>
             </div>
         </div>
         <div class="form-row">
             <div class="form-group">
-                <label for="min_purchase_for_discount">حداقل مبلغ خرید (تومان) {{ tip('مشتری باید حداقل این مبلغ خرید کرده باشد تا بتواند از تخفیف استفاده کند') }}</label>
-                {{ num('min_purchase_for_discount', settings.get('min_purchase_for_discount', '500000')) }}
+                <label for="min_purchase_for_discount">حداقل مبلغ خرید {{ tip('مشتری باید حداقل این مبلغ خرید کرده باشد تا بتواند از تخفیف استفاده کند') }}</label>
+                <span class="field-unit">{{ num('min_purchase_for_discount', settings.get('min_purchase_for_discount', '500000')) }}<span class="unit">تومان</span></span>
             </div>
             <div class="form-group">
-                <label for="monthly_referral_limit">سقف معرفی ماهانه (نفر) {{ tip('حداکثر تعداد افرادی که یک مشتری می‌تواند در ماه معرفی کند') }}</label>
-                {{ num('monthly_referral_limit', settings.get('monthly_referral_limit', '10')) }}
+                <label for="monthly_referral_limit">سقف معرفی ماهانه {{ tip('حداکثر تعداد افرادی که یک مشتری می‌تواند در ماه معرفی کند') }}</label>
+                <span class="field-unit">{{ num('monthly_referral_limit', settings.get('monthly_referral_limit', '10')) }}<span class="unit">نفر</span></span>
             </div>
         </div>
 
@@ -124,11 +124,11 @@
         <div class="form-row">
             <div class="form-group">
                 <label for="tier_points_per_amount">امتیاز به ازای هر خرید</label>
-                {{ num('tier_points_per_amount', tier_config.points_per_amount) }}
+                <span class="field-unit">{{ num('tier_points_per_amount', tier_config.points_per_amount) }}<span class="unit">عدد</span></span>
             </div>
             <div class="form-group">
-                <label for="tier_points_per_toman">به ازای هر مبلغ (تومان) {{ tip('مثال: ۱۰ امتیاز به ازای هر ۱۰۰٬۰۰۰ تومان') }}</label>
-                {{ num('tier_points_per_toman', tier_config.points_per_toman) }}
+                <label for="tier_points_per_toman">به ازای هر مبلغ {{ tip('مثال: ۱۰ امتیاز به ازای هر ۱۰۰٬۰۰۰ تومان') }}</label>
+                <span class="field-unit">{{ num('tier_points_per_toman', tier_config.points_per_toman) }}<span class="unit">تومان</span></span>
             </div>
         </div>
 
@@ -136,15 +136,15 @@
         <div class="form-row">
             <div class="form-group">
                 <label for="tier_gold_threshold">آستانه امتیاز</label>
-                {{ num('tier_gold_threshold', tier_config.gold_threshold) }}
+                <span class="field-unit">{{ num('tier_gold_threshold', tier_config.gold_threshold) }}<span class="unit">عدد</span></span>
             </div>
             <div class="form-group">
                 <label for="tier_gold_discount_percent">درصد تخفیف دائمی</label>
-                {{ num('tier_gold_discount_percent', tier_config.gold_discount_percent) }}
+                <span class="field-unit">{{ num('tier_gold_discount_percent', tier_config.gold_discount_percent) }}<span class="unit">٪</span></span>
             </div>
             <div class="form-group">
-                <label for="tier_gold_birthday_discount">تخفیف تولد (تومان)</label>
-                {{ num('tier_gold_birthday_discount', tier_config.gold_birthday_discount) }}
+                <label for="tier_gold_birthday_discount">تخفیف تولد</label>
+                <span class="field-unit">{{ num('tier_gold_birthday_discount', tier_config.gold_birthday_discount) }}<span class="unit">تومان</span></span>
             </div>
         </div>
 
@@ -152,15 +152,15 @@
         <div class="form-row">
             <div class="form-group">
                 <label for="tier_diamond_threshold">آستانه امتیاز</label>
-                {{ num('tier_diamond_threshold', tier_config.diamond_threshold) }}
+                <span class="field-unit">{{ num('tier_diamond_threshold', tier_config.diamond_threshold) }}<span class="unit">عدد</span></span>
             </div>
             <div class="form-group">
                 <label for="tier_diamond_discount_percent">درصد تخفیف دائمی</label>
-                {{ num('tier_diamond_discount_percent', tier_config.diamond_discount_percent) }}
+                <span class="field-unit">{{ num('tier_diamond_discount_percent', tier_config.diamond_discount_percent) }}<span class="unit">٪</span></span>
             </div>
             <div class="form-group">
-                <label for="tier_diamond_birthday_discount">تخفیف تولد (تومان)</label>
-                {{ num('tier_diamond_birthday_discount', tier_config.diamond_birthday_discount) }}
+                <label for="tier_diamond_birthday_discount">تخفیف تولد</label>
+                <span class="field-unit">{{ num('tier_diamond_birthday_discount', tier_config.diamond_birthday_discount) }}<span class="unit">تومان</span></span>
             </div>
         </div>
 
@@ -171,7 +171,7 @@
         <div class="form-row">
             <div class="form-group">
                 <label for="tier_downgrade_months">ماه‌های عدم خرید {{ tip('اگر مشتری بیشتر از این مدت خرید نکند، یک سطح پایین می‌آید. ۰ = این بررسی را نمی‌خواهم.') }}</label>
-                {{ num('tier_downgrade_months', tier_config.downgrade_months) }}
+                <span class="field-unit">{{ num('tier_downgrade_months', tier_config.downgrade_months) }}<span class="unit">ماه</span></span>
             </div>
         </div>
         <p class="muted settings-downgrade-note">
@@ -190,23 +190,20 @@
                 <option value="both" {% if target == 'both' %}selected{% endif %}>هر دو</option>
             </select>
         </div>
-        <div class="form-group">
+        <div class="cap-row settings-cap">
             {# The hidden companion comes first: the settings form stores the last
                value it sees, so an unticked box still clears the flag. #}
             <input type="hidden" name="child_profile_enabled" value="0">
-            <label class="checkbox-row" for="child_profile_enabled">
+            <label>
                 <input type="checkbox" id="child_profile_enabled" name="child_profile_enabled" value="1"
                        {% if child_on %}checked{% endif %}>
                 <span>این فروشگاه اطلاعات فرزند را ثبت می‌کند (پوشاک کودک)</span>
             </label>
-            <small class="field-help">
-                با برداشتن تیک، فیلدهای فرزند از ثبت‌نام، صندوق و پرونده مشتری حذف می‌شوند؛
-                اطلاعات قبلی پاک نمی‌شود و با فعال‌کردن دوباره بازمی‌گردد.
-            </small>
+            <p class="muted">با برداشتن تیک، فیلدهای فرزند از ثبت‌نام، صندوق و پرونده مشتری حذف می‌شوند؛ اطلاعات قبلی پاک نمی‌شود و با فعال‌کردن دوباره بازمی‌گردد.</p>
         </div>
         <div class="form-group">
             <label for="birthday_sms_days_before">روزهای قبل از تولد {{ tip('چند روز قبل از تولد، تخفیف فعال و پیامک ارسال شود (برای فروشگاه کودک: تولد فرزند)') }}</label>
-            {{ num('birthday_sms_days_before', tier_config.birthday_sms_days_before) }}
+            <span class="field-unit">{{ num('birthday_sms_days_before', tier_config.birthday_sms_days_before) }}<span class="unit">روز</span></span>
         </div>
         <div class="settings-savebar"><button type="submit" class="btn btn-primary">ذخیره تخفیف و مشتریان</button></div>
     </form>
@@ -217,12 +214,12 @@
         <h4>سقف اعتبار و سررسید نسیه</h4>
         <div class="form-row">
             <div class="form-group">
-                <label for="credit_terms_days">مهلت پرداخت نسیه (روز) {{ tip('هر فاکتور نسیه با این مهلت سررسید می‌گیرد و «حساب نسیه» دیرکرد را از همان سررسید می‌سنجد. ۰ = بدون سررسید (سن بدهی از تاریخ فاکتور حساب می‌شود).') }}</label>
-                {{ num('credit_terms_days', settings.get('credit_terms_days', '30')) }}
+                <label for="credit_terms_days">مهلت پرداخت نسیه {{ tip('هر فاکتور نسیه با این مهلت سررسید می‌گیرد و «حساب نسیه» دیرکرد را از همان سررسید می‌سنجد. ۰ = بدون سررسید (سن بدهی از تاریخ فاکتور حساب می‌شود).') }}</label>
+                <span class="field-unit">{{ num('credit_terms_days', settings.get('credit_terms_days', '30')) }}<span class="unit">روز</span></span>
             </div>
             <div class="form-group">
-                <label for="credit_reminder_min_hours">فاصله مجاز بین دو یادآوری (ساعت) {{ tip('تا این مدت، یادآوری دوباره برای همان مشتری رد می‌شود؛ جلوی پیامک ناخواسته را می‌گیرد.') }}</label>
-                {{ num('credit_reminder_min_hours', settings.get('credit_reminder_min_hours', '24')) }}
+                <label for="credit_reminder_min_hours">فاصله مجاز بین دو یادآوری {{ tip('تا این مدت، یادآوری دوباره برای همان مشتری رد می‌شود؛ جلوی پیامک ناخواسته را می‌گیرد.') }}</label>
+                <span class="field-unit">{{ num('credit_reminder_min_hours', settings.get('credit_reminder_min_hours', '24')) }}<span class="unit">ساعت</span></span>
             </div>
         </div>
         <div class="form-group">
@@ -234,11 +231,11 @@
         <div class="form-row">
             <div class="form-group">
                 <label for="default_credit_limit">سقف اعتبار پیش‌فرض مشتریان {{ tip('حداکثر بدهی نسیه هر مشتری (تومان). ۰ = بدون محدودیت. روی هر مشتری در «حساب نسیه» می‌توان سقف اختصاصی گذاشت.') }}</label>
-                {{ num('default_credit_limit', settings.get('default_credit_limit', '0')) }}
+                <span class="field-unit">{{ num('default_credit_limit', settings.get('default_credit_limit', '0')) }}<span class="unit">تومان</span></span>
             </div>
             <div class="form-group">
                 <label for="credit_surcharge_percent">درصد افزایش نسیه {{ tip('درصدی که به مبلغ نهایی فروش نسیه اضافه می‌شود (۰ = بدون افزایش). تخفیف روی نسیه اعمال نمی‌شود.') }}</label>
-                {{ num('credit_surcharge_percent', settings.get('credit_surcharge_percent', '0')) }}
+                <span class="field-unit">{{ num('credit_surcharge_percent', settings.get('credit_surcharge_percent', '0')) }}<span class="unit">٪</span></span>
             </div>
         </div>
         <div class="settings-savebar"><button type="submit" class="btn btn-primary">ذخیره نسیه و چک</button></div>
@@ -276,7 +273,7 @@
         <div class="form-row">
             <div class="form-group">
                 <label for="tryon_daily_limit">سقف تولید روزانه {{ tip('حداکثر تصویر تولیدشده با هوش مصنوعی در روز (هر تصویر هزینه دارد)') }}</label>
-                {{ num('tryon_daily_limit', settings.get('tryon_daily_limit', '20')) }}
+                <span class="field-unit">{{ num('tryon_daily_limit', settings.get('tryon_daily_limit', '20')) }}<span class="unit">عدد</span></span>
             </div>
         </div>
         <div class="settings-savebar"><button type="submit" class="btn btn-primary">ذخیره پیامک و هوش مصنوعی</button></div>
@@ -292,12 +289,15 @@
                        value="{{ settings.get('check_default_reminders', '14, 7, 3') }}" placeholder="14, 7, 3">
             </div>
             <div class="form-group">
-                <label for="check_upcoming_days">بازه نمای نزدیک (روز) {{ tip('نمای نزدیک چک‌هایی را نشان می‌دهد که تا این تعداد روز آینده سررسید می‌شوند (۱ تا ۹۰).') }}</label>
-                {{ num('check_upcoming_days', settings.get('check_upcoming_days', '14')) }}
+                <label for="check_upcoming_days">بازه نمای نزدیک {{ tip('نمای نزدیک چک‌هایی را نشان می‌دهد که تا این تعداد روز آینده سررسید می‌شوند (۱ تا ۹۰).') }}</label>
+                <span class="field-unit">{{ num('check_upcoming_days', settings.get('check_upcoming_days', '14')) }}<span class="unit">روز</span></span>
             </div>
         </div>
-        <div class="form-group">
-            <label class="checkbox-label"><input type="hidden" name="check_reminders_enabled" value="0"><input type="checkbox" name="check_reminders_enabled" value="1"{% if settings.get('check_reminders_enabled', '1') == '1' %} checked{% endif %}> فعال‌سازی هشدارها</label>
+        <div class="cap-row settings-cap">
+            <label>
+                <input type="hidden" name="check_reminders_enabled" value="0"><input type="checkbox" id="check_reminders_enabled" name="check_reminders_enabled" value="1"{% if settings.get('check_reminders_enabled', '1') == '1' %} checked{% endif %}>
+                <span>فعال‌سازی هشدارها</span>
+            </label>
         </div>
         <div class="settings-savebar"><button type="submit" class="btn btn-primary">ذخیره پیشرفته</button></div>
     </form>
