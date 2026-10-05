@@ -371,6 +371,187 @@ def log_action(db, action: str, detail: str = "", request: Request | None = None
         logger.warning("log_action failed: %s", e)
 
 
+# ── Admin action labels ───────────────────────────────────────────────────
+
+# One Persian ledger-voice label per audit action, painted wherever an
+# AdminLog row surfaces (logs page, staff timeline). Unknown codes fall back
+# to the raw code — the audit trail never hides a row for want of a label.
+ADMIN_ACTION_LABELS = {
+    "attendance_mark": "ثبت حضور",
+    "backup": "پشتیبان‌گیری",
+    "birthday_sms": "پیامک تولد",
+    "campaign_archive": "بایگانی کمپین",
+    "campaign_delete": "حذف کمپین",
+    "campaign_unarchive": "بازگشت کمپین از بایگانی",
+    "capture_pair": "جفت‌سازی گوشی عکاسی",
+    "capture_unpair": "قطع گوشی عکاسی",
+    "cash_session_close": "بستن صندوق",
+    "cash_session_open": "باز کردن صندوق",
+    "cash_session_withdrawal": "برداشت از صندوق",
+    "cash_session_withdrawal_reverse": "برگشت برداشت صندوق",
+    "change_password": "تغییر گذرواژه",
+    "check_add": "ثبت چک",
+    "check_delete": "حذف چک",
+    "check_edit": "ویرایش چک",
+    "check_resolve": "پایان پیگیری چک",
+    "check_status": "تغییر وضعیت چک",
+    "credit_due_dates": "ثبت سررسیدها",
+    "credit_limit": "تعیین سقف اعتبار",
+    "credit_payment": "دریافت طلب",
+    "customer_bulk_tag": "برچسب گروهی مشتری",
+    "customer_delete": "حذف مشتری",
+    "customer_discount": "اعمال تخفیف مشتری",
+    "expense_add": "ثبت هزینه",
+    "expense_reverse": "ابطال هزینه",
+    "follow_up_sms": "پیامک پیگیری",
+    "login": "ورود",
+    "login_blocked": "مسدودی ورود",
+    "login_failed": "ورود ناموفق",
+    "logout": "خروج",
+    "logs_archive": "بایگانی گزارش",
+    "owner_profile_update": "به‌روزرسانی هویت کسب‌وکار",
+    "payment_reverse": "برگشت دریافت",
+    "pos_reconciliation": "تطبیق کارت‌خوان",
+    "position_add": "افزودن سمت سازمانی",
+    "position_update": "ویرایش سمت سازمانی",
+    "purchase_reverse": "برگشت خرید",
+    "recurring_expense_add": "افزودن هزینه ماهانه",
+    "recurring_expense_delete": "حذف هزینه ماهانه",
+    "recurring_expense_pause": "توقف هزینه ماهانه",
+    "recurring_expense_resume": "ازسرگیری هزینه ماهانه",
+    "refund": "ابطال فاکتور",
+    "salary_bulk": "پرداخت گروهی",
+    "salary_payment": "پرداخت حقوق",
+    "salary_void": "ابطال حقوق",
+    "sales_goal": "تعیین هدف فروش",
+    "settings_update": "به‌روزرسانی تنظیمات",
+    "setup_complete": "راه‌اندازی اولیه",
+    "sms_audience_delete": "حذف مخاطبان",
+    "sms_config": "تنظیم درگاه پیامک",
+    "sms_digest_resend": "ارسال مجدد گزارش",
+    "sms_digest_send_now": "ارسال فوری گزارش",
+    "sms_gateway_pair": "جفت‌سازی درگاه پیامک",
+    "sms_gateway_unpair": "قطع درگاه پیامک",
+    "sms_retry": "تلاش مجدد پیامک",
+    "sms_template_create": "ساخت قالب پیامک",
+    "sms_template_delete": "حذف قالب پیامک",
+    "sms_template_duplicate": "کپی قالب پیامک",
+    "sms_template_test": "تست قالب پیامک",
+    "sms_template_toggle": "تغییر وضعیت قالب پیامک",
+    "sms_template_update": "ویرایش قالب پیامک",
+    "staff_caps": "تغییر کلیدها",
+    "staff_create": "استخدام",
+    "staff_disable": "بستن دسترسی",
+    "staff_enable": "بازگشایی دسترسی",
+    "staff_update": "ویرایش پرونده",
+    "supplier_add": "افزودن تأمین‌کننده",
+    "supplier_delete": "حذف تأمین‌کننده",
+    "supplier_edit": "ویرایش تأمین‌کننده",
+    "supplier_payment": "پرداخت به تأمین‌کننده",
+    "tag_settings_update": "به‌روزرسانی طرح تگ",
+    "tag_template_update": "به‌روزرسانی قالب تگ",
+    "theme_update": "به‌روزرسانی ظاهر فروشگاه",
+    "tier_downgrade": "تنزل سطح مشتری",
+    "tier_up_sms": "پیامک ارتقا",
+    "variant_demand_reset": "صفر کردن تقاضا",
+    "variant_demand_up": "ثبت تقاضا",
+    "variant_update": "ویرایش تنوع",
+}
+
+# Destructive actions paint danger; everything else stays neutral. Suffixes,
+# not a second list — a new `*_delete` tomorrow is red without a code change.
+_ADMIN_ACTION_DANGER_SUFFIXES = (
+    "_delete", "_void", "_failed", "_blocked", "_reverse",
+    "_disable", "_unpair", "_downgrade",
+)
+_ADMIN_ACTION_DANGER_EXACT = {"refund"}
+
+
+def admin_action_tone(action: str) -> str:
+    """Badge tone for an audit action: 'danger' or '' (neutral)."""
+    code = str(action or "")
+    if code in _ADMIN_ACTION_DANGER_EXACT or code.endswith(_ADMIN_ACTION_DANGER_SUFFIXES):
+        return "danger"
+    return ""
+
+
+# ── Audit target links ────────────────────────────────────────────────────
+
+# Record types with an owner-readable detail page, as (Persian noun, URL
+# template). Anything absent here — ambiguous ids (payment), list-only pages
+# (checks, expenses), settings — renders as plain text, never a hopeful 404.
+ADMIN_TARGET_LINKS = {
+    "sale": ("فاکتور", "/admin/invoice/{id}"),
+    "staff_user": ("کاربر", "/admin/staff/{id}"),
+    "customer": ("مشتری", "/admin/customers/{id}"),
+    "campaign": ("کمپین", "/admin/campaigns/{id}"),
+    "salary_payment": ("فیش حقوق", "/admin/payroll/{id}/receipt"),
+    "variant": ("تنوع", "/admin/variants/{id}/edit"),
+    "sms_template": ("قالب پیامک", "/admin/sms/templates/{id}/edit"),
+    "cash_session": ("صندوق", "/admin/cashbox/sessions/{id}"),
+    "purchase": ("خرید", "/admin/purchases/{id}"),
+}
+
+
+def admin_target_link(target_type: str | None, target_id: int | None) -> tuple[str, str] | None:
+    """(URL, link text) for an audit row's record, or None when unmappable."""
+    if not target_type or target_id is None:
+        return None
+    entry = ADMIN_TARGET_LINKS.get(str(target_type))
+    if entry is None:
+        return None
+    noun, template = entry
+    return (template.format(id=target_id), f"{noun} #{target_id}")
+
+
+def admin_log_diff_fields(before_json: str | None, after_json: str | None) -> list | None:
+    """Changed-field rows for the change dialog: [(field, before, after)].
+
+    Falls back to None when either side is not a JSON object, or when
+    nothing actually changed — the dialog then shows the raw dumps, or no
+    button at all, instead of an empty table.
+    """
+    try:
+        before = json.loads(before_json) if before_json else {}
+        after = json.loads(after_json) if after_json else {}
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        return None
+
+    def _text(value) -> str:
+        if value is None:
+            return "—"
+        if isinstance(value, str):
+            return value
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except (ValueError, TypeError):
+            return str(value)
+
+    rows = []
+    for key in list(before) + [k for k in after if k not in before]:
+        old, new = before.get(key), after.get(key)
+        if old != new:
+            rows.append((str(key), _text(old), _text(new)))
+    return rows or None
+
+
+def admin_log_diff(before_json: str | None, after_json: str | None) -> tuple[str, str] | None:
+    """(before, after) pretty text for the change dialog, or None if neither."""
+    if not before_json and not after_json:
+        return None
+
+    def _pretty(raw: str | None) -> str:
+        if not raw:
+            return "—"
+        try:
+            return json.dumps(json.loads(raw), ensure_ascii=False, indent=2)
+        except (ValueError, TypeError):
+            return str(raw)
+
+    return (_pretty(before_json), _pretty(after_json))
+
 # ── CSRF protection ───────────────────────────────────────────────────────────
 
 # /api/* endpoints are protected by the API token (or admin session), not CSRF,

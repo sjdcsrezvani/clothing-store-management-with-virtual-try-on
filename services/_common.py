@@ -1,6 +1,8 @@
 """Shared helpers — single source of truth for cross-router utilities."""
+import re
 from datetime import datetime, timezone
 from fastapi import Request
+from markupsafe import Markup, escape
 from sqlalchemy.orm import Session
 import jdatetime
 from models import Settings, to_english_digits as _to_en
@@ -70,6 +72,68 @@ def parse_jalali_input_end(value: str) -> datetime | None:
     if dt is None:
         return None
     return dt.replace(hour=23, minute=59, second=59)
+
+
+def rel_time(value: datetime | None) -> str:
+    """How long ago, in the shop's reading voice: «۳ ساعت پیش».
+
+    Empty past a week — there the absolute stamp carries the meaning and a
+    relative tail would be noise. Future or missing timestamps read blank.
+    """
+    if value is None:
+        return ""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    seconds = (datetime.now(timezone.utc) - value).total_seconds()
+    if seconds < 0:
+        return ""
+    if seconds < 3600:
+        minutes = int(seconds // 60)
+        return "لحظاتی پیش" if minutes < 1 else f"{_to_persian_digits(str(minutes))} دقیقه پیش"
+    if seconds < 86400:
+        return f"{_to_persian_digits(str(int(seconds // 3600)))} ساعت پیش"
+    if seconds < 172800:
+        return "دیروز"
+    if seconds < 7 * 86400:
+        return f"{_to_persian_digits(str(int(seconds // 86400)))} روز پیش"
+    return ""
+
+
+def jalali_day_label(value: datetime | None) -> tuple[str, str]:
+    """Group key + heading for one timestamp: امروز / دیروز / the Jalali date.
+
+    Keyed on the same UTC→Jalali conversion `jalali_str` paints, so a row
+    never groups under a day its own stamp disagrees with.
+    """
+    if value is None:
+        return ("", "")
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    stamp = jdatetime.datetime.fromtimestamp(value.timestamp())
+    today = jdatetime.datetime.fromtimestamp(datetime.now(timezone.utc).timestamp())
+    delta = (today.date() - stamp.date()).days
+    key = stamp.strftime("%Y/%m/%d")
+    if delta == 0:
+        return (key, "امروز")
+    if delta == 1:
+        return (key, "دیروز")
+    return (key, _to_persian_digits(key))
+
+
+def highlight(text: str | None, query: str | None):
+    """Wrap query matches in <mark>, everything else HTML-escaped.
+
+    Returned as Markup so templates print it raw; without a query it reads
+    exactly like the autoescaped text it replaces.
+    """
+    if not text:
+        return ""
+    if not query:
+        return escape(text)
+    parts = re.split(f"({re.escape(query)})", text, flags=re.IGNORECASE)
+    return Markup("".join(
+        f"<mark>{escape(part)}</mark>" if i % 2 else escape(part)
+        for i, part in enumerate(parts)))
 
 
 # Jalali years never reach 1900, so a form value starting with one can only be a

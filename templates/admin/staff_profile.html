@@ -385,7 +385,6 @@
   </div>
   <p class="muted">نمای قرارداد و حقوق: ویرایش پرونده، کلیدها، پرداخت و ابطال حقوق، ثبت حضور.</p>
   {% if timeline %}
-  {% set action_labels = {'staff_create': 'استخدام', 'staff_update': 'ویرایش پرونده', 'staff_caps': 'تغییر کلیدها', 'staff_disable': 'بستن دسترسی', 'staff_enable': 'بازگشایی دسترسی', 'salary_payment': 'پرداخت حقوق', 'salary_void': 'ابطال حقوق', 'salary_bulk': 'پرداخت گروهی', 'attendance_mark': 'ثبت حضور', 'login': 'ورود', 'logout': 'خروج'} %}
   <div class="table-scroll"><table class="data-table"><thead><tr><th scope="col">زمان</th><th scope="col">رویداد</th><th scope="col">جزئیات</th></tr></thead><tbody>{% for entry in timeline %}<tr><td>{{ jalali_str(entry.created_at) }}</td><td>{{ action_labels.get(entry.action, entry.action) }}</td><td>{{ entry.detail or '—' }}</td></tr>{% endfor %}</tbody></table></div>
   {% else %}
   <p class="muted">{% if history_kind == 'contract' %}در نمای قرارداد و حقوق رویدادی نیست.{% else %}هنوز رویدادی برای این کارمند ثبت نشده است.{% endif %}</p>

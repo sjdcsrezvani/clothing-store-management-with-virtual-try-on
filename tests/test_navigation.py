@@ -70,7 +70,7 @@ KNOWN_PATHS = (
     "/admin/accounting", "/admin/accounting/export", "/admin/cashbox",
     "/admin/cashbox/sessions/7",
     "/admin/expenses", "/admin/checks", "/admin/analytics", "/admin/suppliers",
-    "/admin/inventory-movements", "/admin/pos-reconciliation", "/admin/events",
+    "/admin/inventory-movements", "/admin/pos-reconciliation",
     "/admin/logs", "/admin/owner-profile",
 )
 
@@ -338,7 +338,7 @@ def test_a_manager_keeps_their_doors_and_loses_the_owners(client, db_session):
                   "پیامک", "صندوق", "هزینه‌ها", "چک‌ها", "سود و زیان", "تطبیق کارت‌خوان"):
         assert label in sidebar, label
     for label in ("تحلیل فروش", "پشتیبان‌ها", "گزارش عملیات", "تنظیمات", "کارکنان و حقوق",
-                  "هویت کسب‌وکار", "دفتر رویدادها"):
+                  "هویت کسب‌وکار"):
         assert label not in sidebar, label
 
 

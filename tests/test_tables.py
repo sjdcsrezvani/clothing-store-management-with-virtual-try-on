@@ -87,7 +87,7 @@ def test_expenses_unknown_sort_falls_back(client, db_session):
 def test_data_table_everywhere_matrix_nowhere():
     import re
     for name in ("sales", "purchases", "expenses", "sms_history", "customers",
-                 "credit", "suppliers", "checks", "logs", "events",
+                 "credit", "suppliers", "checks", "logs",
                  "campaigns", "birthdays", "backups", "staff",
                  "cashbox", "tier_up", "tier_downgrades"):
         source = (ROOT / "templates" / "admin" / f"{name}.html").read_text()

@@ -1,3 +1,77 @@
+## 2.8.3 — 1405/07/13 (2026-10-05)
+
+### گزارش عملیات: the audit trail becomes one timeline, and every row can show its work
+
+- **«دفتر رویدادها» retires into the log it belonged with.** The sidebar
+  drops its one-item page; `/admin/events` answers with a redirect that
+  carries the old filters onto the merged timeline — only the `limit` box
+  is dropped, because the timeline pages at a fixed hundred instead — and
+  the events template is gone. One trail, read in three ways, instead of
+  two pages with separate truths.
+- **Two streams, three readings.** گزارش عملیات opens on «عملیات کاربران»,
+  a tab away from «رویدادهای فروشگاه», and «همه با هم» weaves the newest
+  hundred rows of both into one day-grouped table. The merged view says
+  plainly that it is the newest hundred and points at the single-source
+  tabs for depth, instead of pretending an offset means two things.
+- **The filters are a form the shop can read.** Action and actor are
+  dropdowns on the actions tab — painted with the same labels the rows
+  wear — موجودیت and رویداد are plain boxes on the events tab, the range
+  is two Jalali dates, and جست‌وجو answers a word from the detail column.
+  A stale bookmark degrades to unfiltered and repaints clean; a reversed
+  range answers a Persian sentence rather than an empty list.
+- **Days group themselves.** One table with امروز / دیروز / date divider
+  rows, a relative tail («۳ ساعت پیش»، «دیروز») riding the stamp's
+  tooltip, and a position line that counts exactly what the filters ask
+  for — «نمایش ۱ تا ۱ از ۱» when one row matches — while «نمایش ۱۰۰ ردیف
+  بعدی» walks the rest. Paging rides id order, so equal timestamps can
+  neither duplicate nor skip a row.
+- **Every row speaks the shop's language.** One label map per stream —
+  shared with the staff timeline's history tab, which dropped its own
+  private dictionary — paints «ابطال حقوق», «ثبت فروش» and their kin;
+  destructive families (`_delete`, `_void`, `_reverse`…) take the danger
+  tone, and a code with no label yet renders raw rather than vanishing.
+  The raw code stays reachable in the badge's tooltip.
+- **A row links to what it remembers.** Audit targets resolve to the page
+  that owns them — فاکتور #۷، کاربر #۳، مشتری، کمپین، فیش حقوق، تنوع، قالب
+  پیامک، صندوق and خرید — through one map; a target with no readable page,
+  or an ambiguous id, stays plain text and never becomes a hopeful 404.
+- **The change dialog shows the change, not the JSON.** A row that stored
+  before and after opens a فیلد / قبل / بعد table of only what moved (nulls
+  read «—», nested values stay JSON), and when the two sides are not
+  objects the dialog falls back to the raw pair. Nothing changed, no
+  button.
+- **The trail exports exactly what the screen holds.** خروجی CSV carries
+  the active filters, every matching row on a single source (the merged
+  reading exports its woven hundred), Jalali stamps, Persian action names
+  and a BOM so Excel opens it — and it keeps the IP column the screen
+  itself no longer shows.
+- **Fresh rows offer themselves, never force themselves.** A poller asks
+  a small endpoint for each stream's newest id under the filters in view —
+  once every thirty seconds, skipped while the tab is hidden or a dialog is
+  open — and when something moved a «ردیف‌های تازه — نمایش» pill appears.
+  The page reloads only on a click, and a dead request leaves it untouched.
+- **A year of trail can be filed, never silently eaten.** Rows older than
+  a year are offered for archive: one owner click writes them to
+  `backups/logs_archive_<stamp>.csv` before a single row is deleted, keeps
+  only the twelve newest archive files, records the archive itself in the
+  log, and says a sentence if the file cannot be written.
+- **The log table reads on a phone.** Under 700px it stacks into labelled
+  cards the way the customer and credit tables do, the sticky header no
+  longer reads through its rows, search hits wear the mark paint, and the
+  diff dialog's raw panes scroll as LTR blocks.
+- **Two slips the gate caught on the way out.** The new date filter taught
+  placeholders «از: ۱۴۰۵/۰۱/۰۱» in a field whose label already says
+  «از تاریخ» — the house rule is a bare example, and it now reads like
+  every other range filter; the same pair also declares the range link the
+  picker expects, so «از» can never be chosen after «تا».
+- **The calendar icon goes with the page it belonged to.** When «دفتر
+  رویدادها» retired, the metaphor lost its only nav home: the sprite
+  symbol, its CSS rule and its kids-boutique emoji are removed, and the
+  uniqueness check now pins a surviving pair plus the absence of the
+  retired one.
+
+**Schema change.** None — the database stays on revision 32.
+
 ## 2.8.2 — 1405/07/12 (2026-10-04)
 
 ### کارکنان و هویت کسب‌وکار: the roster becomes a hub, the contract becomes a document, and the shop signs its own name
