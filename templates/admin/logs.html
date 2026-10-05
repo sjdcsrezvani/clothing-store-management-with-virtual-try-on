@@ -36,9 +36,9 @@
     </select>
     {% endif %}
     <label class="sr-only" for="logs-from">از تاریخ</label>
-    <input class="persian-date-input" id="logs-from" name="from" value="{{ date_from }}" inputmode="numeric" dir="ltr" placeholder="از: ۱۴۰۵/۰۱/۰۱">
+    <input class="persian-date-input" id="logs-from" name="from" value="{{ date_from }}" inputmode="numeric" dir="ltr" data-pdp-pair="#logs-to" placeholder="۱۴۰۵/۰۱/۰۱">
     <label class="sr-only" for="logs-to">تا تاریخ</label>
-    <input class="persian-date-input" id="logs-to" name="to" value="{{ date_to }}" inputmode="numeric" dir="ltr" placeholder="تا: ۱۴۰۵/۱۲/۲۹">
+    <input class="persian-date-input" id="logs-to" name="to" value="{{ date_to }}" inputmode="numeric" dir="ltr" placeholder="۱۴۰۵/۰۶/۳۱">
     <label class="sr-only" for="logs-q">جست‌وجو در جزئیات</label>
     <input id="logs-q" name="q" value="{{ search }}" maxlength="100" placeholder="جست‌وجو در جزئیات…">
     <button class="btn btn-primary" type="submit">فیلتر</button>

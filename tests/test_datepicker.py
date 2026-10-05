@@ -294,6 +294,7 @@ def test_campaign_route_stores_a_jalali_date_as_the_same_gregorian_day(client, d
         # pair ids carry that page's own record — the pin follows the move.
         ("admin/staff_profile.html", 'data-pdp-pair="#contract_end_date_{{ staff_user.id }}"'),
     ("admin/campaign_form.html", 'data-pdp-pair="#end_date"'),
+    ("admin/logs.html", 'data-pdp-pair="#logs-to"'),
 ])
 def test_range_pairs_are_declared_once(template, fragment):
     assert fragment in _template(template)
