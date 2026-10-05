@@ -2,7 +2,11 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from database import SessionLocal
-from services.backup import create_backup
+from services._common import get_setting_int
+from services.backup import (
+    BACKUP_EVERY_DEFAULT, BACKUP_KEEP_DEFAULT, backup_due, create_backup,
+    normalize_every_days, normalize_keep_count,
+)
 from services.checkout import expire_stale
 from services.jobs import reclaim_stale, claim_next, process_one, complete, fail
 from services.checks import trigger_due_reminders
@@ -22,10 +26,21 @@ async def scheduler_task():
         try:
             now = datetime.now(timezone.utc)
 
-            # Daily SQLite backup at 2 AM UTC (keeps the last 30)
+            # Automatic backups every N days at the 2 AM UTC pass (a manual
+            # backup resets the clock too — it is a fresh copy either way).
+            # The cadence and retention are the owner's, from /admin/backups.
             if now.hour == 2 and now.minute < 5:
-                logger.info("Running daily database backup")
-                await asyncio.to_thread(create_backup)
+                settings_db = SessionLocal()
+                try:
+                    every = normalize_every_days(get_setting_int(
+                        settings_db, "backup_every_days", BACKUP_EVERY_DEFAULT))
+                    keep = normalize_keep_count(get_setting_int(
+                        settings_db, "backup_keep_count", BACKUP_KEEP_DEFAULT))
+                finally:
+                    settings_db.close()
+                if backup_due(every):
+                    logger.info("Running scheduled database backup (every %s days)", every)
+                    await asyncio.to_thread(create_backup, keep)
 
             db = SessionLocal()
             try:

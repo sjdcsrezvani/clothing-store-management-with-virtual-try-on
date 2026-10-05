@@ -21,6 +21,15 @@ BACKUP_DIR = Path("backups")
 KEEP_COUNT = 30
 _BACKUP_RE = re.compile(r"^referral_\d{8}_\d{6}\.db$")
 
+# The owner picks the cadence, not the clock: automatic backups run every
+# N days (at the 2 AM UTC pass), keeping the newest K files.
+BACKUP_EVERY_OPTIONS = (10, 20, 30)
+BACKUP_EVERY_DEFAULT = 30
+BACKUP_KEEP_DEFAULT = 10
+BACKUP_KEEP_MIN = 3
+BACKUP_KEEP_MAX = 30
+_VERIFY_CACHE_NAME = ".verify.json"
+
 
 def _db_path() -> Path | None:
     if not DATABASE_URL.startswith("sqlite:///"):
@@ -28,9 +37,9 @@ def _db_path() -> Path | None:
     return Path(DATABASE_URL[len("sqlite:///"):])
 
 
-def create_backup() -> str | None:
+def create_backup(keep_count: int | None = None) -> str | None:
     """Snapshot the live database into backups/. Returns the new file path or
-    None on failure. Prunes old backups, keeping the newest KEEP_COUNT."""
+    None on failure. Prunes old backups, keeping the newest keep_count."""
     src = _db_path()
     if not src or not src.exists():
         logger.warning("Backup skipped: database file not found at %s", src)
@@ -55,7 +64,8 @@ def create_backup() -> str | None:
             return None
         metadata = verify_sqlite_backup(dest)
         logger.info("Backup verified: size=%s checksum=%s", metadata["size"], metadata["checksum"])
-        _prune()
+        _remember_verified(dest, metadata)
+        _prune(keep_count)
         logger.info("Backup created: %s", dest)
         return str(dest)
     except Exception as e:
@@ -63,9 +73,10 @@ def create_backup() -> str | None:
         return None
 
 
-def _prune() -> None:
+def _prune(keep_count: int | None = None) -> None:
+    keep = max(int(keep_count or KEEP_COUNT), 1)
     files = sorted(BACKUP_DIR.glob("referral_*.db"))
-    for old in files[:-KEEP_COUNT]:
+    for old in files[:-keep]:
         try:
             old.unlink()
         except OSError:
@@ -120,3 +131,173 @@ def backup_download_path(name: str) -> Path | None:
     if not path.is_file() or not str(path).startswith(str(BACKUP_DIR.resolve())):
         return None
     return path
+
+
+def normalize_every_days(value) -> int:
+    """Clamp a cadence to an offered option — garbage reads as the default."""
+    try:
+        days = int(value)
+    except (ValueError, TypeError):
+        return BACKUP_EVERY_DEFAULT
+    return days if days in BACKUP_EVERY_OPTIONS else BACKUP_EVERY_DEFAULT
+
+
+def normalize_keep_count(value) -> int:
+    """Clamp retention into its bounds — garbage reads as the default."""
+    try:
+        keep = int(value)
+    except (ValueError, TypeError):
+        return BACKUP_KEEP_DEFAULT
+    return min(max(keep, BACKUP_KEEP_MIN), BACKUP_KEEP_MAX)
+
+
+def newest_backup_mtime() -> float | None:
+    """Epoch seconds of the newest backup file, or None when there are none."""
+    newest = None
+    for path in BACKUP_DIR.glob("referral_*.db"):
+        if not _BACKUP_RE.match(path.name):
+            continue
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        if newest is None or mtime > newest:
+            newest = mtime
+    return newest
+
+
+def backup_due(every_days: int) -> bool:
+    """True when no backup exists or the newest is older than the cadence.
+
+    A manual backup resets the clock too — it is a fresh copy either way.
+    """
+    import time
+    newest = newest_backup_mtime()
+    if newest is None:
+        return True
+    return time.time() - newest >= every_days * 86400
+
+
+def _verify_cache_path() -> Path:
+    return BACKUP_DIR / _VERIFY_CACHE_NAME
+
+
+def _verify_cache_load() -> dict:
+    import json
+    try:
+        return json.loads(_verify_cache_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _verify_cache_save(cache: dict) -> None:
+    import json
+    try:
+        BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        _verify_cache_path().write_text(json.dumps(cache), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _remember_verified(path: Path, metadata: dict) -> None:
+    """File one verification result, keyed by name + size + mtime."""
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return
+    cache = _verify_cache_load()
+    cache[path.name] = {
+        "verified": metadata.get("verified", False),
+        "integrity": metadata.get("integrity"),
+        "checksum": metadata.get("checksum"),
+        # Underscored: match keys only, never row data — list_backups owns
+        # the row's size and mtime, and a float mtime would break its dates.
+        "_size": metadata.get("size", 0),
+        "_mtime": mtime,
+    }
+    _verify_cache_save(cache)
+
+
+def verify_cached(path: str | Path) -> dict:
+    """verify_sqlite_backup, but a matching cache entry spares the re-read.
+
+    The entry keys on size + mtime, so a replaced file never reads stale.
+    """
+    target = Path(path)
+    try:
+        stat = target.stat()
+    except OSError:
+        return verify_sqlite_backup(target)
+    entry = _verify_cache_load().get(target.name)
+    if (entry and entry.get("_size") == stat.st_size
+            and entry.get("_mtime") == stat.st_mtime):
+        return {
+            "path": str(target),
+            "verified": entry.get("verified", False),
+            "integrity": entry.get("integrity"),
+            "checksum": entry.get("checksum"),
+        }
+    fresh = verify_sqlite_backup(target)
+    _remember_verified(target, fresh)
+    return fresh
+
+
+def forget_verified(name: str) -> None:
+    """Drop one cache entry — after a delete or a forced re-check."""
+    cache = _verify_cache_load()
+    if name in cache:
+        del cache[name]
+        _verify_cache_save(cache)
+
+
+def delete_backup(name: str) -> bool:
+    """Delete one backup file by name. False when the name is not a backup."""
+    path = backup_download_path(name)
+    if path is None:
+        return False
+    try:
+        path.unlink()
+    except OSError:
+        return False
+    forget_verified(name)
+    return True
+
+
+def backups_storage() -> tuple[int, int]:
+    """(file count, total bytes) of the backup shelf."""
+    count, total = 0, 0
+    for path in BACKUP_DIR.glob("referral_*.db"):
+        if not _BACKUP_RE.match(path.name):
+            continue
+        try:
+            total += path.stat().st_size
+            count += 1
+        except OSError:
+            continue
+    return count, total
+
+
+def download_all_bytes() -> tuple[bytes, str]:
+    """Every backup file as one zip, newest first. Empty shelf → empty zip."""
+    import io
+    import zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted(BACKUP_DIR.glob("referral_*.db"), reverse=True):
+            if _BACKUP_RE.match(path.name):
+                archive.write(path, arcname=path.name)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return buf.getvalue(), f"backups_{stamp}.zip"
+
+
+def recheck_backup(name: str) -> dict | None:
+    """Force a fresh verification of one file, refreshing its cache entry.
+
+    None when the name is not a backup file.
+    """
+    path = backup_download_path(name)
+    if path is None:
+        return None
+    fresh = verify_sqlite_backup(path)
+    _remember_verified(path, fresh)
+    return fresh

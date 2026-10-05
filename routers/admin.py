@@ -33,8 +33,10 @@ from services._common import (
     child_profile_enabled,
     fmt,
     check_admin,
+    format_bytes_fa,
     get_birthday_target,
     get_setting_int as get_discount_setting,
+    get_setting_int,
     jalali_age,
     jalali_str,
     amount_to_words,
@@ -75,11 +77,16 @@ from services.customers import (
     update_customer_meta,
 )
 from models import to_english_digits, to_persian_digits
-from services.backup import BACKUP_DIR, create_backup, list_backups, backup_download_path
+from services.backup import (
+    BACKUP_DIR, BACKUP_EVERY_DEFAULT, BACKUP_EVERY_OPTIONS, BACKUP_KEEP_DEFAULT,
+    backup_download_path, backup_due, backups_storage, create_backup,
+    delete_backup, download_all_bytes, latest_backup, list_backups,
+    normalize_every_days, normalize_keep_count, recheck_backup, verify_cached,
+)
 from services.dashboard import dashboard_overview
 from services.pos_reconciliation import unresolved_transactions
 from services.pos_terminal import get_terminal_config
-from services.operations import verify_sqlite_backup
+
 from services.navigation import home_for
 from services.security import (
     login_locked,
@@ -2252,15 +2259,115 @@ async def admin_backups(request: Request, db: Session = Depends(get_db)):
     if not hasattr(guard, "role"):
         return guard
 
-    backups = list_backups()
-    for backup in backups:
-        backup.update(verify_sqlite_backup(Path("backups") / backup["name"]))
+    every = normalize_every_days(
+        get_setting_int(db, "backup_every_days", BACKUP_EVERY_DEFAULT))
+    keep = normalize_keep_count(
+        get_setting_int(db, "backup_keep_count", BACKUP_KEEP_DEFAULT))
+    backups = []
+    for backup in list_backups():
+        row = {**backup, **verify_cached(Path("backups") / backup["name"])}
+        row["size_fa"] = format_bytes_fa(row.get("size", 0))
+        backups.append(row)
+    count, total = backups_storage()
+    now = datetime.now(timezone.utc)
+    last = latest_backup()
+    if last is None:
+        last_age, next_run = "", ""
+    else:
+        age_days = int((now.timestamp() - last.timestamp()) // 86400)
+        last_age = ("امروز" if age_days <= 0
+                    else f"{to_persian_digits(str(age_days))} روز پیش")
+        due_on = last + timedelta(days=every)
+        next_run = ("امشب" if due_on.date() <= datetime.now().date()
+                    else jalali_str(due_on, False))
     return templates.TemplateResponse(request, "admin/backups.html", {
         "backups": backups,
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
         "jalali_str": jalali_str,
+        "last_backup": jalali_str(last, False) if last else "",
+        "last_age": last_age,
+        "next_run": next_run,
+        "every_days": every,
+        "every_days_fa": to_persian_digits(str(every)),
+        "every_options": [(option, to_persian_digits(str(option)))
+                          for option in BACKUP_EVERY_OPTIONS],
+        "keep_options": [(option, to_persian_digits(str(option)))
+                         for option in (5, 10, 15, 20, 30)],
+        "keep_count": keep,
+        "shelf_count": to_persian_digits(str(count)),
+        "shelf_size": format_bytes_fa(total),
     })
+
+
+@router.post("/backups/schedule", response_class=HTMLResponse)
+async def admin_backup_schedule(request: Request, db: Session = Depends(get_db)):
+    """The owner's backup cadence: every 10/20/30 days, keeping K files."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    form = await request.form()
+    every = normalize_every_days(form.get("backup_every_days"))
+    keep = normalize_keep_count(form.get("backup_keep_count"))
+    for key, value in (("backup_every_days", str(every)),
+                       ("backup_keep_count", str(keep))):
+        setting = db.query(Settings).filter(Settings.key == key).first()
+        if setting:
+            setting.value = value
+        else:
+            db.add(Settings(key=key, value=value))
+    db.commit()
+    log_action(db, "backup_schedule",
+               f"زمان‌بندی پشتیبان: هر {every} روز، نگهداری {keep} نسخه",
+               request=request, target_type="settings")
+    return RedirectResponse(url="/admin/backups?msg=زمان‌بندی پشتیبان ذخیره شد.",
+                            status_code=303)
+
+
+@router.post("/backups/delete", response_class=HTMLResponse)
+async def admin_backup_delete(request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    form = await request.form()
+    name = str(form.get("name") or "")
+    if delete_backup(name):
+        log_action(db, "backup_delete", f"حذف پشتیبان {name}",
+                   request=request, target_type="backup")
+        return RedirectResponse(url="/admin/backups?msg=پشتیبان حذف شد.",
+                                status_code=303)
+    return RedirectResponse(url="/admin/backups?err=فایل یافت نشد.", status_code=303)
+
+
+@router.post("/backups/recheck", response_class=HTMLResponse)
+async def admin_backup_recheck(request: Request, db: Session = Depends(get_db)):
+    """Force a fresh integrity check of one file, refreshing its badge."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    form = await request.form()
+    result = recheck_backup(str(form.get("name") or ""))
+    if result is None:
+        return RedirectResponse(url="/admin/backups?err=فایل یافت نشد.", status_code=303)
+    if result.get("verified"):
+        return RedirectResponse(url="/admin/backups?msg=پشتیبان سالم است.", status_code=303)
+    return RedirectResponse(
+        url="/admin/backups?err=پشتیبان خراب است — همین حالا نسخه تازه بگیرید.",
+        status_code=303)
+
+
+@router.get("/backups/download-all", response_class=HTMLResponse)
+async def admin_backups_download_all(request: Request, db: Session = Depends(get_db)):
+    """The whole shelf as one zip — the off-machine second copy."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    data, filename = download_all_bytes()
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/backups/download", response_class=HTMLResponse)

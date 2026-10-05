@@ -396,6 +396,23 @@ def get_setting_int(db: Session, key: str, default: int) -> int:
     return default
 
 
+def format_bytes_fa(num_bytes) -> str:
+    """A byte count in the shop's reading voice: «۱۲٫۴ مگابایت».
+
+    Persian digits throughout (the decimal point reads ٫), MB-first —
+    a backup shelf is megabytes, never single bytes.
+    """
+    try:
+        total = float(num_bytes or 0)
+    except (ValueError, TypeError):
+        total = 0
+    if total < 1024:
+        return f"{_to_persian_digits(str(int(total)))} بایت"
+    if total < 1048576:
+        return f"{_to_persian_digits(f'{total / 1024:.0f}')} کیلوبایت"
+    return _to_persian_digits(f"{total / 1048576:.1f}").replace(".", "٫") + " مگابایت"
+
+
 def check_admin(request: Request) -> bool:
     """Legacy boolean admin-session check kept for compatibility."""
     return bool(request.session.get("staff_user_id"))

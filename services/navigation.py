@@ -77,7 +77,7 @@ NAV_SECTIONS: tuple[dict, ...] = (
     {"key": "admin", "label": "مدیریت", "items": (
         _item("/admin/staff", "کارکنان و حقوق", "staff", "staff", "owner"),
         _item("/admin/settings", "تنظیمات", "settings", "settings", "owner"),
-        _item("/admin/backups", "پشتیبان‌ها", "backup", "backups", "owner"),
+        _item("/admin/backups", "پشتیبان‌گیری و بازیابی", "backup", "backups", "owner"),
         _item("/admin/logs", "گزارش عملیات", "logs", "logs", "owner"),
         _item("/admin/owner-profile", "هویت کسب‌وکار", "crown", "owner-profile", "owner"),
     )},
