@@ -30,7 +30,7 @@ from services._common import fmt, check_admin, jalali_str, page_arg
 from services.barcode import BARCODE_DENSITIES, generate_barcode_image, generate_barcode_number
 from services.templating import templates
 from services.inventory import (
-    LOW_STOCK_THRESHOLD,
+    low_stock_threshold,
     record_opening_stock,
     record_stock_adjustment,
     record_cost_adjustment,
@@ -250,7 +250,7 @@ def _product_list_query(db, search: str = "", category: str = "", stock: str = "
         # table — one definition of «کم‌موجود» everywhere, not two.
         query = query.filter(Product.variants.any(and_(
             ProductVariant.is_active == True,  # noqa: E712
-            sellable_expression() <= LOW_STOCK_THRESHOLD,
+            sellable_expression() <= low_stock_threshold(db),
         )))
 
     return query, price_sq, avail_sq

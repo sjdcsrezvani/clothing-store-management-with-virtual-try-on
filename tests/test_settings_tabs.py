@@ -67,3 +67,46 @@ def test_sms_link_section_is_gone_but_tryon_stays(client, db_session):
     assert "متن همه پیامک‌ها" not in client.get("/admin/settings").text
     messaging = client.get("/admin/settings?tab=messaging").text
     assert 'name="tryon_daily_limit"' in messaging
+
+
+def test_sales_tab_fields_and_guard_coverage(client, db_session):
+    _owner_client(client, db_session, name="tabs-owner-sales")
+    page = client.get("/admin/settings?tab=sales").text
+    for field in ("cash_opening_balance", "receipt_footer_note", "low_stock_threshold"):
+        assert f'name="{field}"' in page, field
+
+
+def test_low_stock_threshold_tunes_alerts(client, db_session):
+    from services.inventory import low_stock_threshold, stock_alerts
+    _owner_client(client, db_session, name="tabs-owner-stock")
+    assert low_stock_threshold(db_session) == 2
+    assert low_stock_threshold(None) == 2
+    res = client.post("/admin/settings", data={
+        "csrf_token": csrf_token(client, "/admin/settings"),
+        "tab": "sales", "low_stock_threshold": "5",
+    }, follow_redirects=False)
+    assert res.status_code == 303
+    db_session.expire_all()
+    assert low_stock_threshold(db_session) == 5
+    assert stock_alerts(db_session)["threshold"] == 5
+
+
+def test_receipt_footer_note_prints_on_invoice(client, db_session):
+    from models import Sale
+    _owner_client(client, db_session, name="tabs-owner-receipt")
+    client.post("/admin/settings", data={
+        "csrf_token": csrf_token(client, "/admin/settings"),
+        "tab": "sales", "receipt_footer_note": "ممنون از خرید شما",
+    }, follow_redirects=False)
+    sale = Sale(total_amount=600_000, discount_amount=0, final_amount=600_000,
+                payment_method="card")
+    db_session.add(sale)
+    db_session.commit()
+    page = client.get(f"/sales/invoice/{sale.id}").text
+    assert "ممنون از خرید شما" in page
+
+
+def test_messaging_tab_shows_gateway_status(client, db_session):
+    _owner_client(client, db_session, name="tabs-owner-gw")
+    page = client.get("/admin/settings?tab=messaging").text
+    assert "درگاه" in page and "/admin/sms" in page

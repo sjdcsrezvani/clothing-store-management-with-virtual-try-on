@@ -1979,6 +1979,8 @@ SETTINGS_NUMERIC_RULES = {
     "tier_downgrade_months": (0, 120, "ماه‌های عدم خرید"),
     "pos_terminal_port": (1, 65535, "پورت کارت‌خوان"),
     "check_upcoming_days": (1, 90, "بازه چک‌های نزدیک"),
+    "cash_opening_balance": (0, None, "موجودی پیش‌فرض صندوق"),
+    "low_stock_threshold": (0, 999, "آستانه کم‌موجودی"),
 }
 
 
@@ -1986,6 +1988,7 @@ SETTINGS_NUMERIC_RULES = {
 # panel so the num()↔rules self-check below keeps seeing all of them.
 SETTINGS_TABS = (
     ("shop", "فروشگاه", "box"),
+    ("sales", "فروش و صندوق", "cart"),
     ("discounts", "تخفیف و مشتریان", "users"),
     ("credit", "نسیه و چک", "credit"),
     ("devices", "دستگاه‌ها", "terminal"),
@@ -1999,6 +2002,9 @@ _SETTINGS_FIELD_TABS = {
     "barcode_code_length": "shop",
     "store_name": "shop", "store_instagram": "shop",
     "store_tagline": "shop", "store_footer": "shop",
+    "cash_opening_balance": "sales",
+    "receipt_footer_note": "sales",
+    "low_stock_threshold": "sales",
     "default_referrer_discount": "discounts",
     "default_referred_discount": "discounts",
     "min_purchase_for_discount": "discounts",
@@ -2110,6 +2116,14 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
     error_field = (request.query_params.get("field", "") or "").strip()
     if not re.fullmatch(r"[a-z_]+", error_field):
         error_field = ""
+    # The gateway strip is read live but only for its own tab — every other
+    # panel skips the device query entirely.
+    gateway = None
+    if active_tab == "messaging":
+        from services.sms_gateway import gateway_port, gateway_status
+        status = gateway_status(db)
+        gateway = {**status, "port": gateway_port(),
+                   "queued_fa": to_persian_digits(str(status.get("queued", 0)))}
     return templates.TemplateResponse(request, "admin/settings.html", {
         "settings": settings,
         "tier_config": tier_config,
@@ -2120,6 +2134,7 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
         "store": get_store(db),
         "settings_tabs": SETTINGS_TABS, "active_tab": active_tab,
         "error_field": error_field,
+        "gateway": gateway,
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
     })

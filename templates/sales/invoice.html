@@ -81,6 +81,8 @@
     </div>
 </div>
 
+{% if receipt_footer_note %}<p class="muted invoice-foot">{{ receipt_footer_note }}</p>{% endif %}
+
 <div class="invoice-actions">
     {% if sale.is_refunded %}
     <div class="alert alert-error" style="flex: 1; text-align: right;">

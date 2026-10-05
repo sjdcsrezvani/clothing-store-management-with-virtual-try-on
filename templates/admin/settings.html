@@ -71,6 +71,29 @@
         </div>
         <div class="settings-savebar"><button type="submit" class="btn btn-primary">ذخیره فروشگاه</button></div>
     </form>
+{% elif active_tab == 'sales' %}
+    <div class="section-heading"><div><span class="eyebrow">فروش و صندوق</span><h3>صندوق و فاکتور</h3></div></div>
+    <form method="post" action="/admin/settings" data-settings-form="sales">
+        <input type="hidden" name="tab" value="sales">
+        <div class="form-row">
+            <div class="form-group">
+                <label for="cash_opening_balance">موجودی پیش‌فرض صندوق (تومان) {{ tip('مبلغی که باز کردن صندوق بعدی پیشنهاد می‌دهد، وقتی شمارش قبلی نیست. همان کلیدی که صفحه صندوق می‌نویسد.') }}</label>
+                {{ num('cash_opening_balance', settings.get('cash_opening_balance', '0')) }}
+            </div>
+            <div class="form-group">
+                <label for="low_stock_threshold">آستانه کم‌موجودی (عدد) {{ tip('کالایی با موجودی کمتر یا مساوی این عدد «کم‌موجود» حساب می‌شود.') }}</label>
+                {{ num('low_stock_threshold', settings.get('low_stock_threshold', '2')) }}
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="receipt_footer_note">یادداشت پایین فاکتور {{ tip('یک خط زیر فاکتور چاپی. خالی یعنی بدون خط.') }}</label>
+                <input type="text" id="receipt_footer_note" name="receipt_footer_note" maxlength="200"
+                       value="{{ settings.get('receipt_footer_note', '') }}" placeholder="ممنون از خرید شما">
+            </div>
+        </div>
+        <div class="settings-savebar"><button type="submit" class="btn btn-primary">ذخیره فروش و صندوق</button></div>
+    </form>
 {% elif active_tab == 'discounts' %}
     <div class="section-heading"><div><span class="eyebrow">تخفیف و مشتریان</span><h3>تخفیف‌ها و سطوح</h3></div></div>
     <form method="post" action="/admin/settings" data-settings-form="discounts">
@@ -152,12 +175,7 @@
             </div>
         </div>
         <p class="muted settings-downgrade-note">
-            {% if downgrade_rule.enabled %}
-            قاعده فعال است: هرکسی که بیش از {{ downgrade_rule.months_label }} ماه خرید نکرده باشد در فهرست می‌آید.
-            {% else %}
-            قاعده غیرفعال است و فهرست «کاهش سطح» خالی می‌ماند.
-            {% endif %}
-            <strong>هیچ‌کس خودکار کاهش سطح نمی‌یابد</strong> — باید خودتان فهرست را ببینید و تأیید کنید.
+            قاعده کاهش سطح و فهرست بررسی دستی در صفحه خودش است — هیچ‌کس خودکار کاهش سطح نمی‌یابد.
             <a href="/admin/tier-downgrades">مشاهده فهرست و بررسی دستی</a>
         </p>
 
@@ -181,7 +199,7 @@
                        {% if child_on %}checked{% endif %}>
                 <span>این فروشگاه اطلاعات فرزند را ثبت می‌کند (پوشاک کودک)</span>
             </label>
-            <small>
+            <small class="field-help">
                 با برداشتن تیک، فیلدهای فرزند از ثبت‌نام، صندوق و پرونده مشتری حذف می‌شوند؛
                 اطلاعات قبلی پاک نمی‌شود و با فعال‌کردن دوباره بازمی‌گردد.
             </small>
@@ -243,7 +261,16 @@
         <div class="settings-savebar"><button type="submit" class="btn btn-primary">ذخیره دستگاه‌ها</button></div>
     </form>
 {% elif active_tab == 'messaging' %}
-    <div class="section-heading"><div><span class="eyebrow">پیامک و هوش مصنوعی</span><h3>سقف تولید تصویر</h3></div></div>
+    <div class="section-heading"><div><span class="eyebrow">پیامک و هوش مصنوعی</span><h3>وضعیت درگاه و سقف تولید</h3></div></div>
+    {% if gateway %}
+    <p class="muted">
+        {% if not gateway.paired %}گوشی درگاه هنوز جفت نشده است.
+        {% elif gateway.online %}درگاه وصل است{% if gateway.device_name %} ({{ gateway.device_name }}){% endif %}{% if gateway.queued %} · {{ gateway.queued_fa }} پیامک در صف{% endif %} · پورت {{ gateway.port }}
+        {% else %}گوشی درگاه از دسترس خارج است{% if gateway.device_name %} ({{ gateway.device_name }}){% endif %} · پورت {{ gateway.port }}
+        {% endif %}
+        <a href="/admin/sms">مدیریت درگاه پیامک</a>
+    </p>
+    {% endif %}
     <form method="post" action="/admin/settings" data-settings-form="messaging">
         <input type="hidden" name="tab" value="messaging">
         <div class="form-row">

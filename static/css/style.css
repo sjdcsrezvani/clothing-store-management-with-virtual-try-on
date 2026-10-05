@@ -3978,3 +3978,6 @@ button.text-link { background: none; border: none; padding: 0; font: inherit; cu
 .form-group.is-error input, .form-group.is-error select { border-color: var(--danger); }
 .field-tip { display: inline-flex; align-items: center; justify-content: center; width: 1.1rem; height: 1.1rem; border-radius: 50%; border: 1px solid var(--rule); background: var(--surface-soft); color: var(--ink-soft); font-size: 0.7rem; font-weight: 800; cursor: help; padding: 0; position: relative; vertical-align: baseline; }
 .field-tip:hover::after, .field-tip:focus-visible::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 0.4rem); inset-inline-start: 0; width: max-content; max-width: 16rem; white-space: normal; background: var(--card); color: var(--ink); border: 1px solid var(--rule); border-radius: var(--radius-sm); padding: 0.5rem 0.7rem; font-size: 0.78rem; font-weight: 400; z-index: 5; box-shadow: var(--shadow-overlay); }
+
+/* Optional owner line under the printed invoice. */
+.invoice-foot { text-align: center; margin: 0.75rem 0 0; }
