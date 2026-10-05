@@ -1127,6 +1127,8 @@ async def sales_confirm(
         item.variant = db.query(ProductVariant).filter(ProductVariant.id == item.variant_id).first()
         item.product = db.query(Product).filter(Product.id == item.product_id).first()
 
+    footer_note = db.query(Settings).filter(
+        Settings.key == "receipt_footer_note").first()
     invoice_path = generate_invoice_pdf(sale, customer, sale_items)
     invoice_text = generate_invoice_text(sale, customer, sale_items)
 
@@ -1138,6 +1140,7 @@ async def sales_confirm(
         "invoice_path": invoice_path,
         "invoice_text": invoice_text,
         "credit_remaining": sale_remaining(sale),
+        "receipt_footer_note": (footer_note.value or "") if footer_note else "",
         "fmt": fmt,
         "jalali_str": jalali_str,
         "points_earned": points_earned,
@@ -1162,6 +1165,8 @@ async def sales_invoice_view(sale_id: int, request: Request, db: Session = Depen
         item.variant = db.query(ProductVariant).filter(ProductVariant.id == item.variant_id).first()
         item.product = db.query(Product).filter(Product.id == item.product_id).first()
 
+    footer_note = db.query(Settings).filter(
+        Settings.key == "receipt_footer_note").first()
     invoice_path = generate_invoice_pdf(sale, customer, items)
     invoice_text = generate_invoice_text(sale, customer, items)
 
@@ -1180,6 +1185,7 @@ async def sales_invoice_view(sale_id: int, request: Request, db: Session = Depen
         "invoice_path": invoice_path,
         "invoice_text": invoice_text,
         "credit_remaining": sale_remaining(sale),
+        "receipt_footer_note": (footer_note.value or "") if footer_note else "",
         "fmt": fmt,
         "jalali_str": jalali_str,
         "points_earned": sale.points_earned,

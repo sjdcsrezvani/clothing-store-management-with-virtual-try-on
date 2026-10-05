@@ -102,7 +102,7 @@
 }
 
 html, body {
-  font-family: 'Vazirmatn', system-ui, sans-serif;
+  font-family: var(--font, 'Vazirmatn', system-ui, sans-serif);
   background: var(--bg);
   color: var(--ink);
   direction: rtl;
@@ -3965,3 +3965,43 @@ button.text-link { background: none; border: none; padding: 0; font: inherit; cu
   .backups-table td { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; border: none; padding: 0.25rem 0; text-align: start; }
   .backups-table td::before { content: attr(data-label); color: var(--ink-soft); font-size: 0.72rem; flex-shrink: 0; }
 }
+
+/* ===================== Settings tabs =====================
+   One form per panel under a shared pill row. The dirty dot says what is
+   unsaved; the savebar sticks so a long tab never hides its own save;
+   field guides live behind a ؟ toggle instead of a paragraph per field. */
+.settings-tabs { margin-bottom: 0.9rem; }
+.settings-links { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.9rem; }
+.source-chip.is-dirty::after { content: ""; width: 0.45rem; height: 0.45rem; border-radius: 50%; background: var(--candy); }
+.settings-savebar { position: sticky; bottom: 0; background: var(--card); padding: 0.75rem 0 0.25rem; border-top: 1px solid var(--rule); margin-top: 1rem; }
+.settings-note { margin: 0; }
+.form-group.is-error input, .form-group.is-error select { border-color: var(--danger); }
+.tip-icon:hover::after, .tip-icon:focus-visible::after, .field-tip:hover::after, .field-tip:focus-visible::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 0.4rem); inset-inline-start: 0; width: max-content; max-width: 16rem; white-space: normal; background: var(--card); color: var(--ink); border: 1px solid var(--rule); border-radius: var(--radius-sm); padding: 0.5rem 0.7rem; font-size: 0.78rem; font-weight: 400; z-index: 5; box-shadow: var(--shadow-overlay); }
+.tip-icon { position: relative; }
+.settings-card .tip-icon { margin-inline-start: auto; flex-shrink: 0; }
+
+/* Optional owner line under the printed invoice. */
+.invoice-foot { text-align: center; margin: 0.75rem 0 0; }
+
+/* ===================== Settings field beauty =====================
+   Scoped to the settings card: eyebrow labels, ruled subheads, unit chips
+   after numeric inputs, docked help toggles, stacked capability boxes. */
+.settings-card .form-group > label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.72rem; font-weight: 800; color: var(--ink-soft); letter-spacing: 0.02em; }
+.settings-card h4 { border-top: 1px solid var(--rule); padding-top: 0.9rem; margin-top: 1.2rem; }
+.field-unit { display: flex; align-items: stretch; }
+.field-unit input { flex: 1; min-width: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: 0; }
+.field-unit > span { display: inline-flex; align-items: center; padding: 0 0.8rem; background: var(--surface-soft); border: 1px solid var(--rule); border-top-right-radius: 0; border-bottom-right-radius: 0; color: var(--ink-soft); font-size: 0.82rem; font-weight: 700; white-space: nowrap; }
+.settings-cap { flex-direction: column; align-items: stretch; gap: 0.3rem; }
+.settings-cap > label { white-space: normal; }
+.settings-cap .muted { margin: 0; font-size: 0.8rem; }
+
+/* ===================== Display prefs =====================
+   Shop-wide reading size and density, worn as root attributes so every page
+   follows without touching components. Defaults (m/comfortable) change
+   nothing — these rules only exist for the other two stops. */
+html[data-font-size="s"], html[data-font-size="s"] body { font-size: 15px; }
+html[data-font-size="l"], html[data-font-size="l"] body { font-size: 17.5px; }
+html[data-density="compact"] .card { padding: 1rem; }
+html[data-density="compact"] .form-row { row-gap: 0.6rem; }
+html[data-density="compact"] .form-group { margin-bottom: 0.6rem; }
+html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }

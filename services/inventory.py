@@ -55,6 +55,18 @@ _MOVEMENT_EVENT_TYPES = {
 LOW_STOCK_THRESHOLD = 2
 
 
+def low_stock_threshold(db=None) -> int:
+    """The global low-stock line, owner-tunable from settings.
+
+    The constant above is the fallback — and the whole answer when there is
+    no database to ask (scripts, shell sessions).
+    """
+    if db is None:
+        return LOW_STOCK_THRESHOLD
+    from services._common import get_setting_int
+    return get_setting_int(db, "low_stock_threshold", LOW_STOCK_THRESHOLD)
+
+
 def sellable_expression():
     """Sellable units per variant as a SQL expression: stock minus reservations.
 
@@ -83,10 +95,11 @@ def stock_alerts(db) -> dict:
     scope = (db.query(ProductVariant)
              .join(Product)
              .filter(Product.is_active == True, ProductVariant.is_active == True))  # noqa: E712
+    threshold = low_stock_threshold(db)
     return {
-        "low_count": scope.filter(sellable <= LOW_STOCK_THRESHOLD).count(),
+        "low_count": scope.filter(sellable <= threshold).count(),
         "out_count": scope.filter(sellable <= 0).count(),
-        "threshold": LOW_STOCK_THRESHOLD,
+        "threshold": threshold,
     }
 
 

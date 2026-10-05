@@ -969,7 +969,7 @@ def test_turning_the_child_module_off_cannot_leave_a_child_only_target(client, a
 
 
 def test_settings_page_exposes_both_toggles(authed):
-    body = authed.get("/admin/settings").text
+    body = authed.get("/admin/settings?tab=discounts").text
     assert 'name="birthday_target"' in body
     assert 'name="child_profile_enabled"' in body
     assert 'value="customer"' in body and 'value="child"' in body and 'value="both"' in body

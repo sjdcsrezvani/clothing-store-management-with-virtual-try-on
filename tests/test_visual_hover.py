@@ -1,7 +1,7 @@
 """The hover state *seen*, not only measured.
 
-`test_keyboard_shell.py` measures `--hover-surface` and `--ink-on-hover` in all
-ten palettes; those numbers say what the palette intends. What they cannot say
+`test_keyboard_shell.py` measures `--hover-surface` and `--ink-on-hover` in every
+palette; those numbers say what the palette intends. What they cannot say
 is what a browser actually paints — the composition of a row, its borders, the
 inline chips — until the page is rendered and the mouse has crossed a row.
 
@@ -24,7 +24,7 @@ renders as nothing, and a hover that renders but its text washes out.
 The captures land in `.snapshots/` (gitignored) — evidence to look at, not
 fixtures to commit.
 
-The full ten palettes run by default (~1 minute). `RAYKIDS_VISUAL_THEMES="a,b"`
+The whole catalogue runs by default (~1 minute per palette). `RAYKIDS_VISUAL_THEMES="a,b"`
 trims a run to named palettes without weakening what is checked per cell, and
 `RAYKIDS_SKIP_VISUAL=1` skips the render entirely for quick loops.
 
@@ -62,6 +62,7 @@ from models import (  # noqa: E402
     Sale,
     SaleItem,
 )
+from services.themes import THEMES  # noqa: E402
 
 PROBE = ROOT / "tools" / "visual_probe.mjs"
 # Screenshots are evidence; under pytest-xdist each worker gets its own
@@ -77,11 +78,10 @@ CHROME_CANDIDATES = (
 )
 CHROME = next((c for c in CHROME_CANDIDATES if Path(c).exists()), None)
 
-THEME_IDS = [
-    "kashi-tile", "kids-boutique", "operations-light", "pos-focus",
-    "blush-maternal", "amber-till", "midnight-operations", "night-bazaar",
-    "high-contrast", "custom-brand",
-]
+# Read from the catalogue, not from a list written beside it: a palette added
+# to THEMES is measured here the moment it exists, with no second edit to
+# forget. Both visual gates share this one.
+THEME_IDS = list(THEMES)
 
 ROW_SELECTOR = "tbody tr"
 

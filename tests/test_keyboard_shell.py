@@ -16,7 +16,7 @@ them invisible to every guard that existed before this file:
   with a click handler and the picture that opens it was an `<img>`.
 
 What the guards below require is what the shop needs: every pair a person must
-read, measured in all ten palettes rather than eyeballed in one; state colours
+read, measured in every palette rather than eyeballed in one; state colours
 derived from the palette that owns them; no colour literal in an interaction rule;
 and a shell that can be driven from the keyboard alone — Enter to open the menu,
 Escape to close it, a skip link before it, and nothing clickable that is not
@@ -85,14 +85,14 @@ INK_HOMES = (
 # and the derived fills, because a hue is what a shop picked for its brand, not a
 # legibility. `--persimmon` is the exception and is not in this list: it is the one
 # hue the catalogue chose *to be read* — it is the attention colour, and its own
-# guard measures it on the card and on a tint of itself in all ten palettes.
+# guard measures it on the card and on a tint of itself in every palette.
 HUE_TOKENS = ("--candy", "--candy-dark", "--mint", "--mint-dark", "--sky", "--sky-dark",
               "--sunshine", "--lavender")
 # The colours that are text: the derivatives that replaced those hues.
 INK_TOKENS = ("--link", "--link-hover", "--success-ink", "--info-ink", "--warning-ink")
 
 # Every colour a state paints text or a boundary with. A literal here is a colour
-# chosen for one palette being worn by all ten.
+# chosen for one palette being worn by every palette.
 STATE_PSEUDO = re.compile(r":(hover|focus|focus-visible|focus-within|disabled|active|checked|target)\b")
 COLOUR_PROPERTY = re.compile(
     r"^(color|background|background-color|background-image|border-color|outline-color)$")
@@ -131,7 +131,7 @@ def _mix(first: str, second: str, amount: float) -> str:
     return "#%02X%02X%02X" % tuple(channels)
 
 
-# ── The states, measured in all ten palettes ──────────────────────────────────
+# ── The states, measured in every palette ────────────────────────────────────
 #
 # Each entry: what a person has to read, the floor, and how to get the pair out of
 # a palette. The floors are the ones a state needs to be a state: 3:1 for a ring
@@ -224,7 +224,7 @@ FLOORS: tuple[tuple[str, float, object], ...] = (
 )
 
 
-def test_every_state_reads_in_all_ten_palettes():
+def test_every_state_reads_in_all_eleven_palettes():
     """Measured, palette by palette, rather than looked at on the default one.
 
     Every one of these failed somewhere before it was derived: the ring was
@@ -233,7 +233,7 @@ def test_every_state_reads_in_all_ten_palettes():
     label 1.85:1 once the whole control was faded to 62%, and the basket's remove
     button 3.34:1 with the white label its hover swapped in.
     """
-    assert len(THEMES) == 10
+    assert len(THEMES) == 11
     failures = []
     for theme_id in THEMES:
         tokens = theme_preview(theme_id)["tokens"]
@@ -260,7 +260,7 @@ def test_the_state_colours_are_derived_from_the_palette_not_inherited():
     or not it fits — which is exactly how the missing `--persimmon` survived: it
     fell back to `:root` and painted a plausible colour nobody had chosen.
 
-    So none of these live in `_BASE`, all ten palettes compute their own, and the
+    So none of these live in `_BASE`, every palette computes their own, and the
     derivation follows the surfaces: move a palette's card and its ring moves with
     it. A custom brand gets its own too, from the two colours the shop picked.
     """
@@ -278,7 +278,7 @@ def test_the_state_colours_are_derived_from_the_palette_not_inherited():
     moved["--sky"] = "#B03060"
     assert interaction_tokens(moved)["--ring"] != reference, (
         "the ring ignored the palette colour it is derived from")
-    # …and it is a value of its own in each of the ten, not one shared constant.
+    # …and it is a value of its own in each palette, not one shared constant.
     assert len({THEMES[theme]["tokens"]["--hover-surface"] for theme in THEMES}) > 1
     assert len({THEMES[theme]["tokens"]["--ring"] for theme in THEMES}) > 1
 
@@ -674,7 +674,7 @@ def test_a_filled_button_changes_on_hover_without_repainting_its_label():
     assert declarations.get("transform") or declarations.get("box-shadow"), (
         "`.btn:hover` changes nothing a reader can see")
     # A filled button's label and fill are still the pairs the palette guard
-    # measures, in all ten, so nothing below them moved either: each family's
+    # measures, in every palette, so nothing below them moved either: each family's
     # own label on its own fills, and the shared label on the alarm fill.
     for theme_id in THEMES:
         tokens = theme_preview(theme_id)["tokens"]
@@ -1050,7 +1050,7 @@ def test_the_shell_still_carries_what_the_palette_guard_expects():
 
 def test_the_stylesheet_declares_no_colour_the_theme_should_own():
     """A hex written into the stylesheet is a colour chosen for one palette being
-    worn by all ten: `#E8DDD5` drew an invisible border on the dark palettes, the
+    worn by every palette: `#E8DDD5` drew an invisible border on the dark palettes, the
     danger zone froze a red next to palettes whose danger was derived, the print
     rules froze paper itself, and the badge pairs were hand-tuned variants of
     derivations the theme already computes. The templates were swept of their own

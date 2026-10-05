@@ -11,13 +11,13 @@
 <a href="/admin/tier-downgrades" class="btn btn-ghost">کاهش سطح</a>
 <a href="/admin/birthdays" class="btn btn-ghost">پیامک تولد</a>
 <a href="/admin/follow-ups" class="btn btn-ghost">پیگیری مشتریان</a>
-<a href="/admin/settings" class="btn btn-ghost">تنظیمات پیامک</a>
+<a href="/admin/settings?tab=messaging" class="btn btn-ghost">تنظیمات پیامک</a>
 {% endset %}
 {% include 'partials/page_header.html' %}
 
 {% if not pattern_ready %}
 <div class="alert alert-error" role="alert">
-    متن پیامک ارتقا نوشته نشده یا خاموش است — از <a href="/admin/settings">تنظیمات پیامک</a> هر دو متن
+    متن پیامک ارتقا نوشته نشده یا خاموش است — از <a href="/admin/settings?tab=messaging">تنظیمات پیامک</a> هر دو متن
     (نقره‌ای ← طلایی و طلایی ← الماس) را بنویسید و فعال کنید. تا آن زمان چیزی قابل ارسال نیست.
 </div>
 {% endif %}
@@ -143,8 +143,8 @@
     {% else %}
     <div class="empty-state">
         <h3>هیچ مشتری برای ارسال پیامک ارتقا وجود ندارد</h3>
-        <p>وقتی مشتری‌ای به سطح بالاتر برسد، اینجا برای ارسال پیام ظاهر می‌شود. متن‌ها را در <a href="/admin/settings">تنظیمات پیامک</a> می‌نویسید.</p>
-        <a href="/admin/settings" class="btn btn-ghost">تنظیمات پیامک</a>
+        <p>وقتی مشتری‌ای به سطح بالاتر برسد، اینجا برای ارسال پیام ظاهر می‌شود. متن‌ها را در <a href="/admin/settings?tab=messaging">تنظیمات پیامک</a> می‌نویسید.</p>
+        <a href="/admin/settings?tab=messaging" class="btn btn-ghost">تنظیمات پیامک</a>
     </div>
     {% endif %}
 </div>

@@ -1,7 +1,7 @@
 """The checkout till's filled buttons, seen at the pixels.
 
 `test_keyboard_shell.py` measures `--brand-label` against `--brand-fill` and
-`--success-label` against `--success-fill` in all ten palettes; those numbers
+`--success-label` against `--success-fill` in every palette; those numbers
 say what the palette intends for the *pair*. What they cannot say is what a
 browser actually paints on the checkout page — a gradient is a ramp of
 composited colours, the page may composite the button over the card, and the

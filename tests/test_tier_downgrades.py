@@ -291,7 +291,9 @@ def test_a_manager_is_refused_by_both_routes(client, db_session):
 def test_the_settings_page_no_longer_offers_a_field_the_rule_ignores(client, db_session):
     owner, password = _staff(db_session, "dg-settings", "owner")
     _session_as(client, owner, password)
-    page = client.get("/admin/settings").text
+    # The field lives on the discounts panel, not the default one — the tabs
+    # moved it, so the test asks the panel that owns it.
+    page = client.get("/admin/settings?tab=discounts").text
 
     assert "tier_downgrade_months" in page
     assert "tier_downgrade_amount" not in page
