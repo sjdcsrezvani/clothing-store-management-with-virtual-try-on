@@ -1,6 +1,11 @@
 """Backup shelf phase 1: schedule settings, cached verify, row actions, redesign."""
+import sys
 from pathlib import Path
 
+import pytest
+
+import routers.admin as admin_router
+import services.backup as backup
 from models import Settings
 from services.backup import (
     BACKUP_DIR, backup_due, normalize_every_days, normalize_keep_count,
@@ -8,6 +13,25 @@ from services.backup import (
 from services._common import format_bytes_fa
 from tests.conftest import csrf_token
 from tests.test_staff_phase_b import _owner_client
+
+
+@pytest.fixture(autouse=True)
+def _own_shelf(tmp_path, monkeypatch):
+    """A private shelf and uploads tree for each test in this file.
+
+    The shelf is one directory shared by all four xdist workers, so these
+    tests emptied it under one another — and emptied the shop's real
+    backups, and re-swapped its real uploads, on a dev machine. Pointing
+    the app at a temp tree per test leaves the real one alone and makes
+    every count in here deterministic.
+    """
+    shelf = tmp_path / "backups"
+    shelf.mkdir()
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    for module in (backup, admin_router, sys.modules[__name__]):
+        monkeypatch.setattr(module, "BACKUP_DIR", shelf)
+    monkeypatch.setattr(backup, "UPLOADS_DIR", uploads)
 
 
 def _shelf():
@@ -205,10 +229,9 @@ def _pair_of(db_name):
 
 
 def test_backup_pairs_uploads_tarball(client, db_session):
-    from pathlib import Path as _Path
     _owner_client(client, db_session, name="bk-owner-pair")
     _clean()
-    marker = _Path("static/uploads/bk_pair_marker.txt")
+    marker = backup.UPLOADS_DIR / "bk_pair_marker.txt"
     try:
         marker.write_text("pair-me")
         _backup_now(client)
@@ -230,10 +253,9 @@ def test_backup_pairs_uploads_tarball(client, db_session):
 
 
 def test_restore_swaps_uploads_too(client, db_session):
-    from pathlib import Path as _Path
     _owner_client(client, db_session, name="bk-owner-pair-restore")
     _clean()
-    marker = _Path("static/uploads/bk_restore_marker.txt")
+    marker = backup.UPLOADS_DIR / "bk_restore_marker.txt"
     try:
         marker.write_text("before")
         _backup_now(client)

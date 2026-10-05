@@ -2270,7 +2270,7 @@ async def admin_backups(request: Request, db: Session = Depends(get_db)):
         get_setting_int(db, "backup_keep_count", BACKUP_KEEP_DEFAULT))
     backups = []
     for backup in list_backups():
-        row = {**backup, **verify_cached(Path("backups") / backup["name"])}
+        row = {**backup, **verify_cached(BACKUP_DIR / backup["name"])}
         row["size_fa"] = format_bytes_fa(row.get("size", 0))
         pair = uploads_tarball_for(backup["name"])
         try:
@@ -2279,7 +2279,7 @@ async def admin_backups(request: Request, db: Session = Depends(get_db)):
             pair_size = None
         row["uploads_size_fa"] = (
             format_bytes_fa(pair_size) if pair_size is not None else "")
-        version = backup_schema_version(Path("backups") / backup["name"])
+        version = backup_schema_version(BACKUP_DIR / backup["name"])
         row["schema_newer"] = version is not None and version > MIGRATION_VERSION
         backups.append(row)
     count, total = backups_storage()
