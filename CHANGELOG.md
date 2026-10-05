@@ -1,3 +1,77 @@
+## 2.8.4 — 1405/07/13 (2026-10-05)
+
+### زمان‌بندی از آن شماست: the cadence becomes a choice, not a cron
+
+- **The owner sets the rhythm, not the cron.** Automatic backups now
+  run every ۱۰، ۲۰ or ۳۰ days at the usual 2 AM pass and keep ۵ to ۳۰
+  recent files — cadence and retention both off-menu-proof: an
+  off-cadence reads as the default, a keep count clamps to its bounds.
+  The scheduler asks whether one is actually due before it runs, and a
+  manual backup resets the clock either way — a fresh copy is due work.
+- **The page answers «when».** The status card names the last backup
+  and its age («امروز»، «۳ روز پیش»), the next run («امشب» or its
+  Jalali date) and the shelf's weight in the shop's own reading —
+  «۱۲٫۴ مگابایت»، the decimal point ٫ and all; a schedule form saves
+  the cadence, the retention and whether a restore takes a safety
+  snapshot first, the sidebar renamed the page پشتیبان‌گیری و بازیابی,
+  and every one of those values lands in the log beside its label.
+
+### بازیابی همان‌جا: the shop comes back without leaving the app
+
+- **Restore is a button, not a file swap.** The row posts its own name;
+  the shop validates the file, snapshots the present when the toggle
+  says so, checkpoints the live database and drops the pool, then swaps
+  the content online through SQLite's own copy API — no restart —
+  migrates an older schema forward in place, re-verifies, and answers
+  on the dashboard with «بازیابی شد از …». One restore at a time, a
+  copy failure changes nothing, and no audit row survives on purpose:
+  the restored world replaces the one that would have carried it.
+- **The red zone explains itself before it acts.** Three numbered steps
+  say what a restore will replace, the confirm dialog reads it back —
+  and names the newer-schema warning when the file wears one — while
+  without JavaScript the forms simply post. A shelf file stamped past
+  the current revision wears a «نسخه جدیدتر» badge rather than a wall.
+- **A database from elsewhere is welcomed, never trusted.** Uploads
+  take only .db files within ۲۰۰ مگابایت that open as SQLite and hold
+  sales and customers tables; the bytes land in staging, verify, and
+  only then take a shelf name — unpruned until the next pass — and a
+  restore from them stays a second, deliberate click on their own row.
+- **Delete, recheck and the whole-shelf zip.** حذف takes the file, its
+  tarball and its verify entry together (a traversal name fails shut);
+  بررسی مجدد forces a fresh integrity read and says whether the file
+  is still sound; دانلود همه zips the shelf newest-first for the copy
+  that leaves the machine. Schedule and delete write their own lines
+  in the log, under labels the audit trail already speaks.
+
+### هر نسخه با فایل‌هایش: every backup carries its uploads
+
+- **A database without its pictures is half a backup.** Every snapshot
+  now tarballs static/uploads beside itself as a paired
+  `referral_…_uploads.tar.gz`; two backups inside one second get a
+  numbered name instead of a collision, and a shelf row shows both
+  weights — «+ فایل‌ها: …» — or «بدون فایل‌پیوست» when the shop had
+  nothing to carry.
+- **The shelf cleans up after itself in pairs.** Pruning a backup takes
+  its tarball with it, a tarball whose database row is gone is swept
+  as an orphan, and the count and weight on the storage line include
+  what the pairs add.
+- **A restore brings both back, or says exactly what did.** The uploads
+  tree is only touched after the whole archive reads clean; when the
+  swap fails the message says the database went back and the files did
+  not — never half of each, never silence.
+- **A verdict is filed, and a moved file re-files itself.** Every
+  integrity read is cached against the backup's name, size and stamp:
+  the page's «تأیید شده» badge paints from that filing while the file
+  has not moved, a replaced file reads fresh, بررسی مجدد is the way to
+  demand today's truth, and a delete drops the filing with the file.
+- **The shelf reads on a phone.** Under 700px the table stacks into
+  labelled cards the way the customer and credit tables do, the old
+  page's emoji headers are gone in favour of naked Persian labels and
+  the sprite's icons, and an empty shelf offers its own first press:
+  «اولین پشتیبان‌گیری».
+
+**Schema change.** None — the database stays on revision 32.
+
 ## 2.8.3 — 1405/07/13 (2026-10-05)
 
 ### گزارش عملیات: the audit trail becomes one timeline, and every row can show its work
