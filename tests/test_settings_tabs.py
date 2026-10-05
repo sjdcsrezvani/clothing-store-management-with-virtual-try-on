@@ -1,13 +1,17 @@
-"""Settings tabs phase 1: seven panels, one template, ?tab= deep-linking."""
+"""Settings tabs: eight panels, one template, ?tab= deep-linking."""
 from urllib.parse import unquote
 
 from models import Settings
+from routers.admin import SETTINGS_TABS
 from tests.conftest import csrf_token
 from tests.test_staff_phase_b import _owner_client
 
-TABS = ("shop", "discounts", "credit", "devices", "messaging", "advanced", "account")
+# The order the pill row must wear, read from the router's own table so a
+# panel added there cannot slip past this file.
+TABS = tuple(tab_id for tab_id, _title, _icon in SETTINGS_TABS)
 TAB_FIELD = {
     "shop": 'name="store_name"',
+    "sales": 'name="low_stock_threshold"',
     "discounts": 'name="birthday_target"',
     "credit": 'name="credit_terms_days"',
     "devices": 'name="pos_terminal_host"',
@@ -15,6 +19,17 @@ TAB_FIELD = {
     "advanced": 'name="check_default_reminders"',
     "account": 'name="new_password"',
 }
+
+
+def test_the_pill_row_offers_every_panel_the_router_declares(client, db_session):
+    _owner_client(client, db_session, name="tabs-owner-pills")
+    page = client.get("/admin/settings").text
+    assert TABS == ("shop", "sales", "discounts", "credit", "devices",
+                    "messaging", "advanced", "account")
+    assert len(TABS) == 8
+    for tab_id in TABS:
+        assert f'data-settings-tab="{tab_id}"' in page, tab_id
+        assert f'href="/admin/settings?tab={tab_id}"' in page, tab_id
 
 
 def test_default_and_garbage_tabs_open_shop(client, db_session):
