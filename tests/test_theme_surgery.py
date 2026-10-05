@@ -1,6 +1,6 @@
 """Theme surgery (Phase 5): four palettes out, four in, Kashi by default.
 
-The gallery stays ten cards; retired shops are told where they moved.
+The gallery grows only by explicit vote; retired shops are told where moved.
 """
 from pathlib import Path
 
@@ -16,11 +16,12 @@ from tests.conftest import csrf_token
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_catalog_is_ten_with_the_new_set():
-    assert len(THEMES) == 10
+def test_catalog_is_eleven_with_the_new_set():
+    assert len(THEMES) == 11
     assert set(THEMES) == {
         "kashi-tile", "kids-boutique", "operations-light", "pos-focus",
         "blush-maternal", "amber-till", "midnight-operations", "night-bazaar",
+        "jungle-night",
         "high-contrast", "custom-brand",
     }
     assert DEFAULT_THEME_ID == "kashi-tile"
@@ -33,7 +34,7 @@ def test_gallery_leads_with_kashi_then_kids(client, db_session):
     user, password = _staff(db_session, "gallery-owner", "owner")
     _session_as(client, user, password)
     html = client.get("/admin/settings/appearance").text
-    assert html.count('data-theme-id="') == 10
+    assert html.count('data-theme-id="') == 11
     assert html.index('data-theme-id="kashi-tile"') < html.index('data-theme-id="kids-boutique"')
 
 
@@ -82,7 +83,7 @@ def test_no_dead_selectors_for_retired_palettes():
 
 
 def test_till_has_its_own_name():
-    assert THEMES["pos-focus"]["name"] == "Till"
+    assert THEMES["pos-focus"]["name"] == "صندوق"
 
 
 def test_fresh_shop_wears_kashi(client, db_session):

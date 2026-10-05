@@ -32,8 +32,8 @@ def _stylesheet() -> str:
 STYLE_CSS = _stylesheet()
 
 
-def test_theme_catalog_has_ten_complete_presets():
-    assert len(THEMES) == 10
+def test_theme_catalog_has_eleven_complete_presets():
+    assert len(THEMES) == 11
     for theme_id, theme in THEMES.items():
         assert theme["name"]
         assert theme["mode"] in {"light", "dark-shell", "dark", "high-contrast"}
@@ -336,7 +336,7 @@ def test_persimmon_is_legible_in_every_theme_on_its_card_and_its_own_badge_tint(
     high-contrast palette. The state badges paint it on a 20% tint of itself,
     which is the harder surface of the two, so both are measured.
     """
-    assert len(THEMES) == 10
+    assert len(THEMES) == 11
     for theme_id in THEMES:
         tokens = theme_preview(theme_id)["tokens"]
         assert "--persimmon" in tokens, theme_id
@@ -634,7 +634,7 @@ def test_owner_can_load_appearance_gallery(client, db_session):
     _session_as(client, owner, password)
     page = client.get("/admin/settings/appearance")
     assert page.status_code == 200
-    assert page.text.count('data-theme-id="') == 10
+    assert page.text.count('data-theme-id="') == 11
     assert "ui-theme-input" in page.text
 
 
@@ -657,7 +657,7 @@ def test_general_settings_links_to_appearance_page(client, db_session):
 # be *seen* on a page before anyone could know about it. The tests above close
 # that hole by reading the sources: the stylesheet, the templates, the renderer.
 # This one closes it on what the shop actually receives — it opens every address
-# the shell serves, as every role, with each of the ten themes active, and
+# the shell serves, as every role, with each of the eleven themes active, and
 # resolves every custom property the rendered page reads against the palette that
 # theme supplies. The stylesheet's `:root` is deliberately not allowed to answer
 # for a theme: it is the fallback for a page rendered with no theme at all, so if
@@ -784,7 +784,7 @@ def _page_colours(html: str) -> tuple[set[str], set[str]]:
     """``(the properties a page's own markup reads, the ones it declares)``.
 
     Only the page's own `style` attributes and `<style>` blocks. The stylesheet is
-    a separate matter: it is one file for all ten themes and the tests above
+    a separate matter: it is one file for all eleven themes and the tests above
     check it against every one of them. A read that carries a fallback —
     `var(--tag-scale, 1)` — is deliberately not collected, because the fallback
     is exactly what makes a missing definition harmless there.
@@ -1086,7 +1086,7 @@ def test_every_page_the_shell_serves_reads_only_colours_its_theme_defines(client
     offenders, answers, rendered = _walk(client, db_session, accounts, addresses)
 
     # Coverage, so the matrix cannot shrink quietly: every address was asked for
-    # as every role and every answer was the same in all ten themes…
+    # as every role and every answer was the same in all eleven themes…
     assert len(answers) == len(addresses) * len(ROLES), (len(answers), len(addresses))
     assert rendered == sum(1 for _key, (_status, drawn) in answers.items() if drawn) * len(THEMES)
     assert rendered > 0
@@ -1399,4 +1399,73 @@ def test_appearance_page_has_no_emoji_and_names_themes_in_persian(client, db_ses
         assert name in page
     assert "Warm sand paper" not in page
     assert 'id="appearance-revert"' in page
-    assert "پیش‌نمایش می‌دهد" in page
+    assert "امتحان می‌کند" in page
+
+
+def test_appearance_has_explicit_preview_and_revert(client, db_session):
+    from tests.test_roles import _staff, _session_as
+    owner, password = _staff(db_session, "theme-preview-btn", "owner")
+    _session_as(client, owner, password)
+    page = client.get("/admin/settings/appearance").text
+    assert 'id="appearance-preview"' in page
+    assert 'id="appearance-revert"' in page
+    assert "جنگل" in page  # the eleventh card renders
+
+
+def test_shell_carries_display_prefs(client, db_session):
+    from tests.test_roles import _staff, _session_as
+    owner, password = _staff(db_session, "theme-display", "owner")
+    _session_as(client, owner, password)
+    page = client.get("/admin/").text
+    assert 'data-font-size="m"' in page
+    assert 'data-density="comfortable"' in page
+
+
+def test_custom_dark_and_display_prefs_save_validated(client, db_session):
+    from tests.conftest import csrf_token
+    from tests.test_roles import _staff, _session_as
+    from models import Settings
+    owner, password = _staff(db_session, "theme-dark-save", "owner")
+    _session_as(client, owner, password)
+    base = {"csrf_token": csrf_token(client, "/admin/settings/appearance"),
+            "ui_theme": "custom-brand",
+            "theme_custom_primary": "#C94B68", "theme_custom_secondary": "#197A8C"}
+    bad = client.post("/admin/settings/appearance", data={
+        **base, "theme_custom_font": "comic-sans"}, follow_redirects=False)
+    assert bad.status_code == 303
+    from urllib.parse import unquote
+    assert "قلم" in unquote(bad.headers["location"])
+    good = client.post("/admin/settings/appearance", data={
+        **base, "theme_custom_font": "system", "theme_custom_radius": "sharp",
+        "theme_custom_dark": "1",
+        "theme_custom_primary_dark": "#F07A91",
+        "theme_custom_secondary_dark": "#56C2D9",
+        "ui_font_size": "l", "ui_density": "compact"}, follow_redirects=False)
+    assert good.status_code == 303
+    db_session.expire_all()
+    values = {row.key: row.value for row in db_session.query(Settings).filter(
+        Settings.key.like("%font%") | Settings.key.like("%density%")
+        | Settings.key.like("%dark%") | Settings.key.like("%radius%")).all()}
+    assert values["theme_custom_dark"] == "1"
+    assert values["ui_font_size"] == "l"
+    page = client.get("/admin/").text
+    assert 'data-font-size="l"' in page and 'data-density="compact"' in page
+
+
+def test_retired_notice_offers_keep(client, db_session):
+    from models import Settings
+    from tests.test_roles import _staff, _session_as
+    from services.themes import THEME_SETTING_KEY, invalidate_theme_cache
+    owner, password = _staff(db_session, "theme-keep", "owner")
+    _session_as(client, owner, password)
+    db_session.add(Settings(key=THEME_SETTING_KEY, value="ocean-commerce"))
+    db_session.commit()
+    invalidate_theme_cache()
+    try:
+        page = client.get("/admin/settings/appearance").text
+        assert "همین بماند" in page
+        assert 'value="pos-focus"' in page
+    finally:
+        db_session.query(Settings).filter(Settings.key == THEME_SETTING_KEY).delete()
+        db_session.commit()
+        invalidate_theme_cache()

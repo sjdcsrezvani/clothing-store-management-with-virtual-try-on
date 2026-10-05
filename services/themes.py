@@ -34,6 +34,35 @@ _SHELL_THEME_CACHE: dict[str, Any] = {"data": None, "at": 0.0}
 DEFAULT_CUSTOM_PRIMARY = "#C94B68"
 DEFAULT_CUSTOM_SECONDARY = "#197A8C"
 
+# Custom Brand extensions: font and corner picks, an optional dark side, and
+# the shop-wide display prefs. Allowlist-checked at read and write — garbage
+# reads as the default, never as a broken shell.
+CUSTOM_FONT_KEY = "theme_custom_font"
+CUSTOM_RADIUS_KEY = "theme_custom_radius"
+CUSTOM_DARK_KEY = "theme_custom_dark"
+CUSTOM_PRIMARY_DARK_KEY = "theme_custom_primary_dark"
+CUSTOM_SECONDARY_DARK_KEY = "theme_custom_secondary_dark"
+FONT_SIZE_KEY = "ui_font_size"
+DENSITY_KEY = "ui_density"
+DEFAULT_CUSTOM_FONT = "vazirmatn"
+DEFAULT_CUSTOM_RADIUS = "medium"
+DEFAULT_CUSTOM_DARK = "0"
+DEFAULT_CUSTOM_PRIMARY_DARK = "#F07A91"
+DEFAULT_CUSTOM_SECONDARY_DARK = "#56C2D9"
+DEFAULT_FONT_SIZE = "m"
+DEFAULT_DENSITY = "comfortable"
+CUSTOM_FONTS = {
+    "vazirmatn": "'Vazirmatn', system-ui, sans-serif",
+    "system": "Tahoma, 'Segoe UI', system-ui, sans-serif",
+}
+CUSTOM_RADII = {
+    "round": ("14px", "8px"),
+    "medium": ("10px", "6px"),
+    "sharp": ("6px", "4px"),
+}
+FONT_SIZES = ("s", "m", "l")
+DENSITIES = ("comfortable", "compact")
+
 # `--persimmon` is the panel's attention hue: what a figure turns when it is not
 # an error but must be looked at — money owed, a payment past its date, a message
 # that failed, text past its SMS limit. It is deliberately neither `--candy` (the
@@ -72,6 +101,9 @@ _BASE = {
     "--card-accent-full": "linear-gradient(90deg, var(--candy), var(--sky))",
     "--radius": "8px",
     "--radius-sm": "6px",
+    # The shop's reading voice, as a token like any colour: Custom Brand's
+    # font pick overrides it, every other palette wears it as authored.
+    "--font": "'Vazirmatn', system-ui, sans-serif",
     "--sidebar-bg": "#17232B",
     "--sidebar-active": "#2C414C",
     # The text on a filled brand surface — a primary button, a count chip. The
@@ -158,6 +190,12 @@ THEMES: dict[str, dict[str, Any]] = {
         "description": "تیره آلوئی-ذغالی گرم برای شیفت عصر و عکس پرو.",
         "mode": "dark",
         "tokens": {**_BASE, "--candy": "#F2A3B3", "--candy-dark": "#D97A8E", "--sky": "#7AC7D4", "--sky-dark": "#4AA3B5", "--sunshine": "#EAC25E", "--persimmon": "#FF9A72", "--mint": "#6BC48A", "--mint-dark": "#3FA463", "--bg": "#17141A", "--card": "#2A2430", "--ink": "#F5F0F2", "--ink-soft": "#C4B8C2", "--rule": "#3D3542", "--surface-soft": "#241F29", "--sidebar-bg": "#100D13", "--sidebar-text": "#EFE7EC", "--sidebar-active": "#3A2A3D", "--topbar-start": "#100D13", "--topbar-end": "#3A2A3D", "--success-bg": "#1C3325", "--warning-bg": "#3B2F16", "--danger-bg": "#3D222B", "--field-bg": "#262029", "--table-header": "#2C2530", "--card-accent": "linear-gradient(90deg, #F2A3B3, #7AC7D4)"},
+    },
+    "jungle-night": {
+        "name": "جنگل",
+        "description": "سبز جنگلی تیره برای شیفت‌های طولانی — آرام‌تر از نیمه‌شب.",
+        "mode": "dark",
+        "tokens": {**_BASE, "--candy": "#5FC98D", "--candy-dark": "#40A76F", "--sky": "#6FC3B8", "--sky-dark": "#49A199", "--sunshine": "#E3B655", "--persimmon": "#FF9A72", "--mint": "#7BD88F", "--mint-dark": "#4CAF6D", "--bg": "#101914", "--card": "#1B2921", "--ink": "#F1F7F2", "--ink-soft": "#AEC2B4", "--rule": "#2F4436", "--surface-soft": "#152019", "--sidebar-bg": "#0B120E", "--sidebar-text": "#E9F2EB", "--sidebar-active": "#234434", "--topbar-start": "#0B120E", "--topbar-end": "#1C3A2B", "--success-bg": "#153324", "--warning-bg": "#3B3018", "--danger-bg": "#3A2026", "--field-bg": "#1D2D24", "--table-header": "#213129", "--card-accent": "linear-gradient(90deg, #5FC98D, #6FC3B8)"},
     },
     "high-contrast": {
         "name": "کنتراست بالا",
@@ -518,18 +556,35 @@ for _theme in THEMES.values():
 def theme_preview(theme_id: str, custom: dict[str, str] | None = None) -> dict[str, Any]:
     theme = THEMES.get(theme_id) or THEMES[DEFAULT_THEME_ID]
     tokens = dict(theme["tokens"])
+    mode = theme["mode"]
     if theme_id == "custom-brand" and custom:
-        tokens.update(custom_tokens(custom.get("primary", DEFAULT_CUSTOM_PRIMARY),
-                                    custom.get("secondary", DEFAULT_CUSTOM_SECONDARY)))
-        # A shop's own two colours move the brand surfaces, so the state colours
-        # are worked out again from them: the ring follows the brand, not `_BASE`.
-        # `_complete` re-derives everything the same way the catalogue did.
-        _complete({"tokens": tokens})
+        if custom.get("dark") == "1":
+            # The dark side starts from the midnight shelf, not from daylight:
+            # elevation and state colours are derived for darkness throughout.
+            tokens = dict(THEMES["midnight-operations"]["tokens"])
+            tokens.update(custom_tokens(custom.get("primary_dark", DEFAULT_CUSTOM_PRIMARY_DARK),
+                                        custom.get("secondary_dark", DEFAULT_CUSTOM_SECONDARY_DARK)))
+            _complete({"tokens": tokens, "mode": "dark"})
+            mode = "dark"
+        else:
+            tokens.update(custom_tokens(custom.get("primary", DEFAULT_CUSTOM_PRIMARY),
+                                        custom.get("secondary", DEFAULT_CUSTOM_SECONDARY)))
+            # A shop's own two colours move the brand surfaces, so the state colours
+            # are worked out again from them: the ring follows the brand, not `_BASE`.
+            # `_complete` re-derives everything the same way the catalogue did.
+            _complete({"tokens": tokens})
+        font = CUSTOM_FONTS.get(custom.get("font", DEFAULT_CUSTOM_FONT),
+                                CUSTOM_FONTS[DEFAULT_CUSTOM_FONT])
+        radius, radius_sm = CUSTOM_RADII.get(custom.get("radius", DEFAULT_CUSTOM_RADIUS),
+                                             CUSTOM_RADII[DEFAULT_CUSTOM_RADIUS])
+        tokens["--font"] = font
+        tokens["--radius"] = radius
+        tokens["--radius-sm"] = radius_sm
     return {
         "id": theme_id if theme_id in THEMES else DEFAULT_THEME_ID,
         "name": theme["name"],
         "description": theme["description"],
-        "mode": theme["mode"],
+        "mode": mode,
         "tokens": tokens,
     }
 
@@ -581,10 +636,13 @@ def get_theme(db=None) -> dict[str, Any]:
         from database import SessionLocal
         db = SessionLocal()
     try:
-        # One read of the settings table answers the theme, the custom primary
-        # and the custom secondary — a page render asks once, not three times.
+        # One read of the settings table answers the theme, the custom brand
+        # and the display prefs — a page render asks once, not six times.
         chosen = {s.key: s.value for s in db.query(Settings).filter(
-            Settings.key.in_([THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY])).all()}
+            Settings.key.in_([THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY,
+                              CUSTOM_FONT_KEY, CUSTOM_RADIUS_KEY, CUSTOM_DARK_KEY,
+                              CUSTOM_PRIMARY_DARK_KEY, CUSTOM_SECONDARY_DARK_KEY,
+                              FONT_SIZE_KEY, DENSITY_KEY])).all()}
         theme_id = chosen.get(THEME_SETTING_KEY)
         theme_id, _migrated = migrate_retired_theme(theme_id)
         if theme_id not in THEMES:
@@ -592,6 +650,11 @@ def get_theme(db=None) -> dict[str, Any]:
         custom = {
             "primary": chosen.get(CUSTOM_PRIMARY_KEY) or DEFAULT_CUSTOM_PRIMARY,
             "secondary": chosen.get(CUSTOM_SECONDARY_KEY) or DEFAULT_CUSTOM_SECONDARY,
+            "font": chosen.get(CUSTOM_FONT_KEY) or DEFAULT_CUSTOM_FONT,
+            "radius": chosen.get(CUSTOM_RADIUS_KEY) or DEFAULT_CUSTOM_RADIUS,
+            "dark": chosen.get(CUSTOM_DARK_KEY) or DEFAULT_CUSTOM_DARK,
+            "primary_dark": chosen.get(CUSTOM_PRIMARY_DARK_KEY) or DEFAULT_CUSTOM_PRIMARY_DARK,
+            "secondary_dark": chosen.get(CUSTOM_SECONDARY_DARK_KEY) or DEFAULT_CUSTOM_SECONDARY_DARK,
         }
         try:
             theme = theme_preview(theme_id, custom)
@@ -599,6 +662,10 @@ def get_theme(db=None) -> dict[str, Any]:
             theme_id = DEFAULT_THEME_ID
             theme = theme_preview(theme_id)
         theme["inline_style"] = theme_inline_style(theme)
+        font_size = chosen.get(FONT_SIZE_KEY) or DEFAULT_FONT_SIZE
+        theme["font_size"] = font_size if font_size in FONT_SIZES else DEFAULT_FONT_SIZE
+        density = chosen.get(DENSITY_KEY) or DEFAULT_DENSITY
+        theme["density"] = density if density in DENSITIES else DEFAULT_DENSITY
         if close:
             _SHELL_THEME_CACHE["data"] = dict(theme)
             _SHELL_THEME_CACHE["at"] = time.time()
@@ -619,11 +686,36 @@ def all_theme_previews(db=None) -> list[dict[str, Any]]:
     custom = {
         "primary": active["tokens"].get("--candy", DEFAULT_CUSTOM_PRIMARY) if active["id"] == "custom-brand" else DEFAULT_CUSTOM_PRIMARY,
         "secondary": active["tokens"].get("--sky", DEFAULT_CUSTOM_SECONDARY) if active["id"] == "custom-brand" else DEFAULT_CUSTOM_SECONDARY,
+        "font": DEFAULT_CUSTOM_FONT,
+        "radius": DEFAULT_CUSTOM_RADIUS,
+        "dark": DEFAULT_CUSTOM_DARK,
+        "primary_dark": DEFAULT_CUSTOM_PRIMARY_DARK,
+        "secondary_dark": DEFAULT_CUSTOM_SECONDARY_DARK,
     }
+    if db is not None:
+        rows = {s.key: s.value for s in db.query(Settings).filter(Settings.key.in_(
+            [CUSTOM_FONT_KEY, CUSTOM_RADIUS_KEY, CUSTOM_DARK_KEY,
+             CUSTOM_PRIMARY_DARK_KEY, CUSTOM_SECONDARY_DARK_KEY])).all()}
+        custom["font"] = rows.get(CUSTOM_FONT_KEY) or DEFAULT_CUSTOM_FONT
+        custom["radius"] = rows.get(CUSTOM_RADIUS_KEY) or DEFAULT_CUSTOM_RADIUS
+        custom["dark"] = rows.get(CUSTOM_DARK_KEY) or DEFAULT_CUSTOM_DARK
+        custom["primary_dark"] = rows.get(CUSTOM_PRIMARY_DARK_KEY) or DEFAULT_CUSTOM_PRIMARY_DARK
+        custom["secondary_dark"] = rows.get(CUSTOM_SECONDARY_DARK_KEY) or DEFAULT_CUSTOM_SECONDARY_DARK
     previews = []
     for theme_id in THEMES:
         preview = theme_preview(theme_id, custom)
         preview["inline_style"] = theme_inline_style(preview)
         preview["chart_accent"] = chart_accents(preview)
+        if theme_id == "custom-brand":
+            # Both sides, so the live preview can flip light/dark client-side
+            # without a round trip — the save is what makes either permanent.
+            preview["inline_style_dark"] = theme_inline_style(
+                theme_preview(theme_id, {**custom, "dark": "1"}))
+            preview["inline_style_light"] = theme_inline_style(
+                theme_preview(theme_id, {**custom, "dark": "0"}))
         previews.append(preview)
+    preview_custom = {k: custom[k] for k in (
+        "font", "radius", "dark", "primary_dark", "secondary_dark")}
+    for preview in previews:
+        preview["custom"] = preview_custom
     return previews

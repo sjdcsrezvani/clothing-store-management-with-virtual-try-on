@@ -137,7 +137,7 @@ from services.events import (
 from services.payroll import (create_salary_payment, current_period_key,
                              is_payroll_due, normalize_period_key,
                              run_monthly_payday, void_salary_payment)
-from services.themes import THEMES, DEFAULT_THEME_ID, THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY, DEFAULT_CUSTOM_PRIMARY, DEFAULT_CUSTOM_SECONDARY, all_theme_previews, validate_hex, contrast_ratio, get_theme, invalidate_theme_cache, migrate_retired_theme
+from services.themes import THEMES, DEFAULT_THEME_ID, THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY, DEFAULT_CUSTOM_PRIMARY, DEFAULT_CUSTOM_SECONDARY, CUSTOM_FONT_KEY, CUSTOM_RADIUS_KEY, CUSTOM_DARK_KEY, CUSTOM_PRIMARY_DARK_KEY, CUSTOM_SECONDARY_DARK_KEY, DEFAULT_CUSTOM_FONT, DEFAULT_CUSTOM_RADIUS, DEFAULT_CUSTOM_DARK, DEFAULT_CUSTOM_PRIMARY_DARK, DEFAULT_CUSTOM_SECONDARY_DARK, CUSTOM_FONTS, CUSTOM_RADII, FONT_SIZE_KEY, DENSITY_KEY, DEFAULT_FONT_SIZE, DEFAULT_DENSITY, FONT_SIZES, DENSITIES, all_theme_previews, validate_hex, contrast_ratio, get_theme, invalidate_theme_cache, migrate_retired_theme
 
 router = APIRouter(prefix="/admin")
 
@@ -2159,15 +2159,24 @@ async def admin_settings_appearance(request: Request, db: Session = Depends(get_
     _effective, retired = migrate_retired_theme(settings.get(THEME_SETTING_KEY))
     # The theme cards each carry a live sample chart painted by the same
     # renderer the analytics pages use, so the owner judges real shading.
+    previews = all_theme_previews(db)
+    custom_preview = next((p for p in previews if p["id"] == "custom-brand"), {})
+    shell = get_theme(db)
     return templates.TemplateResponse(request, "admin/settings_appearance.html", {
         "show_charts": True,
         "settings": settings,
         "store": get_store(db),
-        "themes": all_theme_previews(db),
+        "themes": previews,
         "retired_theme_id": retired,
         "retired_theme_home": THEMES[_effective]["name"] if retired else "",
+        "retired_theme_home_id": _effective if retired else "",
+        "custom_choices": custom_preview.get("custom", {}),
+        "font_size": shell.get("font_size", DEFAULT_FONT_SIZE),
+        "density": shell.get("density", DEFAULT_DENSITY),
         "default_custom_primary": DEFAULT_CUSTOM_PRIMARY,
         "default_custom_secondary": DEFAULT_CUSTOM_SECONDARY,
+        "default_custom_primary_dark": DEFAULT_CUSTOM_PRIMARY_DARK,
+        "default_custom_secondary_dark": DEFAULT_CUSTOM_SECONDARY_DARK,
         "active_theme_id": get_theme_id(db),
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
@@ -2184,8 +2193,25 @@ async def admin_update_appearance(request: Request, db: Session = Depends(get_db
     theme_id = str(form.get(THEME_SETTING_KEY, DEFAULT_THEME_ID)).strip()
     primary = str(form.get(CUSTOM_PRIMARY_KEY, DEFAULT_CUSTOM_PRIMARY)).strip().upper()
     secondary = str(form.get(CUSTOM_SECONDARY_KEY, DEFAULT_CUSTOM_SECONDARY)).strip().upper()
+    font = str(form.get(CUSTOM_FONT_KEY, DEFAULT_CUSTOM_FONT)).strip()
+    radius = str(form.get(CUSTOM_RADIUS_KEY, DEFAULT_CUSTOM_RADIUS)).strip()
+    dark = str(form.get(CUSTOM_DARK_KEY, DEFAULT_CUSTOM_DARK)).strip()
+    primary_dark = str(form.get(CUSTOM_PRIMARY_DARK_KEY, DEFAULT_CUSTOM_PRIMARY_DARK)).strip().upper()
+    secondary_dark = str(form.get(CUSTOM_SECONDARY_DARK_KEY, DEFAULT_CUSTOM_SECONDARY_DARK)).strip().upper()
+    font_size = str(form.get(FONT_SIZE_KEY, DEFAULT_FONT_SIZE)).strip()
+    density = str(form.get(DENSITY_KEY, DEFAULT_DENSITY)).strip()
     if theme_id not in THEMES:
         return RedirectResponse(url="/admin/settings/appearance?err=تم انتخاب نامعتبر است.", status_code=303)
+    if font not in CUSTOM_FONTS:
+        return RedirectResponse(url="/admin/settings/appearance?err=قلم انتخاب نامعتبر است.", status_code=303)
+    if radius not in CUSTOM_RADII:
+        return RedirectResponse(url="/admin/settings/appearance?err=گردی گوشه نامعتبر است.", status_code=303)
+    if dark not in ("0", "1"):
+        return RedirectResponse(url="/admin/settings/appearance?err=حالت برند نامعتبر است.", status_code=303)
+    if font_size not in FONT_SIZES:
+        return RedirectResponse(url="/admin/settings/appearance?err=اندازه قلم نامعتبر است.", status_code=303)
+    if density not in DENSITIES:
+        return RedirectResponse(url="/admin/settings/appearance?err=تراکم نامعتبر است.", status_code=303)
     if theme_id == "custom-brand":
         if not validate_hex(primary) or not validate_hex(secondary):
             return RedirectResponse(url="/admin/settings/appearance?err=رنگ‌ها باید به صورت HEX شش‌رقمی باشند.", status_code=303)
@@ -2193,8 +2219,18 @@ async def admin_update_appearance(request: Request, db: Session = Depends(get_db
             return RedirectResponse(url="/admin/settings/appearance?err=رنگ اصلی کنتراست کافی ندارد.", status_code=303)
         if contrast_ratio(secondary, "#FFFFFF") < 3 and contrast_ratio(secondary, "#000000") < 3:
             return RedirectResponse(url="/admin/settings/appearance?err=رنگ دوم کنتراست کافی ندارد.", status_code=303)
+        if dark == "1":
+            if not validate_hex(primary_dark) or not validate_hex(secondary_dark):
+                return RedirectResponse(url="/admin/settings/appearance?err=رنگ‌های تیره باید به صورت HEX شش‌رقمی باشند.", status_code=303)
+            if contrast_ratio(primary_dark, "#FFFFFF") < 4.5 and contrast_ratio(primary_dark, "#000000") < 4.5:
+                return RedirectResponse(url="/admin/settings/appearance?err=رنگ اصلی تیره کنتراست کافی ندارد.", status_code=303)
+            if contrast_ratio(secondary_dark, "#FFFFFF") < 3 and contrast_ratio(secondary_dark, "#000000") < 3:
+                return RedirectResponse(url="/admin/settings/appearance?err=رنگ دوم تیره کنتراست کافی ندارد.", status_code=303)
 
-    updates = {THEME_SETTING_KEY: theme_id, CUSTOM_PRIMARY_KEY: primary, CUSTOM_SECONDARY_KEY: secondary}
+    updates = {THEME_SETTING_KEY: theme_id, CUSTOM_PRIMARY_KEY: primary, CUSTOM_SECONDARY_KEY: secondary,
+               CUSTOM_FONT_KEY: font, CUSTOM_RADIUS_KEY: radius, CUSTOM_DARK_KEY: dark,
+               CUSTOM_PRIMARY_DARK_KEY: primary_dark, CUSTOM_SECONDARY_DARK_KEY: secondary_dark,
+               FONT_SIZE_KEY: font_size, DENSITY_KEY: density}
     for key, value in updates.items():
         setting = db.query(Settings).filter(Settings.key == key).first()
         if setting:

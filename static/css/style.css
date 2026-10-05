@@ -102,7 +102,7 @@
 }
 
 html, body {
-  font-family: 'Vazirmatn', system-ui, sans-serif;
+  font-family: var(--font, 'Vazirmatn', system-ui, sans-serif);
   background: var(--bg);
   color: var(--ink);
   direction: rtl;
@@ -3994,3 +3994,14 @@ button.text-link { background: none; border: none; padding: 0; font: inherit; cu
 .settings-cap { flex-direction: column; align-items: stretch; gap: 0.3rem; }
 .settings-cap > label { white-space: normal; }
 .settings-cap .muted { margin: 0; font-size: 0.8rem; }
+
+/* ===================== Display prefs =====================
+   Shop-wide reading size and density, worn as root attributes so every page
+   follows without touching components. Defaults (m/comfortable) change
+   nothing — these rules only exist for the other two stops. */
+html[data-font-size="s"], html[data-font-size="s"] body { font-size: 15px; }
+html[data-font-size="l"], html[data-font-size="l"] body { font-size: 17.5px; }
+html[data-density="compact"] .card { padding: 1rem; }
+html[data-density="compact"] .form-row { row-gap: 0.6rem; }
+html[data-density="compact"] .form-group { margin-bottom: 0.6rem; }
+html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }

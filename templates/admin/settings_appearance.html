@@ -10,7 +10,21 @@
 {% include 'partials/page_header.html' %}
 
 {% if retired_theme_id %}
-<div class="alert alert-info" role="status"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-palette"/></svg> تم «{{ retired_theme_id }}» بازنشسته شد و فروشگاه شما به «{{ retired_theme_home }}» منتقل شد — اگر ظاهر دیگری می‌خواهید، از گالری زیر انتخاب و ذخیره کنید.</div>
+<div class="alert alert-info" role="status"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-palette"/></svg> تم «{{ retired_theme_id }}» بازنشسته شد و فروشگاه شما به «{{ retired_theme_home }}» منتقل شد — از گالری زیر یکی را انتخاب و ذخیره کنید، یا همین را نگه دارید.
+    <form method="post" action="/admin/settings/appearance" class="inline-form">
+        <input type="hidden" name="ui_theme" value="{{ retired_theme_home_id }}">
+        <input type="hidden" name="theme_custom_primary" value="{{ settings.get('theme_custom_primary') or default_custom_primary }}">
+        <input type="hidden" name="theme_custom_secondary" value="{{ settings.get('theme_custom_secondary') or default_custom_secondary }}">
+        <input type="hidden" name="theme_custom_font" value="{{ settings.get('theme_custom_font', 'vazirmatn') }}">
+        <input type="hidden" name="theme_custom_radius" value="{{ settings.get('theme_custom_radius', 'medium') }}">
+        <input type="hidden" name="theme_custom_dark" value="{{ settings.get('theme_custom_dark', '0') }}">
+        <input type="hidden" name="theme_custom_primary_dark" value="{{ settings.get('theme_custom_primary_dark') or default_custom_primary_dark }}">
+        <input type="hidden" name="theme_custom_secondary_dark" value="{{ settings.get('theme_custom_secondary_dark') or default_custom_secondary_dark }}">
+        <input type="hidden" name="ui_font_size" value="{{ settings.get('ui_font_size', 'm') }}">
+        <input type="hidden" name="ui_density" value="{{ settings.get('ui_density', 'comfortable') }}">
+        <button type="submit" class="btn btn-sm btn-primary">همین بماند</button>
+    </form>
+</div>
 {% endif %}
 
 
@@ -24,10 +38,10 @@
                 </div>
                 <span class="appearance-active" id="appearance-active">{{ active_theme_id }}</span>
             </div>
-            <p class="appearance-intro">کلیک، ظاهر را بلافاصله پیش‌نمایش می‌دهد؛ «اعمال» آن را قطعی می‌کند. «بازگشت» به ذخیره‌شده برمی‌گردد.</p>
+            <p class="appearance-intro">کلیک انتخاب می‌کند؛ «پیش‌نمایش» روی همین صفحه امتحان می‌کند؛ «اعمال» قطعی و ذخیره می‌کند.</p>
             <div class="theme-gallery" role="radiogroup" aria-label="تم‌های فروشگاه">
                 {% for theme in themes %}
-                <button type="button" class="theme-option{% if theme.id == active_theme_id %} is-selected{% endif %}" data-theme-id="{{ theme.id }}" data-theme-mode="{{ theme.mode }}" data-theme-style="{{ theme.inline_style }}" role="radio" aria-checked="{{ 'true' if theme.id == active_theme_id else 'false' }}">
+                <button type="button" class="theme-option{% if theme.id == active_theme_id %} is-selected{% endif %}" data-theme-id="{{ theme.id }}" data-theme-mode="{{ theme.mode }}" data-theme-style="{{ theme.inline_style }}"{% if theme.id == 'custom-brand' %} data-theme-style-light="{{ theme.inline_style_light }}" data-theme-style-dark="{{ theme.inline_style_dark }}"{% endif %} role="radio" aria-checked="{{ 'true' if theme.id == active_theme_id else 'false' }}">
                     <span class="theme-preview theme-preview-{{ theme.mode }}" style="{{ theme.inline_style }}" aria-hidden="true">
                         <span class="theme-preview-top"></span>
                         <span class="theme-preview-body"><span></span><i></i><b></b></span>
@@ -48,9 +62,45 @@
                     <div class="form-group"><label for="theme_custom_primary">رنگ اصلی</label><input type="color" id="theme_custom_primary" name="theme_custom_primary" value="{{ settings.get('theme_custom_primary') or default_custom_primary }}"><small>برای دکمه‌های اصلی و تأکیدها</small></div>
                     <div class="form-group"><label for="theme_custom_secondary">رنگ دوم</label><input type="color" id="theme_custom_secondary" name="theme_custom_secondary" value="{{ settings.get('theme_custom_secondary') or default_custom_secondary }}"><small>برای ناوبری و عناصر کمکی</small></div>
                 </div>
+                <div class="form-row">
+                    <div class="form-group"><label for="theme_custom_font">قلم</label><select id="theme_custom_font" name="theme_custom_font">
+                        <option value="vazirmatn"{% if custom_choices.get('font', 'vazirmatn') == 'vazirmatn' %} selected{% endif %}>وزیرمتن</option>
+                        <option value="system"{% if custom_choices.get('font') == 'system' %} selected{% endif %}>سیستمی (تاهوما)</option>
+                    </select></div>
+                    <div class="form-group"><label for="theme_custom_radius">گوشه‌ها</label><select id="theme_custom_radius" name="theme_custom_radius">
+                        <option value="round"{% if custom_choices.get('radius') == 'round' %} selected{% endif %}>گرد</option>
+                        <option value="medium"{% if custom_choices.get('radius', 'medium') == 'medium' %} selected{% endif %}>میانه</option>
+                        <option value="sharp"{% if custom_choices.get('radius') == 'sharp' %} selected{% endif %}>تیز</option>
+                    </select></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label for="theme_custom_dark">حالت برند</label><select id="theme_custom_dark" name="theme_custom_dark">
+                        <option value="0"{% if custom_choices.get('dark', '0') == '0' %} selected{% endif %}>روشن</option>
+                        <option value="1"{% if custom_choices.get('dark') == '1' %} selected{% endif %}>تیره</option>
+                    </select></div>
+                </div>
+                <div class="form-row" id="custom-dark-fields"{% if custom_choices.get('dark') != '1' %} hidden{% endif %}>
+                    <div class="form-group"><label for="theme_custom_primary_dark">رنگ اصلی تیره</label><input type="color" id="theme_custom_primary_dark" name="theme_custom_primary_dark" value="{{ settings.get('theme_custom_primary_dark') or default_custom_primary_dark }}"><small>برای دکمه‌ها در حالت تیره</small></div>
+                    <div class="form-group"><label for="theme_custom_secondary_dark">رنگ دوم تیره</label><input type="color" id="theme_custom_secondary_dark" name="theme_custom_secondary_dark" value="{{ settings.get('theme_custom_secondary_dark') or default_custom_secondary_dark }}"><small>برای ناوبری در حالت تیره</small></div>
+                </div>
             </div>
+            <section aria-labelledby="display-title">
+                <div class="section-heading"><div><span class="eyebrow">نمایش</span><h3 id="display-title">اندازه و تراکم</h3></div></div>
+                <div class="form-row">
+                    <div class="form-group"><label for="ui_font_size">اندازه قلم</label><select id="ui_font_size" name="ui_font_size">
+                        <option value="s"{% if font_size == 's' %} selected{% endif %}>کوچک</option>
+                        <option value="m"{% if font_size == 'm' %} selected{% endif %}>معمولی</option>
+                        <option value="l"{% if font_size == 'l' %} selected{% endif %}>بزرگ</option>
+                    </select></div>
+                    <div class="form-group"><label for="ui_density">تراکم</label><select id="ui_density" name="ui_density">
+                        <option value="comfortable"{% if density == 'comfortable' %} selected{% endif %}>راحت</option>
+                        <option value="compact"{% if density == 'compact' %} selected{% endif %}>فشرده</option>
+                    </select></div>
+                </div>
+            </section>
             <div class="settings-savebar">
                 <button type="submit" class="btn btn-primary appearance-apply"><span class="icon-check" aria-hidden="true"></span> اعمال ظاهر انتخاب‌شده</button>
+                <button type="button" class="btn btn-ghost" id="appearance-preview">پیش‌نمایش</button>
                 <button type="button" class="btn btn-ghost" id="appearance-revert">بازگشت به ذخیره‌شده</button>
             </div>
         </section>
@@ -65,61 +115,98 @@
     var active = document.getElementById('appearance-active');
     var custom = document.getElementById('custom-brand-fields');
     if (!options.length || !input) return;
-    function applyOption(option) {
-        var style = option.dataset.themeStyle || '';
-        if (option.dataset.themeId === 'custom-brand') {
-            var primary = document.getElementById('theme_custom_primary');
-            var secondary = document.getElementById('theme_custom_secondary');
-            if (primary && secondary) style += '; --candy: ' + primary.value + '; --candy-dark: ' + primary.value + '; --sky: ' + secondary.value + '; --sky-dark: ' + secondary.value;
+    function field(id) { return document.getElementById(id); }
+    function customDarkOn() {
+        var sel = field('theme_custom_dark');
+        return !!(sel && sel.value === '1');
+    }
+    // Selecting marks the card and the hidden input only — the shell moves
+    // on «پیش‌نمایش», permanence on save. One path paints everywhere below.
+    function selectOption(option) {
+        options.forEach(function (item) {
+            item.classList.remove('is-selected');
+            item.setAttribute('aria-checked', 'false');
+        });
+        option.classList.add('is-selected');
+        option.setAttribute('aria-checked', 'true');
+        input.value = option.getAttribute('data-theme-id');
+        active.textContent = option.getAttribute('data-theme-id');
+        if (custom) custom.hidden = option.getAttribute('data-theme-id') !== 'custom-brand';
+    }
+    var FONTS = {
+        vazirmatn: "'Vazirmatn', system-ui, sans-serif",
+        system: "Tahoma, 'Segoe UI', system-ui, sans-serif"
+    };
+    var RADII = { round: ['14px', '8px'], medium: ['10px', '6px'], sharp: ['6px', '4px'] };
+    function customOverrides() {
+        var out = '';
+        var font = field('theme_custom_font');
+        var radius = field('theme_custom_radius');
+        if (font && FONTS[font.value]) out += '; --font: ' + FONTS[font.value];
+        if (radius && RADII[radius.value]) out += '; --radius: ' + RADII[radius.value][0] + '; --radius-sm: ' + RADII[radius.value][1];
+        var primary = field(customDarkOn() ? 'theme_custom_primary_dark' : 'theme_custom_primary');
+        var secondary = field(customDarkOn() ? 'theme_custom_secondary_dark' : 'theme_custom_secondary');
+        if (primary && secondary && primary.value && secondary.value) {
+            out += '; --candy: ' + primary.value + '; --candy-dark: ' + primary.value +
+                   '; --sky: ' + secondary.value + '; --sky-dark: ' + secondary.value;
         }
-        root.setAttribute('data-theme', option.dataset.themeId);
-        root.setAttribute('data-theme-mode', option.dataset.themeMode || 'light');
+        return out;
+    }
+    function selectedOption() {
+        for (var i = 0; i < options.length; i++) {
+            if (options[i].classList.contains('is-selected')) return options[i];
+        }
+        return options[0];
+    }
+    function previewSelected() {
+        var option = selectedOption();
+        if (!option) return;
+        var dark = option.getAttribute('data-theme-id') === 'custom-brand' && customDarkOn();
+        var style = option.getAttribute(dark ? 'data-theme-style-dark' : 'data-theme-style-light') ||
+                    option.getAttribute('data-theme-style') || '';
+        var mode = dark ? 'dark' : (option.getAttribute('data-theme-mode') || 'light');
+        if (option.getAttribute('data-theme-id') === 'custom-brand') style += customOverrides();
+        root.setAttribute('data-theme', option.getAttribute('data-theme-id'));
+        root.setAttribute('data-theme-mode', mode);
         root.setAttribute('style', style);
-        input.value = option.dataset.themeId;
-        active.textContent = option.dataset.themeId;
-        if (custom) custom.hidden = option.dataset.themeId !== 'custom-brand';
+        paintSamples();
     }
     options.forEach(function (option) {
-        option.addEventListener('click', function () {
-            options.forEach(function (item) {
-                item.classList.remove('is-selected');
-                item.setAttribute('aria-checked', 'false');
-            });
-            option.classList.add('is-selected');
-            option.setAttribute('aria-checked', 'true');
-            applyOption(option);
-        });
+        option.addEventListener('click', function () { selectOption(option); });
     });
-    // Back to saved: re-clicking the stored card restores the input and the
-    // shell through the same path a manual click takes — no second definition.
+    var previewBtn = document.getElementById('appearance-preview');
+    if (previewBtn) previewBtn.addEventListener('click', previewSelected);
+    var darkSel = field('theme_custom_dark');
+    var darkFields = document.getElementById('custom-dark-fields');
+    if (darkSel && darkFields) darkSel.addEventListener('change', function () {
+        darkFields.hidden = darkSel.value !== '1';
+    });
+    // Back to saved: every input returns to its server value, the saved card
+    // is selected, and the shell is repainted — the page forgets the draft.
     var savedId = input ? input.value : '';
-    var savedPrimary = document.getElementById('theme_custom_primary');
-    var savedSecondary = document.getElementById('theme_custom_secondary');
-    savedPrimary = savedPrimary ? savedPrimary.value : '';
-    savedSecondary = savedSecondary ? savedSecondary.value : '';
+    var RESTORABLE = ['theme_custom_primary', 'theme_custom_secondary',
+        'theme_custom_font', 'theme_custom_radius', 'theme_custom_dark',
+        'theme_custom_primary_dark', 'theme_custom_secondary_dark'];
+    var savedValues = {};
+    RESTORABLE.forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) savedValues[id] = el.value;
+    });
     var revert = document.getElementById('appearance-revert');
     if (revert) revert.addEventListener('click', function () {
-        var primary = document.getElementById('theme_custom_primary');
-        var secondary = document.getElementById('theme_custom_secondary');
-        if (primary) primary.value = savedPrimary;
-        if (secondary) secondary.value = savedSecondary;
+        RESTORABLE.forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el && savedValues[id] !== undefined) el.value = savedValues[id];
+        });
+        if (darkSel && darkFields) darkFields.hidden = darkSel.value !== '1';
         var cards = document.querySelectorAll('.theme-option');
         for (var i = 0; i < cards.length; i++) {
             if (cards[i].getAttribute('data-theme-id') === savedId) {
-                cards[i].click();
+                selectOption(cards[i]);
                 break;
             }
         }
-    });
-    ['theme_custom_primary', 'theme_custom_secondary'].forEach(function (id) {
-        var field = document.getElementById(id);
-        if (field) field.addEventListener('input', function () {
-            var selected = document.querySelector('.theme-option.is-selected');
-            if (selected && selected.dataset.themeId === 'custom-brand') {
-                applyOption(selected);
-                paintSamples();
-            }
-        });
+        previewSelected();
     });
     // The sample chart in every card paints from the page's palette reader, so
     // what the owner judges here is what the charts will do after «اعمال».
@@ -129,11 +216,11 @@
         samples.forEach(function (canvas) {
             var option = canvas.closest('.theme-option');
             if (!option) return;
-            var style = option.dataset.themeStyle || '';
-            if (option.dataset.themeId === 'custom-brand') {
-                var primary = document.getElementById('theme_custom_primary');
-                var secondary = document.getElementById('theme_custom_secondary');
-                if (primary && secondary) style += '; --candy: ' + primary.value + '; --candy-dark: ' + primary.value + '; --sky: ' + secondary.value + '; --sky-dark: ' + secondary.value;
+            var style = option.getAttribute('data-theme-style') || '';
+            if (option.getAttribute('data-theme-id') === 'custom-brand') {
+                var dark = customDarkOn();
+                style = option.getAttribute(dark ? 'data-theme-style-dark' : 'data-theme-style-light') || style;
+                style += customOverrides();
             }
             window.renderThemeChartSample(canvas, style);
         });

@@ -224,7 +224,7 @@ FLOORS: tuple[tuple[str, float, object], ...] = (
 )
 
 
-def test_every_state_reads_in_all_ten_palettes():
+def test_every_state_reads_in_all_eleven_palettes():
     """Measured, palette by palette, rather than looked at on the default one.
 
     Every one of these failed somewhere before it was derived: the ring was
@@ -233,7 +233,7 @@ def test_every_state_reads_in_all_ten_palettes():
     label 1.85:1 once the whole control was faded to 62%, and the basket's remove
     button 3.34:1 with the white label its hover swapped in.
     """
-    assert len(THEMES) == 10
+    assert len(THEMES) == 11
     failures = []
     for theme_id in THEMES:
         tokens = theme_preview(theme_id)["tokens"]
