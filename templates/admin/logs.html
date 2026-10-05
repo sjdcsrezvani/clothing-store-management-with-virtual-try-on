@@ -3,6 +3,7 @@
 {% set page_description %}
 چه کسی، چه کاری انجام داد — تازه‌ترین‌ها اول.
 {% endset %}
+{% set page_actions %}<a class="btn" href="{{ export_url }}">خروجی CSV</a>{% endset %}
 {% include 'partials/page_header.html' %}
 
 <form method="get" action="/admin/logs" class="card form-row">
@@ -29,33 +30,59 @@
         <input class="persian-date-input" name="to" value="{{ date_to }}" inputmode="numeric" dir="ltr" placeholder="۱۴۰۵/۱۲/۲۹">
     </label>
     <button class="btn btn-primary" type="submit">فیلتر</button>
-    {% if filters_active %}<a class="btn" href="/admin/logs">پاک کردن فیلترها</a>{% endif %}
+    {% if filters_active %}<a class="btn" href="/admin/logs">پاک کردن فیلترها</a>{% elif offset %}<a class="btn" href="{{ back_url }}">۱۰۰ ردیف اول</a>{% endif %}
 </form>
 
 <div class="card">
-    {% if logs %}
+    {% if has_rows %}
+    {% for group in groups %}
+    <p class="eyebrow">{{ group.label }}</p>
     <div class="table-scroll">
-        <table class="data-table">
+        <table class="data-table logs-table">
             <thead>
                 <tr>
                     <th scope="col">زمان</th>
                     <th scope="col">عملیات</th>
                     <th scope="col">کننده</th>
+                    <th scope="col">پیوند</th>
+                    <th scope="col">آی‌پی</th>
                     <th scope="col">جزئیات</th>
                 </tr>
             </thead>
             <tbody>
-                {% for log in logs %}
+                {% for log in group.rows %}
+                {% set link = target_link(log.target_type, log.target_id) %}
+                {% set diff = log_diff(log) %}
                 <tr>
-                    <td class="tnum">{{ jalali_str(log.created_at) }}</td>
-                    <td><span class="badge{% if action_tone(log.action) == 'danger' %} badge-danger{% else %} badge-none{% endif %}">{{ action_labels.get(log.action, log.action) }}</span> <code>{{ log.action }}</code></td>
-                    <td>{% if log.staff_user %}<a href="/admin/staff/{{ log.staff_user.id }}">{{ log.staff_user.full_name or log.staff_user.username }}</a>{% else %}سیستم{% endif %}</td>
-                    <td>{{ log.detail or '—' }}</td>
+                    <td class="tnum" data-label="زمان">{{ jalali_str(log.created_at) }}{% if rel_time(log.created_at) %}<br><small class="muted">{{ rel_time(log.created_at) }}</small>{% endif %}</td>
+                    <td data-label="عملیات"><span class="badge{% if action_tone(log.action) == 'danger' %} badge-danger{% else %} badge-none{% endif %}">{{ action_labels.get(log.action, log.action) }}</span> <code>{{ log.action }}</code></td>
+                    <td data-label="کننده">{% if log.staff_user %}<a href="/admin/staff/{{ log.staff_user.id }}">{{ log.staff_user.full_name or log.staff_user.username }}</a>{% else %}سیستم{% endif %}</td>
+                    <td data-label="پیوند">{% if link %}<a href="{{ link[0] }}">{{ link[1] }}</a>{% else %}—{% endif %}</td>
+                    <td data-label="آی‌پی" dir="ltr">{{ log.ip_address or '—' }}</td>
+                    <td data-label="جزئیات">{% if log.detail and log.detail|length > 80 %}<details class="unpaid-details"><summary>{{ log.detail[:80] }}…</summary><p>{{ log.detail }}</p></details>{% else %}{{ log.detail or '—' }}{% endif %}{% if diff %} <button type="button" class="btn btn-sm" data-dialog-open="logdiff-{{ log.id }}">تغییرات</button>{% endif %}</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
+    {% for log in group.rows %}
+    {% set diff = log_diff(log) %}
+    {% if diff %}
+    <div id="logdiff-{{ log.id }}" data-dialog role="dialog" aria-modal="true" aria-labelledby="logdiff-title-{{ log.id }}" class="confirm-scrim" tabindex="-1">
+        <div class="t-modal-card confirm-card" role="document">
+            <h3 id="logdiff-title-{{ log.id }}">تغییرات ثبت‌شده</h3>
+            <h4>قبل</h4>
+            <pre class="log-diff" dir="ltr">{{ diff[0] }}</pre>
+            <h4>بعد</h4>
+            <pre class="log-diff" dir="ltr">{{ diff[1] }}</pre>
+            <div class="confirm-actions">
+                <button type="button" class="btn btn-ghost" data-dialog-close>بستن</button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    {% endfor %}
+    {% endfor %}
     {% if has_more %}
     <div class="tag-pagination"><a class="btn" href="{{ more_url }}">نمایش ۱۰۰ ردیف بعدی</a></div>
     {% endif %}

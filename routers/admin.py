@@ -41,6 +41,8 @@ from services._common import (
     int_arg,
     parse_jalali_input,
     parse_jalali_input_end,
+    rel_time,
+    jalali_day_label,
 )
 from services.customers import (
     ACTIVE_DAYS,
@@ -96,6 +98,8 @@ from services.security import (
     ROLE_DISCOUNT_LIMITS,
     ADMIN_ACTION_LABELS,
     admin_action_tone,
+    admin_target_link,
+    admin_log_diff,
 )
 from services.store import invalidate_store_cache, get_store
 from services.sorting import parse_sort
@@ -2566,16 +2570,18 @@ async def admin_events(
 # One screen of audit rows; "show more" appends the next screen via ?offset=.
 LOGS_PAGE_SIZE = 100
 
+# CSV column order, screen order: time, action, actor, record, network, words.
+LOGS_CSV_HEADERS = ["زمان", "عملیات", "کننده", "پیوند", "آی‌پی", "جزئیات"]
 
-@router.get("/logs", response_class=HTMLResponse)
-async def admin_logs(request: Request, db: Session = Depends(get_db)):
-    guard = require_html_role(request, db, "owner")
-    if not hasattr(guard, "role"):
-        return guard
 
+def _logs_filter_values(request: Request, db: Session) -> dict:
+    """Cleaned audit-trail filters, shared by the page and the CSV export.
+
+    Unknown values degrade to "no filter" — the trail never shows an empty
+    page for a stale bookmark, and the form repaints clean.
+    """
     qp = request.query_params
     action = (qp.get("action") or "").strip()
-    actor_raw = (qp.get("actor") or "").strip()
     date_from_raw = (qp.get("from") or "").strip()
     date_to_raw = (qp.get("to") or "").strip()
     try:
@@ -2583,12 +2589,11 @@ async def admin_logs(request: Request, db: Session = Depends(get_db)):
     except ValueError:
         offset = 0
 
-    # Unknown filter values degrade to "no filter" — the trail never shows
-    # an empty page for a stale bookmark, and the form repaints clean.
     known_actions = sorted(row[0] for row in db.query(AdminLog.action).distinct().all())
     if action not in known_actions:
         action = ""
     actor = None
+    actor_raw = (qp.get("actor") or "").strip()
     if actor_raw.isdigit():
         actor = db.query(StaffUser).filter(StaffUser.id == int(actor_raw)).first()
     date_from = parse_jalali_input(date_from_raw)
@@ -2597,50 +2602,129 @@ async def admin_logs(request: Request, db: Session = Depends(get_db)):
     date_to = parse_jalali_input_end(date_to_raw)
     if date_to is None:
         date_to_raw = ""
+    return {
+        "action": action, "actor": actor, "known_actions": known_actions,
+        "date_from": date_from, "date_from_raw": date_from_raw,
+        "date_to": date_to, "date_to_raw": date_to_raw, "offset": offset,
+    }
 
+
+def _logs_base_query(db: Session, filters: dict):
+    """The filtered audit query, newest first. Offset paging stays stable on
+    id order — equal timestamps can neither duplicate nor skip a row."""
     query = (db.query(AdminLog)
              .options(joinedload(AdminLog.staff_user))
              .order_by(AdminLog.id.desc()))
-    if action:
-        query = query.filter(AdminLog.action == action)
-    if actor is not None:
-        query = query.filter(AdminLog.staff_user_id == actor.id)
-    if date_from is not None:
-        query = query.filter(AdminLog.created_at >= date_from)
-    if date_to is not None:
-        query = query.filter(AdminLog.created_at <= date_to)
-    rows = query.offset(offset).limit(LOGS_PAGE_SIZE + 1).all()
+    if filters["action"]:
+        query = query.filter(AdminLog.action == filters["action"])
+    if filters["actor"] is not None:
+        query = query.filter(AdminLog.staff_user_id == filters["actor"].id)
+    if filters["date_from"] is not None:
+        query = query.filter(AdminLog.created_at >= filters["date_from"])
+    if filters["date_to"] is not None:
+        query = query.filter(AdminLog.created_at <= filters["date_to"])
+    return query
+
+
+@router.get("/logs", response_class=HTMLResponse)
+async def admin_logs(request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+
+    filters = _logs_filter_values(request, db)
+    offset = filters["offset"]
+    rows = _logs_base_query(db, filters).offset(offset).limit(LOGS_PAGE_SIZE + 1).all()
     has_more = len(rows) > LOGS_PAGE_SIZE
-    # The "show more" link replays the active filters — one definition, the
-    # same values the query just read, so the next screen never drifts.
-    more_params = {"offset": offset + LOGS_PAGE_SIZE}
-    if action:
-        more_params["action"] = action
-    if actor is not None:
-        more_params["actor"] = actor.id
-    if date_from_raw:
-        more_params["from"] = date_from_raw
-    if date_to_raw:
-        more_params["to"] = date_to_raw
+    rows = rows[:LOGS_PAGE_SIZE]
+    # Day groups, newest day first: the screen's rows already arrive newest
+    # first, so first-seen order is chronological with no re-sort.
+    groups = []
+    for row in rows:
+        key, label = jalali_day_label(row.created_at)
+        if groups and groups[-1]["key"] == key:
+            groups[-1]["rows"].append(row)
+        else:
+            groups.append({"key": key, "label": label, "rows": [row]})
+    # The "show more" and "export" links replay the active filters — one
+    # definition, the same values the query just read, so the next screen
+    # and the file never drift from what the owner sees.
+    replay = {}
+    if filters["action"]:
+        replay["action"] = filters["action"]
+    if filters["actor"] is not None:
+        replay["actor"] = filters["actor"].id
+    if filters["date_from_raw"]:
+        replay["from"] = filters["date_from_raw"]
+    if filters["date_to_raw"]:
+        replay["to"] = filters["date_to_raw"]
+    more_params = dict(replay, offset=offset + LOGS_PAGE_SIZE)
     more_url = "/admin/logs?" + "&".join(
         f"{key}={quote_plus(str(value))}" for key, value in more_params.items())
+    export_url = "/admin/logs/export"
+    if replay:
+        export_url += "?" + "&".join(
+            f"{key}={quote_plus(str(value))}" for key, value in replay.items())
+    back_url = "/admin/logs"
+    if replay:
+        back_url += "?" + "&".join(
+            f"{key}={quote_plus(str(value))}" for key, value in replay.items())
 
     return templates.TemplateResponse(request, "admin/logs.html", {
-        "logs": rows[:LOGS_PAGE_SIZE],
+        "groups": groups,
+        "has_rows": bool(rows),
         "jalali_str": jalali_str,
+        "rel_time": rel_time,
         "action_labels": ADMIN_ACTION_LABELS,
         "action_tone": admin_action_tone,
-        "known_actions": known_actions,
+        "target_link": admin_target_link,
+        "log_diff": lambda row: admin_log_diff(row.before_json, row.after_json),
+        "known_actions": filters["known_actions"],
         "actors": db.query(StaffUser).order_by(StaffUser.id).all(),
-        "action": action,
-        "actor_id": actor.id if actor is not None else "",
-        "date_from": date_from_raw,
-        "date_to": date_to_raw,
-        "filters_active": bool(action or actor is not None or date_from_raw or date_to_raw),
+        "action": filters["action"],
+        "actor_id": filters["actor"].id if filters["actor"] is not None else "",
+        "date_from": filters["date_from_raw"],
+        "date_to": filters["date_to_raw"],
+        "filters_active": bool(filters["action"] or filters["actor"] is not None
+                              or filters["date_from_raw"] or filters["date_to_raw"]),
         "offset": offset,
         "has_more": has_more,
         "more_url": more_url,
+        "export_url": export_url,
+        "back_url": back_url,
     })
+
+
+@router.get("/logs/export")
+async def admin_logs_export(request: Request, db: Session = Depends(get_db)):
+    """The filtered audit trail as a file: whatever the screen shows, all of it."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    import csv
+    import io
+    filters = _logs_filter_values(request, db)
+    out = [LOGS_CSV_HEADERS]
+    for row in _logs_base_query(db, filters).all():
+        link = admin_target_link(row.target_type, row.target_id)
+        out.append([
+            jalali_str(row.created_at),
+            ADMIN_ACTION_LABELS.get(row.action, row.action),
+            (row.staff_user.full_name or row.staff_user.username)
+            if row.staff_user else "سیستم",
+            link[0] if link else "",
+            row.ip_address or "",
+            row.detail or "",
+        ])
+    buf = io.StringIO()
+    buf.write("\ufeff")  # BOM so Excel opens Persian correctly
+    csv.writer(buf).writerows(out)
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="logs_{today}.csv"'},
+    )
 
 
 def _birthday_marker(db: Session, customer, occasion: str) -> Settings | None:

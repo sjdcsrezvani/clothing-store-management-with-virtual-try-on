@@ -473,6 +473,51 @@ def admin_action_tone(action: str) -> str:
         return "danger"
     return ""
 
+
+# ── Audit target links ────────────────────────────────────────────────────
+
+# Record types with an owner-readable detail page, as (Persian noun, URL
+# template). Anything absent here — ambiguous ids (payment), list-only pages
+# (checks, expenses), settings — renders as plain text, never a hopeful 404.
+ADMIN_TARGET_LINKS = {
+    "sale": ("فاکتور", "/admin/invoice/{id}"),
+    "staff_user": ("کاربر", "/admin/staff/{id}"),
+    "customer": ("مشتری", "/admin/customers/{id}"),
+    "campaign": ("کمپین", "/admin/campaigns/{id}"),
+    "salary_payment": ("فیش حقوق", "/admin/payroll/{id}/receipt"),
+    "variant": ("تنوع", "/admin/variants/{id}/edit"),
+    "sms_template": ("قالب پیامک", "/admin/sms/templates/{id}/edit"),
+    "cash_session": ("صندوق", "/admin/cashbox/sessions/{id}"),
+    "purchase": ("خرید", "/admin/purchases/{id}"),
+}
+
+
+def admin_target_link(target_type: str | None, target_id: int | None) -> tuple[str, str] | None:
+    """(URL, link text) for an audit row's record, or None when unmappable."""
+    if not target_type or target_id is None:
+        return None
+    entry = ADMIN_TARGET_LINKS.get(str(target_type))
+    if entry is None:
+        return None
+    noun, template = entry
+    return (template.format(id=target_id), f"{noun} #{target_id}")
+
+
+def admin_log_diff(before_json: str | None, after_json: str | None) -> tuple[str, str] | None:
+    """(before, after) pretty text for the change dialog, or None if neither."""
+    if not before_json and not after_json:
+        return None
+
+    def _pretty(raw: str | None) -> str:
+        if not raw:
+            return "—"
+        try:
+            return json.dumps(json.loads(raw), ensure_ascii=False, indent=2)
+        except (ValueError, TypeError):
+            return str(raw)
+
+    return (_pretty(before_json), _pretty(after_json))
+
 # ── CSRF protection ───────────────────────────────────────────────────────────
 
 # /api/* endpoints are protected by the API token (or admin session), not CSRF,

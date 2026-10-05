@@ -689,6 +689,7 @@ NOT_A_PAGE: dict[str, str] = {
     "/admin/products/export": "the فهرست محصولات export is a CSV of the filtered list",
     "/admin/customers/export": "the فهرست مشتریان export is a CSV of the filtered list",
     "/admin/staff/export": "the staff-directory export is a CSV of the personnel file",
+    "/admin/logs/export": "the audit-trail export is a CSV of the filtered rows",
     "/admin/payroll/export": "the payroll export is a CSV of the salary ledger",
     "/admin/backups/download": "the download is the backup file itself",
     "/admin/try-on/download": "the try-on engine answers with its own response",

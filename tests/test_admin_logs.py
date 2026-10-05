@@ -90,3 +90,56 @@ def test_staff_timeline_uses_shared_labels(client, db_session):
          target_type="staff_user", target_id=owner.id)
     page = client.get(f"/admin/staff/{owner.id}?tab=history").text
     assert "ویرایش پرونده" in page
+
+
+def test_day_groups_and_relative_time(client, db_session):
+    _owner_client(client, db_session, name="logs-owner-days")
+    db_session.query(AdminLog).delete()
+    db_session.commit()
+    now = datetime.now(timezone.utc)
+    _log(db_session, "login", "ردیف امروز", created_at=now - timedelta(minutes=5))
+    _log(db_session, "logout", "ردیف دیروز", created_at=now - timedelta(days=1, hours=1))
+    page = client.get("/admin/logs").text
+    assert "امروز" in page and "دیروز" in page
+    assert "دقیقه پیش" in page  # relative tail under the fresh stamp
+
+
+def test_target_links_ip_truncation_and_diff_dialog(client, db_session):
+    owner, _ = _owner_client(client, db_session, name="logs-owner-links")
+    row = _log(db_session, "refund", "x" * 120, user=owner,
+               target_type="sale", target_id=7,
+               before_json='{"a": 1}', after_json='{"a": 2}')
+    row.ip_address = "1.2.3.4"
+    db_session.commit()
+    page = client.get("/admin/logs").text
+    assert 'href="/admin/invoice/7"' in page and "فاکتور #7" in page
+    assert "1.2.3.4" in page
+    assert "<details" in page and "تغییرات" in page  # long detail + diff button
+    assert f'id="logdiff-{row.id}"' in page and "data-dialog" in page
+    assert "&#34;a&#34;: 1" in page  # pretty JSON, still HTML-escaped
+
+
+def test_unmapped_targets_stay_plain(client, db_session):
+    _owner_client(client, db_session, name="logs-owner-plain")
+    _log(db_session, "payment_reverse", "برگشت مبهم",
+         target_type="payment", target_id=3)  # ambiguous: never linked
+    page = client.get("/admin/logs").text
+    assert "برگشت مبهم" in page
+    assert "/admin/invoice/3" not in page and "payment" not in page.replace(
+        "payment_reverse", "")
+
+
+def test_csv_export_matches_filtered_screen(client, db_session):
+    _owner_client(client, db_session, name="logs-owner-csv")
+    _log(db_session, "logout", "ردیف فایل")
+    _log(db_session, "login", "ردیف بیرون")
+    res = client.get("/admin/logs/export?action=logout")
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("text/csv")
+    body = res.content.decode("utf-8-sig")
+    assert body.splitlines()[0] == "زمان,عملیات,کننده,پیوند,آی‌پی,جزئیات"
+    assert "ردیف فایل" in body and "خروج" in body
+    assert "ردیف بیرون" not in body
+    page = client.get("/admin/logs?action=logout").text
+    assert "export%3Faction%3Dlogout" not in page  # sanity: link is plain
+    assert "/admin/logs/export?action=logout" in page

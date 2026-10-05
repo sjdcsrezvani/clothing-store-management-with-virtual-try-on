@@ -72,6 +72,52 @@ def parse_jalali_input_end(value: str) -> datetime | None:
     return dt.replace(hour=23, minute=59, second=59)
 
 
+def rel_time(value: datetime | None) -> str:
+    """How long ago, in the shop's reading voice: «۳ ساعت پیش».
+
+    Empty past a week — there the absolute stamp carries the meaning and a
+    relative tail would be noise. Future or missing timestamps read blank.
+    """
+    if value is None:
+        return ""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    seconds = (datetime.now(timezone.utc) - value).total_seconds()
+    if seconds < 0:
+        return ""
+    if seconds < 3600:
+        minutes = int(seconds // 60)
+        return "لحظاتی پیش" if minutes < 1 else f"{_to_persian_digits(str(minutes))} دقیقه پیش"
+    if seconds < 86400:
+        return f"{_to_persian_digits(str(int(seconds // 3600)))} ساعت پیش"
+    if seconds < 172800:
+        return "دیروز"
+    if seconds < 7 * 86400:
+        return f"{_to_persian_digits(str(int(seconds // 86400)))} روز پیش"
+    return ""
+
+
+def jalali_day_label(value: datetime | None) -> tuple[str, str]:
+    """Group key + heading for one timestamp: امروز / دیروز / the Jalali date.
+
+    Keyed on the same UTC→Jalali conversion `jalali_str` paints, so a row
+    never groups under a day its own stamp disagrees with.
+    """
+    if value is None:
+        return ("", "")
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    stamp = jdatetime.datetime.fromtimestamp(value.timestamp())
+    today = jdatetime.datetime.fromtimestamp(datetime.now(timezone.utc).timestamp())
+    delta = (today.date() - stamp.date()).days
+    key = stamp.strftime("%Y/%m/%d")
+    if delta == 0:
+        return (key, "امروز")
+    if delta == 1:
+        return (key, "دیروز")
+    return (key, _to_persian_digits(key))
+
+
 # Jalali years never reach 1900, so a form value starting with one can only be a
 # Gregorian ISO date. Without this check ``parse_jalali_input('2026-09-12')``
 # happily reads 2026 as a Jalali year and returns the year 2647.
