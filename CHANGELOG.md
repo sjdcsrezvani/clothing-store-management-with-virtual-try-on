@@ -1,3 +1,105 @@
+## 2.8.6 — 1405/07/14 (2026-10-06)
+
+### دفتر فروش، پاسخ‌گو: the ledger answers a question, not a scroll
+
+- **The filters are the questions a manager asks.** «روش پرداخت» narrows the
+  list to کارت، نقد، نسیه or ترکیبی and «وضعیت» to the invoices still
+  standing or the ones already voided. Both ride the same GET as the search
+  box and the sort, so a filtered page stays filtered through the next page,
+  the next sort and the next per-page count.
+- **A page holds ten, twenty-five or fifty invoices.** The picker submits
+  itself, and the number travels in every link — sorting or paging never
+  quietly resets the page size the shop chose.
+- **A voided invoice says so, and says why.** The row wears «ابطال شد» with
+  its reason on hover, and the empty state offers the way back to the whole
+  ledger instead of a table with nothing in it.
+- **The ledger lost its emoji.** The columns are named in words — شماره،
+  مشتری، تاریخ، تخفیف، وضعیت، عملیات — and on a phone the same table
+  stacks into one card per invoice, labels and all.
+
+### صندوق، یک نفس تا فاکتور: the money screen reads as one flow
+
+- **A basket row steps up and down in place.** The stepper beside a row
+  changes its quantity against the stock actually on hand and refuses to
+  take the row past it; stepping below one removes the row, so one control
+  replaced two.
+- **The hero got out of the way.** The customer card shrank to a line and
+  the discount card folded into itself, so the space a walk-in till spends
+  on chrome belongs to the basket instead.
+- **The three steps light as they happen.** روش پرداخت، تأیید مبلغ and
+  صدور فاکتور each mark themselves done as the sale advances, and a
+  «آخرین:» strip under the scan box names the item that just landed, with a
+  short tone so the cashier hears it without looking away from the shelf.
+- **The change is always on screen.** The received-cash calculator used to
+  hide itself unless نقد was chosen; it now shows the باقی‌مانده for
+  whatever was tendered, whichever way the rest of the bill is paid.
+- **And the till lost its emoji too.** Labels, notices and statuses are
+  words, and the terminal indicator is a plain dot that takes its colour
+  from the palette — so it reads in all eleven of them.
+
+### پرداخت ترکیبی: cash and card on one invoice
+
+- **Split tender.** A sale can take نقدی X plus کارتی Y on the same فاکتور.
+  Both legs are printed on the invoice, the جمع must equal the مبلغ نهایی
+  exactly, and نسیه has no share in it — debt does not divide.
+- **Only the card leg goes to the terminal.** «ارسال مبلغ به کارت‌خوان»
+  sends the card leg's amount, the approval binds that amount, and the
+  confirm re-checks the posted legs against the draft — so a stale draft
+  cannot smuggle a different figure past the gate. One button now finishes a
+  card sale: it sends, waits for the approval, and completes.
+- **The drawer counts the cash leg and nothing else.** A split sale's cash
+  leg joins the till figures while its card leg stays out, exactly as if the
+  two halves had been rung up separately, and a refund takes back the cash
+  leg and tags the drawer with it. The ledger، فاکتور and the payment mix
+  call the whole thing «ترکیبی».
+- **Another customer can take the basket over.** «تعویض مشتری» hands the
+  live basket to a number that is already registered — the discounts
+  re-resolve on the server and the basket never moves — and an unregistered
+  number is refused on the same page it was typed on.
+- **A till left mid-sale gives the sale back.** فروش‌های نیمه‌تمام lists
+  this cashier's own unexpired drafts with their customer, item count and
+  total, and «ادامه» reopens the basket, the codes and the split editor
+  where they were left.
+
+### فاکتور ۸۰ میلی‌متری: the invoice prints on a thermal roll
+
+- **The paper knows its roll.** The print sheet sets its own page margins,
+  turns the row separators into dashed rules, keeps every item whole across
+  a page break, and sizes the summary and the footer for a till receipt.
+- **The shop signs its own paper.** A heading carries the shop's name and
+  the invoice number onto the printed page alone, so a receipt torn off the
+  roll still says where it came from.
+- **Split legs print under the method.** نقدی and کارتی appear as their own
+  lines with their amounts, and the screen-only chrome — alerts, the profit
+  meter, the toaster — never reaches the paper.
+
+### مهاجرت ۳۳، و چیزهایی که سر راه درست شد: what the database keeps
+
+- **Revision 33 is split-tender's.** `sale_payment_parts` holds the legs of
+  a split sale, both روش پرداخت CHECKs widened to admit `split`, and a
+  draft's legs live on the draft as JSON until it commits. The two tables
+  the revision rebuilds are rebuilt with foreign keys off — set outside any
+  transaction, restored on the way out — and `foreign_key_check` has to come
+  back empty before the version is written.
+- **A boot that dies mid-rebuild boots again.** A staging table left beside
+  a live `sales` is a partial copy and is redone; a staging table with
+  `sales` gone is a finished copy the rename never claimed, and is claimed.
+- **An upgraded shop wears the schema a fresh install gets.** SQLite drops a
+  table's indexes along with the table, so the primary-key indexes of the
+  rebuilt tables are re-created by name: a database that migrated and one
+  created today now answer to the same index list, and a gate reads both
+  lists and holds them together.
+- **Every control on the money screen answers.** A duplicated block had left
+  the till's own script unparseable, so the payment UI, the terminal walk
+  and the split editor rendered but never responded. The script parses
+  again, and the stepper's hover reads in the derived ink rather than in the
+  raw brand hue.
+
+**Schema change.** Revision 33 — a new `sale_payment_parts` table, a widened
+روش پرداخت CHECK on `sales` and on `checkout_sessions`, and `split_json` on an
+open draft. Every existing row keeps its id through the rebuild, so the seven
+tables pointing at `sales` go on pointing at the same invoices.
+
 ## 2.8.5 — 1405/07/14 (2026-10-05)
 
 ### تنظیمات، بخش‌بخش: the settings page stops being one long page
