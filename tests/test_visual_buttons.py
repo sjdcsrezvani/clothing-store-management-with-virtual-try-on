@@ -232,7 +232,13 @@ def _worst_label_on_fill(png: Path, rect: dict) -> tuple[float, str, str, int]:
     width, height = _read_png_size(data)
     pixels = _crop_viewport(_decode_png(data), rect)
     height, width = len(pixels), len(pixels[0])
-    assert width > 40 and height > 16, f"{png.name}: not a rendered button ({width}x{height})"
+    # The payment options are bare text spans — the chip's padding lives on the
+    # label around them — and since the till's labels stopped wearing an emoji
+    # nothing pads them out: `نقد` measures 19px wide, `کارت` 27. The floor
+    # only has to say "this is a painted control, not a sliver of one", so it
+    # sits under the narrowest option rather than under the width the emoji
+    # used to add.
+    assert width >= 16 and height > 16, f"{png.name}: not a rendered button ({width}x{height})"
 
     band = Counter()
     for y in range(height // 4, 3 * height // 4):
