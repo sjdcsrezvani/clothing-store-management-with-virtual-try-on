@@ -207,3 +207,79 @@ def test_code39_strip_shape():
     assert svg.count("<rect") == code39_svg(7).count("<rect")
     assert code39_svg("12").count("<rect") > code39_svg("").count("<rect")
     assert code39_svg("12a").count("<rect") == code39_svg("12").count("<rect")  # junk skipped
+
+
+def _fake_sale(**over):
+    from types import SimpleNamespace
+    base = dict(id=99, total_amount=200_000, discount_amount=0, discount_details=None,
+                final_amount=200_000, payment_method="cash", credit_surcharge=0,
+                credit_due_date=None, is_refunded=False, refund_reason=None)
+    base.update(over)
+    return SimpleNamespace(**base)
+
+
+def _fake_item(name="شلوار", qty=2, unit=100_000):
+    from types import SimpleNamespace
+    return SimpleNamespace(unit_price=unit, quantity=qty, total_price=unit * qty,
+                           variant=None, product=SimpleNamespace(name=name))
+
+
+def test_payment_label_single_table():
+    from services.invoice import payment_label
+    assert payment_label("card") == "کارت"
+    assert payment_label("cash") == "نقد"
+    assert payment_label("credit") == "نسیه"
+    assert payment_label("split") == "ترکیبی"
+    assert payment_label("bitcoin") == "نقد"  # unknown never leaks a code
+
+
+def test_invoice_pdf_generate_once_and_reuse(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)  # invoices land in scratch, not the repo
+    from services.invoice import generate_invoice_pdf
+    sale, items = _fake_sale(), [_fake_item()]
+    first = generate_invoice_pdf(sale, None, items)
+    assert first == "/static/uploads/invoices/invoice_99.pdf"
+    second = generate_invoice_pdf(sale, None, items)
+    assert second == first  # revisit reuses — no timestamped stacking
+    voided = generate_invoice_pdf(_fake_sale(is_refunded=True), None, items)
+    assert voided == "/static/uploads/invoices/invoice_99_void.pdf"
+
+
+def test_invoice_pdf_parity_matrix_no_crash(tmp_path, monkeypatch):
+    """Split legs, credit file, void stamp, discount lines, long baskets,
+    anonymous buyers — the PDF must survive every shape the HTML can show."""
+    monkeypatch.chdir(tmp_path)
+    from types import SimpleNamespace
+    from services.invoice import generate_invoice_pdf
+    parts = [SimpleNamespace(method="cash", amount=60_000),
+             SimpleNamespace(method="card", amount=120_000)]
+    from datetime import datetime
+    cases = [
+        _fake_sale(id=1, payment_method="split"),
+        _fake_sale(id=2, payment_method="credit", credit_surcharge=15_000,
+                   credit_due_date=datetime(2026, 12, 1),
+                   discount_amount=20_000, discount_details='["معرف"]'),
+        _fake_sale(id=3, is_refunded=True, refund_reason="اشتباه"),
+        _fake_sale(id=4, discount_amount=5_000, discount_details=["معرف", "نقدی"]),
+        _fake_sale(id=5),
+    ]
+    customer = SimpleNamespace(first_name="مشتری", last_name="آزمایشی", phone="09120000003")
+    for sale in cases:
+        path = generate_invoice_pdf(
+            sale, customer if sale.id != 5 else None, [_fake_item()] * (30 if sale.id == 5 else 1),
+            store={"address": "تهران", "phone": "021-1"}, cashier_name="سارا",
+            credit_remaining=300_000, footer_note="متن پایین",
+            payment_parts=parts if sale.payment_method == "split" else ())
+        assert path and path.startswith("/static/uploads/invoices/invoice_")
+
+
+def test_invoice_page_links_reused_pdf(client, db_session):
+    from datetime import datetime
+    from tests.test_tables import _login
+    from models import Sale
+    _login(client)
+    db_session.add(Sale(id=51, total_amount=50_000, final_amount=50_000,
+                        payment_method="cash", payment_confirmed=True))
+    db_session.commit()
+    page = client.get("/sales/invoice/51").text
+    assert "/static/uploads/invoices/invoice_51.pdf" in page  # fixed name, reused

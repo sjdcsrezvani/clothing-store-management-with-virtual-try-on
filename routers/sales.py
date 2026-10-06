@@ -40,7 +40,8 @@ from services.tier import (
     update_customer_after_purchase, get_tier_config, check_tier_upgrade,
     tier_up_marker_key, TIER_RANK,
 )
-from services.invoice import generate_invoice_text, generate_invoice_pdf
+from services.invoice import generate_invoice_pdf
+from services.store import get_store
 from services.barcode import code39_svg
 from services.events import append_event
 from services.pos_terminal import (
@@ -1486,8 +1487,13 @@ async def sales_confirm(
 
     footer_note = db.query(Settings).filter(
         Settings.key == "receipt_footer_note").first()
-    invoice_path = generate_invoice_pdf(sale, customer, sale_items)
-    invoice_text = generate_invoice_text(sale, customer, sale_items)
+    footer_text = (footer_note.value or "") if footer_note else ""
+    receipt = _sale_receipt_extras(db, sale)
+    invoice_path = generate_invoice_pdf(
+        sale, customer, sale_items, store=get_store(db),
+        cashier_name=receipt["cashier_name"],
+        credit_remaining=sale_remaining(sale),
+        footer_note=footer_text, payment_parts=sale.payment_parts)
 
     return templates.TemplateResponse(request, "sales/invoice.html", {
         "sale": sale,
@@ -1495,14 +1501,13 @@ async def sales_confirm(
         "items": sale_items,
         "discounts": discounts,
         "invoice_path": invoice_path,
-        "invoice_text": invoice_text,
         "credit_remaining": sale_remaining(sale),
-        "receipt_footer_note": (footer_note.value or "") if footer_note else "",
+        "receipt_footer_note": footer_text,
         "fmt": fmt,
         "jalali_str": jalali_str,
         "points_earned": points_earned,
         "can_refund": effective_cap(guard, "can_refund"),
-        **_sale_receipt_extras(db, sale),
+        **receipt,
     })
 
 
@@ -1525,8 +1530,13 @@ async def sales_invoice_view(sale_id: int, request: Request, db: Session = Depen
 
     footer_note = db.query(Settings).filter(
         Settings.key == "receipt_footer_note").first()
-    invoice_path = generate_invoice_pdf(sale, customer, items)
-    invoice_text = generate_invoice_text(sale, customer, items)
+    footer_text = (footer_note.value or "") if footer_note else ""
+    receipt = _sale_receipt_extras(db, sale)
+    invoice_path = generate_invoice_pdf(
+        sale, customer, items, store=get_store(db),
+        cashier_name=receipt["cashier_name"],
+        credit_remaining=sale_remaining(sale),
+        footer_note=footer_text, payment_parts=sale.payment_parts)
 
     discounts = {}
     if sale.discount_amount > 0 and sale.discount_details:
@@ -1541,14 +1551,13 @@ async def sales_invoice_view(sale_id: int, request: Request, db: Session = Depen
         "items": items,
         "discounts": discounts,
         "invoice_path": invoice_path,
-        "invoice_text": invoice_text,
         "credit_remaining": sale_remaining(sale),
-        "receipt_footer_note": (footer_note.value or "") if footer_note else "",
+        "receipt_footer_note": footer_text,
         "fmt": fmt,
         "jalali_str": jalali_str,
         "points_earned": sale.points_earned,
         "can_refund": effective_cap(guard, "can_refund"),
-        **_sale_receipt_extras(db, sale),
+        **receipt,
     })
 
 
