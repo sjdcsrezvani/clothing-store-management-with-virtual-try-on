@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from database import get_db
 from models import (
-    Campaign, Customer, Product, ProductVariant, Sale, SaleItem, SaleCampaign,
+    Campaign, Customer, Product, ProductVariant, Sale, SaleItem, SaleCampaign, SalePaymentPart,
     Referral, Settings, POSTransaction, CheckoutSession, Refund, generate_referral_code, to_english_digits,
 )
 from services._common import (
@@ -56,7 +56,7 @@ from services.checkout import (
 
 POS_APPROVAL_SESSION_KEY = "pos_approval"
 POS_APPROVAL_MAX_AGE_SECONDS = 15 * 60
-ALLOWED_PAYMENT_METHODS = {"card", "cash", "credit"}
+ALLOWED_PAYMENT_METHODS = {"card", "cash", "credit", "split"}
 
 
 def _clear_pos_approval(request: Request) -> None:
@@ -184,6 +184,27 @@ def _discount_int(v: str) -> int:
         return 0
 
 
+def _parse_split_legs(cash_raw: str = "", card_raw: str = "") -> list:
+    """Split-tender legs from till inputs: [{"method", "amount"}].
+
+    [] means single-method — blanks and zeros are not legs, so an untouched
+    split editor changes nothing and a half-cleared one degrades instead of
+    inventing a one-leg "split".
+    """
+    legs = []
+    cash = _discount_int(cash_raw)
+    card = _discount_int(card_raw)
+    if cash > 0:
+        legs.append({"method": "cash", "amount": cash})
+    if card > 0:
+        legs.append({"method": "card", "amount": card})
+    return legs
+
+
+def _split_leg(legs: list, method: str) -> int:
+    return next((leg["amount"] for leg in legs if leg["method"] == method), 0)
+
+
 def _resolve_referrer(referrer_code: str, referrer_phone: str, db):
     """Resolve a referrer from referral code (preferred) or phone."""
     if referrer_code:
@@ -219,10 +240,16 @@ def _render_scan(request, customer, basket, total_amount, db,
                  referrer_code="", referrer_phone="",
                  use_referrer_discount="1", custom_discount_amount=0,
                  custom_discount_percent=0, campaign_code="",
+                 split_cash="", split_card="",
                  error=None, success=None, just_added=None):
     staff_id = request.session.get("staff_user_id")
     active_nonce = request.session.get("checkout_nonce")
     checkout = get_checkout(db, active_nonce) if active_nonce else None
+    # The split lives on the server-owned draft, echoed back for the editor —
+    # the till never trusts a sum it did not recompute at confirm time. An
+    # empty editor clears the draft; only an absent value leaves it alone.
+    split_legs = _parse_split_legs(split_cash, split_card)
+    split_stored = json.dumps(split_legs, ensure_ascii=False) if split_legs else ""
     if not checkout or checkout.staff_user_id != staff_id or checkout.state in {"completed", "expired", "payment_cancelled", "payment_declined"}:
         checkout = create_checkout(
             db,
@@ -231,6 +258,7 @@ def _render_scan(request, customer, basket, total_amount, db,
             basket_json=json.dumps(basket, ensure_ascii=False),
             payment_method="card",
         )
+        checkout.split_json = split_stored or None
         request.session["checkout_nonce"] = checkout.checkout_nonce
     else:
         update_checkout_options(
@@ -239,6 +267,7 @@ def _render_scan(request, customer, basket, total_amount, db,
             basket_json=json.dumps(basket, ensure_ascii=False),
             payment_method="card",
             campaign_code=campaign_code,
+            split_json=split_stored,
         )
         db.commit()
     # The typed code lives on the server-owned draft, so the amount recomputed
@@ -335,6 +364,9 @@ def _render_scan(request, customer, basket, total_amount, db,
         # actually grant one; the POSTs enforce the same capability.
         "can_discount": effective_cap(current_staff_user(db, request), "can_discount"),
         "just_added": just_added,
+        "split_cash": split_cash,
+        "split_card": split_card,
+        "split_legs": split_legs,
     })
 
 
@@ -346,7 +378,7 @@ async def sales_list(request: Request, search: str = "", page: str = "1",
     if not hasattr(guard, "role"):
         return guard
     page = page_arg(page)
-    if method not in ("card", "cash", "credit"):
+    if method not in ("card", "cash", "credit", "split"):
         method = "all"
     if refunded not in ("yes", "no"):
         refunded = "all"
@@ -411,6 +443,30 @@ async def sales_new(request: Request, db: Session = Depends(get_db)):
     if pos_amount > 0:
         pos_hint = {"amount": pos_amount,
                     "reference": (request.query_params.get("pos_reference") or "").strip()[:100] or None}
+    # Abandoned drafts of this cashier, newest first — a till left mid-sale
+    # resumes instead of restarting. Expired and finished rows never list.
+    now = datetime.now(timezone.utc)
+    drafts = db.query(CheckoutSession).filter(
+        CheckoutSession.staff_user_id == guard.id,
+        CheckoutSession.state.in_(("draft", "reserved")),
+        CheckoutSession.expires_at > now,
+    ).order_by(CheckoutSession.id.desc()).limit(10).all()
+    draft_rows = []
+    for draft in drafts:
+        try:
+            items = json.loads(draft.basket_json or "[]")
+        except (TypeError, ValueError):
+            items = []
+        if not items:
+            continue
+        owner = db.query(Customer).filter(Customer.id == draft.customer_id).first() if draft.customer_id else None
+        draft_rows.append({
+            "nonce": draft.checkout_nonce,
+            "count": len(items),
+            "total": sum(int(it.get("total_price") or 0) for it in items),
+            "who": owner.phone if owner else "ناشناس",
+            "when": jalali_str(draft.created_at, False),
+        })
     return templates.TemplateResponse(request, "sales/checkout.html", {
         "step": "customer",
         "basket": [],
@@ -418,6 +474,7 @@ async def sales_new(request: Request, db: Session = Depends(get_db)):
         "total_amount": 0,
         "customer": None,
         "pos_hint": pos_hint,
+        "drafts": draft_rows,
         "fmt": fmt,
     })
 
@@ -429,6 +486,99 @@ async def sales_skip_customer(request: Request, db: Session = Depends(get_db)):
     if not hasattr(guard, "role"):
         return guard
     return _render_scan(request, None, [], 0, db)
+
+
+@router.post("/swap-customer", response_class=HTMLResponse)
+async def sales_swap_customer(
+    request: Request,
+    phone: str = Form(""),
+    customer_id: int = Form(0),
+    basket_json: str = Form("[]"),
+    referrer_code: str = Form(""),
+    referrer_phone: str = Form(""),
+    use_referrer_discount: str = Form("1"),
+    custom_discount_amount: str = Form(""),
+    custom_discount_percent: str = Form(""),
+    campaign_code: str = Form(""),
+    split_cash: str = Form(""),
+    split_card: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Hand the live basket to another customer — discounts re-resolve.
+
+    The basket never moves through the swap itself; only the person does.
+    An unknown number keeps the old customer and says so on the same page.
+    """
+    guard = require_html_role(request, db, "cashier")
+    if not hasattr(guard, "role"):
+        return guard
+    customer = _resolve_customer(customer_id, db)
+    basket = json.loads(basket_json or "[]")
+    total_amount = sum(int(item.get("total_price") or 0) for item in basket)
+    phone = to_english_digits(phone.strip())
+
+    def _scan(error: str | None = None):
+        return _render_scan(
+            request, customer, basket, total_amount, db,
+            referrer_code=referrer_code,
+            referrer_phone=referrer_phone,
+            use_referrer_discount=use_referrer_discount,
+            custom_discount_amount=_discount_int(custom_discount_amount),
+            custom_discount_percent=_discount_int(custom_discount_percent),
+            campaign_code=campaign_code,
+            split_cash=split_cash,
+            split_card=split_card,
+            error=error,
+        )
+
+    if not phone or not phone.startswith("09") or len(phone) != 11:
+        return _scan(error="شماره موبایل نامعتبر است.")
+    new_customer = db.query(Customer).filter(Customer.phone == phone).first()
+    if new_customer is None:
+        return _scan(error="این شماره ثبت نیست — مشتری دیگر را وارد کنید یا فروش را از اول با شماره جدید شروع کنید.")
+    customer = new_customer
+    return _scan()
+
+
+@router.post("/resume-draft", response_class=HTMLResponse)
+async def sales_resume_draft(
+    request: Request,
+    nonce: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Reopen an abandoned draft of this cashier — basket, customer, codes."""
+    guard = require_html_role(request, db, "cashier")
+    if not hasattr(guard, "role"):
+        return guard
+    draft = get_checkout(db, nonce) if nonce else None
+    if (draft is None or draft.staff_user_id != guard.id
+            or draft.state not in ("draft", "reserved")):
+        return RedirectResponse(url="/sales/new", status_code=303)
+    request.session["checkout_nonce"] = draft.checkout_nonce
+    customer = _resolve_customer(draft.customer_id or 0, db)
+    try:
+        basket = json.loads(draft.basket_json or "[]")
+    except (TypeError, ValueError):
+        basket = []
+    total_amount = sum(int(item.get("total_price") or 0) for item in basket)
+    legs = []
+    try:
+        for leg in json.loads(draft.split_json or "[]"):
+            legs.append({"method": leg.get("method"),
+                         "amount": int(leg.get("amount") or 0)})
+    except (TypeError, ValueError):
+        legs = []
+    return _render_scan(
+        request, customer, basket, total_amount, db,
+        referrer_code=draft.referrer_code or "",
+        referrer_phone=draft.referrer_phone or "",
+        use_referrer_discount="1" if draft.use_referrer_discount else "0",
+        custom_discount_amount=draft.custom_discount_amount or 0,
+        custom_discount_percent=draft.custom_discount_percent or 0,
+        campaign_code=draft.campaign_code or "",
+        split_cash=str(_split_leg(legs, "cash") or ""),
+        split_card=str(_split_leg(legs, "card") or ""),
+    )
 
 
 @router.post("/lookup-customer", response_class=HTMLResponse)
@@ -528,6 +678,8 @@ async def sales_apply_discount(
     custom_discount_amount: str = Form(""),
     custom_discount_percent: str = Form(""),
     campaign_code: str = Form(""),
+    split_cash: str = Form(""),
+    split_card: str = Form(""),
     db: Session = Depends(get_db),
 ):
     guard = require_html_role(request, db, "cashier")
@@ -549,6 +701,8 @@ async def sales_apply_discount(
             custom_discount_amount=0,
             custom_discount_percent=0,
             campaign_code=campaign_code,
+            split_cash=split_cash,
+            split_card=split_card,
             error=limit_error,
         )
 
@@ -560,6 +714,8 @@ async def sales_apply_discount(
         custom_discount_amount=_discount_int(custom_discount_amount),
         custom_discount_percent=_discount_int(custom_discount_percent),
         campaign_code=campaign_code,
+        split_cash=split_cash,
+        split_card=split_card,
     )
 
 
@@ -575,6 +731,8 @@ async def sales_add_to_basket(
     custom_discount_amount: str = Form(""),
     custom_discount_percent: str = Form(""),
     campaign_code: str = Form(""),
+    split_cash: str = Form(""),
+    split_card: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """Add a product to the basket by barcode - looks up variant."""
@@ -594,6 +752,8 @@ async def sales_add_to_basket(
             custom_discount_amount=_discount_int(custom_discount_amount),
             custom_discount_percent=_discount_int(custom_discount_percent),
             campaign_code=campaign_code,
+            split_cash=split_cash,
+            split_card=split_card,
             error=error,
             success=success,
             just_added=just_added,
@@ -648,6 +808,8 @@ async def sales_remove_from_basket(
     custom_discount_amount: str = Form(""),
     custom_discount_percent: str = Form(""),
     campaign_code: str = Form(""),
+    split_cash: str = Form(""),
+    split_card: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """Remove a variant from the basket."""
@@ -664,6 +826,8 @@ async def sales_remove_from_basket(
         custom_discount_amount=_discount_int(custom_discount_amount),
         custom_discount_percent=_discount_int(custom_discount_percent),
         campaign_code=campaign_code,
+        split_cash=split_cash,
+        split_card=split_card,
     )
 
 
@@ -680,6 +844,8 @@ async def sales_set_quantity(
     custom_discount_amount: str = Form(""),
     custom_discount_percent: str = Form(""),
     campaign_code: str = Form(""),
+    split_cash: str = Form(""),
+    split_card: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """Step a basket row's quantity up or down, clamped to stock on hand.
@@ -701,6 +867,8 @@ async def sales_set_quantity(
             custom_discount_amount=_discount_int(custom_discount_amount),
             custom_discount_percent=_discount_int(custom_discount_percent),
             campaign_code=campaign_code,
+            split_cash=split_cash,
+            split_card=split_card,
             error=error,
         )
 
@@ -778,6 +946,18 @@ async def sales_send_to_terminal(
             db.rollback()
             raise HTTPException(status_code=409, detail="موجودی تغییر کرده است؛ لطفاً دوباره تلاش کنید.") from error
     amount = int(checkout.final_amount)
+    # A split invoice sends only its card leg to the terminal — the cash leg
+    # never leaves the drawer. The approval binds this amount, and confirm
+    # re-checks it against the posted legs, so a stale draft cannot smuggle
+    # a different figure past the gate.
+    try:
+        draft_legs = json.loads(checkout.split_json or "[]")
+    except (TypeError, ValueError):
+        draft_legs = []
+    card_leg = next((int(leg.get("amount", 0)) for leg in draft_legs
+                     if leg.get("method") == "card"), 0)
+    if card_leg > 0:
+        amount = card_leg
     if amount <= 0:
         raise HTTPException(status_code=400, detail="مبلغ نهایی نامعتبر است.")
 
@@ -936,6 +1116,8 @@ async def sales_confirm(
     custom_discount_amount: str = Form(""),
     custom_discount_percent: str = Form(""),
     campaign_code: str = Form(""),
+    split_cash: str = Form(""),
+    split_card: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """Confirm and complete the sale.
@@ -955,6 +1137,8 @@ async def sales_confirm(
         _discount_int(custom_discount_percent))
     if not allowed:
         return _render_scan(request, None, [], 0, db, campaign_code=campaign_code,
+            split_cash=split_cash,
+            split_card=split_card,
                             error=limit_error)
 
     checkout = get_checkout(db, checkout_nonce) if checkout_nonce else None
@@ -1014,6 +1198,8 @@ async def sales_confirm(
     except InsufficientStockError as error:
         db.rollback()
         return _render_scan(request, customer, [], 0, db, campaign_code=campaign_code,
+            split_cash=split_cash,
+            split_card=split_card,
                             error="موجودی تغییر کرده است؛ لطفاً دوباره تلاش کنید.")
     basket = checkout_data["basket"]
     total_amount = checkout_data["total_amount"]
@@ -1025,6 +1211,8 @@ async def sales_confirm(
 
     if payment_method == "credit" and customer is None:
         return _render_scan(request, customer, [], 0, db, campaign_code=campaign_code,
+            split_cash=split_cash,
+            split_card=split_card,
                             error="فروش نسیه فقط برای مشتری ثبت‌شده ممکن است — ابتدا شماره مشتری را جستجو کنید.")
 
     # Referral rewards are applied only after the sale commits.
@@ -1035,13 +1223,52 @@ async def sales_confirm(
     credit_surcharge = checkout_data["credit_surcharge"]
     final_amount = checkout_data["final_amount"]
 
+    # Split tender: cash X plus card Y on one invoice, no credit leg — debt
+    # and due dates do not divide. Both legs are re-derived here from the
+    # posted inputs and must add up to the finalized total exactly.
+    split_legs = []
+    if payment_method == "split":
+        split_legs = _parse_split_legs(split_cash, split_card)
+        cash_leg = _split_leg(split_legs, "cash")
+        card_leg = _split_leg(split_legs, "card")
+        if not cash_leg or not card_leg:
+            return _render_scan(
+                request, customer, basket, total_amount, db,
+                referrer_code=referrer_code,
+                referrer_phone=referrer_phone,
+                use_referrer_discount=use_referrer_discount,
+                custom_discount_amount=_discount_int(custom_discount_amount),
+                custom_discount_percent=_discount_int(custom_discount_percent),
+                campaign_code=campaign_code,
+                split_cash=split_cash,
+                split_card=split_card,
+                error="تقسیم پرداخت باید دو مبلغ داشته باشد: نقدی و کارتی.",
+            )
+        if cash_leg + card_leg != final_amount:
+            return _render_scan(
+                request, customer, basket, total_amount, db,
+                referrer_code=referrer_code,
+                referrer_phone=referrer_phone,
+                use_referrer_discount=use_referrer_discount,
+                custom_discount_amount=_discount_int(custom_discount_amount),
+                custom_discount_percent=_discount_int(custom_discount_percent),
+                campaign_code=campaign_code,
+                split_cash=split_cash,
+                split_card=split_card,
+                error=f"جمع تقسیم ({fmt(cash_leg + card_leg)} تومان) با مبلغ نهایی ({fmt(final_amount)} تومان) نمی‌خواند.",
+            )
+    else:
+        cash_leg = final_amount if payment_method == "cash" else 0
+        card_leg = final_amount if payment_method == "card" else 0
+
     # Card sales must be backed by an approved response from the tested
     # Parsian protocol. Sending a payload or merely reaching the terminal is
-    # never enough to create a paid sale.
+    # never enough to create a paid sale. A split sale approves its card leg,
+    # never the whole invoice.
     approval = None
-    if payment_method == "card":
+    if card_leg:
         pos_config = get_terminal_config(db)
-        approval = _get_pos_approval(request, db, final_amount, pos_approval_token, checkout_nonce)
+        approval = _get_pos_approval(request, db, card_leg, pos_approval_token, checkout_nonce)
         if pos_config["configured"] and approval is None:
             return _render_scan(
                 request, customer, basket, total_amount, db,
@@ -1051,6 +1278,8 @@ async def sales_confirm(
                 custom_discount_amount=_discount_int(custom_discount_amount),
                 custom_discount_percent=_discount_int(custom_discount_percent),
                 campaign_code=campaign_code,
+                split_cash=split_cash,
+                split_card=split_card,
                 error="پرداخت کارت تأیید نشده است — ابتدا مبلغ را به کارت‌خوان ارسال کنید و نتیجه «تأیید شد» بگیرید.",
             )
 
@@ -1066,6 +1295,8 @@ async def sales_confirm(
                 custom_discount_amount=_discount_int(custom_discount_amount),
                 custom_discount_percent=_discount_int(custom_discount_percent),
                 campaign_code=campaign_code,
+            split_cash=split_cash,
+            split_card=split_card,
                 error=(f"سقف اعتبار این مشتری {fmt(limit)} تومان است و بدهی فعلی {fmt(customer.total_debt or 0)} تومان — "
                        f"این خرید ({fmt(final_amount)} تومان) از سقف رد می‌شود. روش پرداخت را عوض کنید یا سقف را بالا ببرید."),
             )
@@ -1075,7 +1306,8 @@ async def sales_confirm(
     # so the register had to guess the shift from a time window. The window is
     # still how older rows are counted — this is what future ones will say for
     # themselves.
-    drawer = open_cash_session(db) if payment_method == "cash" else None
+    drawer = open_cash_session(db) if (
+        payment_method == "cash" or (payment_method == "split" and cash_leg)) else None
     sale = Sale(
         customer_id=customer.id if customer else None,
         cash_session_id=drawer.id if drawer else None,
@@ -1084,7 +1316,7 @@ async def sales_confirm(
         discount_details=json.dumps(discounts["details"], ensure_ascii=False),
         final_amount=final_amount,
         payment_method=payment_method,
-        pos_transaction=approval if payment_method == "card" else None,
+        pos_transaction=approval if card_leg else None,
         payment_confirmed=True,
         credit_settled=False,
         credit_paid_amount=0,
@@ -1098,6 +1330,18 @@ async def sales_confirm(
         sale.credit_due_date = credit_due_date_for(db)
     db.add(sale)
     db.flush()
+
+    # Split legs persist beside their invoice: the drawer counts exactly the
+    # cash leg and the terminal owns the card leg's approval.
+    if payment_method == "split":
+        for leg in split_legs:
+            db.add(SalePaymentPart(
+                sale_id=sale.id,
+                method=leg["method"],
+                amount=leg["amount"],
+                pos_transaction_id=approval.id if leg["method"] == "card" and approval else None,
+            ))
+        db.flush()
 
     # نسیه: the customer now owes final_amount.
     if payment_method == "credit" and customer:
@@ -1122,6 +1366,8 @@ async def sales_confirm(
         except InsufficientStockError as error:
             db.rollback()
             return _render_scan(request, customer, [], 0, db, campaign_code=campaign_code,
+            split_cash=split_cash,
+            split_card=split_card,
                                 error="موجودی تغییر کرده است؛ لطفاً دوباره تلاش کنید.")
 
         db.add(SaleItem(
@@ -1322,7 +1568,11 @@ async def sale_refund(sale_id: int, request: Request, refund_reason: str = Form(
     sale.refund_reason = refund_reason if refund_reason else "ابطال فاکتور"
     sale.refund_date = datetime.now(timezone.utc)
     open_session = open_cash_session(db)
-    sale.cash_session_id = open_session.id if open_session and sale.payment_method == "cash" else None
+    # The drawer takes back what it received: the whole final for a cash
+    # sale, exactly the cash leg for a split one (the register counts legs).
+    has_cash_leg = sale.payment_method == "cash" or any(
+        part.method == "cash" for part in sale.payment_parts)
+    sale.cash_session_id = open_session.id if open_session and has_cash_leg else None
 
     # Restore stock to variants
     sale_items = db.query(SaleItem).filter(SaleItem.sale_id == sale.id).all()

@@ -128,6 +128,7 @@ def update_checkout_options(
     referrer_code: str = "",
     referrer_phone: str = "",
     campaign_code: str | None = None,
+    split_json: str | None = None,
 ) -> CheckoutSession:
     """Persist the current checkout inputs before calculating its amount.
 
@@ -145,6 +146,8 @@ def update_checkout_options(
     checkout.referrer_phone = (referrer_phone or "")[:20] or None
     if campaign_code is not None:
         checkout.campaign_code = (campaign_code or "")[:50] or None
+    if split_json is not None:
+        checkout.split_json = split_json or None
     db.flush()
     return checkout
 

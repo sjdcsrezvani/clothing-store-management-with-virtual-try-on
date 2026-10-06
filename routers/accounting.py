@@ -6,14 +6,14 @@ from urllib.parse import quote, quote_plus
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy import String, case, cast, func, literal, or_
+from sqlalchemy import String, case, cast, func, literal, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from database import get_db
 from models import (
     BusinessEvent, Customer, Expense, Payment, ProductVariant, Product, Purchase,
-    PurchaseItem, RecurringExpense, Sale, SaleItem, SalaryPayment, Settings, StaffUser, Supplier, StockMovement,
+    PurchaseItem, RecurringExpense, Sale, SaleItem, SalePaymentPart, SalaryPayment, Settings, StaffUser, Supplier, StockMovement,
     CashSession, CashSessionEntry, SupplierPayment, FinancialEntry, CheckRecord,
     CheckReminder, PaymentReversal, to_english_digits,
 )
@@ -3670,10 +3670,19 @@ async def admin_cashbox(
     # Card sales are not drawer math, so naming their total compromises no
     # count: the line exists because a cashier who has just taken cards all
     # morning otherwise goes looking for that money in the till figures.
+    # Split invoices contribute exactly their card leg, like the drawer
+    # counts exactly the cash one.
+    card_leg = select(func.coalesce(func.sum(SalePaymentPart.amount), 0)).where(
+        SalePaymentPart.sale_id == Sale.id,
+        SalePaymentPart.method == "card",
+    ).scalar_subquery()
     day_start = get_date_range("today")[0]
-    card_today = db.query(func.coalesce(func.sum(Sale.final_amount), 0)).filter(
+    card_today = db.query(func.coalesce(func.sum(case(
+        (Sale.payment_method == "card", Sale.final_amount),
+        else_=card_leg,
+    )), 0)).filter(
         Sale.payment_confirmed == True, Sale.is_refunded == False,  # noqa: E712
-        Sale.payment_method == "card", Sale.created_at >= day_start,
+        Sale.payment_method.in_(("card", "split")), Sale.created_at >= day_start,
     ).scalar() or 0
 
     return templates.TemplateResponse(request, "admin/cashbox.html", {

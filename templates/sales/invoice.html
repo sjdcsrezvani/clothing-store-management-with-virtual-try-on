@@ -65,8 +65,14 @@
         <div class="summary-row"><span>💳 روش پرداخت</span><span>
             {% if sale.payment_method == 'card' %}💳 کارت
             {% elif sale.payment_method == 'credit' %}📒 نسیه
+            {% elif sale.payment_method == 'split' %}ترکیبی
             {% else %}💵 نقد{% endif %}
         </span></div>
+        {% if sale.payment_method == 'split' %}
+        {% for part in sale.payment_parts %}
+        <div class="summary-row"><span>{% if part.method == 'cash' %}نقدی{% else %}کارتی{% endif %}</span><span class="tnum">{{ fmt(part.amount) }} تومان</span></div>
+        {% endfor %}
+        {% endif %}
         {% if sale.payment_method == 'credit' and customer %}
         <div class="summary-row attention">
             <span>📒 بدهی نسیه این فاکتور</span>

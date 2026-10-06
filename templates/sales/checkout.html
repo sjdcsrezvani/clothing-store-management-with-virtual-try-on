@@ -33,6 +33,19 @@
         {{ store.name }} — {{ store.tagline }}
     </div>
 </div>
+{% if drafts %}
+<div class="card">
+    <h3>فروش‌های نیمه‌تمام</h3>
+    <p class="muted">صندوقی که نصفه رها شده — ادامه‌اش از همان‌جا.</p>
+    {% for draft in drafts %}
+    <form method="post" action="/sales/resume-draft" class="draft-row">
+        <input type="hidden" name="nonce" value="{{ draft.nonce }}">
+        <span>{{ draft.who }} · {{ draft.count }} قلم · <strong class="tnum">{{ fmt(draft.total) }}</strong> تومان · <span class="muted">{{ draft.when }}</span></span>
+        <button type="submit" class="btn btn-sm btn-ghost">ادامه</button>
+    </form>
+    {% endfor %}
+</div>
+{% endif %}
 
 {% elif step == "create_customer" %}
 {# ─── STEP 2: New customer form ─── #}
@@ -94,6 +107,29 @@
                 </div>
                 {% endif %}
             </div>
+            {# Hand the live basket to another customer — discounts re-resolve
+               server-side; the basket itself never moves through the swap. #}
+            <details class="customer-swap">
+                <summary>تعویض مشتری</summary>
+                <form method="post" action="/sales/swap-customer" class="form-row">
+                    <input type="hidden" name="customer_id" value="{{ customer_id }}">
+                    <input type="hidden" name="basket_json" value="{{ basket_json }}">
+                    <input type="hidden" name="referrer_code" value="{{ referrer_code|default('') }}">
+                    <input type="hidden" name="referrer_phone" value="{{ referrer_phone|default('') }}">
+                    <input type="hidden" name="campaign_code" value="{{ campaign_code|default('') }}">
+                    <input type="hidden" name="use_referrer_discount" value="{{ '1' if use_referrer_discount == '1' else '0' }}">
+                    <input type="hidden" name="custom_discount_amount" value="{{ custom_discount_amount|default(0) }}">
+                    <input type="hidden" name="custom_discount_percent" value="{{ custom_discount_percent|default(0) }}">
+                    <input type="hidden" name="split_cash" value="{{ split_cash|default('') }}">
+                    <input type="hidden" name="split_card" value="{{ split_card|default('') }}">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label class="sr-only" for="swap-phone">شماره مشتری جدید</label>
+                        <input type="tel" id="swap-phone" name="phone" placeholder="09123456789"
+                               maxlength="11" inputmode="tel" dir="ltr" required>
+                    </div>
+                    <button type="submit" class="btn btn-ghost">جابه‌جا کن</button>
+                </form>
+            </details>
         </div>
         {% else %}
         <div class="customer-info-card card">
@@ -127,6 +163,8 @@
                 <input type="hidden" name="use_referrer_discount" value="{{ '1' if use_referrer_discount == '1' else '0' }}">
                 <input type="hidden" name="custom_discount_amount" value="{{ custom_discount_amount|default(0) }}">
                 <input type="hidden" name="custom_discount_percent" value="{{ custom_discount_percent|default(0) }}">
+                <input type="hidden" name="split_cash" value="{{ split_cash|default('') }}">
+                <input type="hidden" name="split_card" value="{{ split_card|default('') }}">
                 <div class="form-group t-input-wrap{% if error and step == 'scan' %} is-error{% endif %}" style="margin-bottom: 0;">
                     <input type="text" id="barcode-input" name="barcode" class="barcode-input t-input{% if error and step == 'scan' %} is-error{% endif %}"
                            placeholder="بارکد را اسکن کنید..." autofocus autocomplete="off"
@@ -259,6 +297,8 @@
                         <input type="hidden" name="use_referrer_discount" value="{{ '1' if use_referrer_discount == '1' else '0' }}">
                         <input type="hidden" name="custom_discount_amount" value="{{ custom_discount_amount|default(0) }}">
                         <input type="hidden" name="custom_discount_percent" value="{{ custom_discount_percent|default(0) }}">
+                        <input type="hidden" name="split_cash" value="{{ split_cash|default('') }}">
+                        <input type="hidden" name="split_card" value="{{ split_card|default('') }}">
                         <button type="submit" name="delta" value="-1" class="btn-step" aria-label="کم کردن {{ item.name }}">−</button>
                         <button type="submit" name="delta" value="1" class="btn-step" aria-label="زیاد کردن {{ item.name }}">+</button>
                     </form>
@@ -272,6 +312,8 @@
                         <input type="hidden" name="use_referrer_discount" value="{{ '1' if use_referrer_discount == '1' else '0' }}">
                         <input type="hidden" name="custom_discount_amount" value="{{ custom_discount_amount|default(0) }}">
                         <input type="hidden" name="custom_discount_percent" value="{{ custom_discount_percent|default(0) }}">
+                        <input type="hidden" name="split_cash" value="{{ split_cash|default('') }}">
+                        <input type="hidden" name="split_card" value="{{ split_card|default('') }}">
                         <button type="submit" class="btn-remove" title="حذف">✕</button>
                     </form>
                 </div>
@@ -310,6 +352,30 @@
                         <span>نسیه</span>
                     </label>
                     {% endif %}
+                    <label class="payment-option">
+                        <input type="radio" name="payment_method" value="split">
+                        <span>ترکیبی</span>
+                    </label>
+                </div>
+                {# Split tender: cash plus card on one invoice, no credit leg.
+                   The editor posts through the apply form (mirrors, like the
+                   manual discount); every other form carries hidden twins. #}
+                <div class="split-editor" id="split-editor" hidden>
+                    <div class="form-row">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label for="split-cash-input">نقدی (تومان)</label>
+                            <input type="text" inputmode="numeric" id="split-cash-input" name="split_cash" form="apply-discount-form"
+                                   value="{{ split_cash|default('') }}" placeholder="مثال: 200000"
+                                   oninput="setAll('split_cash', this.value)">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label for="split-card-input">کارتی (تومان)</label>
+                            <input type="text" inputmode="numeric" id="split-card-input" name="split_card" form="apply-discount-form"
+                                   value="{{ split_card|default('') }}" placeholder="مثال: 300000"
+                                   oninput="setAll('split_card', this.value)">
+                        </div>
+                    </div>
+                    <p class="muted">جمع دو مبلغ باید برابر مبلغ نهایی باشد؛ سهم کارتی با کارت‌خوان تأیید می‌شود.</p>
                 </div>
                 {% if customer %}
                 <div id="credit-note" class="credit-note" hidden>
@@ -366,6 +432,8 @@
                     <input type="hidden" name="use_referrer_discount" value="{{ '1' if use_referrer_discount == '1' else '0' }}">
                     <input type="hidden" name="custom_discount_amount" value="{{ custom_discount_amount|default(0) }}">
                     <input type="hidden" name="custom_discount_percent" value="{{ custom_discount_percent|default(0) }}">
+                    <input type="hidden" name="split_cash" value="{{ split_cash|default('') }}">
+                    <input type="hidden" name="split_card" value="{{ split_card|default('') }}">
                     <button type="submit" id="confirm-submit" class="btn btn-success btn-large btn-block btn-confirm">
                         تأیید پرداخت و صدور فاکتور
                     </button>
@@ -392,25 +460,40 @@ function updatePaymentUi() {
     var method = selected ? selected.value : 'card';
     var isCard = method === 'card';
     var isCredit = method === 'credit';
+    var isSplit = method === 'split';
     var approvalToken = document.getElementById('pos-approval-token');
     var terminalForm = document.getElementById('terminal-form');
     var terminalStep = document.getElementById('pay-step-terminal');
     var creditNote = document.getElementById('credit-note');
+    var splitEditor = document.getElementById('split-editor');
     var confirmButton = document.getElementById('confirm-submit');
     var paymentHidden = document.getElementById('payment_method_hidden');
     if (paymentHidden) paymentHidden.value = method;
-    if (terminalForm) terminalForm.style.display = isCard ? 'block' : 'none';
-    if (terminalStep) terminalStep.hidden = !isCard;
+    // The card leg of a split still travels through the terminal.
+    var terminalNeeded = isCard || isSplit;
+    if (terminalForm) terminalForm.style.display = terminalNeeded ? 'block' : 'none';
+    if (terminalStep) terminalStep.hidden = !terminalNeeded;
     if (creditNote) creditNote.hidden = !isCredit;
+    if (splitEditor) splitEditor.hidden = !isSplit;
     // Step 2 lights when the amount is settled: cash and credit settle by
-    // choice, card settles when the terminal approves.
+    // choice, card settles when the terminal approves (its leg in a split).
     var step2 = document.getElementById('timeline-step-2');
     var approved = !!(approvalToken && approvalToken.value);
     if (step2) {
-        var settled = !isCard || approved;
+        var settled = !terminalNeeded || approved;
         step2.classList.toggle('done', settled);
         step2.classList.toggle('active', !settled);
     }
+    if (confirmButton) {
+        var needsApproval = terminalNeeded && posRequiresApproval && !approved;
+        confirmButton.disabled = needsApproval;
+        confirmButton.textContent = needsApproval
+            ? (isSplit ? 'ابتدا سهم کارتی را در کارت‌خوان تأیید کنید'
+                       : 'ابتدا پرداخت کارت را در کارت‌خوان تأیید کنید')
+            : 'تأیید پرداخت و صدور فاکتور';
+    }
+    if (terminalNeeded) refreshTerminalStatus();
+}
     if (confirmButton) {
         var needsApproval = isCard && posRequiresApproval && !approved;
         confirmButton.disabled = needsApproval;
@@ -505,7 +588,40 @@ async function sendToTerminal(event) {
 
 updatePaymentUi();
 refreshTerminalStatus();
-setInterval(refreshTerminalStatus, 20000);
+
+// One button for card money: confirming without an approval sends to the
+// terminal first and completes when it approves — the gate stays, the extra
+// click goes. Registered before the global double-submit guard so this flow
+// owns the button while it runs.
+(function () {
+    var confirmForm = document.getElementById('confirm-form');
+    var confirmButton = document.getElementById('confirm-submit');
+    var terminalForm = document.getElementById('terminal-form');
+    if (!confirmForm || !confirmButton || !terminalForm) return;
+    var sending = false;
+    confirmForm.addEventListener('submit', function (event) {
+        var selected = document.querySelector('input[name="payment_method"]:checked');
+        var method = selected ? selected.value : 'card';
+        var approvalToken = document.getElementById('pos-approval-token');
+        var approved = !!(approvalToken && approvalToken.value);
+        if (sending || method === 'cash' || method === 'credit' || approved || !posRequiresApproval) return;
+        var terminalVisible = terminalForm.style.display !== 'none';
+        if (!terminalVisible) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        sending = true;
+        confirmButton.disabled = true;
+        confirmButton.classList.add('is-loading');
+        sendToTerminal({ preventDefault: function () {}, currentTarget: terminalForm }).then(function () {
+            sending = false;
+            confirmButton.disabled = false;
+            confirmButton.classList.remove('is-loading');
+            var token = document.getElementById('pos-approval-token');
+            if (token && token.value) confirmForm.submit();
+            else updatePaymentUi();
+        });
+    });
+})();
 
 // ── Scan beep: one short tone when the just-added strip renders, so the
 // cashier hears the scan land without looking away from the shelf.

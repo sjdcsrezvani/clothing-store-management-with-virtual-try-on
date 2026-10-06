@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 32
+MIGRATION_VERSION = 33
 
 
 def migration_status(engine) -> int:
@@ -118,10 +118,135 @@ def _add_column_if_missing(conn, table_name: str, column_name: str, column_type:
         conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"))
 
 
+_SALES_COLUMNS = (
+    "id", "customer_id", "total_amount", "discount_amount", "discount_details",
+    "final_amount", "payment_method", "credit_surcharge", "payment_confirmed",
+    "credit_settled", "credit_paid_amount", "credit_due_date", "points_earned",
+    "is_refunded", "refund_amount", "refund_reason", "refund_date",
+    "cash_session_id", "created_at",
+)
+
+_CHECKOUT_COLUMNS = (
+    "id", "checkout_nonce", "customer_id", "staff_user_id", "basket_json",
+    "total_amount", "discount_amount", "credit_surcharge", "final_amount",
+    "payment_method", "use_referrer_discount", "custom_discount_amount",
+    "custom_discount_percent", "referrer_code", "referrer_phone",
+    "campaign_code", "campaign_id", "state", "pos_transaction_id", "sale_id",
+    "expires_at", "created_at", "updated_at",
+)
+
+
+def _table_columns(conn, table_name: str) -> list:
+    return [row[1] for row in conn.execute(
+        text(f"PRAGMA table_info({table_name})")).fetchall()]
+
+
+def _rebuild_sales_for_split(conn) -> None:
+    """Widen the sales method CHECK to admit 'split', keeping every row.
+
+    Ids are copied verbatim, so the seven tables pointing at sales keep
+    pointing at the same invoices.
+    """
+    present = [col for col in _SALES_COLUMNS if col in _table_columns(conn, "sales")]
+    if not present:
+        return
+    checks = ", ".join(
+        f"CONSTRAINT ck_sales_{name} CHECK ({expr})"
+        for name, expr in [
+            ("payment_method", "payment_method IN ('card', 'cash', 'credit', 'split')"),
+            ("total_nonnegative", "total_amount >= 0"),
+            ("discount_nonnegative", "discount_amount >= 0"),
+            ("final_nonnegative", "final_amount >= 0"),
+            ("credit_surcharge_nonnegative", "credit_surcharge >= 0"),
+            ("credit_paid_amount_nonnegative", "credit_paid_amount >= 0"),
+            ("refund_nonnegative", "refund_amount >= 0"),
+        ])
+    conn.execute(text(f"""
+        CREATE TABLE sales_v33 (
+            id INTEGER PRIMARY KEY,
+            customer_id INTEGER REFERENCES customers (id),
+            total_amount INTEGER NOT NULL,
+            discount_amount INTEGER,
+            discount_details TEXT,
+            final_amount INTEGER NOT NULL,
+            payment_method VARCHAR(50),
+            credit_surcharge INTEGER,
+            payment_confirmed BOOLEAN,
+            credit_settled BOOLEAN,
+            credit_paid_amount INTEGER,
+            credit_due_date DATETIME,
+            points_earned INTEGER,
+            is_refunded BOOLEAN,
+            refund_amount INTEGER,
+            refund_reason TEXT,
+            refund_date DATETIME,
+            cash_session_id INTEGER REFERENCES cash_sessions (id),
+            created_at DATETIME,
+            {checks}
+        )
+    """))
+    columns = ", ".join(present)
+    conn.execute(text(f"INSERT INTO sales_v33 ({columns}) SELECT {columns} FROM sales"))
+    conn.execute(text("DROP TABLE sales"))
+    conn.execute(text("ALTER TABLE sales_v33 RENAME TO sales"))
+
+
+def _rebuild_checkout_for_split(conn) -> None:
+    """Widen the checkout method CHECK and add the split-legs column.
+
+    Drafts are transient, but a till left open across the upgrade must not
+    lose its basket — ids and content copy over like the sales above.
+    """
+    present = [col for col in _CHECKOUT_COLUMNS if col in _table_columns(conn, "checkout_sessions")]
+    if not present:
+        return
+    for index_name in ("ix_checkout_sessions_checkout_nonce", "ix_checkout_sessions_state"):
+        conn.execute(text(f"DROP INDEX IF EXISTS {index_name}"))
+    conn.execute(text("""
+        CREATE TABLE checkout_sessions_v33 (
+            id INTEGER PRIMARY KEY,
+            checkout_nonce VARCHAR(100) NOT NULL UNIQUE,
+            customer_id INTEGER REFERENCES customers (id),
+            staff_user_id INTEGER REFERENCES staff_users (id),
+            basket_json TEXT,
+            total_amount INTEGER NOT NULL DEFAULT 0,
+            discount_amount INTEGER NOT NULL DEFAULT 0,
+            credit_surcharge INTEGER NOT NULL DEFAULT 0,
+            final_amount INTEGER NOT NULL DEFAULT 0,
+            payment_method VARCHAR(20) NOT NULL DEFAULT 'card',
+            use_referrer_discount BOOLEAN NOT NULL DEFAULT 1,
+            custom_discount_amount INTEGER NOT NULL DEFAULT 0,
+            custom_discount_percent INTEGER NOT NULL DEFAULT 0,
+            referrer_code VARCHAR(50),
+            referrer_phone VARCHAR(20),
+            campaign_code VARCHAR(50),
+            campaign_id INTEGER REFERENCES campaigns (id),
+            state VARCHAR(30) NOT NULL DEFAULT 'draft',
+            pos_transaction_id INTEGER REFERENCES pos_transactions (id),
+            sale_id INTEGER REFERENCES sales (id),
+            expires_at DATETIME NOT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            split_json TEXT,
+            CONSTRAINT ck_checkout_state CHECK (state IN ('draft', 'reserved', 'payment_pending', 'payment_approved', 'payment_cancelled', 'payment_declined', 'payment_uncertain', 'completed', 'refunded', 'expired')),
+            CONSTRAINT ck_checkout_payment_method CHECK (payment_method IN ('card', 'cash', 'credit', 'split')),
+            CONSTRAINT ck_checkout_total_nonnegative CHECK (total_amount >= 0),
+            CONSTRAINT ck_checkout_discount_nonnegative CHECK (discount_amount >= 0),
+            CONSTRAINT ck_checkout_surcharge_nonnegative CHECK (credit_surcharge >= 0),
+            CONSTRAINT ck_checkout_final_nonnegative CHECK (final_amount >= 0),
+            CONSTRAINT ck_checkout_discount_amount_nonnegative CHECK (custom_discount_amount >= 0),
+            CONSTRAINT ck_checkout_discount_percent_valid CHECK (custom_discount_percent >= 0 AND custom_discount_percent <= 100)
+        )
+    """))
+    columns = ", ".join(present)
+    conn.execute(text(f"INSERT INTO checkout_sessions_v33 ({columns}) SELECT {columns} FROM checkout_sessions"))
+    conn.execute(text("DROP TABLE checkout_sessions"))
+    conn.execute(text("ALTER TABLE checkout_sessions_v33 RENAME TO checkout_sessions"))
+    conn.execute(text("CREATE INDEX ix_checkout_sessions_checkout_nonce ON checkout_sessions (checkout_nonce)"))
+    conn.execute(text("CREATE INDEX ix_checkout_sessions_state ON checkout_sessions (state)"))
+
+
 def _rebuild_business_events(conn) -> None:
-    table_exists = conn.execute(text(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='business_events'"
-    )).scalar()
     if not table_exists:
         conn.execute(text(_business_events_table_sql("business_events")))
         _create_business_event_indexes(conn)
@@ -238,6 +363,29 @@ def _rebuild_sms_messages(conn) -> None:
 
 
 def _apply_revision(conn, version: int) -> None:
+    if version == 33:
+        # Split-tender sales: cash X plus card Y on one invoice. Two CHECK
+        # widenings (sales, checkout_sessions) plus the legs table — purely
+        # additive, every existing single-method row reads exactly as before.
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS sale_payment_parts (
+                id INTEGER PRIMARY KEY,
+                sale_id INTEGER NOT NULL REFERENCES sales (id),
+                method VARCHAR(20) NOT NULL,
+                amount INTEGER NOT NULL,
+                pos_transaction_id INTEGER REFERENCES pos_transactions (id),
+                created_at DATETIME,
+                CONSTRAINT ck_sale_part_method CHECK (method IN ('cash', 'card')),
+                CONSTRAINT ck_sale_part_amount_positive CHECK (amount > 0)
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_sale_payment_parts_sale_id "
+            "ON sale_payment_parts (sale_id)"))
+        _rebuild_sales_for_split(conn)
+        _rebuild_checkout_for_split(conn)
+        return
+
     if version == 32:
         # Contract-grade identity: gender, insurance flag and a company
         # position per staff, plus the positions directory itself. All NULL /
@@ -723,10 +871,42 @@ def upgrade(engine, target: int = MIGRATION_VERSION) -> int:
     if current > target:
         raise RuntimeError(f"Database version {current} is newer than requested version {target}")
     for version in range(current + 1, target + 1):
+        if version == 33:
+            _upgrade_with_fk_off(engine, version)
+            continue
         with engine.begin() as conn:
             _apply_revision(conn, version)
             conn.execute(text("UPDATE schema_version SET version=:version WHERE id=1"), {"version": version})
     return migration_status(engine)
+
+
+def _upgrade_with_fk_off(engine, version: int) -> None:
+    """Run one revision with foreign keys disabled, then prove the graph whole.
+
+    Revision 33 rebuilds the sales table, which seven tables point at — with
+    enforcement on, dropping the parent fails outright. The pragma is set
+    outside any transaction (inside one it is a silent no-op) on a dedicated
+    connection, restored before the connection returns to the pool, and
+    ``foreign_key_check`` must come back empty before anything commits.
+    """
+    # The pragma autobegins a transaction on its own; commit it away so the
+    # work below gets exactly one transaction of its own. The prior setting
+    # is restored afterwards — a plain engine that started OFF must not
+    # discover enforcement as a migration side effect.
+    with engine.connect() as conn:
+        prior_fk = conn.execute(text("PRAGMA foreign_keys")).scalar()
+        conn.execute(text("PRAGMA foreign_keys=OFF"))
+        conn.commit()
+        try:
+            with conn.begin():
+                _apply_revision(conn, version)
+                violations = conn.execute(text("PRAGMA foreign_key_check")).fetchall()
+                if violations:
+                    raise RuntimeError(f"Revision {version} broke foreign keys: {violations[:5]}")
+                conn.execute(text("UPDATE schema_version SET version=:version WHERE id=1"), {"version": version})
+        finally:
+            conn.execute(text(f"PRAGMA foreign_keys={'ON' if prior_fk else 'OFF'}"))
+            conn.commit()
 
 
 def downgrade(engine, target: int = 0) -> int:

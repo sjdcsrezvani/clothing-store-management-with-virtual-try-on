@@ -21,6 +21,7 @@
                 <option value="card"{% if method == 'card' %} selected{% endif %}>کارت</option>
                 <option value="cash"{% if method == 'cash' %} selected{% endif %}>نقد</option>
                 <option value="credit"{% if method == 'credit' %} selected{% endif %}>نسیه</option>
+                <option value="split"{% if method == 'split' %} selected{% endif %}>ترکیبی</option>
             </select>
         </div>
         <div class="form-group">
@@ -86,6 +87,7 @@
                 <td data-label="پرداخت">
                     {% if sale.payment_method == 'card' %}کارت
                     {% elif sale.payment_method == 'credit' %}نسیه
+                    {% elif sale.payment_method == 'split' %}ترکیبی
                     {% else %}نقد{% endif %}
                 </td>
                 <td data-label="وضعیت">{% if sale.is_refunded %}<span class="badge badge-danger" {% if sale.refund_reason %}title="{{ sale.refund_reason }}"{% endif %}>ابطال شد</span>{% else %}—{% endif %}</td>

@@ -409,7 +409,7 @@ class ProductVariant(Base):
 class Sale(Base):
     __tablename__ = "sales"
     __table_args__ = (
-        CheckConstraint("payment_method IN ('card', 'cash', 'credit')", name="ck_sales_payment_method"),
+        CheckConstraint("payment_method IN ('card', 'cash', 'credit', 'split')", name="ck_sales_payment_method"),
         CheckConstraint("total_amount >= 0", name="ck_sales_total_nonnegative"),
         CheckConstraint("discount_amount >= 0", name="ck_sales_discount_nonnegative"),
         CheckConstraint("final_amount >= 0", name="ck_sales_final_nonnegative"),
@@ -446,6 +446,33 @@ class Sale(Base):
     items = relationship("SaleItem", back_populates="sale", cascade="all, delete-orphan")
     campaigns = relationship("SaleCampaign", back_populates="sale")
     pos_transaction = relationship("POSTransaction", back_populates="sale", uselist=False)
+    payment_parts = relationship("SalePaymentPart", back_populates="sale", cascade="all, delete-orphan")
+
+
+class SalePaymentPart(Base):
+    """One leg of a split-tender sale: cash X plus card Y on a single invoice.
+
+    Single-method sales carry no rows — the Sale's own method and final are
+    the whole story. A split sale wears method 'split' and its legs here,
+    so the drawer counts exactly the cash leg and the terminal owns the card
+    leg, instead of either side guessing from the final.
+    """
+    __tablename__ = "sale_payment_parts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sale_id = Column(Integer, ForeignKey("sales.id"), nullable=False, index=True)
+    method = Column(String(20), nullable=False)
+    amount = Column(Integer, nullable=False)
+    pos_transaction_id = Column(Integer, ForeignKey("pos_transactions.id"), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        CheckConstraint("method IN ('cash', 'card')", name="ck_sale_part_method"),
+        CheckConstraint("amount > 0", name="ck_sale_part_amount_positive"),
+    )
+
+    sale = relationship("Sale", back_populates="payment_parts")
+    pos_transaction = relationship("POSTransaction")
 
 
 class POSTransaction(Base):
@@ -1283,6 +1310,9 @@ class CheckoutSession(Base):
     # The campaign code typed at the counter. Kept on the server-owned draft so
     # ``finalize_basket`` recomputes the very same discount the cashier saw.
     campaign_code = Column(String(50), nullable=True)
+    # A cash+card split, as JSON legs: [{"method": "cash", "amount": X}, ...].
+    # NULL means single-method — the draft's payment_method says it all.
+    split_json = Column(Text, nullable=True)
     campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=True)
     state = Column(String(30), nullable=False, default="draft", index=True)
     pos_transaction_id = Column(Integer, ForeignKey("pos_transactions.id"), nullable=True, unique=True)
@@ -1300,7 +1330,7 @@ class CheckoutSession(Base):
         CheckConstraint("final_amount >= 0", name="ck_checkout_final_nonnegative"),
         CheckConstraint("custom_discount_amount >= 0", name="ck_checkout_discount_amount_nonnegative"),
         CheckConstraint("custom_discount_percent >= 0 AND custom_discount_percent <= 100", name="ck_checkout_discount_percent_valid"),
-        CheckConstraint("payment_method IN ('card', 'cash', 'credit')", name="ck_checkout_payment_method"),
+        CheckConstraint("payment_method IN ('card', 'cash', 'credit', 'split')", name="ck_checkout_payment_method"),
     )
 
     customer = relationship("Customer")
