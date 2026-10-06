@@ -122,3 +122,18 @@ def test_till_has_no_emoji_outside_js_strings(client, db_session):
     assert "تخفیف‌ها" in scan  # collapsed discount card renders
     for emoji in ("🔑", "📱", "🧮"):
         assert emoji not in scan
+
+
+def test_invoice_print_contract_paper_heading_and_thermal_rules(client, db_session):
+    from tests.test_tables import _login
+    from models import Sale
+    _login(client)
+    sale = Sale(total_amount=50_000, final_amount=50_000, payment_method="cash",
+                payment_confirmed=True)
+    db_session.add(sale)
+    db_session.commit()
+    page = client.get(f"/sales/invoice/{sale.id}").text
+    assert "print-heading" in page  # paper names shop + invoice number
+    css = open("static/css/style.css", encoding="utf-8").read()
+    for rule in ("@page", ".invoice-item", ".invoice-foot", "#profit-meter"):
+        assert rule in css
