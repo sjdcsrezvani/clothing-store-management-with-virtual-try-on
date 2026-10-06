@@ -148,3 +148,36 @@ def get_or_create_barcode(existing_barcode: str | None = None) -> tuple[str, str
     if existing_barcode:
         return existing_barcode, None
     return generate_barcode_number(), None
+
+
+# --- Receipt strip: Code39 as inline SVG, no file, no writer dependency. ---
+# The invoice carries the sale id as a scannable strip so a return lookup is
+# one scan, not one typed number. The product-tag path above writes PNG files
+# through python-barcode; a receipt needs bars inline in the page, so Code39
+# (whose alphabet is just wide/narrow bar-space pairs) is drawn directly.
+_CODE39_PATTERNS = {
+    "0": "nnnwwnwnn", "1": "wnnwnnnnw", "2": "nnwwnnnnw", "3": "wnwwnnnnn",
+    "4": "nnnwwnnnw", "5": "wnnwwnnnn", "6": "nnwwwnnnn", "7": "nnnwnnwnw",
+    "8": "wnnwnnwnn", "9": "nnwwnnwnn", "-": "nnnwnnwnw", "*": "nwnnwnwnn",
+}
+
+
+def code39_svg(text) -> str:
+    """Render digits as a Code39 SVG strip, start/stop delimited."""
+    chars = "*" + "".join(ch for ch in str(text) if ch in _CODE39_PATTERNS) + "*"
+    x = 10  # left quiet zone, drawn as blank space rather than margin
+    rects = []
+    for char in chars:
+        bar = True
+        for slot in _CODE39_PATTERNS.get(char, _CODE39_PATTERNS["*"]):
+            width = 5 if slot == "w" else 2
+            if bar:
+                rects.append(f'<rect x="{x}" y="0" width="{width}" height="44"/>')
+            x += width
+            bar = not bar
+        x += 2  # inter-character gap: one narrow bar of silence
+    width = x + 10
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} 44"'
+        f' role="img" aria-label="بارکد فاکتور {text}">{"".join(rects)}</svg>'
+    )

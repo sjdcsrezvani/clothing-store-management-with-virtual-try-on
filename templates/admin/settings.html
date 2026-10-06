@@ -70,6 +70,19 @@
                        value="{{ settings.get('store_footer', store.footer) }}">
             </div>
         </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="store_address">آدرس فروشگاه {{ tip('روی فاکتور چاپی نمایش داده می‌شود') }}</label>
+                <input type="text" id="store_address" name="store_address"
+                       value="{{ settings.get('store_address', store.address) }}">
+            </div>
+            <div class="form-group">
+                <label for="store_phone">تلفن فروشگاه {{ tip('روی فاکتور چاپی نمایش داده می‌شود') }}</label>
+                <input type="text" id="store_phone" name="store_phone" dir="ltr"
+                       value="{{ settings.get('store_phone', store.phone) }}"
+                       placeholder="۰۲۱-...">
+            </div>
+        </div>
         <div class="settings-savebar"><button type="submit" class="btn btn-primary">ذخیره فروشگاه</button></div>
     </form>
 {% elif active_tab == 'sales' %}

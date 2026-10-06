@@ -2,39 +2,47 @@
 {% block content %}
 {% set print_heading = store.name ~ ' — فاکتور #' ~ sale.id %}
 
-{# A document the customer is handed, but a page in the shop's own history too:
-   the trail says which sale this came from. Hidden in print, like the rest of
+{# The trail says which sale this came from. Hidden in print, like the rest of
    the shell. #}
 <div class="screen-only invoice-trail">
     {% include 'partials/breadcrumb.html' %}
 </div>
 <h2 class="print-heading">{{ print_heading }}</h2>
 
-<div class="alert alert-success" style="font-size: 1.05rem; text-align: center; justify-content: center;">
-    🎉 فروش با موفقیت ثبت شد!
-    {% if points_earned %}&nbsp;🌟 امتیاز کسب‌شده: <strong>{{ points_earned }}</strong>{% endif %}
+<div class="alert alert-success invoice-flash">
+    ✓ فروش ثبت شد{% if points_earned %}&nbsp;· امتیاز: <strong>{{ points_earned }}</strong>{% endif %}
+</div>
+
+<div class="screen-only paper-toggle" role="group" aria-label="اندازه کاغذ">
+    <button type="button" data-paper="thermal" aria-pressed="true">۸۰mm حرارتی</button>
+    <button type="button" data-paper="a5" aria-pressed="false">A5</button>
 </div>
 
 <div class="invoice">
+    {% if sale.is_refunded %}<div class="void-mark" aria-hidden="true">ابطال شد</div>{% endif %}
     <div class="invoice-header">
+        {% if store_logo %}<img src="{{ store_logo }}" alt="" class="invoice-logo">{% endif %}
         <h2>{{ store.name }}</h2>
+        {% if store.address %}<div class="invoice-contact">{{ store.address }}</div>{% endif %}
+        {% if store.phone %}<div class="invoice-contact tnum" dir="ltr">{{ store.phone }}</div>{% endif %}
         <div class="invoice-meta">
-            <span>📄 شماره: {{ sale.id }}</span>
-            <span>🕐 {{ jalali_str(sale.created_at) }}</span>
+            <span><span class="em" aria-hidden="true">📄 </span>شماره: <span class="tnum">{{ sale.id }}</span></span>
+            <span><span class="em" aria-hidden="true">🕐 </span>{{ jalali_str(sale.created_at) }}</span>
+            {% if cashier_name %}<span><span class="em" aria-hidden="true">🧾 </span>صندوقدار: {{ cashier_name }}</span>{% endif %}
         </div>
     </div>
 
     {% if customer %}
     <div class="invoice-customer">
-        <p><span class="label">👤 مشتری</span><span>{{ customer.full_name }}</span></p>
-        <p><span class="label">📱 تلفن</span><span class="tnum">{{ customer.phone }}</span></p>
+        <p><span class="label"><span class="em" aria-hidden="true">👤 </span>مشتری</span><span>{{ customer.full_name }}</span></p>
+        <p><span class="label"><span class="em" aria-hidden="true">📱 </span>تلفن</span><span class="tnum">{{ customer.phone }}</span></p>
         <p>
-            <span class="label">🏷️ سطح</span>
+            <span class="label"><span class="em" aria-hidden="true">🏷️ </span>سطح</span>
             <span>
                 <span class="tier-badge tier-{{ customer.tier }}">
-                    {% if customer.tier == 'diamond' %}💎 الماس
-                    {% elif customer.tier == 'gold' %}⭐ طلایی
-                    {% else %}🥈 نقره‌ای{% endif %}
+                    {% if customer.tier == 'diamond' %}<span class="em" aria-hidden="true">💎 </span>الماس
+                    {% elif customer.tier == 'gold' %}<span class="em" aria-hidden="true">⭐ </span>طلایی
+                    {% else %}<span class="em" aria-hidden="true">🥈 </span>نقره‌ای{% endif %}
                 </span>
             </span>
         </p>
@@ -47,6 +55,7 @@
             <span class="name">
                 {{ item.variant.display_name if item.variant else (item.product.name if item.product else '—') }}
             </span>
+            <span class="unit tnum">{{ fmt(item.unit_price) }}</span>
             <span class="qty tnum">{{ item.quantity }}×</span>
             <span class="price tnum">{{ fmt(item.total_price) }}</span>
         </div>
@@ -54,21 +63,21 @@
     </div>
 
     <div class="invoice-summary">
-        <div class="summary-row"><span>📦 جمع کل</span><span class="tnum">{{ fmt(sale.total_amount) }} تومان</span></div>
+        <div class="summary-row"><span><span class="em" aria-hidden="true">📦 </span>جمع کل</span><span class="tnum">{{ fmt(sale.total_amount) }} تومان</span></div>
         {% if sale.discount_amount > 0 %}
-        <div class="summary-row discount"><span>🏷️ تخفیف</span><span class="tnum">−{{ fmt(sale.discount_amount) }} تومان</span></div>
+        <div class="summary-row discount"><span><span class="em" aria-hidden="true">🏷️ </span>تخفیف</span><span class="tnum">−{{ fmt(sale.discount_amount) }} تومان</span></div>
         {% if discounts and discounts.details %}
         <div class="discount-details">
             {% for detail in discounts.details %}<div>· {{ detail }}</div>{% endfor %}
         </div>
         {% endif %}
         {% endif %}
-        <div class="summary-row total"><span>💰 مبلغ قابل پرداخت</span><span class="tnum">{{ fmt(sale.final_amount) }} تومان</span></div>
-        <div class="summary-row"><span>💳 روش پرداخت</span><span>
-            {% if sale.payment_method == 'card' %}💳 کارت
-            {% elif sale.payment_method == 'credit' %}📒 نسیه
+        <div class="summary-row total"><span><span class="em" aria-hidden="true">💰 </span>مبلغ قابل پرداخت</span><span class="tnum">{{ fmt(sale.final_amount) }} تومان</span></div>
+        <div class="summary-row"><span><span class="em" aria-hidden="true">💳 </span>روش پرداخت</span><span>
+            {% if sale.payment_method == 'card' %}کارت
+            {% elif sale.payment_method == 'credit' %}نسیه
             {% elif sale.payment_method == 'split' %}ترکیبی
-            {% else %}💵 نقد{% endif %}
+            {% else %}نقد{% endif %}
         </span></div>
         {% if sale.payment_method == 'split' %}
         {% for part in sale.payment_parts %}
@@ -76,50 +85,130 @@
         {% endfor %}
         {% endif %}
         {% if sale.payment_method == 'credit' and customer %}
+        {% if sale.credit_surcharge > 0 %}
+        <div class="summary-row"><span>کارمزد نسیه</span><span class="tnum">{{ fmt(sale.credit_surcharge) }} تومان</span></div>
+        {% endif %}
         <div class="summary-row attention">
-            <span>📒 بدهی نسیه این فاکتور</span>
+            <span><span class="em" aria-hidden="true">📒 </span>بدهی نسیه این فاکتور</span>
             <span class="tnum">{{ fmt(credit_remaining) }} تومان</span>
         </div>
+        {% if sale.credit_due_date %}
+        <div class="summary-row"><span>سررسید</span><span>{{ jalali_str(sale.credit_due_date) }}</span></div>
         {% endif %}
-        {% if sale.points_earned %}
-        <div class="summary-row points">
-            <span>🌟 امتیاز کسب‌شده</span><span class="tnum">{{ sale.points_earned }}</span>
-        </div>
         {% endif %}
     </div>
+
+    <div class="invoice-barcode">{{ barcode_svg|safe }}<div class="tnum">{{ sale.id }}</div></div>
 </div>
 
-{% if receipt_footer_note %}<p class="muted invoice-foot">{{ receipt_footer_note }}</p>{% endif %}
+<div class="invoice-foot">
+    {% if receipt_footer_note %}<p>{{ receipt_footer_note }}</p>{% endif %}
+    <p>تعویض کالا با ارائه این فاکتور انجام می‌شود.</p>
+    <p>از خرید شما متشکریم</p>
+</div>
 
 <div class="invoice-actions">
     {% if sale.is_refunded %}
     <div class="alert alert-error" style="flex: 1; text-align: right;">
-        ⛔ این فاکتور ابطال شده است.
-        {% if sale.refund_reason %}<br>📝 دلیل: {{ sale.refund_reason }}{% endif %}
-        {% if sale.refund_date %}<br>🕐 تاریخ ابطال: {{ jalali_str(sale.refund_date) }}{% endif %}
+        این فاکتور ابطال شده است.
+        {% if sale.refund_reason %}<br>دلیل: {{ sale.refund_reason }}{% endif %}
+        {% if sale.refund_date %}<br>تاریخ ابطال: {{ jalali_str(sale.refund_date) }}{% endif %}
     </div>
+    <button onclick="window.print()" class="btn btn-primary">چاپ فاکتور</button>
     {% else %}
         {% if invoice_path %}
-        <a href="{{ invoice_path }}" target="_blank" class="btn btn-ghost">📄 دانلود PDF</a>
+        <a href="{{ invoice_path }}" target="_blank" class="btn btn-ghost">دانلود PDF</a>
         {% endif %}
-        <button onclick="window.print()" class="btn btn-primary">🖨️ چاپ فاکتور</button>
+        <button onclick="window.print()" class="btn btn-primary">چاپ فاکتور</button>
         {% if can_refund %}
-        <form method="post" action="/sales/{{ sale.id }}/refund"
-              onsubmit="return confirm('⚠️ آیا مطمئن هستید؟ این فاکتور ابطال می‌شود و موجودی بازمی‌گردد.')"
-              style="display: flex; gap: 0.4rem; align-items: center;">
+        <form method="post" action="/sales/{{ sale.id }}/refund" data-confirm="این فاکتور ابطال می‌شود و موجودی بازمی‌گردد. ادامه می‌دهید؟"
+              style="display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center;">
             <input type="text" name="refund_reason" aria-label="دلیل ابطال" placeholder="مثال: اشتباه صندوقدار"
                    style="padding: 0.5rem 0.7rem; border: 2px solid var(--rule); border-radius: 8px; max-width: 180px; font-family: inherit;">
-            <button type="submit" class="btn btn-danger">⛔ ابطال فاکتور</button>
+            <button type="submit" class="btn btn-danger">ابطال فاکتور</button>
         </form>
         {% else %}
         <small class="muted">ابطال فاکتور برای حساب شما فعال نیست.</small>
         {% endif %}
     {% endif %}
-    <a href="/sales/new" class="btn btn-success">🛒 فروش جدید</a>
+    <a href="/sales/new" class="btn btn-success">فروش جدید</a>
     {# Only for whoever may open one: a cashier reading their own invoice used to
        be offered a dashboard button that answered with a refusal. #}
     {% if nav_home == '/admin' %}
-    <a href="/admin" class="btn btn-ghost">📊 داشبورد</a>
+    <a href="/admin" class="btn btn-ghost">داشبورد</a>
     {% endif %}
 </div>
+
+{# One confirm surface for the refund: the form carries its sentence in
+   data-confirm, the dialog reads it back. Without JS the form posts directly. #}
+<div id="invoice-confirm" data-dialog role="alertdialog" aria-modal="true"
+     aria-labelledby="invoice-confirm-title" aria-describedby="invoice-confirm-text" class="confirm-scrim" tabindex="-1">
+    <div class="t-modal-card confirm-card" role="document">
+        <h3 id="invoice-confirm-title">مطمئن هستید؟</h3>
+        <p class="muted" id="invoice-confirm-text"></p>
+        <div class="confirm-actions">
+            <button type="button" class="btn btn-danger" id="invoice-confirm-yes">تأیید</button>
+            <button type="button" class="btn btn-ghost" data-dialog-close>انصراف</button>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    // Paper mode is a device habit, not a sale fact — remembered locally.
+    var KEY = 'invoice-paper';
+    function apply(mode) {
+        document.body.dataset.paper = mode;
+        document.querySelectorAll('.paper-toggle button').forEach(function (btn) {
+            btn.setAttribute('aria-pressed', btn.dataset.paper === mode ? 'true' : 'false');
+        });
+        try { localStorage.setItem(KEY, mode); } catch (e) {}
+    }
+    var saved = null;
+    try { saved = localStorage.getItem(KEY); } catch (e) {}
+    apply(saved === 'a5' ? 'a5' : 'thermal');
+    document.querySelectorAll('.paper-toggle button').forEach(function (btn) {
+        btn.addEventListener('click', function () { apply(btn.dataset.paper); });
+    });
+
+    // Paper speaks Persian digits; the screen keeps Latin. Swapped around
+    // printing so copy-paste and the till math never see Persian figures.
+    // The heading carries the invoice number too, so it swaps with the rest.
+    var FA = {'0': '۰', '1': '۱', '2': '۲', '3': '۳', '4': '۴', '5': '۵', '6': '۶', '7': '۷', '8': '۸', '9': '۹', ',': '٬'};
+    var originals = [];
+    window.addEventListener('beforeprint', function () {
+        originals = [];
+        document.querySelectorAll('.invoice .tnum, .print-heading').forEach(function (el) {
+            originals.push([el, el.textContent]);
+            el.textContent = el.textContent.replace(/[0-9,]/g, function (ch) { return FA[ch]; });
+        });
+    });
+    window.addEventListener('afterprint', function () {
+        originals.forEach(function (pair) { pair[0].textContent = pair[1]; });
+        originals = [];
+    });
+
+    // Refund confirmation through the app dialog, not a native prompt.
+    var pendingForm = null;
+    document.addEventListener('submit', function (event) {
+        var form = event.target.closest ? event.target.closest('form[data-confirm]') : null;
+        if (!form || form === pendingForm) return;
+        if (!window.RaykidDialog) return; // no helper, no gate: post directly
+        event.preventDefault();
+        pendingForm = form;
+        document.getElementById('invoice-confirm-text').textContent =
+            form.getAttribute('data-confirm');
+        window.RaykidDialog.open('invoice-confirm', document.activeElement);
+    });
+    document.getElementById('invoice-confirm-yes').addEventListener('click', function () {
+        var form = pendingForm;
+        pendingForm = null;
+        window.RaykidDialog.close('invoice-confirm');
+        if (form) form.submit();
+    });
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') pendingForm = null;
+    });
+})();
+</script>
 {% endblock %}

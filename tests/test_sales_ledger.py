@@ -137,3 +137,73 @@ def test_invoice_print_contract_paper_heading_and_thermal_rules(client, db_sessi
     css = open("static/css/style.css", encoding="utf-8").read()
     for rule in ("@page", ".invoice-item", ".invoice-foot", "#profit-meter"):
         assert rule in css
+
+
+def test_invoice_phase1_paper_contract(client, db_session):
+    """Phase 1 receipt: unit prices, no points, policy, toggle, barcode,
+    dialog refund, Persian-digit print swap, emoji hidden on paper."""
+    from tests.test_tables import _login
+    from datetime import datetime
+    from services.store import invalidate_store_cache
+    from models import Sale, SaleItem, Customer, Settings, Product, CheckoutSession, StaffUser
+    _login(client)
+    db_session.add(Customer(id=3, first_name="مشتری", last_name="آزمایشی", phone="09120000003", tier="gold", referral_code="TST0000003"))
+    db_session.add(Product(id=11, name="شلوار"))
+    db_session.add(Sale(id=21, customer_id=3, total_amount=200_000, discount_amount=20_000,
+                        discount_details='["معرف"]', final_amount=180_000,
+                        payment_method="cash", payment_confirmed=True))
+    db_session.add(SaleItem(id=31, sale_id=21, product_id=11, quantity=2,
+                            unit_price=100_000, total_price=200_000))
+    db_session.add(Settings(key="store_address", value="تهران، خیابان تست"))
+    db_session.add(Settings(key="store_phone", value="021-11111111"))
+    db_session.add(StaffUser(id=5, username="sara", password_hash="x",
+                             role="cashier", full_name="سارا"))
+    db_session.add(CheckoutSession(id=41, checkout_nonce="paper1", customer_id=3,
+                                   staff_user_id=5, sale_id=21, state="completed",
+                                   total_amount=200_000, final_amount=180_000,
+                                   expires_at=datetime(2030, 1, 1),
+                                   created_at=datetime(2026, 1, 1),
+                                   updated_at=datetime(2026, 1, 1)))
+    db_session.commit()
+    invalidate_store_cache()
+    page = client.get("/sales/invoice/21").text
+    assert "۱۰۰٬۰۰۰" not in page  # screen keeps Latin digits
+    assert "100,000" in page  # unit price printed per line
+    assert "امتیاز کسب‌شده" not in page  # points off the paper
+    assert "تعویض کالا با ارائه این فاکتور" in page  # fixed policy line
+    assert "تهران، خیابان تست" in page and "021-11111111" in page
+    assert "صندوقدار" in page and "سارا" in page
+    assert "data-paper" in page and "paper-toggle" in page  # size toggle
+    assert "<svg" in page and "بارکد فاکتور" in page  # scannable strip
+    assert 'class="em"' in page  # emoji wrapped for paper purge
+    assert "data-confirm" in page  # dialog refund…
+    assert "return confirm(" not in page  # …not native
+    assert "beforeprint" in page  # Persian-digit print swap
+    assert "ابطال شد" not in page or "void-mark" in page
+
+
+def test_invoice_phase1_void_watermark_and_credit_full_info(client, db_session):
+    from datetime import datetime
+    from tests.test_tables import _login
+    from models import Sale, Customer
+    _login(client)
+    db_session.add(Customer(id=4, first_name="نسیه‌ای", phone="09120000004", tier="silver", referral_code="TST0000004"))
+    db_session.add(Sale(id=22, customer_id=4, total_amount=300_000, final_amount=315_000,
+                        payment_method="credit", credit_surcharge=15_000,
+                        credit_due_date=datetime(2026, 12, 1),
+                        payment_confirmed=True, is_refunded=True,
+                        refund_reason="اشتباه", refund_date=datetime(2026, 10, 1)))
+    db_session.commit()
+    page = client.get("/sales/invoice/22").text
+    assert "void-mark" in page  # voided prints voided
+    assert "کارمزد نسیه" in page and "سررسید" in page  # full credit info
+    assert "چاپ فاکتور" in page  # print stays available on voided
+
+
+def test_code39_strip_shape():
+    from services.barcode import code39_svg
+    svg = code39_svg(7)
+    assert svg.startswith("<svg") and 'viewBox="0 0 ' in svg
+    assert svg.count("<rect") == code39_svg(7).count("<rect")
+    assert code39_svg("12").count("<rect") > code39_svg("").count("<rect")
+    assert code39_svg("12a").count("<rect") == code39_svg("12").count("<rect")  # junk skipped

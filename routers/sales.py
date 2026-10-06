@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import (
     Campaign, Customer, Product, ProductVariant, Sale, SaleItem, SaleCampaign, SalePaymentPart,
-    Referral, Settings, POSTransaction, CheckoutSession, Refund, generate_referral_code, to_english_digits,
+    Referral, Settings, POSTransaction, CheckoutSession, Refund, StaffUser,
+    generate_referral_code, to_english_digits,
 )
 from services._common import (
     child_profile_enabled,
@@ -40,6 +41,7 @@ from services.tier import (
     tier_up_marker_key, TIER_RANK,
 )
 from services.invoice import generate_invoice_text, generate_invoice_pdf
+from services.barcode import code39_svg
 from services.events import append_event
 from services.pos_terminal import (
     send_sale as send_terminal_sale,
@@ -1102,6 +1104,34 @@ async def sales_send_to_terminal(
     return _transaction_response(transaction, approval_token)
 
 
+def _sale_receipt_extras(db, sale):
+    """Paper-only context: cashier, logo, barcode. Nothing here may fail a sale.
+
+    The cashier resolves through the checkout session that produced the sale;
+    old sales without one print without the line rather than a guess.
+    """
+    cashier_name = None
+    try:
+        session = db.query(CheckoutSession).filter(
+            CheckoutSession.sale_id == sale.id).order_by(CheckoutSession.id.desc()).first()
+        if session and session.staff_user_id:
+            staff = db.query(StaffUser).filter(StaffUser.id == session.staff_user_id).first()
+            if staff:
+                cashier_name = staff.full_name or staff.username
+    except Exception:
+        cashier_name = None
+    try:
+        logo_row = db.query(Settings).filter(Settings.key == "owner_logo_path").first()
+        store_logo = (logo_row.value or "") if logo_row else ""
+    except Exception:
+        store_logo = ""
+    return {
+        "cashier_name": cashier_name,
+        "store_logo": store_logo,
+        "barcode_svg": code39_svg(sale.id),
+    }
+
+
 @router.post("/confirm-sale", response_class=HTMLResponse)
 async def sales_confirm(
     request: Request,
@@ -1472,6 +1502,7 @@ async def sales_confirm(
         "jalali_str": jalali_str,
         "points_earned": points_earned,
         "can_refund": effective_cap(guard, "can_refund"),
+        **_sale_receipt_extras(db, sale),
     })
 
 
@@ -1517,6 +1548,7 @@ async def sales_invoice_view(sale_id: int, request: Request, db: Session = Depen
         "jalali_str": jalali_str,
         "points_earned": sale.points_earned,
         "can_refund": effective_cap(guard, "can_refund"),
+        **_sale_receipt_extras(db, sale),
     })
 
 
