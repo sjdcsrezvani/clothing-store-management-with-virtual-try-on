@@ -4028,7 +4028,7 @@ html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
 .scan-last { margin: 0.6rem 0 0; font-size: 0.85rem; color: var(--success-ink); font-weight: 700; }
 .basket-stepper { display: inline-flex; gap: 0.25rem; }
 .btn-step { min-width: 2rem; min-height: 2rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--card); color: var(--ink); font-size: 1rem; font-weight: 800; cursor: pointer; line-height: 1; }
-.btn-step:hover { border-color: var(--candy); color: var(--candy); }
+.btn-step:hover { border-color: var(--candy); color: var(--link-hover); }
 .timeline-step.done { color: var(--link-hover); border-color: var(--candy); font-weight: 700; }
 .credit-note { font-size: 0.8rem; color: var(--ink-soft); margin-top: 0.4rem; }
 .credit-blocked { color: var(--persimmon); font-weight: 700; }
