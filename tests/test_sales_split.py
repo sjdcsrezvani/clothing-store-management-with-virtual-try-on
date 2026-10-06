@@ -188,3 +188,48 @@ def test_split_refund_voids_wholly_and_tags_drawer(client, db_session, authed):
     db_session.expire_all()
     refunded = db_session.query(Sale).filter(Sale.id == sale.id).one()
     assert refunded.is_refunded and refunded.refund_amount == 100_000
+
+
+def test_migration_33_resumes_after_crashed_boot(tmp_path):
+    """A boot that dies mid-rebuild (staging left, version unrecorded) must
+    boot clean on retry — partial staging redone, orphaned staging claimed."""
+    engine = create_engine(f"sqlite:///{tmp_path}/crashed32.db")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE schema_version (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)"))
+        conn.execute(text("INSERT INTO schema_version (id, version) VALUES (1, 32)"))
+        conn.execute(text("CREATE TABLE customers (id INTEGER PRIMARY KEY, phone VARCHAR(20))"))
+        conn.execute(text("CREATE TABLE cash_sessions (id INTEGER PRIMARY KEY)"))
+        conn.execute(text("CREATE TABLE pos_transactions (id INTEGER PRIMARY KEY)"))
+        conn.execute(text(
+            """CREATE TABLE sales (
+                id INTEGER PRIMARY KEY, customer_id INTEGER REFERENCES customers (id),
+                total_amount INTEGER NOT NULL, final_amount INTEGER NOT NULL,
+                payment_method VARCHAR(50),
+                CONSTRAINT ck_sales_payment_method CHECK (payment_method IN ('card', 'cash', 'credit')))"""))
+        conn.execute(text(
+            """CREATE TABLE checkout_sessions (
+                id INTEGER PRIMARY KEY, checkout_nonce VARCHAR(100) NOT NULL UNIQUE,
+                payment_method VARCHAR(20) NOT NULL DEFAULT 'card',
+                total_amount INTEGER NOT NULL DEFAULT 0, final_amount INTEGER NOT NULL DEFAULT 0,
+                expires_at DATETIME NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL,
+                CONSTRAINT ck_checkout_payment_method CHECK (payment_method IN ('card', 'cash', 'credit')))"""))
+        conn.execute(text("INSERT INTO customers (id, phone) VALUES (1, '09120000001')"))
+        conn.execute(text("INSERT INTO sales (id, customer_id, total_amount, final_amount, payment_method)"
+                          " VALUES (7, 1, 500000, 500000, 'cash')"))
+    assert upgrade(engine) == 33
+    with engine.begin() as conn:
+        # Simulate the crashed first boot: version back, partial staging left.
+        conn.execute(text("UPDATE schema_version SET version=32 WHERE id=1"))
+        conn.execute(text("CREATE TABLE sales_v33 (id INTEGER PRIMARY KEY)"))
+    assert upgrade(engine) == 33
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT payment_method FROM sales WHERE id=7")).scalar() == "cash"
+        assert not conn.execute(text(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%_v33%'")).fetchall()
+    with engine.begin() as conn:
+        # Simulate dying between DROP and RENAME: source gone, staging whole.
+        conn.execute(text("ALTER TABLE sales RENAME TO sales_v33"))
+        conn.execute(text("UPDATE schema_version SET version=32 WHERE id=1"))
+    assert upgrade(engine) == 33
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT payment_method FROM sales WHERE id=7")).scalar() == "cash"

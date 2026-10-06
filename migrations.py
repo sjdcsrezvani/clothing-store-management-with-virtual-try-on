@@ -146,7 +146,20 @@ def _rebuild_sales_for_split(conn) -> None:
 
     Ids are copied verbatim, so the seven tables pointing at sales keep
     pointing at the same invoices.
+
+    Resumable: a boot that died mid-rebuild leaves the staging table behind
+    with the version unrecorded, and the next boot would collide with it.
+    A staging table next to a live sales is a partial copy — drop and redo;
+    a staging table with sales gone is a finished copy the rename never
+    claimed — claim it.
     """
+    tables = {row[0] for row in conn.execute(
+        text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()}
+    if "sales_v33" in tables and "sales" not in tables:
+        conn.execute(text("ALTER TABLE sales_v33 RENAME TO sales"))
+        return
+    if "sales_v33" in tables:
+        conn.execute(text("DROP TABLE sales_v33"))
     present = [col for col in _SALES_COLUMNS if col in _table_columns(conn, "sales")]
     if not present:
         return
@@ -196,7 +209,18 @@ def _rebuild_checkout_for_split(conn) -> None:
 
     Drafts are transient, but a till left open across the upgrade must not
     lose its basket — ids and content copy over like the sales above.
+    Same resume rule as the sales rebuild: partial staging is redone,
+    an orphaned staging is claimed.
     """
+    tables = {row[0] for row in conn.execute(
+        text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()}
+    if "checkout_sessions_v33" in tables and "checkout_sessions" not in tables:
+        conn.execute(text("ALTER TABLE checkout_sessions_v33 RENAME TO checkout_sessions"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_checkout_sessions_checkout_nonce ON checkout_sessions (checkout_nonce)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_checkout_sessions_state ON checkout_sessions (state)"))
+        return
+    if "checkout_sessions_v33" in tables:
+        conn.execute(text("DROP TABLE checkout_sessions_v33"))
     present = [col for col in _CHECKOUT_COLUMNS if col in _table_columns(conn, "checkout_sessions")]
     if not present:
         return
