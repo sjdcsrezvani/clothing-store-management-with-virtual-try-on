@@ -494,14 +494,6 @@ function updatePaymentUi() {
     }
     if (terminalNeeded) refreshTerminalStatus();
 }
-    if (confirmButton) {
-        var needsApproval = isCard && posRequiresApproval && !approved;
-        confirmButton.disabled = needsApproval;
-        confirmButton.textContent = needsApproval
-            ? 'ابتدا پرداخت کارت را در کارت‌خوان تأیید کنید'
-            : 'تأیید پرداخت و صدور فاکتور';
-    }
-}
 
 document.querySelectorAll('input[name="payment_method"]').forEach(function (radio) {
     radio.addEventListener('change', updatePaymentUi);
