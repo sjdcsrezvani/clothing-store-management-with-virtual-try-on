@@ -283,6 +283,9 @@ def _rebuild_checkout_for_split(conn) -> None:
 
 
 def _rebuild_business_events(conn) -> None:
+    table_exists = conn.execute(text(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='business_events'"
+    )).scalar()
     if not table_exists:
         conn.execute(text(_business_events_table_sql("business_events")))
         _create_business_event_indexes(conn)
