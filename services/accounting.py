@@ -4,11 +4,11 @@ and aged-receivables (collection) dashboard."""
 import calendar
 import math
 from datetime import datetime, timezone, timedelta
-from sqlalchemy import case, func, or_
+from sqlalchemy import case, func, or_, select
 
 from models import (
     BusinessEvent, Customer, RecurringExpense, Sale, SaleItem, Expense, Purchase, PurchaseItem, Payment, Settings,
-    Supplier, SupplierPayment, CashSession, CashSessionEntry,
+    Supplier, SupplierPayment, CashSession, CashSessionEntry, SalePaymentPart,
 )
 from services._common import get_setting_int, share
 
@@ -1046,18 +1046,26 @@ def _drawer_filters(db, start, end, cash_session_id: int | None = None) -> dict:
     payment — counting both would count it twice. A card-paid expense stays out
     for the same reason: it left the shop's account, not the drawer.
 
+    Split-tender sales count by leg, not by invoice: the cash leg joins the
+    drawer here while the card leg stays out of it, exactly as if the two
+    halves had been rung up separately.
+
     Scoping to a shift mixes two mechanisms on purpose. Sales and نسیه receipts
     are matched by the **time window**, because rows written before a sale
     carried ``cash_session_id`` are still genuine till movements and must keep
     being counted; refunds, expenses, supplier payments and withdrawals carry
     the id, which survives the hand-correction a time window would lose.
     """
+    cash_leg = select(func.coalesce(func.sum(SalePaymentPart.amount), 0)).where(
+        SalePaymentPart.sale_id == Sale.id,
+        SalePaymentPart.method == "cash",
+    ).scalar_subquery()
     filters = {
         "sale": [Sale.payment_confirmed == True, Sale.is_refunded == False,  # noqa: E712
-                 Sale.payment_method == "cash", Sale.created_at.between(start, end)],
+                 Sale.payment_method.in_(("cash", "split")), Sale.created_at.between(start, end)],
         "payment": [Payment.method == "cash", Payment.reversed_at.is_(None),
                     Payment.created_at.between(start, end)],
-        "refund": [Sale.is_refunded == True, Sale.payment_method == "cash",  # noqa: E712
+        "refund": [Sale.is_refunded == True, Sale.payment_method.in_(("cash", "split")),  # noqa: E712
                    Sale.refund_date.between(start, end)],
         "expense": [Expense.reversed_at.is_(None), Expense.payment_method == "cash",
                     Expense.created_at.between(start, end)],
@@ -1065,6 +1073,7 @@ def _drawer_filters(db, start, end, cash_session_id: int | None = None) -> dict:
                      SupplierPayment.created_at.between(start, end)],
         "entry": [CashSessionEntry.reversed_at.is_(None),
                   CashSessionEntry.created_at.between(start, end)],
+        "cash_leg": cash_leg,
     }
     if cash_session_id is not None:
         session = db.query(CashSession).filter(CashSession.id == cash_session_id).first()
@@ -1082,9 +1091,15 @@ def get_cashbox(db, start, end, opening_balance: int, cash_session_id: int | Non
     """Cash register for a period, optionally scoped to one cash shift."""
     filters = _drawer_filters(db, start, end, cash_session_id)
 
-    cash_in_sales = db.query(func.coalesce(func.sum(Sale.final_amount), 0)).filter(*filters["sale"]).scalar() or 0
+    cash_in_sales = db.query(func.coalesce(func.sum(case(
+        (Sale.payment_method == "cash", Sale.final_amount),
+        else_=filters["cash_leg"],
+    )), 0)).filter(*filters["sale"]).scalar() or 0
     cash_in_payments = db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(*filters["payment"]).scalar() or 0
-    cash_out_refunds = db.query(func.coalesce(func.sum(Sale.refund_amount), 0)).filter(*filters["refund"]).scalar() or 0
+    cash_out_refunds = db.query(func.coalesce(func.sum(case(
+        (Sale.payment_method == "cash", Sale.refund_amount),
+        else_=filters["cash_leg"],
+    )), 0)).filter(*filters["refund"]).scalar() or 0
     cash_out_expenses = db.query(func.coalesce(func.sum(Expense.amount), 0)).filter(*filters["expense"]).scalar() or 0
     cash_out_withdrawals = db.query(func.coalesce(func.sum(CashSessionEntry.amount), 0)).filter(*filters["entry"]).scalar() or 0
     # Informational only: invoices recorded in the period, regardless of payment.

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+{% set print_heading = store.name ~ ' — فاکتور #' ~ sale.id %}
 
 {# A document the customer is handed, but a page in the shop's own history too:
    the trail says which sale this came from. Hidden in print, like the rest of
@@ -7,6 +8,7 @@
 <div class="screen-only invoice-trail">
     {% include 'partials/breadcrumb.html' %}
 </div>
+<h2 class="print-heading">{{ print_heading }}</h2>
 
 <div class="alert alert-success" style="font-size: 1.05rem; text-align: center; justify-content: center;">
     🎉 فروش با موفقیت ثبت شد!
@@ -65,8 +67,14 @@
         <div class="summary-row"><span>💳 روش پرداخت</span><span>
             {% if sale.payment_method == 'card' %}💳 کارت
             {% elif sale.payment_method == 'credit' %}📒 نسیه
+            {% elif sale.payment_method == 'split' %}ترکیبی
             {% else %}💵 نقد{% endif %}
         </span></div>
+        {% if sale.payment_method == 'split' %}
+        {% for part in sale.payment_parts %}
+        <div class="summary-row"><span>{% if part.method == 'cash' %}نقدی{% else %}کارتی{% endif %}</span><span class="tnum">{{ fmt(part.amount) }} تومان</span></div>
+        {% endfor %}
+        {% endif %}
         {% if sale.payment_method == 'credit' and customer %}
         <div class="summary-row attention">
             <span>📒 بدهی نسیه این فاکتور</span>

@@ -4005,3 +4005,59 @@ html[data-density="compact"] .card { padding: 1rem; }
 html[data-density="compact"] .form-row { row-gap: 0.6rem; }
 html[data-density="compact"] .form-group { margin-bottom: 0.6rem; }
 html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
+
+/* ===================== Sales ledger =====================
+   The discount figure reads green without shouting; on phones the ledger
+   stacks into cards like the customer, credit and audit tables. */
+.discount-figure { color: var(--success-ink); }
+@media (max-width: 700px) {
+  .sales-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .sales-table, .sales-table tbody, .sales-table tr, .sales-table td { display: block; }
+  .sales-table tr { border: 1px solid var(--rule); border-radius: var(--radius-sm); margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; }
+  .sales-table td { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; border: none; padding: 0.25rem 0; text-align: start; }
+  .sales-table td::before { content: attr(data-label); color: var(--ink-soft); font-size: 0.72rem; flex-shrink: 0; }
+}
+
+/* ===================== Till phase 2 =====================
+   Compact customer hero, last-scanned strip, row steppers, a timeline that
+   reports state (done steps wear the active voice), and classed credit copy
+   instead of inline styles. */
+.hero-compact { padding-top: 1.2rem; padding-bottom: 1.2rem; }
+.hero-compact h1 { font-size: 1.3rem; }
+.till-brand { margin-top: 1rem; font-size: 0.8rem; color: var(--ink-soft); }
+.scan-last { margin: 0.6rem 0 0; font-size: 0.85rem; color: var(--success-ink); font-weight: 700; }
+.basket-stepper { display: inline-flex; gap: 0.25rem; }
+.btn-step { min-width: 2rem; min-height: 2rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--card); color: var(--ink); font-size: 1rem; font-weight: 800; cursor: pointer; line-height: 1; }
+.btn-step:hover { border-color: var(--candy); color: var(--link-hover); }
+.timeline-step.done { color: var(--link-hover); border-color: var(--candy); font-weight: 700; }
+.credit-note { font-size: 0.8rem; color: var(--ink-soft); margin-top: 0.4rem; }
+.credit-blocked { color: var(--persimmon); font-weight: 700; }
+.empty-title { font-size: 1.1rem; margin: 0 0 0.4rem; }
+.terminal-indicator { margin-bottom: 0.4rem; }
+
+/* ===================== Till phase 3 =====================
+   Split editor, customer swap disclosure, draft resume rows. */
+.split-editor { margin-top: 0.7rem; padding-top: 0.7rem; border-top: 1px dashed var(--rule); }
+.customer-swap { margin-top: 0.8rem; }
+.customer-swap summary { cursor: pointer; color: var(--ink-soft); font-size: 0.85rem; font-weight: 700; }
+.customer-swap summary:hover { color: var(--link-hover); }
+.customer-swap form { margin-top: 0.5rem; }
+.draft-row { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; padding: 0.5rem 0; border-top: 1px solid var(--rule); }
+.draft-row:first-of-type { border-top: 0; }
+
+/* ===================== Thermal invoice =====================
+   The paper invoice must survive an 80mm thermal roll: no chrome, no color,
+   tight rows with dashed dividers, small page margins, and a paper heading
+   naming shop + invoice number. Screen rendering is untouched — everything
+   here lives under print. */
+@media print {
+  @page { margin: 8mm 5mm; }
+  .invoice { font-size: 0.82rem; }
+  .invoice-header h2 { font-size: 1.05rem; margin-bottom: 0.2rem; }
+  .invoice-item { padding: 0.2rem 0; border-bottom: 1px dashed color-mix(in srgb, var(--paper) 60%, var(--paper-ink)); break-inside: avoid; }
+  .invoice-summary .summary-row { padding: 0.15rem 0; }
+  .invoice-summary .summary-row.total { font-size: 1rem; border-top: 2px solid var(--paper-ink); }
+  .invoice-foot { font-size: 0.78rem; }
+  .invoice .muted, .invoice-foot { color: var(--paper-ink) !important; }
+  .alert, #profit-meter, .toaster, .toaster-flash { display: none !important; }
+}

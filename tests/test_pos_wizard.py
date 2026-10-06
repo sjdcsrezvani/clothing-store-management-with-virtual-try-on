@@ -42,7 +42,7 @@ def test_probe_contract_survives_the_rebuild():
     """Ids the headless probe reads, strings it matches, behavior it asserts."""
     source = _checkout()
     for pinned in ('id="terminal-form"', 'id="confirm-submit"',
-                   "terminalForm.style.display = isCard ? 'block' : 'none'",
+                   "terminalForm.style.display = terminalNeeded ? 'block' : 'none'",
                    "نسیه: مبلغ به حساب بدهی مشتری",
                    "از سقف اعتبار رد می‌شوید"):
         assert pinned in source, pinned

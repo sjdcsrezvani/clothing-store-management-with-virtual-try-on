@@ -110,7 +110,7 @@ async def admin_analytics(
         data["sales_pattern"] = get_sales_pattern(db, start, end)
         data["price_dist"] = get_price_distribution(db, start, end)
         data["payment_mix"] = [
-            {"label": {"cash": "نقدی", "card": "کارتی", "credit": "نسیه"}.get(row["method"], row["method"] or "—"),
+            {"label": {"cash": "نقدی", "card": "کارتی", "credit": "نسیه", "split": "ترکیبی"}.get(row["method"], row["method"] or "—"),
              "revenue": row["revenue"], "count": row["count"]}
             for row in get_revenue_by_payment(db, start, end)
         ]

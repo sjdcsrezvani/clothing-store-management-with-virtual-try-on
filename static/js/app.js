@@ -44,15 +44,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     const cashReceived = document.getElementById('cash-received');
-    const cashCalculator = document.getElementById('cash-calculator');
     const paymentMethods = document.querySelectorAll('input[name="payment_method"]');
     const totalElement = document.querySelector('.summary-row.total .tnum');
     const finalAmount = Number(totalElement?.dataset.amount || totalElement?.textContent.replace(/[^0-9]/g, '') || 0);
     function updateCashCalculator() {
-        const selected = document.querySelector('input[name="payment_method"]:checked');
-        const isCash = selected && selected.value === 'cash';
-        if (cashCalculator) cashCalculator.hidden = !isCash;
-        if (cashReceived && isCash) {
+        // Always visible: for card it previews tendered-vs-final all the same.
+        if (cashReceived) {
             const change = Number(toEnglishDigits(cashReceived.value).replace(/[^0-9]/g, '') || 0) - finalAmount;
             const label = document.getElementById('cash-change');
             if (label) label.textContent = change >= 0 ? 'باقی‌مانده: ' + change.toLocaleString('fa-IR') + ' تومان' : 'مبلغ دریافتی کافی نیست';

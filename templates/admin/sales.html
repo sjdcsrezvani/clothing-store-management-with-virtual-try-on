@@ -1,60 +1,98 @@
 {% extends "base.html" %}
 {% block content %}
-
+{% set page_description %}
+فاکتورهای ثبت‌شده — تازه‌ترین‌ها اول.
+{% endset %}
+{% set page_actions %}
+<a class="btn btn-primary" href="/sales/new"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-plus"/></svg>فروش جدید</a>
+{% endset %}
 {% include 'partials/page_header.html' %}
 
-<div class="filter-bar">
+<div class="card">
     <form method="get" action="/sales" class="search-form">
-        <input type="text" name="search" placeholder="مثال: نام یا 09123456789" value="{{ search }}">
-        <button type="submit" class="btn btn-primary">🔍 جستجو</button>
+        <div class="form-group">
+            <label class="sr-only" for="sales-search">جست‌وجو</label>
+            <input type="text" id="sales-search" name="search" placeholder="نام یا 09123456789" value="{{ search }}">
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="sales-method">روش پرداخت</label>
+            <select id="sales-method" name="method">
+                <option value="all"{% if method == 'all' %} selected{% endif %}>همه روش‌ها</option>
+                <option value="card"{% if method == 'card' %} selected{% endif %}>کارت</option>
+                <option value="cash"{% if method == 'cash' %} selected{% endif %}>نقد</option>
+                <option value="credit"{% if method == 'credit' %} selected{% endif %}>نسیه</option>
+                <option value="split"{% if method == 'split' %} selected{% endif %}>ترکیبی</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="sales-refunded">وضعیت</label>
+            <select id="sales-refunded" name="refunded">
+                <option value="all"{% if refunded == 'all' %} selected{% endif %}>فعال و ابطال‌شده</option>
+                <option value="no"{% if refunded == 'no' %} selected{% endif %}>فعال</option>
+                <option value="yes"{% if refunded == 'yes' %} selected{% endif %}>ابطال‌شده</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="sr-only" for="sales-per-page">تعداد در صفحه</label>
+            <select id="sales-per-page" name="per_page" onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}" aria-label="تعداد در صفحه">
+                {% for option in per_page_options %}
+                <option value="{{ option }}"{% if per_page == option %} selected{% endif %}>{{ option }} در صفحه</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary">اعمال فیلتر</button>
+        {% if filters_active %}<a href="/sales" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
     </form>
 </div>
 
 <div class="card" data-list-region="sales">
     {% if sales %}
     <div class="table-scroll">
-    <table class="data-table">
+    <table class="data-table sales-table">
         <thead>
             <tr>
-                <th>📄 شماره</th>
-                <th>👤 مشتری</th>
-                <th aria-sort="{{ 'descending' if sort_key == 'date' and sort_dir == 'desc' else 'ascending' if sort_key == 'date' else 'none' }}"><a class="sort-link" href="/sales?search={{ search }}&sort=date&dir={{ 'asc' if sort_key == 'date' and sort_dir == 'desc' else 'desc' }}">🕐 تاریخ</a></th>
-                <th class="num">📦 جمع کل</th>
-                <th class="num">🏷️ تخفیف</th>
-                <th class="num" aria-sort="{{ 'descending' if sort_key == 'amount' and sort_dir == 'desc' else 'ascending' if sort_key == 'amount' else 'none' }}"><a class="sort-link" href="/sales?search={{ search }}&sort=amount&dir={{ 'asc' if sort_key == 'amount' and sort_dir == 'desc' else 'desc' }}">💰 مبلغ نهایی</a></th>
-                <th class="num">🌟 امتیاز</th>
-                <th>💳 پرداخت</th>
-                <th>🔧</th>
+                <th scope="col">شماره</th>
+                <th scope="col">مشتری</th>
+                <th scope="col" aria-sort="{{ 'descending' if sort_key == 'date' and sort_dir == 'desc' else 'ascending' if sort_key == 'date' else 'none' }}"><a class="sort-link" href="/sales?search={{ search }}&method={{ method }}&refunded={{ refunded }}&per_page={{ per_page }}&sort=date&dir={{ 'asc' if sort_key == 'date' and sort_dir == 'desc' else 'desc' }}">تاریخ</a></th>
+                <th scope="col" class="num">جمع کل</th>
+                <th scope="col" class="num">تخفیف</th>
+                <th scope="col" class="num" aria-sort="{{ 'descending' if sort_key == 'amount' and sort_dir == 'desc' else 'ascending' if sort_key == 'amount' else 'none' }}"><a class="sort-link" href="/sales?search={{ search }}&method={{ method }}&refunded={{ refunded }}&per_page={{ per_page }}&sort=amount&dir={{ 'asc' if sort_key == 'amount' and sort_dir == 'desc' else 'desc' }}">مبلغ نهایی</a></th>
+                <th scope="col" class="num">امتیاز</th>
+                <th scope="col">پرداخت</th>
+                <th scope="col">وضعیت</th>
+                <th scope="col">عملیات</th>
             </tr>
         </thead>
         <tbody>
             {% for sale in sales %}
             <tr>
-                <td class="num"><strong>#{{ sale.id }}</strong></td>
-                <td>
+                <td class="num" data-label="شماره"><strong>#{{ sale.id }}</strong></td>
+                <td data-label="مشتری">
                     {% if sale.customer %}
                         {{ sale.customer.full_name }}<br>
-                        <small style="color: var(--ink-soft);" class="tnum">{{ sale.customer.phone }}</small>
+                        <small class="muted tnum">{{ sale.customer.phone }}</small>
                     {% else %}
-                        <span style="color: var(--ink-soft);">مشتری ناشناس</span>
+                        <span class="muted">مشتری ناشناس</span>
                     {% endif %}
                 </td>
-                <td class="tnum">{{ jalali_str(sale.created_at) }}</td>
-                <td class="tnum num">{{ fmt(sale.total_amount) }}</td>
-                <td class="tnum num">
+                <td class="tnum" data-label="تاریخ">{{ jalali_str(sale.created_at) }}</td>
+                <td class="tnum num" data-label="جمع کل">{{ fmt(sale.total_amount) }}</td>
+                <td class="tnum num" data-label="تخفیف">
                     {% if sale.discount_amount > 0 %}
-                        <span style="color: var(--success-ink);">−{{ fmt(sale.discount_amount) }}</span>
+                        <span class="discount-figure">−{{ fmt(sale.discount_amount) }}</span>
                     {% else %}—{% endif %}
                 </td>
-                <td class="tnum num"><strong>{{ fmt(sale.final_amount) }}</strong></td>
-                <td class="tnum num">{{ sale.points_earned or '—' }}</td>
-                <td>
-                    {% if sale.payment_method == 'card' %}💳
-                    {% elif sale.payment_method == 'credit' %}📒<small>نسیه</small>
-                    {% else %}💵{% endif %}
+                <td class="tnum num" data-label="مبلغ نهایی"><strong>{{ fmt(sale.final_amount) }}</strong></td>
+                <td class="tnum num" data-label="امتیاز">{{ sale.points_earned or '—' }}</td>
+                <td data-label="پرداخت">
+                    {% if sale.payment_method == 'card' %}کارت
+                    {% elif sale.payment_method == 'credit' %}نسیه
+                    {% elif sale.payment_method == 'split' %}ترکیبی
+                    {% else %}نقد{% endif %}
                 </td>
-                <td>
-                    <a href="/sales/invoice/{{ sale.id }}" class="btn btn-sm btn-ghost">🧾 فاکتور</a>
+                <td data-label="وضعیت">{% if sale.is_refunded %}<span class="badge badge-danger" {% if sale.refund_reason %}title="{{ sale.refund_reason }}"{% endif %}>ابطال شد</span>{% else %}—{% endif %}</td>
+                <td data-label="عملیات">
+                    <a href="/sales/invoice/{{ sale.id }}" class="btn btn-sm btn-ghost">فاکتور</a>
                 </td>
             </tr>
             {% endfor %}
@@ -64,18 +102,18 @@
     {% else %}
     <div class="empty-state">
         <h3>فروشی ثبت نشده است</h3>
-        <p>{% if search %}فروشی با این جستجو پیدا نشد.{% else %}اولین فروش را از صندوق ثبت کنید.{% endif %}</p>
-        <a href="/sales/new" class="btn btn-primary">🛒 فروش جدید</a>
+        <p>{% if filters_active %}با این فیلترها فروشی پیدا نشد — <a href="/sales">پاک‌کردن فیلتر</a>{% else %}اولین فروش را از صندوق ثبت کنید.{% endif %}</p>
+        <a href="/sales/new" class="btn btn-primary">فروش جدید</a>
     </div>
     {% endif %}
     {% if total_pages > 1 %}
     <nav class="product-pagination" aria-label="صفحه‌بندی فروش‌ها">
         {% if page > 1 %}
-        <a class="btn btn-sm btn-ghost" href="/sales?page={{ page - 1 }}&search={{ search }}&sort={{ sort_key }}&dir={{ sort_dir }}">→ صفحه قبل</a>
+        <a class="btn btn-sm btn-ghost" href="/sales?page={{ page - 1 }}&search={{ search }}&method={{ method }}&refunded={{ refunded }}&per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}">→ صفحه قبل</a>
         {% endif %}
-        <span style="color: var(--ink-soft);">صفحه {{ page }} از {{ total_pages }}</span>
+        <span class="muted">صفحه {{ page }} از {{ total_pages }}</span>
         {% if page < total_pages %}
-        <a class="btn btn-sm btn-ghost" href="/sales?page={{ page + 1 }}&search={{ search }}&sort={{ sort_key }}&dir={{ sort_dir }}">صفحه بعد ←</a>
+        <a class="btn btn-sm btn-ghost" href="/sales?page={{ page + 1 }}&search={{ search }}&method={{ method }}&refunded={{ refunded }}&per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}">صفحه بعد ←</a>
         {% endif %}
     </nav>
     {% endif %}
