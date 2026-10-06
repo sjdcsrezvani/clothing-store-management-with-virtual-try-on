@@ -147,6 +147,10 @@ def _rebuild_sales_for_split(conn) -> None:
     Ids are copied verbatim, so the seven tables pointing at sales keep
     pointing at the same invoices.
 
+    The indexes come back by hand: SQLite drops a table's indexes along with
+    the table, and a shop that upgrades must not end up with a thinner schema
+    than one that installs today.
+
     Resumable: a boot that died mid-rebuild leaves the staging table behind
     with the version unrecorded, and the next boot would collide with it.
     A staging table next to a live sales is a partial copy — drop and redo;
@@ -157,6 +161,8 @@ def _rebuild_sales_for_split(conn) -> None:
         text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()}
     if "sales_v33" in tables and "sales" not in tables:
         conn.execute(text("ALTER TABLE sales_v33 RENAME TO sales"))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_sales_id ON sales (id)"))
         return
     if "sales_v33" in tables:
         conn.execute(text("DROP TABLE sales_v33"))
@@ -202,6 +208,8 @@ def _rebuild_sales_for_split(conn) -> None:
     conn.execute(text(f"INSERT INTO sales_v33 ({columns}) SELECT {columns} FROM sales"))
     conn.execute(text("DROP TABLE sales"))
     conn.execute(text("ALTER TABLE sales_v33 RENAME TO sales"))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_sales_id ON sales (id)"))
 
 
 def _rebuild_checkout_for_split(conn) -> None:
@@ -210,12 +218,15 @@ def _rebuild_checkout_for_split(conn) -> None:
     Drafts are transient, but a till left open across the upgrade must not
     lose its basket — ids and content copy over like the sales above.
     Same resume rule as the sales rebuild: partial staging is redone,
-    an orphaned staging is claimed.
+    an orphaned staging is claimed. The indexes are re-created for the same
+    reason they are on sales: the drop takes them and the schema owes them
+    back.
     """
     tables = {row[0] for row in conn.execute(
         text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()}
     if "checkout_sessions_v33" in tables and "checkout_sessions" not in tables:
         conn.execute(text("ALTER TABLE checkout_sessions_v33 RENAME TO checkout_sessions"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_checkout_sessions_id ON checkout_sessions (id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_checkout_sessions_checkout_nonce ON checkout_sessions (checkout_nonce)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_checkout_sessions_state ON checkout_sessions (state)"))
         return
@@ -266,6 +277,7 @@ def _rebuild_checkout_for_split(conn) -> None:
     conn.execute(text(f"INSERT INTO checkout_sessions_v33 ({columns}) SELECT {columns} FROM checkout_sessions"))
     conn.execute(text("DROP TABLE checkout_sessions"))
     conn.execute(text("ALTER TABLE checkout_sessions_v33 RENAME TO checkout_sessions"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_checkout_sessions_id ON checkout_sessions (id)"))
     conn.execute(text("CREATE INDEX ix_checkout_sessions_checkout_nonce ON checkout_sessions (checkout_nonce)"))
     conn.execute(text("CREATE INDEX ix_checkout_sessions_state ON checkout_sessions (state)"))
 
@@ -403,6 +415,9 @@ def _apply_revision(conn, version: int) -> None:
                 CONSTRAINT ck_sale_part_amount_positive CHECK (amount > 0)
             )
         """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_sale_payment_parts_id "
+            "ON sale_payment_parts (id)"))
         conn.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_sale_payment_parts_sale_id "
             "ON sale_payment_parts (sale_id)"))

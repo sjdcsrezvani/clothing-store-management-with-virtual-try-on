@@ -1,5 +1,5 @@
 """Split-tender sales phase 3: migration, confirm, counting, swap, resume."""
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 
 from migrations import MIGRATION_VERSION, upgrade
 from models import Sale, SalePaymentPart
@@ -60,6 +60,47 @@ def test_migration_33_rebuilds_sales_and_checkout_keeping_rows(tmp_path):
         else:
             raise SystemExit("widened CHECK admits garbage")
         conn.commit()
+
+
+def test_migration_33_hands_back_the_indexes_it_took(tmp_path):
+    """A rebuilt table must wear the indexes a fresh install gives it.
+
+    SQLite drops a table's indexes along with the table. Revision 33 rebuilds
+    ``sales`` and ``checkout_sessions`` to widen their method CHECKs, so the
+    indexes have to come back explicitly — otherwise a shop that upgrades
+    ends up with a thinner schema than one that installs today. Only the
+    primary-key indexes are checked here, because those are the ones the
+    rebuild has no other reason to re-create.
+    """
+    engine = create_engine(f"sqlite:///{tmp_path}/indexed32.db")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE schema_version (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)"))
+        conn.execute(text("INSERT INTO schema_version (id, version) VALUES (1, 32)"))
+        conn.execute(text("CREATE TABLE customers (id INTEGER PRIMARY KEY, phone VARCHAR(20))"))
+        conn.execute(text("CREATE TABLE cash_sessions (id INTEGER PRIMARY KEY)"))
+        conn.execute(text("CREATE TABLE pos_transactions (id INTEGER PRIMARY KEY)"))
+        conn.execute(text(
+            """CREATE TABLE sales (
+                id INTEGER PRIMARY KEY, total_amount INTEGER NOT NULL,
+                final_amount INTEGER NOT NULL, payment_method VARCHAR(50),
+                CONSTRAINT ck_sales_payment_method CHECK (payment_method IN ('card', 'cash', 'credit')))"""))
+        conn.execute(text("CREATE INDEX ix_sales_id ON sales (id)"))
+        conn.execute(text(
+            """CREATE TABLE checkout_sessions (
+                id INTEGER PRIMARY KEY, checkout_nonce VARCHAR(100) NOT NULL UNIQUE,
+                payment_method VARCHAR(20) NOT NULL DEFAULT 'card',
+                state VARCHAR(30) NOT NULL DEFAULT 'draft',
+                total_amount INTEGER NOT NULL DEFAULT 0, final_amount INTEGER NOT NULL DEFAULT 0,
+                expires_at DATETIME NOT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL,
+                CONSTRAINT ck_checkout_payment_method CHECK (payment_method IN ('card', 'cash', 'credit')))"""))
+        conn.execute(text("CREATE INDEX ix_checkout_sessions_id ON checkout_sessions (id)"))
+        conn.execute(text("CREATE INDEX ix_checkout_sessions_state ON checkout_sessions (state)"))
+    assert upgrade(engine) == 33
+    sales_indexes = {index["name"] for index in inspect(engine).get_indexes("sales")}
+    checkout_indexes = {index["name"] for index in inspect(engine).get_indexes("checkout_sessions")}
+    assert "ix_sales_id" in sales_indexes
+    assert "ix_checkout_sessions_id" in checkout_indexes
+    assert "ix_checkout_sessions_state" in checkout_indexes
 
 
 def _basket(variant, qty=1):
