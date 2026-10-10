@@ -4092,3 +4092,16 @@ html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
   .invoice { position: relative; }
   .void-mark { display: block !important; position: absolute; inset: 30% 0 auto 0; text-align: center; font-size: 2.2rem; font-weight: 900; color: var(--paper-ink) !important; border: 4px double var(--paper-ink); transform: rotate(-12deg); opacity: 0.85; padding: 0.2rem; }
 }
+
+/* ===================== Login card =====================
+   Everything token-driven so the active theme (light, dark, custom)
+   owns the card: no fixed colors, no emoji art, no inline styles. */
+.login-logo { max-height: 56px; max-width: 180px; margin-bottom: 0.4rem; }
+.login-sub { margin: 0 0 1rem; font-size: 0.9rem; }
+.login-card .form-group { text-align: right; margin-bottom: 0.9rem; }
+.login-card .btn-block { margin-top: 0.4rem; }
+.password-wrap { display: flex; gap: 0.4rem; align-items: stretch; }
+.password-wrap input { flex: 1; min-width: 0; }
+.password-peek { white-space: nowrap; }
+.caps-hint { display: block; margin-top: 0.3rem; }
+.caps-hint[hidden] { display: none; }

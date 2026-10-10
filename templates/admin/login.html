@@ -1,24 +1,53 @@
 {% extends "base.html" %}
-{% block title %}ورود مدیر — {{ store.name }}{% endblock %}
+{% block title %}ورود — {{ store.name }}{% endblock %}
 {% block content %}
 
 <div class="login-card">
-    <div style="font-size: 3rem; margin-bottom: 0.5rem;">🔐</div>
-    <h2>ورود مدیر</h2>
-    {% if error %}<div class="alert alert-error">⚠️ {{ error }}</div>{% endif %}
+    {% if store_logo %}<img src="{{ store_logo }}" alt="" class="login-logo">{% endif %}
+    <h2>ورود</h2>
+    <p class="muted login-sub">{{ store.name }} — {{ store.tagline }}</p>
+    {% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
+    {% if error %}<div class="alert alert-error" role="alert">{{ error }}
+        {% if locked_minutes %}<span class="muted">حدود {{ locked_minutes }} دقیقه دیگر دوباره امتحان کنید.</span>{% endif %}
+    </div>{% endif %}
     <form method="post" action="/admin/login">
         <div class="form-group">
-            <label for="username" style="text-align: right;">👤 نام کاربری</label>
-            <input type="text" id="username" name="username" value="{{ username|default('owner') }}" placeholder="نام کاربری" autocomplete="username" required>
-            <label for="password" style="text-align: right;">🔑 رمز عبور مدیریت</label>
-            <input type="password" id="password" name="password" required autofocus
-                   placeholder="رمز عبور را وارد کنید">
+            <label for="username">نام کاربری</label>
+            <input type="text" id="username" name="username" value="{{ username|default('owner') }}" placeholder="نام کاربری" autocomplete="username" dir="ltr" required autofocus>
         </div>
-        <button type="submit" class="btn btn-primary btn-block btn-large">🚪 ورود</button>
+        <div class="form-group">
+            <label for="password">رمز عبور</label>
+            <div class="password-wrap">
+                <input type="password" id="password" name="password" required
+                       placeholder="رمز عبور را وارد کنید" autocomplete="current-password">
+                <button type="button" class="btn btn-ghost btn-sm password-peek" aria-pressed="false" aria-label="نمایش رمز عبور">نمایش</button>
+            </div>
+            <small class="muted caps-hint" hidden>کلید Caps Lock روشن است.</small>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block btn-large">ورود</button>
     </form>
-    <div style="margin-top: 1rem; font-size: 0.8rem; color: var(--ink-soft);">
-        🧸 {{ store.name }} — {{ store.tagline }}
-    </div>
 </div>
 
+<script>
+(function () {
+    // Show/hide + caps-lock hint. Screen-only helpers; the POST is unchanged.
+    var input = document.getElementById('password');
+    var peek = document.querySelector('.password-peek');
+    var caps = document.querySelector('.caps-hint');
+    if (peek && input) {
+        peek.addEventListener('click', function () {
+            var show = input.type === 'password';
+            input.type = show ? 'text' : 'password';
+            peek.setAttribute('aria-pressed', show ? 'true' : 'false');
+            peek.textContent = show ? 'پنهان' : 'نمایش';
+            input.focus();
+        });
+    }
+    if (caps && input && input.getModifierState) {
+        input.addEventListener('keyup', function (event) {
+            caps.hidden = !event.getModifierState || !event.getModifierState('CapsLock');
+        });
+    }
+})();
+</script>
 {% endblock %}

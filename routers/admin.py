@@ -94,6 +94,7 @@ from services.pos_terminal import get_terminal_config
 from services.navigation import home_for
 from services.security import (
     login_locked,
+    login_lock_remaining,
     login_failure,
     login_success,
     log_action,
@@ -143,8 +144,21 @@ router = APIRouter(prefix="/admin")
 
 
 @router.get("/login", response_class=HTMLResponse)
-async def admin_login_page(request: Request):
-    return templates.TemplateResponse(request, "admin/login.html")
+async def admin_login_page(request: Request, db: Session = Depends(get_db)):
+    return templates.TemplateResponse(request, "admin/login.html", {
+        "msg": request.query_params.get("msg", ""),
+        "store_logo": _login_logo(db),
+    })
+
+
+def _login_logo(db) -> str:
+    """Shop logo for the anonymous login card. Empty when never uploaded —
+    the card falls back to name + tagline, like the invoice does."""
+    try:
+        row = db.query(Settings).filter(Settings.key == "owner_logo_path").first()
+        return (row.value or "") if row else ""
+    except Exception:
+        return ""
 
 
 @router.post("/login", response_class=HTMLResponse)
@@ -152,7 +166,9 @@ async def admin_login(request: Request, username: str = Form("owner"), password:
     if login_locked(request):
         log_action(db, "login_blocked", "بیش از حد تلاش ناموفق", request=request)
         return templates.TemplateResponse(request, "admin/login.html", {
-            "error": "تلاش‌های ناموفق زیاد بود. چند دقیقه بعد دوباره امتحان کنید."
+            "error": "تلاش‌های ناموفق زیاد بود.",
+            "locked_minutes": login_lock_remaining(request),
+            "store_logo": _login_logo(db),
         })
     user = authenticate_staff(db, username or "owner", password)
     if user:
@@ -179,7 +195,7 @@ async def admin_login(request: Request, username: str = Form("owner"), password:
         return RedirectResponse(url=home_for(user.role), status_code=303)
     login_failure(request)
     log_action(db, "login_failed", "رمز عبور اشتباه", request=request)
-    return templates.TemplateResponse(request, "admin/login.html", {"error": "رمز عبور اشتباه است", "username": username})
+    return templates.TemplateResponse(request, "admin/login.html", {"error": "رمز عبور اشتباه است", "username": username, "store_logo": _login_logo(db)})
 
 
 @router.post("/logout", response_class=HTMLResponse)

@@ -334,6 +334,16 @@ def login_locked(request: Request) -> bool:
     return len(attempts) >= _LOGIN_MAX_ATTEMPTS
 
 
+def login_lock_remaining(request: Request) -> int:
+    """Whole minutes left on the lock, for display only — no state change."""
+    ip = _client_ip(request)
+    now = time.time()
+    attempts = [t for t in _login_attempts.get(ip, []) if now - t < _LOGIN_LOCK_SECONDS]
+    if len(attempts) < _LOGIN_MAX_ATTEMPTS:
+        return 0
+    return max(1, int((_LOGIN_LOCK_SECONDS - (now - max(attempts))) // 60))
+
+
 def login_failure(request: Request) -> None:
     ip = _client_ip(request)
     _login_attempts.setdefault(ip, []).append(time.time())
