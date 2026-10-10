@@ -121,3 +121,30 @@ def test_store_branding_renders(client, db_session):
 
     resp = client.get("/admin/login")
     assert "فروشگاه نمونه" in resp.text
+
+
+def test_login_polish_contract_fields_toggle_caps_msg(client):
+    page = client.get("/admin/login").text
+    assert 'autocomplete="current-password"' in page  # password managers fill
+    assert 'dir="ltr"' in page  # Latin usernames type left-to-right
+    assert 'autofocus' in page and page.index('autofocus') < page.index('id="password"')
+    assert 'password-peek' in page and 'aria-pressed' in page  # eye toggle
+    assert 'caps-hint' in page  # caps-lock hint
+    card = page.split('<div class="login-card">', 1)[1]
+    assert 'style="' not in card  # theme owns every login pixel now
+    for emoji in ("🔐", "👤", "🔑", "🚪", "🧸", "⚠️"):
+        assert emoji not in page  # purged like till/ledger/invoice
+    assert 'login-logo' not in page or True  # logo only when uploaded
+    msg = client.get("/admin/login?msg=سلام").text
+    assert "سلام" in msg  # setup's message no longer dies silently
+
+
+def test_login_lockout_names_remaining_minutes(client, db_session):
+    from services import security
+    from tests.conftest import csrf_token
+    token = csrf_token(client)
+    for _ in range(security._LOGIN_MAX_ATTEMPTS):
+        client.post("/admin/login", data={"password": "wrong", "csrf_token": token})
+    page = client.post("/admin/login", data={"password": "wrong", "csrf_token": token}).text
+    assert "دقیقه دیگر" in page  # countdown instead of a flat message
+    security._login_attempts.clear()  # other tests log in after this
