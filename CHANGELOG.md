@@ -1,3 +1,66 @@
+## 2.8.7 — 1405/07/18 (2026-10-10)
+
+### فاکتور، به شکل کاغذ: the invoice is written for the paper it lands on
+
+- **The page picks its paper.** A toggle above the invoice picks the print
+  sheet — an 80mm thermal roll or A5 — and remembers it on the device that
+  chose, so the body carries `data-paper` and the print rules scope to it.
+  The choice is a habit of the printer, never a fact of the sale.
+- **The paper knows the shop and the till it came from.** Address and phone
+  now live in «فروشگاه» settings and print under the shop name beside the
+  logo; the cashier who rang the sale signs the «صندوقدار» line, resolved
+  through the checkout session that produced it — an older sale without
+  one prints no line rather than a guess.
+- **Every line carries its unit price.** قیمت واحد joins تعداد and جمع on
+  the page and in the PDF alike, the invoice number renders as a Code39
+  strip a return can scan instead of type, and the fixed line «تعویض کالا
+  با ارائه این فاکتور انجام می‌شود.» closes both.
+- **Paper gets no emoji and no Latin digits.** The decorations hide behind
+  their labels in print while the buttons dropped theirs outright, and
+  around the print event every figure — the heading's included — turns
+  Persian and turns back, so copy-paste and the till keep Latin digits.
+- **A void prints void; credit prints its terms.** A refunded sale wears
+  «ابطال شد» stamped across its printed body with the reason, and نسیه
+  paper carries کارمزد، سررسید and that invoice's remaining debt whenever
+  they exist — while the points row, a screen notion, stays off the slip.
+- **The refund asks in the app's voice.** The invoice form carries its
+  sentence in `data-confirm` and the dialog reads it back; without script
+  the form posts as it always did.
+
+### PDF و کاغذ، یک حرف: the PDF and the page say the same thing
+
+- **One file per invoice, kept.** A finished invoice is never rewritten:
+  the link lands on a fixed name and a revisit reuses the file instead of
+  stacking timestamped copies, and a refund renders its own void file
+  carrying the stamp.
+- **The PDF says what the page says.** Split legs print with their
+  amounts, discount details list their reasons, address, phone, cashier
+  and footer note ride the sheet, and the method comes from one table the
+  two share — an unknown code can never reach paper.
+- **The dead text invoice is gone.** The plain-text generator no view ever
+  rendered was still rebuilt on every sale; it is deleted, and the page
+  hands the PDF the same fields it shows.
+
+### رسید دو قلمی: the card terminal prints the small slip
+
+- **A two-product basket prints a receipt on the merchant slip.** With
+  «رسید دو قلمی» on in «دستگاه‌ها», a sale of at most two distinct products
+  sends its lines, تخفیف and جمع as one R4 block with an R8 thanks tail —
+  the shape probed to the byte against the terminal it feeds.
+- **Everything else prints the footer.** More products, more bytes than
+  the slip holds, or a letter the firmware reads as an abort — the handle,
+  the invoice reference and the thanks lines go instead, and they always
+  fit.
+- **A figure that would not survive encoding is never sent.** Receipt text
+  is windows-1256 with the Yeh normalized and glyph-less characters
+  dropped; a digit that will not fit refuses the receipt outright rather
+  than print an amount with a hole in it, and any failure at all degrades
+  to a bare sale — paper must never break money.
+- **The wire is pinned.** The gate is the setting, the product count and
+  the byte budget together, and the tests hold the approved slip to its
+  exact bytes, the tags in order before PD, and the untagged payload
+  byte-for-byte the one every terminal already accepted.
+
 ## 2.8.6 — 1405/07/14 (2026-10-06)
 
 ### دفتر فروش، پاسخ‌گو: the ledger answers a question, not a scroll
