@@ -119,7 +119,7 @@ def test_send_to_terminal_persists_approval_and_reuses_nonce(client, db_session,
     variant = _make_pos_variant(db_session, price=100_000, stock=2)
     calls = []
 
-    def fake_send(host, port, amount):
+    def fake_send(host, port, amount, r4=None, r8=None):
         calls.append((host, port, amount))
         return {"status": "approved", "response_code": "00200", "label": "Approved", "response": "RS003RS00200"}
 
@@ -152,7 +152,7 @@ def test_terminal_error_is_persisted_as_uncertain_and_not_retried(client, db_ses
     _configure_pos(db_session)
     calls = []
 
-    def fake_send(host, port, amount):
+    def fake_send(host, port, amount, r4=None, r8=None):
         calls.append(amount)
         raise TimeoutError("terminal did not answer")
 
@@ -184,7 +184,7 @@ def test_approved_pos_transaction_links_to_one_sale(client, db_session, monkeypa
     variant = _make_pos_variant(db_session)
     monkeypatch.setattr(
         "routers.sales.send_terminal_sale",
-        lambda host, port, amount: {
+        lambda host, port, amount, r4=None, r8=None: {
             "status": "approved", "response_code": "00200",
             "label": "Approved", "response": "RS003RS00200",
         },

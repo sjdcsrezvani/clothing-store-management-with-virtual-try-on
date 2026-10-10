@@ -1,5 +1,5 @@
 """Store profile (branding) — single source of truth for the shop's name,
-tagline, Instagram handle and invoice footer. Values live in the `settings`
+tagline, Instagram handle, invoice footer, address and phone. Values live in the `settings`
 table so every shop can brand its own install; cached in memory for 60s and
 invalidated when settings are saved.
 
@@ -18,6 +18,8 @@ DEFAULT_STORE = {
     "tagline": "فروشگاه پوشاک کودک",
     "instagram": "",
     "footer": "",
+    "address": "",
+    "phone": "",
 }
 
 

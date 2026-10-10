@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import (
     Campaign, Customer, Product, ProductVariant, Sale, SaleItem, SaleCampaign, SalePaymentPart,
-    Referral, Settings, POSTransaction, CheckoutSession, Refund, generate_referral_code, to_english_digits,
+    Referral, Settings, POSTransaction, CheckoutSession, Refund, StaffUser,
+    generate_referral_code, to_english_digits,
 )
 from services._common import (
     child_profile_enabled,
@@ -39,12 +40,18 @@ from services.tier import (
     update_customer_after_purchase, get_tier_config, check_tier_upgrade,
     tier_up_marker_key, TIER_RANK,
 )
-from services.invoice import generate_invoice_text, generate_invoice_pdf
+from services.invoice import generate_invoice_pdf
+from services.store import get_store
+from services.barcode import code39_svg
 from services.events import append_event
 from services.pos_terminal import (
     send_sale as send_terminal_sale,
     get_terminal_config,
     check_connection as check_terminal_connection,
+    build_receipt_payload,
+    build_receipt_thanks,
+    build_footer_payload,
+    wants_receipt,
 )
 from services.inventory import record_stock_movement
 from services.checkout import (
@@ -1028,8 +1035,28 @@ async def sales_send_to_terminal(
     _clear_pos_approval(request)
 
     try:
+        try:
+            # Receipt or footer-only, decided here so the wire stays dumb:
+            # setting ON + at most 2 distinct products + bytes that fit
+            # sends the full receipt, everything else the footer. Variants
+            # count as lines but products decide — 5 variants of 2 products
+            # still fit the slip. Full-basket figures even on a split leg;
+            # the bank lines carry what the terminal bills. Any failure
+            # degrades to a bare sale — paper must never break money.
+            items = checkout_data["basket"]
+            product_count = len({it.get("product_id") for it in items})
+            shop = get_store(db).get("name") or ""
+            ref = f"inv{transaction.id}"
+            r4 = build_receipt_payload(
+                items, checkout.discount_amount, checkout.final_amount, shop, ref)
+            if wants_receipt(cfg.get("receipt_2item", False), product_count, r4):
+                r8 = build_receipt_thanks()
+            else:
+                r4, r8 = build_footer_payload(shop, ref), None
+        except Exception:
+            r4, r8 = None, None
         result = await asyncio.to_thread(
-            send_terminal_sale, cfg["host"], cfg["port"], amount,
+            send_terminal_sale, cfg["host"], cfg["port"], amount, r4=r4, r8=r8,
         )
     except Exception as error:
         transaction.request_finished_at = datetime.now(timezone.utc)
@@ -1100,6 +1127,34 @@ async def sales_send_to_terminal(
         "created_at": time.time(),
     }
     return _transaction_response(transaction, approval_token)
+
+
+def _sale_receipt_extras(db, sale):
+    """Paper-only context: cashier, logo, barcode. Nothing here may fail a sale.
+
+    The cashier resolves through the checkout session that produced the sale;
+    old sales without one print without the line rather than a guess.
+    """
+    cashier_name = None
+    try:
+        session = db.query(CheckoutSession).filter(
+            CheckoutSession.sale_id == sale.id).order_by(CheckoutSession.id.desc()).first()
+        if session and session.staff_user_id:
+            staff = db.query(StaffUser).filter(StaffUser.id == session.staff_user_id).first()
+            if staff:
+                cashier_name = staff.full_name or staff.username
+    except Exception:
+        cashier_name = None
+    try:
+        logo_row = db.query(Settings).filter(Settings.key == "owner_logo_path").first()
+        store_logo = (logo_row.value or "") if logo_row else ""
+    except Exception:
+        store_logo = ""
+    return {
+        "cashier_name": cashier_name,
+        "store_logo": store_logo,
+        "barcode_svg": code39_svg(sale.id),
+    }
 
 
 @router.post("/confirm-sale", response_class=HTMLResponse)
@@ -1456,8 +1511,13 @@ async def sales_confirm(
 
     footer_note = db.query(Settings).filter(
         Settings.key == "receipt_footer_note").first()
-    invoice_path = generate_invoice_pdf(sale, customer, sale_items)
-    invoice_text = generate_invoice_text(sale, customer, sale_items)
+    footer_text = (footer_note.value or "") if footer_note else ""
+    receipt = _sale_receipt_extras(db, sale)
+    invoice_path = generate_invoice_pdf(
+        sale, customer, sale_items, store=get_store(db),
+        cashier_name=receipt["cashier_name"],
+        credit_remaining=sale_remaining(sale),
+        footer_note=footer_text, payment_parts=sale.payment_parts)
 
     return templates.TemplateResponse(request, "sales/invoice.html", {
         "sale": sale,
@@ -1465,13 +1525,13 @@ async def sales_confirm(
         "items": sale_items,
         "discounts": discounts,
         "invoice_path": invoice_path,
-        "invoice_text": invoice_text,
         "credit_remaining": sale_remaining(sale),
-        "receipt_footer_note": (footer_note.value or "") if footer_note else "",
+        "receipt_footer_note": footer_text,
         "fmt": fmt,
         "jalali_str": jalali_str,
         "points_earned": points_earned,
         "can_refund": effective_cap(guard, "can_refund"),
+        **receipt,
     })
 
 
@@ -1494,8 +1554,13 @@ async def sales_invoice_view(sale_id: int, request: Request, db: Session = Depen
 
     footer_note = db.query(Settings).filter(
         Settings.key == "receipt_footer_note").first()
-    invoice_path = generate_invoice_pdf(sale, customer, items)
-    invoice_text = generate_invoice_text(sale, customer, items)
+    footer_text = (footer_note.value or "") if footer_note else ""
+    receipt = _sale_receipt_extras(db, sale)
+    invoice_path = generate_invoice_pdf(
+        sale, customer, items, store=get_store(db),
+        cashier_name=receipt["cashier_name"],
+        credit_remaining=sale_remaining(sale),
+        footer_note=footer_text, payment_parts=sale.payment_parts)
 
     discounts = {}
     if sale.discount_amount > 0 and sale.discount_details:
@@ -1510,13 +1575,13 @@ async def sales_invoice_view(sale_id: int, request: Request, db: Session = Depen
         "items": items,
         "discounts": discounts,
         "invoice_path": invoice_path,
-        "invoice_text": invoice_text,
         "credit_remaining": sale_remaining(sale),
-        "receipt_footer_note": (footer_note.value or "") if footer_note else "",
+        "receipt_footer_note": footer_text,
         "fmt": fmt,
         "jalali_str": jalali_str,
         "points_earned": sale.points_earned,
         "can_refund": effective_cap(guard, "can_refund"),
+        **receipt,
     })
 
 

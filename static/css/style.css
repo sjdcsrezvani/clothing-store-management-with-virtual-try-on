@@ -4061,3 +4061,34 @@ html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
   .invoice .muted, .invoice-foot { color: var(--paper-ink) !important; }
   .alert, #profit-meter, .toaster, .toaster-flash { display: none !important; }
 }
+
+/* ===================== Invoice paper modes =====================
+   The paper toggle is a device habit (localStorage), not a sale fact: the
+   body carries data-paper and print rules scope to it. Thermal is the narrow
+   roll; A5 breathes. Screen rendering of the invoice itself is untouched
+   apart from the toggle row. */
+.paper-toggle { display: flex; gap: 0.4rem; margin-bottom: 0.8rem; }
+.paper-toggle button { padding: 0.4rem 0.9rem; min-height: 44px; border: 2px solid var(--rule); border-radius: 999px; background: transparent; color: inherit; font-family: inherit; cursor: pointer; }
+.paper-toggle button[aria-pressed="true"] { border-color: var(--candy); font-weight: 700; }
+.invoice-flash { font-size: 0.9rem; text-align: center; }
+.invoice-logo { max-height: 64px; max-width: 160px; }
+.invoice-contact { font-size: 0.85rem; }
+.invoice-item { display: grid; grid-template-columns: 1fr auto auto auto; gap: 0.6rem; align-items: baseline; }
+.invoice-item .unit { color: var(--ink-soft); font-size: 0.85em; }
+.invoice-barcode { text-align: center; margin-top: 0.6rem; }
+.invoice-barcode svg { height: 44px; width: auto; max-width: 100%; }
+.invoice-barcode svg rect { fill: var(--paper-ink); }
+.void-mark { display: none; }
+@media print {
+  .paper-toggle, .invoice-flash, .invoice-trail { display: none !important; }
+  /* Paper carries no emoji: the screen's decorations hide, their labels stay. */
+  .invoice .em { display: none !important; }
+  .invoice-logo { max-height: 44px; filter: grayscale(1) contrast(1.3); }
+  .invoice-barcode svg rect { fill: var(--paper-ink) !important; }
+  body[data-paper="thermal"] .invoice { max-width: 72mm; margin: 0 auto; }
+  body[data-paper="thermal"] .invoice-item { gap: 0.35rem; font-size: 0.78rem; }
+  body[data-paper="thermal"] .invoice-item .unit { font-size: 0.7rem; }
+  body[data-paper="a5"] .invoice { max-width: 130mm; margin: 0 auto; }
+  .invoice { position: relative; }
+  .void-mark { display: block !important; position: absolute; inset: 30% 0 auto 0; text-align: center; font-size: 2.2rem; font-weight: 900; color: var(--paper-ink) !important; border: 4px double var(--paper-ink); transform: rotate(-12deg); opacity: 0.85; padding: 0.2rem; }
+}
