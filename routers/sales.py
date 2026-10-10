@@ -48,6 +48,10 @@ from services.pos_terminal import (
     send_sale as send_terminal_sale,
     get_terminal_config,
     check_connection as check_terminal_connection,
+    build_receipt_payload,
+    build_receipt_thanks,
+    build_footer_payload,
+    wants_receipt,
 )
 from services.inventory import record_stock_movement
 from services.checkout import (
@@ -1031,8 +1035,28 @@ async def sales_send_to_terminal(
     _clear_pos_approval(request)
 
     try:
+        try:
+            # Receipt or footer-only, decided here so the wire stays dumb:
+            # setting ON + at most 2 distinct products + bytes that fit
+            # sends the full receipt, everything else the footer. Variants
+            # count as lines but products decide — 5 variants of 2 products
+            # still fit the slip. Full-basket figures even on a split leg;
+            # the bank lines carry what the terminal bills. Any failure
+            # degrades to a bare sale — paper must never break money.
+            items = checkout_data["basket"]
+            product_count = len({it.get("product_id") for it in items})
+            shop = get_store(db).get("name") or ""
+            ref = f"inv{transaction.id}"
+            r4 = build_receipt_payload(
+                items, checkout.discount_amount, checkout.final_amount, shop, ref)
+            if wants_receipt(cfg.get("receipt_2item", False), product_count, r4):
+                r8 = build_receipt_thanks()
+            else:
+                r4, r8 = build_footer_payload(shop, ref), None
+        except Exception:
+            r4, r8 = None, None
         result = await asyncio.to_thread(
-            send_terminal_sale, cfg["host"], cfg["port"], amount,
+            send_terminal_sale, cfg["host"], cfg["port"], amount, r4=r4, r8=r8,
         )
     except Exception as error:
         transaction.request_finished_at = datetime.now(timezone.utc)
