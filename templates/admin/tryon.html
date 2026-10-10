@@ -2,18 +2,18 @@
 {% block content %}
 
 {% set page_actions %}
-<a href="/sales/new" onclick="return openNewSaleWindow();" rel="noopener" class="btn btn-success btn-sm">➕ فروش جدید</a>
+<a href="/sales/new" onclick="return openNewSaleWindow();" rel="noopener" class="btn btn-success btn-sm">فروش جدید</a>
     <form method="post" action="/admin/try-on/clear"
-          onsubmit="return confirm('عکس کودک و محصولات فعلی پاک می‌شوند. ادامه؟');">
-        <button type="submit" class="btn btn-ghost btn-sm">🆕 شروع مشتری جدید</button>
+          data-confirm="عکس کودک و محصولات فعلی پاک می‌شوند. ادامه؟">
+        <button type="submit" class="btn btn-ghost btn-sm">شروع مشتری جدید</button>
     </form>
 {% endset %}
 {% include 'partials/page_header.html' %}
 
 {# Wizard: photo → options → result, the same numbered rhythm as the till. #}
-<div class="payment-timeline wizard-timeline" aria-label="مراحل پرو مجازی">
-    <span class="timeline-step active">۱ عکس کودک</span><span class="timeline-line"></span><span class="timeline-step">۲ محصولات و تنظیمات</span><span class="timeline-line"></span><span class="timeline-step">۳ نتیجه</span>
-</div>
+<ol class="payment-timeline wizard-timeline" aria-label="مراحل پرو مجازی">
+    <li class="timeline-step{% if tryon_step >= 1 %} active{% endif %}"{% if tryon_step == 1 %} aria-current="step"{% endif %}><span>۱ عکس کودک</span></li><li class="timeline-line" aria-hidden="true"></li><li class="timeline-step{% if tryon_step >= 2 %} active{% endif %}"{% if tryon_step == 2 %} aria-current="step"{% endif %}><span>۲ محصولات و تنظیمات</span></li><li class="timeline-line" aria-hidden="true"></li><li class="timeline-step{% if tryon_step >= 3 %} active{% endif %}"{% if tryon_step == 3 %} aria-current="step"{% endif %}><span>۳ نتیجه</span></li>
+</ol>
 
 <div class="checkout-layout">
     {# ─── STEP 1: the kid + the paired phone ─── #}
@@ -23,104 +23,200 @@
         <div class="card">
             <h3>۱ · عکس کودک</h3>
             {% if kid_photo_preview %}
-            <div style="text-align: center; margin-bottom: 0.8rem;">
-                <img src="{{ kid_photo_preview }}" alt="kid"
-                     style="max-width: 200px; max-height: 200px; border-radius: 12px; object-fit: cover; box-shadow: var(--shadow-hover);">
+            <div class="tryon-photo-frame">
+                <img src="{{ kid_photo_preview }}" alt="عکس کودک برای پرو مجازی"
+                     class="tryon-photo">
+                <span class="tryon-guide" aria-hidden="true"></span>
             </div>
+            <p class="muted tryon-guide-note">صورت داخل قاب، نور روبه‌رو، پس‌زمینه ساده — همین سه‌تا کیفیت پرو را می‌سازد.</p>
             {% else %}
-            <div style="text-align: center; padding: 1.5rem; background: var(--surface-soft); border-radius: 8px; margin-bottom: 0.8rem;">
-                <div style="font-size: 3rem;">📷</div>
-                <p style="color: var(--ink-soft);">هنوز عکسی آپلود نشده</p>
-                <small>از طریق گوشی یا فرم زیر آپلود کنید</small>
+            <div class="tryon-photo-empty">
+                <p>هنوز عکسی آپلود نشده</p>
+                <small>از طریق گوشی یا فرم زیر آپلود کنید — صورت داخل قاب باشد</small>
             </div>
             {% endif %}
-            <details>
-                <summary style="cursor: pointer; font-weight: 600; color: var(--link);">📤 آپلود عکس کودک</summary>
+            <details{% if not kid_photo_preview %} open{% endif %}>
+                <summary class="tryon-upload-toggle">آپلود عکس کودک (یا گرفتن مجدد)</summary>
                 <form method="post" action="/api/image-gen/upload-kid-photo"
-                      enctype="multipart/form-data" style="margin-top: 0.8rem;"
+                      enctype="multipart/form-data" class="tryon-upload-form"
                       target="upload-frame"
                       onsubmit="setTimeout(function(){ location.reload(); }, 1200);">
-                    <div class="form-group" style="margin-bottom: 0.5rem;">
-                        <input type="file" name="file" accept="image/*" required style="padding: 0.4rem;">
+                    <div class="form-group">
+                        <label for="kid-file">فایل عکس</label>
+                        <input type="file" id="kid-file" name="file" accept="image/*" required>
                     </div>
-                    <button type="submit" class="btn btn-sm btn-primary">📤 آپلود</button>
+                    <button type="submit" class="btn btn-sm btn-primary">آپلود</button>
+                    <button type="button" class="btn btn-sm btn-ghost" id="kid-crop-upload">مربع‌سازی و آپلود</button>
+                    <small class="muted" id="kid-crop-note" role="status"></small>
                 </form>
-                <iframe name="upload-frame" style="display:none;"></iframe>
+                <iframe name="upload-frame" class="tryon-upload-frame" title="آپلود"></iframe>
+<script>
+(function () {
+    // Center-square crop at the file's native resolution, then the same
+    // endpoint as the plain form. Quality preserved — the crop happens
+    // before any downscale, unlike cropping the page preview.
+    var input = document.getElementById('kid-file');
+    var btn = document.getElementById('kid-crop-upload');
+    var note = document.getElementById('kid-crop-note');
+    if (!input || !btn) return;
+    btn.addEventListener('click', function () {
+        var file = input.files && input.files[0];
+        if (!file) { note.textContent = 'اول یک فایل انتخاب کنید.'; return; }
+        note.textContent = 'در حال برش…';
+        var url = URL.createObjectURL(file);
+        var img = new Image();
+        img.onload = function () {
+            URL.revokeObjectURL(url);
+            var side = Math.min(img.naturalWidth, img.naturalHeight);
+            var sx = Math.floor((img.naturalWidth - side) / 2);
+            var sy = Math.floor((img.naturalHeight - side) / 2);
+            var canvas = document.createElement('canvas');
+            canvas.width = side; canvas.height = side;
+            canvas.getContext('2d').drawImage(img, sx, sy, side, side, 0, 0, side, side);
+            canvas.toBlob(function (blob) {
+                if (!blob) { note.textContent = 'برش ناموفق بود.'; return; }
+                var meta = document.querySelector('meta[name="csrf-token"]');
+                var form = new FormData();
+                form.append('file', blob, 'kid-square.jpg');
+                form.append('csrf_token', meta ? meta.content : '');
+                fetch('/api/image-gen/upload-kid-photo', { method: 'POST', body: form })
+                    .then(function () { window.location.reload(); })
+                    .catch(function () { note.textContent = 'خطای شبکه.'; });
+            }, 'image/jpeg', 0.92);
+        };
+        img.onerror = function () { URL.revokeObjectURL(url); note.textContent = 'فایل خوانده نشد.'; };
+        img.src = url;
+    });
+})();
+</script>
+<div id="tryon-confirm" data-dialog role="alertdialog" aria-modal="true"
+     aria-labelledby="tryon-confirm-title" aria-describedby="tryon-confirm-text" class="confirm-scrim" tabindex="-1">
+    <div class="t-modal-card confirm-card" role="document">
+        <h3 id="tryon-confirm-title">مطمئن هستید؟</h3>
+        <p class="muted" id="tryon-confirm-text"></p>
+        <div class="confirm-actions">
+            <button type="button" class="btn btn-danger" id="tryon-confirm-yes">تأیید</button>
+            <button type="button" class="btn btn-ghost" data-dialog-close>انصراف</button>
+        </div>
+    </div>
+</div>
+<script>
+(function () {
+    // One confirm surface for destructive try-on forms (pair, unpair, clear,
+    // per-item remove, gallery delete): the form carries its sentence in
+    // data-confirm, the dialog reads it back. Without JS the forms post directly.
+    var pendingForm = null;
+    document.addEventListener('submit', function (event) {
+        var form = event.target.closest ? event.target.closest('form[data-confirm]') : null;
+        if (!form || form === pendingForm) return;
+        if (!window.RaykidDialog) return; // no helper, no gate: post directly
+        event.preventDefault();
+        pendingForm = form;
+        document.getElementById('tryon-confirm-text').textContent =
+            form.getAttribute('data-confirm');
+        window.RaykidDialog.open('tryon-confirm', document.activeElement);
+    });
+    document.getElementById('tryon-confirm-yes').addEventListener('click', function () {
+        var form = pendingForm;
+        pendingForm = null;
+        window.RaykidDialog.close('tryon-confirm');
+        if (form) form.submit();
+    });
+    document.addEventListener('keydown', function (event) {
+        if (event.key !== 'Escape' || !pendingForm) return;
+        pendingForm = null;
+        if (window.RaykidDialog) { try { window.RaykidDialog.close('tryon-confirm'); } catch (e) {} }
+    });
+})();
             </details>
+            <p class="muted tryon-privacy">عکس کودک فقط در حافظه همین مرورگر-نشست می‌ماند، هیچ‌جا ذخیره دائمی نمی‌شود، و با «شروع مشتری جدید» یا همین نشست بعدی پاک می‌شود.</p>
             <section class="tryon-pairing" aria-label="گوشی ضبط عکس">
                 <h4>گوشی ضبط عکس</h4>
                 {% if pairing %}
                     <p class="muted">
                         با دوربین گوشی این کد را اسکن کنید — صفحه جفت‌سازی روی خود گوشی باز می‌شود و کلید را نگه می‌دارد.
                     </p>
-                    <div style="text-align:center; margin-bottom: 0.8rem;">
-                        <img src="{{ pairing.qr }}" alt="QR جفت‌سازی گوشی ضبط عکس"
-                             style="width: 200px; height: 200px; border-radius: 12px; border: 2px solid var(--rule);">
+                    <div class="tryon-qr">
+                        <img src="{{ pairing.qr }}" alt="QR جفت‌سازی گوشی ضبط عکس">
                     </div>
-                    <div class="alert alert-error" style="font-size: 0.85rem;">
-                        ⚠️ این کد فقط همین یک‌بار نمایش داده می‌شود و فقط تا اسکن اعتبار دارد. دوباره جفت‌سازی کنید تا کلید قبلی گوشی باطل شود.
+                    <div class="alert alert-error tryon-qr-note">
+                        این کد فقط همین یک‌بار نمایش داده می‌شود و فقط تا اسکن اعتبار دارد. دوباره جفت‌سازی کنید تا کلید قبلی گوشی باطل شود.
                     </div>
                 {% elif capture_paired %}
                     <p class="muted">
-                        ✅ گوشی جفت‌شده است و عکس می‌فرستد. جفت‌سازی دوباره، کلید فعلی را باطل می‌کند — برای گم‌شدن گوشی همین کار را بکنید.
+                        گوشی جفت‌شده است و عکس می‌فرستد. جفت‌سازی دوباره، کلید فعلی را باطل می‌کند — برای گم‌شدن گوشی همین کار را بکنید.
                     </p>
                 {% else %}
                     <p class="muted">
                         گوشی‌ای که عکس کودک را می‌گیرد، با اسکن یک QR به این فروشگاه وصل می‌شود — نه با تایپ آدرس و توکن.
                     </p>
                 {% endif %}
-                <div style="display:flex; gap: 0.5rem; flex-wrap: wrap;">
+                <div class="row">
                     <form method="post" action="/admin/try-on/pair-capture"
-                          onsubmit="return confirm('{% if capture_paired %}جفت‌سازی دوباره، کلید گوشی فعلی را باطل می‌کند. ادامه؟{% else %}QR جفت‌سازی ساخته شود؟{% endif %}');">
-                        <button type="submit" class="btn btn-primary btn-sm">🔗 ساخت QR جفت‌سازی</button>
+                          data-confirm="{% if capture_paired %}جفت‌سازی دوباره، کلید گوشی فعلی را باطل می‌کند. ادامه؟{% else %}QR جفت‌سازی ساخته شود؟{% endif %}">
+                        <button type="submit" class="btn btn-primary btn-sm">ساخت QR جفت‌سازی</button>
                     </form>
                     {% if capture_paired %}
                     <form method="post" action="/admin/try-on/unpair-capture"
-                          onsubmit="return confirm('اتصال گوشی قطع شود؟ عکس دیگر ارسال نمی‌شود تا دوباره جفت شود.');">
-                        <button type="submit" class="btn btn-ghost btn-sm">✂️ قطع اتصال</button>
+                          data-confirm="اتصال گوشی قطع شود؟ عکس دیگر ارسال نمی‌شود تا دوباره جفت شود.">
+                        <button type="submit" class="btn btn-ghost btn-sm">قطع اتصال</button>
                     </form>
                     {% endif %}
                 </div>
             </section>
-            <div class="muted" style="margin-top: 0.8rem; font-size: 0.85rem;">
-                📱 از گوشی: <code>POST /api/image-gen/upload-kid-photo</code> (multipart, field: <code>file</code>)
-            </div>
         </div>
 
         {# ── Step 2, part 1: products ── #}
         <div class="card">
             <h3>۲ · اسکن بارکد محصولات</h3>
-            <p class="muted" style="margin-bottom: 0.8rem;">
+            <p class="muted tryon-lead">
                 بارکدها را با گوشی اسکن کنید یا دستی وارد کنید
             </p>
 
             <form method="post" action="/admin/try-on/add-product" class="tryon-scan-form">
-                <input type="text" name="barcode_input" placeholder="بارکد را اسکن یا وارد کنید..."
-                       dir="ltr" autofocus aria-label="بارکد محصول">
-                <button type="submit" class="btn btn-primary btn-sm">➕ افزودن</button>
+                <label for="barcode_input" class="sr-only">بارکد محصول</label>
+                <input type="text" id="barcode_input" name="barcode_input" placeholder="بارکد را اسکن یا وارد کنید..."
+                       dir="auto" autofocus aria-label="بارکد محصول">
+                <button type="submit" class="btn btn-primary btn-sm">افزودن</button>
             </form>
 
             {% if scanned %}
-            <div style="margin-top: 0.5rem;">
-                <strong style="font-size: 0.9rem;">📋 محصولات انتخاب‌شده ({{ scanned|length }}):</strong>
-                <div style="margin-top: 0.4rem; display: flex; flex-direction: column; gap: 0.3rem;">
+            <div class="tryon-scanned">
+                <strong class="tryon-scanned-title">محصولات انتخاب‌شده ({{ scanned|length }}):</strong>
+                <div class="tryon-scanned-list">
                     {% for s in scanned %}
-                    <div style="display:flex; align-items:center; gap:0.5rem; padding:0.4rem 0.6rem; background:var(--surface-soft); border-radius:6px;">
+                    <div class="tryon-scanned-row">
                         {% if s.image_path %}
-                            <img src="{{ s.image_path }}" alt="{{ s.name }}" style="width:40px; height:40px; object-fit:cover; border-radius:6px;">
+                            <img src="{{ s.image_path }}" alt="{{ s.name }}" class="tryon-thumb">
                         {% else %}
-                            <span style="font-size:1.2rem;">📦</span>
+                            <span class="tryon-thumb tryon-thumb-empty" aria-hidden="true">—</span>
                         {% endif %}
-                        <span style="flex:1;"><strong>{{ s.name }}</strong> <small style="color:var(--ink-soft);">{{ s.barcode }}</small></span>
+                        <span class="tryon-scanned-name"><strong>{{ s.name }}</strong> <small class="muted" dir="ltr">{{ s.barcode }}</small></span>
+                        {% if s.variants and s.variants|length > 1 %}
+                        <form method="post" action="/admin/try-on/variant" class="tryon-variant-form">
+                            <input type="hidden" name="product_id" value="{{ s.id }}">
+                            <label class="sr-only" for="variant-{{ s.id }}">تنوع {{ s.name }}</label>
+                            <select id="variant-{{ s.id }}" name="barcode" onchange="this.form.submit()">
+                                {% for v in s.variants %}
+                                <option value="{{ v.barcode }}"{% if v.barcode == s.barcode %} selected{% endif %}>{{ v.label }}</option>
+                                {% endfor %}
+                            </select>
+                        </form>
+                        {% endif %}
+                        <form method="post" action="/admin/try-on/remove-product"
+                              data-confirm="{{ s.name }} از فهرست پرو حذف شود؟">
+                            <input type="hidden" name="product_id" value="{{ s.id }}">
+                            <button type="submit" class="btn btn-ghost btn-sm" aria-label="حذف {{ s.name }}">حذف</button>
+                        </form>
                     </div>
                     {% endfor %}
                 </div>
-                <div class="muted" style="margin-top: 0.5rem; font-size: 0.8rem;">
-                    🧵 تصویر این محصول‌ها + عکس کودک به‌عنوان مرجع به هوش مصنوعی ارسال می‌شود
+                <div class="muted tryon-ref-note">
+                    تصویر این محصول‌ها + عکس کودک به‌عنوان مرجع به هوش مصنوعی ارسال می‌شود
                 </div>
             </div>
             {% else %}
-            <div style="text-align:center; padding:1rem; color:var(--ink-soft);">
+            <div class="tryon-empty">
                 <small>هیچ محصولی انتخاب نشده — بارکد اسکن کنید</small>
             </div>
             {% endif %}
@@ -135,28 +231,28 @@
             <h3>تنظیمات تولید تصویر</h3>
             <form id="gen-form" method="post" action="/admin/try-on/generate">
                 <div class="form-group">
-                    <label for="mode">👗 نوع پرو</label>
+                    <label for="mode">نوع پرو</label>
                     <select id="mode" name="mode">
-                        <option value="product_only" selected>👕 فقط محصول (بقیه لباس‌ها دست‌نخورده بماند)</option>
-                        <option value="head_to_toe">👗 استایل کامل سر تا پا (هماهنگ با محصول)</option>
+                        <option value="product_only" selected>فقط محصول (بقیه لباس‌ها دست‌نخورده بماند)</option>
+                        <option value="head_to_toe">استایل کامل سر تا پا (هماهنگ با محصول)</option>
                     </select>
                     <small>در حالت «فقط محصول» فقط خود محصول عوض می‌شود. در حالت «استایل کامل» کل لباس‌ها با محصول هماهنگ می‌شوند.</small>
                 </div>
 
-                <div class="form-group" id="category-group" style="margin-top: 0.8rem;">
-                    <label for="category">🧵 نوع محصول (برای تنظیم قانون لباس)</label>
+                <div class="form-group">
+                    <label for="category">نوع محصول (برای تنظیم قانون لباس)</label>
                     <select id="category" name="category">
-                        <option value="upper" selected>👕 بالاتنه (تیشرت، سویشرت، هودی، پولیور)</option>
-                        <option value="lower">👖 پایین‌تنه (جین، شلوار، شلوارک، دامن)</option>
-                        <option value="set">👚👖 ست دو تکه (تیشرت+شلوارک، سویشرت+شلوار)</option>
-                        <option value="layered">🧥 لایه‌ای بالاتنه (ژاکت/هودی + تیشرت رویی)</option>
-                        <option value="dress">👗 یک‌تکه (پیراهن، پینافور، اورال — با تیشرت زیری)</option>
+                        <option value="upper" selected>بالاتنه (تیشرت، سویشرت، هودی، پولیور)</option>
+                        <option value="lower">پایین‌تنه (جین، شلوار، شلوارک، دامن)</option>
+                        <option value="set">ست دو تکه (تیشرت+شلوارک، سویشرت+شلوار)</option>
+                        <option value="layered">لایه‌ای بالاتنه (ژاکت/هودی + تیشرت رویی)</option>
+                        <option value="dress">یک‌تکه (پیراهن، پینافور، اورال — با تیشرت زیری)</option>
                     </select>
                     <small>نوع محصول را دقیق انتخاب کنید: در حالت «فقط محصول» فقط همان قطعات عوض می‌شوند؛ در حالت «استایل کامل» بقیه لباس‌ها هماهنگ با همین نوع ساخته می‌شوند.</small>
                 </div>
 
-                <div class="form-group" style="margin-top: 0.8rem;">
-                    <label for="pose">🧍 ژست کودک</label>
+                <div class="form-group">
+                    <label for="pose">ژست کودک</label>
                     <select id="pose" name="pose">
                         {% for mode in pose_modes %}
                         <option value="{{ mode.key }}">{{ mode.label_fa }}</option>
@@ -164,8 +260,8 @@
                     </select>
                 </div>
 
-                <div class="form-group" style="margin-top: 0.8rem;">
-                    <label for="face">🧑‍🎨 حالت چهره</label>
+                <div class="form-group">
+                    <label for="face">حالت چهره</label>
                     <select id="face" name="face">
                         {% for mode in face_modes %}
                         <option value="{{ mode.key }}">{{ mode.label_fa }}</option>
@@ -174,46 +270,57 @@
                     <small>در هر سه حالت فرم صورت، بینی و بقیه اجزای چهره دقیقاً حفظ می‌شود. زیبا‌سازی فقط پوست (رفع جوش و لک) و حالت لبخند را در بر می‌گیرد — ظاهری طبیعی، نه آرایش.</small>
                 </div>
 
-                <div class="form-group" style="margin-top: 0.8rem;">
-                    <label for="background">🖼️ پس‌زمینه</label>
-                    <select id="background" name="background">
-                        <option value="random" selected>🎲 پس‌زمینه تصادفی (پیشنهاد می‌شود)</option>
-                        <option value="">🚫 پس‌زمینه را تغییر نده</option>
-                        {% for group in backgrounds %}
-                        <optgroup label="{{ group.label_fa }}">
-                            {% for option in group.options %}
-                            <option value="{{ option.key }}">{{ option.label_fa }}</option>
-                            {% endfor %}
-                        </optgroup>
-                        {% endfor %}
-                    </select>
-                    <small>«تصادفی» هر بار یک استودیوی متفاوت انتخاب می‌کند (از بین {{ backgrounds|map(attribute='options')|map('length')|sum }} گزینه).</small>
+                <fieldset class="form-group studio-picker">
+                    <legend>پس‌زمینه استودیو</legend>
+                    <label class="studio-card"><input type="radio" name="background" value="kids_classic" checked><span>استودیو کلاسیک با پرده سفید</span></label>
+                    <label class="studio-card"><input type="radio" name="background" value="random"><span>پس‌زمینه تصادفی</span></label>
+                    <label class="studio-card"><input type="radio" name="background" value=""><span>پس‌زمینه را تغییر نده</span></label>
+                    {% for group in backgrounds %}
+                    <div role="group" aria-label="{{ group.label_fa }}"><p class="muted studio-group">{{ group.label_fa }}</p>
+                    {% for option in group.options %}
+                    {% if option.key != 'kids_classic' %}
+                    <label class="studio-card"><input type="radio" name="background" value="{{ option.key }}"><span>{{ option.label_fa }}</span></label>
+                    {% endif %}
+                    {% endfor %}
+                    </div>
+                    {% endfor %}
+                    <small>پیش‌فرض: استودیو کلاسیک. «تصادفی» هر بار یک استودیوی متفاوت انتخاب می‌کند.</small>
+                </fieldset>
+
+                <div class="form-group">
+                    <label for="custom_prompt">توضیح اضافه (اختیاری)</label>
+                    <input type="text" id="custom_prompt" name="custom_prompt" maxlength="500"
+                           placeholder="مثلاً: نور ملایم‌تر، لبخند بزرگ‌تر">
+                    <small>به انتهای دستورالعمل اضافه می‌شود؛ خالی بگذارید تا تغییری نکند.</small>
                 </div>
 
-                <div class="muted" style="margin-top: 0.8rem; font-size:0.9rem;">
-                    🔧 موتور تولید: <strong>gpt-image-2</strong> (gapgpt)
+                <div class="muted gen-engine">
+                    موتور تولید: <strong>gpt-image-2</strong> (gapgpt)
                 </div>
 
                 <button type="submit" class="btn btn-primary btn-large btn-block btn-generate">
-                    ✨ تولید تصویر
+                    تولید تصویر
                 </button>
-                <p class="muted" style="font-size:0.85rem; margin:0.4rem 0 0;">۱ تولید · {{ tryon_remaining }} باقی‌مانده امروز · معمولاً ۱ تا ۲ دقیقه</p>
+                <p class="muted tryon-estimate">۱ تولید · {{ tryon_remaining }} باقی‌مانده امروز · معمولاً ۱ تا ۲ دقیقه</p>
             </form>
             {% if tryon_job_id and tryon_job_status in ("pending", "processing") %}
-            <form method="post" action="/admin/try-on/jobs/{{ tryon_job_id }}/cancel" style="margin-top:0.5rem;">
+            <form method="post" action="/admin/try-on/jobs/{{ tryon_job_id }}/cancel" class="tryon-cancel-form">
                 <button type="submit" class="btn btn-ghost btn-block">لغو درخواست جاری ({{ tryon_job_status }})</button>
             </form>
             <div id="tryon-live" role="status" data-status-url="/api/image-gen/jobs/{{ tryon_job_id }}"
-                 style="font-size:0.85rem; margin-top:0.4rem;">در صف تولید… صفحه خودکار به‌روز می‌شود.</div>
+                 class="tryon-live">در صف تولید… صفحه خودکار به‌روز می‌شود.</div>
             <script>
             (function () {
                 var box = document.getElementById('tryon-live');
                 if (!box) return;
                 var url = box.getAttribute('data-status-url');
+                var failures = 0;
                 var timer = setInterval(function () {
                     fetch(url, { headers: { 'Accept': 'application/json' } }).then(function (r) {
+                        if (!r.ok) { throw new Error('http ' + r.status); }
                         return r.json();
                     }).then(function (job) {
+                        failures = 0;
                         if (job.status === 'completed') {
                             clearInterval(timer);
                             window.location.reload();
@@ -223,80 +330,71 @@
                         } else {
                             box.textContent = 'در حال تولید… (' + job.status + ')';
                         }
-                    }).catch(function () {});
+                    }).catch(function () {
+                        failures += 1;
+                        if (failures >= 3) {
+                            clearInterval(timer);
+                            box.textContent = 'وضعیت به‌روز نشد — صفحه را دستی تازه کنید.';
+                        }
+                    });
                 }, 5000);
             })();
             </script>
-            {% elif tryon_job_status == "failed" and tryon_job_error %}
-            <div class="alert alert-error" role="alert">تولید ناموفق بود: {{ tryon_job_error }}</div>
             {% endif %}
         </div>
 
         {# ── Step 3: the generated result ── #}
         {% if last_gen_url %}
-        <div class="card" style="text-align: center; border-color: var(--candy);">
+        <div class="card tryon-result">
             <h3>۳ · تصویر نهایی (با لوگو)</h3>
-            {% if last_gen_engine %}
-            <div style="font-size:0.85rem; color:var(--ink-soft); margin-bottom:0.5rem; padding:0.3rem 0.6rem; background:var(--surface-soft); border-radius:6px; display:inline-block;">
-                🤖 مدل: {{ last_gen_engine }}
-            </div>
-            {% endif %}
-            <div id="final-preview" style="display: inline-block; max-width: 100%;">
+            <div id="final-preview" class="tryon-final-preview">
                 {# A button, not an image with a click handler: an <img> is not in the
                    tab order, so full size was reachable by mouse only. #}
-                <button type="button" class="lightbox-open" style="max-width:100%;"
-                        onclick="openLightbox('{{ last_gen_url }}')"
+                <button type="button" class="lightbox-open" data-lightbox-src="{{ last_gen_url }}"
                         aria-label="نمایش تصویر در اندازه کامل">
-                    <img src="{{ last_gen_url }}" alt="generated"
-                         id="generated-img"
-                         style="max-width:100%; max-height:400px; border-radius:12px; box-shadow:var(--shadow-hover); display:block;">
+                    <img src="{{ last_gen_url }}" alt="تصویر پرو مجازی نهایی"
+                         id="generated-img">
                 </button>
             </div>
-            <div style="display: flex; gap: 0.5rem; justify-content: center; margin-top: 1rem; flex-wrap: wrap;">
-                <a href="/admin/try-on/download?logo=yes" class="btn btn-success">⬇️ دانلود با لوگو</a>
-                <a href="/admin/try-on/download?logo=no" class="btn btn-primary">⬇️ دانلود بدون لوگو</a>
-                <form method="post" action="/admin/try-on/save" style="display:inline;">
-                    <button type="submit" class="btn btn-primary">💾 ذخیره در گالری</button>
+            <div class="row tryon-result-actions">
+                <a href="/admin/try-on/download?logo=yes" class="btn btn-success">دانلود</a>
+                <form method="post" action="/admin/try-on/save">
+                    <button type="submit" class="btn btn-primary">ذخیره در گالری</button>
                 </form>
-                <form method="post" action="/admin/try-on/clear" style="display:inline;">
-                    <button type="submit" class="btn btn-ghost">🔄 پاک کردن و شروع مجدد</button>
+                <form method="post" action="/admin/try-on/clear"
+                      data-confirm="عکس کودک و محصولات فعلی پاک می‌شوند. ادامه؟">
+                    <button type="submit" class="btn btn-ghost">پاک کردن و شروع مجدد</button>
                 </form>
             </div>
         </div>
         {% endif %}
+        {% if tryon_job_status == "failed" %}
+        <div class="card">
+            <div class="alert alert-error" role="alert">تولید ناموفق بود{% if tryon_job_error %}: {{ tryon_job_error }}{% endif %}</div>
+            <form method="post" action="/admin/try-on/retry"
+                  data-confirm="همان ورودی‌ها دوباره تولید می‌شود (۱ تولید، هزینه دارد). ادامه؟">
+                <button type="submit" class="btn btn-primary">تلاش دوباره با همین ورودی‌ها</button>
+            </form>
+        </div>
+        {% endif %}
 
         {# ── Saved images shortcut ── #}
-        <a href="/admin/try-on/saved" class="card" style="display:block; text-decoration:none; color:inherit; text-align:center;">
-            <div style="font-size:1.05rem; font-weight:600;">📂 تصاویر ذخیره‌شده</div>
-            <div style="font-size:0.85rem; color:var(--ink-soft); margin-top:0.3rem;">
+        <a href="/admin/try-on/saved" class="card tryon-saved-shortcut">
+            <div class="tryon-saved-link">تصاویر ذخیره‌شده</div>
+            <div class="muted tryon-saved-count">
                 مشاهده گالری ({{ saved_count }} تصویر)
             </div>
         </a>
     </div>
 </div>
 
-{# ─── Verbose generation loader ─── #}
-<style>
-@keyframes gen-spin { to { transform: rotate(360deg); } }
-@keyframes gen-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
-@keyframes gen-shine { to { background-position: -200% 0; } }
-.gen-spinner {
-    width: 74px; height: 74px; border-radius: 50%;
-    border: 5px solid color-mix(in srgb, var(--scrim-text) 15%, transparent);
-    border-top-color: var(--candy); border-right-color: var(--lavender); border-bottom-color: var(--sky);
-    animation: gen-spin 1s linear infinite;
-    box-shadow: 0 0 30px color-mix(in srgb, var(--lavender) 35%, transparent);
-}
-.gen-float { display:inline-block; animation: gen-float 2.2s ease-in-out infinite; }
-</style>
-<div id="gen-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:var(--scrim);backdrop-filter:blur(6px);z-index:10001;flex-direction:column;align-items:center;justify-content:center;gap:1.2rem;">
-    <a href="/sales/new" onclick="return openNewSaleWindow();" rel="noopener" class="btn btn-success">➕ باز کردن فروش جدید در پنجره دیگر</a>
+{# ─── Verbose generation loader (styles live in style.css) ─── #}
+<div id="gen-overlay" class="gen-overlay">
+    <a href="/sales/new" onclick="return openNewSaleWindow();" rel="noopener" class="btn btn-success">باز کردن فروش جدید در پنجره دیگر</a>
     <div class="gen-spinner"></div>
-    <div id="gen-step" style="color:var(--scrim-text);font-size:1.25rem;font-weight:600;text-align:center;padding:0 1rem;"></div>
-    <div style="width:min(420px,80vw);height:10px;border-radius:6px;background:color-mix(in srgb, var(--scrim-text) 15%, transparent);overflow:hidden;">
-        <div id="gen-bar" style="width:10%;height:100%;border-radius:6px;background:linear-gradient(90deg,var(--candy),var(--lavender),var(--sky));background-size:200% 100%;animation:gen-shine 1.6s linear infinite;transition:width .8s ease;"></div>
-    </div>
-    <div style="color:color-mix(in srgb, var(--scrim-text) 60%, transparent);font-size:0.85rem;"><span class="gen-float">✨</span> معمولاً ۱ تا ۲ دقیقه — در صف شلوغ ممکن است تا ۴ دقیقه طول بکشد (صفحه را نبندید)</div>
+    <div id="gen-step" role="status" class="gen-step-text"></div>
+    <div class="gen-track"><div id="gen-bar" class="gen-bar"></div></div>
+    <div class="gen-note">معمولاً ۱ تا ۲ دقیقه — در صف شلوغ ممکن است تا ۴ دقیقه طول بکشد (صفحه را نبندید)</div>
 </div>
 
 {# ─── Lightbox ─── #}
@@ -304,17 +402,13 @@
    [data-dialog] in motion.css, focus returns to the picture that opened it.
    The scrim dismisses on a click as a convenience for the mouse; the
    keyboard's own ways out are the ✕ button below and Escape. #}
-<div id="lightbox" data-dialog role="dialog" aria-modal="true" aria-label="نمایش تصویر در اندازه کامل" tabindex="-1" style="display:flex;position:fixed;top:0;left:0;width:100%;height:100%;background:var(--scrim);z-index:9999;align-items:center;justify-content:center;"
-     class="lightbox-scrim" onclick="closeLightbox(event)">
-    <div id="lightbox-stage" class="lightbox-stage t-modal-card" style="position:relative;display:inline-block;line-height:0;">
-        <img id="lightbox-img" src="" alt="full"
-             style="max-width:95vw;max-height:95vh;object-fit:contain;border-radius:8px;display:block;">
-        <img src="/static/logo.png" alt="logo"
-             id="lightbox-logo"
-             style="position:absolute;top:0;left:0;width:200px;height:200px;pointer-events:none;filter:drop-shadow(0 2px 6px color-mix(in srgb, var(--scrim) 40%, transparent));">
+<div id="lightbox" data-dialog role="dialog" aria-modal="true" aria-label="نمایش تصویر در اندازه کامل" tabindex="-1" class="lightbox-scrim"
+     data-close-lightbox>
+     <div id="lightbox-stage" class="lightbox-stage t-modal-card">
+        <img id="lightbox-img" src="" alt="تصویر پرو مجازی در اندازه کامل">
+        <img src="/static/logo.png" alt="" aria-hidden="true" class="lightbox-logo">
     </div>
-    <button type="button" id="lightbox-close" class="lightbox-close" aria-label="بستن تصویر"
-            onclick="closeLightbox()">✕</button>
+    <button type="button" id="lightbox-close" class="lightbox-close" aria-label="بستن تصویر" data-close-lightbox>✕</button>
 </div>
 <script>
 var lightboxOpener = null;
@@ -335,6 +429,11 @@ function closeLightbox(e) {
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') closeLightbox();
 });
+document.addEventListener('click', function(e) {
+    var opener = e.target.closest ? e.target.closest('[data-lightbox-src]') : null;
+    if (opener) { openLightbox(opener.getAttribute('data-lightbox-src')); return; }
+    if (e.target.closest && e.target.closest('[data-close-lightbox]')) closeLightbox(e);
+});
 // Category dropdown always visible — it applies to both outfit modes.
 
 (function () {
@@ -344,18 +443,18 @@ document.addEventListener('keydown', function(e) {
     var step = document.getElementById('gen-step');
     var bar = document.getElementById('gen-bar');
     var phases = [
-        "📸 دریافت عکس کودک…",
-        "👕 خواندن لباس و سایز…",
-        "🧵 طراحی اولیه لباس…",
-        "🎨 رنگ‌آمیزی پارچه…",
-        "✨ افزودن جزئیات و نور…",
-        "🪄 اعمال پس‌زمینه…",
-        "💫 نهایی‌سازی تصویر…"
+        "دریافت عکس کودک…",
+        "خواندن لباس و سایز…",
+        "طراحی اولیه لباس…",
+        "رنگ‌آمیزی پارچه…",
+        "افزودن جزئیات و نور…",
+        "اعمال پس‌زمینه…",
+        "نهایی‌سازی تصویر…"
     ];
     var retryPhases = [
         "⏳ سرور کند بود — تلاش مجدد…",
-        "🔄 تلاش دوباره برای تولید…",
-        "💪 یه بار دیگه امتحان می‌کنیم…"
+        "تلاش دوباره برای تولید…",
+        "یه بار دیگه امتحان می‌کنیم…"
     ];
     form.addEventListener('submit', function () {
         var btn = form.querySelector('button[type="submit"]');

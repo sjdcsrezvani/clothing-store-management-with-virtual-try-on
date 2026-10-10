@@ -2029,6 +2029,7 @@ _SETTINGS_FIELD_TABS = {
     "birthday_target": "discounts", "child_profile_enabled": "discounts",
     "tryon_daily_limit": "messaging",
     "tryon_api_key": "messaging", "tryon_api_url": "messaging",
+    "tryon_autoclear_kid": "messaging",
     "credit_terms_days": "credit",
     "credit_reminder_min_hours": "credit",
     "default_credit_limit": "credit",

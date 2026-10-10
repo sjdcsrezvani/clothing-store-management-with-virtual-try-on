@@ -37,9 +37,9 @@ API_TOKEN = os.getenv("API_TOKEN", "")
 TRYON_BACKGROUNDS = [
     {
         "key": "kids",
-        "label_fa": "🧒 استودیو کودک",
+        "label_fa": "استودیو کودک",
         "options": [
-            {"key": "kids_classic", "label_fa": "📸 استودیو کلاسیک با پرده سفید",
+            {"key": "kids_classic", "label_fa": "استودیو کلاسیک با پرده سفید",
              "prompt": "a professional photo studio with a clean white seamless paper backdrop, soft overhead key light and two diffused fill lights, gentle wraparound shadows, neutral grey floor",
              "props": [
                  "a small wooden stool beside the person",
@@ -51,7 +51,7 @@ TRYON_BACKGROUNDS = [
                  "a pair of tiny leather shoes placed on the floor",
                  "a small potted plant in a ceramic pot in the corner",
              ]},
-            {"key": "kids_warm", "label_fa": "🟫 استودیو گرم با پس‌زمینه بژ",
+            {"key": "kids_warm", "label_fa": "استودیو گرم با پس‌زمینه بژ",
              "prompt": "a professional photo studio with a warm beige seamless paper backdrop, soft golden key light from camera-left, two diffused fill lights, smooth gradient on the backdrop, neutral floor",
              "props": [
                  "a rustic wooden crate on the floor",
@@ -63,7 +63,7 @@ TRYON_BACKGROUNDS = [
                  "a vintage brass lantern on the floor",
                  "a soft knitted throw draped over a stool",
              ]},
-            {"key": "kids_pastel", "label_fa": "🩵 استودیو پاستلی",
+            {"key": "kids_pastel", "label_fa": "استودیو پاستلی",
              "prompt": "a professional photo studio with a soft pastel blue seamless paper backdrop, large softbox key light above, two diffused side fills, subtle gradient on the backdrop, clean neutral floor",
              "props": [
                  "a small pastel balloon arch behind the person",
@@ -75,7 +75,7 @@ TRYON_BACKGROUNDS = [
                  "a pastel paper lantern hanging from a discreet studio stand",
                  "a light blue knit blanket folded on a bench",
              ]},
-            {"key": "kids_minimal", "label_fa": "⬜ استودیو مینیمال خاکستری",
+            {"key": "kids_minimal", "label_fa": "استودیو مینیمال خاکستری",
              "prompt": "a professional photo studio with a neutral mid-grey seamless paper backdrop, large overhead softbox key light, two diffused side fills, fine tonal gradient on the backdrop, polished concrete floor",
              "props": [
                  "a single monochrome wooden block on the floor",
@@ -87,7 +87,7 @@ TRYON_BACKGROUNDS = [
                  "a soft grey throw on a low bench",
                  "a small wooden toy car on the floor",
              ]},
-            {"key": "kids_window", "label_fa": "🪟 استودیو با نور پنجره",
+            {"key": "kids_window", "label_fa": "استودیو با نور پنجره",
              "prompt": "a professional photo studio setup recreating soft natural window light, sheer white diffuser on one side as key, subtle bounce fill, clean off-white seamless backdrop, light hardwood floor",
              "props": [
                  "a sheer white curtain softly billowing on the side",
@@ -99,7 +99,7 @@ TRYON_BACKGROUNDS = [
                  "a small wicker basket on the floor",
                  "a tiny wooden rocking horse behind the person",
              ]},
-            {"key": "kids_spring_garden", "label_fa": "🌸 استودیو باغ بهاری",
+            {"key": "kids_spring_garden", "label_fa": "استودیو باغ بهاری",
              "prompt": "a bright indoor photo studio with a soft floral seamless backdrop of pale pink and sage green, large overhead softbox key light, two diffused side fills, light wood floor",
              "props": [
                  "a small woven basket of dried flowers on the floor",
@@ -111,7 +111,7 @@ TRYON_BACKGROUNDS = [
                  "a stack of seed packets on a wooden crate",
                  "a small potted lavender plant in a terracotta pot",
              ]},
-            {"key": "kids_bookshelf", "label_fa": "📚 استودیو قفسه کتاب",
+            {"key": "kids_bookshelf", "label_fa": "استودیو قفسه کتاب",
              "prompt": "a warm photo studio with a soft cream seamless paper backdrop flanked by tall warm-wood bookshelves slightly out of focus, large overhead softbox key light, two diffused side fills, polished wood floor",
              "props": [
                  "a stack of hardcover picture books on a low bench",
@@ -123,7 +123,7 @@ TRYON_BACKGROUNDS = [
                  "a potted fern on a stool",
                  "a stack of story books with a soft toy on top",
              ]},
-            {"key": "kids_playroom", "label_fa": "🧸 استودیو اتاق بازی",
+            {"key": "kids_playroom", "label_fa": "استودیو اتاق بازی",
              "prompt": "a cozy photo studio with a soft warm-yellow seamless backdrop, overhead softbox key light, two diffused side fills, light wood floor with a small rug",
              "props": [
                  "a small wooden abacus on a low bench",
@@ -135,7 +135,7 @@ TRYON_BACKGROUNDS = [
                  "a small wooden train on a side table",
                  "a basket of pinecones in the corner",
              ]},
-            {"key": "kids_beach_white", "label_fa": "🏖️ استودیو ساحلی روشن",
+            {"key": "kids_beach_white", "label_fa": "استودیو ساحلی روشن",
              "prompt": "a sunlit photo studio with a soft sand-cream seamless backdrop, large overhead softbox key light, two diffused fills, light bleached-oak floor",
              "props": [
                  "a small woven straw tote on the floor",
@@ -147,7 +147,7 @@ TRYON_BACKGROUNDS = [
                  "a small wooden boat on the floor",
                  "a pair of sunglasses resting on a folded towel",
              ]},
-            {"key": "kids_terracotta", "label_fa": "🧱 استودیو تراکوتا",
+            {"key": "kids_terracotta", "label_fa": "استودیو تراکوتا",
              "prompt": "a warm photo studio with a soft terracotta seamless paper backdrop, large softbox key light from camera-left, two diffused fills, polished concrete floor",
              "props": [
                  "a small terracotta pot with a green herb on a stool",
@@ -159,7 +159,7 @@ TRYON_BACKGROUNDS = [
                  "a sprig of dried wheat in a slim vase",
                  "a folded raw-cotton blanket on a low stool",
              ]},
-            {"key": "kids_navy", "label_fa": "🌊 استودیو سرمه‌ای",
+            {"key": "kids_navy", "label_fa": "استودیو سرمه‌ای",
              "prompt": "a moody photo studio with a deep navy seamless paper backdrop, overhead softbox key light, two diffused fills, smooth studio floor",
              "props": [
                  "a small model sailboat on a low bench",
@@ -171,7 +171,7 @@ TRYON_BACKGROUNDS = [
                  "a small woven navy rug under the person",
                  "a potted succulent in a blue ceramic pot",
              ]},
-            {"key": "kids_pink_floral", "label_fa": "🌷 استودیو صورتی گلدار",
+            {"key": "kids_pink_floral", "label_fa": "استودیو صورتی گلدار",
              "prompt": "a bright photo studio with a soft blush-pink seamless paper backdrop printed with subtle white floral silhouettes, large overhead softbox key light, two diffused fills, light wood floor",
              "props": [
                  "a small bouquet of dried pink roses on a stool",
@@ -187,9 +187,9 @@ TRYON_BACKGROUNDS = [
     },
     {
         "key": "teens",
-        "label_fa": "🧑 استودیو نوجوان",
+        "label_fa": "استودیو نوجوان",
         "options": [
-            {"key": "teens_dark", "label_fa": "⬛ استودیو تیره با ریم‌لایت",
+            {"key": "teens_dark", "label_fa": "استودیو تیره با ریم‌لایت",
              "prompt": "a professional photo studio with a charcoal-grey seamless paper backdrop, strong key softbox at 45 degrees from camera-right, subtle rim light from behind, polished floor with soft reflection",
              "props": [
                  "a single black director's chair in the background",
@@ -201,7 +201,7 @@ TRYON_BACKGROUNDS = [
                  "a small abstract sculpture on a pedestal",
                  "a folded denim jacket on a bench",
              ]},
-            {"key": "teens_smoke", "label_fa": "🌫️ استودیو مه‌آلود",
+            {"key": "teens_smoke", "label_fa": "استودیو مه‌آلود",
              "prompt": "a professional photo studio with a deep smoke-grey seamless backdrop, single overhead key softbox, two diffused side fills, gentle atmospheric haze catching the light, neutral floor",
              "props": [
                  "a matte black skateboard leaning against the backdrop",
@@ -213,7 +213,7 @@ TRYON_BACKGROUNDS = [
                  "a leather messenger bag on the floor",
                  "a camera on a tripod at the edge of frame",
              ]},
-            {"key": "teens_warm", "label_fa": "🟧 استودیو گرم",
+            {"key": "teens_warm", "label_fa": "استودیو گرم",
              "prompt": "a professional photo studio with a warm umber seamless paper backdrop, large soft key light, two diffused fill lights, soft gradient on the backdrop, polished wood floor",
              "props": [
                  "a leather armchair behind the person",
@@ -225,7 +225,7 @@ TRYON_BACKGROUNDS = [
                  "a pair of tan leather boots on the floor",
                  "a folded suede jacket on a stool",
              ]},
-            {"key": "teens_white", "label_fa": "⬜ استودیو های‌کی",
+            {"key": "teens_white", "label_fa": "استودیو های‌کی",
              "prompt": "a high-key professional photo studio with a bright white seamless backdrop and bright white floor, large overhead softbox key, strong front fill, soft wraparound shadows, no visible studio gear",
              "props": [
                  "a single white cube pedestal",
@@ -237,7 +237,7 @@ TRYON_BACKGROUNDS = [
                  "a single white balloon floating in the background",
                  "a transparent acrylic stool",
              ]},
-            {"key": "teens_gradient", "label_fa": "🎨 استودیو گرادینت",
+            {"key": "teens_gradient", "label_fa": "استودیو گرادینت",
              "prompt": "a professional photo studio with a smooth light-to-dark grey seamless backdrop, main softbox key from camera-left, rim light from behind, clean studio floor with soft contact shadow",
              "props": [
                  "a single glass bottle on the floor",
@@ -249,7 +249,7 @@ TRYON_BACKGROUNDS = [
                  "a minimalist grey cube on the floor",
                  "a vinyl record on a low bench",
              ]},
-            {"key": "teens_loft_brick", "label_fa": "🧱 استودیو آجری Loft",
+            {"key": "teens_loft_brick", "label_fa": "استودیو آجری Loft",
              "prompt": "an urban loft photo studio with an exposed-brick backdrop softly lit, large overhead softbox key light, two diffused fills, polished concrete floor",
              "props": [
                  "a vintage leather duffel on the floor",
@@ -261,7 +261,7 @@ TRYON_BACKGROUNDS = [
                  "a single Edison bulb hanging from a stand",
                  "a vintage paperback stack on the floor",
              ]},
-            {"key": "teens_cafe", "label_fa": "☕ استودیو کافه",
+            {"key": "teens_cafe", "label_fa": "استودیو کافه",
              "prompt": "a cozy cafe-style photo studio with a warm cocoa-brown seamless backdrop, large overhead softbox key light, two diffused fills, light wood floor",
              "props": [
                  "a ceramic coffee cup on a small round table",
@@ -273,7 +273,7 @@ TRYON_BACKGROUNDS = [
                  "a folded wool scarf on a stool",
                  "a small bouquet of dried wheat in a ceramic jug",
              ]},
-            {"key": "teens_street_soft", "label_fa": "🚶 استودیو خیابان نرم",
+            {"key": "teens_street_soft", "label_fa": "استودیو خیابان نرم",
              "prompt": "an outdoor street-photo studio with a softly blurred neutral-concrete backdrop, large overhead softbox key light, two diffused fills, clean light pavement",
              "props": [
                  "a folded single-speed bicycle leaning against the backdrop",
@@ -285,7 +285,7 @@ TRYON_BACKGROUNDS = [
                  "a single film camera on a tripod behind the person",
                  "a folded flannel shirt on a bench",
              ]},
-            {"key": "teens_gym_mirror", "label_fa": "🏋️ استودیو سالن ورزشی",
+            {"key": "teens_gym_mirror", "label_fa": "استودیو سالن ورزشی",
              "prompt": "a modern athletic photo studio with a deep slate-grey seamless backdrop, strong overhead softbox key light, two diffused side fills, polished rubber-style floor",
              "props": [
                  "a single foam roller on a low bench",
@@ -297,7 +297,7 @@ TRYON_BACKGROUNDS = [
                  "a small weight plate on the floor",
                  "a sports duffel on a stool",
              ]},
-            {"key": "teens_sunset_balcony", "label_fa": "🌇 استودیو بالکن غروب",
+            {"key": "teens_sunset_balcony", "label_fa": "استودیو بالکن غروب",
              "prompt": "a golden-hour photo studio with a warm peach-to-amber seamless backdrop simulating sunset, large softbox key from camera-left, two diffused fills, light wood floor",
              "props": [
                  "a small potted olive tree on a stool",
@@ -309,7 +309,7 @@ TRYON_BACKGROUNDS = [
                  "a small brass lantern beside the person",
                  "a folded cotton throw on a stool",
              ]},
-            {"key": "teens_snow_window", "label_fa": "❄️ استودیو پنجره برفی",
+            {"key": "teens_snow_window", "label_fa": "استودیو پنجره برفی",
              "prompt": "a winter photo studio with a soft cool-white seamless backdrop, sheer white diffuser as key, two diffused fills, light wood floor, hints of cool blue rim light",
              "props": [
                  "a folded chunky knit sweater on a stool",
@@ -321,7 +321,7 @@ TRYON_BACKGROUNDS = [
                  "a pair of leather gloves on a bench",
                  "a stack of vintage novels on the floor",
              ]},
-            {"key": "teens_concrete_loft", "label_fa": "🏙️ استودیو بتنی",
+            {"key": "teens_concrete_loft", "label_fa": "استودیو بتنی",
              "prompt": "a minimalist photo studio with a raw concrete-textured seamless backdrop, overhead softbox key light, two diffused side fills, polished concrete floor",
              "props": [
                  "a single matte-black geometric sculpture on a pedestal",
@@ -335,6 +335,44 @@ TRYON_BACKGROUNDS = [
              ]},
         ],
     },
+    {
+        "key": "seasonal",
+        "label_fa": "استودیو فصلی",
+        "options": [
+            {"key": "season_nowruz", "label_fa": "سفره هفت‌سین نوروزی",
+             "prompt": "a bright photo studio styled for Nowruz with a haft-sin table arrangement softly blurred in the background, fresh spring light, white and green tones, clean studio floor",
+             "props": [
+                 "a small bowl of oranges on a side table",
+                 "a vase with fresh hyacinths nearby",
+                 "a few colored eggs in a ceramic bowl",
+                 "a hand mirror with a red ribbon",
+             ]},
+            {"key": "season_winter", "label_fa": "استودیو زمستانی",
+             "prompt": "a cozy winter photo studio with a softly blurred snowy pine backdrop, cool daylight key with warm fill, knitted textures around, clean studio floor",
+             "props": [
+                 "a folded chunky knit blanket on a bench",
+                 "a small sled leaning in the corner",
+                 "a mug of hot chocolate on a side table",
+                 "pine branches in a tall vase",
+             ]},
+            {"key": "season_eid", "label_fa": "استودیو عید فطر",
+             "prompt": "a festive photo studio with soft golden lantern light, elegant cream backdrop with subtle geometric pattern, warm celebratory glow, clean studio floor",
+             "props": [
+                 "a brass lantern glowing on a side table",
+                 "a plate of dates and sweets nearby",
+                 "a crescent ornament hanging softly blurred",
+                 "an embroidered cushion on a low bench",
+             ]},
+            {"key": "season_autumn", "label_fa": "استودیو پاییزی",
+             "prompt": "a warm autumn photo studio with softly blurred amber foliage backdrop, golden-hour key light, rustic wooden floor accents, clean studio floor",
+             "props": [
+                 "a basket of apples and pomegranates",
+                 "a pile of colorful fallen leaves artfully placed",
+                 "a plaid scarf draped over a stool",
+                 "a small pumpkin on a wooden crate",
+             ]},
+        ],
+    },
 ]
 
 # ── Try-on pose modes ──
@@ -342,17 +380,17 @@ TRYON_BACKGROUNDS = [
 # `key` is the value sent through the form; `prompt_clause` is appended to the
 # Base try-on prompt to steer pose preservation or an automatic pose.
 TRYON_POSE_MODES = [
-    {"key": "preserve", "label_fa": "🪄 حفظ ژست عکس اصلی",
+    {"key": "preserve", "label_fa": "حفظ ژست عکس اصلی",
      "prompt_clause": (
          "Preserve the person's exact face, body shape and posture — sitting stays sitting, standing stays standing, "
          "kneeling stays kneeling. Do not change pose, body shape or weight distribution. Only clothing changes."
      )},
-    {"key": "ai", "label_fa": "✨ ژست خودکار",
+    {"key": "ai", "label_fa": "ژست خودکار",
      "prompt_clause": (
          "Catalog stance — standing, relaxed shoulders, gentle smile, one hand slightly out, three-quarter to camera, "
          "natural weight. Confident, comfortable. Keep face, body shape, skin tone, hair and expression identical to reference."
      )},
-    {"key": "dynamic", "label_fa": "🎬 ژست پویا و صمیمی",
+    {"key": "dynamic", "label_fa": "ژست پویا و صمیمی",
      "prompt_clause": (
          "Candid mid-motion moment — relaxed laugh, mid-stride with hem caught in motion, or both hands on fabric. "
          "Soft fabric movement, hair in air. Premium editorial framing; authentic, not rigid. "
@@ -367,13 +405,13 @@ TRYON_POSE_MODES = [
 # its generic identity wording). All modes keep the face structure intact;
 # they only differ in skin beautification and expression.
 TRYON_FACE_MODES = [
-    {"key": "preserve", "label_fa": "🪞 بدون تغییر چهره — دقیقاً مثل عکس (پیشنهادی)",
+    {"key": "preserve", "label_fa": "بدون تغییر چهره — دقیقاً مثل عکس (پیشنهادی)",
      "prompt_clause": (
          "FACE RULE: preserve the person's face EXACTLY as in the reference photo — same facial "
          "structure, same expression, same skin texture, same look. NO beautification, no retouching, "
          "no skin-smoothing, no makeup, no expression change, no aging."
      )},
-    {"key": "beautify", "label_fa": "✨ زیبا‌سازی ملایم — بدون آرایش (همان حالت و لبخند)",
+    {"key": "beautify", "label_fa": "زیبا‌سازی ملایم — بدون آرایش (همان حالت و لبخند)",
      "prompt_clause": (
          "FACE RULE: keep the face position, pose, and expression EXACTLY as in the person's photo. "
          "Keep the face structure identical — face shape, nose, eyes, brows, lips, jawline, chin, "
@@ -382,7 +420,7 @@ TRYON_FACE_MODES = [
          "This must look like natural healthy skin — NOT makeup, NOT a filter, NOT an airbrushed doll, "
          "NOT a changed face."
      )},
-    {"key": "beautify_expression", "label_fa": "😊 زیبا‌سازی + لبخند طبیعی بهتر",
+    {"key": "beautify_expression", "label_fa": "زیبا‌سازی + لبخند طبیعی بهتر",
      "prompt_clause": (
          "FACE RULE: keep the face structure identical — face shape, nose, eyes, brows, lips, "
          "jawline, chin, ears, hairline, skin tone, and apparent age. Beautify the skin: clean away "

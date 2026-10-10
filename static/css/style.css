@@ -4105,3 +4105,97 @@ html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
 .password-peek { white-space: nowrap; }
 .caps-hint { display: block; margin-top: 0.3rem; }
 .caps-hint[hidden] { display: none; }
+
+/* ===================== Virtual try-on =====================
+   Everything token-driven so the active theme owns these pages: no fixed
+   colors, no emoji art, no inline styles. Mobile-first: rows wrap at 320px,
+   the generate button sticks within reach. */
+.tryon-photo-frame { position: relative; text-align: center; margin-bottom: 0.8rem; }
+.tryon-photo { max-width: 200px; max-height: 200px; border-radius: 12px; object-fit: cover; box-shadow: var(--shadow-hover); }
+.tryon-guide { position: absolute; inset: 8% 22%; border: 2px dashed var(--candy); border-radius: 12px; pointer-events: none; }
+.tryon-guide-note { font-size: 0.8rem; margin: 0.3rem 0 0; }
+.tryon-photo-empty { text-align: center; padding: 1.5rem; background: var(--surface-soft); border-radius: 8px; margin-bottom: 0.8rem; }
+.tryon-upload-toggle { cursor: pointer; font-weight: 600; color: var(--link); }
+.tryon-upload-form { margin-top: 0.8rem; }
+.tryon-privacy { margin-top: 0.8rem; font-size: 0.85rem; }
+.tryon-pairing h4 { margin-bottom: 0.3rem; }
+.tryon-qr { text-align: center; margin-bottom: 0.8rem; }
+.tryon-qr img { width: 200px; height: 200px; border-radius: 12px; border: 2px solid var(--rule); }
+.tryon-qr-note { font-size: 0.85rem; }
+.tryon-lead { margin-bottom: 0.8rem; }
+.tryon-scan-form { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.tryon-scan-form input { flex: 1; min-width: 140px; }
+.tryon-scanned { margin-top: 0.5rem; }
+.tryon-scanned-title { font-size: 0.9rem; }
+.tryon-scanned-list { margin-top: 0.4rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.tryon-scanned-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.6rem; background: var(--surface-soft); border-radius: 6px; flex-wrap: wrap; }
+.tryon-thumb { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; }
+.tryon-thumb-empty { display: inline-flex; align-items: center; justify-content: center; background: var(--surface-soft); border: 1px solid var(--rule); color: var(--ink-soft); }
+.tryon-scanned-name { flex: 1; min-width: 120px; }
+.tryon-variant-form select { max-width: 140px; }
+.tryon-ref-note { margin-top: 0.5rem; font-size: 0.8rem; }
+.tryon-empty { text-align: center; padding: 1rem; color: var(--ink-soft); }
+.tryon-empty-large { text-align: center; padding: 3rem 1rem; }
+.tryon-empty-large .btn { margin-top: 1rem; }
+.studio-picker { border: none; padding: 0; margin: 0 0 0.9rem; }
+.studio-picker legend { font-weight: 600; padding: 0; margin-bottom: 0.4rem; }
+.studio-card { display: inline-flex; align-items: center; gap: 0.4rem; border: 2px solid var(--rule); border-radius: 999px; padding: 0.35rem 0.8rem; margin: 0 0.3rem 0.3rem 0; cursor: pointer; font-size: 0.85rem; min-height: 44px; }
+.studio-card input { accent-color: var(--candy); }
+.studio-card:has(input:checked) { border-color: var(--candy); font-weight: 700; }
+.studio-group { margin: 0.5rem 0 0.2rem; font-size: 0.8rem; }
+.gen-engine { margin-top: 0.8rem; font-size: 0.9rem; }
+.btn-generate { position: sticky; bottom: 0.6rem; }
+.tryon-result { text-align: center; border-color: var(--candy); }
+.tryon-final-preview { display: inline-block; max-width: 100%; }
+.tryon-final-preview .lightbox-open { max-width: 100%; }
+.tryon-final-preview img { max-width: 100%; max-height: 400px; border-radius: 12px; box-shadow: var(--shadow-hover); display: block; }
+.tryon-result-actions { display: flex; gap: 0.5rem; justify-content: center; margin-top: 1rem; flex-wrap: wrap; }
+.tryon-result-actions form { display: inline; }
+.tryon-filters { display: flex; gap: 0.5rem; align-items: end; flex-wrap: wrap; margin-bottom: 0.8rem; }
+.tryon-filters label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.85rem; }
+.tryon-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.8rem; }
+.tryon-gallery-item { border-radius: 8px; overflow: hidden; box-shadow: var(--shadow); background: var(--card); }
+.tryon-gallery-item .lightbox-open { position: relative; width: 100%; padding: 0; border: none; background: none; cursor: pointer; }
+.tryon-gallery-thumb { width: 100%; height: 160px; object-fit: cover; display: block; }
+.tryon-gallery-logo { position: absolute; top: 0; left: 0; width: 80px; height: 80px; pointer-events: none; }
+.tryon-gallery-date { padding: 0.5rem; font-size: 0.7rem; text-align: center; }
+.tryon-gallery-variants { padding: 0 0.4rem 0.4rem; display: flex; gap: 0.3rem; flex-wrap: wrap; justify-content: center; }
+.tryon-gallery-variant { text-align: center; max-width: 70px; }
+.tryon-gallery-variant img { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; border: 1px solid var(--rule); }
+.tryon-gallery-variant-label { font-size: 0.6rem; margin-top: 2px; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tryon-gallery-actions { display: flex; gap: 0.3rem; padding: 0 0.4rem 0.5rem; justify-content: center; }
+.lightbox-scrim { display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--scrim); z-index: 9999; align-items: center; justify-content: center; }
+.lightbox-stage { position: relative; display: inline-block; line-height: 0; }
+.lightbox-stage img:first-child { max-width: 95vw; max-height: 95vh; object-fit: contain; border-radius: 8px; display: block; }
+.lightbox-logo { position: absolute; top: 0; left: 0; width: 200px; height: 200px; pointer-events: none; }
+@media (max-width: 480px) {
+  .tryon-scan-form input { min-width: 0; }
+  .tryon-gallery { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .tryon-qr img { width: 160px; height: 160px; }
+}
+.tryon-saved-link { font-size: 1.05rem; font-weight: 600; }
+
+/* ===================== Try-on generation overlay ===================== */
+@keyframes gen-spin { to { transform: rotate(360deg); } }
+@keyframes gen-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+@keyframes gen-shine { to { background-position: -200% 0; } }
+.gen-spinner {
+    width: 74px; height: 74px; border-radius: 50%;
+    border: 5px solid color-mix(in srgb, var(--scrim-text) 15%, transparent);
+    border-top-color: var(--candy); border-right-color: var(--lavender); border-bottom-color: var(--sky);
+    animation: gen-spin 1s linear infinite;
+    box-shadow: 0 0 30px color-mix(in srgb, var(--lavender) 35%, transparent);
+}
+.gen-float { display:inline-block; animation: gen-float 2.2s ease-in-out infinite; }
+
+.tryon-upload-frame { display: none; }
+.tryon-estimate { font-size: 0.85rem; margin: 0.4rem 0 0; }
+.tryon-cancel-form { margin-top: 0.5rem; }
+.tryon-live { font-size: 0.85rem; margin-top: 0.4rem; }
+.tryon-saved-shortcut { display: block; text-decoration: none; color: inherit; text-align: center; }
+.tryon-saved-count { font-size: 0.85rem; margin-top: 0.3rem; }
+.gen-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--scrim); backdrop-filter: blur(6px); z-index: 10001; flex-direction: column; align-items: center; justify-content: center; gap: 1.2rem; }
+.gen-step-text { color: var(--scrim-text); font-size: 1.25rem; font-weight: 600; text-align: center; padding: 0 1rem; }
+.gen-track { width: min(420px, 80vw); height: 10px; border-radius: 6px; background: color-mix(in srgb, var(--scrim-text) 15%, transparent); overflow: hidden; }
+.gen-bar { width: 10%; height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--candy), var(--lavender), var(--sky)); background-size: 200% 100%; animation: gen-shine 1.6s linear infinite; transition: width .8s ease; }
+.gen-note { color: color-mix(in srgb, var(--scrim-text) 60%, transparent); font-size: 0.85rem; }
