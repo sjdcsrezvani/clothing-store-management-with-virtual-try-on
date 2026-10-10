@@ -1,3 +1,29 @@
+## 2.8.8 — 1405/07/18 (2026-10-10)
+
+### درِ ورود: the login card belongs to the shop again
+
+- **The shop signs the front door.** The logo uploaded in «فروشگاه»
+  settings now sits on the login card, with the shop's name and tagline
+  beneath it as the fallback until one is chosen.
+- **The card lost its emoji and its inline styles.** The padlock, the
+  person, the key and the door were decoration no theme could reach;
+  they are gone, every pixel speaks in the active palette's tokens, and
+  the card wears light, dark and custom themes alike.
+- **A locked door counts down.** After too many failed attempts the page
+  still refuses, but now says how many minutes remain instead of asking
+  the cashier to guess when to come back.
+- **The password field helps without leaving.** A «نمایش» toggle shows
+  the password to the hand that typed it, Caps Lock announces itself
+  while it is on, the field fills from a password manager, and a Latin
+  username types left-to-right.
+- **The message that sent the user keeps its word.** A `?msg=` written by
+  whoever redirected to the login page prints as a notice instead of
+  vanishing, and the errors wear `role="alert"` while notices wear
+  `role="status"`.
+- **The card is held to all of it.** One gate reads the rendered page and
+  keeps the fields, the toggle, the hint, the message and the purged
+  emoji in place; a second keeps the countdown honest.
+
 ## 2.8.7 — 1405/07/18 (2026-10-10)
 
 ### فاکتور، به شکل کاغذ: the invoice is written for the paper it lands on
