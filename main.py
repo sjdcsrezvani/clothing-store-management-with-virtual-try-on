@@ -366,10 +366,17 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
     scheduler = asyncio.create_task(scheduler_task())
+    from services.tryon_worker import tryon_worker_task
+    tryon_worker = asyncio.create_task(tryon_worker_task())
     yield
     scheduler.cancel()
+    tryon_worker.cancel()
     try:
         await scheduler
+    except asyncio.CancelledError:
+        pass
+    try:
+        await tryon_worker
     except asyncio.CancelledError:
         pass
 

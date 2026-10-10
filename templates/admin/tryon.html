@@ -197,7 +197,39 @@
                 <button type="submit" class="btn btn-primary btn-large btn-block btn-generate">
                     ✨ تولید تصویر
                 </button>
+                <p class="muted" style="font-size:0.85rem; margin:0.4rem 0 0;">۱ تولید · {{ tryon_remaining }} باقی‌مانده امروز · معمولاً ۱ تا ۲ دقیقه</p>
             </form>
+            {% if tryon_job_id and tryon_job_status in ("pending", "processing") %}
+            <form method="post" action="/admin/try-on/jobs/{{ tryon_job_id }}/cancel" style="margin-top:0.5rem;">
+                <button type="submit" class="btn btn-ghost btn-block">لغو درخواست جاری ({{ tryon_job_status }})</button>
+            </form>
+            <div id="tryon-live" role="status" data-status-url="/api/image-gen/jobs/{{ tryon_job_id }}"
+                 style="font-size:0.85rem; margin-top:0.4rem;">در صف تولید… صفحه خودکار به‌روز می‌شود.</div>
+            <script>
+            (function () {
+                var box = document.getElementById('tryon-live');
+                if (!box) return;
+                var url = box.getAttribute('data-status-url');
+                var timer = setInterval(function () {
+                    fetch(url, { headers: { 'Accept': 'application/json' } }).then(function (r) {
+                        return r.json();
+                    }).then(function (job) {
+                        if (job.status === 'completed') {
+                            clearInterval(timer);
+                            window.location.reload();
+                        } else if (job.status === 'failed') {
+                            clearInterval(timer);
+                            box.textContent = 'ناموفق بود — ورودی‌ها سر جایشان است، دوباره امتحان کنید.';
+                        } else {
+                            box.textContent = 'در حال تولید… (' + job.status + ')';
+                        }
+                    }).catch(function () {});
+                }, 5000);
+            })();
+            </script>
+            {% elif tryon_job_status == "failed" and tryon_job_error %}
+            <div class="alert alert-error" role="alert">تولید ناموفق بود: {{ tryon_job_error }}</div>
+            {% endif %}
         </div>
 
         {# ── Step 3: the generated result ── #}

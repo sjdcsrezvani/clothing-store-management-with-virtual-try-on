@@ -702,8 +702,11 @@ def tryon_can_generate(request: Request, db) -> bool:
     return True
 
 
-def tryon_record_generation(request: Request) -> None:
+def tryon_record_generation(request: Request | None = None, ip: str | None = None) -> None:
+    """Burn one unit of daily + hourly budget. Burns on SUCCESS now — a
+    failed generation must not eat the owner's paid quota. The worker passes
+    the ip recorded at enqueue time since it has no request of its own."""
     today = _today_key()
     _generation_day[today] = _generation_day.get(today, 0) + 1
-    ip = _client_ip(request)
+    ip = ip or (_client_ip(request) if request is not None else "worker")
     _generation_ip.setdefault(ip, []).append(time.time())

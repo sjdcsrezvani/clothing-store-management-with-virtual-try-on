@@ -295,6 +295,38 @@
                 <label for="tryon_daily_limit">سقف تولید روزانه {{ tip('حداکثر تصویر تولیدشده با هوش مصنوعی در روز (هر تصویر هزینه دارد)') }}</label>
                 <span class="field-unit">{{ num('tryon_daily_limit', settings.get('tryon_daily_limit', '20')) }}<span class="unit">عدد</span></span>
             </div>
+            <div class="form-group">
+                <label for="tryon_api_url">نشانی درگاه تصویر {{ tip('پیش‌فرض درگاه فعلی؛ فقط وقتی عوضش کنید که ارائه‌دهنده گفته باشد') }}</label>
+                <input type="text" id="tryon_api_url" name="tryon_api_url" dir="ltr"
+                       value="{{ settings.get('tryon_api_url', '') }}"
+                       placeholder="https://api.gapgpt.app/v1/images/edits">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="tryon_api_key">کلید پرو مجازی {{ tip('ذخیره‌شده: ' + (tryon_key_mask or 'ندارد') + ' — خالی بگذارید تا همان قبلی بماند') }}</label>
+                <input type="password" id="tryon_api_key" name="tryon_api_key" dir="ltr"
+                       value="" placeholder="کلید جدید (خالی = بدون تغییر)" autocomplete="off">
+                <div class="row"><button type="button" class="btn btn-ghost btn-sm" id="tryon-test-key">آزمایش اتصال</button>
+                <small class="muted" id="tryon-test-result" role="status"></small></div>
+<script>
+(function () {
+    var btn = document.getElementById('tryon-test-key');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+        var out = document.getElementById('tryon-test-result');
+        out.textContent = 'در حال آزمایش…';
+        var meta = document.querySelector('meta[name="csrf-token"]');
+        fetch('/admin/tryon/test-key', {
+            method: 'POST',
+            headers: { 'X-CSRF-Token': meta ? meta.content : '' },
+        }).then(function (r) { return r.json(); }).then(function (j) {
+            out.textContent = j.ok ? 'اتصال برقرار است.' : ('خطا: ' + (j.error || 'نامشخص'));
+        }).catch(function () { out.textContent = 'خطای شبکه.'; });
+    });
+})();
+</script>
+            </div>
         </div>
         <div class="settings-savebar"><button type="submit" class="btn btn-primary">ذخیره پیامک و هوش مصنوعی</button></div>
     </form>
