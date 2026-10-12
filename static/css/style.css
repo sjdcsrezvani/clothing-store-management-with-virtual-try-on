@@ -4137,12 +4137,6 @@ html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
 .tryon-empty { text-align: center; padding: 1rem; color: var(--ink-soft); }
 .tryon-empty-large { text-align: center; padding: 3rem 1rem; }
 .tryon-empty-large .btn { margin-top: 1rem; }
-.studio-picker { border: none; padding: 0; margin: 0 0 0.9rem; }
-.studio-picker legend { font-weight: 600; padding: 0; margin-bottom: 0.4rem; }
-.studio-card { display: inline-flex; align-items: center; gap: 0.4rem; border: 2px solid var(--rule); border-radius: 999px; padding: 0.35rem 0.8rem; margin: 0 0.3rem 0.3rem 0; cursor: pointer; font-size: 0.85rem; min-height: 44px; }
-.studio-card input { accent-color: var(--candy); }
-.studio-card:has(input:checked) { border-color: var(--candy); font-weight: 700; }
-.studio-group { margin: 0.5rem 0 0.2rem; font-size: 0.8rem; }
 .gen-engine { margin-top: 0.8rem; font-size: 0.9rem; }
 .btn-generate { position: sticky; bottom: 0.6rem; }
 .tryon-result { text-align: center; border-color: var(--candy); }

@@ -52,11 +52,12 @@ def test_probe_contract_survives_the_rebuild():
 
 def test_tryon_is_a_three_step_wizard():
     source = (ROOT / "templates" / "admin" / "tryon.html").read_text()
-    assert "۱ عکس کودک" in source
-    assert "۲ محصولات و تنظیمات" in source
-    assert "۳ · تصویر نهایی" in source
-    assert "۱ · عکس کودک" in source
+    # The decorative timeline is gone; sections number themselves ۱–۴.
+    assert "wizard-timeline" not in source and "timeline-step" not in source
+    assert "۱ · عکس شخص" in source
     assert "۲ · اسکن بارکد محصولات" in source
+    assert "۳ · تنظیمات تولید تصویر" in source
+    assert "۴ · تصویر نهایی" in source
     # Pairing lives inside step 1 now, not as its own card.
     assert source.count("<h3>گوشی ضبط عکس</h3>") == 0
     assert "گوشی ضبط عکس" in source

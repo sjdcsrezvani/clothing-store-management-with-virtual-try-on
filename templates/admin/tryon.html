@@ -4,27 +4,23 @@
 {% set page_actions %}
 <a href="/sales/new" onclick="return openNewSaleWindow();" rel="noopener" class="btn btn-success btn-sm">فروش جدید</a>
     <form method="post" action="/admin/try-on/clear"
-          data-confirm="عکس کودک و محصولات فعلی پاک می‌شوند. ادامه؟">
+          data-confirm="عکس شخص و محصولات فعلی پاک می‌شوند. ادامه؟">
         <button type="submit" class="btn btn-ghost btn-sm">شروع مشتری جدید</button>
     </form>
 {% endset %}
 {% include 'partials/page_header.html' %}
 
-{# Wizard: photo → options → result, the same numbered rhythm as the till. #}
-<ol class="payment-timeline wizard-timeline" aria-label="مراحل پرو مجازی">
-    <li class="timeline-step{% if tryon_step >= 1 %} active{% endif %}"{% if tryon_step == 1 %} aria-current="step"{% endif %}><span>۱ عکس کودک</span></li><li class="timeline-line" aria-hidden="true"></li><li class="timeline-step{% if tryon_step >= 2 %} active{% endif %}"{% if tryon_step == 2 %} aria-current="step"{% endif %}><span>۲ محصولات و تنظیمات</span></li><li class="timeline-line" aria-hidden="true"></li><li class="timeline-step{% if tryon_step >= 3 %} active{% endif %}"{% if tryon_step == 3 %} aria-current="step"{% endif %}><span>۳ نتیجه</span></li>
-</ol>
-
+{# Sections carry their own ۱–۴ numbers; the decorative timeline is gone. #}
 <div class="checkout-layout">
     {# ─── STEP 1: the kid + the paired phone ─── #}
     <div class="checkout-left">
 
         {# ── Kid photo (QR pairing lives here: the phone exists to take it) ── #}
         <div class="card">
-            <h3>۱ · عکس کودک</h3>
+            <h3>۱ · عکس شخص</h3>
             {% if kid_photo_preview %}
             <div class="tryon-photo-frame">
-                <img src="{{ kid_photo_preview }}" alt="عکس کودک برای پرو مجازی"
+                <img src="{{ kid_photo_preview }}" alt="عکس شخص برای پرو مجازی"
                      class="tryon-photo">
                 <span class="tryon-guide" aria-hidden="true"></span>
             </div>
@@ -36,7 +32,7 @@
             </div>
             {% endif %}
             <details{% if not kid_photo_preview %} open{% endif %}>
-                <summary class="tryon-upload-toggle">آپلود عکس کودک (یا گرفتن مجدد)</summary>
+                <summary class="tryon-upload-toggle">آپلود عکس شخص (یا گرفتن مجدد)</summary>
                 <form method="post" action="/api/image-gen/upload-kid-photo"
                       enctype="multipart/form-data" class="tryon-upload-form"
                       id="kid-upload-form">
@@ -145,7 +141,7 @@
 })();
 </script>
             </details>
-            <p class="muted tryon-privacy">عکس کودک فقط در حافظه همین مرورگر-نشست می‌ماند، هیچ‌جا ذخیره دائمی نمی‌شود، و با «شروع مشتری جدید» یا همین نشست بعدی پاک می‌شود.</p>
+            <p class="muted tryon-privacy">عکس شخص فقط در حافظه همین مرورگر-نشست می‌ماند، هیچ‌جا ذخیره دائمی نمی‌شود، و با «شروع مشتری جدید» یا همین نشست بعدی پاک می‌شود.</p>
             <section class="tryon-pairing" aria-label="گوشی ضبط عکس">
                 <h4>گوشی ضبط عکس</h4>
                 {% if pairing %}
@@ -164,7 +160,7 @@
                     </p>
                 {% else %}
                     <p class="muted">
-                        گوشی‌ای که عکس کودک را می‌گیرد، با اسکن یک QR به این فروشگاه وصل می‌شود — نه با تایپ آدرس و توکن.
+                        گوشی‌ای که عکس شخص را می‌گیرد، با اسکن یک QR به این فروشگاه وصل می‌شود — نه با تایپ آدرس و توکن.
                     </p>
                 {% endif %}
                 <div class="row">
@@ -228,7 +224,7 @@
                     {% endfor %}
                 </div>
                 <div class="muted tryon-ref-note">
-                    تصویر این محصول‌ها + عکس کودک به‌عنوان مرجع به هوش مصنوعی ارسال می‌شود
+                    تصویر این محصول‌ها + عکس شخص به‌عنوان مرجع به هوش مصنوعی ارسال می‌شود
                 </div>
             </div>
             {% else %}
@@ -244,7 +240,7 @@
 
         {# ── Generate ── #}
         <div class="card">
-            <h3>۲ · تنظیمات تولید تصویر</h3>
+            <h3>۳ · تنظیمات تولید تصویر</h3>
             <form id="gen-form" method="post" action="/admin/try-on/generate">
                 <div class="form-group">
                     <label for="mode">نوع پرو</label>
@@ -268,7 +264,7 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="pose">ژست کودک</label>
+                    <label for="pose">ژست شخص</label>
                     <select id="pose" name="pose">
                         {% for mode in pose_modes %}
                         <option value="{{ mode.key }}">{{ mode.label_fa }}</option>
@@ -286,22 +282,24 @@
                     <small>در هر سه حالت فرم صورت، بینی و بقیه اجزای چهره دقیقاً حفظ می‌شود. زیبا‌سازی فقط پوست (رفع جوش و لک) و حالت لبخند را در بر می‌گیرد — ظاهری طبیعی، نه آرایش.</small>
                 </div>
 
-                <fieldset class="form-group studio-picker">
-                    <legend>پس‌زمینه استودیو</legend>
-                    <label class="studio-card"><input type="radio" name="background" value="kids_classic" checked><span>استودیو کلاسیک با پرده سفید</span></label>
-                    <label class="studio-card"><input type="radio" name="background" value="random"><span>پس‌زمینه تصادفی</span></label>
-                    <label class="studio-card"><input type="radio" name="background" value=""><span>پس‌زمینه را تغییر نده</span></label>
-                    {% for group in backgrounds %}
-                    <div role="group" aria-label="{{ group.label_fa }}"><p class="muted studio-group">{{ group.label_fa }}</p>
-                    {% for option in group.options %}
-                    {% if option.key != 'kids_classic' %}
-                    <label class="studio-card"><input type="radio" name="background" value="{{ option.key }}"><span>{{ option.label_fa }}</span></label>
-                    {% endif %}
-                    {% endfor %}
-                    </div>
-                    {% endfor %}
+                <div class="form-group">
+                    <label for="background">پس‌زمینه استودیو</label>
+                    <select id="background" name="background">
+                        <option value="kids_classic" selected>استودیو کلاسیک با پرده سفید</option>
+                        <option value="random">پس‌زمینه تصادفی</option>
+                        <option value="">پس‌زمینه را تغییر نده</option>
+                        {% for group in backgrounds %}
+                        <optgroup label="{{ group.label_fa }}">
+                            {% for option in group.options %}
+                            {% if option.key != 'kids_classic' %}
+                            <option value="{{ option.key }}">{{ option.label_fa }}</option>
+                            {% endif %}
+                            {% endfor %}
+                        </optgroup>
+                        {% endfor %}
+                    </select>
                     <small>پیش‌فرض: استودیو کلاسیک. «تصادفی» هر بار یک استودیوی متفاوت انتخاب می‌کند.</small>
-                </fieldset>
+                </div>
 
                 <div class="form-group">
                     <label for="custom_prompt">توضیح اضافه (اختیاری)</label>
@@ -362,7 +360,7 @@
         {# ── Step 3: the generated result ── #}
         {% if last_gen_url %}
         <div class="card tryon-result">
-            <h3>۳ · تصویر نهایی (با لوگو)</h3>
+            <h3>۴ · تصویر نهایی (با لوگو)</h3>
             <div id="final-preview" class="tryon-final-preview">
                 {# A button, not an image with a click handler: an <img> is not in the
                    tab order, so full size was reachable by mouse only. #}
@@ -378,7 +376,7 @@
                     <button type="submit" class="btn btn-primary">ذخیره در گالری</button>
                 </form>
                 <form method="post" action="/admin/try-on/clear"
-                      data-confirm="عکس کودک و محصولات فعلی پاک می‌شوند. ادامه؟">
+                      data-confirm="عکس شخص و محصولات فعلی پاک می‌شوند. ادامه؟">
                     <button type="submit" class="btn btn-ghost">پاک کردن و شروع مجدد</button>
                 </form>
             </div>
@@ -468,7 +466,7 @@ document.addEventListener('change', function(e) {
     var step = document.getElementById('gen-step');
     var bar = document.getElementById('gen-bar');
     var phases = [
-        "دریافت عکس کودک…",
+        "دریافت عکس شخص…",
         "خواندن لباس و سایز…",
         "طراحی اولیه لباس…",
         "رنگ‌آمیزی پارچه…",

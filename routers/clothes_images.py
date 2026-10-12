@@ -303,7 +303,7 @@ def _set_kid_photo(state: dict, raw: bytes, content_type: str = "image/jpeg") ->
     if not raw:
         raise ValueError("Empty kid photo")
     if len(raw) > KID_PHOTO_MAX_BYTES:
-        raise ValueError("عکس کودک بیشتر از ۱۵ مگابایت است.")
+        raise ValueError("عکس شخص بیشتر از ۱۵ مگابایت است.")
     mime = content_type if content_type and content_type.startswith("image/") else "image/jpeg"
     state["kid_photo_bytes"] = raw
     state["kid_photo_content_type"] = mime
@@ -621,11 +621,6 @@ def _tryon_context(db: Session, request: Request, *, msg: str = "", err: str = "
     job = _latest_tryon_job(request, db)
     last_gen_url = job.result_url if job and job.status == "completed" else None
     from services.security import tryon_daily_remaining as _tryon_remaining
-    step = 1
-    if last_gen_url or (job and job.status in ("pending", "processing")):
-        step = 3
-    elif state["scanned"]:
-        step = 2
     return {
         "kid_photo_preview": state["kid_photo_preview"],
         "scanned": state["scanned"],
@@ -635,7 +630,6 @@ def _tryon_context(db: Session, request: Request, *, msg: str = "", err: str = "
         "tryon_job_status": job.status if job else None,
         "tryon_job_error": job.error_message if job and job.status == "failed" else None,
         "tryon_remaining": _tryon_remaining(db),
-        "tryon_step": step,
         "backgrounds": TRYON_BACKGROUNDS,
         "pose_modes": TRYON_POSE_MODES,
         "face_modes": TRYON_FACE_MODES,
@@ -870,7 +864,7 @@ async def admin_tryon_generate(
 
     if not reference_paths:
         _remove_temp_file(kid_temp_path)
-        return RedirectResponse(url="/admin/try-on?err=عکس کودک و تصویر محصول الزامی است.", status_code=303)
+        return RedirectResponse(url="/admin/try-on?err=عکس شخص و تصویر محصول الزامی است.", status_code=303)
 
     prefix, prompt_mid, outfit_clause = _build_tryon_prompt(
         product_names, background, pose, mode,
@@ -1212,7 +1206,7 @@ async def upload_kid_photo(file: UploadFile = File(...)):
     if not raw:
         raise HTTPException(status_code=400, detail="Empty kid photo")
     if len(raw) > KID_PHOTO_MAX_BYTES:
-        raise HTTPException(status_code=400, detail="عکس کودک بیشتر از ۱۵ مگابایت است.")
+        raise HTTPException(status_code=400, detail="عکس شخص بیشتر از ۱۵ مگابایت است.")
     # Inbox, not session: browser and phone share this endpoint, and the
     # desktop drains it into its own session on the next render (the page
     # already reloads after upload).
@@ -1277,7 +1271,7 @@ async def api_generate(
         try:
             request_kid_bytes = base64.b64decode(data.kid_photo_base64, validate=True)
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"تصویر کودک نامعتبر است: {e}")
+            raise HTTPException(status_code=400, detail=f"تصویر شخص نامعتبر است: {e}")
 
     # Map each scanned product to the barcode that was scanned so we send the
     # correct color variant's photo (not all variants' photos).
@@ -1304,7 +1298,7 @@ async def api_generate(
 
     if not reference_paths:
         _remove_temp_file(kid_temp_path)
-        raise HTTPException(status_code=400, detail="عکس کودک و تصویر محصول الزامی است.")
+        raise HTTPException(status_code=400, detail="عکس شخص و تصویر محصول الزامی است.")
 
     filename = f"tryon_api_{uuid.uuid4().hex[:12]}.jpg"
     filepath = GENERATED_DIR / filename

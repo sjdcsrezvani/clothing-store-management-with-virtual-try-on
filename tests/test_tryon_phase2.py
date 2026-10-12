@@ -25,7 +25,7 @@ def test_seasonal_group_and_fixed_default(client):
     page = client.get("/admin/try-on").text
     for key in ("season_nowruz", "season_winter", "season_eid", "season_autumn"):
         assert f'value="{key}"' in page
-    assert 'name="background" value="kids_classic" checked' in page  # fixed default
+    assert 'value="kids_classic" selected' in page  # fixed default kept
     assert 'name="custom_prompt"' in page and 'maxlength="500"' in page
 
 
@@ -106,13 +106,32 @@ def test_gallery_filter_and_delete(client, db_session):
         target.unlink(missing_ok=True)
 
 
-def test_timeline_step_and_privacy_note(client):
+def test_numbered_sections_and_privacy_note(client):
     _login(client)
     page = client.get("/admin/try-on").text
-    assert 'aria-current="step"' in page  # step-aware, starts at 1
+    assert "wizard-timeline" not in page and "timeline-step" not in page  # pills gone
+    for header in ("۱ · عکس شخص", "۲ · اسکن بارکد محصولات",
+                   "۳ · تنظیمات تولید تصویر"):
+        assert header in page  # sections number themselves now
+    # The ۴ result card renders only once a generation completes; its number
+    # lives in the template, not behind a job fixture.
+    assert "<h3>۴ · تصویر نهایی" in open("templates/admin/tryon.html", encoding="utf-8").read()
     assert "فقط در حافظه" in page  # retention note
     assert "data-confirm" in page  # dialog confirms, no native confirm()
     assert "return confirm(" not in page
+
+
+def test_backgrounds_are_a_grouped_select(client):
+    import config
+    _login(client)
+    page = client.get("/admin/try-on").text
+    assert 'name="background"' in page and "<optgroup" in page
+    assert 'value="kids_classic" selected' in page  # fixed default kept
+    for group in config.TRYON_BACKGROUNDS:
+        assert f'label="{group["label_fa"]}"' in page
+        for option in group["options"]:
+            assert f'value="{option["key"]}"' in page
+    assert 'type="radio" name="background"' not in page  # no 28-card wall
 
 
 def test_autoclear_setting_key_saved(client, db_session):
@@ -153,7 +172,7 @@ def test_variant_switch_rejects_missing_csrf(client, db_session):
 def test_steps_and_upload_surface(client):
     _login(client)
     page = client.get("/admin/try-on").text
-    assert "<h3>۲ · تنظیمات تولید تصویر</h3>" in page  # step ۲ across both columns
+    assert "<h3>۳ · تنظیمات تولید تصویر</h3>" in page  # step ۳, right column
     assert "data-autosubmit" in page and 'onchange="this.form.submit()"' not in page
     assert "upload-frame" not in page  # no hidden frame swallowing upload errors
     assert 'id="kid-plain-upload"' in page and 'role="status"' in page
