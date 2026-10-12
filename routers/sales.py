@@ -454,30 +454,7 @@ async def sales_new(request: Request, db: Session = Depends(get_db)):
     if pos_amount > 0:
         pos_hint = {"amount": pos_amount,
                     "reference": (request.query_params.get("pos_reference") or "").strip()[:100] or None}
-    # Abandoned drafts of this cashier, newest first — a till left mid-sale
-    # resumes instead of restarting. Expired and finished rows never list.
-    now = datetime.now(timezone.utc)
-    drafts = db.query(CheckoutSession).filter(
-        CheckoutSession.staff_user_id == guard.id,
-        CheckoutSession.state.in_(("draft", "reserved")),
-        CheckoutSession.expires_at > now,
-    ).order_by(CheckoutSession.id.desc()).limit(10).all()
-    draft_rows = []
-    for draft in drafts:
-        try:
-            items = json.loads(draft.basket_json or "[]")
-        except (TypeError, ValueError):
-            items = []
-        if not items:
-            continue
-        owner = db.query(Customer).filter(Customer.id == draft.customer_id).first() if draft.customer_id else None
-        draft_rows.append({
-            "nonce": draft.checkout_nonce,
-            "count": len(items),
-            "total": sum(int(it.get("total_price") or 0) for it in items),
-            "who": owner.phone if owner else "ناشناس",
-            "when": jalali_str(draft.created_at, False),
-        })
+    # Abandoned drafts expire on their own — the till always starts fresh.
     return templates.TemplateResponse(request, "sales/checkout.html", {
         "step": "customer",
         "basket": [],
@@ -485,7 +462,6 @@ async def sales_new(request: Request, db: Session = Depends(get_db)):
         "total_amount": 0,
         "customer": None,
         "pos_hint": pos_hint,
-        "drafts": draft_rows,
         "fmt": fmt,
     })
 
@@ -497,101 +473,6 @@ async def sales_skip_customer(request: Request, db: Session = Depends(get_db)):
     if not hasattr(guard, "role"):
         return guard
     return _render_scan(request, None, [], 0, db)
-
-
-@router.post("/swap-customer", response_class=HTMLResponse)
-async def sales_swap_customer(
-    request: Request,
-    phone: str = Form(""),
-    customer_id: int = Form(0),
-    basket_json: str = Form("[]"),
-    referrer_code: str = Form(""),
-    referrer_phone: str = Form(""),
-    use_referrer_discount: str = Form("1"),
-    custom_discount_amount: str = Form(""),
-    custom_discount_percent: str = Form(""),
-    campaign_code: str = Form(""),
-    split_cash: str = Form(""),
-    split_card: str = Form(""),
-    split_credit: str = Form(""),
-    db: Session = Depends(get_db),
-):
-    """Hand the live basket to another customer — discounts re-resolve.
-
-    The basket never moves through the swap itself; only the person does.
-    An unknown number keeps the old customer and says so on the same page.
-    """
-    guard = require_html_role(request, db, "cashier")
-    if not hasattr(guard, "role"):
-        return guard
-    customer = _resolve_customer(customer_id, db)
-    basket = json.loads(basket_json or "[]")
-    total_amount = sum(int(item.get("total_price") or 0) for item in basket)
-    phone = to_english_digits(phone.strip())
-
-    def _scan(error: str | None = None):
-        return _render_scan(
-            request, customer, basket, total_amount, db,
-            referrer_code=referrer_code,
-            referrer_phone=referrer_phone,
-            use_referrer_discount=use_referrer_discount,
-            custom_discount_amount=_discount_int(custom_discount_amount),
-            custom_discount_percent=_discount_int(custom_discount_percent),
-            campaign_code=campaign_code,
-            split_cash=split_cash,
-            split_card=split_card,
-            split_credit=split_credit,
-            error=error,
-        )
-
-    if not phone or not phone.startswith("09") or len(phone) != 11:
-        return _scan(error="شماره موبایل نامعتبر است.")
-    new_customer = db.query(Customer).filter(Customer.phone == phone).first()
-    if new_customer is None:
-        return _scan(error="این شماره ثبت نیست — مشتری دیگر را وارد کنید یا فروش را از اول با شماره جدید شروع کنید.")
-    customer = new_customer
-    return _scan()
-
-
-@router.post("/resume-draft", response_class=HTMLResponse)
-async def sales_resume_draft(
-    request: Request,
-    nonce: str = Form(""),
-    db: Session = Depends(get_db),
-):
-    """Reopen an abandoned draft of this cashier — basket, customer, codes."""
-    guard = require_html_role(request, db, "cashier")
-    if not hasattr(guard, "role"):
-        return guard
-    draft = get_checkout(db, nonce) if nonce else None
-    if (draft is None or draft.staff_user_id != guard.id
-            or draft.state not in ("draft", "reserved")):
-        return RedirectResponse(url="/sales/new", status_code=303)
-    request.session["checkout_nonce"] = draft.checkout_nonce
-    customer = _resolve_customer(draft.customer_id or 0, db)
-    try:
-        basket = json.loads(draft.basket_json or "[]")
-    except (TypeError, ValueError):
-        basket = []
-    total_amount = sum(int(item.get("total_price") or 0) for item in basket)
-    legs = []
-    try:
-        for leg in json.loads(draft.split_json or "[]"):
-            legs.append({"method": leg.get("method"),
-                         "amount": int(leg.get("amount") or 0)})
-    except (TypeError, ValueError):
-        legs = []
-    return _render_scan(
-        request, customer, basket, total_amount, db,
-        referrer_code=draft.referrer_code or "",
-        referrer_phone=draft.referrer_phone or "",
-        use_referrer_discount="1" if draft.use_referrer_discount else "0",
-        custom_discount_amount=draft.custom_discount_amount or 0,
-        custom_discount_percent=draft.custom_discount_percent or 0,
-        campaign_code=draft.campaign_code or "",
-        split_cash=str(_split_leg(legs, "cash") or ""),
-        split_card=str(_split_leg(legs, "card") or ""),
-    )
 
 
 @router.post("/lookup-customer", response_class=HTMLResponse)

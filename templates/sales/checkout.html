@@ -33,19 +33,6 @@
         {{ store.name }} — {{ store.tagline }}
     </div>
 </div>
-{% if drafts %}
-<div class="card">
-    <h3>فروش‌های نیمه‌تمام</h3>
-    <p class="muted">صندوقی که نصفه رها شده — ادامه‌اش از همان‌جا.</p>
-    {% for draft in drafts %}
-    <form method="post" action="/sales/resume-draft" class="draft-row">
-        <input type="hidden" name="nonce" value="{{ draft.nonce }}">
-        <span>{{ draft.who }} · {{ draft.count }} قلم · <strong class="tnum">{{ fmt(draft.total) }}</strong> تومان · <span class="muted">{{ draft.when }}</span></span>
-        <button type="submit" class="btn btn-sm btn-ghost">ادامه</button>
-    </form>
-    {% endfor %}
-</div>
-{% endif %}
 
 {% elif step == "create_customer" %}
 {# ─── STEP 2: New customer form ─── #}
@@ -107,29 +94,6 @@
                 </div>
                 {% endif %}
             </div>
-            {# Hand the live basket to another customer — discounts re-resolve
-               server-side; the basket itself never moves through the swap. #}
-            <details class="customer-swap">
-                <summary>تعویض مشتری</summary>
-                <form method="post" action="/sales/swap-customer" class="form-row">
-                    <input type="hidden" name="customer_id" value="{{ customer_id }}">
-                    <input type="hidden" name="basket_json" value="{{ basket_json }}">
-                    <input type="hidden" name="referrer_code" value="{{ referrer_code|default('') }}">
-                    <input type="hidden" name="referrer_phone" value="{{ referrer_phone|default('') }}">
-                    <input type="hidden" name="campaign_code" value="{{ campaign_code|default('') }}">
-                    <input type="hidden" name="use_referrer_discount" value="{{ '1' if use_referrer_discount == '1' else '0' }}">
-                    <input type="hidden" name="custom_discount_amount" value="{{ custom_discount_amount|default(0) }}">
-                    <input type="hidden" name="custom_discount_percent" value="{{ custom_discount_percent|default(0) }}">
-                    <input type="hidden" name="split_cash" value="{{ split_cash|default('') }}">
-                    <input type="hidden" name="split_card" value="{{ split_card|default('') }}">
-                    <div class="form-group" style="margin-bottom: 0;">
-                        <label class="sr-only" for="swap-phone">شماره مشتری جدید</label>
-                        <input type="tel" id="swap-phone" name="phone" placeholder="09123456789"
-                               maxlength="11" inputmode="tel" dir="ltr" required>
-                    </div>
-                    <button type="submit" class="btn btn-ghost">جابه‌جا کن</button>
-                </form>
-            </details>
         </div>
         {% else %}
         <div class="customer-info-card card">

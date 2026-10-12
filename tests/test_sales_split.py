@@ -147,7 +147,7 @@ def test_split_sum_mismatch_and_single_leg_refused(client, db_session, authed):
     assert db_session.query(Sale).count() == before
 
 
-def test_swap_customer_keeps_basket(client, db_session, authed):
+def test_swap_route_is_gone_and_basket_stays_put(client, db_session, authed):
     import json
     from tests.conftest import csrf_token
     from tests.test_sales_money import _make_variant, _make_customer
@@ -157,21 +157,19 @@ def test_swap_customer_keeps_basket(client, db_session, authed):
     second = _make_customer(db_session, phone="09120000022")
     _, variant = _make_variant(db_session)
     basket = _basket(variant)
-    page = client.post("/sales/swap-customer", data={
+    # Phase 2: the swap endpoint no longer exists — a basket belongs to the
+    # customer it started with.
+    gone = client.post("/sales/swap-customer", data={
         "csrf_token": csrf_token(client, "/sales/new"),
         "phone": second.phone, "customer_id": str(first.id),
         "basket_json": json.dumps(basket, ensure_ascii=False),
-    }).text
-    assert second.phone in page and first.phone not in page
-    unknown = client.post("/sales/swap-customer", data={
-        "csrf_token": csrf_token(client, "/sales/new"),
-        "phone": "09129999999", "customer_id": str(first.id),
-        "basket_json": json.dumps(basket, ensure_ascii=False),
-    }).text
-    assert "ثبت نیست" in unknown and first.phone in unknown
+    }, follow_redirects=False)
+    assert gone.status_code == 404
+    page = client.get("/sales/new").text
+    assert "swap-customer" not in page and "تعویض مشتری" not in page
 
 
-def test_drafts_list_and_resume(client, db_session, authed):
+def test_drafts_never_list_and_resume_is_gone(client, db_session, authed):
     import json
     from tests.conftest import csrf_token
     from tests.test_sales_money import _make_variant
@@ -184,14 +182,13 @@ def test_drafts_list_and_resume(client, db_session, authed):
         "basket_json": json.dumps([], ensure_ascii=False),
         "csrf_token": csrf_token(client, "/sales/new"),
     })
+    # Phase 2: no resume list on a fresh till, and the endpoint is gone.
     listed = client.get("/sales/new").text
-    assert "نیمه‌تمام" in listed
-    import re
-    nonce = re.search(r'name="nonce" value="([A-Za-z0-9_-]+)"', listed).group(1)
-    resumed = client.post("/sales/resume-draft", data={
-        "csrf_token": csrf_token(client, "/sales/new"), "nonce": nonce,
-    }).text
-    assert variant.barcode in resumed or "تست" in resumed
+    assert "نیمه‌تمام" not in listed and "resume-draft" not in listed
+    gone = client.post("/sales/resume-draft", data={
+        "csrf_token": csrf_token(client, "/sales/new"), "nonce": "whatever",
+    }, follow_redirects=False)
+    assert gone.status_code == 404
 
 
 def test_ledger_and_invoice_name_the_split(client, db_session, authed):
