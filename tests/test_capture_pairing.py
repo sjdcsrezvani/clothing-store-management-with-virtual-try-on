@@ -205,6 +205,18 @@ def test_mobile_page_is_session_free_and_persian(client):
     assert _no_emoji(page) == []
 
 
+def test_mobile_page_phone_compat_baseline(client):
+    # mobile-native floor: viewport-fit so safe-area insets resolve, the panel
+    # font, tap-without-delay + unselectable controls, 44px targets.
+    page = client.get("/admin/mobile").text
+    assert "viewport-fit=cover" in page
+    assert "fonts.googleapis.com/css2?family=Vazirmatn" in page
+    assert "env(safe-area-inset-bottom" in page and "env(safe-area-inset-top" in page
+    assert "touch-action:manipulation" in page
+    assert "min-height:44px" in page
+    assert "min-height:100dvh" in page
+
+
 def test_pair_page_names_the_right_screen_and_continues(client):
     page = client.get("/admin/mobile/pair").text
     assert "پروژه تعاملی" not in page
