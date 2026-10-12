@@ -181,3 +181,45 @@ def test_browser_session_still_opens_the_upload_form_route(client, authed):
     resp = authed.post("/api/image-gen/upload-kid-photo",
                        files={"file": ("kid.jpg", b"bytes", "image/jpeg")})
     assert resp.status_code == 200
+
+
+# ── The phone pages: Persian RTL, no emoji, key-gated UI ─────────────────────
+
+def _no_emoji(text):
+    import re
+    pat = re.compile(r'[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\uFE0F]')
+    return [c for c in set(pat.findall(text)) if c != "✕"]
+
+
+def test_mobile_page_is_session_free_and_persian(client):
+    # Key-only access: the shell opens with no staff session; the stored key
+    # gates the API underneath and the script locks capture until the ping
+    # answers 200.
+    resp = client.get("/admin/mobile", follow_redirects=False)
+    assert resp.status_code == 200
+    page = resp.text
+    assert 'lang="fa"' in page and 'dir="rtl"' in page
+    assert "عکس شخص" in page and "پرو مجازی" in page
+    assert "log-list" not in page and 'id="status-line"' in page
+    assert "onclick" not in page  # listeners, like the panel
+    assert _no_emoji(page) == []
+
+
+def test_pair_page_names_the_right_screen_and_continues(client):
+    page = client.get("/admin/mobile/pair").text
+    assert "پروژه تعاملی" not in page
+    assert "پرو مجازی" in page
+    assert 'href="/admin/mobile"' in page  # success continues to capture
+    assert "/admin/login" not in page
+    assert _no_emoji(page) == []
+
+
+def test_mobile_templates_balance_scripts(client):
+    # The try-on lesson: byte-presence is not rendering — an unclosed script
+    # swallows the page while string asserts still pass.
+    import re
+    for url in ("/admin/mobile", "/admin/mobile/pair"):
+        page = client.get(url).text
+        opens = len(re.findall(r"<script(?![a-zA-Z])", page))
+        closes = len(re.findall(r"</script\s*>", page))
+        assert opens == closes, (url, opens, closes)

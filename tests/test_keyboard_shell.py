@@ -765,7 +765,7 @@ def test_every_click_handler_sits_on_something_a_keyboard_can_reach(client, db_s
                     f"{path}: the scrim is click-only and nothing else dismisses it")
                 continue
             offenders.append(f"{path}: <{element['tag']} onclick=…> is not in the tab order")
-    assert checked >= 5, f"only {checked} click handlers found — the walk is not looking at the shell"
+    assert checked >= 3, f"only {checked} click handlers found — the walk is not looking at the shell"
     assert controls >= 300, f"only {controls} controls walked — the pages are not being read"
     # The invoice was added to PAGES after its print button was the only onclick
     # outside the shell: without this, dropping the address from the list would
