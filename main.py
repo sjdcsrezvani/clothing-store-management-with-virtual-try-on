@@ -13,7 +13,7 @@ from database import engine, Base, SessionLocal
 from routers import customers, api, admin, products, sales, analytics, campaigns, accounting, sms
 from routers.clothes_images import admin_router as clothes_admin_router, api_router as clothes_api_router
 from routers.sms_device import gateway_app as _sms_gateway_app  # noqa: F401  (supervised on :8101 by desktop_entry)
-from services.security import CSRFMiddleware, PERMISSION_DENIED_DETAIL
+from services.security import CSRFMiddleware, NoStoreHTMLMiddleware, PERMISSION_DENIED_DETAIL
 from services.store import get_store
 from services.scheduler import scheduler_task
 from services.templating import templates
@@ -387,6 +387,9 @@ app = FastAPI(title="سیستم فروش", lifespan=lifespan)
 # the session (and its CSRF token) is available when CSRF validates. Starlette
 # wraps in reverse order of add_middleware, so CSRF is added first.
 app.add_middleware(CSRFMiddleware)
+# Documents bypass the browser's heuristic cache (assets already bust via
+# ?v=mtime): a page edit must show on a plain reload, not after cache surgery.
+app.add_middleware(NoStoreHTMLMiddleware)
 app.add_middleware(
     SessionMiddleware,
     secret_key=SESSION_SECRET,
