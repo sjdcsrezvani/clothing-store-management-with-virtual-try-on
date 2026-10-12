@@ -168,3 +168,19 @@ def test_capture_pairing_section_renders(client):
     assert "ساخت QR جفت‌سازی" in page
     assert "اسکن بارکد محصولات" in page
     assert "app-footer" in page
+
+
+def test_no_unclosed_script_swallows_the_page(client):
+    # Byte-presence is not rendering: one unclosed <script> turns the rest of
+    # the page into script text (invisible, unqueryable) while every string
+    # assert above still passes. Balance the tags on the rendered bytes.
+    import re
+    _login(client)
+    page = client.get("/admin/try-on").text
+    opens = len(re.findall(r"<script(?![a-zA-Z])", page))
+    closes = len(re.findall(r"</script\s*>", page))
+    assert opens == closes, (opens, closes)
+    saved = client.get("/admin/try-on/saved").text
+    opens = len(re.findall(r"<script(?![a-zA-Z])", saved))
+    closes = len(re.findall(r"</script\s*>", saved))
+    assert opens == closes, (opens, closes)
