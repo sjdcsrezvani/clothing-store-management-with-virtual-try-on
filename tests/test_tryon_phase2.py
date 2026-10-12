@@ -157,3 +157,14 @@ def test_steps_and_upload_surface(client):
     assert "data-autosubmit" in page and 'onchange="this.form.submit()"' not in page
     assert "upload-frame" not in page  # no hidden frame swallowing upload errors
     assert 'id="kid-plain-upload"' in page and 'role="status"' in page
+
+
+def test_capture_pairing_section_renders(client):
+    # The phone pairs from step 1 itself: section, pair button, products card
+    # and settings card all render unconditionally for a manager.
+    _login(client)
+    page = client.get("/admin/try-on").text
+    assert "گوشی ضبط عکس" in page
+    assert "ساخت QR جفت‌سازی" in page
+    assert "اسکن بارکد محصولات" in page
+    assert "app-footer" in page
