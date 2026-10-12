@@ -988,7 +988,7 @@ tbody tr:last-child td { border-bottom: none; }
 .btn-confirm { font-size: 1.1rem; padding: 1.1rem; margin-top: 0.8rem; }
 /* The wizard's own rhythm (try-on mirrors the till): timeline breathing room,
    the pairing subsection inside step 1, the scan row, the generate button. */
-.wizard-timeline { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.wizard-timeline { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; margin-bottom: 1.5rem; list-style: none; margin-top: 0; margin-left: 0; margin-right: 0; padding: 0; }
 .tryon-pairing {
   margin-top: 1rem;
   padding-top: 1rem;
@@ -997,12 +997,12 @@ tbody tr:last-child td { border-bottom: none; }
 .tryon-pairing h4 { margin-bottom: 0.5rem; font-size: 0.95rem; }
 .tryon-pairing .muted { color: var(--ink-soft); font-size: 0.85rem; margin-bottom: 0.6rem; }
 .tryon-scan-form { display: flex; gap: 0.5rem; margin-bottom: 0.8rem; align-items: center; }
-.tryon-scan-form input[type="text"] { flex: 1; direction: ltr; font-size: 1rem; }
+.tryon-scan-form input[type="text"] { flex: 1; font-size: 1rem; }
 .btn-generate { font-size: 1.1rem; margin-top: 1rem; }
-.payment-timeline { display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.8rem; color: var(--ink-soft); font-size: 0.72rem; }
+.payment-timeline { display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.8rem; color: var(--ink-soft); font-size: 0.72rem; list-style: none; margin-top: 0; margin-left: 0; margin-right: 0; padding: 0; }
 .timeline-step { padding: 0.35rem 0.5rem; border-radius: 999px; border: 1px solid var(--rule); white-space: nowrap; }
 .timeline-step.active { color: var(--link-hover); border-color: var(--candy); background: color-mix(in srgb, var(--card) 82%, var(--candy)); font-weight: 700; }
-.timeline-line { flex: 1; height: 1px; background: var(--rule); }
+.timeline-line { flex: 1; min-width: 12px; height: 1px; background: var(--rule); list-style: none; }
 .cash-calculator { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; align-items: end; margin: 0.8rem 0; padding: 0.8rem; background: var(--surface-soft); border-radius: var(--radius-sm); }
 .cash-calculator label { font-size: 0.8rem; font-weight: 700; grid-column: 1 / -1; }
 .cash-calculator strong { padding: 0.7rem; color: var(--success-ink); }

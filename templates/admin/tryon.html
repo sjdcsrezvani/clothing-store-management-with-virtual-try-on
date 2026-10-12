@@ -39,27 +39,48 @@
                 <summary class="tryon-upload-toggle">آپلود عکس کودک (یا گرفتن مجدد)</summary>
                 <form method="post" action="/api/image-gen/upload-kid-photo"
                       enctype="multipart/form-data" class="tryon-upload-form"
-                      target="upload-frame"
-                      onsubmit="setTimeout(function(){ location.reload(); }, 1200);">
+                      id="kid-upload-form">
                     <div class="form-group">
                         <label for="kid-file">فایل عکس</label>
                         <input type="file" id="kid-file" name="file" accept="image/*" required>
                     </div>
-                    <button type="submit" class="btn btn-sm btn-primary">آپلود</button>
+                    <button type="button" class="btn btn-sm btn-primary" id="kid-plain-upload">آپلود</button>
                     <button type="button" class="btn btn-sm btn-ghost" id="kid-crop-upload">مربع‌سازی و آپلود</button>
                     <small class="muted" id="kid-crop-note" role="status"></small>
                 </form>
-                <iframe name="upload-frame" class="tryon-upload-frame" title="آپلود"></iframe>
 <script>
 (function () {
-    // Center-square crop at the file's native resolution, then the same
-    // endpoint as the plain form. Quality preserved — the crop happens
-    // before any downscale, unlike cropping the page preview.
+    // Both buttons post with fetch, so a rejection (wrong file, too big,
+    // logged out) lands in the status line instead of vanishing into a
+    // hidden frame behind a blind reload. The endpoint is CSRF-exempt and
+    // takes the admin session cookie, which fetch sends same-origin.
     var input = document.getElementById('kid-file');
-    var btn = document.getElementById('kid-crop-upload');
+    var plainBtn = document.getElementById('kid-plain-upload');
+    var cropBtn = document.getElementById('kid-crop-upload');
     var note = document.getElementById('kid-crop-note');
-    if (!input || !btn) return;
-    btn.addEventListener('click', function () {
+    if (!input || !plainBtn || !cropBtn) return;
+    function postBlob(blob, name) {
+        note.textContent = 'در حال آپلود…';
+        var form = new FormData();
+        form.append('file', blob, name);
+        fetch('/api/image-gen/upload-kid-photo', { method: 'POST', body: form })
+            .then(function (r) {
+                if (r.ok) { window.location.reload(); return null; }
+                return r.json().then(function (body) {
+                    throw new Error((body && body.detail) || ('خطا ' + r.status));
+                }, function () { throw new Error('خطا ' + r.status); });
+            })
+            .catch(function (e) { note.textContent = 'آپلود نشد: ' + (e.message || 'خطای شبکه'); });
+    }
+    plainBtn.addEventListener('click', function () {
+        var file = input.files && input.files[0];
+        if (!file) { note.textContent = 'اول یک فایل انتخاب کنید.'; return; }
+        postBlob(file, file.name || 'kid.jpg');
+    });
+    cropBtn.addEventListener('click', function () {
+        // Center-square crop at the file's native resolution, then the same
+        // endpoint as the plain button. Quality preserved — the crop happens
+        // before any downscale, unlike cropping the page preview.
         var file = input.files && input.files[0];
         if (!file) { note.textContent = 'اول یک فایل انتخاب کنید.'; return; }
         note.textContent = 'در حال برش…';
@@ -75,13 +96,7 @@
             canvas.getContext('2d').drawImage(img, sx, sy, side, side, 0, 0, side, side);
             canvas.toBlob(function (blob) {
                 if (!blob) { note.textContent = 'برش ناموفق بود.'; return; }
-                var meta = document.querySelector('meta[name="csrf-token"]');
-                var form = new FormData();
-                form.append('file', blob, 'kid-square.jpg');
-                form.append('csrf_token', meta ? meta.content : '');
-                fetch('/api/image-gen/upload-kid-photo', { method: 'POST', body: form })
-                    .then(function () { window.location.reload(); })
-                    .catch(function () { note.textContent = 'خطای شبکه.'; });
+                postBlob(blob, 'kid-square.jpg');
             }, 'image/jpeg', 0.92);
         };
         img.onerror = function () { URL.revokeObjectURL(url); note.textContent = 'فایل خوانده نشد.'; };
@@ -196,7 +211,7 @@
                         <form method="post" action="/admin/try-on/variant" class="tryon-variant-form">
                             <input type="hidden" name="product_id" value="{{ s.id }}">
                             <label class="sr-only" for="variant-{{ s.id }}">تنوع {{ s.name }}</label>
-                            <select id="variant-{{ s.id }}" name="barcode" onchange="this.form.submit()">
+                            <select id="variant-{{ s.id }}" name="barcode" data-autosubmit aria-label="تنوع {{ s.name }}">
                                 {% for v in s.variants %}
                                 <option value="{{ v.barcode }}"{% if v.barcode == s.barcode %} selected{% endif %}>{{ v.label }}</option>
                                 {% endfor %}
@@ -228,7 +243,7 @@
 
         {# ── Generate ── #}
         <div class="card">
-            <h3>تنظیمات تولید تصویر</h3>
+            <h3>۲ · تنظیمات تولید تصویر</h3>
             <form id="gen-form" method="post" action="/admin/try-on/generate">
                 <div class="form-group">
                     <label for="mode">نوع پرو</label>
@@ -434,6 +449,15 @@ document.addEventListener('click', function(e) {
     if (opener) { openLightbox(opener.getAttribute('data-lightbox-src')); return; }
     if (e.target.closest && e.target.closest('[data-close-lightbox]')) closeLightbox(e);
 });
+document.addEventListener('change', function(e) {
+    // The variant picker posts programmatically, and form.submit() fires no
+    // submit event — so the CSRF injector in base.html never runs and the
+    // middleware answers 403. Attach the token first, then submit.
+    var sel = e.target.closest ? e.target.closest('select[data-autosubmit]') : null;
+    if (!sel || !sel.form) return;
+    if (window.ensureCsrf) window.ensureCsrf(sel.form);
+    sel.form.submit();
+});
 // Category dropdown always visible — it applies to both outfit modes.
 
 (function () {
@@ -452,9 +476,9 @@ document.addEventListener('click', function(e) {
         "نهایی‌سازی تصویر…"
     ];
     var retryPhases = [
-        "⏳ سرور کند بود — تلاش مجدد…",
+        "سرور کند بود — در حال تلاش مجدد…",
         "تلاش دوباره برای تولید…",
-        "یه بار دیگه امتحان می‌کنیم…"
+        "کمی صبر کنید، دوباره امتحان می‌کنیم…"
     ];
     form.addEventListener('submit', function () {
         var btn = form.querySelector('button[type="submit"]');

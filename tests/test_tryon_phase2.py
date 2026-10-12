@@ -138,3 +138,22 @@ def test_no_emoji_in_tryon_surfaces():
         labels.append(group["label_fa"])
         labels.extend(o["label_fa"] for o in group["options"])
     assert not [label for label in labels if pat.search(label)]
+
+
+def test_variant_switch_rejects_missing_csrf(client, db_session):
+    # The picker submits programmatically, which fires no submit event — the
+    # page must attach the token itself, or this route answers 403.
+    _login(client)
+    _product_with_variants(db_session)
+    resp = client.post("/admin/try-on/variant", data={"product_id": "1", "barcode": "BC-2"},
+                       follow_redirects=False)
+    assert resp.status_code == 403
+
+
+def test_steps_and_upload_surface(client):
+    _login(client)
+    page = client.get("/admin/try-on").text
+    assert "<h3>۲ · تنظیمات تولید تصویر</h3>" in page  # step ۲ across both columns
+    assert "data-autosubmit" in page and 'onchange="this.form.submit()"' not in page
+    assert "upload-frame" not in page  # no hidden frame swallowing upload errors
+    assert 'id="kid-plain-upload"' in page and 'role="status"' in page
