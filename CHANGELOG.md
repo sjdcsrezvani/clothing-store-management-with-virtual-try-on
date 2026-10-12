@@ -1,3 +1,59 @@
+## 2.9.0 — 1405/07/20 (2026-10-12)
+
+### پرو مجازی: the queue gets its own worker and a quota that burns on success
+
+- **The queue stops waiting its turn.** Generations leave the
+  scheduler's five-minute sweep for a dedicated worker that polls
+  every ten seconds with two jobs in flight, so a picture starts in
+  seconds rather than minutes.
+- **A billed failure fails once.** When the provider takes the money
+  and the picture still does not come, the job completes as failed
+  and is never requeued; an ordinary local fault retries with
+  backoff, so no job strands half-done.
+- **The quota burns only on success.** Daily and hourly budgets are
+  spent when — and only when — a generation returns whole; a broken
+  picture no longer eats the owner's allowance.
+- **The key is stored, masked, testable.** It migrates from the
+  environment once, shows its masked tail everywhere, survives an
+  empty field untouched, and a test button proves the connection
+  without spending a picture; the provider's address sits in
+  settings beside it.
+- **Cancel respects the work in flight.** A queued job can be
+  cancelled, one already producing cannot, and the upload refuses
+  non-images and files over 15 MB before anything is queued.
+- **The page tells the wait honestly.** A live estimate and the
+  running job's state sit on the try-on page while the queue works.
+
+### استودیوی پرو: four numbered steps and a studio that speaks plainly
+
+- **Four steps, in order.** The person's photo, the barcode scan of
+  the products, the generation settings, and the final image wearing
+  the shop's logo — each its own numbered section; the old inline
+  ribbon between them is gone.
+- **One picker, grouped.** Backgrounds arrive as a single grouped
+  select with a fixed default, seasons beside the studio sets, and a
+  custom line capped at 500 characters.
+- **The wording says person, not child.** Every surface speaks of the
+  person in the photo, the emoji are gone, and one setting drops that
+  photo from memory the moment a picture is saved.
+- **The controls actually work.** Swap a product's variant, remove
+  one, retry a failed job, filter and delete the saved gallery, open
+  any result full screen — each move has its gate.
+- **Progress that names its step.** The overlay says which step it is
+  on and what the wait really is: one to two minutes, up to four
+  when the queue runs long.
+- **The phone joins by QR.** The camera connects to the shop by
+  scanning a code instead of typing an address and a token.
+
+### پشت صحنه: pages stop lying about their age
+
+- **A reload shows today's page.** HTML documents now carry
+  `Cache-Control: no-store` while versioned assets keep their
+  busting, so a plain reload cannot serve yesterday's markup.
+- **Held to all of it.** New gates keep the key masked, the quota
+  honest, the cancel rules intact, the steps rendered, the script
+  tags closed, and the emoji off every try-on surface.
+
 ## 2.8.8 — 1405/07/18 (2026-10-10)
 
 ### درِ ورود: the login card belongs to the shop again
