@@ -2028,6 +2028,8 @@ _SETTINGS_FIELD_TABS = {
     "birthday_sms_days_before": "discounts",
     "birthday_target": "discounts", "child_profile_enabled": "discounts",
     "tryon_daily_limit": "messaging",
+    "tryon_api_key": "messaging", "tryon_api_url": "messaging",
+    "tryon_autoclear_kid": "messaging",
     "credit_terms_days": "credit",
     "credit_reminder_min_hours": "credit",
     "default_credit_limit": "credit",
@@ -2129,6 +2131,8 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
 
     settings = {s.key: s.value for s in db.query(Settings).all()}
     tier_config = get_tier_config(db)
+    from services.image_gen import mask_tryon_key
+    tryon_key_mask = mask_tryon_key(settings.get("tryon_api_key", ""))
     error_field = (request.query_params.get("field", "") or "").strip()
     if not re.fullmatch(r"[a-z_]+", error_field):
         error_field = ""
@@ -2151,6 +2155,7 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
         "settings_tabs": SETTINGS_TABS, "active_tab": active_tab,
         "error_field": error_field,
         "gateway": gateway,
+        "tryon_key_mask": tryon_key_mask,
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
     })
@@ -2277,8 +2282,11 @@ async def admin_update_settings(request: Request, db: Session = Depends(get_db))
     for key, value in form.items():
         if key in {"csrf_token", "tab", THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY}:
             continue
+        if key == "tryon_api_key" and not str(value).strip():
+            continue  # empty key field means "keep the stored secret"
         updates[key] = str(value)
-    # A birthday target that names a module the store switched off would
+    if "tryon_api_key" in updates and not updates["tryon_api_key"].strip():
+        del updates["tryon_api_key"]    # A birthday target that names a module the store switched off would
     # contradict itself, so it falls back rather than silently doing nothing.
     child_off = str(updates.get(CHILD_PROFILE_KEY, "1")).strip().lower() in (
         "0", "false", "no", "off",

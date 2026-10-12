@@ -4,6 +4,8 @@ import base64
 import logging
 import os
 import tempfile
+import time
+from datetime import datetime, timedelta, timezone
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -11,15 +13,15 @@ from typing import Optional
 import random
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, File
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response, JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Product, ProductVariant, GeneratedImage, BackgroundJob, to_english_digits
+from models import Product, ProductVariant, GeneratedImage, BackgroundJob, Settings, to_english_digits
 from services._common import check_admin, fmt, jalali_str
 from services.image_gen import ImageGenService, ImageGenerationError, composite_logo, MAIN_PROMPT
-from services.security import require_api_token, tryon_can_generate, tryon_record_generation, tryon_daily_remaining, log_action, require_html_role
+from services.security import require_api_token, tryon_can_generate, tryon_daily_remaining, log_action, require_html_role
 from services.capture_device import (
     AUTH_HEADER, authenticate_device, is_paired, pair_device,
     pairing_qr_data_uri, unpair_device,
@@ -229,34 +231,99 @@ def _outfit_clause(outfit_mode: str, category: str) -> str:
 # Background key that triggers a uniform-random pick across the catalog.
 RANDOM_BG_KEY = "random"
 
-# In-memory try-on state (single admin, no session). The kid photo is kept only
-# in RAM; it is materialized into the operating system's temporary directory for
-# the duration of a generation request, never under static/.
-_tryon = {
-    "kid_photo_bytes": None,
-    "kid_photo_content_type": "image/jpeg",
-    "kid_photo_preview": None,  # data URL for the current page only
-    "scanned": [],               # list of product dicts
-    "last_gen_url": None,     # latest generated image URL
-    "last_gen_path": None,    # latest generated image disk path
-    "last_gen_engine": None,  # engine_id of last generation (for display)
-    "last_gen_prompt": None,  # full prompt of last generation (for save audit)
-}
+# In-memory try-on state, keyed per browser session. The kid photo is kept
+# only in RAM; it is materialized into the operating system's temporary
+# directory for the duration of a generation request, never under static/.
+# Entries older than a day are swept on access so abandoned sessions cannot
+# accumulate RAM. Latest-generation tracking lives on the BackgroundJob row
+# (session stores the job id) — never here, so save/download survive worker
+# timing and concurrent staff.
+_tryon_sessions: dict[str, dict] = {}
+
+_TRYON_SID_TTL_SECONDS = 24 * 3600
+KID_PHOTO_MAX_BYTES = 15_000_000
+KID_PREVIEW_MAX_DIM = 640
 
 
-def _set_kid_photo(raw: bytes, content_type: str = "image/jpeg") -> None:
+def _new_tryon_state() -> dict:
+    return {
+        "kid_photo_bytes": None,
+        "kid_photo_content_type": "image/jpeg",
+        "kid_photo_preview": None,  # downscaled data URL for the page only
+        "scanned": [],               # list of product dicts
+        "_at": time.time(),
+    }
+
+
+def _state(request: Request) -> dict:
+    """This browser's try-on state, created on first touch."""
+    import time as _time
+    now = _time.time()
+    for sid, entry in list(_tryon_sessions.items()):
+        if now - entry.get("_at", 0) > _TRYON_SID_TTL_SECONDS:
+            _tryon_sessions.pop(sid, None)
+    sid = (request.session.get("tryon_sid") or "").strip()
+    entry = _tryon_sessions.get(sid) if sid else None
+    if entry is None:
+        sid = uuid.uuid4().hex
+        request.session["tryon_sid"] = sid
+        entry = _new_tryon_state()
+        _tryon_sessions[sid] = entry
+    entry["_at"] = now
+    _drain_capture_inbox(entry)
+    return entry
+
+
+# The capture phone is a remote control for the desktop session, not a
+# session of its own: its scans and photos land here, keyed by nothing
+# (there is exactly one paired phone by design), and the desktop drains
+# the inbox into its own session state on the next page view. Phone
+# routes never touch session state — token callers may not keep cookies.
+_capture_inbox: dict = {"scanned": [], "kid_photo_bytes": None,
+                        "kid_photo_content_type": "image/jpeg"}
+
+
+def _drain_capture_inbox(state: dict) -> None:
+    """Move phone-captured scans/photo into this browser's session state."""
+    for item in _capture_inbox["scanned"]:
+        if not any(s["id"] == item["id"] for s in state["scanned"]):
+            state["scanned"].append(item)
+    _capture_inbox["scanned"] = []
+    if _capture_inbox["kid_photo_bytes"] and not state["kid_photo_bytes"]:
+        try:
+            _set_kid_photo(state, _capture_inbox["kid_photo_bytes"],
+                           _capture_inbox["kid_photo_content_type"])
+        except ValueError:
+            pass
+        _capture_inbox["kid_photo_bytes"] = None
+
+
+def _set_kid_photo(state: dict, raw: bytes, content_type: str = "image/jpeg") -> None:
     """Keep the uploaded kid photo in memory, not in static/uploads."""
     if not raw:
         raise ValueError("Empty kid photo")
+    if len(raw) > KID_PHOTO_MAX_BYTES:
+        raise ValueError("عکس شخص بیشتر از ۱۵ مگابایت است.")
     mime = content_type if content_type and content_type.startswith("image/") else "image/jpeg"
-    _tryon["kid_photo_bytes"] = raw
-    _tryon["kid_photo_content_type"] = mime
-    _tryon["kid_photo_preview"] = f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+    state["kid_photo_bytes"] = raw
+    state["kid_photo_content_type"] = mime
+    # The page preview is a downscaled standalone copy — the full bytes stay
+    # for generation, but the base64 data URL never carries 25 MB of RAM.
+    try:
+        from PIL import Image
+        import io as _io
+        img = Image.open(_io.BytesIO(raw))
+        img.thumbnail((KID_PREVIEW_MAX_DIM, KID_PREVIEW_MAX_DIM))
+        buf = _io.BytesIO()
+        img.convert("RGB").save(buf, "JPEG", quality=80)
+        preview = base64.b64encode(buf.getvalue()).decode("ascii")
+        state["kid_photo_preview"] = f"data:image/jpeg;base64,{preview}"
+    except Exception:
+        state["kid_photo_preview"] = None
 
 
-def _kid_photo_temp_path(raw: Optional[bytes] = None, content_type: str = "image/jpeg") -> Optional[str]:
+def _kid_photo_temp_path(raw: Optional[bytes], content_type: str = "image/jpeg") -> Optional[str]:
     """Write a RAM-held kid photo to an OS temp file for one provider request."""
-    raw = _tryon["kid_photo_bytes"] if raw is None else raw
     if not raw:
         return None
     ext = {
@@ -281,10 +348,10 @@ def _remove_temp_file(path: Optional[str]) -> None:
         Path(path).unlink(missing_ok=True)
 
 
-def _clear_kid_photo() -> None:
-    _tryon["kid_photo_bytes"] = None
-    _tryon["kid_photo_content_type"] = "image/jpeg"
-    _tryon["kid_photo_preview"] = None
+def _clear_kid_photo(state: dict) -> None:
+    state["kid_photo_bytes"] = None
+    state["kid_photo_content_type"] = "image/jpeg"
+    state["kid_photo_preview"] = None
 
 
 class ScanBarcodeRequest(BaseModel):
@@ -299,6 +366,16 @@ class GenerateRequest(BaseModel):
     category: str = CATEGORY_UPPER  # product type: upper/lower/set/layered/dress
     barcodes: list[str] = []
     kid_photo_base64: str = ""  # optional: embed kid photo in the same request
+    custom_prompt: str = ""  # optional staff free text, appended to the middle
+
+
+def _custom_prompt_clause(raw: str) -> str:
+    """Staff free text, capped and stripped — it joins the middle (before the
+    outfit rule), never replaces the fixed studio prompt."""
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    return text[:500]
 
 
 def _variant_image_path(variant: ProductVariant) -> Optional[str]:
@@ -474,12 +551,17 @@ def _scanned_product_dict(product: Product, barcode: str) -> dict:
                 image_path = v.image_path
     if not image_path:
         image_path = product.image_path
+    variants = [
+        {"barcode": v.barcode, "label": (v.tryon_details or v.barcode or "")[:60]}
+        for v in (product.variants or []) if v.is_active and v.barcode
+    ]
     return {
         "id": product.id,
         "name": product.name,
         "barcode": barcode,
         "image_path": image_path,
         "details": details,
+        "variants": variants,
     }
 
 
@@ -516,16 +598,38 @@ def _capture_base_url(request: Request) -> str:
     return f"http://{host}:{port}"
 
 
-def _tryon_context(db: Session, *, msg: str = "", err: str = "", pairing=None):
+def _latest_tryon_job(request: Request, db: Session):
+    """This browser's latest generation, via the job id parked in session
+    at enqueue time — the worker, not in-memory state, is the source of
+    truth, so save/download survive queue timing and concurrent staff."""
+    try:
+        job_id = int(request.session.get("tryon_job_id") or 0)
+    except (TypeError, ValueError):
+        return None
+    if not job_id:
+        return None
+    return db.query(BackgroundJob).filter(
+        BackgroundJob.id == job_id, BackgroundJob.job_type == "tryon").first()
+
+
+def _tryon_context(db: Session, request: Request, *, msg: str = "", err: str = "", pairing=None):
     """Everything the try-on page renders, shared by the page route and the
     pair route so the two cannot drift. ``pairing`` is set only on the response
     that just issued a key — the QR is shown exactly once, never on a reload."""
     saved = db.query(GeneratedImage).order_by(GeneratedImage.created_at.desc()).limit(20).all()
+    state = _state(request)
+    job = _latest_tryon_job(request, db)
+    last_gen_url = job.result_url if job and job.status == "completed" else None
+    from services.security import tryon_daily_remaining as _tryon_remaining
     return {
-        "kid_photo_preview": _tryon["kid_photo_preview"],
-        "scanned": _tryon["scanned"],
-        "last_gen_url": _tryon["last_gen_url"],
-        "last_gen_engine": _tryon.get("last_gen_engine"),
+        "kid_photo_preview": state["kid_photo_preview"],
+        "scanned": state["scanned"],
+        "last_gen_url": last_gen_url,
+        "last_gen_engine": None,
+        "tryon_job_id": job.id if job else None,
+        "tryon_job_status": job.status if job else None,
+        "tryon_job_error": job.error_message if job and job.status == "failed" else None,
+        "tryon_remaining": _tryon_remaining(db),
         "backgrounds": TRYON_BACKGROUNDS,
         "pose_modes": TRYON_POSE_MODES,
         "face_modes": TRYON_FACE_MODES,
@@ -545,7 +649,7 @@ async def admin_tryon_page(request: Request, msg: str = "", err: str = "", db: S
     if not hasattr(guard, "role"):
         return guard
 
-    return templates.TemplateResponse(request, "admin/tryon.html", _tryon_context(db, msg=msg, err=err))
+    return templates.TemplateResponse(request, "admin/tryon.html", _tryon_context(db, request, msg=msg, err=err))
 
 
 @admin_router.post("/try-on/pair-capture", response_class=HTMLResponse)
@@ -566,7 +670,7 @@ async def admin_pair_capture_phone(request: Request, db: Session = Depends(get_d
                request=request)
 
     return templates.TemplateResponse(request, "admin/tryon.html", _tryon_context(
-        db, msg="QR برای یک‌بار نمایش ساخته شد؛ همین حالا با دوربین گوشی اسکن کنید.",
+        db, request, msg="QR برای یک‌بار نمایش ساخته شد؛ همین حالا با دوربین گوشی اسکن کنید.",
         pairing={"qr": pairing_qr_data_uri(_capture_base_url(request), raw_key)},
     ))
 
@@ -627,10 +731,76 @@ async def admin_tryon_add_product(
     if not variant:
         return RedirectResponse(url="/admin/try-on?err=بارکد یافت نشد.", status_code=303)
     product = variant.product
-    if not any(s["id"] == product.id for s in _tryon["scanned"]):
-        _tryon["scanned"].append(_scanned_product_dict(product, variant.barcode))
+    state = _state(request)
+    if not any(s["id"] == product.id for s in state["scanned"]):
+        state["scanned"].append(_scanned_product_dict(product, variant.barcode))
         return RedirectResponse(url="/admin/try-on?msg=محصول اضافه شد.", status_code=303)
     return RedirectResponse(url="/admin/try-on?msg=محصول از قبل اضافه شده است.", status_code=303)
+
+
+@admin_router.post("/try-on/remove-product", response_class=HTMLResponse)
+async def admin_tryon_remove_product(
+    request: Request,
+    product_id: int = Form(0),
+    db: Session = Depends(get_db),
+):
+    """Drop one scanned product. The kid photo and the rest survive."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    state = _state(request)
+    state["scanned"] = [s for s in state["scanned"] if s["id"] != product_id]
+    return RedirectResponse(url="/admin/try-on?msg=محصول حذف شد.", status_code=303)
+
+
+@admin_router.post("/try-on/variant", response_class=HTMLResponse)
+async def admin_tryon_variant(
+    request: Request,
+    product_id: int = Form(0),
+    barcode: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Switch a scanned row to another active variant (size/color). The
+    row keeps its place; photo and AI details rebuild from the new barcode."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    barcode = to_english_digits(barcode.strip())
+    variant = db.query(ProductVariant).filter(
+        ProductVariant.barcode == barcode,
+        ProductVariant.is_active == True,
+    ).first()
+    if not variant or variant.product_id != product_id:
+        return RedirectResponse(url="/admin/try-on?err=تنوع معتبر نیست.", status_code=303)
+    state = _state(request)
+    for i, s in enumerate(state["scanned"]):
+        if s["id"] == product_id:
+            state["scanned"][i] = _scanned_product_dict(variant.product, barcode)
+            break
+    return RedirectResponse(url="/admin/try-on?msg=تنوع عوض شد.", status_code=303)
+
+
+@admin_router.post("/try-on/retry", response_class=HTMLResponse)
+async def admin_tryon_retry(request: Request, db: Session = Depends(get_db)):
+    """Re-queue the session's failed job with identical inputs. A retry is a
+    new billable generation — the button names the cost, the click approves."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    job = _latest_tryon_job(request, db)
+    if not job or job.status != "failed":
+        return RedirectResponse(url="/admin/try-on?err=کار ناموفقی برای تکرار نیست.", status_code=303)
+    if not tryon_can_generate(request, db):
+        return RedirectResponse(
+            url="/admin/try-on?err=سقف تولید روزانه تصویر رسیده است.", status_code=303)
+    import json
+    payload = json.loads(job.payload or "{}")
+    payload.pop("ip", None)
+    payload["ip"] = request.client.host if request.client else "unknown"
+    new_job = enqueue(db, "tryon", payload)
+    db.commit()
+    request.session["tryon_job_id"] = new_job.id
+    return RedirectResponse(url=f"/admin/try-on?msg=همان ورودی‌ها دوباره در صف قرار گرفت (شناسه {new_job.id}).", status_code=303)
 
 
 # ─── Generate image ───
@@ -643,13 +813,15 @@ async def admin_tryon_generate(
     face: str = Form("preserve"),
     mode: str = Form(OUTFIT_MODE_PRODUCT_ONLY),
     category: str = Form(CATEGORY_UPPER),
+    custom_prompt: str = Form(""),
     db: Session = Depends(get_db),
 ):
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
-    scanned_ids = [s["id"] for s in _tryon["scanned"]]
+    state = _state(request)
+    scanned_ids = [s["id"] for s in state["scanned"]]
     if not scanned_ids:
         return RedirectResponse(url="/admin/try-on?err=حداقل یک محصول انتخاب کنید.", status_code=303)
 
@@ -666,17 +838,17 @@ async def admin_tryon_generate(
         mode = OUTFIT_MODE_PRODUCT_ONLY
 
     # Resolve scanned products by id (one query each — small list)
-    products = [db.query(Product).get(s["id"]) for s in _tryon["scanned"]]
+    products = [db.query(Product).get(s["id"]) for s in state["scanned"]]
     products = [p for p in products if p]
     product_names = ", ".join(p.name for p in products)
-    garment_details = [s["details"] for s in _tryon["scanned"] if s.get("details")]
+    garment_details = [s["details"] for s in state["scanned"] if s.get("details")]
 
     # Build reference images: kid photo first, then each scanned variant's garment photo.
     # Pass the scanned barcode so we send the right color (red variant photo for red),
     # not whichever variant image sorts first. The kid photo is materialized only
     # for this request and is deleted immediately afterward.
     reference_paths = []
-    for s in _tryon["scanned"]:
+    for s in state["scanned"]:
         product = next((p for p in products if p.id == s["id"]), None)
         if product:
             reference_paths.extend(_product_image_paths(product, s["barcode"]))
@@ -684,19 +856,23 @@ async def admin_tryon_generate(
     reference_paths = list(dict.fromkeys(reference_paths))
 
     kid_temp_path = _kid_photo_temp_path(
-        content_type=_tryon["kid_photo_content_type"]
+        state["kid_photo_bytes"],
+        content_type=state["kid_photo_content_type"],
     )
     if kid_temp_path:
         reference_paths.insert(0, kid_temp_path)
 
     if not reference_paths:
         _remove_temp_file(kid_temp_path)
-        return RedirectResponse(url="/admin/try-on?err=عکس کودک و تصویر محصول الزامی است.", status_code=303)
+        return RedirectResponse(url="/admin/try-on?err=عکس شخص و تصویر محصول الزامی است.", status_code=303)
 
     prefix, prompt_mid, outfit_clause = _build_tryon_prompt(
         product_names, background, pose, mode,
         garment_details=garment_details, category=category, face_key=face,
     )
+    extra = _custom_prompt_clause(custom_prompt)
+    if extra:
+        prompt_mid = f"{prompt_mid} {extra}".strip()
 
     filename = f"tryon_{uuid.uuid4().hex[:12]}.jpg"
     filepath = GENERATED_DIR / filename
@@ -708,9 +884,10 @@ async def admin_tryon_generate(
         "temporary_paths": [kid_temp_path] if kid_temp_path else [],
         "output_path": str(filepath),
         "result_url": f"/static/uploads/generated/{filename}",
+        "ip": (request.client.host if request.client else "unknown"),
     })
     db.commit()
-    tryon_record_generation(request)
+    request.session["tryon_job_id"] = job.id
     return RedirectResponse(url=f"/admin/try-on?msg=درخواست تولید در صف قرار گرفت (شناسه {job.id}).", status_code=303)
 
 
@@ -721,22 +898,37 @@ async def admin_tryon_save(request: Request, db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
-    if not _tryon["last_gen_path"] or not _tryon["last_gen_url"]:
+    job = _latest_tryon_job(request, db)
+    if not job or job.status != "completed" or not job.result_path or not job.result_url:
         return RedirectResponse(url="/admin/try-on?err=تصویری برای ذخیره وجود ندارد.", status_code=303)
 
-    barcodes = ",".join(s["barcode"] for s in _tryon["scanned"])
+    state = _state(request)
+    barcodes = ",".join(s["barcode"] for s in state["scanned"])
+    try:
+        import json
+        payload = json.loads(job.payload or "{}")
+        prompt = "\n".join(p for p in (
+            payload.get("prompt", ""), payload.get("prompt_mid", ""),
+            payload.get("prompt_suffix", "")) if p)
+    except Exception:
+        prompt = ""
     record = GeneratedImage(
-        image_path=_tryon["last_gen_url"],
+        image_path=job.result_url,
         product_ids=barcodes,
-        prompt_used=_tryon.get("last_gen_prompt") or "",
+        prompt_used=prompt,
     )
     db.add(record)
     db.commit()
 
-    _tryon["last_gen_url"] = None
-    _tryon["last_gen_path"] = None
-    _tryon["last_gen_prompt"] = None
-    # Keep scanned products and kid photo for another round
+    request.session.pop("tryon_job_id", None)  # saving consumes it: no dup-saves
+    try:
+        autoclear = db.query(Settings).filter(
+            Settings.key == "tryon_autoclear_kid").first()
+        if autoclear and (autoclear.value or "").strip() == "1":
+            _clear_kid_photo(_state(request))
+    except Exception:
+        pass
+    # Keep scanned products for another round
     return RedirectResponse(url="/admin/try-on?msg=تصویر ذخیره شد. می‌توانید تصویر دیگری تولید کنید.", status_code=303)
 
 
@@ -752,8 +944,9 @@ async def admin_tryon_download(request: Request, logo: str = "no", db: Session =
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
-    path = _tryon.get("last_gen_path")
-    if not path or not Path(path).exists():
+    job = _latest_tryon_job(request, db)
+    path = Path(job.result_path) if job and job.status == "completed" and job.result_path else None
+    if not path or not path.exists():
         return RedirectResponse(url="/admin/try-on?err=تصویری برای دانلود وجود ندارد.", status_code=303)
 
     raw = Path(path).read_bytes()
@@ -781,16 +974,55 @@ async def admin_tryon_download(request: Request, logo: str = "no", db: Session =
     return Response(content=out, media_type=media_type, headers=headers)
 
 
+@admin_router.post("/try-on/jobs/{job_id}/cancel", response_class=HTMLResponse)
+async def admin_tryon_cancel_job(job_id: int, request: Request, db: Session = Depends(get_db)):
+    """Cancel a queued generation. Only pending jobs die — deleted outright,
+    since the status CHECK knows no 'cancelled' and a never-ran job needs no
+    audit row. A running job is already billing, so it finishes (no refund
+    fiction). Pending cancels never touched quota, which burns on success."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    job = db.query(BackgroundJob).filter(
+        BackgroundJob.id == job_id, BackgroundJob.job_type == "tryon").first()
+    if not job:
+        return RedirectResponse(url="/admin/try-on?err=کار پیدا نشد.", status_code=303)
+    if job.status == "pending":
+        db.delete(job)
+        db.commit()
+        if int(request.session.get("tryon_job_id") or 0) == job_id:
+            request.session.pop("tryon_job_id", None)
+        return RedirectResponse(url="/admin/try-on?msg=درخواست لغو شد.", status_code=303)
+    return RedirectResponse(url="/admin/try-on?err=این درخواست در حال اجراست و لغو نمی‌شود.", status_code=303)
+
+
+@admin_router.post("/tryon/test-key", response_class=JSONResponse)
+async def admin_tryon_test_key(request: Request, db: Session = Depends(get_db)):
+    """Cheap non-billable credential probe for the settings page."""
+    from services.image_gen import get_provider, get_tryon_credentials
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    api_key, api_url = get_tryon_credentials(db)
+    provider = get_provider(api_key, api_url)
+    try:
+        return provider.test_connection()
+    finally:
+        try:
+            provider.cleanup()
+        except Exception:
+            pass
+
+
 @admin_router.post("/try-on/clear")
 async def admin_tryon_clear(request: Request, db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
-    _clear_kid_photo()
-    _tryon["scanned"] = []
-    _tryon["last_gen_url"] = None
-    _tryon["last_gen_path"] = None
-    _tryon["last_gen_prompt"] = None
+    state = _state(request)
+    _clear_kid_photo(state)
+    state["scanned"] = []
+    request.session.pop("tryon_job_id", None)
     return RedirectResponse(url="/admin/try-on?msg=حالت پاک شد.", status_code=303)
 
 
@@ -801,7 +1033,17 @@ async def admin_tryon_saved(request: Request, db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
-    saved = db.query(GeneratedImage).order_by(GeneratedImage.created_at.desc()).all()
+    query = db.query(GeneratedImage).order_by(GeneratedImage.created_at.desc())
+    day = (request.query_params.get("day", "") or "").strip()
+    if day:
+        try:
+            start = datetime.strptime(day, "%Y-%m-%d")
+            end = start + timedelta(days=1)
+            query = query.filter(GeneratedImage.created_at >= start,
+                                 GeneratedImage.created_at < end)
+        except ValueError:
+            day = ""
+    saved = query.all()
 
     # Resolve each saved image's stored barcodes back to real variant photos so
     # the gallery thumbnail row shows the scanned variant's own product photo
@@ -840,11 +1082,43 @@ async def admin_tryon_saved(request: Request, db: Session = Depends(get_db)):
             })
         img.variants = items
 
+    q = (request.query_params.get("q", "") or "").strip()
+    if q:
+        saved = [img for img in saved
+                 if q in (img.product_ids or "")
+                 or any(q in (it.get("name") or "") or q in (it.get("barcode") or "")
+                        for it in img.variants)]
+
     return templates.TemplateResponse(request, "admin/tryon_saved.html", {
         "saved_images": saved,
+        "filter_q": q,
+        "filter_day": day,
         "fmt": fmt,
         "jalali_str": jalali_str,
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
     })
+
+
+@admin_router.post("/try-on/saved/{img_id}/delete", response_class=HTMLResponse)
+async def admin_tryon_saved_delete(img_id: int, request: Request, db: Session = Depends(get_db)):
+    """Delete one saved generation (row + file). Dialog-confirmed on the page."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    img = db.query(GeneratedImage).filter(GeneratedImage.id == img_id).first()
+    if not img:
+        return RedirectResponse(url="/admin/try-on/saved?err=تصویر پیدا نشد.", status_code=303)
+    for candidate in (img.image_path or "",):
+        try:
+            path = Path(candidate.lstrip("/"))
+            if path.is_file() and "generated" in path.parts:
+                path.unlink(missing_ok=True)
+        except Exception:
+            pass
+    db.delete(img)
+    db.commit()
+    return RedirectResponse(url="/admin/try-on/saved?msg=تصویر حذف شد.", status_code=303)
 
 
 # ─── Download a saved image (with or without logo) ───
@@ -913,9 +1187,10 @@ async def scan_barcode(data: ScanBarcodeRequest, db: Session = Depends(get_db)):
     if not variant:
         raise HTTPException(status_code=404, detail="محصول با این بارکد یافت نشد.")
     product = variant.product
-    if not any(s["id"] == product.id for s in _tryon["scanned"]):
-        _tryon["scanned"].append(_scanned_product_dict(product, variant.barcode))
-    return {"status": "ok", "product": {"id": product.id, "name": product.name, "barcode": variant.barcode}, "scanned_count": len(_tryon["scanned"])}
+    item = _scanned_product_dict(product, variant.barcode)
+    if not any(s["id"] == item["id"] for s in _capture_inbox["scanned"]):
+        _capture_inbox["scanned"].append(item)
+    return {"status": "ok", "product": {"id": product.id, "name": product.name, "barcode": variant.barcode}, "scanned_count": len(_capture_inbox["scanned"])}
 
 
 # ─── JSON API: Upload kid photo from phone (no customer) ───
@@ -923,10 +1198,20 @@ async def scan_barcode(data: ScanBarcodeRequest, db: Session = Depends(get_db)):
 @api_router.post("/image-gen/upload-kid-photo")
 async def upload_kid_photo(file: UploadFile = File(...)):
     raw = await file.read()
-    try:
-        _set_kid_photo(raw, file.content_type or "image/jpeg")
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    # Guards before RAM: type must be an image, size capped — a 100 MB
+    # "photo" must fail here, not as a base64 preview three steps later.
+    mime = file.content_type or "image/jpeg"
+    if not mime.startswith("image/"):
+        raise HTTPException(status_code=400, detail="فایل باید عکس باشد.")
+    if not raw:
+        raise HTTPException(status_code=400, detail="Empty kid photo")
+    if len(raw) > KID_PHOTO_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="عکس شخص بیشتر از ۱۵ مگابایت است.")
+    # Inbox, not session: browser and phone share this endpoint, and the
+    # desktop drains it into its own session on the next render (the page
+    # already reloads after upload).
+    _capture_inbox["kid_photo_bytes"] = raw
+    _capture_inbox["kid_photo_content_type"] = mime
     # The image is held in RAM and is never written to static/uploads.
     return {"status": "ok", "path": None, "stored_in_static": False}
 
@@ -972,6 +1257,9 @@ async def api_generate(
         names, data.background, data.pose, mode,
         garment_details=details, category=data.category, face_key=data.face,
     )
+    extra = _custom_prompt_clause(data.custom_prompt)
+    if extra:
+        prompt_mid = f"{prompt_mid} {extra}".strip()
 
     reference_paths = []
 
@@ -983,7 +1271,7 @@ async def api_generate(
         try:
             request_kid_bytes = base64.b64decode(data.kid_photo_base64, validate=True)
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"تصویر کودک نامعتبر است: {e}")
+            raise HTTPException(status_code=400, detail=f"تصویر شخص نامعتبر است: {e}")
 
     # Map each scanned product to the barcode that was scanned so we send the
     # correct color variant's photo (not all variants' photos).
@@ -1003,14 +1291,14 @@ async def api_generate(
 
     kid_temp_path = _kid_photo_temp_path(
         request_kid_bytes,
-        request_kid_type if request_kid_bytes else _tryon["kid_photo_content_type"],
+        request_kid_type if request_kid_bytes else _state(request)["kid_photo_content_type"],
     )
     if kid_temp_path:
         reference_paths.insert(0, kid_temp_path)
 
     if not reference_paths:
         _remove_temp_file(kid_temp_path)
-        raise HTTPException(status_code=400, detail="عکس کودک و تصویر محصول الزامی است.")
+        raise HTTPException(status_code=400, detail="عکس شخص و تصویر محصول الزامی است.")
 
     filename = f"tryon_api_{uuid.uuid4().hex[:12]}.jpg"
     filepath = GENERATED_DIR / filename
@@ -1022,7 +1310,11 @@ async def api_generate(
         "temporary_paths": [kid_temp_path] if kid_temp_path else [],
         "output_path": str(filepath),
         "result_url": f"/static/uploads/generated/{filename}",
+        "ip": (request.client.host if request.client else "unknown"),
     })
     db.commit()
-    tryon_record_generation(request)
+    try:
+        request.session["tryon_job_id"] = job.id
+    except Exception:
+        pass
     return {"status": "queued", "job_id": job.id, "status_url": f"/api/image-gen/jobs/{job.id}"}

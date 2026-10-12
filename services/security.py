@@ -629,6 +629,32 @@ class CSRFMiddleware:
         await self.app(scope, replay_receive, send)
 
 
+class NoStoreHTMLMiddleware:
+    """Documents are never cached: pages carry no cache headers, so a browser
+    may keep showing yesterday's HTML after a plain reload while the versioned
+    assets (?v=mtime) already moved on. Mark text/html responses no-store; the
+    API, static files and downloads keep whatever headers they already have."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_no_store(message):
+            if message["type"] == "http.response.start":
+                headers = dict(message.get("headers", []))
+                content_type = headers.get(b"content-type", b"").decode("latin-1")
+                if content_type.startswith("text/html"):
+                    headers[b"cache-control"] = b"no-store"
+                    message = {**message, "headers": list(headers.items())}
+            await send(message)
+
+        await self.app(scope, receive, send_no_store)
+
+
 def csrf_token_for(request: Request) -> str:
     """Get (and lazily create) the session-bound CSRF token."""
     if "csrf_token" not in request.session:
@@ -702,8 +728,11 @@ def tryon_can_generate(request: Request, db) -> bool:
     return True
 
 
-def tryon_record_generation(request: Request) -> None:
+def tryon_record_generation(request: Request | None = None, ip: str | None = None) -> None:
+    """Burn one unit of daily + hourly budget. Burns on SUCCESS now — a
+    failed generation must not eat the owner's paid quota. The worker passes
+    the ip recorded at enqueue time since it has no request of its own."""
     today = _today_key()
     _generation_day[today] = _generation_day.get(today, 0) + 1
-    ip = _client_ip(request)
+    ip = ip or (_client_ip(request) if request is not None else "worker")
     _generation_ip.setdefault(ip, []).append(time.time())

@@ -148,3 +148,14 @@ def test_login_lockout_names_remaining_minutes(client, db_session):
     page = client.post("/admin/login", data={"password": "wrong", "csrf_token": token}).text
     assert "دقیقه دیگر" in page  # countdown instead of a flat message
     security._login_attempts.clear()  # other tests log in after this
+
+
+def test_html_documents_are_not_cached_but_assets_are(client):
+    # A page edited on the server must show on a plain reload: documents carry
+    # no-store so the browser never serves yesterday's HTML from heuristic
+    # cache (assets already bust via ?v=mtime and keep their own headers).
+    resp = client.get("/admin/login")
+    assert resp.headers.get("cache-control") == "no-store"
+    asset = client.get("/static/css/style.css")
+    assert asset.status_code == 200
+    assert asset.headers.get("cache-control") != "no-store"
