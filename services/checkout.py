@@ -432,6 +432,9 @@ def finalize_basket(db: Session, checkout: CheckoutSession) -> dict:
     from services.campaigns import campaign_for_customer, resolve_campaign_code
     raw_basket = json.loads(checkout.basket_json or "[]")
     verified: list[dict] = []
+    # What the till asked for versus what is still there: the caller shows
+    # this instead of silently selling a shrunk basket.
+    adjustments: list[dict] = []
     for item in raw_basket:
         try:
             variant_id = int(item.get("variant_id"))
@@ -443,6 +446,7 @@ def finalize_basket(db: Session, checkout: CheckoutSession) -> dict:
             ProductVariant.is_active == True,
         ).first()
         if not variant:
+            adjustments.append({"name": f"کالای #{variant_id}", "requested": requested_qty, "granted": 0})
             continue
         # Clamp to current stock minus other active reservations.
         now = _now()
@@ -457,7 +461,10 @@ def finalize_basket(db: Session, checkout: CheckoutSession) -> dict:
         available = max(0, (variant.stock_quantity or 0) - reserved_elsewhere)
         qty = min(requested_qty, available)
         if qty <= 0:
+            adjustments.append({"name": variant.display_name, "requested": requested_qty, "granted": 0})
             continue
+        if qty < requested_qty:
+            adjustments.append({"name": variant.display_name, "requested": requested_qty, "granted": qty})
         unit_price = variant.price
         verified.append({
             "variant_id": variant.id,
@@ -537,6 +544,7 @@ def finalize_basket(db: Session, checkout: CheckoutSession) -> dict:
         "credit_surcharge": credit_surcharge,
         "final_amount": final_amount,
         "campaign": campaign,
+        "adjustments": adjustments,
     }
 
 
@@ -790,6 +798,29 @@ def refund_checkout(
     )
     if commit:
         db.commit()
+
+
+def reopen_checkout(
+    db: Session,
+    checkout: CheckoutSession,
+    *,
+    request_id: str | None = None,
+) -> None:
+    """Reopen a terminal-failed checkout for another payment method.
+
+    Only a cancelled or declined payment lands here — the outcome handler
+    already released the holds, and an uncertain payment must reconcile
+    first. The basket is untouched, so the till re-renders it and the
+    staffer picks a new method explicitly.
+    """
+    if checkout.state not in {"payment_cancelled", "payment_declined"}:
+        raise ValueError(f"Cannot reopen a checkout in state {checkout.state}")
+    # The state transition itself records a CheckoutEvent, which is the audit
+    # trail — no business event, since reopening can repeat and its key must
+    # stay unique per occurrence.
+    _set_state(db, checkout, "draft", "reopened after failed terminal payment")
+    db.commit()
+    db.refresh(checkout)
 
 
 class InsufficientStockError(Exception):
