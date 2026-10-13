@@ -914,6 +914,12 @@ tbody tr:last-child td { border-bottom: none; }
   border-bottom: 1px solid var(--rule);
 }
 .basket-item:last-child { border-bottom: none; }
+/* The row that just landed flashes once (same keyframes as the purchases
+   duplicate flash), so the eye finds it without reading every line. */
+.basket-item.is-new { animation: row-flash 1.2s ease; border-radius: var(--radius-sm); }
+@media (prefers-reduced-motion: reduce) {
+  .basket-item.is-new { animation: none; }
+}
 
 .basket-item-info strong { font-size: 0.95rem; display: block; }
 .basket-item-info small  { color: var(--ink-soft); font-size: 0.8rem; }
@@ -930,7 +936,7 @@ tbody tr:last-child td { border-bottom: none; }
   color: var(--persimmon);
   border: 1px solid transparent;
   border-radius: 50%;
-  width: 30px; height: 30px;
+  width: 44px; height: 44px;
   cursor: pointer;
   font-weight: 700;
   font-family: inherit;
@@ -1019,6 +1025,7 @@ tbody tr:last-child td { border-bottom: none; }
   gap: 0.5rem;
   cursor: pointer;
   padding: 0.6rem 1rem;
+  min-height: 44px;
   border: 2px solid var(--rule);
   border-radius: var(--radius-sm);
   transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
@@ -4027,7 +4034,7 @@ html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
 .till-brand { margin-top: 1rem; font-size: 0.8rem; color: var(--ink-soft); }
 .scan-last { margin: 0.6rem 0 0; font-size: 0.85rem; color: var(--success-ink); font-weight: 700; }
 .basket-stepper { display: inline-flex; gap: 0.25rem; }
-.btn-step { min-width: 2rem; min-height: 2rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--card); color: var(--ink); font-size: 1rem; font-weight: 800; cursor: pointer; line-height: 1; }
+.btn-step { min-width: 44px; min-height: 44px; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--card); color: var(--ink); font-size: 1.1rem; font-weight: 800; cursor: pointer; line-height: 1; }
 .btn-step:hover { border-color: var(--candy); color: var(--link-hover); }
 .timeline-step.done { color: var(--link-hover); border-color: var(--candy); font-weight: 700; }
 .credit-note { font-size: 0.8rem; color: var(--ink-soft); margin-top: 0.4rem; }

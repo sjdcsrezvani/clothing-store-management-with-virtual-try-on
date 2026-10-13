@@ -118,9 +118,11 @@ def test_split_confirm_writes_legs_and_counts_cash_leg(client, db_session, authe
     res = _confirm_sale(client, basket, extra={
         "payment_method": "split", "split_cash": "40000", "split_card": "60000",
     })
-    assert res.status_code == 200 and "ترکیبی" in res.text
+    assert res.history and res.history[0].status_code == 303  # straight to a new sale
     sale = db_session.query(Sale).order_by(Sale.id.desc()).first()
     assert sale.payment_method == "split" and sale.final_amount == total
+    ledger = client.get("/sales?method=split").text
+    assert "ترکیبی" in ledger  # the invoice name lives on the ledger now
     parts = {p.method: p.amount for p in
              db_session.query(SalePaymentPart).filter_by(sale_id=sale.id).all()}
     assert parts == {"cash": 40000, "card": 60000}

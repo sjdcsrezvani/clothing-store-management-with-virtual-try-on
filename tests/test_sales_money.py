@@ -75,8 +75,8 @@ def test_confirm_sale_recomputes_prices_from_db(client, db_session):
         "unit_price": 1, "quantity": 3, "total_price": 3,
     }]
     resp = _confirm_sale(client, tampered)
-    assert resp.status_code == 200
-    assert "فاکتور" in resp.text
+    assert resp.history and resp.history[0].status_code == 303  # straight to a new sale
+    assert "msg=" in resp.history[0].headers["location"]
 
     sale = db_session.query(Sale).order_by(Sale.id.desc()).first()
     assert sale.total_amount == 300_000          # 3 × 100_000, not 3

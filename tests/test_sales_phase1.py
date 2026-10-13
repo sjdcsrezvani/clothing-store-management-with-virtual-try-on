@@ -36,8 +36,8 @@ def test_replayed_nonce_returns_first_invoice_not_second_sale(client, db_session
         CheckoutSession.checkout_nonce == nonce).update({"state": "reserved"})
     db_session.commit()
     replay = _confirm_sale(client, basket, extra={"checkout_nonce": nonce, "payment_method": "cash"})
-    assert replay.status_code == 200
-    assert "فاکتور" in replay.text
+    assert replay.history and replay.history[0].status_code == 303  # straight to a new sale
+    assert "msg=" in replay.history[0].headers["location"]
     assert db_session.query(Sale).count() == 1
     db_session.refresh(variant)
     assert variant.stock_quantity == 4  # sold once, not twice
@@ -138,6 +138,6 @@ def test_declined_terminal_reopens_the_basket_for_cash(client, db_session):
     retry = client.post("/sales/confirm-sale", data={
         "customer_id": "0", "basket_json": json.dumps(basket, ensure_ascii=False),
         "payment_method": "cash", "checkout_nonce": nonce, "csrf_token": token})
-    assert retry.status_code == 200
-    assert "فاکتور" in retry.text
+    assert retry.history and retry.history[0].status_code == 303
+    assert "msg=" in retry.history[0].headers["location"]
     assert db_session.query(Sale).count() == 1

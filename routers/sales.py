@@ -1051,40 +1051,6 @@ def _sale_receipt_extras(db, sale):
     }
 
 
-def _render_invoice(request, db, sale, customer, discounts, points_earned, guard):
-    """The invoice page for one finished sale, shared by a fresh confirm and
-    by the replay of a double-submitted one."""
-    sale_items = db.query(SaleItem).filter(SaleItem.sale_id == sale.id).all()
-    for item in sale_items:
-        item.variant = db.query(ProductVariant).filter(ProductVariant.id == item.variant_id).first()
-        item.product = db.query(Product).filter(Product.id == item.product_id).first()
-
-    footer_note = db.query(Settings).filter(
-        Settings.key == "receipt_footer_note").first()
-    footer_text = (footer_note.value or "") if footer_note else ""
-    receipt = _sale_receipt_extras(db, sale)
-    invoice_path = generate_invoice_pdf(
-        sale, customer, sale_items, store=get_store(db),
-        cashier_name=receipt["cashier_name"],
-        credit_remaining=sale_remaining(sale),
-        footer_note=footer_text, payment_parts=sale.payment_parts)
-
-    return templates.TemplateResponse(request, "sales/invoice.html", {
-        "sale": sale,
-        "customer": customer,
-        "items": sale_items,
-        "discounts": discounts,
-        "invoice_path": invoice_path,
-        "credit_remaining": sale_remaining(sale),
-        "receipt_footer_note": footer_text,
-        "fmt": fmt,
-        "jalali_str": jalali_str,
-        "points_earned": points_earned,
-        "can_refund": effective_cap(guard, "can_refund"),
-        **receipt,
-    })
-
-
 def _adjustment_message(adjustments: list) -> str:
     """What the till asked for versus what is still there, in the staffer's
     own words — shown instead of silently selling a shrunk basket."""
@@ -1417,16 +1383,8 @@ async def sales_confirm(
             raise
         request.session.pop("checkout_nonce", None)
         _clear_pos_approval(request)
-        replay_customer = _resolve_customer(existing.customer_id or 0, db)
-        try:
-            replay_details = json.loads(existing.discount_details or "[]")
-        except (ValueError, TypeError):
-            replay_details = []
-        return _render_invoice(
-            request, db, existing, replay_customer,
-            {"total_discount": existing.discount_amount, "details": replay_details},
-            existing.points_earned or 0, guard,
-        )
+        return RedirectResponse(
+            url=f"/sales/new?msg=فاکتور #{existing.id} ثبت شد", status_code=303)
 
     # Split legs persist beside their invoice: the drawer counts exactly the
     # cash leg and the terminal owns the card leg's approval.
@@ -1549,7 +1507,24 @@ async def sales_confirm(
     from services.sms_triggers import fire_purchase_sms
     await fire_purchase_sms(db, sale=sale, customer=customer)
 
-    return _render_invoice(request, db, sale, customer, discounts, points_earned, guard)
+    sale_items = db.query(SaleItem).filter(SaleItem.sale_id == sale.id).all()
+    for item in sale_items:
+        item.variant = db.query(ProductVariant).filter(ProductVariant.id == item.variant_id).first()
+        item.product = db.query(Product).filter(Product.id == item.product_id).first()
+    footer_note = db.query(Settings).filter(
+        Settings.key == "receipt_footer_note").first()
+    footer_text = (footer_note.value or "") if footer_note else ""
+    receipt = _sale_receipt_extras(db, sale)
+    generate_invoice_pdf(
+        sale, customer, sale_items, store=get_store(db),
+        cashier_name=receipt["cashier_name"],
+        credit_remaining=sale_remaining(sale),
+        footer_note=footer_text, payment_parts=sale.payment_parts)
+
+    # Straight to a new sale: the invoice stays reachable from the ledger,
+    # and the toast names the finished invoice number.
+    return RedirectResponse(
+        url=f"/sales/new?msg=فاکتور #{sale.id} ثبت شد", status_code=303)
 
 
 @router.get("/invoice/{sale_id}", response_class=HTMLResponse)

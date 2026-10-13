@@ -129,6 +129,7 @@
                 <input type="hidden" name="custom_discount_percent" value="{{ custom_discount_percent|default(0) }}">
                 <input type="hidden" name="split_cash" value="{{ split_cash|default('') }}">
                 <input type="hidden" name="split_card" value="{{ split_card|default('') }}">
+                <input type="hidden" name="split_credit" value="{{ split_credit|default('') }}">
                 <div class="form-group t-input-wrap{% if error and step == 'scan' %} is-error{% endif %}" style="margin-bottom: 0;">
                     <input type="text" id="barcode-input" name="barcode" class="barcode-input t-input{% if error and step == 'scan' %} is-error{% endif %}"
                            placeholder="بارکد را اسکن کنید..." autofocus autocomplete="off"
@@ -163,7 +164,7 @@
             <p>جمعاً {{ fmt(customer.referrer_discount) }} تومان تخفیف معرفی ({{ customer.active_referral_count }} عدد) — با این خرید استفاده شود؟</p>
             <label style="display:flex; gap:0.5rem; align-items:center;">
                 <input type="checkbox" id="use-ref-checkbox" {% if use_referrer_discount == '1' %}checked{% endif %}
-                       onchange="setAll('use_referrer_discount', this.checked ? '1' : '0'); var f = document.getElementById('apply-discount-form'); ensureCsrf(f); f.submit();">
+                       onchange="setAll('use_referrer_discount', this.checked ? '1' : '0');">
                 بله، از تخفیف معرفی در این فاکتور استفاده کن
             </label>
             {% endif %}
@@ -263,6 +264,7 @@
                         <input type="hidden" name="custom_discount_percent" value="{{ custom_discount_percent|default(0) }}">
                         <input type="hidden" name="split_cash" value="{{ split_cash|default('') }}">
                         <input type="hidden" name="split_card" value="{{ split_card|default('') }}">
+                        <input type="hidden" name="split_credit" value="{{ split_credit|default('') }}">
                         <button type="submit" name="delta" value="-1" class="btn-step" aria-label="کم کردن {{ item.name }}">−</button>
                         <button type="submit" name="delta" value="1" class="btn-step" aria-label="زیاد کردن {{ item.name }}">+</button>
                     </form>
@@ -278,6 +280,7 @@
                         <input type="hidden" name="custom_discount_percent" value="{{ custom_discount_percent|default(0) }}">
                         <input type="hidden" name="split_cash" value="{{ split_cash|default('') }}">
                         <input type="hidden" name="split_card" value="{{ split_card|default('') }}">
+                        <input type="hidden" name="split_credit" value="{{ split_credit|default('') }}">
                         <button type="submit" class="btn-remove" title="حذف">✕</button>
                     </form>
                 </div>
@@ -321,8 +324,8 @@
                         <span>ترکیبی</span>
                     </label>
                 </div>
-                {# Split tender: cash plus card on one invoice, no credit leg.
-                   The editor posts through the apply form (mirrors, like the
+                {# Split tender: cash, card and نسیه legs on one invoice. The
+                   editor posts through the apply form (mirrors, like the
                    manual discount); every other form carries hidden twins. #}
                 <div class="split-editor" id="split-editor" hidden>
                     <div class="form-row">
@@ -338,8 +341,15 @@
                                    value="{{ split_card|default('') }}" placeholder="مثال: 300000"
                                    oninput="setAll('split_card', this.value)">
                         </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label for="split-credit-input">نسیه (تومان)</label>
+                            <input type="text" inputmode="numeric" id="split-credit-input" name="split_credit" form="apply-discount-form"
+                                   value="{{ split_credit|default('') }}" placeholder="مثال: 100000"
+                                   oninput="setAll('split_credit', this.value)">
+                        </div>
                     </div>
-                    <p class="muted">جمع دو مبلغ باید برابر مبلغ نهایی باشد؛ سهم کارتی با کارت‌خوان تأیید می‌شود.</p>
+                    <p class="muted">جمع مبلغ‌ها باید برابر مبلغ نهایی باشد؛ سهم کارتی با کارت‌خوان تأیید می‌شود و سهم نسیه به بدهی مشتری اضافه می‌شود.</p>
+                    <p class="form-error" id="split-sum-error" role="alert" hidden></p>
                 </div>
                 {% if customer %}
                 <div id="credit-note" class="credit-note" hidden>
@@ -398,6 +408,7 @@
                     <input type="hidden" name="custom_discount_percent" value="{{ custom_discount_percent|default(0) }}">
                     <input type="hidden" name="split_cash" value="{{ split_cash|default('') }}">
                     <input type="hidden" name="split_card" value="{{ split_card|default('') }}">
+                    <input type="hidden" name="split_credit" value="{{ split_credit|default('') }}">
                     <button type="submit" id="confirm-submit" class="btn btn-success btn-large btn-block btn-confirm">
                         تأیید پرداخت و صدور فاکتور
                     </button>
@@ -439,6 +450,9 @@ function updatePaymentUi() {
     if (terminalStep) terminalStep.hidden = !terminalNeeded;
     if (creditNote) creditNote.hidden = !isCredit;
     if (splitEditor) splitEditor.hidden = !isSplit;
+    // The cash box only exists when cash changes hands.
+    var cashBox = document.getElementById('cash-calculator');
+    if (cashBox) cashBox.style.display = (method === 'cash' || isSplit) ? '' : 'none';
     // Step 2 lights when the amount is settled: cash and credit settle by
     // choice, card settles when the terminal approves (its leg in a split).
     var step2 = document.getElementById('timeline-step-2');
@@ -545,6 +559,39 @@ async function sendToTerminal(event) {
 updatePaymentUi();
 refreshTerminalStatus();
 
+// ── Split-sum guard: the legs must add up to the finalized final before
+// the form may leave. Registered before the one-button terminal flow so a
+// bad sum stops everything; the server rechecks anyway.
+(function () {
+    var confirmForm = document.getElementById('confirm-form');
+    if (!confirmForm) return;
+    function legValue(name) {
+        var input = confirmForm.querySelector('input[name="' + name + '"]');
+        if (!input) return 0;
+        var latin = input.value.replace(/[۰-۹]/g, function (d) { return '۰۱۲۳۴۵۶۷۸۹'.indexOf(d); });
+        return parseInt(latin.replace(/[^0-9]/g, '') || '0', 10);
+    }
+    confirmForm.addEventListener('submit', function (event) {
+        var selected = document.querySelector('input[name="payment_method"]:checked');
+        if (!selected || selected.value !== 'split') return;
+        var finalNode = document.querySelector('[data-amount]');
+        var final = finalNode ? parseInt(finalNode.getAttribute('data-amount') || '0', 10) : 0;
+        var legs = ['split_cash', 'split_card', 'split_credit'].map(legValue);
+        var filled = legs.filter(function (v) { return v > 0; }).length;
+        var sum = legs[0] + legs[1] + legs[2];
+        var bad = !(filled >= 2 && sum === final);
+        var errorBox = document.getElementById('split-sum-error');
+        if (errorBox) {
+            errorBox.hidden = !bad;
+            if (bad) errorBox.textContent = 'جمع سهم‌ها باید برابر مبلغ نهایی باشد.';
+        }
+        if (bad) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }
+    });
+})();
+
 // One button for card money: confirming without an approval sends to the
 // terminal first and completes when it approves — the gate stays, the extra
 // click goes. Registered before the global double-submit guard so this flow
@@ -595,6 +642,19 @@ refreshTerminalStatus();
         gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.12);
         osc.stop(ctx.currentTime + 0.12);
     } catch (e) { /* silent shop, silent beep */ }
+})();
+
+// ── Just-added flash: the row that landed glows once, so the eye finds it
+// without reading every line.
+(function () {
+    var strip = document.querySelector('[data-beep]');
+    if (!strip) return;
+    var name = strip.textContent.replace(/^آخرین:\s*/, '').trim();
+    if (!name) return;
+    document.querySelectorAll('.basket-item').forEach(function (row) {
+        var title = row.querySelector('.basket-item-info strong');
+        if (title && title.textContent.trim() === name) row.classList.add('is-new');
+    });
 })();
 
 // ── Final-total pop + server-error shake (Phase D). Both replay from a

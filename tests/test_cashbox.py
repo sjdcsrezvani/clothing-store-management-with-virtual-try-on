@@ -107,7 +107,7 @@ def test_a_cashier_opens_and_closes_their_own_drawer(client, db_session):
     assert session.cashier_user_id == cashier.id
     assert session.opening_balance == 500_000
 
-    assert _sell(client, variant).status_code == 200
+    assert _sell(client, variant).status_code == 303
 
     assert _close(client, 600_000).status_code == 303
     db_session.refresh(session)
@@ -193,7 +193,7 @@ def test_a_manager_closes_and_verifies_someone_elses_drawer(client, db_session):
 
     _session_as(client, cashier, cashier_password)
     assert _open(client, 100_000).status_code == 303
-    assert _sell(client, variant).status_code == 200
+    assert _sell(client, variant).status_code == 303
 
     _session_as(client, manager, manager_password)
     closed = _close(client, 100_000)
@@ -214,7 +214,7 @@ def test_the_blind_count_hides_the_expected_figure_until_the_count_is_in(client,
 
     _session_as(client, cashier, cashier_password)
     assert _open(client, 100_000).status_code == 303
-    assert _sell(client, variant).status_code == 200
+    assert _sell(client, variant).status_code == 303
     session = _live_shift(db_session)
 
     page = client.get("/admin/cashbox")
@@ -299,8 +299,8 @@ def test_a_cash_sale_carries_its_shift_and_a_card_sale_does_not(client, db_sessi
     _, variant = _make_variant(db_session, price=80_000, stock=6)
     _session_as(client, cashier, password)
     assert _open(client, 200_000).status_code == 303
-    assert _sell(client, variant, payment_method="cash").status_code == 200
-    assert _sell(client, variant, payment_method="card").status_code == 200
+    assert _sell(client, variant, payment_method="cash").status_code == 303
+    assert _sell(client, variant, payment_method="card").status_code == 303
 
     cash_sale = db_session.query(Sale).filter(Sale.payment_method == "cash").order_by(Sale.id.desc()).first()
     card_sale = db_session.query(Sale).filter(Sale.payment_method == "card").order_by(Sale.id.desc()).first()
@@ -437,7 +437,7 @@ def test_the_statement_shows_what_makes_up_the_expected_figure(client, db_sessio
 
     _session_as(client, cashier, password)
     assert _open(client, 200_000).status_code == 303
-    assert _sell(client, variant).status_code == 200
+    assert _sell(client, variant).status_code == 303
     assert _withdraw(client, 30_000, "خرید نقدی").status_code == 303
     db_session.add(Expense(amount=20_000, category="حمل و نقل", payment_method="cash",
                            cash_session_id=_live_shift(db_session).id))
@@ -671,7 +671,7 @@ def test_the_drawer_names_todays_card_sales_and_points_at_reconciliation(client,
     _, variant = _make_variant(db_session, price=200_000, stock=5)
     _session_as(client, cashier, password)
     assert _open(client, 100_000).status_code == 303
-    assert _sell(client, variant, payment_method="card").status_code == 200
+    assert _sell(client, variant, payment_method="card").status_code == 303
 
     content = _content(client.get("/admin/cashbox").text)
     assert "فروش کارتخوان امروز" in content
@@ -714,7 +714,7 @@ def test_the_statement_export_follows_the_statements_own_permissions(client, db_
     _, variant = _make_variant(db_session, price=100_000, stock=5)
     _session_as(client, cashier, password)
     assert _open(client, 100_000).status_code == 303
-    assert _sell(client, variant).status_code == 200
+    assert _sell(client, variant).status_code == 303
     session = _live_shift(db_session)
 
     # While the shift is open, even its opener is refused the file.
