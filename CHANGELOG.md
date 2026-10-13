@@ -1,3 +1,58 @@
+## 2.9.1 — 1405/07/21 (2026-10-13)
+
+### گوشی عکاسی: the capture page speaks Persian and answers the thumb
+
+- **The whole shell is Persian.** Right-to-left, Vazirmatn,
+  the shop's own words for every button and state — the English
+  log and its emoji are gone, and one status line speaks for
+  the server.
+- **A page view carries no session.** The capture page renders
+  without a login at all: the pairing key alone gates every
+  capture call, and the UI stays locked until that key's own
+  ping answers 200.
+- **It feels like a phone app.** Viewport-fit and safe-area
+  insets keep controls clear of the notch and the home bar, the
+  layout tracks the collapsing toolbar, and pinch-zoom is no
+  longer locked out.
+
+### صندوق فروش: the money path earns its guarantees
+
+- **A replay rings once.** The checkout's nonce is stamped into
+  the sale row behind a unique index (migration 34), so a double
+  submit or a retried POST hands back the invoice already made
+  instead of ringing a second sale — and the stock moves once.
+- **A shrunken basket stops the sale.** When stock moved under
+  the till's feet, the confirm stops and names every line that
+  shrank or vanished, then sells nothing until the corrected
+  basket is confirmed again.
+- **نسیه is a leg, not a loophole.** The credit leg of a split
+  sale needs a customer, fits that customer's ceiling, and books
+  only itself as debt; the payment-parts table is rebuilt
+  (migration 34) to admit the method without losing a row.
+- **A declined card hands the basket back.** Cancelled or
+  declined terminal payments reopen the checkout for cash
+  instead of stranding the sale mid-way.
+- **The drafts are cut.** Customer swap and draft resume are
+  gone: an abandoned till starts fresh, and a basket belongs to
+  the customer it was opened with.
+
+### پیشخوان صندوق: fewer taps from scan to invoice
+
+- **Confirm lands on the next sale.** A finished sale redirects
+  to a fresh till instead of re-rendering the spent page, with
+  the invoice still one link away in the ledger.
+- **The discount applies when you say so.** Ticking the box no
+  longer submits the form; a separate Apply does, and the split
+  editor counts its own sum before anything posts.
+- **The cash box appears only when cash is due.** The calculator
+  shows for cash and split, a new row flashes once so the eye
+  finds it, and every stepper, remove disc and payment radio
+  clears 44 pixels.
+- **The till reads itself out loud.** Landmarks and labelled
+  steps for a screen reader, no inline styles or handlers on
+  any sales page, an invoice that names its credit leg, and no
+  emoji left on the counter.
+
 ## 2.9.0 — 1405/07/20 (2026-10-12)
 
 ### پرو مجازی: the queue gets its own worker and a quota that burns on success
