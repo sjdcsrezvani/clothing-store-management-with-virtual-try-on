@@ -17,35 +17,31 @@ html[data-theme-mode="dark"],html[data-theme-mode="dark-shell"]{color-scheme:dar
 html[data-theme-mode="light"],html[data-theme-mode="high-contrast"]{color-scheme:light}
 body{font-family:Vazirmatn,Tahoma,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
 .card{background:var(--card);border-radius:16px;padding:32px 24px;max-width:420px;width:100%;text-align:center;box-shadow:var(--shadow)}
-.icon{font-size:56px;margin-bottom:12px}
 h1{font-size:20px;margin-bottom:8px}
 p{font-size:14px;line-height:1.9;color:var(--ink-soft);margin-bottom:12px}
 .status{display:inline-block;padding:8px 18px;border-radius:999px;font-weight:800;font-size:14px;margin-bottom:8px}
 .status.ok{background:var(--success-bg);color:var(--success-ink)}
 .status.bad{background:var(--danger-bg);color:var(--link-hover)}
 .btn{display:block;width:100%;margin-top:12px;padding:12px;border-radius:10px;border:none;background:var(--brand-fill);color:var(--brand-label);font-weight:800;font-size:15px;font-family:inherit;text-decoration:none;cursor:pointer}
-.btn:hover{background:var(--brand-fill-dark)}
+@media (hover: hover) and (pointer: fine){.btn:hover{background:var(--brand-fill-dark)}}
 .small{font-size:12px;color:var(--ink-soft)}
 </style>
 </head>
 <body>
 <div class="card">
-<div class="icon" id="pair-icon">⏳</div>
 <h1 id="pair-title">در حال بررسی…</h1>
 <div class="status" id="pair-status">…</div>
 <p id="pair-help">در حال خواندن کلید از پیوند جفت‌سازی…</p>
-<a class="btn" href="/admin/login" id="go-login" style="display:none">ورود به حساب</a>
+<a class="btn" href="/admin/mobile" id="go-capture" style="display:none">رفتن به صفحه ضبط عکس</a>
 <p class="small">هر جفت‌سازی تازه، کلید قبلی گوشی را باطل می‌کند.</p>
 </div>
 <script>
 (function () {
-    const icon = document.getElementById('pair-icon');
     const title = document.getElementById('pair-title');
     const status = document.getElementById('pair-status');
     const help = document.getElementById('pair-help');
-    const login = document.getElementById('go-login');
-    function show(state, titleText, statusText, helpText, ok) {
-        icon.textContent = state;
+    const login = document.getElementById('go-capture');
+    function show(titleText, statusText, helpText, ok) {
         title.textContent = titleText;
         status.textContent = statusText;
         status.className = 'status ' + (ok ? 'ok' : 'bad');
@@ -65,8 +61,8 @@ p{font-size:14px;line-height:1.9;color:var(--ink-soft);margin-bottom:12px}
             probe(stored, false);
             return;
         }
-        show('📵', 'پیوند ناقص', 'کلیدی در پیوند نبود',
-             'از پنل مدیریت، صفحه «پروژه تعاملی»، دوباره QR بگیرید و همین صفحه را اسکن کنید.', false);
+        show('پیوند ناقص', 'کلیدی در پیوند نبود',
+             'از پنل مدیریت، صفحه «پرو مجازی»، دوباره QR بگیرید و همین صفحه را اسکن کنید.', false);
         return;
     }
     try { localStorage.setItem('capture_key', key); } catch (e) { /* private mode: nothing to hand to */ }
@@ -79,19 +75,19 @@ p{font-size:14px;line-height:1.9;color:var(--ink-soft);margin-bottom:12px}
         fetch('/api/capture/ping', { headers: { 'X-Capture-Key': keyWith } })
             .then(function (r) {
                 if (r.ok) {
-                    show('✅', 'گوشی جفت شد', 'کلید ذخیره شد',
-                         'حالا وارد حساب شوید تا صفحه ضبط عکس باز شود.', true);
+                    show('گوشی جفت شد', 'کلید ذخیره شد',
+                         'رفتن به صفحه ضبط عکس.', true);
                 } else if (r.status === 401) {
                     localStorage.removeItem('capture_key');
-                    show('📵', 'کلید معتبر نیست', 'جفت‌سازی انجام نشد',
-                         'این کلید باطل شده است. از پنل، صفحه «پروژه تعاملی»، دوباره QR بگیرید و اسکن کنید.', false);
+                    show('کلید معتبر نیست', 'جفت‌سازی انجام نشد',
+                         'این کلید باطل شده است. از پنل، صفحه «پرو مجازی»، دوباره QR بگیرید و اسکن کنید.', false);
                 } else {
-                    show('⚠️', 'سرور پاسخ ' + r.status + ' داد', 'بررسی ناموفق',
+                    show('سرور پاسخ ' + r.status + ' داد', 'بررسی ناموفق',
                          'اتصال اینترنت گوشی را بررسی کنید و صفحه را دوباره باز کنید.', false);
                 }
             })
             .catch(function () {
-                show('⚠️', 'سرور در دسترس نیست', 'بررسی ناموفق',
+                show('سرور در دسترس نیست', 'بررسی ناموفق',
                      'گوشی و کامپیوتر باید به یک Wi‑Fi وصل باشند.', false);
             });
     }

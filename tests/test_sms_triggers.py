@@ -526,7 +526,7 @@ def test_completing_a_sale_in_the_app_fires_the_thanks_sms(client, authed, db_se
         "csrf_token": csrf_token(authed, "/sales/new"),
     })
 
-    assert response.status_code == 200
+    assert response.history and response.history[0].status_code == 303  # straight to a new sale
     db_session.expire_all()
     sale = db_session.query(Sale).one()
     rows = db_session.query(SmsMessage).all()

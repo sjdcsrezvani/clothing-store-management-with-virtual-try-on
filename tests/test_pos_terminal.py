@@ -218,7 +218,7 @@ def test_approved_pos_transaction_links_to_one_sale(client, db_session, monkeypa
         },
     )
 
-    assert confirm_response.status_code == 200
+    assert confirm_response.history and confirm_response.history[0].status_code == 303  # straight to a new sale
     sale = db_session.query(Sale).one()
     transaction = db_session.query(POSTransaction).one()
     assert transaction.status == "linked_to_sale"

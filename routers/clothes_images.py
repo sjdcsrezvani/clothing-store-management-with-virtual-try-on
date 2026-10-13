@@ -569,9 +569,10 @@ def _scanned_product_dict(product: Product, barcode: str) -> dict:
 
 @admin_router.get("/mobile", response_class=HTMLResponse)
 async def mobile_app_page(request: Request, db: Session = Depends(get_db)):
-    guard = require_html_role(request, db, "cashier")
-    if not hasattr(guard, "role"):
-        return guard
+    # Key-only access: a page navigation cannot carry the capture header, so
+    # the shell renders session-free like the pairing landing. The pairing key
+    # still gates every /api/capture/* call underneath, and the page's own
+    # script keeps the capture UI locked until the ping answers 200.
     return templates.TemplateResponse(request, "mobile/index.html", {})
 
 

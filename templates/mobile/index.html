@@ -4,70 +4,63 @@
    because it has to come up on a phone over the shop's own Wi-Fi — but it wears
    the shop's palette like every other screen. The theme's tokens arrive on the
    <html> element below, which is where the stylesheet would have put its `:root`
-   block, and every colour in this page is read from them. #}
-<html lang="en" dir="ltr" data-theme="{{ theme.id }}" data-theme-mode="{{ theme.mode }}" style="{{ theme.inline_style }}">
+   block, and every colour in this page is read from them. Persian, RTL, no
+   emoji — like the panel the staffer already knows. #}
+<html lang="fa" dir="rtl" data-theme="{{ theme.id }}" data-theme-mode="{{ theme.mode }}" style="{{ theme.inline_style }}">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 {# The phone's own chrome takes the theme's background, as it does on every other
    page: an installed shortcut must not stay one colour across ten palettes. #}
 <meta name="theme-color" content="{{ theme.tokens['--bg'] }}">
-<title>{{ store.name }} — Virtual Try-On</title>
+<title>{{ store.name }} — پرو مجازی</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html[data-theme-mode="dark"],html[data-theme-mode="dark-shell"]{color-scheme:dark}
 html[data-theme-mode="light"],html[data-theme-mode="high-contrast"]{color-scheme:light}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh}
+html{-webkit-text-size-adjust:100%;overscroll-behavior:none}
+body{font-family:Vazirmatn,Tahoma,-apple-system,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;min-height:100dvh}
+/* Controls answer on finger-down, not finger-up; labels never select. */
+button{touch-action:manipulation;user-select:none;-webkit-user-select:none}
+
+/* ─── Header: the shop's own bar, in miniature ─── */
+.header{background:linear-gradient(135deg,var(--topbar-start),var(--topbar-end));color:var(--topbar-text);padding:16px;padding-top:calc(16px + env(safe-area-inset-top, 0px));text-align:center;font-weight:700;font-size:18px;box-shadow:var(--shadow)}
 
 /* ─── Header: the shop's own bar, in miniature ─── */
 .header{background:linear-gradient(135deg,var(--topbar-start),var(--topbar-end));color:var(--topbar-text);padding:16px;text-align:center;font-weight:700;font-size:18px;box-shadow:var(--shadow)}
 .header small{display:block;font-weight:400;font-size:13px;opacity:0.9;margin-top:2px}
 
-/* ─── Config bar ─── */
-.config-bar{padding:12px 16px;background:var(--card);display:flex;gap:8px;align-items:center;flex-wrap:wrap;box-shadow:var(--shadow)}
-.config-bar input{flex:1;padding:10px 12px;border:2px solid var(--rule);border-radius:10px;font-size:15px;font-family:monospace;direction:ltr;background:var(--field-bg);color:var(--ink)}
-.config-bar input:focus{outline:none;border-color:var(--candy);box-shadow:var(--focus-ring)}
-.config-bar button{background:var(--brand-fill);color:var(--brand-label);border:none;padding:8px 14px;border-radius:8px;font-weight:700;font-size:13px;font-family:inherit;cursor:pointer}
+/* ─── Status row: paired or not, plus a connection check ─── */
+.status-bar{padding:12px 16px;background:var(--card);display:flex;gap:8px;align-items:center;box-shadow:var(--shadow)}
+.status-bar button{background:var(--brand-fill);color:var(--brand-label);border:none;padding:8px 14px;min-height:44px;border-radius:8px;font-weight:700;font-size:13px;font-family:inherit;cursor:pointer}
 .status-dot{width:12px;height:12px;border-radius:50%;background:var(--ink-soft);flex-shrink:0}
 .status-dot.online{background:var(--mint)}
 .status-dot.offline{background:var(--persimmon)}
 .pair-state{flex:1;font-size:13px;font-weight:700;color:var(--ink)}
-.connection-help{padding:0 16px 10px;color:var(--ink-soft);font-size:12px;line-height:1.7}
-.connection-help strong{color:var(--ink)}
+.connection-help{padding:8px 16px 0;color:var(--ink-soft);font-size:12px;line-height:1.7}
 
 /* ─── Main actions ─── */
-.main-actions{padding:16px;display:flex;flex-direction:column;gap:12px}
+.main-actions{padding:16px;display:flex;flex-direction:column;gap:8px}
 .action-btn{display:flex;align-items:center;justify-content:center;gap:10px;padding:22px;border:none;border-radius:var(--radius);font-size:17px;font-weight:700;font-family:inherit;cursor:pointer;transition:transform 0.1s,box-shadow 0.15s;box-shadow:var(--shadow)}
 .action-btn:active{transform:scale(0.97)}
-.action-btn .icon{font-size:28px}
 .action-btn.photo{background:var(--brand-fill);color:var(--brand-label)}
 .action-btn:disabled{opacity:0.5;transform:none}
+.limits-hint{text-align:center;color:var(--ink-soft);font-size:12px}
 
-/* ─── Log ─── */
-.log-section{padding:0 16px 20px}
-.log-section h3{font-size:14px;color:var(--ink-soft);margin-bottom:8px;display:flex;align-items:center;gap:6px}
-.log-list{background:var(--card);border-radius:var(--radius);padding:12px;max-height:200px;overflow-y:auto;font-size:13px}
-.log-entry{padding:8px 0;border-bottom:1px solid var(--rule);display:flex;align-items:start;gap:8px;line-height:1.4}
-.log-entry:last-child{border-bottom:none}
-.log-entry .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap;flex-shrink:0;margin-top:1px}
-/* What went right or was merely noted takes the app's ink-on-tint shape — the
-   colour is the information, so the words stay the most legible thing on the
-   row; a failure takes the attention colour, as the SMS history's failed badge
-   and the overdue pills do. */
-.badge-ok{background:color-mix(in srgb,var(--mint) 18%,var(--card));color:var(--success-ink)}
-.badge-info{background:color-mix(in srgb,var(--sky) 20%,var(--card));color:var(--info-ink)}
-.badge-err{background:color-mix(in srgb,var(--persimmon) 20%,var(--card));color:var(--persimmon)}
+/* ─── Status line: the last thing the server said ─── */
+.status-line{margin:0 16px 20px;background:var(--card);border-radius:var(--radius);padding:12px 14px;font-size:13px;line-height:1.8;min-height:3.2em;box-shadow:var(--shadow)}
 
 /* ─── Photo capture overlay ─── */
-.photo-overlay{display:flex;position:fixed;top:0;left:0;width:100%;height:100%;background:var(--scrim);z-index:100;flex-direction:column;align-items:center;justify-content:center;padding:20px;visibility:hidden;opacity:0;pointer-events:none;transition:opacity 0.25s cubic-bezier(0.22,1,0.36,1),visibility 0s linear 0.25s}
+.photo-overlay{display:flex;position:fixed;top:0;left:0;width:100%;height:100%;background:var(--scrim);z-index:100;flex-direction:column;align-items:center;justify-content:center;padding:20px;padding-bottom:calc(20px + env(safe-area-inset-bottom, 0px));visibility:hidden;opacity:0;pointer-events:none;transition:opacity 0.25s cubic-bezier(0.22,1,0.36,1),visibility 0s linear 0.25s}
 .photo-overlay.active{visibility:visible;opacity:1;pointer-events:auto;transition:opacity 0.25s cubic-bezier(0.22,1,0.36,1),visibility 0s linear 0s}
 @media (prefers-reduced-motion: reduce){.photo-overlay{transition:none}}
 .photo-overlay .photo-card{background:var(--card);color:var(--ink);border-radius:var(--radius);padding:30px 24px;text-align:center;max-width:340px;width:100%}
-.photo-overlay .photo-card .big-icon{font-size:56px;margin-bottom:12px}
 .photo-overlay .photo-card h3{font-size:18px;margin-bottom:6px}
-.photo-overlay .photo-card p{font-size:14px;color:var(--ink-soft);margin-bottom:20px}
+.photo-overlay .photo-card p{font-size:14px;color:var(--ink-soft);margin-bottom:8px}
+.photo-overlay .photo-card .limits-hint{margin-bottom:12px}
 .file-input-wrapper{position:relative;overflow:hidden;margin-bottom:12px}
 .file-input-wrapper input[type=file]{position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;cursor:pointer}
 .file-input-wrapper .fake-btn{display:block;padding:16px;border:2px dashed var(--candy);border-radius:12px;color:var(--link);font-weight:600;font-size:15px}
@@ -81,13 +74,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .send-status.is-ok{background:color-mix(in srgb,var(--mint) 18%,var(--card));color:var(--success-ink)}
 .send-status.is-err{background:color-mix(in srgb,var(--persimmon) 20%,var(--card));color:var(--persimmon)}
 
-/* ─── Empty state ─── */
-.empty-state{text-align:center;padding:30px 16px;color:var(--ink-soft)}
-.empty-state .icon{font-size:48px;margin-bottom:8px}
-
 /* ─── Toasts (stacked queue; same contract as the shell toaster) ─── */
 @keyframes toastIn{from{transform:translateY(16px) scale(0.97);opacity:0}to{transform:translateY(0) scale(1);opacity:1}}
-.toaster{position:fixed;bottom:20px;left:20px;right:20px;display:flex;flex-direction:column;gap:8px;z-index:200;pointer-events:none}
+.toaster{position:fixed;bottom:calc(20px + env(safe-area-inset-bottom, 0px));left:20px;right:20px;display:flex;flex-direction:column;gap:8px;z-index:200;pointer-events:none}
 .toast-item{pointer-events:auto;display:flex;align-items:center;gap:8px;padding:14px 16px;border-radius:12px;font-weight:600;font-size:14px;background:var(--card);color:var(--ink);border:1px solid var(--rule);box-shadow:var(--shadow-overlay);animation:toastIn 0.25s cubic-bezier(0.22,1,0.36,1);cursor:pointer}
 .toast-item.success{border-inline-start:4px solid var(--success-ink)}
 .toast-item.error{border-inline-start:4px solid var(--persimmon)}
@@ -98,50 +87,41 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
 <!-- Header -->
 <div class="header">
-    👗 {{ store.name }} — Virtual Try-On
-    <small>Photo Upload</small>
+    {{ store.name }} — پرو مجازی
+    <small>ضبط عکس شخص</small>
 </div>
 
-<!-- Server Config -->
-<div class="config-bar">
-    <div class="status-dot" id="status-dot" title="Connection status"></div>
+<!-- Status -->
+<div class="status-bar">
+    <div class="status-dot" id="status-dot" title="وضعیت اتصال"></div>
     <div class="pair-state" id="pair-state">…</div>
-    <button id="btn-connection-test" onclick="testConnection()">بررسی اتصال</button>
+    <button type="button" id="btn-connection-test">بررسی اتصال</button>
 </div>
-<div class="connection-help" id="connection-help">گوشی و کامپیوتر باید به یک Wi‑Fi وصل باشند. جفت‌سازی از صفحه «پروژه تعاملی» در پنل، با QR انجام می‌شود.</div>
+<div class="connection-help">گوشی و کامپیوتر باید به یک Wi‑Fi وصل باشند. جفت‌سازی با QR از صفحه «پرو مجازی» در پنل انجام می‌شود.</div>
 
 <!-- Main Actions -->
 <div class="main-actions">
-    <button class="action-btn photo" id="btn-photo" onclick="showPhotoCapture()">
-        <span class="icon">📸</span> Take Photo
-    </button>
+    <button type="button" class="action-btn photo" id="btn-photo">گرفتن عکس شخص</button>
+    <div class="limits-hint">فقط فایل عکس، حداکثر ۱۵ مگابایت</div>
 </div>
 
-<!-- Activity Log -->
-<div class="log-section">
-    <h3>📋 Activity Log</h3>
-    <div class="log-list" id="log-list">
-        <div class="empty-state">
-            <div class="icon">📱</div>
-            <div>Activities will appear here</div>
-        </div>
-    </div>
-</div>
+<!-- Status line -->
+<div class="status-line" id="status-line" role="status">آماده — عکس بگیرید و ارسال کنید.</div>
 
 <!-- Photo Capture Overlay: a dialog — Escape closes, focus returns -->
-<div class="photo-overlay" id="photo-overlay" role="dialog" aria-modal="true" aria-label="Take kid's photo" tabindex="-1">
+<div class="photo-overlay" id="photo-overlay" role="dialog" aria-modal="true" aria-label="گرفتن عکس شخص" tabindex="-1">
     <div class="photo-card">
-        <div class="big-icon">📸</div>
-        <h3>Take Kid's Photo</h3>
-        <p>Take a clear photo of the child's face for AI try-on</p>
+        <h3>عکس شخص</h3>
+        <p>صورت داخل قاب باشد، نور روبه‌رو — همین دو تا کیفیت پرو را می‌سازد.</p>
+        <div class="limits-hint">فقط فایل عکس، حداکثر ۱۵ مگابایت</div>
         <div class="file-input-wrapper">
-            <input type="file" id="photo-input" accept="image/*" capture="environment" onchange="onPhotoSelected(event)">
-            <div class="fake-btn">📱 Open Camera</div>
+            <input type="file" id="photo-input" accept="image/*" capture="environment">
+            <div class="fake-btn">باز کردن دوربین</div>
         </div>
-        <img id="photo-preview" class="photo-preview" alt="Preview">
+        <img id="photo-preview" class="photo-preview" alt="پیش‌نمایش عکس شخص">
         <div class="btn-group">
-            <button class="btn-cancel" id="btn-cancel-photo" onclick="hidePhotoCapture()">Cancel</button>
-            <button class="btn-send" id="btn-send-photo" onclick="sendPhoto()" disabled>📤 Send to Server</button>
+            <button type="button" class="btn-cancel" id="btn-cancel-photo">انصراف</button>
+            <button type="button" class="btn-send" id="btn-send-photo" disabled>ارسال به سرور</button>
         </div>
         <div class="send-status" id="send-status"></div>
     </div>
@@ -160,6 +140,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 let baseUrl = window.location.origin;
 let captureKey = localStorage.getItem('capture_key') || '';
 let selectedPhotoFile = null;
+
+// ─── Status line: the last thing the server said, as text — never markup,
+// so a file name or a server message cannot smuggle elements onto the page ───
+function setStatus(msg) {
+    document.getElementById('status-line').textContent = msg;
+}
 
 // ─── Config ───
 function loadConfig() {
@@ -187,38 +173,28 @@ function apiHeaders() {
 async function testConnection() {
     const dot = document.getElementById('status-dot');
     dot.className = 'status-dot';
-    if (!captureKey) { dot.className = 'status-dot offline'; addLog('info', 'هنوز جفت نشده — QR را از پنل اسکن کنید.'); return; }
+    if (!captureKey) {
+        dot.className = 'status-dot offline';
+        setStatus('هنوز جفت نشده — QR را از پنل اسکن کنید.');
+        return;
+    }
     try {
         const r = await fetch(baseUrl + '/api/capture/ping', { method: 'GET', headers: apiHeaders(), signal: AbortSignal.timeout(5000) });
         if (r.ok) {
             dot.className = 'status-dot online';
-            addLog('ok', 'اتصال برقرار است');
+            setStatus('اتصال برقرار است — آماده ضبط.');
         } else if (r.status === 401) {
             dot.className = 'status-dot offline';
             markUnpaired();
-            addLog('err', 'کلید گوشی معتبر نیست — دوباره QR را اسکن کنید.');
+            setStatus('کلید گوشی معتبر نیست — دوباره QR را اسکن کنید.');
         } else {
             dot.className = 'status-dot offline';
-            addLog('err', 'سرور پاسخ ' + r.status + ' داد');
+            setStatus('سرور پاسخ ' + r.status + ' داد.');
         }
     } catch(e) {
         dot.className = 'status-dot offline';
-        addLog('err', 'سرور در دسترس نیست: ' + e.message);
+        setStatus('سرور در دسترس نیست — Wi‑Fi گوشی را بررسی کنید.');
     }
-}
-
-// ─── Log ───
-function addLog(type, msg) {
-    const list = document.getElementById('log-list');
-    const empty = list.querySelector('.empty-state');
-    if (empty) empty.remove();
-    const entry = document.createElement('div');
-    entry.className = 'log-entry';
-    const badgeMap = { ok: 'OK', err: 'Error', info: 'Info' };
-    entry.innerHTML = `<span class="badge badge-${type}">${badgeMap[type]||type}</span><span>${msg}</span>`;
-    list.insertBefore(entry, list.firstChild);
-    // Keep max 50 entries
-    while (list.children.length > 50) list.removeChild(list.lastChild);
 }
 
 // ─── Toasts (stacked; errors persist until tapped, notes auto-leave) ───
@@ -271,7 +247,7 @@ function onPhotoSelected(event) {
         document.getElementById('btn-send-photo').disabled = false;
     };
     reader.readAsDataURL(file);
-    addLog('info', 'Photo selected: ' + file.name);
+    setStatus('عکس انتخاب شد: ' + file.name);
 }
 
 async function sendPhoto() {
@@ -281,7 +257,7 @@ async function sendPhoto() {
     btn.disabled = true;
     status.style.display = 'block';
     status.className = 'send-status';
-    status.textContent = '⏳ Sending...';
+    status.textContent = 'در حال ارسال…';
 
     const formData = new FormData();
     formData.append('file', selectedPhotoFile);
@@ -296,25 +272,29 @@ async function sendPhoto() {
         const data = await r.json();
         if (r.ok) {
             status.className = 'send-status is-ok';
-            status.textContent = '✅ Photo sent successfully!';
-            addLog('ok', 'Kid photo uploaded');
-            showToast('Photo uploaded ✓', 'success');
+            status.textContent = 'عکس ارسال شد.';
+            setStatus('عکس ارسال شد — در پنل، صفحه پرو مجازی را ببینید.');
+            showToast('عکس ارسال شد', 'success');
             setTimeout(hidePhotoCapture, 1500);
         } else {
-            throw new Error(data.detail || 'Upload failed');
+            throw new Error(data.detail || 'ارسال ناموفق بود');
         }
     } catch(e) {
         status.className = 'send-status is-err';
-        status.textContent = '❌ ' + e.message;
-        addLog('err', 'Photo upload failed: ' + e.message);
-        showToast('Upload failed: ' + e.message, 'error');
+        status.textContent = 'ارسال نشد: ' + e.message;
+        setStatus('ارسال نشد: ' + e.message);
+        showToast('ارسال نشد: ' + e.message, 'error');
         btn.disabled = false;
     }
 }
 
-// ─── Init ───
-loadConfig();
+// ─── Init: listeners, not inline handlers ───
 document.getElementById('btn-connection-test').addEventListener('click', testConnection);
+document.getElementById('btn-photo').addEventListener('click', showPhotoCapture);
+document.getElementById('btn-cancel-photo').addEventListener('click', hidePhotoCapture);
+document.getElementById('btn-send-photo').addEventListener('click', sendPhoto);
+document.getElementById('photo-input').addEventListener('change', onPhotoSelected);
+loadConfig();
 </script>
 </body>
 </html>

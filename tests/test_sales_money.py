@@ -75,8 +75,8 @@ def test_confirm_sale_recomputes_prices_from_db(client, db_session):
         "unit_price": 1, "quantity": 3, "total_price": 3,
     }]
     resp = _confirm_sale(client, tampered)
-    assert resp.status_code == 200
-    assert "فاکتور" in resp.text
+    assert resp.history and resp.history[0].status_code == 303  # straight to a new sale
+    assert "msg=" in resp.history[0].headers["location"]
 
     sale = db_session.query(Sale).order_by(Sale.id.desc()).first()
     assert sale.total_amount == 300_000          # 3 × 100_000, not 3
@@ -90,15 +90,16 @@ def test_confirm_sale_recomputes_prices_from_db(client, db_session):
 
 
 def test_confirm_sale_clamps_quantity_to_stock(client, db_session):
+    # Phase 1: the clamp is shown, not silent — the first confirm re-renders
+    # the corrected basket, the second sells it. Full flow lives in
+    # test_sales_phase1.
     _, variant = _make_variant(db_session, price=50_000, stock=5)
     basket = [{"variant_id": variant.id, "product_id": variant.product_id,
                "unit_price": 50_000, "quantity": 99, "total_price": 99 * 50_000}]
     resp = _confirm_sale(client, basket)
     assert resp.status_code == 200
-    sale = db_session.query(Sale).order_by(Sale.id.desc()).first()
-    assert sale.total_amount == 5 * 50_000  # clamped to available stock
-    db_session.refresh(variant)
-    assert variant.stock_quantity == 0
+    assert "موجودی تغییر کرد" in resp.text
+    assert db_session.query(Sale).count() == 0
 
 
 def test_refund_restores_stock_and_reverses_customer(client, db_session):

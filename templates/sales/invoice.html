@@ -9,13 +9,13 @@
 </div>
 <h2 class="print-heading">{{ print_heading }}</h2>
 
-<div class="alert alert-success invoice-flash">
+<div class="alert alert-success invoice-flash" role="status">
     ✓ فروش ثبت شد{% if points_earned %}&nbsp;· امتیاز: <strong>{{ points_earned }}</strong>{% endif %}
 </div>
 
 <div class="screen-only paper-toggle" role="group" aria-label="اندازه کاغذ">
-    <button type="button" data-paper="thermal" aria-pressed="true">۸۰mm حرارتی</button>
-    <button type="button" data-paper="a5" aria-pressed="false">A5</button>
+    <button type="button" data-paper="thermal" aria-pressed="true">فیش حرارتی (۸۰ میلی‌متر)</button>
+    <button type="button" data-paper="a5" aria-pressed="false">برگه A5</button>
 </div>
 
 <div class="invoice">
@@ -26,23 +26,23 @@
         {% if store.address %}<div class="invoice-contact">{{ store.address }}</div>{% endif %}
         {% if store.phone %}<div class="invoice-contact tnum" dir="ltr">{{ store.phone }}</div>{% endif %}
         <div class="invoice-meta">
-            <span><span class="em" aria-hidden="true">📄 </span>شماره: <span class="tnum">{{ sale.id }}</span></span>
-            <span><span class="em" aria-hidden="true">🕐 </span>{{ jalali_str(sale.created_at) }}</span>
-            {% if cashier_name %}<span><span class="em" aria-hidden="true">🧾 </span>صندوقدار: {{ cashier_name }}</span>{% endif %}
+            <span>شماره: <span class="tnum">{{ sale.id }}</span></span>
+            <span>{{ jalali_str(sale.created_at) }}</span>
+            {% if cashier_name %}<span>صندوقدار: {{ cashier_name }}</span>{% endif %}
         </div>
     </div>
 
     {% if customer %}
     <div class="invoice-customer">
-        <p><span class="label"><span class="em" aria-hidden="true">👤 </span>مشتری</span><span>{{ customer.full_name }}</span></p>
-        <p><span class="label"><span class="em" aria-hidden="true">📱 </span>تلفن</span><span class="tnum">{{ customer.phone }}</span></p>
+        <p><span class="label">مشتری</span><span>{{ customer.full_name }}</span></p>
+        <p><span class="label">تلفن</span><span class="tnum">{{ customer.phone }}</span></p>
         <p>
-            <span class="label"><span class="em" aria-hidden="true">🏷️ </span>سطح</span>
+            <span class="label">سطح</span>
             <span>
                 <span class="tier-badge tier-{{ customer.tier }}">
-                    {% if customer.tier == 'diamond' %}<span class="em" aria-hidden="true">💎 </span>الماس
-                    {% elif customer.tier == 'gold' %}<span class="em" aria-hidden="true">⭐ </span>طلایی
-                    {% else %}<span class="em" aria-hidden="true">🥈 </span>نقره‌ای{% endif %}
+                    {% if customer.tier == 'diamond' %}الماس
+                    {% elif customer.tier == 'gold' %}طلایی
+                    {% else %}نقره‌ای{% endif %}
                 </span>
             </span>
         </p>
@@ -63,17 +63,17 @@
     </div>
 
     <div class="invoice-summary">
-        <div class="summary-row"><span><span class="em" aria-hidden="true">📦 </span>جمع کل</span><span class="tnum">{{ fmt(sale.total_amount) }} تومان</span></div>
+        <div class="summary-row"><span>جمع کل</span><span class="tnum">{{ fmt(sale.total_amount) }} تومان</span></div>
         {% if sale.discount_amount > 0 %}
-        <div class="summary-row discount"><span><span class="em" aria-hidden="true">🏷️ </span>تخفیف</span><span class="tnum">−{{ fmt(sale.discount_amount) }} تومان</span></div>
+        <div class="summary-row discount"><span>تخفیف</span><span class="tnum">−{{ fmt(sale.discount_amount) }} تومان</span></div>
         {% if discounts and discounts.details %}
         <div class="discount-details">
             {% for detail in discounts.details %}<div>· {{ detail }}</div>{% endfor %}
         </div>
         {% endif %}
         {% endif %}
-        <div class="summary-row total"><span><span class="em" aria-hidden="true">💰 </span>مبلغ قابل پرداخت</span><span class="tnum">{{ fmt(sale.final_amount) }} تومان</span></div>
-        <div class="summary-row"><span><span class="em" aria-hidden="true">💳 </span>روش پرداخت</span><span>
+        <div class="summary-row total"><span>مبلغ قابل پرداخت</span><span class="tnum">{{ fmt(sale.final_amount) }} تومان</span></div>
+        <div class="summary-row"><span>روش پرداخت</span><span>
             {% if sale.payment_method == 'card' %}کارت
             {% elif sale.payment_method == 'credit' %}نسیه
             {% elif sale.payment_method == 'split' %}ترکیبی
@@ -81,7 +81,7 @@
         </span></div>
         {% if sale.payment_method == 'split' %}
         {% for part in sale.payment_parts %}
-        <div class="summary-row"><span>{% if part.method == 'cash' %}نقدی{% else %}کارتی{% endif %}</span><span class="tnum">{{ fmt(part.amount) }} تومان</span></div>
+        <div class="summary-row"><span>{% if part.method == 'cash' %}نقدی{% elif part.method == 'credit' %}نسیه{% else %}کارتی{% endif %}</span><span class="tnum">{{ fmt(part.amount) }} تومان</span></div>
         {% endfor %}
         {% endif %}
         {% if sale.payment_method == 'credit' and customer %}
@@ -89,7 +89,7 @@
         <div class="summary-row"><span>کارمزد نسیه</span><span class="tnum">{{ fmt(sale.credit_surcharge) }} تومان</span></div>
         {% endif %}
         <div class="summary-row attention">
-            <span><span class="em" aria-hidden="true">📒 </span>بدهی نسیه این فاکتور</span>
+            <span>بدهی نسیه این فاکتور</span>
             <span class="tnum">{{ fmt(credit_remaining) }} تومان</span>
         </div>
         {% if sale.credit_due_date %}
@@ -109,22 +109,22 @@
 
 <div class="invoice-actions">
     {% if sale.is_refunded %}
-    <div class="alert alert-error" style="flex: 1; text-align: right;">
+    <div class="alert alert-error refund-notice">
         این فاکتور ابطال شده است.
         {% if sale.refund_reason %}<br>دلیل: {{ sale.refund_reason }}{% endif %}
         {% if sale.refund_date %}<br>تاریخ ابطال: {{ jalali_str(sale.refund_date) }}{% endif %}
     </div>
-    <button onclick="window.print()" class="btn btn-primary">چاپ فاکتور</button>
+    <button data-print class="btn btn-primary">چاپ فاکتور</button>
     {% else %}
         {% if invoice_path %}
-        <a href="{{ invoice_path }}" target="_blank" class="btn btn-ghost">دانلود PDF</a>
+        <a href="{{ invoice_path }}" target="_blank" class="btn btn-ghost">دانلود فاکتور (PDF)</a>
         {% endif %}
-        <button onclick="window.print()" class="btn btn-primary">چاپ فاکتور</button>
+        <button data-print class="btn btn-primary">چاپ فاکتور</button>
         {% if can_refund %}
         <form method="post" action="/sales/{{ sale.id }}/refund" data-confirm="این فاکتور ابطال می‌شود و موجودی بازمی‌گردد. ادامه می‌دهید؟"
-              style="display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center;">
+              class="refund-form">
             <input type="text" name="refund_reason" aria-label="دلیل ابطال" placeholder="مثال: اشتباه صندوقدار"
-                   style="padding: 0.5rem 0.7rem; border: 2px solid var(--rule); border-radius: 8px; max-width: 180px; font-family: inherit;">
+                   class="refund-reason">
             <button type="submit" class="btn btn-danger">ابطال فاکتور</button>
         </form>
         {% else %}
@@ -155,6 +155,11 @@
 
 <script>
 (function () {
+    // Print buttons print; the refund dialog below owns confirms.
+    document.querySelectorAll('[data-print]').forEach(function (btn) {
+        btn.addEventListener('click', function () { window.print(); });
+    });
+
     // Paper mode is a device habit, not a sale fact — remembered locally.
     var KEY = 'invoice-paper';
     function apply(mode) {

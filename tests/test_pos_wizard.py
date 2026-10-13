@@ -14,7 +14,7 @@ def _checkout() -> str:
 
 def test_payment_flows_in_order():
     source = _checkout()
-    method = source.index('role="radiogroup"')
+    method = source.index('<fieldset class="payment-options">')
     terminal = source.index('id="pay-step-terminal"')
     cash = source.index('id="cash-calculator"')
     confirm = source.index('id="confirm-form"')

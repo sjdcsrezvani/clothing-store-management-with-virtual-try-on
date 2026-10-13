@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 33
+MIGRATION_VERSION = 34
 
 
 def migration_status(engine) -> int:
@@ -119,7 +119,7 @@ def _add_column_if_missing(conn, table_name: str, column_name: str, column_type:
 
 
 _SALES_COLUMNS = (
-    "id", "customer_id", "total_amount", "discount_amount", "discount_details",
+    "id", "customer_id", "sale_nonce", "total_amount", "discount_amount", "discount_details",
     "final_amount", "payment_method", "credit_surcharge", "payment_confirmed",
     "credit_settled", "credit_paid_amount", "credit_due_date", "points_earned",
     "is_refunded", "refund_amount", "refund_reason", "refund_date",
@@ -139,6 +139,56 @@ _CHECKOUT_COLUMNS = (
 def _table_columns(conn, table_name: str) -> list:
     return [row[1] for row in conn.execute(
         text(f"PRAGMA table_info({table_name})")).fetchall()]
+
+
+def _rebuild_parts_for_credit_leg(conn) -> None:
+    """Widen the split-leg method CHECK to admit 'credit', keeping every row.
+
+    Same resume rule as the rev-33 rebuilds: a staging table next to a live
+    legs table is a partial copy — drop and redo; a staging table with the
+    live one gone is a finished copy the rename never claimed — claim it.
+    """
+    tables = {row[0] for row in conn.execute(
+        text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()}
+    if "sale_payment_parts_v34" in tables and "sale_payment_parts" not in tables:
+        conn.execute(text("ALTER TABLE sale_payment_parts_v34 RENAME TO sale_payment_parts"))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_sale_payment_parts_id "
+            "ON sale_payment_parts (id)"))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_sale_payment_parts_sale_id "
+            "ON sale_payment_parts (sale_id)"))
+        return
+    if "sale_payment_parts_v34" in tables:
+        conn.execute(text("DROP TABLE sale_payment_parts_v34"))
+    if "sale_payment_parts" not in tables:
+        return
+    conn.execute(text("""
+        CREATE TABLE sale_payment_parts_v34 (
+            id INTEGER PRIMARY KEY,
+            sale_id INTEGER NOT NULL REFERENCES sales (id),
+            method VARCHAR(20) NOT NULL,
+            amount INTEGER NOT NULL,
+            pos_transaction_id INTEGER REFERENCES pos_transactions (id),
+            created_at DATETIME,
+            CONSTRAINT ck_sale_part_method CHECK (method IN ('cash', 'card', 'credit')),
+            CONSTRAINT ck_sale_part_amount_positive CHECK (amount > 0)
+        )
+    """))
+    conn.execute(text("""
+        INSERT INTO sale_payment_parts_v34
+            (id, sale_id, method, amount, pos_transaction_id, created_at)
+        SELECT id, sale_id, method, amount, pos_transaction_id, created_at
+        FROM sale_payment_parts
+    """))
+    conn.execute(text("DROP TABLE sale_payment_parts"))
+    conn.execute(text("ALTER TABLE sale_payment_parts_v34 RENAME TO sale_payment_parts"))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_sale_payment_parts_id "
+        "ON sale_payment_parts (id)"))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS ix_sale_payment_parts_sale_id "
+        "ON sale_payment_parts (sale_id)"))
 
 
 def _rebuild_sales_for_split(conn) -> None:
@@ -184,6 +234,7 @@ def _rebuild_sales_for_split(conn) -> None:
         CREATE TABLE sales_v33 (
             id INTEGER PRIMARY KEY,
             customer_id INTEGER REFERENCES customers (id),
+            sale_nonce VARCHAR(100),
             total_amount INTEGER NOT NULL,
             discount_amount INTEGER,
             discount_details TEXT,
@@ -402,6 +453,20 @@ def _rebuild_sms_messages(conn) -> None:
 
 
 def _apply_revision(conn, version: int) -> None:
+    if version == 34:
+        # Phase-1 till hardening: one checkout nonce creates at most one sale
+        # (nullable idempotency key — legacy rows stay NULL, and SQLite lets
+        # NULLs share a UNIQUE index), plus a credit leg on split tender.
+        _add_column_if_missing(conn, "sales", "sale_nonce", "VARCHAR(100)")
+        tables = {row[0] for row in conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()}
+        if "sales" in tables:
+            conn.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_sales_sale_nonce "
+                "ON sales (sale_nonce)"))
+        _rebuild_parts_for_credit_leg(conn)
+        return
+
     if version == 33:
         # Split-tender sales: cash X plus card Y on one invoice. Two CHECK
         # widenings (sales, checkout_sessions) plus the legs table — purely

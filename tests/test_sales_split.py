@@ -42,7 +42,7 @@ def test_migration_33_rebuilds_sales_and_checkout_keeping_rows(tmp_path):
                           " final_amount, expires_at, created_at, updated_at)"
                           " VALUES (9, 'n1', 'card', 100, 100,"
                           " '2030-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')"))
-    assert upgrade(engine) == MIGRATION_VERSION == 33
+    assert upgrade(engine) == MIGRATION_VERSION == 34
     with engine.connect() as conn:
         assert conn.execute(text("SELECT payment_method FROM sales WHERE id=7")).scalar() == "cash"
         assert conn.execute(text("SELECT quantity FROM sale_items WHERE id=3")).scalar() == 2
@@ -95,7 +95,7 @@ def test_migration_33_hands_back_the_indexes_it_took(tmp_path):
                 CONSTRAINT ck_checkout_payment_method CHECK (payment_method IN ('card', 'cash', 'credit')))"""))
         conn.execute(text("CREATE INDEX ix_checkout_sessions_id ON checkout_sessions (id)"))
         conn.execute(text("CREATE INDEX ix_checkout_sessions_state ON checkout_sessions (state)"))
-    assert upgrade(engine) == 33
+    assert upgrade(engine) == 34
     sales_indexes = {index["name"] for index in inspect(engine).get_indexes("sales")}
     checkout_indexes = {index["name"] for index in inspect(engine).get_indexes("checkout_sessions")}
     assert "ix_sales_id" in sales_indexes
@@ -118,9 +118,11 @@ def test_split_confirm_writes_legs_and_counts_cash_leg(client, db_session, authe
     res = _confirm_sale(client, basket, extra={
         "payment_method": "split", "split_cash": "40000", "split_card": "60000",
     })
-    assert res.status_code == 200 and "ترکیبی" in res.text
+    assert res.history and res.history[0].status_code == 303  # straight to a new sale
     sale = db_session.query(Sale).order_by(Sale.id.desc()).first()
     assert sale.payment_method == "split" and sale.final_amount == total
+    ledger = client.get("/sales?method=split").text
+    assert "ترکیبی" in ledger  # the invoice name lives on the ledger now
     parts = {p.method: p.amount for p in
              db_session.query(SalePaymentPart).filter_by(sale_id=sale.id).all()}
     assert parts == {"cash": 40000, "card": 60000}
@@ -147,7 +149,7 @@ def test_split_sum_mismatch_and_single_leg_refused(client, db_session, authed):
     assert db_session.query(Sale).count() == before
 
 
-def test_swap_customer_keeps_basket(client, db_session, authed):
+def test_swap_route_is_gone_and_basket_stays_put(client, db_session, authed):
     import json
     from tests.conftest import csrf_token
     from tests.test_sales_money import _make_variant, _make_customer
@@ -157,21 +159,19 @@ def test_swap_customer_keeps_basket(client, db_session, authed):
     second = _make_customer(db_session, phone="09120000022")
     _, variant = _make_variant(db_session)
     basket = _basket(variant)
-    page = client.post("/sales/swap-customer", data={
+    # Phase 2: the swap endpoint no longer exists — a basket belongs to the
+    # customer it started with.
+    gone = client.post("/sales/swap-customer", data={
         "csrf_token": csrf_token(client, "/sales/new"),
         "phone": second.phone, "customer_id": str(first.id),
         "basket_json": json.dumps(basket, ensure_ascii=False),
-    }).text
-    assert second.phone in page and first.phone not in page
-    unknown = client.post("/sales/swap-customer", data={
-        "csrf_token": csrf_token(client, "/sales/new"),
-        "phone": "09129999999", "customer_id": str(first.id),
-        "basket_json": json.dumps(basket, ensure_ascii=False),
-    }).text
-    assert "ثبت نیست" in unknown and first.phone in unknown
+    }, follow_redirects=False)
+    assert gone.status_code == 404
+    page = client.get("/sales/new").text
+    assert "swap-customer" not in page and "تعویض مشتری" not in page
 
 
-def test_drafts_list_and_resume(client, db_session, authed):
+def test_drafts_never_list_and_resume_is_gone(client, db_session, authed):
     import json
     from tests.conftest import csrf_token
     from tests.test_sales_money import _make_variant
@@ -184,14 +184,13 @@ def test_drafts_list_and_resume(client, db_session, authed):
         "basket_json": json.dumps([], ensure_ascii=False),
         "csrf_token": csrf_token(client, "/sales/new"),
     })
+    # Phase 2: no resume list on a fresh till, and the endpoint is gone.
     listed = client.get("/sales/new").text
-    assert "نیمه‌تمام" in listed
-    import re
-    nonce = re.search(r'name="nonce" value="([A-Za-z0-9_-]+)"', listed).group(1)
-    resumed = client.post("/sales/resume-draft", data={
-        "csrf_token": csrf_token(client, "/sales/new"), "nonce": nonce,
-    }).text
-    assert variant.barcode in resumed or "تست" in resumed
+    assert "نیمه‌تمام" not in listed and "resume-draft" not in listed
+    gone = client.post("/sales/resume-draft", data={
+        "csrf_token": csrf_token(client, "/sales/new"), "nonce": "whatever",
+    }, follow_redirects=False)
+    assert gone.status_code == 404
 
 
 def test_ledger_and_invoice_name_the_split(client, db_session, authed):
@@ -257,12 +256,12 @@ def test_migration_33_resumes_after_crashed_boot(tmp_path):
         conn.execute(text("INSERT INTO customers (id, phone) VALUES (1, '09120000001')"))
         conn.execute(text("INSERT INTO sales (id, customer_id, total_amount, final_amount, payment_method)"
                           " VALUES (7, 1, 500000, 500000, 'cash')"))
-    assert upgrade(engine) == 33
+    assert upgrade(engine) == 34
     with engine.begin() as conn:
         # Simulate the crashed first boot: version back, partial staging left.
         conn.execute(text("UPDATE schema_version SET version=32 WHERE id=1"))
         conn.execute(text("CREATE TABLE sales_v33 (id INTEGER PRIMARY KEY)"))
-    assert upgrade(engine) == 33
+    assert upgrade(engine) == 34
     with engine.connect() as conn:
         assert conn.execute(text("SELECT payment_method FROM sales WHERE id=7")).scalar() == "cash"
         assert not conn.execute(text(
@@ -271,6 +270,6 @@ def test_migration_33_resumes_after_crashed_boot(tmp_path):
         # Simulate dying between DROP and RENAME: source gone, staging whole.
         conn.execute(text("ALTER TABLE sales RENAME TO sales_v33"))
         conn.execute(text("UPDATE schema_version SET version=32 WHERE id=1"))
-    assert upgrade(engine) == 33
+    assert upgrade(engine) == 34
     with engine.connect() as conn:
         assert conn.execute(text("SELECT payment_method FROM sales WHERE id=7")).scalar() == "cash"

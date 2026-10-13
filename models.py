@@ -420,6 +420,10 @@ class Sale(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
+    # Idempotency key: one checkout nonce creates at most one sale. A double
+    # click or a retried POST replays the first invoice instead of a second
+    # sale. NULL for rows recorded before the key existed.
+    sale_nonce = Column(String(100), nullable=True, unique=True, index=True)
     total_amount = Column(Integer, nullable=False)
     discount_amount = Column(Integer, default=0)
     discount_details = Column(Text, nullable=True)
@@ -450,12 +454,13 @@ class Sale(Base):
 
 
 class SalePaymentPart(Base):
-    """One leg of a split-tender sale: cash X plus card Y on a single invoice.
+    """One leg of a split-tender sale: cash, card and نسیه legs share one invoice.
 
     Single-method sales carry no rows — the Sale's own method and final are
     the whole story. A split sale wears method 'split' and its legs here,
-    so the drawer counts exactly the cash leg and the terminal owns the card
-    leg, instead of either side guessing from the final.
+    so the drawer counts exactly the cash leg, the terminal owns the card
+    leg, and the credit leg ages like any نسیه debt instead of either side
+    guessing from the final.
     """
     __tablename__ = "sale_payment_parts"
 
@@ -467,7 +472,7 @@ class SalePaymentPart(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
-        CheckConstraint("method IN ('cash', 'card')", name="ck_sale_part_method"),
+        CheckConstraint("method IN ('cash', 'card', 'credit')", name="ck_sale_part_method"),
         CheckConstraint("amount > 0", name="ck_sale_part_amount_positive"),
     )
 
