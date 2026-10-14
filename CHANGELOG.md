@@ -1,3 +1,42 @@
+## 2.9.2 — 1405/07/22 (2026-10-14)
+
+### صندوق فروش: four more phases on the counter screen
+
+- **The meter now shows its margin.** Manager and owner
+  both watch the profit meter live, now with a margin
+  percent beside the toman figure; a cashier's page
+  carries neither number — not hidden, omitted — and an
+  empty basket shows nothing at all.
+- **The referral discount becomes a choice.** A balance
+  offers a pair — spend it on this invoice or save it
+  for later — with save as the default, the pair shown
+  only when there is something to choose, and a record
+  still required before a code grants anything.
+- **The scan step fits the screen.** Tighter rhythm and
+  one step smaller type carry the whole scan screen on a
+  short desktop display, the list scrolls inside its
+  card, the customer card is name, phone, and tier only,
+  and the till wears its theme's own accent instead of
+  the forced rainbow.
+- **A broken tag no longer stops a sale.** A name search
+  under the scan box answers after two characters with
+  the shop's active variants; picking one fills the
+  barcode box and scans it, and a Persian-digit barcode
+  scans as happily as an English one.
+- **The counter stops reloading.** Add, quantity, remove,
+  and discount post by fetch and the server's own fresh
+  layout swaps in place — the beep, the just-added glow,
+  and the scan focus land after every swap — while the
+  terminal and the confirm keep their real submits and a
+  plain-submit fallback.
+
+### پشت صحنه: the gates follow the till
+
+- **Held to all of it.** New gates keep the meter off a
+  cashier's page, the choice pair honest, the search
+  endpoint answering in JSON only, and the final total
+  the only figure that pops.
+
 ## 2.9.1 — 1405/07/21 (2026-10-13)
 
 ### گوشی عکاسی: the capture page speaks Persian and answers the thumb

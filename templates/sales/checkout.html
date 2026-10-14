@@ -1,6 +1,5 @@
 {% extends "base.html" %}
-{# Storefront accent: the till sells, so it wears the full rainbow. #}
-{% set page_accent_full = True %}
+{# Till follows the active theme's own accent — no forced rainbow. #}
 {% block title %}{% if step == 'scan' %} فروش — {{ customer.phone if customer else 'ناشناس' }}{% else %} فروش جدید — {{ store.name }}{% endif %}{% endblock %}
 {% block content %}
 
@@ -81,12 +80,6 @@
                         </span>
                     </span>
                 </div>
-                {% if customer.tier != 'silver' %}
-                <div class="info-item">
-                    <span class="label">امتیاز</span>
-                    <span class="value tnum">{{ customer.total_points }}</span>
-                </div>
-                {% endif %}
                 {% if customer.child_name %}
                 <div class="info-item">
                     <span class="label">فرزند</span>
@@ -105,10 +98,6 @@
                 </div>
                 <div class="info-item">
                     <span class="label">سطح</span>
-                    <span class="value">—</span>
-                </div>
-                <div class="info-item">
-                    <span class="label">امتیاز</span>
                     <span class="value">—</span>
                 </div>
             </div>
@@ -136,6 +125,14 @@
                            inputmode="numeric" dir="ltr" aria-label="بارکد محصول"{% if error and step == 'scan' %} aria-invalid="true" data-shake-on-load{% endif %}>
                 </div>
             </form>
+            {# Name search for damaged tags: picking a result fills the
+               barcode box and submits the scan form above. #}
+            <div class="form-group mb-0">
+                <label for="product-search-input">جستجوی نام کالا (برچسب خراب)</label>
+                <input type="text" id="product-search-input" autocomplete="off"
+                       placeholder="نام کالا..." aria-label="جستجوی نام کالا">
+            </div>
+            <div id="product-search-results" class="search-results" role="listbox" aria-label="نتایج جستجو"></div>
             {% if error and step == 'scan' %}<p class="form-error" role="alert">{{ error }}</p>{% endif %}
             {% if just_added %}<p class="scan-last" data-beep role="status">آخرین اسکن: {{ just_added }}</p>{% endif %}
         </div>
@@ -160,13 +157,18 @@
                            placeholder="09123456789" dir="ltr">
                 </div>
             </div>
-            {% if customer.active_referral_count > 0 %}
-            <p>جمعاً {{ fmt(customer.referrer_discount) }} تومان تخفیف معرفی ({{ customer.active_referral_count }} عدد) — با این خرید استفاده شود؟</p>
-            <label class="check-row">
-                <input type="checkbox" id="use-ref-checkbox" {% if use_referrer_discount == '1' %}checked{% endif %}
-                       data-sync="use_referrer_discount" data-checkbox>
-                بله، از تخفیف معرفی در این فاکتور استفاده کن
-            </label>
+            {% if customer.referrer_discount > 0 %}
+            <p>جمعاً {{ fmt(customer.referrer_discount) }} تومان تخفیف معرفی ({{ customer.active_referral_count }} عدد)</p>
+            <div class="payment-options" role="radiogroup" aria-label="تخفیف معرفی">
+                <label class="payment-option">
+                    <input type="radio" data-sync="use_referrer_discount" value="1"{% if use_referrer_discount == '1' %} checked{% endif %}>
+                    <span>همین فاکتور استفاده شود</span>
+                </label>
+                <label class="payment-option">
+                    <input type="radio" data-sync="use_referrer_discount" value="0"{% if use_referrer_discount != '1' %} checked{% endif %}>
+                    <span>ذخیره برای بعد</span>
+                </label>
+            </div>
             {% endif %}
             {# ── Campaign: what this customer holds, and the code field for anyone
                  else. The held campaign is applied by the server without typing. ── #}
@@ -238,6 +240,7 @@
         </div>
         {% endif %}
 
+    </div>
     <div class="checkout-right">
         {# ── Basket ── #}
         <div class="basket-section card">
@@ -431,7 +434,8 @@ function setAll(name, value) {
 }
 // Mirrored inputs sync their hidden twins through one delegated listener —
 // no inline handlers. Uppercase and checkbox variants ride data attributes.
-document.addEventListener('input', function (event) {
+// Radios also fire change: same sync runs for both events.
+function syncMirror(event) {
     var input = event.target;
     if (!input || !input.getAttribute) return;
     var name = input.getAttribute('data-sync');
@@ -440,7 +444,9 @@ document.addEventListener('input', function (event) {
     if (input.type === 'checkbox') value = input.checked ? '1' : '0';
     if (input.hasAttribute('data-uppercase')) value = value.toUpperCase();
     setAll(name, value);
-});
+}
+document.addEventListener('input', syncMirror);
+document.addEventListener('change', syncMirror);
 var posRequiresApproval = {{ 'true' if pos_requires_approval else 'false' }};
 
 function updatePaymentUi() {
@@ -494,11 +500,16 @@ function updatePaymentUi() {
     if (terminalNeeded) refreshTerminalStatus();
 }
 
-document.querySelectorAll('input[name="payment_method"]').forEach(function (radio) {
-    radio.addEventListener('change', updatePaymentUi);
+document.addEventListener('change', function (event) {
+    var t = event.target;
+    if (t && t.name === 'payment_method') updatePaymentUi();
 });
-var terminalFormWire = document.getElementById('terminal-form');
-if (terminalFormWire) terminalFormWire.addEventListener('submit', sendToTerminal);
+document.addEventListener('submit', function (event) {
+    var t = event.target;
+    if (t && t.id === 'terminal-form') {
+        sendToTerminal({ preventDefault: function () { event.preventDefault(); }, currentTarget: t });
+    }
+});
 
 function renderTerminalIndicator(data) {
     var dot = document.getElementById('terminal-dot');
@@ -583,107 +594,142 @@ updatePaymentUi();
 refreshTerminalStatus();
 
 // ── Split-sum guard: the legs must add up to the finalized final before
-// the form may leave. Registered before the one-button terminal flow so a
-// bad sum stops everything; the server rechecks anyway.
-(function () {
-    var confirmForm = document.getElementById('confirm-form');
-    if (!confirmForm) return;
+// the form may leave. Delegated so it survives silent refreshes; registered
+// before the one-button flow so a bad sum stops everything; the server
+// rechecks anyway.
+document.addEventListener('submit', function (event) {
+    var confirmForm = event.target;
+    if (!confirmForm || confirmForm.id !== 'confirm-form') return;
     function legValue(name) {
         var input = confirmForm.querySelector('input[name="' + name + '"]');
         if (!input) return 0;
         var latin = input.value.replace(/[۰-۹]/g, function (d) { return '۰۱۲۳۴۵۶۷۸۹'.indexOf(d); });
         return parseInt(latin.replace(/[^0-9]/g, '') || '0', 10);
     }
-    confirmForm.addEventListener('submit', function (event) {
-        var selected = document.querySelector('input[name="payment_method"]:checked');
-        if (!selected || selected.value !== 'split') return;
-        var finalNode = document.querySelector('[data-amount]');
-        var final = finalNode ? parseInt(finalNode.getAttribute('data-amount') || '0', 10) : 0;
-        var legs = ['split_cash', 'split_card', 'split_credit'].map(legValue);
-        var filled = legs.filter(function (v) { return v > 0; }).length;
-        var sum = legs[0] + legs[1] + legs[2];
-        var bad = !(filled >= 2 && sum === final);
-        var errorBox = document.getElementById('split-sum-error');
-        if (errorBox) {
-            errorBox.hidden = !bad;
-            if (bad) errorBox.textContent = 'جمع سهم‌ها باید برابر مبلغ نهایی باشد.';
-        }
-        if (bad) {
-            event.preventDefault();
-            event.stopImmediatePropagation();
-        }
-    });
-})();
+    var selected = document.querySelector('input[name="payment_method"]:checked');
+    if (!selected || selected.value !== 'split') return;
+    var finalNode = document.querySelector('[data-amount]');
+    var final = finalNode ? parseInt(finalNode.getAttribute('data-amount') || '0', 10) : 0;
+    var legs = ['split_cash', 'split_card', 'split_credit'].map(legValue);
+    var filled = legs.filter(function (v) { return v > 0; }).length;
+    var sum = legs[0] + legs[1] + legs[2];
+    var bad = !(filled >= 2 && sum === final);
+    var errorBox = document.getElementById('split-sum-error');
+    if (errorBox) {
+        errorBox.hidden = !bad;
+        if (bad) errorBox.textContent = 'جمع سهم‌ها باید برابر مبلغ نهایی باشد.';
+    }
+    if (bad) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+    }
+});
 
 // One button for card money: confirming without an approval sends to the
 // terminal first and completes when it approves — the gate stays, the extra
-// click goes. Registered before the global double-submit guard so this flow
-// owns the button while it runs.
-(function () {
-    var confirmForm = document.getElementById('confirm-form');
+// click goes. Delegated so it survives silent refreshes; registered before
+// the global double-submit guard so this flow owns the button while it runs.
+var tillSending = false;
+document.addEventListener('submit', function (event) {
+    var confirmForm = event.target;
+    if (!confirmForm || confirmForm.id !== 'confirm-form') return;
     var confirmButton = document.getElementById('confirm-submit');
     var terminalForm = document.getElementById('terminal-form');
-    if (!confirmForm || !confirmButton || !terminalForm) return;
-    var sending = false;
-    confirmForm.addEventListener('submit', function (event) {
-        var selected = document.querySelector('input[name="payment_method"]:checked');
-        var method = selected ? selected.value : 'card';
-        var approvalToken = document.getElementById('pos-approval-token');
-        var approved = !!(approvalToken && approvalToken.value);
-        if (sending || method === 'cash' || method === 'credit' || approved || !posRequiresApproval) return;
-        var terminalVisible = terminalForm.style.display !== 'none';
-        if (!terminalVisible) return;
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        sending = true;
-        confirmButton.disabled = true;
-        confirmButton.classList.add('is-loading');
-        sendToTerminal({ preventDefault: function () {}, currentTarget: terminalForm }).then(function () {
-            sending = false;
-            confirmButton.disabled = false;
-            confirmButton.classList.remove('is-loading');
-            var token = document.getElementById('pos-approval-token');
-            if (token && token.value) confirmForm.submit();
-            else updatePaymentUi();
-        });
+    if (!confirmButton || !terminalForm) return;
+    var selected = document.querySelector('input[name="payment_method"]:checked');
+    var method = selected ? selected.value : 'card';
+    var approvalToken = document.getElementById('pos-approval-token');
+    var approved = !!(approvalToken && approvalToken.value);
+    if (tillSending || method === 'cash' || method === 'credit' || approved || !posRequiresApproval) return;
+    var terminalVisible = terminalForm.style.display !== 'none';
+    if (!terminalVisible) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    tillSending = true;
+    confirmButton.disabled = true;
+    confirmButton.classList.add('is-loading');
+    sendToTerminal({ preventDefault: function () {}, currentTarget: terminalForm }).then(function () {
+        tillSending = false;
+        confirmButton.disabled = false;
+        confirmButton.classList.remove('is-loading');
+        var token = document.getElementById('pos-approval-token');
+        if (token && token.value) confirmForm.submit();
+        else updatePaymentUi();
+    });
+});
+
+// ── Product name search (damaged tags): results fill the barcode box and
+// submit the scan form. Text-only rows, debounced, aborted on retype.
+(function () {
+    var box = document.getElementById('product-search-input');
+    var results = document.getElementById('product-search-results');
+    if (!box || !results) return;
+    var timer = null;
+    var pending = null;
+    box.addEventListener('input', function () {
+        if (timer) clearTimeout(timer);
+        if (pending) pending.abort();
+        var q = box.value.trim();
+        if (q.length < 2) { results.replaceChildren(); return; }
+        timer = setTimeout(function () {
+            pending = new AbortController();
+            fetch('/sales/api/product-search?q=' + encodeURIComponent(q),
+                  { signal: pending.signal })
+                .then(function (r) { return r.ok ? r.json() : { items: [] }; })
+                .then(function (data) {
+                    results.replaceChildren();
+                    (data.items || []).forEach(function (item) {
+                        var btn = document.createElement('button');
+                        btn.type = 'button';
+                        btn.setAttribute('role', 'option');
+                        btn.textContent = item.name + ' — ' + item.barcode;
+                        btn.addEventListener('click', function () {
+                            var scan = document.getElementById('barcode-input');
+                            if (scan) {
+                                scan.value = item.barcode;
+                                scan.form.requestSubmit();
+                            }
+                        });
+                        results.appendChild(btn);
+                    });
+                })
+                .catch(function () {});
+        }, 300);
     });
 })();
 
-// ── Scan beep: one short tone when the just-added strip renders, so the
-// cashier hears the scan land without looking away from the shelf.
-(function () {
-    if (!document.querySelector('[data-beep]')) return;
-    try {
-        var ctx = new (window.AudioContext || window.webkitAudioContext)();
-        var osc = ctx.createOscillator();
-        var gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.frequency.value = 880;
-        gain.gain.value = 0.08;
-        osc.start();
-        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.12);
-        osc.stop(ctx.currentTime + 0.12);
-    } catch (e) { /* silent shop, silent beep */ }
-})();
-
-// ── Just-added flash: the row that landed glows once, so the eye finds it
-// without reading every line.
-(function () {
+// ── Scan feedback: one short tone plus a glow on the row that landed, so
+// the cashier hears and sees the scan without reading every line. Runs on
+// load and after every silent refresh.
+function announceScan() {
+    if (document.querySelector('[data-beep]')) {
+        try {
+            var ctx = new (window.AudioContext || window.webkitAudioContext)();
+            var osc = ctx.createOscillator();
+            var gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.value = 880;
+            gain.gain.value = 0.08;
+            osc.start();
+            gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.12);
+            osc.stop(ctx.currentTime + 0.12);
+        } catch (e) { /* silent shop, silent beep */ }
+    }
     var strip = document.querySelector('[data-beep]');
-    if (!strip) return;
-    var name = strip.textContent.replace(/^آخرین اسکن:\s*/, '').trim();
-    if (!name) return;
-    document.querySelectorAll('.basket-item').forEach(function (row) {
-        var title = row.querySelector('.basket-item-info strong');
-        if (title && title.textContent.trim() === name) row.classList.add('is-new');
-    });
-})();
-
-// ── Final-total pop + server-error shake (Phase D). Both replay from a
-// clean baseline so a re-rendered page always animates exactly once.
-(function () {
+    if (strip) {
+        var name = strip.textContent.replace(/^آخرین اسکن:\s*/, '').trim();
+        if (name) {
+            document.querySelectorAll('.basket-item').forEach(function (row) {
+                var title = row.querySelector('.basket-item-info strong');
+                if (title && title.textContent.trim() === name) row.classList.add('is-new');
+            });
+        }
+    }
+    // Final-total pop + server-error shake replay from a clean baseline so a
+    // re-rendered page animates exactly once.
     document.querySelectorAll('[data-digit-pop]').forEach(function (node) {
+        if (node.querySelector('.t-digit')) return; // already split: just replay
         var text = node.textContent;
         node.replaceChildren();
         node.classList.add('t-digit-group');
@@ -695,6 +741,9 @@ refreshTerminalStatus();
             else if (i === arr.length - 1) span.setAttribute('data-stagger', '2');
             node.appendChild(span);
         });
+    });
+    document.querySelectorAll('[data-digit-pop]').forEach(function (node) {
+        node.classList.remove('is-animating');
         void node.offsetWidth;
         node.classList.add('is-animating');
     });
@@ -703,13 +752,58 @@ refreshTerminalStatus();
         void node.offsetWidth;
         node.classList.add('is-shaking');
     });
-})();
+}
+announceScan();
+
+// ── Silent refresh: basket mutations post by fetch and swap the layout —
+// no full reload, same server truth. Terminal + confirm keep real submits.
+// A response without the layout (expired session, error page) falls back to
+// a real submit so the staffer always lands somewhere meaningful.
+var SILENT_TILL_ACTIONS = ['/sales/add-to-basket', '/sales/set-quantity',
+    '/sales/remove-from-basket', '/sales/apply-discount'];
+document.addEventListener('submit', function (event) {
+    var form = event.target;
+    if (!form || !form.action) return;
+    var silent = SILENT_TILL_ACTIONS.some(function (a) { return form.action.indexOf(a) !== -1; });
+    if (!silent) return;
+    event.preventDefault();
+    if (window.ensureCsrf) window.ensureCsrf(form);
+    // FormData from the form alone drops the clicked stepper's delta —
+    // reattach the submitter so set-quantity validates like a real submit.
+    var silentData = new FormData(form);
+    var submitter = event.submitter;
+    if (submitter && submitter.name) silentData.append(submitter.name, submitter.value);
+    fetch(form.action, {
+        method: 'POST',
+        body: silentData,
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    }).then(function (r) {
+        return r.text().then(function (html) { return { ok: r.ok, html: html }; });
+    }).then(function (res) {
+        var doc = new DOMParser().parseFromString(res.html, 'text/html');
+        var fresh = doc.querySelector('.checkout-layout');
+        var current = document.querySelector('.checkout-layout');
+        if (!fresh || !current) { form.submit(); return; }
+        current.innerHTML = fresh.innerHTML;
+        var freshMeter = doc.getElementById('profit-meter');
+        var currentMeter = document.getElementById('profit-meter');
+        if (freshMeter && currentMeter) currentMeter.replaceWith(freshMeter);
+        else if (freshMeter && !currentMeter) document.body.appendChild(freshMeter);
+        else if (!freshMeter && currentMeter) currentMeter.remove();
+        updatePaymentUi();
+        announceScan();
+        var scan = document.getElementById('barcode-input');
+        if (scan) scan.focus();
+    }).catch(function () { form.submit(); });
+});
 </script>
 
-{# ── Owner-only profit meter — kept tiny/low-contrast in the corner so a passerby won't read it ── #}
-{% if net_profit is defined %}
+{# ── Margin meter: manager and owner only, bottom-left, always in view. The
+   figure never reaches a cashier's HTML at all. ── #}
+{% if net_profit is not none %}
 <div id="profit-meter" dir="ltr" class="profit-meter">
     <span class="tnum">{% if net_profit > 0 %}+{% elif net_profit < 0 %}−{% endif %}{{ fmt(net_profit) }}</span>
+    <span class="profit-pct tnum">{{ percent(net_profit_percent) }}</span>
 </div>
 {% endif %}
 

@@ -21,6 +21,7 @@ from services._common import (
     get_setting_int as get_discount_setting,
     jalali_str,
     page_arg,
+    share,
 )
 from services.customers import signup_birthday_fields
 from services.accounting import (
@@ -35,7 +36,7 @@ from services.campaigns import (
     resolve_campaign_code,
     restore_campaign_after_refund,
 )
-from services.security import log_action, require_html_role, effective_cap, require_cap, current_staff_user, discount_allowed
+from services.security import log_action, require_html_role, effective_cap, require_cap, current_staff_user, discount_allowed, role_allows
 from services.tier import (
     update_customer_after_purchase, get_tier_config, check_tier_upgrade,
     tier_up_marker_key, TIER_RANK,
@@ -248,7 +249,7 @@ def _resolve_customer(customer_id: int, db) -> Customer | None:
 
 def _render_scan(request, customer, basket, total_amount, db,
                  referrer_code="", referrer_phone="",
-                 use_referrer_discount="1", custom_discount_amount=0,
+                 use_referrer_discount="0", custom_discount_amount=0,
                  custom_discount_percent=0, campaign_code="",
                  split_cash="", split_card="", split_credit="",
                  error=None, success=None, just_added=None):
@@ -312,12 +313,21 @@ def _render_scan(request, customer, basket, total_amount, db,
         custom_percent=custom_discount_percent,
         campaign=campaign,
     )
-    # Owner-only profit meter: gross margin minus everything already discounted.
+    # Profit meter, manager and owner only: gross margin minus everything
+    # already discounted, plus its share of the total. A cashier's page
+    # carries neither figure — not hidden, omitted.
+    staff_viewer = current_staff_user(db, request)
+    sees_margin = bool(staff_viewer) and role_allows(
+        getattr(staff_viewer, "role", ""), "manager")
     gross_profit = sum(
         (it.get("unit_price", 0) - it.get("unit_cost", 0)) * it.get("quantity", 0)
         for it in basket
     )
     net_profit = gross_profit - discounts["total_discount"]
+    net_percent = share(net_profit, total_amount)
+    if not sees_margin or not basket:
+        net_profit = None
+        net_percent = None
     # Credit-limit hint for the نسیه radio: would this basket exceed the cap?
     # Uses the surcharge-inclusive amount, since that's what the customer owes.
     pos_config = get_terminal_config(db)
@@ -362,6 +372,7 @@ def _render_scan(request, customer, basket, total_amount, db,
             "custom_discount_percent": (CUSTOM_DISCOUNT_RULES["percent_min"], CUSTOM_DISCOUNT_RULES["percent_max"], "درصد تخفیف"),
         },
         "net_profit": net_profit,
+        "net_profit_percent": net_percent,
         "credit_limit_info": credit_limit_info,
         # A saved POS configuration enables the strict approval gate. Before
         # setup, card remains available as the app's existing manual-card
@@ -568,7 +579,7 @@ async def sales_apply_discount(
     basket_json: str = Form("[]"),
     referrer_code: str = Form(""),
     referrer_phone: str = Form(""),
-    use_referrer_discount: str = Form("1"),
+    use_referrer_discount: str = Form("0"),
     custom_discount_amount: str = Form(""),
     custom_discount_percent: str = Form(""),
     campaign_code: str = Form(""),
@@ -623,7 +634,7 @@ async def sales_add_to_basket(
     basket_json: str = Form("[]"),
     referrer_code: str = Form(""),
     referrer_phone: str = Form(""),
-    use_referrer_discount: str = Form("1"),
+    use_referrer_discount: str = Form("0"),
     custom_discount_amount: str = Form(""),
     custom_discount_percent: str = Form(""),
     campaign_code: str = Form(""),
@@ -702,7 +713,7 @@ async def sales_remove_from_basket(
     basket_json: str = Form("[]"),
     referrer_code: str = Form(""),
     referrer_phone: str = Form(""),
-    use_referrer_discount: str = Form("1"),
+    use_referrer_discount: str = Form("0"),
     custom_discount_amount: str = Form(""),
     custom_discount_percent: str = Form(""),
     campaign_code: str = Form(""),
@@ -739,7 +750,7 @@ async def sales_set_quantity(
     basket_json: str = Form("[]"),
     referrer_code: str = Form(""),
     referrer_phone: str = Form(""),
-    use_referrer_discount: str = Form("1"),
+    use_referrer_discount: str = Form("0"),
     custom_discount_amount: str = Form(""),
     custom_discount_percent: str = Form(""),
     campaign_code: str = Form(""),
@@ -1575,6 +1586,23 @@ async def sales_invoice_view(sale_id: int, request: Request, db: Session = Depen
         "can_refund": effective_cap(guard, "can_refund"),
         **receipt,
     })
+
+
+@router.get("/api/product-search", response_class=JSONResponse)
+async def api_search_products(q: str = "", db: Session = Depends(get_db)):
+    """Name search for damaged tags: up to 8 active variants."""
+    needle = (q or "").strip()[:50]
+    if len(needle) < 2:
+        return {"items": []}
+    like = f"%{needle}%"
+    rows = db.query(ProductVariant).join(Product).filter(
+        ProductVariant.is_active == True,
+        (Product.name.like(like)) | (ProductVariant.barcode.like(like)),
+    ).order_by(ProductVariant.id.desc()).limit(8).all()
+    return {"items": [
+        {"variant_id": v.id, "barcode": v.barcode or "",
+         "name": v.display_name, "price": v.price,
+         "stock": v.stock_quantity or 0} for v in rows]}
 
 
 @router.get("/api/barcode/{barcode}", response_class=JSONResponse)
