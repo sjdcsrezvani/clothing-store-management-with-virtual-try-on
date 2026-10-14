@@ -160,13 +160,18 @@
                            placeholder="09123456789" dir="ltr">
                 </div>
             </div>
-            {% if customer.active_referral_count > 0 %}
-            <p>جمعاً {{ fmt(customer.referrer_discount) }} تومان تخفیف معرفی ({{ customer.active_referral_count }} عدد) — با این خرید استفاده شود؟</p>
-            <label class="check-row">
-                <input type="checkbox" id="use-ref-checkbox" {% if use_referrer_discount == '1' %}checked{% endif %}
-                       data-sync="use_referrer_discount" data-checkbox>
-                بله، از تخفیف معرفی در این فاکتور استفاده کن
-            </label>
+            {% if customer.referrer_discount > 0 %}
+            <p>جمعاً {{ fmt(customer.referrer_discount) }} تومان تخفیف معرفی ({{ customer.active_referral_count }} عدد)</p>
+            <div class="payment-options" role="radiogroup" aria-label="تخفیف معرفی">
+                <label class="payment-option">
+                    <input type="radio" data-sync="use_referrer_discount" value="1"{% if use_referrer_discount == '1' %} checked{% endif %}>
+                    <span>همین فاکتور استفاده شود</span>
+                </label>
+                <label class="payment-option">
+                    <input type="radio" data-sync="use_referrer_discount" value="0"{% if use_referrer_discount != '1' %} checked{% endif %}>
+                    <span>ذخیره برای بعد</span>
+                </label>
+            </div>
             {% endif %}
             {# ── Campaign: what this customer holds, and the code field for anyone
                  else. The held campaign is applied by the server without typing. ── #}
@@ -431,7 +436,8 @@ function setAll(name, value) {
 }
 // Mirrored inputs sync their hidden twins through one delegated listener —
 // no inline handlers. Uppercase and checkbox variants ride data attributes.
-document.addEventListener('input', function (event) {
+// Radios also fire change: same sync runs for both events.
+function syncMirror(event) {
     var input = event.target;
     if (!input || !input.getAttribute) return;
     var name = input.getAttribute('data-sync');
@@ -440,7 +446,9 @@ document.addEventListener('input', function (event) {
     if (input.type === 'checkbox') value = input.checked ? '1' : '0';
     if (input.hasAttribute('data-uppercase')) value = value.toUpperCase();
     setAll(name, value);
-});
+}
+document.addEventListener('input', syncMirror);
+document.addEventListener('change', syncMirror);
 var posRequiresApproval = {{ 'true' if pos_requires_approval else 'false' }};
 
 function updatePaymentUi() {
