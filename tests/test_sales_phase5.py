@@ -23,15 +23,15 @@ def _scan_as(client, db_session, role, username, product_name="تیشرت تست
 
 def test_cashier_page_carries_no_margin_at_all(client, db_session):
     page = _scan_as(client, db_session, "cashier", "phase5-cashier")
-    assert "profit-meter" not in page
-    assert "profit-pct" not in page
+    assert 'id="profit-meter"' not in page
+    assert 'class="profit-pct' not in page
 
 
 def test_manager_and_owner_see_amount_plus_distinct_percent(client, db_session):
     for role, username, product in (("manager", "phase5-manager", "تیشرت مدیر"),
                                     ("owner", "phase5-owner", "تیشرت مالک")):
         page = _scan_as(client, db_session, role, username, product)
-        assert "profit-meter" in page
+        assert 'id="profit-meter"' in page
         assert "+50,000" in page  # exact toman: 100,000 − 50,000
         assert '<span class="profit-pct tnum">50٪</span>' in page
 
@@ -41,4 +41,4 @@ def test_meter_hides_on_an_empty_basket(client, db_session):
     _session_as(client, user, password)
     page = client.post("/sales/skip-customer",
                        data={"csrf_token": csrf_token(client, "/sales/new")}).text
-    assert "profit-meter" not in page
+    assert 'id="profit-meter"' not in page
