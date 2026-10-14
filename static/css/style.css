@@ -904,6 +904,13 @@ tbody tr:last-child td { border-bottom: none; }
   overflow-y: auto;
   margin: 0.5rem 0;
 }
+/* Till density: the whole scan step fits 768px height at desktop widths —
+   tighter rhythm, one step smaller type, list scrolls inside. */
+.checkout-layout { font-size: 0.95rem; }
+.checkout-layout .card { padding: 0.8rem 1rem; }
+.checkout-layout h3 { font-size: 1rem; margin-bottom: 0.4rem; }
+.checkout-layout h4 { font-size: 0.9rem; margin: 0.6rem 0 0.3rem; }
+.checkout-layout .form-group { margin-bottom: 0.5rem; }
 
 .basket-item {
   display: grid;
@@ -929,6 +936,10 @@ tbody tr:last-child td { border-bottom: none; }
 #terminal-status { margin-top: 0.6rem; }
 .profit-meter { position: fixed; bottom: 4px; left: 6px; font-size: 0.62rem; line-height: 1; opacity: 0.42; color: var(--ink-soft); letter-spacing: 0.5px; z-index: 50; background: var(--card); padding: 1px 3px; border-radius: 2px; }
 .profit-pct { color: var(--info-ink); margin-inline-start: 0.35rem; }
+/* Product name search: quiet result rows under the scan box. */
+.search-results { display: flex; flex-direction: column; gap: 0.25rem; margin-top: 0.4rem; }
+.search-results button { text-align: right; padding: 0.5rem 0.7rem; min-height: 44px; border: 1px solid var(--rule); border-radius: 8px; background: var(--card); color: var(--ink); font-family: inherit; font-size: 0.9rem; cursor: pointer; }
+.search-results button:hover { border-color: var(--candy); }
 
 .basket-item-info strong { font-size: 0.95rem; display: block; }
 .basket-item-info small  { color: var(--ink-soft); font-size: 0.8rem; }

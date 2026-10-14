@@ -35,7 +35,7 @@ def test_final_total_pops_but_nothing_else_does():
     """Only the final total carries the hook — line items and the cash
     change must never animate per keystroke or per scan."""
     source = (ROOT / "templates" / "sales" / "checkout.html").read_text()
-    hooked = re.findall(r"<[^>]*data-digit-pop", source)
+    hooked = re.findall(r"<[a-zA-Z][^>]*data-digit-pop", source)
     assert len(hooked) == 1
     assert 'data-amount="{{ final }}"' in source
     assert "cash-change" in source

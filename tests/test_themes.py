@@ -700,6 +700,7 @@ NOT_A_PAGE: dict[str, str] = {
     "/admin/sales": "a shortcut that redirects to the sales history it counts",
     "/admin/setup": "the demo build's first-run wizard, and this is the owner's private build",
     "/sales/api/barcode/{barcode}": "the scanner's lookup, which answers in JSON",
+    "/sales/api/product-search": "the name search for damaged tags, which answers in JSON",
     "/admin/try-on/saved/{img_id}/download": "the saved photo itself, not a page",
 }
 

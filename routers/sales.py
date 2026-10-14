@@ -1588,6 +1588,23 @@ async def sales_invoice_view(sale_id: int, request: Request, db: Session = Depen
     })
 
 
+@router.get("/api/product-search", response_class=JSONResponse)
+async def api_search_products(q: str = "", db: Session = Depends(get_db)):
+    """Name search for damaged tags: up to 8 active variants."""
+    needle = (q or "").strip()[:50]
+    if len(needle) < 2:
+        return {"items": []}
+    like = f"%{needle}%"
+    rows = db.query(ProductVariant).join(Product).filter(
+        ProductVariant.is_active == True,
+        (Product.name.like(like)) | (ProductVariant.barcode.like(like)),
+    ).order_by(ProductVariant.id.desc()).limit(8).all()
+    return {"items": [
+        {"variant_id": v.id, "barcode": v.barcode or "",
+         "name": v.display_name, "price": v.price,
+         "stock": v.stock_quantity or 0} for v in rows]}
+
+
 @router.get("/api/barcode/{barcode}", response_class=JSONResponse)
 async def api_lookup_barcode(barcode: str, db: Session = Depends(get_db)):
     """API endpoint to lookup a product variant by barcode."""

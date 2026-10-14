@@ -1,6 +1,5 @@
 {% extends "base.html" %}
-{# Storefront accent: the till sells, so it wears the full rainbow. #}
-{% set page_accent_full = True %}
+{# Till follows the active theme's own accent — no forced rainbow. #}
 {% block title %}{% if step == 'scan' %} فروش — {{ customer.phone if customer else 'ناشناس' }}{% else %} فروش جدید — {{ store.name }}{% endif %}{% endblock %}
 {% block content %}
 
@@ -81,12 +80,6 @@
                         </span>
                     </span>
                 </div>
-                {% if customer.tier != 'silver' %}
-                <div class="info-item">
-                    <span class="label">امتیاز</span>
-                    <span class="value tnum">{{ customer.total_points }}</span>
-                </div>
-                {% endif %}
                 {% if customer.child_name %}
                 <div class="info-item">
                     <span class="label">فرزند</span>
@@ -105,10 +98,6 @@
                 </div>
                 <div class="info-item">
                     <span class="label">سطح</span>
-                    <span class="value">—</span>
-                </div>
-                <div class="info-item">
-                    <span class="label">امتیاز</span>
                     <span class="value">—</span>
                 </div>
             </div>
@@ -136,6 +125,14 @@
                            inputmode="numeric" dir="ltr" aria-label="بارکد محصول"{% if error and step == 'scan' %} aria-invalid="true" data-shake-on-load{% endif %}>
                 </div>
             </form>
+            {# Name search for damaged tags: picking a result fills the
+               barcode box and submits the scan form above. #}
+            <div class="form-group mb-0">
+                <label for="product-search-input">جستجوی نام کالا (برچسب خراب)</label>
+                <input type="text" id="product-search-input" autocomplete="off"
+                       placeholder="نام کالا..." aria-label="جستجوی نام کالا">
+            </div>
+            <div id="product-search-results" class="search-results" role="listbox" aria-label="نتایج جستجو"></div>
             {% if error and step == 'scan' %}<p class="form-error" role="alert">{{ error }}</p>{% endif %}
             {% if just_added %}<p class="scan-last" data-beep role="status">آخرین اسکن: {{ just_added }}</p>{% endif %}
         </div>
@@ -243,6 +240,7 @@
         </div>
         {% endif %}
 
+    </div>
     <div class="checkout-right">
         {# ── Basket ── #}
         <div class="basket-section card">
@@ -654,6 +652,46 @@ refreshTerminalStatus();
             if (token && token.value) confirmForm.submit();
             else updatePaymentUi();
         });
+    });
+})();
+
+// ── Product name search (damaged tags): results fill the barcode box and
+// submit the scan form. Text-only rows, debounced, aborted on retype.
+(function () {
+    var box = document.getElementById('product-search-input');
+    var results = document.getElementById('product-search-results');
+    if (!box || !results) return;
+    var timer = null;
+    var pending = null;
+    box.addEventListener('input', function () {
+        if (timer) clearTimeout(timer);
+        if (pending) pending.abort();
+        var q = box.value.trim();
+        if (q.length < 2) { results.replaceChildren(); return; }
+        timer = setTimeout(function () {
+            pending = new AbortController();
+            fetch('/sales/api/product-search?q=' + encodeURIComponent(q),
+                  { signal: pending.signal })
+                .then(function (r) { return r.ok ? r.json() : { items: [] }; })
+                .then(function (data) {
+                    results.replaceChildren();
+                    (data.items || []).forEach(function (item) {
+                        var btn = document.createElement('button');
+                        btn.type = 'button';
+                        btn.setAttribute('role', 'option');
+                        btn.textContent = item.name + ' — ' + item.barcode;
+                        btn.addEventListener('click', function () {
+                            var scan = document.getElementById('barcode-input');
+                            if (scan) {
+                                scan.value = item.barcode;
+                                scan.form.requestSubmit();
+                            }
+                        });
+                        results.appendChild(btn);
+                    });
+                })
+                .catch(function () {});
+        }, 300);
     });
 })();
 
