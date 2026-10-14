@@ -21,6 +21,7 @@ from services._common import (
     get_setting_int as get_discount_setting,
     jalali_str,
     page_arg,
+    share,
 )
 from services.customers import signup_birthday_fields
 from services.accounting import (
@@ -35,7 +36,7 @@ from services.campaigns import (
     resolve_campaign_code,
     restore_campaign_after_refund,
 )
-from services.security import log_action, require_html_role, effective_cap, require_cap, current_staff_user, discount_allowed
+from services.security import log_action, require_html_role, effective_cap, require_cap, current_staff_user, discount_allowed, role_allows
 from services.tier import (
     update_customer_after_purchase, get_tier_config, check_tier_upgrade,
     tier_up_marker_key, TIER_RANK,
@@ -312,12 +313,21 @@ def _render_scan(request, customer, basket, total_amount, db,
         custom_percent=custom_discount_percent,
         campaign=campaign,
     )
-    # Owner-only profit meter: gross margin minus everything already discounted.
+    # Profit meter, manager and owner only: gross margin minus everything
+    # already discounted, plus its share of the total. A cashier's page
+    # carries neither figure — not hidden, omitted.
+    staff_viewer = current_staff_user(db, request)
+    sees_margin = bool(staff_viewer) and role_allows(
+        getattr(staff_viewer, "role", ""), "manager")
     gross_profit = sum(
         (it.get("unit_price", 0) - it.get("unit_cost", 0)) * it.get("quantity", 0)
         for it in basket
     )
     net_profit = gross_profit - discounts["total_discount"]
+    net_percent = share(net_profit, total_amount)
+    if not sees_margin or not basket:
+        net_profit = None
+        net_percent = None
     # Credit-limit hint for the نسیه radio: would this basket exceed the cap?
     # Uses the surcharge-inclusive amount, since that's what the customer owes.
     pos_config = get_terminal_config(db)
@@ -362,6 +372,7 @@ def _render_scan(request, customer, basket, total_amount, db,
             "custom_discount_percent": (CUSTOM_DISCOUNT_RULES["percent_min"], CUSTOM_DISCOUNT_RULES["percent_max"], "درصد تخفیف"),
         },
         "net_profit": net_profit,
+        "net_profit_percent": net_percent,
         "credit_limit_info": credit_limit_info,
         # A saved POS configuration enables the strict approval gate. Before
         # setup, card remains available as the app's existing manual-card

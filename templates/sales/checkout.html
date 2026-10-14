@@ -706,10 +706,12 @@ refreshTerminalStatus();
 })();
 </script>
 
-{# ── Owner-only profit meter — kept tiny/low-contrast in the corner so a passerby won't read it ── #}
-{% if net_profit is defined %}
+{# ── Margin meter: manager and owner only, bottom-left, always in view. The
+   figure never reaches a cashier's HTML at all. ── #}
+{% if net_profit is not none %}
 <div id="profit-meter" dir="ltr" class="profit-meter">
     <span class="tnum">{% if net_profit > 0 %}+{% elif net_profit < 0 %}−{% endif %}{{ fmt(net_profit) }}</span>
+    <span class="profit-pct tnum">{{ percent(net_profit_percent) }}</span>
 </div>
 {% endif %}
 
