@@ -3,13 +3,19 @@
 
 {% set page_badge = role_label %}
 {% set page_actions %}
-<a href="/sales/new" class="btn btn-success">🛒 ثبت فروش</a>
+<a href="/sales/new" class="btn btn-success">ثبت فروش</a>
 {% endset %}
 {# The paper heading names the day and the reader's role — a printed dashboard
    travels without a URL or a badge, and a manager's printout shows fewer
    figures than the owner's. #}
 {% set print_heading = 'داشبورد فروشگاه — ' ~ today ~ ((' (' ~ role_label ~ ')') if role_label else '') %}
 {% include 'partials/page_header.html' %}
+
+{# The counter's own greeting: who is looking, which day, and the day in one
+   line. Managers and owners never receive it — their header stays titled. #}
+{% if greeting %}
+<p class="dash-greeting" role="status">سلام {{ greeting.name }}، {{ greeting.weekday }} — {{ greeting.summary }}</p>
+{% endif %}
 
 {# The gateway cannot text anyone about itself, so its outage lives here:
    one strip while the paired phone is silent, gone the moment it polls.
@@ -29,7 +35,21 @@
    Nothing below changes data either — this page reports and links. #}
 {% for section in sections %}
 
-{% if section.kind == 'attention' %}
+{% if section.kind == 'history' %}
+{# The cashier's own week: full-card days behind, one tap each. #}
+<section class="card screen-only" aria-label="روزهای گذشته">
+    <div class="history-strip">
+        {% for day in section.days %}
+        {% if day.active %}
+        <span class="history-day is-active" aria-current="true"><strong>{{ day.label }}</strong><span class="tnum">{{ day.sales }}</span></span>
+        {% else %}
+        <a class="history-day" href="{{ day.href }}"><strong>{{ day.label }}</strong><span class="tnum">{{ day.sales }}</span></a>
+        {% endif %}
+        {% endfor %}
+    </div>
+</section>
+
+{% elif section.kind == 'attention' %}
 {# The action row is the page's navigation: on paper it is a list of links to
    screens the printout cannot open, so it lives on the screen only. #}
 <section class="card screen-only" aria-labelledby="dash-{{ section.key }}">
@@ -123,6 +143,9 @@
                 {% endif %}
             </div>
             <div class="stat-sub">{{ card.sub }}</div>
+            {% if card.progress is not none %}
+            <div class="progress-track" role="progressbar" aria-valuenow="{{ card.progress }}" aria-valuemin="0" aria-valuemax="100" aria-label="{{ card.label }}"><div class="progress-fill" data-progress="{{ card.progress }}"></div></div>
+            {% endif %}
         {% if card.href %}</a>{% else %}</div>{% endif %}
         {% endfor %}
     </div>
@@ -130,5 +153,13 @@
 {% endif %}
 
 {% endfor %}
+
+<script>
+// Progress fills read their width from data, never from a style attribute.
+document.querySelectorAll('.progress-fill[data-progress]').forEach(function (el) {
+    var pct = Math.max(0, Math.min(100, parseInt(el.getAttribute('data-progress') || '0', 10)));
+    el.style.width = pct + '%';
+});
+</script>
 
 {% endblock %}

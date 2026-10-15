@@ -734,6 +734,15 @@ tbody tr:last-child td { border-bottom: none; }
   gap: 1rem;
   margin-bottom: 1.5rem;
 }
+/* Cashier greeting: one line, no card chrome — the cards carry the weight. */
+.dash-greeting { font-size: 1.05rem; font-weight: 600; margin: 0 0 1rem; }
+/* The cashier's own week: day chips with their takings, the viewed day calm. */
+.history-strip { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.history-day { display: flex; flex-direction: column; gap: 0.15rem; padding: 0.5rem 0.9rem; min-height: 44px; justify-content: center; border: 1px solid var(--rule); border-radius: 999px; font-size: 0.85rem; color: var(--ink); text-decoration: none; }
+.history-day.is-active { border-color: var(--candy); font-weight: 700; }
+/* Target progress: the track is theme chrome, the fill reads the data width. */
+.progress-track { height: 8px; border-radius: 999px; background: var(--surface-soft); margin-top: 0.5rem; overflow: hidden; }
+.progress-fill { height: 100%; width: 0; border-radius: 999px; background: var(--candy); }
 
 .stat-card {
   background: var(--card);

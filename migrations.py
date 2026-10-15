@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 34
+MIGRATION_VERSION = 35
 
 
 def migration_status(engine) -> int:
@@ -453,6 +453,13 @@ def _rebuild_sms_messages(conn) -> None:
 
 
 def _apply_revision(conn, version: int) -> None:
+    if version == 35:
+        # Who registered each customer: nullable attribution for the
+        # cashier's signup card. Legacy rows stay NULL and count for nobody.
+        _add_column_if_missing(conn, "customers", "created_by_user_id",
+                               "INTEGER")
+        return
+
     if version == 34:
         # Phase-1 till hardening: one checkout nonce creates at most one sale
         # (nullable idempotency key — legacy rows stay NULL, and SQLite lets

@@ -37,7 +37,7 @@ import jdatetime
 from sqlalchemy.orm import Session
 
 from models import CashSession, Settings, to_persian_digits
-from services._common import fmt, jalali_str, percent
+from services._common import fmt, get_setting_int, jalali_str, percent
 from services.accounting import (
     as_utc, debt_totals, get_cashbox, get_opening_balance, open_cash_session,
 )
@@ -652,13 +652,219 @@ def _gateway_status(db: Session) -> dict:
     return gateway_status(db)
 
 
-def dashboard_overview(db: Session, *, role: str = "manager") -> dict:
+# ── Cashier view: my day, nobody else's figures ────────────────────────────
+# A cashier never sees cost, profit, margins, or colleagues' numbers — not
+# hidden, never computed. Every figure below is the viewer's own sales (who
+# rang it, via the checkout's staffer), plus shop-wide totals without money
+# context beyond the day's takings. Refunds are listed, never subtracted.
+
+_FA_WEEKDAYS = ("دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه", "شنبه",
+                "یکشنبه")
+
+
+def _midnight_span(days_ago: int = 0):
+    start = (datetime.now(timezone.utc) - timedelta(days=days_ago)).replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    return start, start + timedelta(days=1)
+
+
+def _staff_day_sales(db: Session, user_id, start, end) -> dict:
+    """One staffer's day, gross: sales they rang, refunds listed separately."""
+    from models import CheckoutSession, Sale, SalePaymentPart
+    sales = db.query(Sale).join(
+        CheckoutSession, CheckoutSession.sale_id == Sale.id).filter(
+        CheckoutSession.staff_user_id == user_id,
+        Sale.created_at >= start, Sale.created_at < end,
+        Sale.payment_confirmed == True,  # noqa: E712
+    ).all()
+    live = [s for s in sales if not s.is_refunded]
+    refunded = [s for s in sales if s.is_refunded]
+    legs = {"cash": 0, "card": 0, "credit": 0}
+    manual = 0
+    loyalty = 0
+    for sale in live:
+        parts = db.query(SalePaymentPart).filter(
+            SalePaymentPart.sale_id == sale.id).all()
+        if parts:
+            for part in parts:
+                if part.method in legs:
+                    legs[part.method] += part.amount or 0
+        elif sale.payment_method in legs:
+            legs[sale.payment_method] += sale.final_amount or 0
+        try:
+            import json as _json
+            details = _json.loads(sale.discount_details or "[]") or []
+        except (ValueError, TypeError):
+            details = []
+        for line in details:
+            # The writer side names manual discounts «تخفیف ویژه» — the one
+            # prefix that separates the staffer's hand from loyalty math.
+            if str(line).startswith("تخفیف ویژه"):
+                manual += _line_amount(str(line))
+            else:
+                loyalty += _line_amount(str(line))
+    return {
+        "total": sum(s.final_amount or 0 for s in live),
+        "count": len(live),
+        "legs": legs,
+        "manual": manual,
+        "loyalty": loyalty,
+        "refund_count": len(refunded),
+        "refund_total": sum(s.final_amount or 0 for s in refunded),
+    }
+
+
+def _line_amount(line: str) -> int:
+    """The toman figure inside a discount sentence, or 0 if none parses."""
+    import re
+    match = re.search(r"([\d,٬]+)\s*تومان", line)
+    if not match:
+        return 0
+    try:
+        return int(match.group(1).replace(",", "").replace("٬", ""))
+    except (ValueError, TypeError):
+        return 0
+
+
+def _arrow(current, previous) -> dict | None:
+    """Direction only, no ratio: the cashier's delta names no amounts."""
+    if previous is None or previous <= 0:
+        return None if current <= 0 else {"text": "▲", "good": True}
+    if current == previous:
+        return {"text": "—", "good": None}
+    up = current > previous
+    return {"text": "▲" if up else "▼", "good": up}
+
+
+def _cashier_overview(db: Session, *, user_id, user_name: str | None,
+                      day_offset: int = 0) -> dict:
+    """The counter's own day: greeting, my figures, shop target, history."""
+    from models import Customer
+    from services.security import ROLE_LABELS
+    try:
+        offset = max(0, min(6, int(day_offset or 0)))
+    except (TypeError, ValueError):
+        offset = 0
+    start, end = _midnight_span(offset)
+    mine = _staff_day_sales(db, user_id, start, end)
+    prev_start, prev_end = start - timedelta(days=1), end - timedelta(days=1)
+    prev = _staff_day_sales(db, user_id, prev_start, prev_end)
+    weekday = _FA_WEEKDAYS[start.weekday()]
+    cards = [
+        {"key": "my_sales", "label": "فروش امروز من", "tone": "pine",
+         "href": "/sales/",
+         "value": _money(mine["total"]),
+         "sub": (f"{mine['count']} فاکتور · نقدی {_money(mine['legs']['cash'])} · "
+                 f"کارتی {_money(mine['legs']['card'])} · "
+                 f"نسیه {_money(mine['legs']['credit'])}"),
+         "delta": _arrow(mine["total"], prev["total"]), "clear": False},
+        {"key": "my_discounts", "label": "تخفیف‌های من", "tone": None,
+         "href": "/sales/",
+         "value": _money(mine["manual"] + mine["loyalty"]),
+         "sub": (f"دستی {_money(mine['manual'])} · "
+                 f"باشگاهی {_money(mine['loyalty'])}"),
+         "delta": None, "clear": False},
+        {"key": "my_refunds", "label": "برگشتی‌های من", "tone": None,
+         "href": "/sales/",
+         "value": str(mine["refund_count"]),
+         "sub": (f"{_money(mine['refund_total'])} برگشت خورد — از فروش کم نشده"
+                 if mine["refund_count"] else "برگشتی ثبت نشده"),
+         "delta": None, "clear": mine["refund_count"] == 0},
+    ]
+    signups = 0
+    if user_id:
+        signups = db.query(Customer).filter(
+            Customer.created_by_user_id == user_id,
+            Customer.created_at >= start,
+            Customer.created_at < end,
+        ).count()
+    cards.append(
+        {"key": "my_signups", "label": "مشتری‌های جدید من", "tone": None,
+         "href": "/admin/customers",
+         "value": str(signups),
+         "sub": "ثبت‌شده امروز توسط من",
+         "delta": None, "clear": signups == 0})
+    target = get_setting_int(db, f"sales_target_{start.weekday()}", 0)
+    if target > 0:
+        pct = min(100, int(round(mine["total"] * 100 / target)))
+        cards.append(
+            {"key": "my_target", "label": "هدف امروز فروشگاه", "tone": "sky",
+             "href": None,
+             "value": f"٪{pct}",
+             "sub": f"{_money(mine['total'])} از {_money(target)}",
+             "delta": None, "clear": False,
+             "progress": pct})
+    from services.reporting import canonical_report
+    shop = canonical_report(db, start, end)
+    cards.append(
+        {"key": "shop_today", "label": "فروش امروز فروشگاه", "tone": "sky",
+         "href": "/sales/",
+         "value": _money(shop["net_sales"]),
+         "sub": f"{shop['sale_count']} فاکتور در کل فروشگاه",
+         "delta": None, "clear": False})
+    sections = [{
+        "key": "myday", "title": "امروز من" if offset == 0 else history_day_title(offset),
+        "eyebrow": "", "kind": "stats",
+        "cards": cards, "rows": [],
+    }]
+    history = []
+    for ago in range(7):
+        day_start, day_end = _midnight_span(ago)
+        day_sales = _staff_day_sales(db, user_id, day_start, day_end)
+        label = ("امروز" if ago == 0 else
+                 "دیروز" if ago == 1 else
+                 _FA_WEEKDAYS[day_start.weekday()])
+        history.append({
+            "label": label,
+            "href": f"/admin?day={ago}",
+            "sales": _money(day_sales["total"]),
+            "active": ago == offset,
+        })
+    sections.append({
+        "key": "history", "title": "", "eyebrow": "", "kind": "history",
+        "cards": [], "rows": [], "days": history,
+    })
+    summary = (f"امروز {summary_word(mine, target > 0)}" if offset == 0
+               else f"نمایش {history[offset]['label']}")
+    return {
+        "role": "cashier",
+        "role_label": ROLE_LABELS.get("cashier", "cashier"),
+        "sections": sections,
+        "greeting": {
+            "name": user_name or "",
+            "weekday": weekday,
+            "summary": summary,
+        },
+    }
+
+
+def history_day_title(offset: int) -> str:
+    """The section title when the cashier looks back."""
+    start, _ = _midnight_span(offset)
+    label = "دیروز من" if offset == 1 else f"{_FA_WEEKDAYS[start.weekday()]} من"
+    return label
+
+
+def summary_word(mine: dict, has_target: bool = False) -> str:
+    """The greeting's one line, from the day's own figures."""
+    if mine["count"] == 0:
+        return "هنوز فروشی ثبت نشده — اولین فاکتور روز را ببندید."
+    tail = " — پیشرفت هدف پایین صفحه." if has_target else ""
+    return (f"{mine['count']} فاکتور به مبلغ {_money(mine['total'])}"
+            f"{tail}")
+
+
+def dashboard_overview(db: Session, *, role: str = "manager", user_id=None,
+                       user_name: str | None = None, day_offset: int = 0) -> dict:
     """Every card this viewer may see, already formatted, in reading order.
 
     Cards for other roles are not built at all, and a section with nothing left
     in it disappears — so a manager is never handed an empty heading implying
     there is something to do that they cannot reach.
     """
+    if role == "cashier" or (user_id and not role_allows(role, "manager")):
+        return _cashier_overview(db, user_id=user_id, user_name=user_name,
+                                 day_offset=day_offset)
     numbers = _Numbers(db)
     sections = []
     for key, title, eyebrow, kind in SECTIONS:

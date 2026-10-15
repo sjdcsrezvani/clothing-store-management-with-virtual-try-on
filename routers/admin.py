@@ -319,11 +319,17 @@ async def admin_dashboard(request: Request, db: Session = Depends(get_db)):
     that role may see and never computes the others. That is what keeps the
     template free of role logic — it prints what it is given.
     """
-    guard = require_html_role(request, db, "manager")
+    guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
 
-    view = dashboard_overview(db, role=guard.role)
+    try:
+        day_offset = max(0, min(6, int(request.query_params.get("day", 0) or 0)))
+    except (TypeError, ValueError):
+        day_offset = 0
+    view = dashboard_overview(db, role=guard.role, user_id=guard.id,
+                              user_name=guard.full_name or guard.username,
+                              day_offset=day_offset)
     return templates.TemplateResponse(request, "admin/dashboard.html", {
         **view,
         # The print heading names the day; a staple carries no URL.
@@ -350,7 +356,7 @@ async def admin_customers(
     db: Session = Depends(get_db),
 ):
     """The customer list: who they are, what they bought, and what is due."""
-    guard = require_html_role(request, db, "manager")
+    guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
 
@@ -477,7 +483,7 @@ async def admin_customer_profile(
     customer_id: int, request: Request, page: str = "1", db: Session = Depends(get_db)
 ):
     """One customer's file: purchases, discounts, referrals, debt and details."""
-    guard = require_html_role(request, db, "manager")
+    guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
 

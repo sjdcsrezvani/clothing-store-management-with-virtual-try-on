@@ -646,7 +646,7 @@ def _tryon_context(db: Session, request: Request, *, msg: str = "", err: str = "
 
 @admin_router.get("/try-on", response_class=HTMLResponse)
 async def admin_tryon_page(request: Request, msg: str = "", err: str = "", db: Session = Depends(get_db)):
-    guard = require_html_role(request, db, "manager")
+    guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
 
@@ -716,7 +716,7 @@ async def admin_tryon_add_product(
     db: Session = Depends(get_db),
 ):
     """Add a product to the try-on list by barcode. Does NOT generate an image."""
-    guard = require_html_role(request, db, "manager")
+    guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
 
@@ -746,7 +746,7 @@ async def admin_tryon_remove_product(
     db: Session = Depends(get_db),
 ):
     """Drop one scanned product. The kid photo and the rest survive."""
-    guard = require_html_role(request, db, "manager")
+    guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
     state = _state(request)
@@ -763,7 +763,7 @@ async def admin_tryon_variant(
 ):
     """Switch a scanned row to another active variant (size/color). The
     row keeps its place; photo and AI details rebuild from the new barcode."""
-    guard = require_html_role(request, db, "manager")
+    guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
     barcode = to_english_digits(barcode.strip())
@@ -785,7 +785,7 @@ async def admin_tryon_variant(
 async def admin_tryon_retry(request: Request, db: Session = Depends(get_db)):
     """Re-queue the session's failed job with identical inputs. A retry is a
     new billable generation — the button names the cost, the click approves."""
-    guard = require_html_role(request, db, "manager")
+    guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
     job = _latest_tryon_job(request, db)
@@ -817,7 +817,7 @@ async def admin_tryon_generate(
     custom_prompt: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    guard = require_html_role(request, db, "manager")
+    guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
 
@@ -896,7 +896,7 @@ async def admin_tryon_generate(
 
 @admin_router.post("/try-on/save")
 async def admin_tryon_save(request: Request, db: Session = Depends(get_db)):
-    guard = require_html_role(request, db, "manager")
+    guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
     job = _latest_tryon_job(request, db)
@@ -942,7 +942,7 @@ async def admin_tryon_download(request: Request, logo: str = "no", db: Session =
     """Stream the most-recently generated image as a downloadable file.
     `logo=yes` composites the brand logo onto it via PIL (no AI call).
     `logo=no` (default) returns the raw generated image."""
-    guard = require_html_role(request, db, "manager")
+    guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
     job = _latest_tryon_job(request, db)
@@ -981,7 +981,7 @@ async def admin_tryon_cancel_job(job_id: int, request: Request, db: Session = De
     since the status CHECK knows no 'cancelled' and a never-ran job needs no
     audit row. A running job is already billing, so it finishes (no refund
     fiction). Pending cancels never touched quota, which burns on success."""
-    guard = require_html_role(request, db, "manager")
+    guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
     job = db.query(BackgroundJob).filter(
@@ -1017,7 +1017,7 @@ async def admin_tryon_test_key(request: Request, db: Session = Depends(get_db)):
 
 @admin_router.post("/try-on/clear")
 async def admin_tryon_clear(request: Request, db: Session = Depends(get_db)):
-    guard = require_html_role(request, db, "manager")
+    guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
     state = _state(request)
@@ -1031,7 +1031,7 @@ async def admin_tryon_clear(request: Request, db: Session = Depends(get_db)):
 
 @admin_router.get("/try-on/saved", response_class=HTMLResponse)
 async def admin_tryon_saved(request: Request, db: Session = Depends(get_db)):
-    guard = require_html_role(request, db, "manager")
+    guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
     query = db.query(GeneratedImage).order_by(GeneratedImage.created_at.desc())
@@ -1104,7 +1104,7 @@ async def admin_tryon_saved(request: Request, db: Session = Depends(get_db)):
 @admin_router.post("/try-on/saved/{img_id}/delete", response_class=HTMLResponse)
 async def admin_tryon_saved_delete(img_id: int, request: Request, db: Session = Depends(get_db)):
     """Delete one saved generation (row + file). Dialog-confirmed on the page."""
-    guard = require_html_role(request, db, "manager")
+    guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
     img = db.query(GeneratedImage).filter(GeneratedImage.id == img_id).first()
@@ -1131,7 +1131,7 @@ async def admin_tryon_saved_download(
     logo: str = "no",
     db: Session = Depends(get_db),
 ):
-    guard = require_html_role(request, db, "manager")
+    guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
     record = db.query(GeneratedImage).filter(GeneratedImage.id == img_id).first()
