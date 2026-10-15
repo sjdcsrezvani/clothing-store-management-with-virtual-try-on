@@ -2125,7 +2125,8 @@ async def admin_dashboard_poll(request: Request, db: Session = Depends(get_db)):
     greeting = view.get("greeting")
     return {
         "cards": cards,
-        "greeting": (f"سلام {greeting['name']}، {greeting['weekday']} — "
+        "greeting": (f"سلام {greeting['name']}، {greeting['salutation']} — "
+                     f"{greeting['weekday']} {greeting['date']}، ساعت {greeting['time']} — "
                      f"{greeting['summary']}") if greeting else None,
     }
 

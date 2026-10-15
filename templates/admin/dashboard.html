@@ -14,7 +14,7 @@
 {# The counter's own greeting: who is looking, which day, and the day in one
    line. Managers and owners never receive it — their header stays titled. #}
 {% if greeting %}
-<p class="dash-greeting" role="status" data-poll-greeting>سلام {{ greeting.name }}، {{ greeting.weekday }} — {{ greeting.summary }}</p>
+<p class="dash-greeting" role="status" data-poll-greeting>سلام {{ greeting.name }}، {{ greeting.salutation }} — {{ greeting.weekday }} {{ greeting.date }}، ساعت {{ greeting.time }} — {{ greeting.summary }}</p>
 {% endif %}
 
 {# The gateway cannot text anyone about itself, so its outage lives here:

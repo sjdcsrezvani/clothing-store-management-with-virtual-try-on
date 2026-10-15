@@ -673,6 +673,27 @@ _FA_WEEKDAYS = ("دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجش
                 "یکشنبه")
 
 
+def _greeting_stamp() -> tuple[str, str, str]:
+    """Time-of-day salutation plus the Jalali date and clock time.
+
+    The hour comes from the shop's own wall clock; the date/time from the
+    same ``jalali_str`` every other stamp on this page reads.
+    """
+    now = datetime.now(timezone.utc)
+    hour = datetime.now().hour
+    if 5 <= hour < 12:
+        salutation = "صبح بخیر"
+    elif 12 <= hour < 14:
+        salutation = "ظهر بخیر"
+    elif 14 <= hour < 19:
+        salutation = "عصر بخیر"
+    else:
+        salutation = "شب بخیر"
+    stamp = jalali_str(now)
+    date_part, _, time_part = stamp.partition(" ")
+    return salutation, date_part, time_part
+
+
 def _midnight_span(days_ago: int = 0):
     start = (datetime.now(timezone.utc) - timedelta(days=days_ago)).replace(
         hour=0, minute=0, second=0, microsecond=0)
@@ -837,6 +858,7 @@ def _cashier_overview(db: Session, *, user_id, user_name: str | None,
     })
     summary = (f"امروز {summary_word(mine, target > 0)}" if offset == 0
                else f"نمایش {history[offset]['label']}")
+    salutation, date_part, time_part = _greeting_stamp()
     return {
         "role": "cashier",
         "role_label": ROLE_LABELS.get("cashier", "cashier"),
@@ -844,6 +866,9 @@ def _cashier_overview(db: Session, *, user_id, user_name: str | None,
         "greeting": {
             "name": user_name or "",
             "weekday": weekday,
+            "salutation": salutation,
+            "date": date_part,
+            "time": time_part,
             "summary": summary,
         },
     }
@@ -1050,9 +1075,13 @@ def _manager_greeting(db: Session, role: str, user_name: str | None,
     shop = canonical_report(db, start, start + timedelta(days=1))
     urgent = sum(len(s.get("cards", [])) for s in sections
                  if s["key"] == "urgent")
+    salutation, date_part, time_part = _greeting_stamp()
     return {
         "name": user_name,
         "weekday": _FA_WEEKDAYS[start.weekday()],
+        "salutation": salutation,
+        "date": date_part,
+        "time": time_part,
         "summary": (f"فروش امروز {_money(shop['net_sales'])} — "
                     f"{urgent} اقدام فوری" if urgent else
                     f"فروش امروز {_money(shop['net_sales'])} — روز آرام است."),
