@@ -1413,6 +1413,14 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 .ranked-units { color: var(--ink-soft); font-size: 0.75rem; }
 .ranked-money { font-weight: 800; }
 .ranked-profit { color: var(--success-ink); font-size: 0.78rem; }
+.ranked-discount { color: var(--ink-soft); font-size: 0.75rem; }
+/* Staff board toggle + inline goal editor live in the section heading area. */
+.rank-toggle { display: flex; gap: 0.25rem; }
+.rank-toggle a { padding: 0.4rem 0.9rem; min-height: 44px; display: inline-flex; align-items: center; border: 1px solid var(--rule); border-radius: 999px; font-size: 0.85rem; color: var(--ink-soft); text-decoration: none; }
+.rank-toggle a[aria-current] { border-color: var(--candy); color: var(--ink); font-weight: 700; }
+.targets-editor { margin-top: 1rem; }
+.targets-editor summary { cursor: pointer; color: var(--link); font-weight: 600; min-height: 44px; display: inline-flex; align-items: center; }
+.targets-editor .form-row { margin-top: 0.6rem; }
 
 /* The month in prose — the dashboard's reading strip. Prose lines like the
    ranked rows', but no ranks and no figures to align: it is a paragraph list. */

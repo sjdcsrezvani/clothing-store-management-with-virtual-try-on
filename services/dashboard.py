@@ -603,7 +603,7 @@ CARDS: tuple[dict, ...] = (
 # present where it adds a fact the title does not already carry.
 SECTIONS: tuple[tuple[str, str, str, str], ...] = (
     ("urgent", "اقدام فوری", "پول", "attention"),
-    ("attention", "نیازمند توجه", "اقدام‌های امروز", "attention"),
+    ("attention", "نیازمند توجه", "عملیات", "attention"),
     ("today", "امروز", "", "stats"),
     ("month", "این ماه", "", "stats"),
     # The month in prose, from the same builders the analytics page and the
