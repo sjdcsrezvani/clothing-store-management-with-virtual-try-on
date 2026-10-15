@@ -734,8 +734,12 @@ tbody tr:last-child td { border-bottom: none; }
   gap: 1rem;
   margin-bottom: 1.5rem;
 }
-/* Cashier greeting: one line, no card chrome — the cards carry the weight. */
-.dash-greeting { font-size: 1.05rem; font-weight: 600; margin: 0 0 1rem; }
+/* Cashier greeting: one line, no card chrome — the cards carry the weight.
+   Generous line-height for the tall Persian glyphs, balanced wrapping so a
+   long line never strands one word, and a jitter-free clock: tabular figures
+   that never shift the line when the minutes tick. */
+.dash-greeting { font-size: 1.1rem; font-weight: 600; line-height: 2.1; margin: 0 0 1rem; text-wrap: balance; }
+.dash-greeting [data-clock] { font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* The cashier's own week: day chips with their takings, the viewed day calm. */
 .history-strip { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .history-day { display: flex; flex-direction: column; gap: 0.15rem; padding: 0.5rem 0.9rem; min-height: 44px; justify-content: center; border: 1px solid var(--rule); border-radius: 999px; font-size: 0.85rem; color: var(--ink); text-decoration: none; }

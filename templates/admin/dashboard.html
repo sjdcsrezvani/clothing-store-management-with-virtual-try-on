@@ -14,7 +14,7 @@
 {# The counter's own greeting: who is looking, which day, and the day in one
    line. Managers and owners never receive it — their header stays titled. #}
 {% if greeting %}
-<p class="dash-greeting" role="status" data-poll-greeting>سلام {{ greeting.name }}، {{ greeting.salutation }} — {{ greeting.weekday }} {{ greeting.date }}، ساعت {{ greeting.time }} — {{ greeting.summary }}</p>
+<p class="dash-greeting" role="status" data-poll-greeting>سلام {{ greeting.name }}، {{ greeting.salutation }} — {{ greeting.weekday }} {{ greeting.date }}، ساعت <span class="tnum" data-clock>{{ greeting.time }}</span> — {{ greeting.summary }}</p>
 {% endif %}
 
 {# The gateway cannot text anyone about itself, so its outage lives here:
@@ -207,6 +207,35 @@ document.querySelectorAll('.progress-fill[data-progress]').forEach(function (el)
     el.style.width = pct + '%';
 });
 
+// Live clock: the greeting's minutes tick from the shop's own clock, every
+// twenty seconds — no reload, no five-minute wait for the poll.
+function tickClock() {
+    try {
+        var t = new Intl.DateTimeFormat('fa-IR', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
+        document.querySelectorAll('[data-clock]').forEach(function (el) {
+            el.textContent = t;
+        });
+    } catch (e) {}
+}
+tickClock();
+setInterval(tickClock, 20 * 1000);
+
+// Rebuild the greeting from parts so the live clock span survives a poll —
+// a textContent overwrite would kill the span the ticker writes to.
+function renderGreeting(el, p) {
+    el.textContent = '';
+    el.appendChild(document.createTextNode(
+        'سلام ' + p.name + '، ' + p.salutation + ' — ' +
+        p.weekday + ' ' + p.date + '، ساعت '));
+    var s = document.createElement('span');
+    s.className = 'tnum';
+    s.setAttribute('data-clock', '');
+    s.textContent = p.time;
+    el.appendChild(s);
+    el.appendChild(document.createTextNode(' — ' + p.summary));
+    tickClock();
+}
+
 // Silent poll, every five minutes: the figures tick in place, the page never
 // reloads. A failed poll keeps yesterday's numbers rather than blanking them.
 setInterval(function () {
@@ -223,7 +252,11 @@ setInterval(function () {
                     el.textContent = card.sub;
                 });
             });
-            if (data.greeting) {
+            if (data.greeting_parts) {
+                document.querySelectorAll('[data-poll-greeting]').forEach(function (el) {
+                    renderGreeting(el, data.greeting_parts);
+                });
+            } else if (data.greeting) {
                 document.querySelectorAll('[data-poll-greeting]').forEach(function (el) {
                     el.textContent = data.greeting;
                 });
