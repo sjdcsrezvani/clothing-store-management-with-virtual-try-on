@@ -103,6 +103,52 @@
     {% endif %}
 </section>
 
+{% elif section.kind == 'staff' %}
+<section class="card" aria-labelledby="dash-{{ section.key }}">
+    <div class="section-heading">
+        <div>
+            <span class="eyebrow">{{ section.eyebrow }}</span>
+            <h3 id="dash-{{ section.key }}">{{ section.title }}</h3>
+        </div>
+        <div class="rank-toggle">
+            <a href="/admin"{% if not section.rank_week %} aria-current="true"{% endif %}>امروز</a>
+            <a href="/admin?rank=week"{% if section.rank_week %} aria-current="true"{% endif %}>۷ روز</a>
+        </div>
+    </div>
+    {% if section.rows %}
+    <ol class="ranked-list">
+        {% for row in section.rows %}
+        <li class="ranked-row">
+            <span class="ranked-rank tnum">{{ loop.index }}</span>
+            <span class="ranked-name"><strong>{{ row.name }}</strong></span>
+            <span class="ranked-figures">
+                <span class="ranked-units tnum">{{ row.invoices }} فاکتور</span>
+                <span class="ranked-money tnum">{{ row.sales }} ت</span>
+                <span class="ranked-discount tnum">تخفیف {{ row.discounts }} ت</span>
+            </span>
+        </li>
+        {% endfor %}
+    </ol>
+    {% else %}
+    <p class="empty-state">هنوز فروشی ثبت نشده است.</p>
+    {% endif %}
+    {% if section.targets_editable %}
+    <details class="targets-editor">
+        <summary>تعیین هدف روزانه</summary>
+        <form method="post" action="/admin/targets" class="form-row">
+            {% for w in range(7) %}
+            <div class="form-group">
+                <label for="tgt-{{ w }}">{{ section.weekdays[w] }}</label>
+                <input type="text" inputmode="numeric" id="tgt-{{ w }}" name="sales_target_{{ w }}"
+                       value="{{ section.targets[w|string] }}" dir="ltr">
+            </div>
+            {% endfor %}
+            <button type="submit" class="btn btn-primary btn-sm">ذخیره هدف‌ها</button>
+        </form>
+    </details>
+    {% endif %}
+</section>
+
 {% elif section.kind == 'reading' %}
 <section class="card" aria-labelledby="dash-{{ section.key }}">
     <div class="section-heading">

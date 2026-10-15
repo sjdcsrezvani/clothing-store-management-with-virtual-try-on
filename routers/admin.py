@@ -329,7 +329,8 @@ async def admin_dashboard(request: Request, db: Session = Depends(get_db)):
         day_offset = 0
     view = dashboard_overview(db, role=guard.role, user_id=guard.id,
                               user_name=guard.full_name or guard.username,
-                              day_offset=day_offset)
+                              day_offset=day_offset,
+                              rank_week=request.query_params.get("rank") == "week")
     return templates.TemplateResponse(request, "admin/dashboard.html", {
         **view,
         # The print heading names the day; a staple carries no URL.
@@ -2003,6 +2004,13 @@ SETTINGS_NUMERIC_RULES = {
     "check_upcoming_days": (1, 90, "بازه چک‌های نزدیک"),
     "cash_opening_balance": (0, None, "موجودی پیش‌فرض صندوق"),
     "low_stock_threshold": (0, 999, "آستانه کم‌موجودی"),
+    "sales_target_0": (0, None, "هدف فروش دوشنبه"),
+    "sales_target_1": (0, None, "هدف فروش سه‌شنبه"),
+    "sales_target_2": (0, None, "هدف فروش چهارشنبه"),
+    "sales_target_3": (0, None, "هدف فروش پنجشنبه"),
+    "sales_target_4": (0, None, "هدف فروش جمعه"),
+    "sales_target_5": (0, None, "هدف فروش شنبه"),
+    "sales_target_6": (0, None, "هدف فروش یکشنبه"),
 }
 
 
@@ -2060,6 +2068,40 @@ def _settings_tab(request: Request) -> str:
     wanted = (request.query_params.get("tab") or "").strip()
     known = {tab_id for tab_id, _title, _icon in SETTINGS_TABS}
     return wanted if wanted in known else "shop"
+
+
+@router.post("/targets", response_class=HTMLResponse)
+async def admin_update_targets(request: Request, db: Session = Depends(get_db)):
+    """Weekday sales goals, settable by manager and owner alike.
+
+    Only the seven goal keys are accepted — anything else posted here is
+    ignored, so this narrow door can never become a second settings page.
+    """
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    form = await request.form()
+    for weekday in range(7):
+        key = f"sales_target_{weekday}"
+        raw = str(form.get(key, "")).strip()
+        if not raw:
+            continue
+        try:
+            number = int(to_english_digits(raw))
+        except (TypeError, ValueError):
+            continue
+        if number < 0:
+            continue
+        row = db.query(Settings).filter(Settings.key == key).first()
+        if row is None:
+            db.add(Settings(key=key, value=str(number)))
+        else:
+            row.value = str(number)
+    db.commit()
+    log_action(db, "targets_update", "هدف روزانه فروش به‌روز شد",
+               request=request)
+    return RedirectResponse(url="/admin?msg=هدف روزانه فروش ذخیره شد.",
+                            status_code=303)
 
 
 @router.get("/settings", response_class=HTMLResponse)
@@ -3326,7 +3368,7 @@ async def admin_birthdays(request: Request, db: Session = Depends(get_db)):
     soon, and who already received this year's wish — nothing sends until the
     owner ticks and confirms.
     """
-    guard = require_html_role(request, db, "owner")
+    guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
@@ -3400,7 +3442,7 @@ async def admin_birthdays_send(request: Request, customer_ids: list[int] = Form(
     occasion, per year) still guards a double-send, so a re-submit of the same
     selection reports skips instead of repeat wishes.
     """
-    guard = require_html_role(request, db, "owner")
+    guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
@@ -3478,7 +3520,7 @@ async def admin_follow_ups(request: Request, db: Session = Depends(get_db)):
     than at the next pass, and whoever the sweep reached first is simply no
     longer on the list.
     """
-    guard = require_html_role(request, db, "owner")
+    guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
@@ -3523,7 +3565,7 @@ async def admin_follow_ups_send(request: Request, template_id: int = Form(0),
     twice. Both paths record the same per-purchase reference, and the second to
     arrive loses politely with a count the page reports.
     """
-    guard = require_html_role(request, db, "owner")
+    guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
@@ -3565,7 +3607,7 @@ async def admin_tier_downgrades(request: Request, db: Session = Depends(get_db))
     when the rule was simply switched off — so this page exists to make the
     decision visible, and to be the only way it is ever made.
     """
-    guard = require_html_role(request, db, "owner")
+    guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
@@ -3606,7 +3648,7 @@ async def admin_tier_downgrades_apply(
     trading, and a purchase in the meantime is exactly what the rule says
     protects the tier.
     """
-    guard = require_html_role(request, db, "owner")
+    guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
@@ -3634,7 +3676,7 @@ TIER_UP_SMS_LIMIT = 10
 
 @router.get("/tier-up", response_class=HTMLResponse)
 async def admin_tier_up(request: Request, db: Session = Depends(get_db)):
-    guard = require_html_role(request, db, "owner")
+    guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
@@ -3697,7 +3739,7 @@ async def admin_tier_up(request: Request, db: Session = Depends(get_db)):
 @router.post("/tier-up/send", response_class=HTMLResponse)
 async def admin_tier_up_send(request: Request, customer_ids: list[str] = Form([]), db: Session = Depends(get_db)):
     """Send tier-up SMS to selected customers, capped so we never blast >10 at once."""
-    guard = require_html_role(request, db, "owner")
+    guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 

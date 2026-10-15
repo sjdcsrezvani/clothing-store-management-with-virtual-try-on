@@ -106,6 +106,37 @@
                        value="{{ settings.get('receipt_footer_note', '') }}" placeholder="ممنون از خرید شما">
             </div>
         </div>
+        <h4>هدف روزانه فروش (تومان)</h4>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="sales_target_5">شنبه</label>
+                <span class="field-unit">{{ num('sales_target_5', settings.get('sales_target_5', '0')) }}<span class="unit">تومان</span></span>
+            </div>
+            <div class="form-group">
+                <label for="sales_target_6">یکشنبه</label>
+                <span class="field-unit">{{ num('sales_target_6', settings.get('sales_target_6', '0')) }}<span class="unit">تومان</span></span>
+            </div>
+            <div class="form-group">
+                <label for="sales_target_0">دوشنبه</label>
+                <span class="field-unit">{{ num('sales_target_0', settings.get('sales_target_0', '0')) }}<span class="unit">تومان</span></span>
+            </div>
+            <div class="form-group">
+                <label for="sales_target_1">سه‌شنبه</label>
+                <span class="field-unit">{{ num('sales_target_1', settings.get('sales_target_1', '0')) }}<span class="unit">تومان</span></span>
+            </div>
+            <div class="form-group">
+                <label for="sales_target_2">چهارشنبه</label>
+                <span class="field-unit">{{ num('sales_target_2', settings.get('sales_target_2', '0')) }}<span class="unit">تومان</span></span>
+            </div>
+            <div class="form-group">
+                <label for="sales_target_3">پنجشنبه</label>
+                <span class="field-unit">{{ num('sales_target_3', settings.get('sales_target_3', '0')) }}<span class="unit">تومان</span></span>
+            </div>
+            <div class="form-group">
+                <label for="sales_target_4">جمعه</label>
+                <span class="field-unit">{{ num('sales_target_4', settings.get('sales_target_4', '0')) }}<span class="unit">تومان</span></span>
+            </div>
+        </div>
         <div class="settings-savebar"><button type="submit" class="btn btn-primary">ذخیره فروش و صندوق</button></div>
     </form>
 {% elif active_tab == 'discounts' %}

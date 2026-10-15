@@ -566,15 +566,15 @@ CARDS: tuple[dict, ...] = (
           tone="persimmon", href="/admin/credit"),
     _card("inventory_value", "balances", "ارزش موجودی انبار", _build_inventory_value,
           min_role="owner", tone="ink", href="/admin/products"),
-    # کارهای دوره‌ای — all owner-only, because every destination is owner-only
+    # کارهای دوره‌ای — the sends are manager-operable, so managers see them;
     _card("birthdays_due", "periodic", "پیامک تولد", _build_birthdays_due,
-          min_role="owner", href="/admin/birthdays"),
+          min_role="manager", href="/admin/birthdays"),
     _card("follow_ups_due", "periodic", "پیگیری مشتریان", _build_follow_ups_due,
-          min_role="owner", href="/admin/follow-ups"),
+          min_role="manager", href="/admin/follow-ups"),
     _card("tier_ups_due", "periodic", "ارتقای سطح", _build_tier_ups_due,
-          min_role="owner", href="/admin/tier-up"),
+          min_role="manager", href="/admin/tier-up"),
     _card("downgrades_due", "periodic", "کاهش سطح", _build_downgrades_due,
-          min_role="owner", tone="danger", href="/admin/tier-downgrades"),
+          min_role="manager", tone="danger", href="/admin/tier-downgrades"),
     # باشگاه مشتریان
     _card("club_total", "club", "اعضای باشگاه", _build_club_total,
           href="/admin/customers"),
@@ -854,8 +854,90 @@ def summary_word(mine: dict, has_target: bool = False) -> str:
             f"{tail}")
 
 
+# ── Staff ranking + live counter (manager and owner) ─────────────────────────
+# One query per staffer per span — the ranking is a handful of rows, and each
+# row reuses the same day-math as the cashier's own cards, so the figures a
+# manager compares are the figures each cashier sees.
+
+def _sellers_in_span(db: Session, start, end) -> list:
+    """Everyone who rang in the span, plus every active staffer on the roster.
+
+    Ex-staff appear only with past sales beside them (history keeps them);
+    active staff appear even at zero so an empty day still reads as a roster.
+    """
+    from models import CheckoutSession, Sale, StaffUser
+    rang = {row[0] for row in db.query(CheckoutSession.staff_user_id).join(
+        Sale, CheckoutSession.sale_id == Sale.id).filter(
+        CheckoutSession.staff_user_id.isnot(None),
+        Sale.created_at >= start, Sale.created_at < end,
+        Sale.payment_confirmed == True,  # noqa: E712
+    ).distinct().all()}
+    roster = {u.id for u in db.query(StaffUser).filter(
+        StaffUser.is_active == True).all()}  # noqa: E712
+    users = db.query(StaffUser).filter(
+        StaffUser.id.in_(rang | roster)).all()
+    return sorted(users, key=lambda u: (u.full_name or u.username))
+
+
+def _staff_ranking(db: Session, *, week: bool = False) -> list[dict]:
+    """Per-seller today (or trailing 7 days): sales, invoices, discounts."""
+    if week:
+        end = _midnight_span(0)[1]
+        start = end - timedelta(days=7)
+    else:
+        start, end = _midnight_span(0)
+    rows = []
+    for user in _sellers_in_span(db, start, end):
+        day = _staff_day_sales(db, user.id, start, end)
+        rows.append({
+            "name": user.full_name or user.username,
+            "invoices": day["count"],
+            "sales": _money(day["total"]),
+            "discounts": _money(day["manual"] + day["loyalty"]),
+            "_total": day["total"],
+        })
+    rows.sort(key=lambda r: r["_total"], reverse=True)
+    for row in rows:
+        del row["_total"]
+    return rows
+
+
+def _live_counter(db: Session) -> dict | None:
+    """Open drawers and live baskets right now, as one compact panel."""
+    from models import CheckoutSession
+    from services.accounting import open_cash_session
+    sessions = db.query(CheckoutSession).filter(
+        CheckoutSession.state.in_(("draft", "reserved", "payment_pending")),
+    ).all()
+    open_session = open_cash_session(db)
+    bits = []
+    if open_session:
+        bits.append("صندوق باز است")
+    if sessions:
+        bits.append(f"{len(sessions)} سبد باز")
+    if not bits:
+        return None
+    return {"value": f"{len(sessions)} سبد" if sessions else "—",
+            "sub": " · ".join(bits)}
+
+
+def _shop_target(db: Session) -> dict | None:
+    """Today's shop takings against the weekday goal — managers see it too."""
+    from services.reporting import canonical_report
+    start, end = _midnight_span(0)
+    target = get_setting_int(db, f"sales_target_{start.weekday()}", 0)
+    if target <= 0:
+        return None
+    shop = canonical_report(db, start, end)
+    pct = min(100, int(round(shop["net_sales"] * 100 / target)))
+    return {"value": f"٪{pct}",
+            "sub": f"{_money(shop['net_sales'])} از {_money(target)}",
+            "progress": pct}
+
+
 def dashboard_overview(db: Session, *, role: str = "manager", user_id=None,
-                       user_name: str | None = None, day_offset: int = 0) -> dict:
+                       user_name: str | None = None, day_offset: int = 0,
+                       rank_week: bool = False) -> dict:
     """Every card this viewer may see, already formatted, in reading order.
 
     Cards for other roles are not built at all, and a section with nothing left
@@ -896,6 +978,38 @@ def dashboard_overview(db: Session, *, role: str = "manager", user_id=None,
                 })
         if section["cards"] or section["rows"] or section.get("sentences") or kind == "top":
             sections.append(section)
+    if role_allows(role, "manager"):
+        # The counter, watched: who rang what, what is live, whether the day
+        # meets its goal. Names are a manager's working material here.
+        staff_rows = _staff_ranking(db, week=rank_week)
+        sections.append({
+            "key": "staff", "title": "فروشندگان", "eyebrow": "امروز" if not rank_week else "۷ روز گذشته",
+            "kind": "staff", "cards": [], "rows": staff_rows,
+            "rank_week": rank_week,
+            "targets_editable": True,
+            "targets": {str(w): get_setting_int(db, f"sales_target_{w}", 0)
+                        for w in range(7)},
+            "weekdays": ["دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه",
+                         "شنبه", "یکشنبه"],
+        })
+        live = _live_counter(db)
+        if live is not None:
+            sections.append({
+                "key": "live", "title": "الان صندوق", "eyebrow": "", "kind": "stats",
+                "cards": [{"key": "live_counter", "label": "صندوق و سبدهای باز",
+                           "tone": None, "href": "/admin/cashbox",
+                           "delta": None, "clear": False, **live}],
+                "rows": [],
+            })
+        target = _shop_target(db)
+        if target is not None:
+            sections.append({
+                "key": "target", "title": "هدف امروز", "eyebrow": "", "kind": "stats",
+                "cards": [{"key": "shop_target", "label": "هدف امروز فروشگاه",
+                           "tone": "sky", "href": None,
+                           "delta": None, "clear": False, **target}],
+                "rows": [],
+            })
     return {
         "role": role,
         "role_label": ROLE_LABELS.get(role, role),
