@@ -390,7 +390,25 @@ def _build_cashbox(numbers: _Numbers, role: str) -> dict:
     cash = numbers.cash
     movement = (f"امروز {_money(cash['cash_in'])} ورود · {_money(cash['cash_out'])} خروج"
                 if cash["cash_in"] or cash["cash_out"] else "امروز ورود و خروجی نداشته")
-    return {"value": "باز نشده", "sub": movement}
+    notes = [movement]
+    # The merged cash card carries what used to be two alert cards: a drawer
+    # short/over from the last closed shift, and a drawer left open overnight.
+    variance = _build_cash_variance(numbers, role)
+    if variance is not None:
+        notes.append(variance["sub"])
+    stale = _build_cash_stale(numbers, role)
+    if stale is not None:
+        notes.append(stale["sub"])
+    return {"value": "باز نشده", "sub": " · ".join(notes)}
+
+
+def _build_sms_failed(numbers: _Numbers, role: str) -> dict | None:
+    """Messages that tried the gateway and died — money already spent on sends
+    that never arrived. Quiet when the failure queue is empty."""
+    failed = numbers.sms["failed"]
+    if not failed:
+        return None
+    return {"value": str(failed), "sub": "ارسال ناموفق — بررسی و ارسال دوباره"}
 
 
 def _build_cash_variance(numbers: _Numbers, role: str) -> dict | None:
@@ -489,8 +507,11 @@ def _build_month_expenses(numbers: _Numbers, role: str) -> dict:
 
 def _build_debt(numbers: _Numbers, role: str) -> dict:
     debts = numbers.debts
-    return {"value": _money(debts["total_debt"]),
-            "sub": f"{debts['debtor_count']} مشتری بدهکار"}
+    overdue = debts["overdue_customers"]
+    detail = f"{debts['debtor_count']} مشتری بدهکار"
+    if overdue:
+        detail += f" · {overdue} سررسیدشده"
+    return {"value": _money(debts["total_debt"]), "sub": detail}
 
 
 def _build_inventory_value(numbers: _Numbers, role: str) -> dict:
@@ -503,21 +524,13 @@ def _build_inventory_value(numbers: _Numbers, role: str) -> dict:
 
 def _build_club_total(numbers: _Numbers, role: str) -> dict:
     club = numbers.club
-    archived = club["archived_count"]
-    detail = f"{archived} بایگانی‌شده جدا از این عدد" if archived else "همه اعضای فعال"
-    return {"value": str(club["total"]), "sub": detail}
+    new = club["new_this_month"]
+    return {"value": str(club["total"]),
+            "sub": f"{new} عضو جدید این ماه"}
 
 
 def _build_club_active(numbers: _Numbers, role: str) -> dict:
     return {"value": str(numbers.club["active"]), "sub": "خرید در ۳۰ روز اخیر"}
-
-
-def _build_club_new(numbers: _Numbers, role: str) -> dict:
-    return {"value": str(numbers.club["new_this_month"]), "sub": "عضو جدید در این ماه"}
-
-
-def _build_club_debtors(numbers: _Numbers, role: str) -> dict:
-    return {"value": str(numbers.club["debtor_count"]), "sub": "مشتری با مانده بدهی"}
 
 
 def _card(key: str, section: str, label: str, build, *,
@@ -528,21 +541,22 @@ def _card(key: str, section: str, label: str, build, *,
 
 
 CARDS: tuple[dict, ...] = (
-    # نیازمند توجه
+    # اقدام فوری — money first: figures that lose value while unread.
+    _card("pos", "urgent", "تراکنش کارتخوان", _build_pos_unresolved,
+          min_role="owner", tone="danger", href="/admin/pos-reconciliation"),
+    _card("credit", "urgent", "نسیه سررسیدشده", _build_credit_overdue,
+          tone="info", href="/admin/credit?status=overdue"),
+    _card("checks", "urgent", "چک سررسیدشده", _build_checks,
+          tone="info", href="/admin/checks"),
+    _card("books_disagree", "urgent", "مغایرت دفاتر", _build_books_disagree,
+          tone="danger", href="/admin/accounting"),
+    _card("sms_failed", "urgent", "پیامک ناموفق", _build_sms_failed,
+          tone="danger", href="/admin/sms"),
+    # نیازمند توجه — the chores: ops work that waits without costing.
     _card("stock", "attention", "تنوع کم‌موجود", _build_stock,
           tone="warning", href="/admin/products"),
-    _card("pos", "attention", "تراکنش کارتخوان", _build_pos_unresolved,
-          tone="danger", href="/admin/pos-reconciliation"),
-    _card("credit", "attention", "نسیه سررسیدشده", _build_credit_overdue,
-          tone="info", href="/admin/credit?status=overdue"),
-    _card("checks", "attention", "چک سررسیدشده", _build_checks,
-          tone="info", href="/admin/checks"),
-    _card("cash_variance", "attention", "اختلاف صندوق", _build_cash_variance,
-          tone="danger", href="/admin/cashbox"),
     _card("cash_stale", "attention", "صندوق باز مانده", _build_cash_stale,
           tone="warning", href="/admin/cashbox"),
-    _card("books_disagree", "attention", "مغایرت دفاتر", _build_books_disagree,
-          tone="danger", href="/admin/accounting"),
     _card("backup", "attention", "پشتیبان‌گیری", _build_backup,
           min_role="owner", tone="success", href="/admin/backups"),
     _card("sms", "attention", "پیامک", _build_sms,
@@ -560,12 +574,12 @@ CARDS: tuple[dict, ...] = (
     _card("month_profit", "month", "سود خالص", _build_month_profit,
           min_role="owner", tone="pine"),
     _card("month_expenses", "month", "هزینه‌ها", _build_month_expenses,
-          min_role="owner", tone="saffron", href="/admin/expenses"),
+          min_role="manager", tone="saffron", href="/admin/expenses"),
     # مانده‌ها — balances, which belong to no single day or month
     _card("debt", "balances", "نسیه در گردش", _build_debt,
           tone="persimmon", href="/admin/credit"),
     _card("inventory_value", "balances", "ارزش موجودی انبار", _build_inventory_value,
-          min_role="owner", tone="ink", href="/admin/products"),
+          min_role="manager", tone="ink", href="/admin/products"),
     # کارهای دوره‌ای — the sends are manager-operable, so managers see them;
     _card("birthdays_due", "periodic", "پیامک تولد", _build_birthdays_due,
           min_role="manager", href="/admin/birthdays"),
@@ -580,20 +594,15 @@ CARDS: tuple[dict, ...] = (
           href="/admin/customers"),
     _card("club_active", "club", "مشتریان فعال", _build_club_active,
           href="/admin/customers?status=active"),
-    _card("club_new", "club", "عضو جدید این ماه", _build_club_new,
-          href="/admin/customers"),
-    _card("club_debtors", "club", "مشتریان بدهکار", _build_club_debtors,
-          href="/admin/credit"),
-    # There is deliberately no birthday card here. The number is the same one
-    # the owner's «پیامک تولد» card shows, and showing one fact twice on a page
-    # this short trains the reader to stop reading it. The customers page keeps
-    # «تولد نزدیک» as a one-click filter for everybody.
+    # No club_debtors card: the balances debt card already splits current vs
+    # overdue, and one fact twice trains the reader to stop reading it.
 )
 
 # Each section names the span or the kind of number it holds, so a reader never
 # has to work out which of two periods a card belongs to. An eyebrow is only
 # present where it adds a fact the title does not already carry.
 SECTIONS: tuple[tuple[str, str, str, str], ...] = (
+    ("urgent", "اقدام فوری", "پول", "attention"),
     ("attention", "نیازمند توجه", "اقدام‌های امروز", "attention"),
     ("today", "امروز", "", "stats"),
     ("month", "این ماه", "", "stats"),
@@ -622,7 +631,9 @@ def _month_reading(db: Session) -> list[str] | None:
     # them: takings, the day worth naming, what sold, who bought.
     keys = ("dailyChart", "categoryChart", "tierChart", "customerSegChart")
     sentences = [notes[key] for key in keys if notes.get(key)]
-    return sentences or None
+    # The page keeps one line — the day worth naming. The month's own cards
+    # carry the rest, and four sentences restate them.
+    return sentences[:1] or None
 
 
 def _top_rows(numbers: _Numbers, role: str) -> list[dict]:
@@ -968,7 +979,15 @@ def dashboard_overview(db: Session, *, role: str = "manager", user_id=None,
             for spec in CARDS:
                 if spec["section"] != key or not role_allows(role, spec["min_role"]):
                     continue
-                card = spec["build"](numbers, role)
+                try:
+                    card = spec["build"](numbers, role)
+                except Exception:
+                    # A failed query shows as a failed card, never a missing
+                    # one: silence would read as a calm shop.
+                    import logging as _logging
+                    _logging.getLogger(__name__).exception(
+                        "dashboard card %s failed", spec["key"])
+                    card = {"value": "—", "sub": "خطا در محاسبه — بعداً ببینید"}
                 if card is None:
                     continue
                 section["cards"].append({
@@ -1014,7 +1033,27 @@ def dashboard_overview(db: Session, *, role: str = "manager", user_id=None,
         "role": role,
         "role_label": ROLE_LABELS.get(role, role),
         "sections": sections,
+        "greeting": _manager_greeting(db, role, user_name, sections),
         # The gateway strip reads this, not a card: two light queries, no
         # money figures, safe for every role that reaches the dashboard.
         "gateway": _gateway_status(db),
+    }
+
+
+def _manager_greeting(db: Session, role: str, user_name: str | None,
+                      sections: list) -> dict | None:
+    """Name, weekday, and the day in one line — for managers and owners too."""
+    if not user_name:
+        return None
+    from services.reporting import canonical_report
+    start, _ = _midnight_span(0)
+    shop = canonical_report(db, start, start + timedelta(days=1))
+    urgent = sum(len(s.get("cards", [])) for s in sections
+                 if s["key"] == "urgent")
+    return {
+        "name": user_name,
+        "weekday": _FA_WEEKDAYS[start.weekday()],
+        "summary": (f"فروش امروز {_money(shop['net_sales'])} — "
+                    f"{urgent} اقدام فوری" if urgent else
+                    f"فروش امروز {_money(shop['net_sales'])} — روز آرام است."),
     }

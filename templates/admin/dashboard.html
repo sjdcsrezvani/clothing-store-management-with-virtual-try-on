@@ -14,7 +14,7 @@
 {# The counter's own greeting: who is looking, which day, and the day in one
    line. Managers and owners never receive it — their header stays titled. #}
 {% if greeting %}
-<p class="dash-greeting" role="status">سلام {{ greeting.name }}، {{ greeting.weekday }} — {{ greeting.summary }}</p>
+<p class="dash-greeting" role="status" data-poll-greeting>سلام {{ greeting.name }}، {{ greeting.weekday }} — {{ greeting.summary }}</p>
 {% endif %}
 
 {# The gateway cannot text anyone about itself, so its outage lives here:
@@ -64,9 +64,9 @@
         {# `is-clear` means «nothing here needs you» and only this row may carry
            it. A money card showing a zero must never look this calm. #}
         <a class="action-item{% if card.tone %} action-{{ card.tone }}{% endif %}{% if card.clear %} is-clear{% endif %}" href="{{ card.href }}">
-            <span class="action-count tnum">{{ card.value }}</span>
+            <span class="action-count tnum" data-poll-value="{{ card.key }}">{{ card.value }}</span>
             <strong>{{ card.label }}</strong>
-            <span class="action-sub">{{ card.sub }}</span>
+            <span class="action-sub" data-poll-sub="{{ card.key }}">{{ card.sub }}</span>
         </a>
         {% endfor %}
     </div>
@@ -182,13 +182,13 @@
         <div class="stat-card{% if card.tone %} accent-{{ card.tone }}{% endif %}">
         {% endif %}
             <div class="stat-label">{{ card.label }}</div>
-            <div class="stat-value tnum">
+            <div class="stat-value tnum" data-poll-value="{{ card.key }}">
                 {{ card.value }}
                 {% if card.delta %}
                 <span class="stat-delta{% if card.delta.good is not none %} is-{{ 'good' if card.delta.good else 'bad' }}{% endif %}">{{ card.delta.text }}</span>
                 {% endif %}
             </div>
-            <div class="stat-sub">{{ card.sub }}</div>
+            <div class="stat-sub" data-poll-sub="{{ card.key }}">{{ card.sub }}</div>
             {% if card.progress is not none %}
             <div class="progress-track" role="progressbar" aria-valuenow="{{ card.progress }}" aria-valuemin="0" aria-valuemax="100" aria-label="{{ card.label }}"><div class="progress-fill" data-progress="{{ card.progress }}"></div></div>
             {% endif %}
@@ -206,6 +206,31 @@ document.querySelectorAll('.progress-fill[data-progress]').forEach(function (el)
     var pct = Math.max(0, Math.min(100, parseInt(el.getAttribute('data-progress') || '0', 10)));
     el.style.width = pct + '%';
 });
+
+// Silent poll, every five minutes: the figures tick in place, the page never
+// reloads. A failed poll keeps yesterday's numbers rather than blanking them.
+setInterval(function () {
+    fetch('/admin/dashboard-poll', { headers: { 'Accept': 'application/json' } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+            if (!data || !data.cards) return;
+            Object.keys(data.cards).forEach(function (key) {
+                var card = data.cards[key];
+                document.querySelectorAll('[data-poll-value="' + key + '"]').forEach(function (el) {
+                    el.childNodes[0].textContent = card.value + ' ';
+                });
+                document.querySelectorAll('[data-poll-sub="' + key + '"]').forEach(function (el) {
+                    el.textContent = card.sub;
+                });
+            });
+            if (data.greeting) {
+                document.querySelectorAll('[data-poll-greeting]').forEach(function (el) {
+                    el.textContent = data.greeting;
+                });
+            }
+        })
+        .catch(function () {});
+}, 5 * 60 * 1000);
 </script>
 
 {% endblock %}

@@ -2104,6 +2104,32 @@ async def admin_update_targets(request: Request, db: Session = Depends(get_db)):
                             status_code=303)
 
 
+@router.get("/dashboard-poll", response_class=JSONResponse)
+async def admin_dashboard_poll(request: Request, db: Session = Depends(get_db)):
+    """The dashboard's figures as JSON, for the five-minute silent poll.
+
+    Same overview builder as the page, flattened to keyed values — so the
+    polled numbers can never disagree with a reload. History strips and
+    rankings ride a reload; the poll moves values, not structure.
+    """
+    guard = require_html_role(request, db, "cashier")
+    if not hasattr(guard, "role"):
+        return guard
+    view = dashboard_overview(db, role=guard.role, user_id=guard.id,
+                              user_name=guard.full_name or guard.username)
+    cards = {}
+    for section in view.get("sections", []):
+        for card in section.get("cards", []):
+            cards[card["key"]] = {"value": card.get("value", ""),
+                                  "sub": card.get("sub", "")}
+    greeting = view.get("greeting")
+    return {
+        "cards": cards,
+        "greeting": (f"سلام {greeting['name']}، {greeting['weekday']} — "
+                     f"{greeting['summary']}") if greeting else None,
+    }
+
+
 @router.get("/settings", response_class=HTMLResponse)
 async def admin_settings(request: Request, db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "owner")
