@@ -139,3 +139,19 @@ def test_color_palette_suggests_the_persian_name_until_hand_edited():
     # Both shapes are covered: the variant page (#color / #color_code) and
     # product-form rows (variant_color_N / variant_color_code_N).
     assert "#color" in js or '"color"' in js or "'color'" in js
+
+
+def test_product_form_variant_script_survives_a_boosted_return():
+    page = (ROOT / "templates/admin/product_form.html").read_text()
+    # `var`, never `let`/`const`, at script top level: htmx re-runs this
+    # script on a boosted return, and a re-declared `let` throws —
+    # «افزودن تنوع» dies with it.
+    assert "let variantIndex" not in page
+    assert "const container = document.getElementById('variants-container')" not in page
+    # The counter lives on window so a return keeps counting, and the first
+    # run alone binds listeners and seeds the empty form.
+    assert "window.__variantIndex" in page
+    assert "__variantFormBound" in page
+    # app.js is deferred and may not be back on a return: digit helpers are
+    # reached through window with a plain-string fallback.
+    assert "window.toEnglishDigits" in page

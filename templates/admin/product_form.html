@@ -213,11 +213,20 @@
 {% endif %}
 
 <script>
-let variantIndex = 0;
-const container = document.getElementById('variants-container');
+/* Variant rows: re-entry safe for boosted arrivals. The shell re-runs this
+   script in place: `var` re-declares quietly where `let` would throw, and
+   only the first run binds listeners or seeds the empty form. State lives
+   on window so every arrival sees the same counter. */
+var __variantIndex = window.__variantIndex;
+if (typeof __variantIndex !== 'number') {
+    __variantIndex = document.querySelectorAll('#variants-container .variant-entry').length;
+    window.__variantIndex = __variantIndex;
+}
+var container = document.getElementById('variants-container');
 
 function variantNum(raw) {
-    const n = parseInt(String(toEnglishDigits(raw)).replace(/[^0-9]/g, ''), 10);
+    const digits = window.toEnglishDigits ? window.toEnglishDigits(raw) : String(raw || '');
+    const n = parseInt(String(digits).replace(/[^0-9]/g, ''), 10);
     return Number.isFinite(n) ? n : 0;
 }
 function fmtMoney(n) { return n.toLocaleString('fa-IR') + ' تومان'; }
@@ -264,7 +273,7 @@ function syncSkuRow(entry) {
 }
 
 function addVariant() {
-    const index = variantIndex++;
+    const index = window.__variantIndex++;
     const entryNo = container.querySelectorAll('.variant-entry').length + 1;
     // The row being built becomes the open one; finished rows fold away.
     container.querySelectorAll('.variant-entry').forEach(entry => setEntryOpen(entry, false));
@@ -310,6 +319,8 @@ function addVariant() {
     refreshFormTotal();
 }
 
+if (!window.__variantFormBound) {
+window.__variantFormBound = true;
 container.addEventListener('click', event => {
     const head = event.target.closest('[data-collapse]');
     if (!head) return;
@@ -332,20 +343,25 @@ container.addEventListener('input', event => {
 // Product-level defaults feed untouched variant rows while they are typed.
 function bindDefaultSync(sourceId, kind) {
     const source = document.getElementById(sourceId);
-    if (!source) return;
-    let prev = toEnglishDigits(source.value);
+    if (!source || source.dataset.syncBound) return;
+    source.dataset.syncBound = 'true';
+    function currentDigits(value) {
+        return window.toEnglishDigits ? window.toEnglishDigits(value) : String(value || '');
+    }
+    let prev = currentDigits(source.value);
     source.addEventListener('input', () => {
-        const next = toEnglishDigits(source.value);
+        const next = currentDigits(source.value);
         container.querySelectorAll(`[data-sync-default="${kind}"]`).forEach(field => {
-            if (!field.dataset.touched && toEnglishDigits(field.value) === prev) field.value = next;
+            if (!field.dataset.touched && currentDigits(field.value) === prev) field.value = next;
         });
         prev = next;
     });
 }
 // Deferred scripts (app.js) land after parsing, so everything that touches
-// their globals waits for DOMContentLoaded; the container listeners above
-// only call them on user input, long after load.
+// their globals guards with window.* — the helpers above already do.
 function bootVariantForm() {
+    if (!container || container.dataset.booted) return;
+    container.dataset.booted = 'true';
     bindDefaultSync('default_reorder_point', 'point');
     bindDefaultSync('default_reorder_quantity', 'quantity');
     const baseSkuField = document.getElementById('base_sku');
@@ -363,5 +379,6 @@ if (document.readyState === 'loading') {
 // The demand button is htmx: the hidden form posts itself, htmx swaps the
 // tally cell. A failed request swaps nothing — the shell keeps yesterday's
 // count until a reload, never a silent second POST.
+} // __variantFormBound
 </script>
 {% endblock %}
