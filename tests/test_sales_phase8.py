@@ -1,5 +1,6 @@
-"""Phase 8 silent refresh: basket mutations swap the layout by fetch —
-no full reload, same server HTML. Terminal + confirm keep real submits."""
+"""Phase 8 silent refresh — htmx now: basket mutations swap the layout in
+place with no full reload, same server HTML. Terminal + confirm keep their own
+flows; the fetch-era shims are gone (tests/test_htmx_migration.py guards it)."""
 import json
 
 from tests.conftest import csrf_token
@@ -25,14 +26,20 @@ def test_silent_submit_wiring_present(client, db_session):
     page = _scan_page(client, db_session)
     for action in ("/sales/add-to-basket", "/sales/set-quantity",
                    "/sales/remove-from-basket", "/sales/apply-discount"):
-        assert action in page  # intercepted actions
+        assert f'hx-post="{action}"' in page  # each mutation rides htmx
+    assert 'hx-select=".checkout-layout"' in page  # the swap source, in place
+    assert 'hx-target=".checkout-layout"' in page
     assert "announceScan" in page
-    assert "SILENT_TILL_ACTIONS" in page
-    assert "event.submitter" in page  # stepper delta rides the fetch too
-    # Delegated bindings survive the swap; no per-node wiring.
-    assert "t.id === 'terminal-form'" in page
+    # htmx includes the clicked stepper's delta natively — the shim is gone.
+    assert "event.submitter" not in page
+    # The terminal strip and the name search are htmx too.
+    assert 'hx-post="/sales/send-to-terminal"' in page
+    assert 'hx-get="/sales/terminal-status"' in page
+    assert 'hx-get="/sales/api/product-search"' in page
+    # Delegated bindings survive the swap; a dead wire still lands somewhere.
     assert "t.name === 'payment_method'" in page
-    assert "form.submit()" in page  # fallback always lands somewhere
+    assert "htmx:sendError" in page
+    assert "form.submit()" in page
 
 
 def test_xhr_gets_the_same_full_page(client, db_session):

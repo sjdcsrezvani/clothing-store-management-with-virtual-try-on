@@ -1,0 +1,7 @@
+{# What a terminal send swaps back into the till: the status line in place, an
+   out-of-band approval token (empty unless this exact amount was approved —
+   an empty value clears any earlier one) and a fresh indicator whose own poll
+   re-answers reachability. #}
+<div id="terminal-status" class="{{ status_class }}" role="status" aria-live="polite">{{ status_text }}</div>
+{% with oob = true %}{% include "partials/terminal_indicator.html" %}{% endwith %}
+<input type="hidden" name="pos_approval_token" id="pos-approval-token" value="{{ approval_token }}" hx-swap-oob="true">

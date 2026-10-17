@@ -1,0 +1,22 @@
+{# The till's terminal reachability strip. One fragment serves three callers:
+   the page itself, the htmx poll this element re-arms on every landing, and
+   the send-to-terminal response's out-of-band copy. Handed no state (the
+   first paint) it says "checking" until the poll answers. #}
+<div id="terminal-indicator" class="terminal-indicator"
+     hx-get="/sales/terminal-status" hx-trigger="load" hx-swap="outerHTML"{% if oob %} hx-swap-oob="true"{% endif %}>
+    {% if terminal %}
+        {% if not terminal.enabled %}
+        <span class="terminal-dot" id="terminal-dot" aria-hidden="true" style="color: var(--ink-soft)">•</span>
+        <span id="terminal-indicator-text">کارت‌خوان غیرفعال است — از تنظیمات پیکربندی کنید</span>
+        {% elif terminal.online %}
+        <span class="terminal-dot" id="terminal-dot" aria-hidden="true" style="color: var(--success-ink)">•</span>
+        <span id="terminal-indicator-text">کارت‌خوان: {{ terminal.host }}:{{ terminal.port }} — متصل{% if terminal.latency_ms is not none %} ({{ terminal.latency_ms }} میلی‌ثانیه){% endif %}</span>
+        {% else %}
+        <span class="terminal-dot" id="terminal-dot" aria-hidden="true" style="color: var(--link-hover)">•</span>
+        <span id="terminal-indicator-text">کارت‌خوان: {{ terminal.host }}:{{ terminal.port }} — قطع است</span>
+        {% endif %}
+    {% else %}
+    <span class="terminal-dot" id="terminal-dot" aria-hidden="true">•</span>
+    <span id="terminal-indicator-text">کارت‌خوان: در حال بررسی…</span>
+    {% endif %}
+</div>

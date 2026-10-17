@@ -32,7 +32,6 @@ FETCH_ALLOWLIST = {
     "templates/admin/tryon.html",
     "templates/mobile/index.html",
     "templates/mobile/pair.html",
-    "templates/sales/checkout.html",
 }
 
 

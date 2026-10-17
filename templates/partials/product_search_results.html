@@ -1,0 +1,9 @@
+{# Search rows for damaged tags: picking one adds that barcode through the
+   same door the scanner uses — the scan form's hidden fields ride along and
+   the swap refreshes the whole layout, results box included. #}
+{% for item in items %}
+<button type="button" role="option"
+        hx-post="/sales/add-to-basket" hx-include="#scan-form input[type=hidden]"
+        hx-vals='{{ {"barcode": item.barcode} | tojson }}'
+        hx-target=".checkout-layout" hx-swap="outerHTML" hx-select=".checkout-layout">{{ item.name }} — {{ item.barcode }}</button>
+{% endfor %}
