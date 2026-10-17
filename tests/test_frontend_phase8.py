@@ -148,10 +148,13 @@ def test_product_form_variant_script_survives_a_boosted_return():
     # «افزودن تنوع» dies with it.
     assert "let variantIndex" not in page
     assert "const container = document.getElementById('variants-container')" not in page
-    # The counter lives on window so a return keeps counting, and the first
-    # run alone binds listeners and seeds the empty form.
-    assert "window.__variantIndex" in page
-    assert "__variantFormBound" in page
+    # The capsule toggle binds the live container every run: htmx swaps the
+    # body on a return, so a window-once flag would pin the listener to a
+    # node no longer in the document and the arrow would go dead.
+    assert "__variantFormBound" not in page
+    # The next free row index is re-derived from the hidden markers, so a
+    # return never reuses a field name already in the DOM.
+    assert 'input[name^="variant_index_"]' in page
     # app.js is deferred and may not be back on a return: digit helpers are
     # reached through window with a plain-string fallback.
     assert "window.toEnglishDigits" in page

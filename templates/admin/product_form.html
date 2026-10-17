@@ -215,13 +215,10 @@
 <script>
 /* Variant rows: re-entry safe for boosted arrivals. The shell re-runs this
    script in place: `var` re-declares quietly where `let` would throw, and
-   only the first run binds listeners or seeds the empty form. State lives
-   on window so every arrival sees the same counter. */
-var __variantIndex = window.__variantIndex;
-if (typeof __variantIndex !== 'number') {
-    __variantIndex = document.querySelectorAll('#variants-container .variant-entry').length;
-    window.__variantIndex = __variantIndex;
-}
+   binding re-attaches to the fresh container each run (htmx swaps the body,
+   so a window-once flag would point listeners at a dead node). The index
+   counter is re-derived from the DOM — the row total marks every used
+   index, so the next one is always fresh. */
 var container = document.getElementById('variants-container');
 
 function variantNum(raw) {
@@ -273,7 +270,13 @@ function syncSkuRow(entry) {
 }
 
 function addVariant() {
-    const index = window.__variantIndex++;
+    // Next free index: the hidden marker stamps every used one, so a return
+    // never reuses a name already in the DOM.
+    let index = 0;
+    container.querySelectorAll('input[name^="variant_index_"]').forEach(marker => {
+        const n = parseInt(marker.name.split('_').pop(), 10);
+        if (Number.isFinite(n) && n >= index) index = n + 1;
+    });
     const entryNo = container.querySelectorAll('.variant-entry').length + 1;
     // The row being built becomes the open one; finished rows fold away.
     container.querySelectorAll('.variant-entry').forEach(entry => setEntryOpen(entry, false));
@@ -319,11 +322,17 @@ function addVariant() {
     refreshFormTotal();
 }
 
-if (!window.__variantFormBound) {
-window.__variantFormBound = true;
+/* Variant capsule toggle + row inputs: bound to the live container every run.
+   htmx swaps the body on a boosted return, so a window-once flag would pin
+   these listeners to a node no longer in the document. The shell's re-entry
+   dedupe (htmx-shell.js) swallows the duplicate document-level binds; the
+   container itself is fresh each arrival, so binding it again is correct. */
 container.addEventListener('click', event => {
     const head = event.target.closest('[data-collapse]');
     if (!head) return;
+    // Sidebar sections carry a key in data-collapse; variant headings carry
+    // the bare marker — only the bare one is ours.
+    if (head.getAttribute('data-collapse') !== '') return;
     const entry = head.closest('.variant-entry');
     setEntryOpen(entry, entry.dataset.open !== 'true');
 });
@@ -379,6 +388,5 @@ if (document.readyState === 'loading') {
 // The demand button is htmx: the hidden form posts itself, htmx swaps the
 // tally cell. A failed request swaps nothing — the shell keeps yesterday's
 // count until a reload, never a silent second POST.
-} // __variantFormBound
 </script>
 {% endblock %}
