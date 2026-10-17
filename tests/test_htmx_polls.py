@@ -9,7 +9,7 @@ def test_dashboard_lives_in_one_swappable_region(client, db_session):
     page = client.get("/admin").text
     assert 'id="dash-live"' in page
     assert 'hx-get="/admin"' in page
-    assert 'hx-trigger="every 5min' in page
+    assert 'hx-trigger="every 5m ' in page
     assert 'hx-select="#dash-live"' in page
     # The old keyed patching names are gone; the region swap replaces them all.
     assert "data-poll-value" not in page
@@ -90,3 +90,20 @@ def test_settings_test_key_swaps_the_status_line(client, db_session):
     body = resp.text.lstrip()
     assert 'id="tryon-test-result" role="status"' in body
     assert "<html" not in body  # a status line, not a page
+
+
+def test_every_poll_trigger_uses_a_unit_htmx_knows():
+    """`every 5min` is five milliseconds to htmx: the parser knows only ms, s and
+    m, and anything else falls through to parseFloat on the leading digits — so
+    the dashboard's live region asked the server for itself without pause. Every
+    interval written in a template must fit one of the three units."""
+    import re
+    from pathlib import Path
+    templates = Path(__file__).resolve().parent.parent / "templates"
+    offenders = []
+    for path in templates.rglob("*.html"):
+        for token in re.findall(r"""hx-trigger=["']every\s+([^\s\[\"']+)""",
+                                path.read_text(encoding="utf-8")):
+            if not re.fullmatch(r"\d+(ms|s|m)", token):
+                offenders.append(f"{path.relative_to(templates)}: every {token}")
+    assert not offenders, "htmx cannot time these intervals: " + ", ".join(offenders)
