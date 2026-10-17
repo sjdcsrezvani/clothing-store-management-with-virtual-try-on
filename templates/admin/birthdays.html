@@ -20,7 +20,7 @@
 </div>
 {% endif %}
 
-<section class="card birthdays-card" data-list-region="birthdays">
+<section class="card birthdays-card" data-list-region="birthdays" hx-boost="true" hx-target="closest [data-list-region]" hx-swap="outerHTML" hx-select="[data-list-region=birthdays]">
     <div class="section-heading-row">
         <div>
             <h3 data-list-heading tabindex="-1">تولدهای پیش‌رو</h3>

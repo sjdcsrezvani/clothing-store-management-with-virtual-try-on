@@ -184,7 +184,7 @@
 </section>
 
 {% if not editing %}
-<section class="card purchase-history-card" data-list-region="purchases">
+<section class="card purchase-history-card" data-list-region="purchases" hx-boost="true" hx-target="closest [data-list-region]" hx-swap="outerHTML" hx-select="[data-list-region=purchases]">
     <div class="section-heading-row purchase-history-head">
         <div>
             <h3 data-list-heading tabindex="-1">خریدهای ثبت‌شده</h3>

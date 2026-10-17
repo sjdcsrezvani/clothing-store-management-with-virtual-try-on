@@ -118,6 +118,18 @@ def _transaction_response(transaction: POSTransaction, approval_token: str | Non
     return result
 
 
+def _terminal_result_fragment(request: Request, status_class: str, status_text: str,
+                              approval_token: str = ""):
+    """What the till swaps back after a terminal send: the status line, the
+    approval token (an empty value clears any earlier one) and an out-of-band
+    copy of the indicator, whose own poll re-answers reachability."""
+    return templates.TemplateResponse(request, "partials/terminal_send_result.html", {
+        "status_class": status_class,
+        "status_text": status_text,
+        "approval_token": approval_token,
+    })
+
+
 def _append_pos_outcome_event(
     db: Session,
     transaction: POSTransaction,
@@ -809,14 +821,26 @@ async def sales_set_quantity(
 
 
 @router.get("/terminal-status", response_class=JSONResponse)
-async def sales_terminal_status(db: Session = Depends(get_db)):
+async def sales_terminal_status(request: Request, db: Session = Depends(get_db)):
     """Live terminal reachability for the checkout indicator. Read-only TCP
-    probe — never sends a payment amount, safe to poll."""
+    probe — never sends a payment amount, safe to poll. The till swaps the
+    answer as a fragment; every other caller keeps JSON."""
     cfg = get_terminal_config(db)
     if not cfg["enabled"]:
-        return {**cfg, "online": False, "latency_ms": None}
-    conn = await asyncio.to_thread(check_terminal_connection, cfg["host"], cfg["port"])
-    return {**cfg, **conn}
+        state = {**cfg, "online": False, "latency_ms": None}
+    else:
+        state = {**cfg, **await asyncio.to_thread(
+            check_terminal_connection, cfg["host"], cfg["port"])}
+    if request.headers.get("HX-Request"):
+        # Checkout swaps the full indicator (whose own poll re-arms on every
+        # landing); the POS page's pill is a one-shot line — its fragment
+        # carries no polling wiring, so it settles after one answer.
+        if request.headers.get("HX-Target") == "pos-terminal-pill":
+            return templates.TemplateResponse(
+                request, "partials/terminal_pill.html", {"terminal": state})
+        return templates.TemplateResponse(
+            request, "partials/terminal_indicator.html", {"terminal": state})
+    return state
 
 
 @router.post("/send-to-terminal", response_class=JSONResponse)
@@ -827,9 +851,49 @@ async def sales_send_to_terminal(
 ):
     """Start one durable, idempotent Parsian sale attempt.
 
-    The row is committed before network I/O. A retry with the same checkout
-    nonce returns the stored result and never sends a second terminal charge.
-    Only an approved row receives a session capability for ``confirm-sale``.
+    The till gets an htmx fragment it swaps into the terminal strip; every
+    other caller keeps the JSON contract unchanged.
+    """
+    if not request.headers.get("HX-Request"):
+        return await _send_to_terminal(request, checkout_nonce=checkout_nonce, db=db)
+    try:
+        result = await _send_to_terminal(request, checkout_nonce=checkout_nonce, db=db)
+    except HTTPException as error:
+        return _terminal_result_fragment(request, "alert alert-error", str(error.detail))
+    if isinstance(result, dict):
+        if result.get("approval_token"):
+            return _terminal_result_fragment(
+                request, "alert alert-success",
+                "تراکنش در کارت‌خوان تأیید شد. اکنون فاکتور را ثبت کنید.",
+                approval_token=result["approval_token"],
+            )
+        if result.get("status") == "cancelled":
+            return _terminal_result_fragment(
+                request, "alert alert-error",
+                "تراکنش در کارت‌خوان لغو شد؛ فاکتور ثبت نشد.",
+            )
+        return _terminal_result_fragment(
+            request, "alert alert-error",
+            f"{result.get('label') or 'پرداخت توسط کارت‌خوان تأیید نشد.'}؛ فاکتور ثبت نشد.",
+        )
+    if isinstance(result, JSONResponse):
+        # A refusal the app has already explained (terminal not configured,
+        # amount reused, state uncertain): the strip carries the detail.
+        try:
+            detail = json.loads(bytes(result.body)).get("detail")
+        except (TypeError, ValueError):
+            detail = None
+        return _terminal_result_fragment(
+            request, "alert alert-error", detail or "ارتباط با کارت‌خوان ناموفق بود.",
+        )
+    return result  # the login redirect for an expired session; the shell lands it
+
+
+async def _send_to_terminal(request: Request, checkout_nonce: str, db: Session):
+    """One durable, idempotent Parsian sale attempt — committed before network
+    I/O. A retry with the same checkout nonce returns the stored result and
+    never sends a second terminal charge. Only an approved row receives a
+    session capability for ``confirm-sale``.
     """
     require_role = require_html_role(request, db, "cashier")
     if not hasattr(require_role, "role"):
@@ -1590,20 +1654,25 @@ async def sales_invoice_view(sale_id: int, request: Request, db: Session = Depen
 
 
 @router.get("/api/product-search", response_class=JSONResponse)
-async def api_search_products(q: str = "", db: Session = Depends(get_db)):
-    """Name search for damaged tags: up to 8 active variants."""
+async def api_search_products(request: Request, q: str = "", db: Session = Depends(get_db)):
+    """Name search for damaged tags: up to 8 active variants. The till swaps
+    the matches as option rows; every other caller keeps JSON."""
     needle = (q or "").strip()[:50]
-    if len(needle) < 2:
-        return {"items": []}
-    like = f"%{needle}%"
-    rows = db.query(ProductVariant).join(Product).filter(
-        ProductVariant.is_active == True,
-        (Product.name.like(like)) | (ProductVariant.barcode.like(like)),
-    ).order_by(ProductVariant.id.desc()).limit(8).all()
-    return {"items": [
-        {"variant_id": v.id, "barcode": v.barcode or "",
-         "name": v.display_name, "price": v.price,
-         "stock": v.stock_quantity or 0} for v in rows]}
+    items = []
+    if len(needle) >= 2:
+        like = f"%{needle}%"
+        rows = db.query(ProductVariant).join(Product).filter(
+            ProductVariant.is_active == True,
+            (Product.name.like(like)) | (ProductVariant.barcode.like(like)),
+        ).order_by(ProductVariant.id.desc()).limit(8).all()
+        items = [
+            {"variant_id": v.id, "barcode": v.barcode or "",
+             "name": v.display_name, "price": v.price,
+             "stock": v.stock_quantity or 0} for v in rows]
+    if request.headers.get("HX-Request"):
+        return templates.TemplateResponse(
+            request, "partials/product_search_results.html", {"items": items})
+    return {"items": items}
 
 
 @router.get("/api/barcode/{barcode}", response_class=JSONResponse)

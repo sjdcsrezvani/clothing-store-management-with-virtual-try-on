@@ -999,7 +999,9 @@ async def admin_tryon_cancel_job(job_id: int, request: Request, db: Session = De
 
 @admin_router.post("/tryon/test-key", response_class=JSONResponse)
 async def admin_tryon_test_key(request: Request, db: Session = Depends(get_db)):
-    """Cheap non-billable credential probe for the settings page."""
+    """Cheap non-billable credential probe for the settings page. The
+    settings button swaps the answer as the status line; other callers keep
+    the JSON contract."""
     from services.image_gen import get_provider, get_tryon_credentials
     guard = require_html_role(request, db, "owner")
     if not hasattr(guard, "role"):
@@ -1007,12 +1009,18 @@ async def admin_tryon_test_key(request: Request, db: Session = Depends(get_db)):
     api_key, api_url = get_tryon_credentials(db)
     provider = get_provider(api_key, api_url)
     try:
-        return provider.test_connection()
+        result = provider.test_connection()
     finally:
         try:
             provider.cleanup()
         except Exception:
             pass
+    if request.headers.get("HX-Request"):
+        return templates.TemplateResponse(request, "partials/tryon_key_test.html", {
+            "ok": bool(result.get("ok")),
+            "error": result.get("error") or "",
+        })
+    return result
 
 
 @admin_router.post("/try-on/clear")
@@ -1174,7 +1182,15 @@ async def admin_tryon_saved_download(
 # is the one this server currently holds. No state, nothing to leak.
 
 @api_router.get("/capture/ping")
-async def capture_ping():
+async def capture_ping(request: Request):
+    """The pairing proof: the capture key reaches the handler only when the
+    gate accepted it. The phone pages speak htmx — the strip re-answers as
+    itself (dot lit, one-line message out of band), so the proof is markup
+    the phone renders, not JSON it parses. Other callers keep JSON."""
+    if request.headers.get("HX-Request"):
+        return templates.TemplateResponse(
+            request, "partials/mobile_status_bar.html",
+            {"online": True, "status_text": "اتصال برقرار است — آماده ضبط."})
     return {"status": "ok"}
 
 
@@ -1197,7 +1213,24 @@ async def scan_barcode(data: ScanBarcodeRequest, db: Session = Depends(get_db)):
 # ─── JSON API: Upload kid photo from phone (no customer) ───
 
 @api_router.post("/image-gen/upload-kid-photo")
-async def upload_kid_photo(file: UploadFile = File(...)):
+async def upload_kid_photo(request: Request, file: UploadFile = File(...)):
+    """The phone's photo drop. The capture page uploads as htmx multipart and
+    swaps the send-status line; every other caller keeps the JSON contract —
+    including the exact 400 details — unchanged."""
+    if not request.headers.get("HX-Request"):
+        return await _upload_kid_photo(file)
+    try:
+        await _upload_kid_photo(file)
+    except HTTPException as error:
+        return templates.TemplateResponse(
+            request, "partials/mobile_send_status.html",
+            {"ok": False, "msg": str(error.detail)})
+    return templates.TemplateResponse(
+        request, "partials/mobile_send_status.html",
+        {"ok": True, "msg": "عکس ارسال شد."})
+
+
+async def _upload_kid_photo(file: UploadFile):
     raw = await file.read()
     # Guards before RAM: type must be an image, size capped — a 100 MB
     # "photo" must fail here, not as a base64 preview three steps later.
@@ -1220,8 +1253,22 @@ async def upload_kid_photo(file: UploadFile = File(...)):
 # ─── JSON API: Generate (stateless) ───
 
 @api_router.get("/image-gen/jobs/{job_id}")
-async def api_image_job(job_id: int, db: Session = Depends(get_db)):
+async def api_image_job(job_id: int, request: Request, db: Session = Depends(get_db)):
     job = db.query(BackgroundJob).filter(BackgroundJob.id == job_id, BackgroundJob.job_type == "tryon").first()
+    if request.headers.get("HX-Request"):
+        # The try-on page polls this as itself: while it runs the strip
+        # re-renders and re-arms; completed reloads the page outright
+        # (HX-Redirect suppresses the swap); failed re-renders unarmed. The
+        # JSON contract below stays byte-identical for other callers.
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        if job.status == "completed":
+            return Response(headers={"HX-Redirect": "/admin/try-on"})
+        return templates.TemplateResponse(request, "partials/tryon_live.html", {
+            "job_id": job.id,
+            "tryon_job_id": job.id,
+            "tryon_job_status": job.status,
+        })
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return {"job_id": job.id, "status": job.status, "image_url": job.result_url if job.status == "completed" else None, "error": job.error_message if job.status == "failed" else None}

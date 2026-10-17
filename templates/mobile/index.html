@@ -92,7 +92,7 @@ button{touch-action:manipulation;user-select:none;-webkit-user-select:none}
 </div>
 
 <!-- Status -->
-<div class="status-bar">
+<div class="status-bar" id="status-area" hx-get="/api/capture/ping" hx-trigger="load [ (window.__captureKey || '').length > 0 ], click from:#btn-connection-test" hx-target="this" hx-swap="outerHTML" hx-headers='{"X-Capture-Key": "js:window.__captureKey"}'>
     <div class="status-dot" id="status-dot" title="وضعیت اتصال"></div>
     <div class="pair-state" id="pair-state">…</div>
     <button type="button" id="btn-connection-test">بررسی اتصال</button>
@@ -108,38 +108,45 @@ button{touch-action:manipulation;user-select:none;-webkit-user-select:none}
 <!-- Status line -->
 <div class="status-line" id="status-line" role="status">آماده — عکس بگیرید و ارسال کنید.</div>
 
-<!-- Photo Capture Overlay: a dialog — Escape closes, focus returns -->
+<!-- Photo Capture Overlay: a dialog — Escape closes, focus returns.
+     The send is htmx: the form posts the file ride as multipart; the
+     send-status line is the swap target, and its data-status attribute
+     tells the page hook what to do next (toast, close, re-enable). -->
 <div class="photo-overlay" id="photo-overlay" role="dialog" aria-modal="true" aria-label="گرفتن عکس شخص" tabindex="-1">
-    <div class="photo-card">
+    <form class="photo-card" hx-post="/api/image-gen/upload-kid-photo" hx-target="#send-status" hx-swap="outerHTML" hx-encoding="multipart/form-data" hx-headers='{"X-Capture-Key": "js:window.__captureKey"}'>
         <h3>عکس شخص</h3>
         <p>صورت داخل قاب باشد، نور روبه‌رو — همین دو تا کیفیت پرو را می‌سازد.</p>
         <div class="limits-hint">فقط فایل عکس، حداکثر ۱۵ مگابایت</div>
         <div class="file-input-wrapper">
-            <input type="file" id="photo-input" accept="image/*" capture="environment">
+            <input type="file" id="photo-input" name="file" accept="image/*" capture="environment">
             <div class="fake-btn">باز کردن دوربین</div>
         </div>
         <img id="photo-preview" class="photo-preview" alt="پیش‌نمایش عکس شخص">
         <div class="btn-group">
             <button type="button" class="btn-cancel" id="btn-cancel-photo">انصراف</button>
-            <button type="button" class="btn-send" id="btn-send-photo" disabled>ارسال به سرور</button>
+            <button type="submit" class="btn-send" id="btn-send-photo" disabled>ارسال به سرور</button>
         </div>
         <div class="send-status" id="send-status"></div>
-    </div>
+    </form>
 </div>
 
 <!-- Toasts -->
 <div class="toaster" id="toaster" aria-live="polite"></div>
 
+<script src="/static/vendor/htmx.min.js?v={{ static_version }}"></script>
 <script>
-// ─── State ───
+// ─── The capture key ───
 // No typed address and no typed token any more: the phone is set up by scanning
 // the pairing QR on the try-on page. The QR opens the pairing landing on this
 // same origin, which stores the key in localStorage — so the base address is
 // simply where this page was loaded from, and the key is the one thing a
-// re-pair rotates.
-let baseUrl = window.location.origin;
-let captureKey = localStorage.getItem('capture_key') || '';
-let selectedPhotoFile = null;
+// re-pair rotates. htmx reads this getter per request as the X-Capture-Key
+// header (hx-headers, js:); a re-pair never needs a reload to take effect.
+Object.defineProperty(window, '__captureKey', {
+    get: function () {
+        try { return localStorage.getItem('capture_key') || ''; } catch (e) { return ''; }
+    }
+});
 
 // ─── Status line: the last thing the server said, as text — never markup,
 // so a file name or a server message cannot smuggle elements onto the page ───
@@ -148,52 +155,18 @@ function setStatus(msg) {
 }
 
 // ─── Config ───
-function loadConfig() {
-    captureKey = localStorage.getItem('capture_key') || '';
-    updatePairState();
-    testConnection();
-}
 function markUnpaired() {
-    localStorage.removeItem('capture_key');
-    captureKey = '';
+    try { localStorage.removeItem('capture_key'); } catch (e) {}
     updatePairState();
 }
 function updatePairState() {
-    document.getElementById('pair-state').textContent = captureKey ? 'جفت‌شده' : 'جفت‌نشده';
-}
-function apiHeaders() {
-    return captureKey ? { 'X-Capture-Key': captureKey } : {};
-}
-
-// ─── Connection test ───
-// The probe is the pairing proof itself: /api/capture/ping sits behind the
-// same gate as the upload, and 401 is how the page learns the key it holds
-// was rotated (or never was one) — it then shows «جفت‌نشده» instead of
-// pretending to be online.
-async function testConnection() {
-    const dot = document.getElementById('status-dot');
-    dot.className = 'status-dot';
-    if (!captureKey) {
-        dot.className = 'status-dot offline';
+    var has = window.__captureKey.length > 0;
+    var bar = document.getElementById('pair-state');
+    if (bar) bar.textContent = has ? 'جفت‌شده' : 'جفت‌نشده';
+    if (!has) {
+        var dot = document.getElementById('status-dot');
+        if (dot) dot.className = 'status-dot offline';
         setStatus('هنوز جفت نشده — QR را از پنل اسکن کنید.');
-        return;
-    }
-    try {
-        const r = await fetch(baseUrl + '/api/capture/ping', { method: 'GET', headers: apiHeaders(), signal: AbortSignal.timeout(5000) });
-        if (r.ok) {
-            dot.className = 'status-dot online';
-            setStatus('اتصال برقرار است — آماده ضبط.');
-        } else if (r.status === 401) {
-            dot.className = 'status-dot offline';
-            markUnpaired();
-            setStatus('کلید گوشی معتبر نیست — دوباره QR را اسکن کنید.');
-        } else {
-            dot.className = 'status-dot offline';
-            setStatus('سرور پاسخ ' + r.status + ' داد.');
-        }
-    } catch(e) {
-        dot.className = 'status-dot offline';
-        setStatus('سرور در دسترس نیست — Wi‑Fi گوشی را بررسی کنید.');
     }
 }
 
@@ -215,9 +188,8 @@ function showToast(msg, type, ms) {
 // ─── Photo Capture (dialog: focus in on open, back to the opener on close) ───
 let photoOpener = null;
 function showPhotoCapture() {
-    if (!captureKey) { showToast('اول گوشی را جفت کنید', 'error'); return; }
+    if (!window.__captureKey) { showToast('اول گوشی را جفت کنید', 'error'); return; }
     photoOpener = document.activeElement;
-    selectedPhotoFile = null;
     document.getElementById('photo-preview').style.display = 'none';
     document.getElementById('btn-send-photo').disabled = true;
     document.getElementById('send-status').style.display = 'none';
@@ -228,7 +200,6 @@ function showPhotoCapture() {
 
 function hidePhotoCapture() {
     document.getElementById('photo-overlay').classList.remove('active');
-    selectedPhotoFile = null;
     if (photoOpener && document.contains(photoOpener)) photoOpener.focus();
 }
 document.addEventListener('keydown', function(e) {
@@ -238,7 +209,6 @@ document.addEventListener('keydown', function(e) {
 function onPhotoSelected(event) {
     const file = event.target.files[0];
     if (!file) return;
-    selectedPhotoFile = file;
     const reader = new FileReader();
     reader.onload = function(e) {
         const preview = document.getElementById('photo-preview');
@@ -250,51 +220,83 @@ function onPhotoSelected(event) {
     setStatus('عکس انتخاب شد: ' + file.name);
 }
 
-async function sendPhoto() {
-    if (!selectedPhotoFile) return;
-    const btn = document.getElementById('btn-send-photo');
-    const status = document.getElementById('send-status');
-    btn.disabled = true;
-    status.style.display = 'block';
-    status.className = 'send-status';
-    status.textContent = 'در حال ارسال…';
+// ─── htmx hooks: the page never speaks fetch — htmx owns the network ───
+// (30s cap: the upload of a 15 MB photo over shop Wi-Fi needs the headroom;
+// the probe answers in milliseconds, the cap only matters on a real hang.)
+htmx.config.timeout = 30000;
 
-    const formData = new FormData();
-    formData.append('file', selectedPhotoFile);
-
-    try {
-        const r = await fetch(baseUrl + '/api/image-gen/upload-kid-photo', {
-            method: 'POST',
-            headers: apiHeaders(),
-            body: formData,
-            signal: AbortSignal.timeout(30000),
-        });
-        const data = await r.json();
-        if (r.ok) {
-            status.className = 'send-status is-ok';
-            status.textContent = 'عکس ارسال شد.';
-            setStatus('عکس ارسال شد — در پنل، صفحه پرو مجازی را ببینید.');
-            showToast('عکس ارسال شد', 'success');
-            setTimeout(hidePhotoCapture, 1500);
-        } else {
-            throw new Error(data.detail || 'ارسال ناموفق بود');
-        }
-    } catch(e) {
-        status.className = 'send-status is-err';
-        status.textContent = 'ارسال نشد: ' + e.message;
-        setStatus('ارسال نشد: ' + e.message);
-        showToast('ارسال نشد: ' + e.message, 'error');
-        btn.disabled = false;
+// While the upload flies the dialog says so, and the send button waits.
+document.body.addEventListener('htmx:beforeRequest', function (event) {
+    var elt = event.detail && event.detail.elt;
+    if (!elt || !elt.matches || !elt.matches('#photo-form')) return;
+    var status = document.getElementById('send-status');
+    if (status) {
+        status.className = 'send-status';
+        status.style.display = 'block';
+        status.textContent = 'در حال ارسال…';
     }
-}
+    document.getElementById('btn-send-photo').disabled = true;
+});
+
+// 401 is a rotated key — the same answer the probe's JSON gave. No swap:
+// JSON never lands on the phone's screen; the copy is the page's own text.
+document.body.addEventListener('htmx:beforeSwap', function (event) {
+    var status = event.detail.xhr && event.detail.xhr.status;
+    if (status !== 401) return;
+    event.detail.shouldSwap = false;
+    markUnpaired();
+    var overlay = document.getElementById('photo-overlay');
+    var msg = 'کلید گوشی معتبر نیست — دوباره QR را اسکن کنید.';
+    if (overlay.classList.contains('active')) {
+        var line = document.getElementById('send-status');
+        line.className = 'send-status is-err';
+        line.style.display = 'block';
+        line.textContent = 'ارسال نشد: ' + msg;
+        document.getElementById('btn-send-photo').disabled = false;
+    }
+    setStatus(msg);
+    showToast(msg, 'error');
+});
+
+// An unreachable server: the same words the old fetch wrote, and the flight
+// unwinds — the button comes back.
+document.body.addEventListener('htmx:sendError', function () {
+    var overlay = document.getElementById('photo-overlay');
+    var msg = 'سرور در دسترس نیست — Wi‑Fi گوشی را بررسی کنید.';
+    if (overlay.classList.contains('active')) {
+        var line = document.getElementById('send-status');
+        line.className = 'send-status is-err';
+        line.style.display = 'block';
+        line.textContent = 'ارسال نشد: سرور در دسترس نیست.';
+        var btn = document.getElementById('btn-send-photo');
+        if (btn) btn.disabled = false;
+    }
+    setStatus(msg);
+});
+
+// The send-status fragment lands with its verdict in data-status: success
+// closes the dialog after a beat, failure reports and re-arms the button.
+document.body.addEventListener('htmx:afterSwap', function (event) {
+    var target = event.target;
+    if (!target.matches || !target.matches('#send-status[data-status]')) return;
+    target.style.display = 'block';
+    if (target.getAttribute('data-status') === 'ok') {
+        setStatus('عکس ارسال شد — در پنل، صفحه پرو مجازی را ببینید.');
+        showToast('عکس ارسال شد', 'success');
+        setTimeout(hidePhotoCapture, 1500);
+    } else {
+        var msg = target.textContent.trim();
+        setStatus('ارسال نشد: ' + msg);
+        showToast('ارسال نشد: ' + msg, 'error');
+        document.getElementById('btn-send-photo').disabled = false;
+    }
+});
 
 // ─── Init: listeners, not inline handlers ───
-document.getElementById('btn-connection-test').addEventListener('click', testConnection);
 document.getElementById('btn-photo').addEventListener('click', showPhotoCapture);
 document.getElementById('btn-cancel-photo').addEventListener('click', hidePhotoCapture);
-document.getElementById('btn-send-photo').addEventListener('click', sendPhoto);
 document.getElementById('photo-input').addEventListener('change', onPhotoSelected);
-loadConfig();
+updatePairState();
 </script>
 </body>
 </html>

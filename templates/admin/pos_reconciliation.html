@@ -19,36 +19,17 @@
     <div class="stat-card accent-ink">
         <div class="stat-label">کارت‌خوان</div>
         <div class="stat-value tnum" dir="ltr">{{ terminal.host }}:{{ terminal.port }}</div>
-        <div class="stat-sub"><span data-terminal-pill>در حال بررسی اتصال…</span>
+        <div class="stat-sub"><span id="pos-terminal-pill" data-terminal-pill hx-get="/sales/terminal-status" hx-trigger="load" hx-swap="outerHTML">در حال بررسی اتصال…</span>
             {% if is_owner %} · <a href="/admin/settings?tab=devices">تنظیمات کارت‌خوان</a>{% endif %}
         </div>
     </div>
 </div>
-<script>
-// Reachability is read live, never baked into the page: a probe at render
-// time would hold every visit up to its timeout on the days the terminal is
-// dark — exactly when this page is needed most.
-(function () {
-    var pill = document.querySelector('[data-terminal-pill]');
-    if (!pill) return;
-    fetch('/sales/terminal-status', { headers: { 'Accept': 'application/json' } })
-        .then(function (response) { return response.json(); })
-        .then(function (status) {
-            if (!status || !status.configured) {
-                pill.textContent = 'پیکربندی نشده';
-                return;
-            }
-            pill.textContent = status.online ? 'متصل است' : 'پاسخ نمی‌دهد';
-        })
-        .catch(function () { pill.textContent = 'نامشخص'; });
-})();
-</script>
 
 {# The count is the shop's real outstanding total; the numbered pages below
    list whatever the filters ask for, so the two can never silently disagree
    the way a fixed window once did. #}
 
-<div class="card" data-list-region="pos">
+<div class="card" data-list-region="pos" hx-boost="true" hx-target="closest [data-list-region]" hx-swap="outerHTML" hx-select="[data-list-region=pos]">
     <div class="section-heading-row">
         <div>
             <h3 data-list-heading tabindex="-1">تراکنش‌ها</h3>

@@ -4163,6 +4163,10 @@ html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
 .tryon-photo-empty { text-align: center; padding: 1.5rem; background: var(--surface-soft); border-radius: 8px; margin-bottom: 0.8rem; }
 .tryon-upload-toggle { cursor: pointer; font-weight: 600; color: var(--link); }
 .tryon-upload-form { margin-top: 0.8rem; }
+/* The swapped-in upload answer reuses the phone's send-status markup. */
+.tryon-upload-form .send-status { display: block; font-size: 0.85rem; }
+.tryon-upload-form .send-status.is-ok { color: var(--success-ink); }
+.tryon-upload-form .send-status.is-err { color: var(--danger); }
 .tryon-privacy { margin-top: 0.8rem; font-size: 0.85rem; }
 .tryon-pairing h4 { margin-bottom: 0.3rem; }
 .tryon-qr { text-align: center; margin-bottom: 0.8rem; }

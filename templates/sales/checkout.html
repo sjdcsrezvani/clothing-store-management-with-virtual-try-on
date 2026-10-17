@@ -107,7 +107,9 @@
         {# ── Barcode scanner ── #}
         <div class="scan-section card">
             <h3>اسکن بارکد</h3>
-            <form method="post" action="/sales/add-to-basket" id="scan-form">
+            <form method="post" action="/sales/add-to-basket" id="scan-form"
+                  hx-post="/sales/add-to-basket" hx-target=".checkout-layout"
+                  hx-swap="outerHTML" hx-select=".checkout-layout">
                 <input type="hidden" name="customer_id" value="{{ customer_id }}">
                 <input type="hidden" name="basket_json" value="{{ basket_json }}">
                 <input type="hidden" name="referrer_code" value="{{ referrer_code|default('') }}">
@@ -129,7 +131,9 @@
                barcode box and submits the scan form above. #}
             <div class="form-group mb-0">
                 <label for="product-search-input">جستجوی نام کالا (برچسب خراب)</label>
-                <input type="text" id="product-search-input" autocomplete="off"
+                <input type="text" id="product-search-input" name="q" autocomplete="off"
+                       hx-get="/sales/api/product-search" hx-trigger="input changed delay:300ms"
+                       hx-target="#product-search-results" hx-swap="innerHTML"
                        placeholder="نام کالا..." aria-label="جستجوی نام کالا">
             </div>
             <div id="product-search-results" class="search-results" role="listbox" aria-label="نتایج جستجو"></div>
@@ -225,7 +229,9 @@
                 </div>
             </div>
             {# ── Apply discounts (recompute preview without scanning) ── #}
-            <form method="post" action="/sales/apply-discount" id="apply-discount-form">
+            <form method="post" action="/sales/apply-discount" id="apply-discount-form"
+                  hx-post="/sales/apply-discount" hx-target=".checkout-layout"
+                  hx-swap="outerHTML" hx-select=".checkout-layout">
                 <input type="hidden" name="customer_id" value="{{ customer_id }}">
                 <input type="hidden" name="basket_json" value="{{ basket_json }}">
                 <input type="hidden" name="referrer_code" value="{{ referrer_code|default('') }}">
@@ -255,7 +261,9 @@
                     </div>
                     <div class="basket-item-qty tnum">{{ item.quantity }} × {{ fmt(item.unit_price) }}</div>
                     <div class="basket-item-total tnum">{{ fmt(item.total_price) }}</div>
-                    <form method="post" action="/sales/set-quantity" class="basket-stepper">
+                    <form method="post" action="/sales/set-quantity" class="basket-stepper"
+                          hx-post="/sales/set-quantity" hx-target=".checkout-layout"
+                          hx-swap="outerHTML" hx-select=".checkout-layout">
                         <input type="hidden" name="customer_id" value="{{ customer_id }}">
                         <input type="hidden" name="variant_id" value="{{ item.variant_id }}">
                         <input type="hidden" name="basket_json" value="{{ basket_json }}">
@@ -271,7 +279,9 @@
                         <button type="submit" name="delta" value="-1" class="btn-step" aria-label="کم کردن {{ item.name }}">−</button>
                         <button type="submit" name="delta" value="1" class="btn-step" aria-label="زیاد کردن {{ item.name }}">+</button>
                     </form>
-                    <form method="post" action="/sales/remove-from-basket">
+                    <form method="post" action="/sales/remove-from-basket"
+                          hx-post="/sales/remove-from-basket" hx-target=".checkout-layout"
+                          hx-swap="outerHTML" hx-select=".checkout-layout">
                         <input type="hidden" name="customer_id" value="{{ customer_id }}">
                         <input type="hidden" name="variant_id" value="{{ item.variant_id }}">
                         <input type="hidden" name="basket_json" value="{{ basket_json }}">
@@ -380,11 +390,11 @@
                 {# Step 2 — approve the amount: terminal for card, cash count for
                    cash, nothing for credit (the note above is its step 2). #}
                 <div class="pay-step" id="pay-step-terminal">
-                    <div id="terminal-indicator" class="terminal-indicator">
-                        <span class="terminal-dot" id="terminal-dot" aria-hidden="true">•</span>
-                        <span id="terminal-indicator-text">کارت‌خوان: در حال بررسی…</span>
-                    </div>
-                    <form method="post" action="/sales/send-to-terminal" id="terminal-form">
+                    {% include "partials/terminal_indicator.html" %}
+                    <form method="post" action="/sales/send-to-terminal" id="terminal-form"
+                          hx-post="/sales/send-to-terminal" hx-target="#terminal-status"
+                          hx-swap="outerHTML" hx-disabled-elt="#terminal-submit"
+                          hx-on::before-request="terminalBusy()">
                         <input type="hidden" name="checkout_nonce" value="{{ checkout_nonce }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                         <button type="submit" id="terminal-submit" class="btn btn-primary btn-block">ارسال مبلغ به کارت‌خوان</button>
@@ -426,6 +436,15 @@
             {% endif %}
         </div>
     </div>
+    {# ── Margin meter: manager and owner only, bottom-left, always in view. The
+       figure never reaches a cashier's HTML at all. It lives inside the layout
+       so every silent swap carries the fresh figure along. ── #}
+    {% if net_profit is not none %}
+    <div id="profit-meter" dir="ltr" class="profit-meter">
+        <span class="tnum">{% if net_profit > 0 %}+{% elif net_profit < 0 %}−{% endif %}{{ fmt(net_profit) }}</span>
+        <span class="profit-pct tnum">{{ percent(net_profit_percent) }}</span>
+    </div>
+    {% endif %}
 </div>
 
 <script>
@@ -497,101 +516,27 @@ function updatePaymentUi() {
                        : 'ابتدا پرداخت کارت را در کارت‌خوان تأیید کنید')
             : 'تأیید پرداخت و صدور فاکتور';
     }
-    if (terminalNeeded) refreshTerminalStatus();
 }
 
 document.addEventListener('change', function (event) {
     var t = event.target;
     if (t && t.name === 'payment_method') updatePaymentUi();
 });
-document.addEventListener('submit', function (event) {
-    var t = event.target;
-    if (t && t.id === 'terminal-form') {
-        sendToTerminal({ preventDefault: function () { event.preventDefault(); }, currentTarget: t });
-    }
-});
-
-function renderTerminalIndicator(data) {
-    var dot = document.getElementById('terminal-dot');
-    var text = document.getElementById('terminal-indicator-text');
-    if (!data.enabled) {
-        dot.textContent = '•';
-        dot.style.color = 'var(--ink-soft)';
-        text.textContent = 'کارت‌خوان غیرفعال است — از تنظیمات پیکربندی کنید';
-        return;
-    }
-    var addr = data.host + ':' + data.port;
-    if (data.online) {
-        dot.textContent = '•';
-        dot.style.color = 'var(--mint-dark)';
-        text.textContent = 'کارت‌خوان: ' + addr + ' — متصل' + (data.latency_ms != null ? ' (' + data.latency_ms + ' میلی‌ثانیه)' : '');
-    } else {
-        dot.textContent = '•';
-        dot.style.color = 'var(--link-hover)';
-        text.textContent = 'کارت‌خوان: ' + addr + ' — قطع است';
-    }
-}
-
-async function refreshTerminalStatus() {
-    if (!document.getElementById('terminal-dot')) return;  // no basket / indicator not rendered
-    try {
-        var response = await fetch('/sales/terminal-status');
-        if (response.ok) renderTerminalIndicator(await response.json());
-    } catch (e) { /* keep last known state */ }
-}
-
-async function sendToTerminal(event) {
-    if (event) event.preventDefault();
-    var form = event.currentTarget;
-    var button = document.getElementById('terminal-submit');
+// The terminal round-trip takes seconds: say so the moment the request leaves,
+// and clear the old approval while it is in flight. The response fragment
+// carries the real outcome — status line, fresh token, refreshed indicator.
+function terminalBusy() {
     var status = document.getElementById('terminal-status');
     var approvalToken = document.getElementById('pos-approval-token');
-    if (button) button.disabled = true;
     if (approvalToken) approvalToken.value = '';
     if (status) {
         status.hidden = false;
         status.className = 'alert';
         status.textContent = 'در حال ارسال مبلغ به کارت‌خوان… کارت‌خوان نتیجه نهایی را اعلام می‌کند.';
     }
-    try {
-        var response = await fetch(form.action, {
-            method: 'POST',
-            body: new FormData(form),
-            headers: { 'X-Requested-With': 'XMLHttpRequest' }
-        });
-        var data = await response.json();
-        if (!response.ok) throw new Error(data.detail || 'ارتباط با کارت‌خوان ناموفق بود');
-        if (data.status === 'approved' && data.approval_token) {
-            if (approvalToken) approvalToken.value = data.approval_token;
-            if (status) {
-                status.className = 'alert alert-success';
-                status.textContent = 'تراکنش در کارت‌خوان تأیید شد. اکنون فاکتور را ثبت کنید.';
-            }
-        } else if (data.status === 'cancelled') {
-            if (status) {
-                status.className = 'alert alert-error';
-                status.textContent = 'تراکنش در کارت‌خوان لغو شد؛ فاکتور ثبت نشد.';
-            }
-        } else {
-            if (status) {
-                status.className = 'alert alert-error';
-                status.textContent = (data.label || 'پرداخت توسط کارت‌خوان تأیید نشد.') + '؛ فاکتور ثبت نشد.';
-            }
-        }
-    } catch (error) {
-        if (status) {
-            status.className = 'alert alert-error';
-            status.textContent = error.message;
-        }
-    } finally {
-        if (button) button.disabled = false;
-        updatePaymentUi();
-        refreshTerminalStatus();
-    }
 }
 
 updatePaymentUi();
-refreshTerminalStatus();
 
 // ── Split-sum guard: the legs must add up to the finalized final before
 // the form may leave. Delegated so it survives silent refreshes; registered
@@ -629,6 +574,7 @@ document.addEventListener('submit', function (event) {
 // terminal first and completes when it approves — the gate stays, the extra
 // click goes. Delegated so it survives silent refreshes; registered before
 // the global double-submit guard so this flow owns the button while it runs.
+// The terminal response fragment re-arms this through htmx:afterSwap.
 var tillSending = false;
 document.addEventListener('submit', function (event) {
     var confirmForm = event.target;
@@ -648,55 +594,8 @@ document.addEventListener('submit', function (event) {
     tillSending = true;
     confirmButton.disabled = true;
     confirmButton.classList.add('is-loading');
-    sendToTerminal({ preventDefault: function () {}, currentTarget: terminalForm }).then(function () {
-        tillSending = false;
-        confirmButton.disabled = false;
-        confirmButton.classList.remove('is-loading');
-        var token = document.getElementById('pos-approval-token');
-        if (token && token.value) confirmForm.submit();
-        else updatePaymentUi();
-    });
+    htmx.trigger(terminalForm, 'submit');
 });
-
-// ── Product name search (damaged tags): results fill the barcode box and
-// submit the scan form. Text-only rows, debounced, aborted on retype.
-(function () {
-    var box = document.getElementById('product-search-input');
-    var results = document.getElementById('product-search-results');
-    if (!box || !results) return;
-    var timer = null;
-    var pending = null;
-    box.addEventListener('input', function () {
-        if (timer) clearTimeout(timer);
-        if (pending) pending.abort();
-        var q = box.value.trim();
-        if (q.length < 2) { results.replaceChildren(); return; }
-        timer = setTimeout(function () {
-            pending = new AbortController();
-            fetch('/sales/api/product-search?q=' + encodeURIComponent(q),
-                  { signal: pending.signal })
-                .then(function (r) { return r.ok ? r.json() : { items: [] }; })
-                .then(function (data) {
-                    results.replaceChildren();
-                    (data.items || []).forEach(function (item) {
-                        var btn = document.createElement('button');
-                        btn.type = 'button';
-                        btn.setAttribute('role', 'option');
-                        btn.textContent = item.name + ' — ' + item.barcode;
-                        btn.addEventListener('click', function () {
-                            var scan = document.getElementById('barcode-input');
-                            if (scan) {
-                                scan.value = item.barcode;
-                                scan.form.requestSubmit();
-                            }
-                        });
-                        results.appendChild(btn);
-                    });
-                })
-                .catch(function () {});
-        }, 300);
-    });
-})();
 
 // ── Scan feedback: one short tone plus a glow on the row that landed, so
 // the cashier hears and sees the scan without reading every line. Runs on
@@ -755,57 +654,59 @@ function announceScan() {
 }
 announceScan();
 
-// ── Silent refresh: basket mutations post by fetch and swap the layout —
-// no full reload, same server truth. Terminal + confirm keep real submits.
-// A response without the layout (expired session, error page) falls back to
-// a real submit so the staffer always lands somewhere meaningful.
-var SILENT_TILL_ACTIONS = ['/sales/add-to-basket', '/sales/set-quantity',
-    '/sales/remove-from-basket', '/sales/apply-discount'];
-document.addEventListener('submit', function (event) {
-    var form = event.target;
-    if (!form || !form.action) return;
-    var silent = SILENT_TILL_ACTIONS.some(function (a) { return form.action.indexOf(a) !== -1; });
-    if (!silent) return;
-    event.preventDefault();
-    if (window.ensureCsrf) window.ensureCsrf(form);
-    // FormData from the form alone drops the clicked stepper's delta —
-    // reattach the submitter so set-quantity validates like a real submit.
-    var silentData = new FormData(form);
-    var submitter = event.submitter;
-    if (submitter && submitter.name) silentData.append(submitter.name, submitter.value);
-    fetch(form.action, {
-        method: 'POST',
-        body: silentData,
-        headers: { 'X-Requested-With': 'XMLHttpRequest' }
-    }).then(function (r) {
-        return r.text().then(function (html) { return { ok: r.ok, html: html }; });
-    }).then(function (res) {
-        var doc = new DOMParser().parseFromString(res.html, 'text/html');
-        var fresh = doc.querySelector('.checkout-layout');
-        var current = document.querySelector('.checkout-layout');
-        if (!fresh || !current) { form.submit(); return; }
-        current.innerHTML = fresh.innerHTML;
-        var freshMeter = doc.getElementById('profit-meter');
-        var currentMeter = document.getElementById('profit-meter');
-        if (freshMeter && currentMeter) currentMeter.replaceWith(freshMeter);
-        else if (freshMeter && !currentMeter) document.body.appendChild(freshMeter);
-        else if (!freshMeter && currentMeter) currentMeter.remove();
+// ── htmx landings: the two regions this page swaps. The terminal strip
+// finishes the one-button flow; the layout refresh re-arms the payment UI,
+// replays scan feedback and keeps the scanner hot. Errors never swap (the
+// shell enforces that); a dead wire falls back to a real submit — the same
+// guarantee the hand-rolled transport kept.
+document.addEventListener('htmx:afterSwap', function (event) {
+    // Per-swap event target is the node that just landed (verified against
+    // the vendored dist); detail.target is not on this event.
+    var target = event.target;
+    if (!target) return;
+    if (target.id === 'terminal-status') {
+        updatePaymentUi();
+        if (!tillSending) return;
+        tillSending = false;
+        var confirmButton = document.getElementById('confirm-submit');
+        if (confirmButton) confirmButton.classList.remove('is-loading');
+        var token = document.getElementById('pos-approval-token');
+        if (token && token.value) {
+            var confirmForm = document.getElementById('confirm-form');
+            if (confirmForm) confirmForm.submit();
+        }
+        return;
+    }
+    if (target.classList && target.classList.contains('checkout-layout')) {
         updatePaymentUi();
         announceScan();
         var scan = document.getElementById('barcode-input');
         if (scan) scan.focus();
-    }).catch(function () { form.submit(); });
+    }
 });
-</script>
 
-{# ── Margin meter: manager and owner only, bottom-left, always in view. The
-   figure never reaches a cashier's HTML at all. ── #}
-{% if net_profit is not none %}
-<div id="profit-meter" dir="ltr" class="profit-meter">
-    <span class="tnum">{% if net_profit > 0 %}+{% elif net_profit < 0 %}−{% endif %}{{ fmt(net_profit) }}</span>
-    <span class="profit-pct tnum">{{ percent(net_profit_percent) }}</span>
-</div>
-{% endif %}
+document.addEventListener('htmx:sendError', function (event) {
+    var form = event.detail.elt;
+    if (!form || form.tagName !== 'FORM') return;
+    if (form.id === 'terminal-form') {
+        tillSending = false;
+        var confirmButton = document.getElementById('confirm-submit');
+        if (confirmButton) confirmButton.classList.remove('is-loading');
+        var status = document.getElementById('terminal-status');
+        if (status) {
+            status.hidden = false;
+            status.className = 'alert alert-error';
+            status.textContent = 'ارتباط با سرور برقرار نشد؛ دوباره تلاش کنید.';
+        }
+        updatePaymentUi();
+        return;
+    }
+    // Basket mutations: nothing swapped, so the scan would vanish silently.
+    // Fall back to a real submit so the staffer always lands somewhere.
+    if (form.closest('.checkout-layout')) form.submit();
+});
+
+</script>
 
 {% endif %}
 {% endblock %}

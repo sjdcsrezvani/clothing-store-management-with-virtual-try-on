@@ -21,7 +21,7 @@
   </form>
 </div>
 {% endif %}
-<div class="card" id="staff-list" data-list-region="staff">
+<div class="card" id="staff-list" data-list-region="staff" hx-boost="true" hx-target="closest [data-list-region]" hx-swap="outerHTML" hx-select="[data-list-region=staff]">
   <div class="section-heading"><div><span class="eyebrow">کارکنان</span><h3 data-list-heading tabindex="-1">فهرست کارکنان</h3></div>{% if total_count %}<span class="appearance-active">{{ total_count }} نفر</span>{% endif %}</div>
   <div class="list-heading-actions">
     <a class="btn btn-sm btn-ghost" href="/admin/staff/export"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-backup"/></svg>خروجی کارکنان</a>
@@ -135,13 +135,15 @@
             form.getAttribute('data-confirm-ok') || 'تأیید';
         window.RaykidDialog.open('staff-list-confirm', document.activeElement);
     });
-    document.getElementById('staff-list-confirm-yes').addEventListener('click', function () {
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest || !event.target.closest('#staff-list-confirm-yes')) return;
         var form = pendingForm;
         pendingForm = null;
         window.RaykidDialog.close('staff-list-confirm');
         if (form) form.submit();
     });
-    document.getElementById('staff-list-confirm').addEventListener('click', function (event) {
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest || !event.target.closest('#staff-list-confirm')) return;
         if (event.target.closest('[data-dialog-close]')) pendingForm = null;
     });
     document.addEventListener('keydown', function (event) {

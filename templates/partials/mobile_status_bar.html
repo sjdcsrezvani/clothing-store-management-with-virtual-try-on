@@ -1,0 +1,10 @@
+{# The capture page's connection strip, one fragment for both callers: the
+   page (initial "…") and the probe's answer (dot lit or dark, one-line
+   message as the out-of-band status line). Its own attributes ride along so
+   the strip re-arms its probe — htmx re-processes every landed node. #}
+<div class="status-bar" id="status-area" hx-get="/api/capture/ping" hx-trigger="click from:#btn-connection-test" hx-target="this" hx-swap="outerHTML" hx-headers='{"X-Capture-Key": "js:window.__captureKey"}'>
+    <div class="status-dot{% if online %} online{% endif %}" id="status-dot" title="وضعیت اتصال"></div>
+    <div class="pair-state" id="pair-state">جفت‌شده</div>
+    <button type="button" id="btn-connection-test">بررسی اتصال</button>
+</div>
+<div id="status-line" role="status" class="status-line" hx-swap-oob="outerHTML">{{ status_text }}</div>

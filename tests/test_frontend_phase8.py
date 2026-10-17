@@ -6,7 +6,11 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_base_template_loads_local_application_assets():
     text = (ROOT / "templates/base.html").read_text()
     assert "/static/js/app.js" in text
-    assert "/static/js/charts.js" in text
+    # The chart engine shipped offline like everything else. It loads at page
+    # level now (a boosted arrival re-runs body scripts, not head ones), so
+    # the page that draws charts carriers its own script — the offline
+    # guarantee is the page's, not base's.
+    assert "/static/js/charts.js" in (ROOT / "templates/admin/settings_appearance.html").read_text()
     assert 'lang="fa" dir="rtl"' in text
 
 

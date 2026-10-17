@@ -15,12 +15,16 @@
     {# The browser's own chrome takes the theme's background, so an installed
        shortcut does not stay one colour across all ten palettes. #}
     <meta name="theme-color" content="{{ theme.tokens['--bg'] }}">
-    {# The canvas chart renderer is only needed where canvases are drawn. Pages
-       that do not set `show_charts` skip it; the analytics page opts in, and
-       its inline init already falls back to an offline message without it. #}
-    {% if show_charts %}<script src="/static/js/charts.js"></script>{% endif %}
+    {# The canvas chart engines load per page that draws one — analytics and
+       the appearance settings each bring theirs at page level, so a boosted
+       arrival re-runs them. A head-level carrier would be dead on arrival. #}
+    {# htmx and its shell load blocking ahead of every body script: boosted
+       pages re-run body scripts, and the shell's re-entry dedupe has to be
+       installed before the first one binds a document listener. #}
+    <script src="/static/vendor/htmx.min.js?v={{ static_version }}"></script>
+    <script src="/static/js/htmx-shell.js?v={{ static_version }}"></script>
 </head>
-<body data-app-shell="store-management">
+<body data-app-shell="store-management" hx-boost="true">
     <svg class="icon-sprite" aria-hidden="true" focusable="false">
         <defs>
             <symbol id="icon-cart" viewBox="0 0 24 24"><path d="M3 4h2l2.2 10.2a2 2 0 0 0 2 1.6h7.9a2 2 0 0 0 1.9-1.4L21 8H6"/><circle cx="10" cy="20" r="1.2"/><circle cx="18" cy="20" r="1.2"/></symbol>
@@ -129,7 +133,6 @@
     <script src="/static/js/dialog.js?v={{ static_version }}" defer></script>
     <script src="/static/js/datepicker.js?v={{ static_version }}" defer></script>
     <script src="/static/js/dropdown.js?v={{ static_version }}" defer></script>
-    <script src="/static/js/list_nav.js?v={{ static_version }}" defer></script>
     <script>
     // Open the POS in a second native window (desktop app) or browser tab (web).
     // target="_blank" alone does nothing inside pywebview, so pages call this.

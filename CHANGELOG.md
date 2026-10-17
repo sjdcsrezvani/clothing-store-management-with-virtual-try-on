@@ -1,3 +1,67 @@
+## 2.9.4 — 1405/07/25 (2026-10-17)
+
+### بارگذاری در جا: the shop moves without a reload
+
+- **htmx drives the whole shell.** Every link and form
+  accelerates by default, so a click swaps the page in
+  place — with htmx 2.0.11 vendored beside the chart
+  engine, the shop's LAN never needs the internet, and a
+  boosted arrival re-runs its inline boots exactly once.
+
+- **The till went first.** Terminal status, the name and
+  barcode search, and add-to-basket answer the counter
+  with fragments, while every other caller keeps its
+  exact JSON contract — the two-character silence
+  included.
+
+- **Lists stop jumping.** Sort headers, page links and
+  filter forms each swap only their own region; the
+  server still draws the whole page, so a no-JS browser
+  reads the same list through plain navigation and a
+  scrolled page stays scrolled.
+
+- **The live islands poll as regions.** The dashboard's
+  five-minute refresh and the log page's fresh-rows pill
+  swap a fragment instead of patching keys, and the
+  terminal and try-on reachability pills answer the same
+  way.
+
+- **The phone app speaks fragments too.** Pairing, the
+  connection strip and the photo upload moved over behind
+  the capture key, with the header read live from a
+  getter so a rotated key never goes stale on the wire.
+
+- **The last fetches went quiet.** The product form's
+  demand button, the try-on upload and job strip, and the
+  print tray's preview read now move through htmx — the
+  transport allowlist holds only the shell bridge itself.
+
+- **The shell answers for one copy.** A re-entry dedupe
+  keeps boosted boots from piling, confirm gates moved to
+  delegation across the twelve pages they gate, flash
+  rows land on arrival, and a reply that is not the
+  fragment it claims to be never lands in the page — a
+  failed boosted load falls back to real navigation.
+
+### پشت صحنه: the guard that keeps the transport honest
+
+- **The transport inventory only shrinks.** A guard reads
+  every template and script for hand-rolled fetch or XHR:
+  a new speaker fails, and an allowlist entry whose file
+  was converted fails until it is removed — the list can
+  never rot into a lie.
+
+- **Every call carries the shop's marks.** CSRF and the
+  request marker ride each htmx call from the one
+  sanctioned bridge; an expired session answers as a
+  navigation to the login page instead of becoming a row
+  inside a table.
+
+- **The vendored copy is pinned.** The guard reads the
+  version out of the shipped file and the README carries
+  its hash, so a silent swap of the transport cannot pass
+  unnoticed.
+
 ## 2.9.3 — 1405/07/25 (2026-10-17)
 
 ### پیشخوان: the dashboard answers to whoever is standing at it

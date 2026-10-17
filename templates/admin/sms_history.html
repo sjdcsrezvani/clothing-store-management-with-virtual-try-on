@@ -44,7 +44,7 @@
     </a>
 </div>
 
-<section class="card sms-history-card" data-list-region="sms-history">
+<section class="card sms-history-card" data-list-region="sms-history" hx-boost="true" hx-target="closest [data-list-region]" hx-swap="outerHTML" hx-select="[data-list-region=sms-history]">
     <div class="section-heading-row">
         <div>
             <h3 data-list-heading tabindex="-1">گزارش ارسال</h3>
@@ -326,13 +326,15 @@
             form.getAttribute('data-confirm');
         window.RaykidDialog.open('history-confirm', document.activeElement);
     });
-    document.getElementById('history-confirm-yes').addEventListener('click', function () {
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest || !event.target.closest('#history-confirm-yes')) return;
         var form = pendingForm;
         pendingForm = null;
         window.RaykidDialog.close('history-confirm');
         if (form) form.submit();
     });
-    document.getElementById('history-confirm').addEventListener('click', function (event) {
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest || !event.target.closest('#history-confirm')) return;
         if (event.target.closest('[data-dialog-close]')) pendingForm = null;
     });
     document.addEventListener('keydown', function (event) {

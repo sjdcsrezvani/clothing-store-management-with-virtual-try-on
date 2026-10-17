@@ -46,31 +46,42 @@
                 </form>
 <script>
 (function () {
-    // Both buttons post with fetch, so a rejection (wrong file, too big,
-    // logged out) lands in the status line instead of vanishing into a
-    // hidden frame behind a blind reload. The endpoint is CSRF-exempt and
-    // takes the admin session cookie, which fetch sends same-origin.
+    // Both buttons post through htmx. The transport is htmx.ajax because the
+    // crop button builds its blob in browser memory before anything can be
+    // sent — a plain form post can't carry it. The answer is the same
+    // send-status strip the phone gets (data-status ok|err); success reloads
+    // the page so the new photo shows, failure just swamps the note line.
     var input = document.getElementById('kid-file');
     var plainBtn = document.getElementById('kid-plain-upload');
     var cropBtn = document.getElementById('kid-crop-upload');
-    var note = document.getElementById('kid-crop-note');
-    if (!input || !plainBtn || !cropBtn) return;
+    var noteLine = function (msg) {
+        // The note in the DOM is the truth: after an err swap it is the
+        // send-status strip the server sent back (new id, same slot).
+        statusSlot().textContent = msg;
+    };
+    if (!input || !plainBtn || !cropBtn || !window.htmx) return;
+    // After an error the note is the send-status strip the server sent back —
+    // same slot, different id. Every retry must find whatever holds it now.
+    function statusSlot() {
+        return document.getElementById('kid-crop-note')
+            || document.getElementById('send-status');
+    }
     function postBlob(blob, name) {
-        note.textContent = 'در حال آپلود…';
-        var form = new FormData();
-        form.append('file', blob, name);
-        fetch('/api/image-gen/upload-kid-photo', { method: 'POST', body: form })
-            .then(function (r) {
-                if (r.ok) { window.location.reload(); return null; }
-                return r.json().then(function (body) {
-                    throw new Error((body && body.detail) || ('خطا ' + r.status));
-                }, function () { throw new Error('خطا ' + r.status); });
-            })
-            .catch(function (e) { note.textContent = 'آپلود نشد: ' + (e.message || 'خطای شبکه'); });
+        statusSlot().textContent = 'در حال آپلود…';
+        var body = new FormData();
+        body.append('file', blob, name);
+        htmx.ajax('POST', '/api/image-gen/upload-kid-photo', {
+            values: body,
+            target: statusSlot(),
+            swap: 'outerHTML',
+        }).catch(function () {
+            // No transport, no swap, no answer: the note keeps its own line.
+            statusSlot().textContent = 'آپلود نشد: خطای شبکه.';
+        });
     }
     plainBtn.addEventListener('click', function () {
         var file = input.files && input.files[0];
-        if (!file) { note.textContent = 'اول یک فایل انتخاب کنید.'; return; }
+        if (!file) { noteLine('اول یک فایل انتخاب کنید.'); return; }
         postBlob(file, file.name || 'kid.jpg');
     });
     cropBtn.addEventListener('click', function () {
@@ -78,8 +89,8 @@
         // endpoint as the plain button. Quality preserved — the crop happens
         // before any downscale, unlike cropping the page preview.
         var file = input.files && input.files[0];
-        if (!file) { note.textContent = 'اول یک فایل انتخاب کنید.'; return; }
-        note.textContent = 'در حال برش…';
+        if (!file) { noteLine('اول یک فایل انتخاب کنید.'); return; }
+        noteLine('در حال برش…');
         var url = URL.createObjectURL(file);
         var img = new Image();
         img.onload = function () {
@@ -91,12 +102,33 @@
             canvas.width = side; canvas.height = side;
             canvas.getContext('2d').drawImage(img, sx, sy, side, side, 0, 0, side, side);
             canvas.toBlob(function (blob) {
-                if (!blob) { note.textContent = 'برش ناموفق بود.'; return; }
+                if (!blob) { noteLine('برش ناموفق بود.'); return; }
                 postBlob(blob, 'kid-square.jpg');
             }, 'image/jpeg', 0.92);
         };
-        img.onerror = function () { URL.revokeObjectURL(url); note.textContent = 'فایل خوانده نشد.'; };
+        img.onerror = function () { URL.revokeObjectURL(url); noteLine('فایل خوانده نشد.'); };
         img.src = url;
+    });
+    // The swapped-in strip answers with its verdict: success reloads (the
+    // page has to draw the new photo), failure already shows its text.
+    var pollFailures = 0;
+    document.body.addEventListener('htmx:afterSwap', function (event) {
+        var target = event.target;
+        if (!target.matches || !target.matches('#send-status[data-status], #tryon-live')) return;
+        if (target.matches('#tryon-live')) { pollFailures = 0; return; }
+        if (target.getAttribute('data-status') === 'ok') window.location.reload();
+    });
+    // The old poll gave up after three bad rounds. Same words, then the
+    // strip stops asking until someone refreshes: deleting its own attrs.
+    document.body.addEventListener('htmx:responseError', function (event) {
+        var strip = event.detail && event.detail.target;
+        if (!strip || !strip.matches || !strip.matches('#tryon-live')) return;
+        pollFailures += 1;
+        if (pollFailures < 3) return;
+        strip.removeAttribute('hx-get');
+        strip.removeAttribute('hx-trigger');
+        htmx.process(strip);
+        strip.textContent = 'وضعیت به‌روز نشد — صفحه را دستی تازه کنید.';
     });
 })();
 </script>
@@ -127,7 +159,8 @@
             form.getAttribute('data-confirm');
         window.RaykidDialog.open('tryon-confirm', document.activeElement);
     });
-    document.getElementById('tryon-confirm-yes').addEventListener('click', function () {
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest || !event.target.closest('#tryon-confirm-yes')) return;
         var form = pendingForm;
         pendingForm = null;
         window.RaykidDialog.close('tryon-confirm');
@@ -321,39 +354,7 @@
             <form method="post" action="/admin/try-on/jobs/{{ tryon_job_id }}/cancel" class="tryon-cancel-form">
                 <button type="submit" class="btn btn-ghost btn-block">لغو درخواست جاری ({{ tryon_job_status }})</button>
             </form>
-            <div id="tryon-live" role="status" data-status-url="/api/image-gen/jobs/{{ tryon_job_id }}"
-                 class="tryon-live">در صف تولید… صفحه خودکار به‌روز می‌شود.</div>
-            <script>
-            (function () {
-                var box = document.getElementById('tryon-live');
-                if (!box) return;
-                var url = box.getAttribute('data-status-url');
-                var failures = 0;
-                var timer = setInterval(function () {
-                    fetch(url, { headers: { 'Accept': 'application/json' } }).then(function (r) {
-                        if (!r.ok) { throw new Error('http ' + r.status); }
-                        return r.json();
-                    }).then(function (job) {
-                        failures = 0;
-                        if (job.status === 'completed') {
-                            clearInterval(timer);
-                            window.location.reload();
-                        } else if (job.status === 'failed') {
-                            clearInterval(timer);
-                            box.textContent = 'ناموفق بود — ورودی‌ها سر جایشان است، دوباره امتحان کنید.';
-                        } else {
-                            box.textContent = 'در حال تولید… (' + job.status + ')';
-                        }
-                    }).catch(function () {
-                        failures += 1;
-                        if (failures >= 3) {
-                            clearInterval(timer);
-                            box.textContent = 'وضعیت به‌روز نشد — صفحه را دستی تازه کنید.';
-                        }
-                    });
-                }, 5000);
-            })();
-            </script>
+            {% include 'partials/tryon_live.html' %}
             {% endif %}
         </div>
 

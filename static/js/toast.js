@@ -236,6 +236,7 @@
     }
 
     var api = {
+        adopt: adoptServerFlash,   // boosted arrivals carry [data-toast] too
         show: function (title, opts) { return upsert(title, opts); },
         success: function (title, opts) { return upsert(title, Object.assign({}, opts, { type: 'success' })); },
         error: function (title, opts) { return upsert(title, Object.assign({}, opts, { type: 'error' })); },
