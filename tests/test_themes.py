@@ -711,6 +711,7 @@ NOT_A_PAGE: dict[str, str] = {
 # it, so a renamed route cannot leave a stale excuse behind.
 UNPOLLED: dict[str, str] = {
     "/sales/terminal-status": "the till's long poll: two seconds of waiting, and JSON when it answers",
+    "/admin/dashboard-poll": "the dashboard's silent poll: keyed figures as JSON, not a page",
 }
 
 # The one thing a document loads from the shell. `:root` is a rule inside this

@@ -2148,7 +2148,7 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
     # owner is looking at, instead of surfacing later as a rule the browser
     # showed and the server ignored.
     template_source = (Path("templates") / "admin" / "settings.html").read_text(encoding="utf-8")
-    macro_fields = set(re.findall(r"num\('([a-z_]+)'", template_source))
+    macro_fields = set(re.findall(r"num\('([a-z0-9_]+)'", template_source))
     missing = sorted(macro_fields - set(SETTINGS_NUMERIC_RULES))
     if missing:
         return templates.TemplateResponse(request, "admin/settings.html", {
@@ -2188,7 +2188,7 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
         tag = m.group(0)
         if 'type="number"' not in tag:
             continue
-        name_m = re.search(r'name="([a-z_]+)"', tag)
+        name_m = re.search(r'name="([a-z0-9_]+)"', tag)
         rule = SETTINGS_NUMERIC_RULES.get(name_m.group(1)) if name_m else None
         min_m = re.search(r'\bmin="(-?\d+)"', tag)
         max_m = re.search(r'\bmax="(-?\d+)"', tag)
@@ -2213,7 +2213,7 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
     from services.image_gen import mask_tryon_key
     tryon_key_mask = mask_tryon_key(settings.get("tryon_api_key", ""))
     error_field = (request.query_params.get("field", "") or "").strip()
-    if not re.fullmatch(r"[a-z_]+", error_field):
+    if not re.fullmatch(r"[a-z0-9_]+", error_field):
         error_field = ""
     # The gateway strip is read live but only for its own tab — every other
     # panel skips the device query entirely.

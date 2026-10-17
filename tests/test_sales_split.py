@@ -42,7 +42,7 @@ def test_migration_33_rebuilds_sales_and_checkout_keeping_rows(tmp_path):
                           " final_amount, expires_at, created_at, updated_at)"
                           " VALUES (9, 'n1', 'card', 100, 100,"
                           " '2030-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')"))
-    assert upgrade(engine) == MIGRATION_VERSION == 34
+    assert upgrade(engine) == MIGRATION_VERSION == 35
     with engine.connect() as conn:
         assert conn.execute(text("SELECT payment_method FROM sales WHERE id=7")).scalar() == "cash"
         assert conn.execute(text("SELECT quantity FROM sale_items WHERE id=3")).scalar() == 2
@@ -95,7 +95,7 @@ def test_migration_33_hands_back_the_indexes_it_took(tmp_path):
                 CONSTRAINT ck_checkout_payment_method CHECK (payment_method IN ('card', 'cash', 'credit')))"""))
         conn.execute(text("CREATE INDEX ix_checkout_sessions_id ON checkout_sessions (id)"))
         conn.execute(text("CREATE INDEX ix_checkout_sessions_state ON checkout_sessions (state)"))
-    assert upgrade(engine) == 34
+    assert upgrade(engine) == 35
     sales_indexes = {index["name"] for index in inspect(engine).get_indexes("sales")}
     checkout_indexes = {index["name"] for index in inspect(engine).get_indexes("checkout_sessions")}
     assert "ix_sales_id" in sales_indexes
@@ -256,12 +256,12 @@ def test_migration_33_resumes_after_crashed_boot(tmp_path):
         conn.execute(text("INSERT INTO customers (id, phone) VALUES (1, '09120000001')"))
         conn.execute(text("INSERT INTO sales (id, customer_id, total_amount, final_amount, payment_method)"
                           " VALUES (7, 1, 500000, 500000, 'cash')"))
-    assert upgrade(engine) == 34
+    assert upgrade(engine) == 35
     with engine.begin() as conn:
         # Simulate the crashed first boot: version back, partial staging left.
         conn.execute(text("UPDATE schema_version SET version=32 WHERE id=1"))
         conn.execute(text("CREATE TABLE sales_v33 (id INTEGER PRIMARY KEY)"))
-    assert upgrade(engine) == 34
+    assert upgrade(engine) == 35
     with engine.connect() as conn:
         assert conn.execute(text("SELECT payment_method FROM sales WHERE id=7")).scalar() == "cash"
         assert not conn.execute(text(
@@ -270,6 +270,6 @@ def test_migration_33_resumes_after_crashed_boot(tmp_path):
         # Simulate dying between DROP and RENAME: source gone, staging whole.
         conn.execute(text("ALTER TABLE sales RENAME TO sales_v33"))
         conn.execute(text("UPDATE schema_version SET version=32 WHERE id=1"))
-    assert upgrade(engine) == 34
+    assert upgrade(engine) == 35
     with engine.connect() as conn:
         assert conn.execute(text("SELECT payment_method FROM sales WHERE id=7")).scalar() == "cash"

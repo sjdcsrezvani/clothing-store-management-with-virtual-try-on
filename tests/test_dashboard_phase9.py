@@ -85,5 +85,5 @@ def test_manager_and_owner_views_unchanged(client, db_session):
     manager, password = _staff(db_session, "phase9-mgr", "manager")
     _session_as(client, manager, password)
     page = client.get("/admin").text
-    assert "نیازمند توجه" in page and "dash-greeting" not in page
+    assert "نیازمند توجه" in page  # phase 11 gives every role its greeting
     assert "سود ناخالص" not in page and "سود خالص" not in page  # money-in only

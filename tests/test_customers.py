@@ -376,7 +376,7 @@ def test_profile_404s_for_an_unknown_customer(authed):
     assert authed.get("/admin/customers/424242").status_code == 404
 
 
-def test_profile_requires_a_manager(client, db_session):
+def test_profile_reaches_the_cashier_desk(client, db_session):
     from services.security import hash_password
 
     customer = make_customer(db_session, first_name="محدود")
@@ -388,8 +388,10 @@ def test_profile_requires_a_manager(client, db_session):
     client.post("/admin/login", data={"username": "cashier-c", "password": "role-pass",
                                       "csrf_token": token}, follow_redirects=False)
 
-    assert client.get("/admin/customers", follow_redirects=False).status_code == 403
-    assert client.get(f"/admin/customers/{customer.id}", follow_redirects=False).status_code == 403
+    # The list and the file both open at the counter now — the cashier
+    # registers the signup and answers about it without a manager.
+    assert client.get("/admin/customers", follow_redirects=False).status_code == 200
+    assert client.get(f"/admin/customers/{customer.id}", follow_redirects=False).status_code == 200
 
 
 def test_profile_never_offers_delete_when_sales_exist(authed, db_session):

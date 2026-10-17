@@ -68,7 +68,7 @@ def _clean_db(client, db_session):
     for model in (BusinessEvent, TagPrintBatchLine, TagPrintBatch, CheckoutEvent, StockReservation, CheckoutSession, CheckReminder, CheckRecord, RefundLine, FinancialEntry, PaymentReversal, Refund, SalaryPaymentItem, SalaryPayment, AttendanceRecord, CampaignAssignment, SaleCampaign, SalePaymentPart, SaleItem, StockMovement, POSTransaction, Payment, Sale, GeneratedImage,
                   SmsMessage, SmsTemplate, SmsDevice, BackgroundJob,
                   Referral, SupplierPayment, PurchaseItem, Purchase, VariantImage, ProductImage, ProductVariant, Product, Expense, RecurringExpense,
-                  Campaign, CashSessionEntry, CashSession, AdminLog, StaffUser, JobPosition, Settings, Customer):
+                  Campaign, CashSessionEntry, CashSession, AdminLog, Customer, StaffUser, JobPosition, Settings):
         db_session.query(model).delete()
     db_session.commit()
     db_session.expire_all()  # drop stale identity-map entries

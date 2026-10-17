@@ -52,7 +52,7 @@ def attention_counts(html: str) -> dict:
     return {
         match.group(2): match.group(1).strip()
         for match in re.finditer(
-            r'<span class="action-count tnum">([^<]*)</span>\s*<strong>([^<]*)</strong>', html
+            r'<span class="action-count tnum"[^>]*>([^<]*)</span>\s*<strong>([^<]*)</strong>', html
         )
     }
 
@@ -68,7 +68,7 @@ def stat_values(html: str) -> dict:
     return {
         match.group(1).strip(): match.group(2).strip()
         for match in re.finditer(
-            r'<div class="stat-label">([^<]*)</div>\s*<div class="stat-value[^"]*">([^<]*)</div>',
+            r'<div class="stat-label">([^<]*)</div>\s*<div class="stat-value[^>]*>([^<]*)</div>',
             html,
         )
     }
@@ -100,11 +100,11 @@ def _product(db, stock_levels, name="کالای داشبورد"):
 
 # Labels only an owner may be handed. The sections carry the period now, so
 # «امروز ← فروش» is one card labelled «فروش» rather than a label repeating the
-# span the heading already names.
+# span the heading already names. The periodic counts and the expense and
+# stock figures moved down to the manager when those pages became the
+# manager's own; what stays above them is profit and the backup button.
 OWNER_ONLY = (
-    "سود ناخالص", "سود خالص", "هزینه‌ها",
-    "ارزش موجودی انبار", "کارهای دوره‌ای", "پیامک تولد", "پیگیری مشتریان",
-    "ارتقای سطح", "کاهش سطح", "پشتیبان‌گیری",
+    "سود ناخالص", "سود خالص", "پشتیبان‌گیری",
 )
 
 
@@ -139,8 +139,7 @@ def test_manager_is_never_shown_an_owner_number_or_button(client, db_session):
     # …and the takings, which a manager does run the shop on, are all still here.
     # «فروش» appears twice because today's and the month's are separate cards.
     labels = stat_values(html)
-    for label in ("صندوق", "نسیه در گردش", "اعضای باشگاه", "مشتریان فعال",
-                  "مشتریان بدهکار"):
+    for label in ("صندوق", "نسیه در گردش", "اعضای باشگاه", "مشتریان فعال"):
         assert label in labels, f"manager is missing {label}"
     # The periods are named by their sections, so «فروش» appears once under
     # «امروز» and once under «این ماه» rather than in three separate labels.
@@ -164,7 +163,10 @@ def test_every_destination_the_page_draws_can_be_opened_by_whoever_it_drew_it_fo
     assert links, "the page drew no destinations at all"
 
     for link in sorted(links):
-        response = client.get(link, follow_redirects=False)
+        # The shell's own home and day links are spelled without the trailing
+        # slash; a canonical redirect still lands on the page — what must never
+        # happen is a link that answers with something that is not one.
+        response = client.get(link, follow_redirects=True)
         assert response.status_code < 400, f"{role} cannot open {link} ({response.status_code})"
         assert response.headers.get("content-type", "").startswith("text/html"), \
             f"{link} answered with a non-HTML body for {role}"
@@ -336,29 +338,33 @@ def test_the_dashboard_cannot_reach_the_helpers_that_are_too_heavy_for_it(
 def test_a_card_a_role_may_not_see_is_never_computed(client, db_session, monkeypatch):
     """Laziness is a correctness property here, not a performance tweak.
 
-    The owner-only cards are the expensive ones — a follow-up count walks the
-    customer list and a tier-up count reads every marker. If a manager's page
-    computed them anyway the manager would be paying for the owner's work, and a
-    number nobody is shown would exist at all.
+    The owner-only cards are the expensive ones — the reconciliation walk
+    reads every unsettled terminal transaction and the backup card reaches for
+    the last archive. If a manager's page computed them anyway the manager
+    would be paying for the owner's work, and a number nobody is shown would
+    exist at all. What is measured is the computation itself: the builder
+    runs, or it does not — a failed card could hide the call behind an error
+    cell.
     """
     import services.dashboard as dashboard
 
-    def _refuse(*args, **kwargs):
-        raise AssertionError("an owner-only card was built for a manager")
+    calls = []
 
-    monkeypatch.setattr(dashboard, "follow_up_due_count", _refuse)
-    monkeypatch.setattr(dashboard, "tier_up_candidates", _refuse)
-    monkeypatch.setattr(dashboard, "latest_backup", _refuse)
-    monkeypatch.setattr(dashboard, "downgrade_candidates", _refuse)
+    def _spy(*args, **kwargs):
+        calls.append("owner-only card built")
+
+    monkeypatch.setattr(dashboard, "unresolved_transactions", _spy)
+    monkeypatch.setattr(dashboard, "latest_backup", _spy)
 
     manager, password = _staff(db_session, "dash-lazy", "manager")
     _session_as(client, manager, password)
     assert client.get("/admin").status_code == 200
+    assert not calls, f"a manager's page computed {calls}"
 
     owner, password = _staff(db_session, "dash-lazy-owner", "owner")
     _session_as(client, owner, password)
-    with pytest.raises(AssertionError):
-        client.get("/admin")
+    assert client.get("/admin").status_code == 200
+    assert calls, "the owner's own page never computed the owner-only cards"
 
 
 def test_tier_up_candidates_asks_the_database_once_however_many_customers(db_session):
@@ -438,10 +444,11 @@ def test_the_page_prints_what_it_is_handed_and_decides_nothing_itself():
 
 
 def test_the_dashboard_hosts_no_action_at_all():
-    """It reports and it links. The one mutation it used to carry turned out to
-    duplicate a job that already ran, and it lives where the rule does now."""
-    assert "<form" not in _read("dashboard")
-    assert "action=" not in _read("dashboard")
+    """It reports and it links. The one form it carries is the weekday-goal
+    editor the staff board grew — the same door ``/admin/targets`` is, and the
+    only mutation the page may still hold."""
+    actions = re.findall(r'<form[^>]*action="([^"]*)"', _read("dashboard"))
+    assert set(actions) <= {"/admin/targets"}, actions
 
 
 # ── the deltas ───────────────────────────────────────────────────────────────
@@ -577,12 +584,17 @@ def test_the_downgrade_card_links_to_the_page_instead_of_running_it(client, db_s
 
     html = client.get("/admin").text
     assert "/admin/tier-downgrades" in html
-    # A count, and the fact that it waits for a person.
-    assert f">{customer.id}<" not in html
+    # A count, and the fact that it waits for a person — never the person's
+    # own file. A bare number cannot prove this (the staff board ranks a lone
+    # seller «۱» and the card's own count is «1» too), so what is checked is
+    # that no link singles the customer out.
+    assert f"/admin/customers/{customer.id}" not in html
     assert "با تأیید شما" in html
-    # The dashboard no longer holds the mutation: it draws no form of its own.
+    # The dashboard no longer holds the mutation: the downgrade button lives
+    # on its page. Its only form is the staff board's weekday-goal editor.
     body = html[MAIN_OPEN.search(html).end():]
-    assert "<form" not in body
+    actions = set(re.findall(r'<form[^>]*action="([^"]*)"', body))
+    assert actions <= {"/admin/targets"}, actions
 
 
 def test_the_downgrade_card_says_the_rule_is_off_rather_than_reporting_nobody(client, db_session):

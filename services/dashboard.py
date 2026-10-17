@@ -395,7 +395,9 @@ def _build_cashbox(numbers: _Numbers, role: str) -> dict:
     # short/over from the last closed shift, and a drawer left open overnight.
     variance = _build_cash_variance(numbers, role)
     if variance is not None:
-        notes.append(variance["sub"])
+        # The merged note names the shortage and its figure: a numeral the
+        # drawer is short is the fact worth walking over to check.
+        notes.append(f"اختلاف صندوق {variance['value']} · {variance['sub']}")
     stale = _build_cash_stale(numbers, role)
     if stale is not None:
         notes.append(stale["sub"])
@@ -1054,6 +1056,11 @@ def dashboard_overview(db: Session, *, role: str = "manager", user_id=None,
                            "delta": None, "clear": False, **target}],
                 "rows": [],
             })
+    # Every card speaks the same keys: goal cards carry a progress, the rest
+    # carry none — so the template never reads a name a builder left out.
+    for section in sections:
+        for card in section.get("cards", []):
+            card.setdefault("progress", None)
     return {
         "role": role,
         "role_label": ROLE_LABELS.get(role, role),
