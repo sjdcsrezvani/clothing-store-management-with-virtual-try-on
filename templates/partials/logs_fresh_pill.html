@@ -1,0 +1,11 @@
+{# The audit trail's fresh-rows pill, one fragment for both callers: the page
+   (always hidden on paint) and the htmx poll — /admin/logs/latest under HX
+   re-renders it visible when a newer row exists under the same filters.
+   Polling stops the moment the pill stands: the owner decides, and no reload
+   ever happens behind their back. #}
+<p class="empty-state" id="logs-fresh"{% if not fresh %} hidden{% endif %}
+     hx-get="{{ hx_url }}"
+     hx-trigger="every 30s [ !document.hidden && !document.querySelector('[data-dialog].is-open') && document.getElementById('logs-fresh').hidden ]"
+     hx-swap="outerHTML">
+    <a class="btn btn-primary" href="{{ show_url }}">ردیف‌های تازه — نمایش</a>
+</p>

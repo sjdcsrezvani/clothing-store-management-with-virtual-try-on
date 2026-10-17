@@ -3,7 +3,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse, Response
@@ -3228,6 +3228,10 @@ async def admin_logs(request: Request, db: Session = Depends(get_db)):
         fa = to_persian_digits
         position_line = (f"نمایش {fa(str(start))} تا {fa(str(end))}"
                          f" از {fa(str(total))}")
+    first_action_id = next(
+        (item["row_id"] for item in items if item["source"] == "action"), 0)
+    first_event_id = next(
+        (item["row_id"] for item in items if item["source"] == "event"), 0)
 
     return templates.TemplateResponse(request, "admin/logs.html", {
         "groups": groups,
@@ -3259,10 +3263,13 @@ async def admin_logs(request: Request, db: Session = Depends(get_db)):
         "back_url": back_url,
         "poll_url": poll_url,
         "position_line": position_line,
-        "first_action_id": next(
-            (item["row_id"] for item in items if item["source"] == "action"), 0),
-        "first_event_id": next(
-            (item["row_id"] for item in items if item["source"] == "event"), 0),
+        # The fresh-rows pill's own wiring: the fragment it polls keeps the
+        # page's filters (poll_url), and its "نمایش" link is exactly the page
+        # the user is looking at.
+        "fresh": False,
+        "hx_url": poll_url + ("&" if "?" in poll_url else "?")
+                  + f"first_action={first_action_id}&first_event={first_event_id}",
+        "show_url": str(request.url),
         "archivable": _logs_archivable_count(db),
     })
 
@@ -3313,7 +3320,10 @@ async def admin_logs_export(request: Request, db: Session = Depends(get_db)):
 @router.get("/logs/latest")
 async def admin_logs_latest(request: Request, db: Session = Depends(get_db)):
     """The newest row id per stream under the active filters — the poller asks
-    this, not the page, so a quiet check never renders a thing."""
+    this, not the page, so a quiet check never renders a thing. Plain callers
+    get the row ids as JSON; the audit pill's htmx poll (`HX-Request`) gets the
+    pill fragment itself: same comparison the old page script made, rendered
+    server-side, so the answer is visible or absent and never a number."""
     guard = require_html_role(request, db, "owner")
     if not hasattr(guard, "role"):
         return guard
@@ -3322,6 +3332,23 @@ async def admin_logs_latest(request: Request, db: Session = Depends(get_db)):
         AdminLog.id.desc()).limit(1).first()
     latest_event = _events_base_query(db, filters).order_by(
         BusinessEvent.id.desc()).limit(1).first()
+    if request.headers.get("HX-Request") == "true":
+        try:
+            first_action = int(request.query_params.get("first_action") or "0")
+            first_event = int(request.query_params.get("first_event") or "0")
+        except ValueError:
+            first_action = first_event = 0
+        fresh = ((latest_action.id if latest_action else 0) > first_action
+                 or (latest_event.id if latest_event else 0) > first_event)
+        qp = [(k, v) for k, v in request.query_params.multi_items()
+              if k not in ("first_action", "first_event")]
+        return templates.TemplateResponse(request, "partials/logs_fresh_pill.html", {
+            "fresh": fresh,
+            "hx_url": str(request.url.path)
+                      + (("?" + str(request.url.query)) if request.url.query else ""),
+            # The reveal link is the audit page itself, never this endpoint.
+            "show_url": "/admin/logs" + (("?" + urlencode(qp)) if qp else ""),
+        })
     return JSONResponse({
         "actions_max": latest_action.id if latest_action else 0,
         "events_max": latest_event.id if latest_event else 0,

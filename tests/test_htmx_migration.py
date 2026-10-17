@@ -23,9 +23,7 @@ _TRANSPORT = re.compile(r"\bfetch\s*\(|\bXMLHttpRequest\b")
 FETCH_ALLOWLIST = {
     "static/js/htmx-shell.js",  # the bridge itself — permanent, by design
     "static/js/list_nav.js",
-    "static/js/logs_poll.js",
     "templates/admin/barcode_print.html",
-    "templates/admin/dashboard.html",
     "templates/admin/pos_reconciliation.html",
     "templates/admin/product_form.html",
     "templates/admin/settings.html",
