@@ -425,13 +425,15 @@
             form.getAttribute('data-confirm-ok') || 'تأیید';
         window.RaykidDialog.open('staff-confirm', document.activeElement);
     });
-    document.getElementById('staff-confirm-yes').addEventListener('click', function () {
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest || !event.target.closest('#staff-confirm-yes')) return;
         var form = pendingForm;
         pendingForm = null;
         window.RaykidDialog.close('staff-confirm');
         if (form) form.submit();
     });
-    document.getElementById('staff-confirm').addEventListener('click', function (event) {
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest || !event.target.closest('#staff-confirm')) return;
         if (event.target.closest('[data-dialog-close]')) pendingForm = null;
     });
     document.addEventListener('keydown', function (event) {

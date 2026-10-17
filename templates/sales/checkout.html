@@ -660,7 +660,9 @@ announceScan();
 // shell enforces that); a dead wire falls back to a real submit — the same
 // guarantee the hand-rolled transport kept.
 document.addEventListener('htmx:afterSwap', function (event) {
-    var target = event.detail.target;
+    // Per-swap event target is the node that just landed (verified against
+    // the vendored dist); detail.target is not on this event.
+    var target = event.target;
     if (!target) return;
     if (target.id === 'terminal-status') {
         updatePaymentUi();

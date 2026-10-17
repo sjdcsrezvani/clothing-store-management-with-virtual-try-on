@@ -205,7 +205,12 @@
             form.getAttribute('data-confirm');
         window.RaykidDialog.open('invoice-confirm', document.activeElement);
     });
-    document.getElementById('invoice-confirm-yes').addEventListener('click', function () {
+    // htmx body-boost swaps this page under us; node-bound answers die with
+    // their elements. These gates stay document-level and answer fresh nodes
+    // — and with the shell's allowScriptTags=false the script registers once,
+    // on the first paint, no matter how many swaps pass by.
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest || !event.target.closest('#invoice-confirm-yes')) return;
         var form = pendingForm;
         pendingForm = null;
         window.RaykidDialog.close('invoice-confirm');

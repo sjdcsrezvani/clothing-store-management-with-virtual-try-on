@@ -135,13 +135,15 @@
             form.getAttribute('data-confirm-ok') || 'تأیید';
         window.RaykidDialog.open('staff-list-confirm', document.activeElement);
     });
-    document.getElementById('staff-list-confirm-yes').addEventListener('click', function () {
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest || !event.target.closest('#staff-list-confirm-yes')) return;
         var form = pendingForm;
         pendingForm = null;
         window.RaykidDialog.close('staff-list-confirm');
         if (form) form.submit();
     });
-    document.getElementById('staff-list-confirm').addEventListener('click', function (event) {
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest || !event.target.closest('#staff-list-confirm')) return;
         if (event.target.closest('[data-dialog-close]')) pendingForm = null;
     });
     document.addEventListener('keydown', function (event) {

@@ -20,6 +20,31 @@
 (function () {
     'use strict';
 
+    // A boosted page-load swaps the whole body in place, and htmx re-runs
+    // every inline script it swaps in. A re-run must produce no second
+    // document-level listener (the QR countdown restarts, that is fine —
+    // but a second submit gate would open the confirm dialog twice).
+    // Deduplicate by the handler's own source text: an identical script
+    // re-registering the same listener on the same element is a re-entry,
+    // not a new gate. Node-bound listeners on fresh nodes always land —
+    // their elements are new — so every page arrives alive with nothing
+    // rewritten. (A template whose embedded value changes a handler's
+    // source between renders registers a fresh listener while the stale
+    // one keeps working; state drifts in that rare corner, and the fresh
+    // one wins the race that matters.)
+    var seen = new Map();
+    var addEventListener = EventTarget.prototype.addEventListener;
+    EventTarget.prototype.addEventListener = function (type, handler, options) {
+        if (handler && typeof handler === 'function') {
+            var bag = seen.get(this);
+            if (!bag) { bag = new Map(); seen.set(this, bag); }
+            var key = type + '\u0000' + String(handler);
+            if (bag.has(key)) return undefined;
+            bag.set(key, true);
+        }
+        return addEventListener.call(this, type, handler, options);
+    };
+
     function loginPath(url) {
         try {
             return new URL(url, window.location.href).pathname === '/admin/login';
@@ -103,6 +128,9 @@
     document.body.addEventListener('htmx:sendError', liftVeil);
 
     document.body.addEventListener('htmx:load', function (event) {
+        // A boosted nav answers with the server's flash row inside the new
+        // body; the toaster already adopts those on a real load — adopt here.
+        if (window.RaykidToast && window.RaykidToast.adopt) window.RaykidToast.adopt();
         var node = event.target;
         var region = node && node.matches ? node.closest('[data-list-region]') : null;
         if (!region) return;

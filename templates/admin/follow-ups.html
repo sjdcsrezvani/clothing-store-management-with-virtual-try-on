@@ -238,13 +238,15 @@
             ' مخاطب در صف قرار می‌گیرد. مطمئن هستید؟';
         window.RaykidDialog.open('followup-confirm', document.activeElement);
     });
-    document.getElementById('followup-confirm-yes').addEventListener('click', function () {
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest || !event.target.closest('#followup-confirm-yes')) return;
         var form = pendingForm;
         pendingForm = null;
         window.RaykidDialog.close('followup-confirm');
         if (form) form.submit();
     });
-    document.getElementById('followup-confirm').addEventListener('click', function (event) {
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest || !event.target.closest('#followup-confirm')) return;
         if (event.target.closest('[data-dialog-close]')) pendingForm = null;
     });
     document.addEventListener('keydown', function (event) {
