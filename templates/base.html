@@ -130,6 +130,11 @@
     <script src="/static/js/datepicker.js?v={{ static_version }}" defer></script>
     <script src="/static/js/dropdown.js?v={{ static_version }}" defer></script>
     <script src="/static/js/list_nav.js?v={{ static_version }}" defer></script>
+    {# The transport for every in-place update from here on: vendored htmx
+       (offline like the chart engine) plus the shell hooks that carry the
+       app's markers and keep non-fragment answers out of fragments. #}
+    <script src="/static/vendor/htmx.min.js?v={{ static_version }}" defer></script>
+    <script src="/static/js/htmx-shell.js?v={{ static_version }}" defer></script>
     <script>
     // Open the POS in a second native window (desktop app) or browser tab (web).
     // target="_blank" alone does nothing inside pywebview, so pages call this.
