@@ -1,3 +1,56 @@
+## 2.9.3 — 1405/07/25 (2026-10-17)
+
+### پیشخوان: the dashboard answers to whoever is standing at it
+
+- **The cashier gets their own board.** Their day alone —
+  sales, refunds, discounts, and the signups they
+  registered — under a greeting that names them, with a
+  seven-day strip to look back through, the shop's total
+  with no cost or colleague behind it, and a target bar
+  that appears only when a target exists.
+- **The manager gets a staff board and shop goals.** Who
+  rang what today, a live counter for open drawers and
+  baskets, today's target against the day's real number,
+  and seven weekday goals set from the sales tab by
+  manager or owner alike.
+- **Attention splits money first.** The urgent row leads,
+  the two drawer alerts fold into the cash card, a failed
+  SMS queue raises its own card, and margins stay off a
+  manager's view where they are not theirs to read.
+- **The page greets every role.** A live clock, the time
+  of day, today's Persian date, and one readable line of
+  context — for cashiers and owners alike.
+- **The dashboard polls silently.** A five-minute fetch
+  hands back the same builder's figures keyed per card,
+  so a page left open stays current without a reload and
+  can never disagree with one you open fresh.
+
+### پشت صحنه: attribution, gates, and the seams they left
+
+- **Each signup keeps its author.** Migration 35 stores
+  who registered the customer; legacy rows stay NULL and
+  count for nobody, so the signups card counts only rows
+  that name someone.
+- **The gates follow the counter.** The dashboard, the
+  customer list and file, and the try-on open to a
+  cashier; birthdays, follow-ups, and the tier tools move
+  from owner to manager — each page answering to the role
+  that works it.
+- **The settings page stopped erroring on itself.** The
+  numeric-form check could not read a digit-bearing field
+  name, so the seven weekday goals read as rules with no
+  field and the page painted its protection shell; both
+  checks now spell names the way the form does, the key
+  mask and all.
+- **The shortage is named with its figure again.** The
+  folded cash card carries «اختلاف صندوق» and the exact
+  amount with the shift it belongs to, where the first
+  fold had left only a reference.
+- **Every card speaks the same keys.** Goal cards still
+  paint their bar; the rest carry no progress — the key
+  exists either way, so the shell never reads a name
+  nothing supplied.
+
 ## 2.9.2 — 1405/07/22 (2026-10-14)
 
 ### صندوق فروش: four more phases on the counter screen
