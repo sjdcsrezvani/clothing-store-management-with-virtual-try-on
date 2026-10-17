@@ -86,7 +86,7 @@
     {% endif %}
 </section>
 
-<section class="card credit-card" data-list-region="credit">
+<section class="card credit-card" data-list-region="credit" hx-boost="true" hx-target="closest [data-list-region]" hx-swap="outerHTML" hx-select="[data-list-region=credit]">
     <div class="section-heading-row">
         <div>
             <h3 data-list-heading tabindex="-1">{% if view == 'invoices' %}فاکتورهای باز{% else %}بدهکاران{% endif %}</h3>

@@ -62,7 +62,7 @@
     </nav>
 </section>
 
-<section class="card product-list-card" data-list-region="products">
+<section class="card product-list-card" data-list-region="products" hx-boost="true" hx-target="closest [data-list-region]" hx-swap="outerHTML" hx-select="[data-list-region=products]">
     <div class="section-heading-row product-list-heading">
         <div>
             <h3 data-list-heading tabindex="-1">{% if state == 'archived' %}بایگانی محصولات{% else %}فهرست محصولات{% endif %}</h3>
@@ -265,7 +265,12 @@ function initProductsRegion(root) {
 }
 function initProductsPage() {
     initProductsRegion(document);
-    if (window.RaykidListNav) window.RaykidListNav.register('products', initProductsRegion);
+    // The region swaps itself whole via htmx: rebind its widgets on arrival.
+    document.body.addEventListener('htmx:load', function (event) {
+        var region = event.target.closest
+            ? event.target.closest('[data-list-region="products"]') : null;
+        if (region) initProductsRegion(region);
+    });
 }
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initProductsPage);

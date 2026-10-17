@@ -55,4 +55,61 @@
             window.location.assign(xhr.responseURL || window.location.href);
         }
     });
+
+    /* List regions (the old list_nav, kept as one bridge): the region itself
+       carries hx-boost + hx-select. What htmx cannot say in attributes lives
+       here — a control that leaves the page keeps navigating fully, a POST
+       never swaps, the region wears its veil while its rows fly, focus lands
+       on the marked heading after the swap, and the scroll never moves. */
+    document.body.addEventListener('htmx:configRequest', function (event) {
+        var elt = event.detail.elt;
+        if (!elt || !elt.closest || !elt.closest('[data-list-region]')) return;
+        var isGet = (event.detail.verb || 'get').toLowerCase() === 'get';
+        var target = null;
+        try {
+            target = new URL(event.detail.path, window.location.href);
+        } catch (error) {
+            return;
+        }
+        if (isGet && target.pathname === window.location.pathname) return;
+        event.preventDefault();
+        if (isGet) window.location.assign(target.href);
+        else elt.submit(); // a POST inside a region acts like it always did
+    });
+
+    document.body.addEventListener('htmx:beforeRequest', function (event) {
+        var elt = event.detail && event.detail.elt;
+        var region = elt && elt.closest ? elt.closest('[data-list-region]') : null;
+        if (!region) return;
+        if (region.getAttribute('aria-busy') === 'true') {
+            event.preventDefault(); // one flight per region, as before
+            return;
+        }
+        region.classList.add('is-loading');
+        region.setAttribute('aria-busy', 'true');
+    });
+
+    // The swap itself replaces the region node, veil and all; these only lift
+    // it off a region that survived a flight which did not swap.
+    var liftVeil = function (event) {
+        var elt = event.detail && event.detail.elt;
+        var region = elt && elt.closest ? elt.closest('[data-list-region]') : null;
+        if (region) {
+            region.classList.remove('is-loading');
+            region.removeAttribute('aria-busy');
+        }
+    };
+    document.body.addEventListener('htmx:responseError', liftVeil);
+    document.body.addEventListener('htmx:sendError', liftVeil);
+
+    document.body.addEventListener('htmx:load', function (event) {
+        var node = event.target;
+        var region = node && node.matches ? node.closest('[data-list-region]') : null;
+        if (!region) return;
+        var head = region.querySelector('[data-list-heading]') || region;
+        if (head === region && !region.hasAttribute('tabindex')) {
+            region.setAttribute('tabindex', '-1');
+        }
+        head.focus({ preventScroll: true });
+    });
 })();

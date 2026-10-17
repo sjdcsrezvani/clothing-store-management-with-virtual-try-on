@@ -70,7 +70,7 @@
 {% endif %}
 
 {% if reconcile %}
-<section class="card" data-list-region="movements">
+<section class="card" data-list-region="movements" hx-boost="true" hx-target="closest [data-list-region]" hx-swap="outerHTML" hx-select="[data-list-region=movements]">
     <div class="section-heading-row">
         <div>
             <h3 data-list-heading tabindex="-1">{{ reconcile_label }}</h3>
@@ -168,7 +168,7 @@
 </section>
 {% else %}
 
-<section class="card movement-card" data-list-region="movements">
+<section class="card movement-card" data-list-region="movements" hx-boost="true" hx-target="closest [data-list-region]" hx-swap="outerHTML" hx-select="[data-list-region=movements]">
     <div class="section-heading-row">
         <div>
             <h3 data-list-heading tabindex="-1">حرکت‌های ثبت‌شده</h3>

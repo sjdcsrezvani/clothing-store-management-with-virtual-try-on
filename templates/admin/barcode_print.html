@@ -12,7 +12,7 @@
 {% if request.query_params.get('msg') %}<div class="alert alert-success" role="status">{{ request.query_params.get('msg') }}</div>{% endif %}
 {% if request.query_params.get('err') %}<div class="alert alert-error" role="alert">{{ request.query_params.get('err') }}</div>{% endif %}
 
-<div class="card tag-print-controls" id="controls" data-list-region="tags">
+<div class="card tag-print-controls" id="controls" data-list-region="tags" hx-boost="true" hx-target="closest [data-list-region]" hx-swap="outerHTML" hx-select="[data-list-region=tags]">
     <div class="tag-print-help">
         <strong>راهنمای سریع</strong>
         <span>هر کارت یک تنوع محصول است. تعداد چاپ را وارد کنید و سپس یکی از عملیات را بزنید. چاپ تگ به موجودی فعلی وابسته نیست و می‌توانید برای کالای در راه هم تگ بسازید.</span>
@@ -364,7 +364,12 @@ function initTagPage() {
         if (new URLSearchParams(window.location.search).has('msg')) writeTray({});
     } catch (e) { /* without a URL there is no receipt to read */ }
     bindTagRegion(document);
-    if (window.RaykidListNav) window.RaykidListNav.register('tags', bindTagRegion);
+    // The region swaps itself whole via htmx: rebind its widgets on arrival.
+    document.body.addEventListener('htmx:load', function (event) {
+        var region = event.target.closest
+            ? event.target.closest('[data-list-region="tags"]') : null;
+        if (region) bindTagRegion(region);
+    });
 }
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initTagPage);

@@ -27,7 +27,7 @@
 </div>
 
 {% if rows %}
-<section class="card" data-list-region="tier-downgrades">
+<section class="card" data-list-region="tier-downgrades" hx-boost="true" hx-target="closest [data-list-region]" hx-swap="outerHTML" hx-select="[data-list-region=tier-downgrades]">
     <div class="section-heading-row">
         <div>
             <h3 data-list-heading tabindex="-1">واجد شرایط</h3>

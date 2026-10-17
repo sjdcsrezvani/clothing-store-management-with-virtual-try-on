@@ -85,7 +85,7 @@
     </form>
 </details>
 
-<section class="card customer-card" data-list-region="customers">
+<section class="card customer-card" data-list-region="customers" hx-boost="true" hx-target="closest [data-list-region]" hx-swap="outerHTML" hx-select="[data-list-region=customers]">
     <div class="section-heading-row">
         <div>
             <h3 data-list-heading tabindex="-1">فهرست مشتریان</h3>
@@ -363,7 +363,12 @@ function initCustomersRegion(root) {
 }
 function initCustomersPage() {
     initCustomersRegion(document);
-    if (window.RaykidListNav) window.RaykidListNav.register('customers', initCustomersRegion);
+    // The region swaps itself whole via htmx: rebind its widgets on arrival.
+    document.body.addEventListener('htmx:load', function (event) {
+        var region = event.target.closest
+            ? event.target.closest('[data-list-region="customers"]') : null;
+        if (region) initCustomersRegion(region);
+    });
 }
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initCustomersPage);

@@ -198,7 +198,7 @@
 </div>
 {% endif %}
 
-<div class="card" id="checks-list" data-list-region="checks">
+<div class="card" id="checks-list" data-list-region="checks" hx-boost="true" hx-target="closest [data-list-region]" hx-swap="outerHTML" hx-select="[data-list-region=checks]">
     <div class="section-heading"><div><span class="eyebrow">چک‌های صادره</span><h3 data-list-heading tabindex="-1">فهرست چک‌ها</h3></div>{% if total_count %}<span class="appearance-active">{{ total_count }} مورد</span>{% endif %}</div>
     <div class="list-heading-actions">
         <a class="btn btn-sm btn-ghost" href="/admin/checks/export?{{ base_qs }}"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-backup"/></svg>خروجی CSV</a>
