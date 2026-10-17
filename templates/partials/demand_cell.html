@@ -1,0 +1,7 @@
+{# The variant's demand tally cell, one fragment for two callers: the product
+   form's row (the loop's ambient variant carries it; no flag on paint) and
+   the htmx demand POST's answer (updated=true — the badge carries the raised
+   flag, the count a hand has just bumped). #}
+<td data-demand-cell="{{ variant.id }}">
+    {% if variant.demand_count %}<a href="/admin/variants/{{ variant.id }}/edit" class="badge badge-info{% if updated %} demand-updated{% endif %}">{{ variant.demand_count }} تقاضا</a>{% else %}<span class="muted">—</span>{% endif %}
+</td>

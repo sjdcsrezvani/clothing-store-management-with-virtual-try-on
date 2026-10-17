@@ -1437,6 +1437,13 @@ async def admin_variant_demand_up(variant_id: int, request: Request, next: str =
     db.commit()
     from services.security import log_action
     log_action(db, "variant_demand_up", f"ثبت تقاضا برای تنوع #{variant.id}", request=request, target_type="variant", target_id=variant.id)
+    if request.headers.get("HX-Request"):
+        # The product form's button swaps its own tally cell — the answer is
+        # the cell as the row will draw it from now on, badge flagged updated.
+        return templates.TemplateResponse(request, "partials/demand_cell.html", {
+            "variant": variant,
+            "updated": True,
+        })
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         return JSONResponse({"ok": True, "demand_count": variant.demand_count})
     return RedirectResponse(

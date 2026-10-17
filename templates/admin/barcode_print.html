@@ -407,19 +407,29 @@ async function printSelected() {
     if (missing.length) {
         const grid = document.querySelector('.tag-selection-grid');
         const totalPages = Math.max(1, parseInt(grid?.dataset.totalPages || '1', 10));
+        // htmx owns the cross-page fetch: each paged grid swaps through a
+        // hidden holding pool (select picks only the preview nodes), then the
+        // missing ids are read out of it exactly as they used to be read out
+        // of a parsed document.
+        const pool = document.createElement('div');
+        pool.hidden = true;
+        document.body.appendChild(pool);
         for (let page = 1; page <= totalPages && missing.length; page += 1) {
             try {
                 const url = new URL(window.location.href);
                 url.searchParams.set('page', String(page));
-                const response = await fetch(url.toString(), { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
-                if (!response.ok) continue;
-                const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
+                await htmx.ajax('GET', url.toString(), {
+                    target: pool,
+                    swap: 'innerHTML',
+                    select: '.tag-selection-preview',
+                });
                 for (let i = missing.length - 1; i >= 0; i -= 1) {
-                    const preview = doc.querySelector(`.tag-selection-preview[data-variant-id="${missing[i]}"]`);
+                    const preview = pool.querySelector(`.tag-selection-preview[data-variant-id="${missing[i]}"]`);
                     if (preview) { collect(preview, tray[missing[i]]); missing.splice(i, 1); }
                 }
             } catch (e) { /* a page that will not load prints without its rows */ }
         }
+        pool.remove();
     }
     if (missing.length) {
         showTagNotice(`${missing.length} تنوع روی صفحه‌های دیگر خوانده نشد و بدون آن‌ها چاپ می‌شود.`);

@@ -1253,8 +1253,22 @@ async def _upload_kid_photo(file: UploadFile):
 # ─── JSON API: Generate (stateless) ───
 
 @api_router.get("/image-gen/jobs/{job_id}")
-async def api_image_job(job_id: int, db: Session = Depends(get_db)):
+async def api_image_job(job_id: int, request: Request, db: Session = Depends(get_db)):
     job = db.query(BackgroundJob).filter(BackgroundJob.id == job_id, BackgroundJob.job_type == "tryon").first()
+    if request.headers.get("HX-Request"):
+        # The try-on page polls this as itself: while it runs the strip
+        # re-renders and re-arms; completed reloads the page outright
+        # (HX-Redirect suppresses the swap); failed re-renders unarmed. The
+        # JSON contract below stays byte-identical for other callers.
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        if job.status == "completed":
+            return Response(headers={"HX-Redirect": "/admin/try-on"})
+        return templates.TemplateResponse(request, "partials/tryon_live.html", {
+            "job_id": job.id,
+            "tryon_job_id": job.id,
+            "tryon_job_status": job.status,
+        })
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return {"job_id": job.id, "status": job.status, "image_url": job.result_url if job.status == "completed" else None, "error": job.error_message if job.status == "failed" else None}

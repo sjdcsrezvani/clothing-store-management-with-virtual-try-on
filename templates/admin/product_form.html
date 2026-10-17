@@ -147,10 +147,10 @@
                     <td><span class="badge {% if variant.available_quantity > 0 %}badge-available{% else %}badge-none{% endif %}">{{ variant.available_quantity }} قابل فروش</span></td>
                     <td>{{ variant.reserved_quantity or 0 }}</td>
                     <td>{{ variant.reorder_point or 0 }}</td>
-                    <td data-demand-cell="{{ variant.id }}">{% if variant.demand_count %}<a href="/admin/variants/{{ variant.id }}/edit" class="badge badge-info">{{ variant.demand_count }} تقاضا</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+                    {% include 'partials/demand_cell.html' %}
                     <td>
                         <div class="table-actions">
-                        <button type="submit" form="demand-form-{{ variant.id }}" data-demand-btn="{{ variant.id }}" class="btn btn-sm btn-ghost" title="ثبت تقاضای مشتری برای این تنوع">+ ثبت تقاضا</button>
+                        <button type="submit" form="demand-form-{{ variant.id }}" class="btn btn-sm btn-ghost" title="ثبت تقاضای مشتری برای این تنوع">+ ثبت تقاضا</button>
                         <a href="/admin/variants/{{ variant.id }}/edit{% if return_to %}?next={{ return_to|urlencode }}{% endif %}" class="btn btn-sm btn-ghost">ویرایش تنوع</a>
                         </div>
                     </td>
@@ -198,9 +198,11 @@
 <div hidden>
     {% for variant in product.variants %}
     {% if variant.is_active %}
-    <form id="demand-form-{{ variant.id }}" method="post" action="/admin/variants/{{ variant.id }}/demand?next={{ (return_to or '/admin/products/' ~ product.id)|urlencode }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    </form>
+    <form id="demand-form-{{ variant.id }}" method="post" action="/admin/variants/{{ variant.id }}/demand?next={{ (return_to or '/admin/products/' ~ product.id)|urlencode }}"
+      hx-post="/admin/variants/{{ variant.id }}/demand?next={{ (return_to or '/admin/products/' ~ product.id)|urlencode }}"
+      hx-target="[data-demand-cell='{{ variant.id }}']" hx-swap="outerHTML">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+</form>
     {% else %}
     <form id="restore-form-{{ variant.id }}" method="post" action="/admin/variants/{{ variant.id }}/restore">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -358,38 +360,8 @@ if (document.readyState === 'loading') {
     bootVariantForm();
 }
 
-// Silent demand +1: the count ticks in place, the page never reloads. A
-// failed fetch falls back to the plain form submit, never a dead click.
-document.querySelectorAll('[data-demand-btn]').forEach(function (btn) {
-    btn.addEventListener('click', async function (event) {
-        event.preventDefault();
-        if (btn.disabled) return;
-        const form = btn.form;
-        if (!form || typeof fetch !== 'function') { form.submit(); return; }
-        btn.disabled = true;
-        try {
-            const response = await fetch(form.action, {
-                method: 'POST',
-                body: new FormData(form),
-                headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            });
-            if (!response.ok) throw new Error('bad status');
-            const data = await response.json();
-            const cell = document.querySelector(`[data-demand-cell="${btn.dataset.demandBtn}"]`);
-            if (cell) {
-                cell.innerHTML = '';
-                const badge = document.createElement('a');
-                badge.href = `/admin/variants/${btn.dataset.demandBtn}/edit`;
-                badge.className = 'badge badge-info demand-updated';
-                badge.textContent = `${data.demand_count} تقاضا`;
-                cell.appendChild(badge);
-            }
-        } catch (err) {
-            form.submit();
-            return;
-        }
-        btn.disabled = false;
-    });
-});
+// The demand button is htmx: the hidden form posts itself, htmx swaps the
+// tally cell. A failed request swaps nothing — the shell keeps yesterday's
+// count until a reload, never a silent second POST.
 </script>
 {% endblock %}

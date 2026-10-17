@@ -1,0 +1,8 @@
+{# The try-on page's live generation strip, one fragment for every state:
+   armed again while a job runs (every 5s re-arms), unarmed when the job is
+   terminal — failed keeps the copy, completed rides an HX-Redirect that
+   reloads the page before any swap. tryon_job_id and tryon_job_status arrive
+   from both the page render and the job endpoint's HX branch. #}
+<div id="tryon-live" role="status"
+     {% if tryon_job_status != "failed" %}hx-get="/api/image-gen/jobs/{{ tryon_job_id }}" hx-trigger="every 5s" hx-target="this" hx-swap="outerHTML"{% endif %}
+     class="tryon-live">{% if tryon_job_status == "failed" %}ناموفق بود — ورودی‌ها سر جایشان است، دوباره امتحان کنید.{% else %}در حال تولید… ({{ tryon_job_status }}){% endif %}</div>
