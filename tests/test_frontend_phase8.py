@@ -158,3 +158,25 @@ def test_product_form_variant_script_survives_a_boosted_return():
     # app.js is deferred and may not be back on a return: digit helpers are
     # reached through window with a plain-string fallback.
     assert "window.toEnglishDigits" in page
+
+
+def test_variant_capsule_is_a_designed_component():
+    form = (ROOT / "templates/admin/product_form.html").read_text()
+    css = (ROOT / "static/css/style.css").read_text()
+    motion = (ROOT / "static/css/motion.css").read_text()
+    # The header carries its own affordances: an index chip, the garment dot
+    # and a drawn chevron — never a bare text glyph.
+    assert "variant-entry-index" in form
+    assert "data-dot" in form
+    assert "variant-entry-chevron" in form
+    assert "<svg" in form and "variant-entry-caret" not in form
+    # The accordion motion lives in motion.css beside the scale, so the theme
+    # catalogue never owns a duration.
+    assert ".variant-entry-body" in motion
+    assert "var(--acc-expand)" in motion
+    assert "var(--acc-" not in css
+    assert "var(--duration-" not in css
+    # Fills read the contrast-derived brand pair, never a raw palette hue.
+    assert "--on-candy" not in css
+    # Reduced motion covers the capsule's transitions.
+    assert ".variant-entry-body" in motion.split("prefers-reduced-motion")[1]

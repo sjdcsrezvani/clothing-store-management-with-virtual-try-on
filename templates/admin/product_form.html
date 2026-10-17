@@ -241,6 +241,23 @@ function refreshEntry(entry) {
     if (summary) summary.textContent = `${size}${color ? ' · ' + color : ''} · ${price ? fmtMoney(price) : 'قیمت؟'}`;
     const total = entry.querySelector('[data-row-total]');
     if (total) total.textContent = (price && stock) ? fmtMoney(price * stock) : '—';
+    // The row reads sellable once a price is set: the status edge settles.
+    entry.classList.toggle('is-complete', price > 0);
+    paintEntryDot(entry);
+}
+
+// The garment dot mirrors the row's own colour-code field, so the shut
+// capsule still shows its garment. Plain hex only — never a theme token.
+function paintEntryDot(entry) {
+    const dot = entry.querySelector('[data-dot]');
+    if (!dot) return;
+    const code = entry.querySelector('[name^="variant_color_code_"]');
+    const raw = code ? String(code.value || '').trim() : '';
+    const m = /^#?(?:([0-9a-f]{6})|([0-9a-f])([0-9a-f])([0-9a-f]))$/i.exec(raw);
+    if (!m) { dot.style.background = 'transparent'; dot.classList.remove('has-color'); return; }
+    const full = (m[1] || (m[2] + m[2] + m[3] + m[3] + m[4] + m[4])).toLowerCase();
+    dot.style.background = '#' + full;
+    dot.classList.add('has-color');
 }
 
 function refreshFormTotal() {
@@ -284,11 +301,13 @@ function addVariant() {
         <article class="variant-entry" data-open="true">
             <button type="button" class="variant-remove" onclick="this.closest('.variant-entry').remove(); refreshFormTotal();" aria-label="حذف تنوع">×</button>
             <button type="button" class="variant-entry-heading" data-collapse aria-expanded="true">
-                <strong>تنوع ${entryNo}</strong>
+                <span class="variant-entry-index" aria-hidden="true">${entryNo}</span>
+                <strong>تنوع</strong>
+                <span class="variant-entry-dot" data-dot aria-hidden="true"></span>
                 <span class="variant-entry-summary" data-summary></span>
-                <span class="variant-entry-caret" aria-hidden="true">▾</span>
+                <span class="variant-entry-chevron" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5 8 11l4.5-4.5"/></svg></span>
             </button>
-            <div class="variant-entry-body">
+            <div class="variant-entry-body"><div class="variant-entry-body-inner"><div class="variant-entry-body-pad">
             <div class="form-row variant-entry-grid">
                 <div class="form-group"><label>سایز</label><input type="text" name="variant_size_${index}" data-unify-digits placeholder="مثلاً ۳ تا ۴ سال"></div>
                 <div class="form-group"><label>رنگ</label><input type="text" name="variant_color_${index}" placeholder="مثلاً آبی"></div>
@@ -312,7 +331,7 @@ function addVariant() {
             </div>
             <div class="form-group"><label>تصویر تنوع</label><input type="file" name="variant_image_${index}" accept="image/png,image/jpeg,image/webp"></div>
             <div class="variant-entry-total">ارزش موجودی: <strong class="tnum" data-row-total>—</strong></div>
-            </div>
+            </div></div></div>
             <input type="hidden" name="variant_index_${index}" value="${index}">
         </article>`);
     initColorPickers(container);

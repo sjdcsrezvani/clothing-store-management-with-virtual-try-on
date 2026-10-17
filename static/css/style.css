@@ -2127,23 +2127,50 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 @media (prefers-reduced-motion: reduce) {
   .demand-updated { animation: none; }
 }
-.variant-entry { position: relative; margin-top: 0.8rem; padding: 1rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--surface-soft); }
-.variant-entry-heading { display: flex; align-items: center; gap: 0.7rem; width: 100%; margin: 0 0 0.8rem; padding: 0; padding-inline-end: 2rem; border: 0; background: none; font: inherit; text-align: start; cursor: pointer; color: var(--ink); }
+.variant-entry { position: relative; margin-top: 0.8rem; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / 0.06); overflow: clip; }
+/* The header is a real bar: full-bleed tint, generous hit area, the summary
+   beside the title — not a bare row of text floating over the card. */
+.variant-entry-heading { display: flex; align-items: center; gap: 0.7rem; width: 100%; margin: 0; padding: 0.7rem 0.9rem; padding-inline-end: 3rem; border: 0; border-block-end: 1px solid var(--rule); background: var(--surface-soft); font: inherit; text-align: start; cursor: pointer; color: var(--ink); }
+.variant-entry[data-open="false"] .variant-entry-heading { border-block-end-color: transparent; }
+@media (hover: hover) and (pointer: fine) {
+  .variant-entry-heading:hover { filter: brightness(0.985); }
+}
+.variant-entry-heading:focus-visible { outline: 2px solid var(--candy); outline-offset: -2px; }
+/* Number chip: the row's own index — outlined while the row is unfinished
+   (price missing), filled once it can sell. */
+.variant-entry-index { flex: 0 0 auto; display: inline-grid; place-items: center; min-width: 1.7rem; height: 1.7rem; padding-inline: 0.4rem; border-radius: 999px; background: transparent; border: 1.5px solid var(--brand-fill); color: var(--brand-fill); font-size: 0.78rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.variant-entry.is-complete .variant-entry-index { background: var(--brand-fill); border-color: var(--brand-fill); color: var(--brand-label); }
 .variant-entry-heading strong { font-size: 0.92rem; }
 .variant-entry-summary { color: var(--ink-soft); font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.variant-entry-caret { margin-inline-start: auto; color: var(--ink-soft); transition: transform 150ms ease; }
-.variant-entry[data-open="false"] .variant-entry-body { display: none; }
-.variant-entry[data-open="false"] .variant-entry-heading { margin-bottom: 0; }
-.variant-entry[data-open="false"] .variant-entry-caret { transform: rotate(90deg); }
+/* Colour dot: the variant's own picked colour, drawn from the row's live
+   field by JS — a garment row should show its garment. */
+.variant-entry-dot { flex: 0 0 auto; width: 1rem; height: 1rem; border-radius: 50%; border: 1.5px solid var(--rule); background: transparent; }
+.variant-entry-dot.has-color { border-color: rgb(0 0 0 / 0.2); }
+/* Chevron: a drawn chevron in a ringed button, not a bare glyph — it reads
+   as the control it is. Flips on the open state with the accordion curve. */
+.variant-entry-chevron { margin-inline-start: auto; flex: 0 0 auto; display: inline-grid; place-items: center; width: 1.9rem; height: 1.9rem; border: 1.5px solid var(--rule); border-radius: 50%; color: var(--ink-soft); }
+.variant-entry-chevron svg { width: 0.85rem; height: 0.85rem; }
+.variant-entry-chevron svg path { vector-effect: non-scaling-stroke; }
+.variant-entry[data-open="true"] .variant-entry-chevron { transform: rotate(180deg); background: var(--brand-fill); border-color: var(--brand-fill); color: var(--brand-label); }
+@media (hover: hover) and (pointer: fine) {
+  .variant-entry-heading:hover .variant-entry-chevron { border-color: var(--brand-fill); color: var(--brand-fill); }
+  .variant-entry[data-open="true"] .variant-entry-heading:hover .variant-entry-chevron { color: var(--brand-label); }
+}
+/* Open/close geometry lives in motion.css beside the accordion scale, so the
+   theme catalogue never owns a duration. */
+.variant-entry-body { display: grid; }
+.variant-entry-body-inner { min-height: 0; }
+.variant-entry-body-pad { padding: 1rem; padding-block-start: 0.9rem; }
 .variant-entry-total { margin-top: 0.7rem; font-size: 0.85rem; color: var(--ink-soft); }
 .variant-entry-total strong { color: var(--ink); }
 .form-stock-total { margin-inline-start: auto; font-size: 0.88rem; color: var(--ink-soft); }
 .form-stock-total strong { color: var(--ink); }
-@media (prefers-reduced-motion: reduce) {
-  .variant-entry-caret { transition: none; }
+/* The delete control: quiet until hovered, clearly destructive on hover. */
+.variant-remove { position: absolute; top: 0.55rem; left: 0.55rem; z-index: 1; width: 1.9rem; min-height: 1.9rem; border: 1px solid transparent; border-radius: 50%; background: transparent; color: var(--ink-soft); font-size: 1.1rem; line-height: 1; cursor: pointer; }
+@media (hover: hover) and (pointer: fine) {
+  .variant-remove:hover { color: var(--link-hover); border-color: var(--rule); }
 }
 .variant-entry-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.variant-remove { position: absolute; top: 0.7rem; left: 0.7rem; width: 2rem; min-height: 2rem; border: 1px solid var(--rule); border-radius: 50%; background: var(--card); color: var(--link-hover); font-size: 1.2rem; cursor: pointer; }
 .variant-edit-layout { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(250px, 0.65fr); gap: 1.2rem; align-items: start; }
 /* The whole side column sticks, not just the summary card: a single sticky
    card would slide down over the danger card below it. */
