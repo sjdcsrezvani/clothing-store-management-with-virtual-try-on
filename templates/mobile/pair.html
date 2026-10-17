@@ -28,69 +28,64 @@ p{font-size:14px;line-height:1.9;color:var(--ink-soft);margin-bottom:12px}
 </style>
 </head>
 <body>
-<div class="card">
+<div class="card" hx-get="/api/capture/ping" hx-trigger="load [ (window.__captureKey || '').length > 0 ]" hx-target="this" hx-swap="outerHTML" hx-headers='{"X-Capture-Key": "js:window.__captureKey"}'>
 <h1 id="pair-title">در حال بررسی…</h1>
 <div class="status" id="pair-status">…</div>
 <p id="pair-help">در حال خواندن کلید از پیوند جفت‌سازی…</p>
 <a class="btn" href="/admin/mobile" id="go-capture" style="display:none">رفتن به صفحه ضبط عکس</a>
 <p class="small">هر جفت‌سازی تازه، کلید قبلی گوشی را باطل می‌کند.</p>
 </div>
+<script src="/static/vendor/htmx.min.js?v={{ static_version }}"></script>
 <script>
+// The key reaches the DOM before the network does: this page never serves
+// markup — the fragment (#…) holds the key, then htmx carries it as the
+// X-Capture-Key header. Browser-local, scrubbed from the address bar at
+// once; the live getter means a re-pair rotates without a reload.
 (function () {
-    const title = document.getElementById('pair-title');
-    const status = document.getElementById('pair-status');
-    const help = document.getElementById('pair-help');
-    const login = document.getElementById('go-capture');
+    var key = window.location.hash.replace(/^#/, '').trim();
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+    try { if (key) localStorage.setItem('capture_key', key); } catch (e) { /* private mode: nothing to hand to */ }
+    Object.defineProperty(window, '__captureKey', {
+        get: function () {
+            try { return localStorage.getItem('capture_key') || ''; } catch (e) { return ''; }
+        }
+    });
+
+    // Presentational only — markup text, htmx owns the network legs.
     function show(titleText, statusText, helpText, ok) {
+        var title = document.getElementById('pair-title');
+        var status = document.getElementById('pair-status');
+        var help = document.getElementById('pair-help');
+        var login = document.getElementById('go-capture');
+        if (!title || !status || !help || !login) return;
         title.textContent = titleText;
         status.textContent = statusText;
         status.className = 'status ' + (ok ? 'ok' : 'bad');
         help.textContent = helpText;
         if (ok) login.style.display = 'block';
     }
-    // The fragment never reached the server; it is read here and stored, then
-    // the URL is scrubbed so the key does not sit in the address bar or the
-    // browser's history. `replaceState` keeps the back button honest too.
-    const key = window.location.hash.replace(/^#/, '').trim();
-    history.replaceState(null, '', window.location.pathname + window.location.search);
-    if (!key) {
-        // Arrived without a fragment: the phone may already hold a key from an
-        // earlier scan — probe it before declaring failure.
-        const stored = localStorage.getItem('capture_key');
-        if (stored) {
-            probe(stored, false);
-            return;
-        }
+
+    // No key anywhere: the probe never starts and the failure copy speaks.
+    if (!window.__captureKey) {
         show('پیوند ناقص', 'کلیدی در پیوند نبود',
              'از پنل مدیریت، صفحه «پرو مجازی»، دوباره QR بگیرید و همین صفحه را اسکن کنید.', false);
-        return;
     }
-    try { localStorage.setItem('capture_key', key); } catch (e) { /* private mode: nothing to hand to */ }
-    probe(key, true);
 
-    // The proof is a ping, not a promise: /api/capture/ping sits behind the
-    // same gate as the photo upload, so 200 is the server saying this key is
-    // the one it currently holds — and 401 is a key that was rotated.
-    function probe(keyWith, fresh) {
-        fetch('/api/capture/ping', { headers: { 'X-Capture-Key': keyWith } })
-            .then(function (r) {
-                if (r.ok) {
-                    show('گوشی جفت شد', 'کلید ذخیره شد',
-                         'رفتن به صفحه ضبط عکس.', true);
-                } else if (r.status === 401) {
-                    localStorage.removeItem('capture_key');
-                    show('کلید معتبر نیست', 'جفت‌سازی انجام نشد',
-                         'این کلید باطل شده است. از پنل، صفحه «پرو مجازی»، دوباره QR بگیرید و اسکن کنید.', false);
-                } else {
-                    show('سرور پاسخ ' + r.status + ' داد', 'بررسی ناموفق',
-                         'اتصال اینترنت گوشی را بررسی کنید و صفحه را دوباره باز کنید.', false);
-                }
-            })
-            .catch(function () {
-                show('سرور در دسترس نیست', 'بررسی ناموفق',
-                     'گوشی و کامپیوتر باید به یک Wi‑Fi وصل باشند.', false);
-            });
-    }
+    // 401 is a rotated key: clear it and say so — no JSON ever swaps in.
+    document.body.addEventListener('htmx:beforeSwap', function (event) {
+        var status = event.detail.xhr && event.detail.xhr.status;
+        if (status === 401) {
+            event.detail.shouldSwap = false;
+            try { localStorage.removeItem('capture_key'); } catch (e) {}
+            show('کلید معتبر نیست', 'جفت‌سازی انجام نشد',
+                 'این کلید باطل شده است. از پنل، صفحه «پرو مجازی»، دوباره QR بگیرید و اسکن کنید.', false);
+        }
+    });
+    // A unreachable server keeps the same words the old fetch wrote.
+    document.body.addEventListener('htmx:sendError', function () {
+        show('سرور در دسترس نیست', 'بررسی ناموفق',
+             'گوشی و کامپیوتر باید به یک Wi‑Fi وصل باشند.', false);
+    });
 })();
 </script>
 </body>

@@ -25,8 +25,6 @@ FETCH_ALLOWLIST = {
     "templates/admin/barcode_print.html",
     "templates/admin/product_form.html",
     "templates/admin/tryon.html",
-    "templates/mobile/index.html",
-    "templates/mobile/pair.html",
 }
 
 

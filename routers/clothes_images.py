@@ -1182,7 +1182,15 @@ async def admin_tryon_saved_download(
 # is the one this server currently holds. No state, nothing to leak.
 
 @api_router.get("/capture/ping")
-async def capture_ping():
+async def capture_ping(request: Request):
+    """The pairing proof: the capture key reaches the handler only when the
+    gate accepted it. The phone pages speak htmx — the strip re-answers as
+    itself (dot lit, one-line message out of band), so the proof is markup
+    the phone renders, not JSON it parses. Other callers keep JSON."""
+    if request.headers.get("HX-Request"):
+        return templates.TemplateResponse(
+            request, "partials/mobile_status_bar.html",
+            {"online": True, "status_text": "اتصال برقرار است — آماده ضبط."})
     return {"status": "ok"}
 
 
@@ -1205,7 +1213,24 @@ async def scan_barcode(data: ScanBarcodeRequest, db: Session = Depends(get_db)):
 # ─── JSON API: Upload kid photo from phone (no customer) ───
 
 @api_router.post("/image-gen/upload-kid-photo")
-async def upload_kid_photo(file: UploadFile = File(...)):
+async def upload_kid_photo(request: Request, file: UploadFile = File(...)):
+    """The phone's photo drop. The capture page uploads as htmx multipart and
+    swaps the send-status line; every other caller keeps the JSON contract —
+    including the exact 400 details — unchanged."""
+    if not request.headers.get("HX-Request"):
+        return await _upload_kid_photo(file)
+    try:
+        await _upload_kid_photo(file)
+    except HTTPException as error:
+        return templates.TemplateResponse(
+            request, "partials/mobile_send_status.html",
+            {"ok": False, "msg": str(error.detail)})
+    return templates.TemplateResponse(
+        request, "partials/mobile_send_status.html",
+        {"ok": True, "msg": "عکس ارسال شد."})
+
+
+async def _upload_kid_photo(file: UploadFile):
     raw = await file.read()
     # Guards before RAM: type must be an image, size capped — a 100 MB
     # "photo" must fail here, not as a base64 preview three steps later.
