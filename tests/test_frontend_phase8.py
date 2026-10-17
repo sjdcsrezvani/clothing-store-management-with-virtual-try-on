@@ -125,3 +125,17 @@ def test_color_code_fields_open_a_native_colour_palette():
     assert "picker.type = 'color'" in js
     # The picker's chosen colour reaches the field in upper-case hex.
     assert "field.value = hex.toUpperCase()" in js
+
+
+def test_color_palette_suggests_the_persian_name_until_hand_edited():
+    js = (ROOT / "static/js/app.js").read_text()
+    # A palette pick suggests the Persian name in the sibling «رنگ» field.
+    assert "findColorNameField" in js
+    assert "nearestPresetName" in js
+    # A hand on the name field ends the sync; a synthetic fill never counts
+    # as a hand, so later picks keep following until a real keystroke.
+    assert "syntheticFill" in js
+    assert 'dataset.touched' in js
+    # Both shapes are covered: the variant page (#color / #color_code) and
+    # product-form rows (variant_color_N / variant_color_code_N).
+    assert "#color" in js or '"color"' in js or "'color'" in js

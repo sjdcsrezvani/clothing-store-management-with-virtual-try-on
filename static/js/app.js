@@ -93,6 +93,54 @@ const COLOR_PRESETS = [
 function initColorPickers(scope) {
     // Short #abc codes expand to aabbcc, the only form a colour input accepts.
     const hexCode = /^#?(?:([0-9a-f]{6})|([0-9a-f])([0-9a-f])([0-9a-f]))$/i;
+    // The «رنگ» name field next to a «کد رنگ» code field: on the variant page
+    // the pair is #color / #color_code, in product-form rows it is
+    // variant_color_N / variant_color_code_N.
+    // A hand on a «رنگ» name field ends the palette-sync for that field —
+    // the same contract as the reorder-default rows. Programmatic fills
+    // (palette picks) dispatch a flagged event so they never count as a hand.
+    function armColorNameSync(nameField) {
+        if (!nameField || nameField.dataset.colorNameReady) return;
+        nameField.dataset.colorNameReady = 'true';
+        nameField.addEventListener('input', (event) => {
+            if (event && event.syntheticFill) return;
+            nameField.dataset.touched = '1';
+        });
+    }
+    function findColorNameField(codeField) {
+        if (codeField.id === 'color_code') {
+            const byId = document.getElementById('color');
+            if (byId) { armColorNameSync(byId); return byId; }
+        }
+        const name = codeField.name || '';
+        if (name.includes('color_code')) {
+            const want = name.replace('color_code', 'color');
+            const holder = codeField.closest('form, .variant-entry-body, .form-row') || document;
+            const found = holder.querySelector(`input[name="${want}"]`);
+            if (found && found !== codeField) { armColorNameSync(found); return found; }
+        }
+        return null;
+    }
+    // Nearest preset name for a custom-picked hex, so «رنگ دلخواه» still
+    // suggests a Persian name the shopkeeper can keep or overwrite.
+    function nearestPresetName(hex) {
+        const m = hexCode.exec((hex || '').trim());
+        if (!m) return '';
+        const full = (m[1] || (m[2] + m[2] + m[3] + m[3] + m[4] + m[4])).toLowerCase();
+        const r = parseInt(full.slice(0, 2), 16);
+        const g = parseInt(full.slice(2, 4), 16);
+        const b = parseInt(full.slice(4, 6), 16);
+        let best = '', bestDist = Infinity;
+        COLOR_PRESETS.forEach(([label, presetHex]) => {
+            const p = presetHex.toLowerCase();
+            const dr = r - parseInt(p.slice(1, 3), 16);
+            const dg = g - parseInt(p.slice(3, 5), 16);
+            const db = b - parseInt(p.slice(5, 7), 16);
+            const dist = dr * dr + dg * dg + db * db;
+            if (dist < bestDist) { bestDist = dist; best = label; }
+        });
+        return best;
+    }
     (scope || document).querySelectorAll('input[data-color-picker]').forEach(field => {
         if (field.dataset.colorPickerReady) return;
         field.dataset.colorPickerReady = 'true';
@@ -127,7 +175,7 @@ function initColorPickers(scope) {
             preset.setAttribute('aria-label', label);
             preset.dataset.hex = hex;
             preset.addEventListener('click', () => {
-                setFieldColor(hex);
+                setFieldColor(hex, label);
                 closePop();
                 field.focus({ preventScroll: true });
             });
@@ -143,6 +191,9 @@ function initColorPickers(scope) {
             field.value = '';
             field.dispatchEvent(new Event('change', { bubbles: true }));
             paintSwatch();
+            // «بدون رنگ» releases the name field back to following picks.
+            const nameField = findColorNameField(field);
+            if (nameField) delete nameField.dataset.touched;
             closePop();
         });
         pop.appendChild(clear);
@@ -172,10 +223,25 @@ function initColorPickers(scope) {
             });
         }
 
-        function setFieldColor(hex) {
+        function setFieldColor(hex, label) {
             field.value = hex.toUpperCase();
             field.dispatchEvent(new Event('change', { bubbles: true }));
             paintSwatch();
+            // A palette pick suggests the Persian name in the sibling «رنگ»
+            // field — until a hand on that field ends the sync, the same
+            // contract as the reorder-default rows.
+            const nameField = findColorNameField(field);
+            if (nameField && !nameField.dataset.touched) {
+                const suggestion = label || nearestPresetName(hex);
+                if (suggestion) {
+                    nameField.value = suggestion;
+                    // Flagged as synthetic: armColorNameSync ignores it, so the
+                    // field keeps following later picks until a real keystroke.
+                    const fill = new Event('input', { bubbles: true });
+                    fill.syntheticFill = true;
+                    nameField.dispatchEvent(fill);
+                }
+            }
         }
 
         function closePop() {
