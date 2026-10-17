@@ -1,0 +1,4 @@
+{# The settings page's one-line probe result. Rendered empty on the page;
+   the آزمایش اتصال button swaps this fragment over it, whatever the probe
+   said — so the answer is text the screen owns, never a fetched JSON. #}
+<small class="muted" id="tryon-test-result" role="status">{% if ok %}اتصال برقرار است.{% else %}خطا: {{ error or 'نامشخص' }}{% endif %}</small>

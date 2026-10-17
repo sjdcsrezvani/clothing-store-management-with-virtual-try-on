@@ -999,7 +999,9 @@ async def admin_tryon_cancel_job(job_id: int, request: Request, db: Session = De
 
 @admin_router.post("/tryon/test-key", response_class=JSONResponse)
 async def admin_tryon_test_key(request: Request, db: Session = Depends(get_db)):
-    """Cheap non-billable credential probe for the settings page."""
+    """Cheap non-billable credential probe for the settings page. The
+    settings button swaps the answer as the status line; other callers keep
+    the JSON contract."""
     from services.image_gen import get_provider, get_tryon_credentials
     guard = require_html_role(request, db, "owner")
     if not hasattr(guard, "role"):
@@ -1007,12 +1009,18 @@ async def admin_tryon_test_key(request: Request, db: Session = Depends(get_db)):
     api_key, api_url = get_tryon_credentials(db)
     provider = get_provider(api_key, api_url)
     try:
-        return provider.test_connection()
+        result = provider.test_connection()
     finally:
         try:
             provider.cleanup()
         except Exception:
             pass
+    if request.headers.get("HX-Request"):
+        return templates.TemplateResponse(request, "partials/tryon_key_test.html", {
+            "ok": bool(result.get("ok")),
+            "error": result.get("error") or "",
+        })
+    return result
 
 
 @admin_router.post("/try-on/clear")

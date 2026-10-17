@@ -832,6 +832,12 @@ async def sales_terminal_status(request: Request, db: Session = Depends(get_db))
         state = {**cfg, **await asyncio.to_thread(
             check_terminal_connection, cfg["host"], cfg["port"])}
     if request.headers.get("HX-Request"):
+        # Checkout swaps the full indicator (whose own poll re-arms on every
+        # landing); the POS page's pill is a one-shot line — its fragment
+        # carries no polling wiring, so it settles after one answer.
+        if request.headers.get("HX-Target") == "pos-terminal-pill":
+            return templates.TemplateResponse(
+                request, "partials/terminal_pill.html", {"terminal": state})
         return templates.TemplateResponse(
             request, "partials/terminal_indicator.html", {"terminal": state})
     return state

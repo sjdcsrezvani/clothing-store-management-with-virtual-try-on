@@ -56,3 +56,37 @@ def test_latest_htx_reveals_pill_when_rows_arrived(client, db_session):
     body = resp.text.lstrip()
     assert body.startswith('<p class="empty-state" id="logs-fresh"\n')
     assert 'href="/admin/logs"' in body  # reload is the current view, no junk
+
+
+def test_pos_pill_probes_once_and_settles(client, db_session):
+    import re
+    _owner_client(client, db_session, name="htmx4-pospill")
+    page = client.get("/admin/pos-reconciliation").text
+    assert 'id="pos-terminal-pill"' in page
+    assert 'hx-get="/sales/terminal-status"' in page
+    # The old inline probe script is gone.
+    assert "XMLHttpRequest" not in page and "fetch(" not in page
+
+    # The probe for this pill answers as a plain line: no polling wiring,
+    # so a visit asks once and the pill settles.
+    m = re.search(r'id="pos-terminal-pill"[^>]*hx-trigger="load"', page)
+    assert m
+    resp = client.get("/sales/terminal-status",
+                      headers={"HX-Request": "true", "HX-Target": "pos-terminal-pill"})
+    body = resp.text.lstrip()
+    assert body.startswith('<span id="pos-terminal-pill" data-terminal-pill>')
+    assert "hx-" not in body  # nothing to re-arm: one probe per visit
+
+
+def test_settings_test_key_swaps_the_status_line(client, db_session):
+    _owner_client(client, db_session, name="htmx4-testkey")
+    page = client.get("/admin/settings?tab=messaging").text
+    assert 'id="tryon-test-key" hx-post="/admin/tryon/test-key"' in page
+    assert '<script>' not in page.split("tryon-test-key")[0].split("{% if active_tab")[0]
+
+    from tests.conftest import csrf_token
+    resp = client.post("/admin/tryon/test-key",
+                       headers={"HX-Request": "true", "X-CSRF-Token": csrf_token(client)})
+    body = resp.text.lstrip()
+    assert 'id="tryon-test-result" role="status"' in body
+    assert "<html" not in body  # a status line, not a page

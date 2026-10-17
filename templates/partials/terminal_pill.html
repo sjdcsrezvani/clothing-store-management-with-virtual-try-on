@@ -1,0 +1,4 @@
+{# The POS page's reachability pill: one probe fired on landing, exchanged
+   for a plain answer — the fragment carries no polling wiring of its own,
+   so a visit asks the terminal once and the pill settles. #}
+<span id="pos-terminal-pill" data-terminal-pill>{% if not terminal.enabled %}پیکربندی نشده{% elif terminal.online %}متصل است{% else %}پاسخ نمی‌دهد{% endif %}</span>
