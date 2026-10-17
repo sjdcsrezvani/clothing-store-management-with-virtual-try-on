@@ -557,6 +557,7 @@ async def sales_create_customer(
         first_name=first_name or None,
         last_name=last_name or None,
         referral_code=code,
+        created_by_user_id=guard.id,
         **signup_birthday_fields(
             db, buys_for=buys_for, birth_value=birth_date,
             child_name=child_name, child_birth_value=child_birthday,

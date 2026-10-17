@@ -319,11 +319,18 @@ async def admin_dashboard(request: Request, db: Session = Depends(get_db)):
     that role may see and never computes the others. That is what keeps the
     template free of role logic — it prints what it is given.
     """
-    guard = require_html_role(request, db, "manager")
+    guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
 
-    view = dashboard_overview(db, role=guard.role)
+    try:
+        day_offset = max(0, min(6, int(request.query_params.get("day", 0) or 0)))
+    except (TypeError, ValueError):
+        day_offset = 0
+    view = dashboard_overview(db, role=guard.role, user_id=guard.id,
+                              user_name=guard.full_name or guard.username,
+                              day_offset=day_offset,
+                              rank_week=request.query_params.get("rank") == "week")
     return templates.TemplateResponse(request, "admin/dashboard.html", {
         **view,
         # The print heading names the day; a staple carries no URL.
@@ -350,7 +357,7 @@ async def admin_customers(
     db: Session = Depends(get_db),
 ):
     """The customer list: who they are, what they bought, and what is due."""
-    guard = require_html_role(request, db, "manager")
+    guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
 
@@ -477,7 +484,7 @@ async def admin_customer_profile(
     customer_id: int, request: Request, page: str = "1", db: Session = Depends(get_db)
 ):
     """One customer's file: purchases, discounts, referrals, debt and details."""
-    guard = require_html_role(request, db, "manager")
+    guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
 
@@ -1997,6 +2004,13 @@ SETTINGS_NUMERIC_RULES = {
     "check_upcoming_days": (1, 90, "بازه چک‌های نزدیک"),
     "cash_opening_balance": (0, None, "موجودی پیش‌فرض صندوق"),
     "low_stock_threshold": (0, 999, "آستانه کم‌موجودی"),
+    "sales_target_0": (0, None, "هدف فروش دوشنبه"),
+    "sales_target_1": (0, None, "هدف فروش سه‌شنبه"),
+    "sales_target_2": (0, None, "هدف فروش چهارشنبه"),
+    "sales_target_3": (0, None, "هدف فروش پنجشنبه"),
+    "sales_target_4": (0, None, "هدف فروش جمعه"),
+    "sales_target_5": (0, None, "هدف فروش شنبه"),
+    "sales_target_6": (0, None, "هدف فروش یکشنبه"),
 }
 
 
@@ -2056,6 +2070,71 @@ def _settings_tab(request: Request) -> str:
     return wanted if wanted in known else "shop"
 
 
+@router.post("/targets", response_class=HTMLResponse)
+async def admin_update_targets(request: Request, db: Session = Depends(get_db)):
+    """Weekday sales goals, settable by manager and owner alike.
+
+    Only the seven goal keys are accepted — anything else posted here is
+    ignored, so this narrow door can never become a second settings page.
+    """
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    form = await request.form()
+    for weekday in range(7):
+        key = f"sales_target_{weekday}"
+        raw = str(form.get(key, "")).strip()
+        if not raw:
+            continue
+        try:
+            number = int(to_english_digits(raw))
+        except (TypeError, ValueError):
+            continue
+        if number < 0:
+            continue
+        row = db.query(Settings).filter(Settings.key == key).first()
+        if row is None:
+            db.add(Settings(key=key, value=str(number)))
+        else:
+            row.value = str(number)
+    db.commit()
+    log_action(db, "targets_update", "هدف روزانه فروش به‌روز شد",
+               request=request)
+    return RedirectResponse(url="/admin?msg=هدف روزانه فروش ذخیره شد.",
+                            status_code=303)
+
+
+@router.get("/dashboard-poll", response_class=JSONResponse)
+async def admin_dashboard_poll(request: Request, db: Session = Depends(get_db)):
+    """The dashboard's figures as JSON, for the five-minute silent poll.
+
+    Same overview builder as the page, flattened to keyed values — so the
+    polled numbers can never disagree with a reload. History strips and
+    rankings ride a reload; the poll moves values, not structure.
+    """
+    guard = require_html_role(request, db, "cashier")
+    if not hasattr(guard, "role"):
+        return guard
+    view = dashboard_overview(db, role=guard.role, user_id=guard.id,
+                              user_name=guard.full_name or guard.username)
+    cards = {}
+    for section in view.get("sections", []):
+        for card in section.get("cards", []):
+            cards[card["key"]] = {"value": card.get("value", ""),
+                                  "sub": card.get("sub", "")}
+    greeting = view.get("greeting")
+    parts = ({k: greeting[k] for k in
+              ("name", "salutation", "weekday", "date", "time", "summary")}
+             if greeting else None)
+    return {
+        "cards": cards,
+        "greeting": (f"سلام {greeting['name']}، {greeting['salutation']} — "
+                     f"{greeting['weekday']} {greeting['date']}، ساعت {greeting['time']} — "
+                     f"{greeting['summary']}") if greeting else None,
+        "greeting_parts": parts,
+    }
+
+
 @router.get("/settings", response_class=HTMLResponse)
 async def admin_settings(request: Request, db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "owner")
@@ -2069,7 +2148,7 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
     # owner is looking at, instead of surfacing later as a rule the browser
     # showed and the server ignored.
     template_source = (Path("templates") / "admin" / "settings.html").read_text(encoding="utf-8")
-    macro_fields = set(re.findall(r"num\('([a-z_]+)'", template_source))
+    macro_fields = set(re.findall(r"num\('([a-z0-9_]+)'", template_source))
     missing = sorted(macro_fields - set(SETTINGS_NUMERIC_RULES))
     if missing:
         return templates.TemplateResponse(request, "admin/settings.html", {
@@ -2109,7 +2188,7 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
         tag = m.group(0)
         if 'type="number"' not in tag:
             continue
-        name_m = re.search(r'name="([a-z_]+)"', tag)
+        name_m = re.search(r'name="([a-z0-9_]+)"', tag)
         rule = SETTINGS_NUMERIC_RULES.get(name_m.group(1)) if name_m else None
         min_m = re.search(r'\bmin="(-?\d+)"', tag)
         max_m = re.search(r'\bmax="(-?\d+)"', tag)
@@ -2134,7 +2213,7 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
     from services.image_gen import mask_tryon_key
     tryon_key_mask = mask_tryon_key(settings.get("tryon_api_key", ""))
     error_field = (request.query_params.get("field", "") or "").strip()
-    if not re.fullmatch(r"[a-z_]+", error_field):
+    if not re.fullmatch(r"[a-z0-9_]+", error_field):
         error_field = ""
     # The gateway strip is read live but only for its own tab — every other
     # panel skips the device query entirely.
@@ -3320,7 +3399,7 @@ async def admin_birthdays(request: Request, db: Session = Depends(get_db)):
     soon, and who already received this year's wish — nothing sends until the
     owner ticks and confirms.
     """
-    guard = require_html_role(request, db, "owner")
+    guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
@@ -3394,7 +3473,7 @@ async def admin_birthdays_send(request: Request, customer_ids: list[int] = Form(
     occasion, per year) still guards a double-send, so a re-submit of the same
     selection reports skips instead of repeat wishes.
     """
-    guard = require_html_role(request, db, "owner")
+    guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
@@ -3472,7 +3551,7 @@ async def admin_follow_ups(request: Request, db: Session = Depends(get_db)):
     than at the next pass, and whoever the sweep reached first is simply no
     longer on the list.
     """
-    guard = require_html_role(request, db, "owner")
+    guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
@@ -3517,7 +3596,7 @@ async def admin_follow_ups_send(request: Request, template_id: int = Form(0),
     twice. Both paths record the same per-purchase reference, and the second to
     arrive loses politely with a count the page reports.
     """
-    guard = require_html_role(request, db, "owner")
+    guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
@@ -3559,7 +3638,7 @@ async def admin_tier_downgrades(request: Request, db: Session = Depends(get_db))
     when the rule was simply switched off — so this page exists to make the
     decision visible, and to be the only way it is ever made.
     """
-    guard = require_html_role(request, db, "owner")
+    guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
@@ -3600,7 +3679,7 @@ async def admin_tier_downgrades_apply(
     trading, and a purchase in the meantime is exactly what the rule says
     protects the tier.
     """
-    guard = require_html_role(request, db, "owner")
+    guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
@@ -3628,7 +3707,7 @@ TIER_UP_SMS_LIMIT = 10
 
 @router.get("/tier-up", response_class=HTMLResponse)
 async def admin_tier_up(request: Request, db: Session = Depends(get_db)):
-    guard = require_html_role(request, db, "owner")
+    guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
@@ -3691,7 +3770,7 @@ async def admin_tier_up(request: Request, db: Session = Depends(get_db)):
 @router.post("/tier-up/send", response_class=HTMLResponse)
 async def admin_tier_up_send(request: Request, customer_ids: list[str] = Form([]), db: Session = Depends(get_db)):
     """Send tier-up SMS to selected customers, capped so we never blast >10 at once."""
-    guard = require_html_role(request, db, "owner")
+    guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 

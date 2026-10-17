@@ -734,6 +734,19 @@ tbody tr:last-child td { border-bottom: none; }
   gap: 1rem;
   margin-bottom: 1.5rem;
 }
+/* Cashier greeting: one line, no card chrome — the cards carry the weight.
+   Generous line-height for the tall Persian glyphs, balanced wrapping so a
+   long line never strands one word, and a jitter-free clock: tabular figures
+   that never shift the line when the minutes tick. */
+.dash-greeting { font-size: 1.1rem; font-weight: 600; line-height: 2.1; margin: 0 0 1rem; text-wrap: balance; }
+.dash-greeting [data-clock] { font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* The cashier's own week: day chips with their takings, the viewed day calm. */
+.history-strip { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.history-day { display: flex; flex-direction: column; gap: 0.15rem; padding: 0.5rem 0.9rem; min-height: 44px; justify-content: center; border: 1px solid var(--rule); border-radius: 999px; font-size: 0.85rem; color: var(--ink); text-decoration: none; }
+.history-day.is-active { border-color: var(--candy); font-weight: 700; }
+/* Target progress: the track is theme chrome, the fill reads the data width. */
+.progress-track { height: 8px; border-radius: 999px; background: var(--surface-soft); margin-top: 0.5rem; overflow: hidden; }
+.progress-fill { height: 100%; width: 0; border-radius: 999px; background: var(--candy); }
 
 .stat-card {
   background: var(--card);
@@ -1404,6 +1417,14 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 .ranked-units { color: var(--ink-soft); font-size: 0.75rem; }
 .ranked-money { font-weight: 800; }
 .ranked-profit { color: var(--success-ink); font-size: 0.78rem; }
+.ranked-discount { color: var(--ink-soft); font-size: 0.75rem; }
+/* Staff board toggle + inline goal editor live in the section heading area. */
+.rank-toggle { display: flex; gap: 0.25rem; }
+.rank-toggle a { padding: 0.4rem 0.9rem; min-height: 44px; display: inline-flex; align-items: center; border: 1px solid var(--rule); border-radius: 999px; font-size: 0.85rem; color: var(--ink-soft); text-decoration: none; }
+.rank-toggle a[aria-current] { border-color: var(--candy); color: var(--ink); font-weight: 700; }
+.targets-editor { margin-top: 1rem; }
+.targets-editor summary { cursor: pointer; color: var(--link); font-weight: 600; min-height: 44px; display: inline-flex; align-items: center; }
+.targets-editor .form-row { margin-top: 0.6rem; }
 
 /* The month in prose — the dashboard's reading strip. Prose lines like the
    ranked rows', but no ranks and no figures to align: it is a paragraph list. */

@@ -281,11 +281,17 @@ def test_the_rule_is_applied_in_one_query_not_one_per_customer(db_session):
 
 # ── the pages that reach it ──────────────────────────────────────────────────
 
-def test_a_manager_is_refused_by_both_routes(client, db_session):
-    manager, password = _staff(db_session, "dg-manager", "manager")
-    _session_as(client, manager, password)
+def test_a_cashier_is_refused_by_both_routes(client, db_session):
+    staff, password = _staff(db_session, "dg-cashier", "cashier")
+    _session_as(client, staff, password)
     assert client.get("/admin/tier-downgrades", follow_redirects=False).status_code == 403
     assert client.post("/admin/tier-downgrades/apply", data={}, follow_redirects=False).status_code == 403
+
+
+def test_a_manager_reaches_both_routes(client, db_session):
+    staff, password = _staff(db_session, "dg-manager", "manager")
+    _session_as(client, staff, password)
+    assert client.get("/admin/tier-downgrades", follow_redirects=False).status_code == 200
 
 
 def test_the_settings_page_no_longer_offers_a_field_the_rule_ignores(client, db_session):

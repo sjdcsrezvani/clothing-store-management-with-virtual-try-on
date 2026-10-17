@@ -75,6 +75,7 @@ async def create_customer(
         first_name=first_name if first_name else None,
         last_name=last_name if last_name else None,
         referral_code=code,
+        created_by_user_id=getattr(guard, "id", None),
         **signup_birthday_fields(
             db, buys_for=buys_for, birth_value=birth_date,
             child_name=child_name, child_birth_value=child_birthday,

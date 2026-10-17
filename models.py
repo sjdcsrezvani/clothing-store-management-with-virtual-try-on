@@ -147,6 +147,10 @@ class Customer(Base):
     credit_limit = Column(Integer, nullable=True)
     last_purchase_date = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    # Who registered this customer, when known (counter signup by staff).
+    # NULL for legacy rows and public signups — attribution counts only rows
+    # that name someone.
+    created_by_user_id = Column(Integer, ForeignKey("staff_users.id"), nullable=True)
 
     referrer = relationship("Customer", remote_side=[id], backref="referrals_made")
     sales = relationship("Sale", back_populates="customer")

@@ -40,7 +40,7 @@ def _item(href: str, label: str, icon: str, key: str,
 # from the same registry as everything else.
 TOPBAR_ACTIONS: tuple[dict, ...] = (
     _item("/sales/new", "فروش جدید", "cart", "sales", "cashier", tone="sale"),
-    _item("/admin", "داشبورد", "dashboard", "dashboard", "manager"),
+    _item("/admin", "داشبورد", "dashboard", "dashboard", "cashier"),
 )
 
 # Reading order for a shopkeeper: what I sell, what I stock, who buys, the money,
@@ -49,7 +49,7 @@ TOPBAR_ACTIONS: tuple[dict, ...] = (
 NAV_SECTIONS: tuple[dict, ...] = (
     {"key": "sales", "label": "فروش", "items": (
         _item("/sales/", "تاریخچه فروش", "history", "sales-history", "cashier"),
-        _item("/admin/try-on", "پرو مجازی", "dress", "tryon"),
+        _item("/admin/try-on", "پرو مجازی", "dress", "tryon", "cashier"),
     )},
     {"key": "inventory", "label": "کالا و انبار", "items": (
         _item("/admin/products", "محصولات و موجودی", "box", "products"),
@@ -58,7 +58,7 @@ NAV_SECTIONS: tuple[dict, ...] = (
         _item("/admin/inventory-movements", "دفتر انبار", "ledger", "inventory-movements"),
     )},
     {"key": "club", "label": "مشتریان و باشگاه", "items": (
-        _item("/admin/customers", "مشتریان", "users", "customers"),
+        _item("/admin/customers", "مشتریان", "users", "customers", "cashier"),
         _item("/admin/credit", "حساب نسیه", "credit", "credit"),
         _item("/admin/campaigns", "کمپین پیامکی", "campaign", "campaigns"),
         _item("/admin/sms", "پیامک", "sms", "sms"),
@@ -269,13 +269,10 @@ def trail_for(path: str, title: str | None = None) -> list[dict]:
 
 
 def home_for(role: str | None) -> str:
-    """Where this role belongs: the dashboard if it may open one, else the till.
-
-    A cashier used to land on ``/admin`` after logging in and be refused by the
-    page they had just been sent to; the shop's own home for that role is the
-    counter.
-    """
-    return "/admin" if role_allows(role, "manager") else "/sales/new"
+    """Where this role belongs: the dashboard for every role that may open
+    one — including the cashier, whose first screen is their own day — and
+    the till for nobody by default any more."""
+    return "/admin" if role_allows(role, "cashier") else "/sales/new"
 
 
 def home_label_for(role: str | None) -> str:

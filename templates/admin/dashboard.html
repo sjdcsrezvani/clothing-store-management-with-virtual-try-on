@@ -3,13 +3,19 @@
 
 {% set page_badge = role_label %}
 {% set page_actions %}
-<a href="/sales/new" class="btn btn-success">🛒 ثبت فروش</a>
+<a href="/sales/new" class="btn btn-success">ثبت فروش</a>
 {% endset %}
 {# The paper heading names the day and the reader's role — a printed dashboard
    travels without a URL or a badge, and a manager's printout shows fewer
    figures than the owner's. #}
 {% set print_heading = 'داشبورد فروشگاه — ' ~ today ~ ((' (' ~ role_label ~ ')') if role_label else '') %}
 {% include 'partials/page_header.html' %}
+
+{# The counter's own greeting: who is looking, which day, and the day in one
+   line. Managers and owners never receive it — their header stays titled. #}
+{% if greeting %}
+<p class="dash-greeting" role="status" data-poll-greeting>سلام {{ greeting.name }}، {{ greeting.salutation }} — {{ greeting.weekday }} {{ greeting.date }}، ساعت <span class="tnum" data-clock>{{ greeting.time }}</span> — {{ greeting.summary }}</p>
+{% endif %}
 
 {# The gateway cannot text anyone about itself, so its outage lives here:
    one strip while the paired phone is silent, gone the moment it polls.
@@ -29,7 +35,21 @@
    Nothing below changes data either — this page reports and links. #}
 {% for section in sections %}
 
-{% if section.kind == 'attention' %}
+{% if section.kind == 'history' %}
+{# The cashier's own week: full-card days behind, one tap each. #}
+<section class="card screen-only" aria-label="روزهای گذشته">
+    <div class="history-strip">
+        {% for day in section.days %}
+        {% if day.active %}
+        <span class="history-day is-active" aria-current="true"><strong>{{ day.label }}</strong><span class="tnum">{{ day.sales }}</span></span>
+        {% else %}
+        <a class="history-day" href="{{ day.href }}"><strong>{{ day.label }}</strong><span class="tnum">{{ day.sales }}</span></a>
+        {% endif %}
+        {% endfor %}
+    </div>
+</section>
+
+{% elif section.kind == 'attention' %}
 {# The action row is the page's navigation: on paper it is a list of links to
    screens the printout cannot open, so it lives on the screen only. #}
 <section class="card screen-only" aria-labelledby="dash-{{ section.key }}">
@@ -44,9 +64,9 @@
         {# `is-clear` means «nothing here needs you» and only this row may carry
            it. A money card showing a zero must never look this calm. #}
         <a class="action-item{% if card.tone %} action-{{ card.tone }}{% endif %}{% if card.clear %} is-clear{% endif %}" href="{{ card.href }}">
-            <span class="action-count tnum">{{ card.value }}</span>
+            <span class="action-count tnum" data-poll-value="{{ card.key }}">{{ card.value }}</span>
             <strong>{{ card.label }}</strong>
-            <span class="action-sub">{{ card.sub }}</span>
+            <span class="action-sub" data-poll-sub="{{ card.key }}">{{ card.sub }}</span>
         </a>
         {% endfor %}
     </div>
@@ -83,6 +103,52 @@
     {% endif %}
 </section>
 
+{% elif section.kind == 'staff' %}
+<section class="card" aria-labelledby="dash-{{ section.key }}">
+    <div class="section-heading">
+        <div>
+            <span class="eyebrow">{{ section.eyebrow }}</span>
+            <h3 id="dash-{{ section.key }}">{{ section.title }}</h3>
+        </div>
+        <div class="rank-toggle">
+            <a href="/admin"{% if not section.rank_week %} aria-current="true"{% endif %}>امروز</a>
+            <a href="/admin?rank=week"{% if section.rank_week %} aria-current="true"{% endif %}>۷ روز</a>
+        </div>
+    </div>
+    {% if section.rows %}
+    <ol class="ranked-list">
+        {% for row in section.rows %}
+        <li class="ranked-row">
+            <span class="ranked-rank tnum">{{ loop.index }}</span>
+            <span class="ranked-name"><strong>{{ row.name }}</strong></span>
+            <span class="ranked-figures">
+                <span class="ranked-units tnum">{{ row.invoices }} فاکتور</span>
+                <span class="ranked-money tnum">{{ row.sales }} ت</span>
+                <span class="ranked-discount tnum">تخفیف {{ row.discounts }} ت</span>
+            </span>
+        </li>
+        {% endfor %}
+    </ol>
+    {% else %}
+    <p class="empty-state">هنوز فروشی ثبت نشده است.</p>
+    {% endif %}
+    {% if section.targets_editable %}
+    <details class="targets-editor">
+        <summary>تعیین هدف روزانه</summary>
+        <form method="post" action="/admin/targets" class="form-row">
+            {% for w in range(7) %}
+            <div class="form-group">
+                <label for="tgt-{{ w }}">{{ section.weekdays[w] }}</label>
+                <input type="text" inputmode="numeric" id="tgt-{{ w }}" name="sales_target_{{ w }}"
+                       value="{{ section.targets[w|string] }}" dir="ltr">
+            </div>
+            {% endfor %}
+            <button type="submit" class="btn btn-primary btn-sm">ذخیره هدف‌ها</button>
+        </form>
+    </details>
+    {% endif %}
+</section>
+
 {% elif section.kind == 'reading' %}
 <section class="card" aria-labelledby="dash-{{ section.key }}">
     <div class="section-heading">
@@ -116,13 +182,16 @@
         <div class="stat-card{% if card.tone %} accent-{{ card.tone }}{% endif %}">
         {% endif %}
             <div class="stat-label">{{ card.label }}</div>
-            <div class="stat-value tnum">
+            <div class="stat-value tnum" data-poll-value="{{ card.key }}">
                 {{ card.value }}
                 {% if card.delta %}
                 <span class="stat-delta{% if card.delta.good is not none %} is-{{ 'good' if card.delta.good else 'bad' }}{% endif %}">{{ card.delta.text }}</span>
                 {% endif %}
             </div>
-            <div class="stat-sub">{{ card.sub }}</div>
+            <div class="stat-sub" data-poll-sub="{{ card.key }}">{{ card.sub }}</div>
+            {% if card.progress is not none %}
+            <div class="progress-track" role="progressbar" aria-valuenow="{{ card.progress }}" aria-valuemin="0" aria-valuemax="100" aria-label="{{ card.label }}"><div class="progress-fill" data-progress="{{ card.progress }}"></div></div>
+            {% endif %}
         {% if card.href %}</a>{% else %}</div>{% endif %}
         {% endfor %}
     </div>
@@ -130,5 +199,71 @@
 {% endif %}
 
 {% endfor %}
+
+<script>
+// Progress fills read their width from data, never from a style attribute.
+document.querySelectorAll('.progress-fill[data-progress]').forEach(function (el) {
+    var pct = Math.max(0, Math.min(100, parseInt(el.getAttribute('data-progress') || '0', 10)));
+    el.style.width = pct + '%';
+});
+
+// Live clock: the greeting's minutes tick from the shop's own clock, every
+// twenty seconds — no reload, no five-minute wait for the poll.
+function tickClock() {
+    try {
+        var t = new Intl.DateTimeFormat('fa-IR', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
+        document.querySelectorAll('[data-clock]').forEach(function (el) {
+            el.textContent = t;
+        });
+    } catch (e) {}
+}
+tickClock();
+setInterval(tickClock, 20 * 1000);
+
+// Rebuild the greeting from parts so the live clock span survives a poll —
+// a textContent overwrite would kill the span the ticker writes to.
+function renderGreeting(el, p) {
+    el.textContent = '';
+    el.appendChild(document.createTextNode(
+        'سلام ' + p.name + '، ' + p.salutation + ' — ' +
+        p.weekday + ' ' + p.date + '، ساعت '));
+    var s = document.createElement('span');
+    s.className = 'tnum';
+    s.setAttribute('data-clock', '');
+    s.textContent = p.time;
+    el.appendChild(s);
+    el.appendChild(document.createTextNode(' — ' + p.summary));
+    tickClock();
+}
+
+// Silent poll, every five minutes: the figures tick in place, the page never
+// reloads. A failed poll keeps yesterday's numbers rather than blanking them.
+setInterval(function () {
+    fetch('/admin/dashboard-poll', { headers: { 'Accept': 'application/json' } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+            if (!data || !data.cards) return;
+            Object.keys(data.cards).forEach(function (key) {
+                var card = data.cards[key];
+                document.querySelectorAll('[data-poll-value="' + key + '"]').forEach(function (el) {
+                    el.childNodes[0].textContent = card.value + ' ';
+                });
+                document.querySelectorAll('[data-poll-sub="' + key + '"]').forEach(function (el) {
+                    el.textContent = card.sub;
+                });
+            });
+            if (data.greeting_parts) {
+                document.querySelectorAll('[data-poll-greeting]').forEach(function (el) {
+                    renderGreeting(el, data.greeting_parts);
+                });
+            } else if (data.greeting) {
+                document.querySelectorAll('[data-poll-greeting]').forEach(function (el) {
+                    el.textContent = data.greeting;
+                });
+            }
+        })
+        .catch(function () {});
+}, 5 * 60 * 1000);
+</script>
 
 {% endblock %}
