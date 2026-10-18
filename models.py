@@ -273,6 +273,11 @@ class Product(Base):
     description = Column(Text, nullable=True)
     category = Column(String(100), nullable=True)
     brand = Column(String(100), nullable=True)
+    # Sizing phase 1: what the tag speaks (size_system) and which per-garment
+    # ladder resolves it (size_type) — see services.sizing. Nullable: legacy
+    # products keep working with no conversion.
+    size_type = Column(String(30), nullable=True)
+    size_system = Column(String(30), nullable=True)
     base_sku = Column(String(50), nullable=True)
     base_barcode = Column(String(50), nullable=True)
     weight_grams = Column(Integer, nullable=True)
@@ -366,6 +371,13 @@ class ProductVariant(Base):
     storage_location = Column(String(100), nullable=True)
     size_system = Column(String(30), nullable=True)
     color_code = Column(String(30), nullable=True)
+    # The unified band (services.sizing): resolved person height (cm) and age
+    # (months) beside the raw tag size. Nullable — unresolved sizes simply
+    # carry no band, and legacy rows stay untouched.
+    band_min_cm = Column(Integer, nullable=True)
+    band_max_cm = Column(Integer, nullable=True)
+    band_min_months = Column(Integer, nullable=True)
+    band_max_months = Column(Integer, nullable=True)
 
     # Variant-specific SKU (optional)
     sku = Column(String(50), nullable=True)

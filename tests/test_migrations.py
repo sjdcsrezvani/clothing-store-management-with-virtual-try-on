@@ -293,3 +293,28 @@ def test_revision_27_collapses_junk_category_spellings_to_null(tmp_path):
         assert conn.execute(text("SELECT category FROM products WHERE name = 'c'")).scalar() == "پیراهن"
         assert conn.execute(text(
             "SELECT amount FROM expenses WHERE category IS NULL")).scalars().all() == [1000]
+
+
+def test_revision_36_adds_the_sizing_columns(tmp_path):
+    """Sizing phase 1 is purely additive: a shop that ran revision 35 gets the
+    product's tag system/type and every variant's unified band as empty
+    columns — legacy rows read exactly as before, nothing is backfilled by
+    guessing."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'v35.db'}")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE schema_version (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)"))
+        conn.execute(text("INSERT INTO schema_version (id, version) VALUES (1, 35)"))
+        conn.execute(text("CREATE TABLE products (id INTEGER PRIMARY KEY, name VARCHAR(200), category VARCHAR(100))"))
+        conn.execute(text("CREATE TABLE product_variants (id INTEGER PRIMARY KEY, product_id INTEGER, size VARCHAR(20))"))
+        conn.execute(text("INSERT INTO products (name) VALUES ('پیراهن')"))
+        conn.execute(text("INSERT INTO product_variants (product_id, size) VALUES (1, '110')"))
+
+    assert upgrade(engine) == MIGRATION_VERSION == 36
+
+    with engine.connect() as conn:
+        products = {row[1] for row in conn.execute(text("PRAGMA table_info(products)"))}
+        variants = {row[1] for row in conn.execute(text("PRAGMA table_info(product_variants)"))}
+        assert {"size_type", "size_system"} <= products
+        assert {"band_min_cm", "band_max_cm", "band_min_months", "band_max_months"} <= variants
+        row = conn.execute(text("SELECT size, band_min_cm FROM product_variants WHERE id=1")).one()
+        assert row == ("110", None)

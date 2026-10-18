@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 35
+MIGRATION_VERSION = 36
 
 
 def migration_status(engine) -> int:
@@ -453,6 +453,19 @@ def _rebuild_sms_messages(conn) -> None:
 
 
 def _apply_revision(conn, version: int) -> None:
+    if version == 36:
+        # Sizing phase 1: the product names its tag system and garment type;
+        # every variant carries the resolved unified band (person height cm /
+        # age months) beside the raw tag size. All nullable — legacy products
+        # read exactly as before.
+        _add_column_if_missing(conn, "products", "size_type", "VARCHAR(30)")
+        _add_column_if_missing(conn, "products", "size_system", "VARCHAR(30)")
+        _add_column_if_missing(conn, "product_variants", "band_min_cm", "INTEGER")
+        _add_column_if_missing(conn, "product_variants", "band_max_cm", "INTEGER")
+        _add_column_if_missing(conn, "product_variants", "band_min_months", "INTEGER")
+        _add_column_if_missing(conn, "product_variants", "band_max_months", "INTEGER")
+        return
+
     if version == 35:
         # Who registered each customer: nullable attribution for the
         # cashier's signup card. Legacy rows stay NULL and count for nobody.
