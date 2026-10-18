@@ -281,14 +281,19 @@
     window.ensureCsrf = function (f) {
         if (!f || !f.querySelector) return;
         if ((f.getAttribute('method') || 'get').toLowerCase() !== 'post') return;
-        if (!f.querySelector('input[name="csrf_token"]')) {
-            var meta = document.querySelector('meta[name="csrf-token"]');
-            var i = document.createElement('input');
-            i.type = 'hidden';
-            i.name = 'csrf_token';
-            i.value = meta ? meta.content : '';
-            f.appendChild(i);
+        var meta = document.querySelector('meta[name="csrf-token"]');
+        var current = f.querySelector('input[name="csrf_token"]');
+        if (current) {
+            // A field injected before a session rotation still sits in the
+            // form; the shell keeps the meta current, so it wins.
+            if (meta) current.value = meta.content;
+            return;
         }
+        var i = document.createElement('input');
+        i.type = 'hidden';
+        i.name = 'csrf_token';
+        i.value = meta ? meta.content : '';
+        f.appendChild(i);
     };
     document.addEventListener('submit', function (e) { ensureCsrf(e.target); }, true);
     </script>

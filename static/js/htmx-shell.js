@@ -59,6 +59,21 @@
         event.detail.headers['X-Requested-With'] = 'XMLHttpRequest';
     });
 
+    // The session can rotate its CSRF token mid-flight (login and logout clear
+    // it) and a boosted swap never replaces the <head>: the meta would keep a
+    // token the server no longer accepts, and every meta-fed request — the
+    // header above, a form whose field was injected before the rotation —
+    // would answer 403 in silence. The server names the current token on every
+    // HTML answer; adopt it.
+    document.addEventListener('htmx:afterOnLoad', function (event) {
+        var xhr = event.detail && event.detail.xhr;
+        if (!xhr || !xhr.getResponseHeader) return;
+        var fresh = xhr.getResponseHeader('X-CSRF-Token');
+        if (!fresh) return;
+        var meta = document.querySelector('meta[name="csrf-token"]');
+        if (meta) meta.content = fresh;
+    });
+
     document.addEventListener('htmx:beforeSwap', function (event) {
         var xhr = event.detail.xhr;
         var config = event.detail.requestConfig || {};

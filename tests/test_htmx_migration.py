@@ -78,3 +78,35 @@ def test_flash_adoption_survives_boosted_arrivals():
     assert "adopt: adoptServerFlash" in toast
     shell = (ROOT / "static" / "js" / "htmx-shell.js").read_text(encoding="utf-8")
     assert "RaykidToast.adopt" in shell
+
+
+def test_the_shell_adopts_the_csrf_token_the_server_names():
+    """Login and logout clear the session and mint a new CSRF token; a boosted
+    swap never replaces the head, so the meta would keep the old token and
+    every meta-fed request would answer 403 in silence. The server names the
+    current token on every HTML answer and the shell writes it into the meta;
+    a field injected before a rotation is refreshed at submit, not left stale."""
+    shell = (ROOT / "static" / "js" / "htmx-shell.js").read_text(encoding="utf-8")
+    assert "htmx:afterOnLoad" in shell
+    assert "X-CSRF-Token" in shell
+    assert "meta.content = fresh" in shell
+    base = (ROOT / "templates" / "base.html").read_text(encoding="utf-8")
+    assert "current.value = meta.content" in base
+
+
+def test_html_answers_name_the_session_csrf_token(client):
+    """The header the shell adopts: every HTML answer carries the session's
+    current token, and the page landed on after a login rotation carries the
+    new one. The browser check that found this proved a stale meta answers
+    403 on the very next POST."""
+    page = client.get("/admin/login")
+    before = re.search(r'name="csrf-token" content="([^"]+)"', page.text).group(1)
+    assert page.headers.get("x-csrf-token") == before
+
+    landed = client.post("/admin/login",
+                         data={"username": "owner", "password": "test-admin-pass",
+                               "csrf_token": before},
+                         follow_redirects=True)
+    after = re.search(r'name="csrf-token" content="([^"]+)"', landed.text).group(1)
+    assert after != before                                  # the session rotated
+    assert landed.headers.get("x-csrf-token") == after      # and the answer names it

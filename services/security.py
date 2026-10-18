@@ -577,19 +577,38 @@ CSRF_EXEMPT_PREFIXES = ("/api", "/gateway")
 class CSRFMiddleware:
     """Rejects state-changing requests that don't carry the session-bound CSRF
     token (form field `csrf_token` or `X-CSRF-Token` header). Buffers the body
-    so downstream handlers still receive it."""
+    so downstream handlers still receive it.
+
+    Every HTML answer also names the session's current token in an
+    `X-CSRF-Token` header. A boosted swap never replaces the <head>, so after
+    a login or logout mints a new token the page's meta would keep the old one
+    and every meta-fed request would answer 403; the shell adopts the header."""
 
     def __init__(self, app, exempt_prefixes=CSRF_EXEMPT_PREFIXES):
         self.app = app
         self.exempt_prefixes = exempt_prefixes
 
     async def __call__(self, scope, receive, send):
+        async def send_naming_token(message):
+            if message["type"] == "http.response.start" and scope["type"] == "http":
+                token = (scope.get("session") or {}).get("csrf_token")
+                if token:
+                    headers = message.get("headers", [])
+                    content_type = ""
+                    for name, value in headers:
+                        if name.lower() == b"content-type":
+                            content_type = value.decode("latin-1")
+                            break
+                    if content_type.startswith("text/html"):
+                        message = {**message, "headers": headers + [(b"x-csrf-token", str(token).encode())]}
+            await send(message)
+
         if scope["type"] != "http" or scope["method"] not in ("POST", "PUT", "PATCH", "DELETE"):
-            await self.app(scope, receive, send)
+            await self.app(scope, receive, send_naming_token)
             return
         path = scope.get("path", "")
         if path.startswith(self.exempt_prefixes):
-            await self.app(scope, receive, send)
+            await self.app(scope, receive, send_naming_token)
             return
 
         # Buffer the request body so we can inspect the token and still replay
@@ -621,12 +640,12 @@ class CSRFMiddleware:
 
         if not expected or not token or not hmac.compare_digest(str(expected), str(token)):
             response = JSONResponse({"detail": "CSRF validation failed"}, status_code=403)
-            await response(scope, receive, send)
+            await response(scope, receive, send_naming_token)
             return
 
         # Rewind the buffer so the route handler below can read the body too.
         state["index"] = 0
-        await self.app(scope, replay_receive, send)
+        await self.app(scope, replay_receive, send_naming_token)
 
 
 class NoStoreHTMLMiddleware:
