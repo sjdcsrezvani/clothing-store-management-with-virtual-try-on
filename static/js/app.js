@@ -301,7 +301,10 @@ function initColorPickers(scope) {
         custom.addEventListener('click', () => { picker.click(); });
         actions.appendChild(custom);
         pop.appendChild(actions);
-        wrap.appendChild(pop);
+        // A panel fixed to the viewport, not a child of the card: the variant
+        // row clips its children (`overflow: clip` for the accordion), so the
+        // palette must live on the body and be placed by script.
+        document.body.appendChild(pop);
 
         const picker = document.createElement('input');
         picker.type = 'color';
@@ -351,6 +354,20 @@ function initColorPickers(scope) {
             setFieldColor(picker.value);
         });
 
+        // Anchored to the swatch on the viewport (RTL: right edge to right
+        // edge), so no card boundary is in its way; flips above the field
+        // when the foot of the page is close.
+        function placePop() {
+            const rect = swatch.getBoundingClientRect();
+            const height = pop.offsetHeight;
+            const aboveTop = rect.top - height - 6;
+            const belowTop = rect.bottom + 6;
+            pop.style.top = (height + 8 > window.innerHeight - rect.bottom - 8 && aboveTop > 0)
+                ? aboveTop + 'px'
+                : Math.max(8, Math.min(belowTop, window.innerHeight - height - 8)) + 'px';
+            pop.style.right = Math.max(8, window.innerWidth - rect.right) + 'px';
+        }
+
         swatch.addEventListener('click', event => {
             event.stopPropagation();
             const open = pop.hidden;
@@ -358,6 +375,7 @@ function initColorPickers(scope) {
             document.querySelectorAll('.color-swatch').forEach(other => { other.setAttribute('aria-expanded', 'false'); });
             pop.hidden = !open;
             swatch.setAttribute('aria-expanded', open ? 'true' : 'false');
+            if (open) placePop();
         });
 
         field.addEventListener('input', paintSwatch);
@@ -371,10 +389,19 @@ function initColorPickers(scope) {
 }
 
 document.addEventListener('click', event => {
-    if (event.target.closest && event.target.closest('.color-pick')) return;
+    if (event.target.closest && (event.target.closest('.color-pick') || event.target.closest('.color-presets'))) return;
     document.querySelectorAll('.color-presets').forEach(pop => { pop.hidden = true; });
     document.querySelectorAll('.color-swatch').forEach(swatch => { swatch.setAttribute('aria-expanded', 'false'); });
 });
+
+// The palette is fixed to the viewport while the field scrolls away with the
+// page: close it rather than let it hang over whatever scrolled under it. Its
+// own scrolling is not a scroll away.
+document.addEventListener('scroll', event => {
+    if (event.target && event.target.closest && event.target.closest('.color-presets')) return;
+    document.querySelectorAll('.color-presets').forEach(pop => { pop.hidden = true; });
+    document.querySelectorAll('.color-swatch').forEach(swatch => { swatch.setAttribute('aria-expanded', 'false'); });
+}, true);
 
 document.addEventListener('keydown', event => {
     if (event.key !== 'Escape') return;

@@ -323,6 +323,11 @@ def test_the_palette_picker_offers_every_named_colour():
     assert "color-family-row" in js and "color-family-label" in js
     assert "color-pick-name" in js
     assert "'رنگ دلخواه…'" in js  # the native picker stays for off-table colours
+    # The palette is fixed to the viewport and placed by script — the variant
+    # row clips its children (`overflow: clip` for the accordion), so a
+    # palette living inside the card would be cut off.
+    assert "placePop" in js
+    assert "document.body.appendChild(pop)" in js
     css = (ROOT / "static/css/style.css").read_text()
     assert ".color-family-label" in css and ".color-pick-name" in css
-    assert ".color-presets" in css and "overflow-y: auto" in css
+    assert ".color-presets" in css and "overflow-y: auto" in css and "position: fixed" in css
