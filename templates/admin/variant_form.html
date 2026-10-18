@@ -17,8 +17,13 @@
         <input type="hidden" name="next" value="{{ return_to or '' }}">
         <div class="section-heading-row"><div><h3>مشخصات فروش</h3><p class="muted">قیمت‌ها و شناسه‌ها را دقیق و قابل جست‌وجو نگه دارید.</p></div><span class="section-step">۱</span></div>
         <div class="form-row product-form-grid-wide">
-            <div class="form-group"><label for="size">سایز</label><input id="size" name="size" data-unify-digits value="{{ variant.size or '' }}" placeholder="۳ تا ۴ سال"></div>
-            <div class="form-group"><label for="size_system">سیستم سایز</label><input id="size_system" name="size_system" value="{{ variant.size_system or '' }}" placeholder="ایران / EU"></div>
+            <div class="form-group"><label for="size">سایز</label>
+                <div class="size-field" data-size-field data-size-system="{{ product.size_system or '' }}" data-size-type="{{ product.size_type or '' }}" data-size-value="{{ variant.size or '' }}">
+                    <select id="size" name="size" data-size-select aria-label="سایز"></select>
+                    <input type="text" data-size-other placeholder="سایز روی تگ" hidden>
+                    <small class="field-help size-preview" data-size-preview hidden></small>
+                </div>
+            </div>
             <div class="form-group"><label for="color">رنگ</label><input id="color" name="color" value="{{ variant.color or '' }}" placeholder="آبی"></div>
             <div class="form-group"><label for="color_code">کد رنگ</label><input id="color_code" name="color_code" value="{{ variant.color_code or '' }}" dir="ltr" placeholder="#4AA3DF" data-color-picker></div>
             <div class="form-group"><label for="price">قیمت فروش <span class="required-mark">*</span></label><input type="text" inputmode="numeric" id="price" name="price" required min="0" value="{{ variant.price }}" placeholder="مثال: 350000"></div>
@@ -162,4 +167,6 @@
     second.addEventListener('input', sync);
 })();
 </script>
+<script type="application/json" id="sizing-ladders">{{ sizing_ladders_json|safe }}</script>
+<script src="/static/js/sizing.js?v={{ static_version }}"></script>
 {% endblock %}

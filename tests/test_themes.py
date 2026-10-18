@@ -681,6 +681,7 @@ NOT_A_PAGE: dict[str, str] = {
     "/admin/backups/download-all": "the whole-shelf download is a zip of the backup files",
     "/admin/events": "retired: old bookmarks redirect to the merged audit timeline",
     "/admin/logs/latest": "the audit poller answers with JSON row ids, not a page",
+    "/admin/sizing/preview": "the product form's live sizing line, a one-line fragment",
     "/admin/payroll/export": "the payroll export is a CSV of the salary ledger",
     "/admin/backups/download": "the download is the backup file itself",
     "/admin/try-on/download": "the try-on engine answers with its own response",

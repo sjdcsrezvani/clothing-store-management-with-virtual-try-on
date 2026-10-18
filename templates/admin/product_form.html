@@ -66,6 +66,28 @@
         <datalist id="brand-list">
             {% for brand in brands or [] %}<option value="{{ brand }}">{% endfor %}
         </datalist>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="size_type">نوع سایزبندی</label>
+                <select id="size_type" name="size_type" data-fancy>
+                    <option value="">بدون تبدیل سایز</option>
+                    {% for type_id, type_label in sizing_types %}
+                    <option value="{{ type_id }}" {% if product and product.size_type == type_id %}selected{% endif %}>{{ type_label }}</option>
+                    {% endfor %}
+                </select>
+                <small class="field-help">کدام جدول تبدیل روی این محصول بنشیند؛ انتخاب دسته‌بندی آن را خودکار پر می‌کند و دست شما همیشه حرف آخر را می‌زند.</small>
+            </div>
+            <div class="form-group">
+                <label for="size_system">سیستم سایز روی تگ</label>
+                <select id="size_system" name="size_system" data-fancy>
+                    <option value="">نامشخص — بدون تبدیل</option>
+                    {% for system_id, system_label in sizing_systems %}
+                    <option value="{{ system_id }}" {% if product and product.size_system == system_id %}selected{% endif %}>{{ system_label }}</option>
+                    {% endfor %}
+                </select>
+                <small class="field-help">سیستمی که روی تگ خریداری‌شده چاپ شده؛ تنوع‌ها فقط سایز همان تگ را می‌گیرند و برنامه معادلش را نشان می‌دهد.</small>
+            </div>
+        </div>
         <details class="advanced-fields">
             <summary>جزئیات بیشتر <small>اختیاری — کدها، مشخصات پارچه و پیش‌فرض‌های سفارش</small></summary>
             <div class="form-row product-form-grid product-form-grid-wide">
@@ -309,9 +331,14 @@ function addVariant() {
             </button>
             <div class="variant-entry-body"><div class="variant-entry-body-inner"><div class="variant-entry-body-pad">
             <div class="form-row variant-entry-grid">
-                <div class="form-group"><label>سایز</label><input type="text" name="variant_size_${index}" data-unify-digits placeholder="مثلاً ۳ تا ۴ سال"></div>
+                <div class="form-group"><label>سایز</label>
+                    <div class="size-field" data-size-field>
+                        <select name="variant_size_${index}" data-size-select aria-label="سایز"></select>
+                        <input type="text" data-size-other placeholder="سایز روی تگ" hidden>
+                        <small class="field-help size-preview" data-size-preview hidden></small>
+                    </div>
+                </div>
                 <div class="form-group"><label>رنگ</label><input type="text" name="variant_color_${index}" placeholder="مثلاً آبی"></div>
-                <div class="form-group"><label>سیستم سایز</label><input type="text" name="variant_size_system_${index}" placeholder="ایران / EU"></div>
                 <div class="form-group"><label>کد رنگ</label><input type="text" name="variant_color_code_${index}" dir="ltr" placeholder="#4AA3DF" data-color-picker></div>
                 <div class="form-group"><label>قیمت فروش <span class="required-mark">*</span></label><input type="text" inputmode="numeric" name="variant_price_${index}" required min="0" placeholder="مثال: 350000"></div>
                 <div class="form-group"><label>قیمت خرید</label><input type="text" inputmode="numeric" name="variant_cost_price_${index}" min="0" placeholder="مثال: 220000"></div>
@@ -335,6 +362,7 @@ function addVariant() {
             <input type="hidden" name="variant_index_${index}" value="${index}">
         </article>`);
     initColorPickers(container);
+    if (window.RaykidSizing) window.RaykidSizing.setup(container);
     const fresh = container.lastElementChild;
     syncSkuRow(fresh);
     refreshEntry(fresh);
@@ -404,8 +432,27 @@ if (document.readyState === 'loading') {
     bootVariantForm();
 }
 
+// Choosing a category suggests the garment ladder; a hand-set type wins.
+(function () {
+    var category = document.getElementById('category');
+    var typeSelect = document.getElementById('size_type');
+    if (!category || !typeSelect) return;
+    function suggest() {
+        if (typeSelect.value) return;
+        var text = category.value || '';
+        if (/شلوار|شورت|دامن|لگ|ساپورت|پایین/.test(text)) typeSelect.value = 'lower';
+        else if (/سرهمی|سرهم|ست|بادی|دستک/.test(text)) typeSelect.value = 'set';
+        else if (/تیشرت|پیراهن|بلوز|شومیز|هودی|کاپشن|بالاتنه/.test(text)) typeSelect.value = 'upper';
+        typeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    category.addEventListener('change', suggest);
+    category.addEventListener('blur', suggest);
+})();
+
 // The demand button is htmx: the hidden form posts itself, htmx swaps the
 // tally cell. A failed request swaps nothing — the shell keeps yesterday's
 // count until a reload, never a silent second POST.
 </script>
+<script type="application/json" id="sizing-ladders">{{ sizing_ladders_json|safe }}</script>
+<script src="/static/js/sizing.js?v={{ static_version }}"></script>
 {% endblock %}

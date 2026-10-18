@@ -2222,6 +2222,8 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .color-family-label { margin: 0; font-size: 0.72rem; font-weight: 700; color: var(--ink-soft); }
 .color-family-row { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .color-actions { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; border-top: 1px solid var(--rule); padding-top: 0.45rem; }
+.size-field { display: grid; gap: 0.35rem; }
+.size-field select[hidden], .size-field input[hidden], .size-preview[hidden] { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .color-swatch, .color-preset { transition: none; }
 }

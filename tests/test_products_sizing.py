@@ -115,3 +115,50 @@ def test_variant_edit_recomputes_its_own_band(client, db_session, authed):
     variant = _variant(db_session, "SIZ-E")
     assert variant.size == "10"
     assert (variant.band_min_cm, variant.band_max_cm) == (140, 146)
+
+
+def test_product_form_carries_the_sizing_pickers(client, db_session, authed):
+    page = client.get("/admin/products/add").text
+    assert 'id="size_type"' in page and 'id="size_system"' in page
+    assert 'id="sizing-ladders"' in page
+    assert "/static/js/sizing.js" in page
+    assert "data-size-select" in page            # the row template the script stamps
+    assert "variant_size_system_" not in page    # the per-variant system field is gone
+
+
+def test_edit_form_preselects_the_stored_system(client, db_session, authed):
+    assert _create_product(client, size_system="us", size_type="upper",
+                           variant_size_0="8", variant_barcode_0="SIZ-H").status_code == 303
+    variant = _variant(db_session, "SIZ-H")
+    page = client.get(f"/admin/products/{variant.product_id}").text
+    assert 'value="us" selected' in page
+    assert 'value="upper" selected' in page
+
+
+def test_variant_page_carries_its_products_system(client, db_session, authed):
+    assert _create_product(client, size_system="age", size_type="upper",
+                           variant_size_0="6-7", variant_barcode_0="SIZ-I").status_code == 303
+    variant = _variant(db_session, "SIZ-I")
+    page = client.get(f"/admin/variants/{variant.id}/edit").text
+    assert 'data-size-field' in page
+    assert 'data-size-system="age"' in page
+    assert 'id="sizing-ladders"' in page
+
+
+def test_preview_answers_in_the_shops_standard(client, db_session, authed):
+    page = client.get("/admin/sizing/preview?system=age&type=upper&size=6-7").text
+    assert "6-7 سال" in page and "قد 116 تا 122" in page
+    junk = client.get("/admin/sizing/preview?system=iran&type=upper&size=خیلی%20بزرگ").text
+    assert "تبدیل ندارد" in junk
+    empty = client.get("/admin/sizing/preview?system=age&type=upper&size=").text
+    assert empty.strip() == ""
+
+    from models import Settings
+    row = db_session.query(Settings).filter(Settings.key == "sizing_standard").first()
+    if row:
+        row.value = "height"
+    else:
+        db_session.add(Settings(key="sizing_standard", value="height"))
+    db_session.commit()
+    body = client.get("/admin/sizing/preview?system=age&type=upper&size=6-7").text
+    assert body.startswith("قد")

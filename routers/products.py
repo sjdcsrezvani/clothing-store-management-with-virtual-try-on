@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode, quote_plus
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, File, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 from database import get_db
@@ -26,7 +26,7 @@ from models import (
     to_english_digits,
 )
 from services.security import log_action, require_html_role
-from services.sizing import SIZE_TYPES as SIZING_TYPES, SYSTEMS as SIZING_SYSTEMS, resolve_band
+from services.sizing import SIZE_TYPES as SIZING_TYPES, SYSTEMS as SIZING_SYSTEMS, resolve_band, size_options, band_summary, get_sizing_standard
 
 
 def _apply_band(variant, band) -> None:
@@ -139,6 +139,7 @@ def _product_form_error(request, db, product, edit_mode: bool, message: str):
         "error": message,
     }
     context.update(_catalog_datalists(db))
+    context.update(_sizing_context())
     if edit_mode:
         context.update({"fmt": fmt, "jalali_str": jalali_str})
     return templates.TemplateResponse(request, "admin/product_form.html", context)
@@ -151,6 +152,20 @@ def _catalog_datalists(db) -> dict:
     categories = [row[0] for row in db.query(Product.category).distinct().all() if row[0]]
     brands = [row[0] for row in db.query(Product.brand).distinct().all() if row[0]]
     return {"categories": sorted(categories), "brands": sorted(brands)}
+
+
+def _sizing_context() -> dict:
+    """Sizing phase 1: the engine's ladders, embedded once per form render so
+    the size pickers and the preview line never guess. Static tables, no I/O."""
+    ladders = {
+        system: {size_type: size_options(system, size_type) for size_type in SIZING_TYPES}
+        for system in SIZING_SYSTEMS
+    }
+    return {
+        "sizing_types": list(SIZING_TYPES.items()),
+        "sizing_systems": [(sid, spec["label"]) for sid, spec in SIZING_SYSTEMS.items()],
+        "sizing_ladders_json": json.dumps(ladders, ensure_ascii=False),
+    }
 
 
 def _selected_quantities(form) -> dict[int, int]:
@@ -674,7 +689,27 @@ async def admin_product_add_form(request: Request, db: Session = Depends(get_db)
         "suppliers": db.query(Supplier).order_by(Supplier.name.asc()).all(),
         "tag_templates": list_tag_templates(db),
         **_catalog_datalists(db),
+        **_sizing_context(),
     })
+
+
+@router.get("/sizing/preview", response_class=HTMLResponse)
+async def admin_sizing_preview(request: Request, system: str = "", size: str = "",
+                               size_type: str = "", db: Session = Depends(get_db)):
+    """The one converter, answering the form's live preview: the resolved band
+    in the shop's standard, «تبدیل ندارد» for a size the engine cannot name."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    band = resolve_band(system, size, size_type) if system in SIZING_SYSTEMS else None
+    text = size.strip()
+    if band is not None:
+        text = band_summary(band, get_sizing_standard(db))
+    elif not text:
+        text = ""
+    else:
+        text = "تبدیل ندارد"
+    return PlainTextResponse(text)
 
 
 @router.post("/products/add", response_class=HTMLResponse)
@@ -718,6 +753,7 @@ async def admin_product_add(
             "suppliers": db.query(Supplier).order_by(Supplier.name.asc()).all(),
             "tag_templates": list_tag_templates(db),
             "error": "حداقل یک تنوع اضافه کنید.",
+            **_sizing_context(),
         })
 
     upload_dir = Path("static/uploads/products")
@@ -888,6 +924,7 @@ async def admin_product_edit_form(product_id: int, request: Request, next: str =
         "suppliers": db.query(Supplier).order_by(Supplier.name.asc()).all(),
         "tag_templates": list_tag_templates(db),
         **_catalog_datalists(db),
+        **_sizing_context(),
         "return_to": _safe_next(next, "/admin/products"),
         "fmt": fmt,
         "jalali_str": jalali_str,
@@ -1119,6 +1156,7 @@ async def admin_variant_edit_form(variant_id: int, request: Request, next: str =
         "variant": variant,
         "product": variant.product,
         "return_to": _safe_next(next, f"/admin/products/{variant.product_id}"),
+        **_sizing_context(),
     })
 
 
