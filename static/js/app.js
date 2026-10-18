@@ -354,18 +354,23 @@ function initColorPickers(scope) {
             setFieldColor(picker.value);
         });
 
-        // Anchored to the swatch on the viewport (RTL: right edge to right
-        // edge), so no card boundary is in its way; flips above the field
-        // when the foot of the page is close.
+        // Anchored to the swatch on the viewport, then clamped to it: the
+        // panel floats anywhere but leaves the screen on neither axis. It
+        // grows to the roomier side and scrolls inside itself rather than
+        // stretching to a page edge.
         function placePop() {
             const rect = swatch.getBoundingClientRect();
+            const vw = document.documentElement.clientWidth;
+            const vh = document.documentElement.clientHeight;
+            const below = vh - rect.bottom - 8;
+            const above = rect.top - 8;
+            const flipAbove = below < 240 && above > below;
+            const room = (flipAbove ? above : below) - 6;
+            pop.style.maxHeight = Math.max(180, Math.min(room, Math.round(vh * 0.6))) + 'px';
             const height = pop.offsetHeight;
-            const aboveTop = rect.top - height - 6;
-            const belowTop = rect.bottom + 6;
-            pop.style.top = (height + 8 > window.innerHeight - rect.bottom - 8 && aboveTop > 0)
-                ? aboveTop + 'px'
-                : Math.max(8, Math.min(belowTop, window.innerHeight - height - 8)) + 'px';
-            pop.style.right = Math.max(8, window.innerWidth - rect.right) + 'px';
+            pop.style.top = (flipAbove ? Math.max(8, rect.top - height - 6) : rect.bottom + 6) + 'px';
+            const width = pop.offsetWidth;
+            pop.style.right = Math.max(8, Math.min(vw - rect.right, vw - width - 8)) + 'px';
         }
 
         swatch.addEventListener('click', event => {
