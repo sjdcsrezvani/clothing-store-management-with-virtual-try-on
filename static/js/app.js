@@ -90,9 +90,74 @@ const COLOR_PRESETS = [
     ['سبز', '#16A34A'], ['کرم', '#E7D8B7'],
 ];
 
+/* Persian names for the custom-palette picker («رنگ دلخواه»): every hex it
+   hands back is named by its closest neighbour here, so a زرشکی pick reads
+   «زرشکی», not the nearest of the eight presets. Garment data again, not
+   theme tokens — literal hex is correct. */
+const COLOR_NAMES = [
+    ['سفید', '#FFFFFF'], ['شیری', '#FBF5E8'],
+    ['صدفی', '#F4EDE4'], ['استخوانی', '#EFE5D2'],
+    ['کرم', '#E7D8B7'], ['بژ', '#DCC9A8'],
+    ['نود', '#E8C4A0'], ['نخودی', '#E4D5A5'],
+    ['طوسی روشن', '#D8D8D8'], ['نقره‌ای', '#C0C0C0'],
+    ['طوسی', '#A6A6A6'], ['طوسی تیره', '#757575'],
+    ['دودی', '#5A5A5A'], ['ذغالی', '#363636'],
+    ['مشکی', '#000000'], ['قرمز', '#DC2626'],
+    ['قرمز تیره', '#AE1C1C'], ['جگری', '#7E1518'],
+    ['آلبالویی', '#8C1B33'], ['زرشکی', '#801E3C'],
+    ['شرابی', '#5E1526'], ['عنابی', '#6B2028'],
+    ['آجری', '#B04A34'], ['گلبهی', '#E58C8C'],
+    ['سرخابی', '#C2185B'], ['صورتی', '#EC4899'],
+    ['صورتی روشن', '#F5B8CE'], ['صورتی پاستلی', '#FADCE8'],
+    ['نارنجی', '#F97316'], ['نارنجی تیره', '#C2410C'],
+    ['هلویی', '#FDB28A'], ['شتری', '#BE9A6A'],
+    ['قهوه‌ای روشن', '#B08052'], ['قهوه‌ای', '#7E4E2B'],
+    ['شکلاتی', '#563321'], ['نسکافه‌ای', '#4E3A2B'],
+    ['قهوه‌ای سوخته', '#3B2417'], ['مسی', '#B87333'],
+    ['عسلی', '#E0A428'], ['زرد', '#EAB308'],
+    ['زرد روشن', '#F6E266'], ['لیمویی', '#BCD64A'],
+    ['طلایی', '#D4AF37'], ['خردلی', '#C9A227'],
+    ['سبز', '#16A34A'], ['سبز روشن', '#4ADE80'],
+    ['سبز چمنی', '#4CAF50'], ['نعنایی', '#A8E6C4'],
+    ['پسته‌ای', '#9CBF70'], ['یشمی', '#2E9E6B'],
+    ['زیتونی', '#6F7B3E'], ['لجنی', '#566741'],
+    ['سبز ارتشی', '#3F4B33'], ['سبز تیره', '#14532D'],
+    ['سبز کله‌غازی', '#1D5A4A'], ['فیروزه‌ای', '#2BC4C2'],
+    ['آبی آسمانی', '#6FB6E8'], ['آبی', '#2563EB'],
+    ['آبی طوسی', '#6C7E96'], ['نفتی', '#274A5C'],
+    ['نیلی', '#3B4A99'], ['آبی تیره', '#1E40AF'],
+    ['سرمه‌ای', '#1E3A8A'], ['یاسی', '#C8A8E8'],
+    ['بنفش', '#9333EA'], ['بنفش تیره', '#5B21B6'],
+    ['ارغوانی', '#9B2B92'], ['بادمجانی', '#4C2E52'],
+];
+
+// Short #abc codes expand to aabbcc, the only form a colour input accepts.
+const hexCode = /^#?(?:([0-9a-f]{6})|([0-9a-f])([0-9a-f])([0-9a-f]))$/i;
+
+function nearestColorName(hex) {
+    const m = hexCode.exec((hex || '').trim());
+    if (!m) return '';
+    const full = (m[1] || (m[2] + m[2] + m[3] + m[3] + m[4] + m[4])).toLowerCase();
+    const r = parseInt(full.slice(0, 2), 16);
+    const g = parseInt(full.slice(2, 4), 16);
+    const b = parseInt(full.slice(4, 6), 16);
+    let best = '', bestDist = Infinity;
+    COLOR_NAMES.forEach(([label, anchor]) => {
+        const p = anchor.toLowerCase();
+        const pr = parseInt(p.slice(1, 3), 16);
+        const pg = parseInt(p.slice(3, 5), 16);
+        const pb = parseInt(p.slice(5, 7), 16);
+        // Weighted RGB: greens weigh most, then reds, then blues — plain RGB
+        // distance names muted olives and wines wrong.
+        const dr = r - pr, dg = g - pg, db = b - pb;
+        const rmean = (r + pr) / 2;
+        const dist = (2 + rmean / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rmean) / 256) * db * db;
+        if (dist < bestDist) { bestDist = dist; best = label; }
+    });
+    return best;
+}
+
 function initColorPickers(scope) {
-    // Short #abc codes expand to aabbcc, the only form a colour input accepts.
-    const hexCode = /^#?(?:([0-9a-f]{6})|([0-9a-f])([0-9a-f])([0-9a-f]))$/i;
     // The «رنگ» name field next to a «کد رنگ» code field: on the variant page
     // the pair is #color / #color_code, in product-form rows it is
     // variant_color_N / variant_color_code_N.
@@ -120,26 +185,6 @@ function initColorPickers(scope) {
             if (found && found !== codeField) { armColorNameSync(found); return found; }
         }
         return null;
-    }
-    // Nearest preset name for a custom-picked hex, so «رنگ دلخواه» still
-    // suggests a Persian name the shopkeeper can keep or overwrite.
-    function nearestPresetName(hex) {
-        const m = hexCode.exec((hex || '').trim());
-        if (!m) return '';
-        const full = (m[1] || (m[2] + m[2] + m[3] + m[3] + m[4] + m[4])).toLowerCase();
-        const r = parseInt(full.slice(0, 2), 16);
-        const g = parseInt(full.slice(2, 4), 16);
-        const b = parseInt(full.slice(4, 6), 16);
-        let best = '', bestDist = Infinity;
-        COLOR_PRESETS.forEach(([label, presetHex]) => {
-            const p = presetHex.toLowerCase();
-            const dr = r - parseInt(p.slice(1, 3), 16);
-            const dg = g - parseInt(p.slice(3, 5), 16);
-            const db = b - parseInt(p.slice(5, 7), 16);
-            const dist = dr * dr + dg * dg + db * db;
-            if (dist < bestDist) { bestDist = dist; best = label; }
-        });
-        return best;
     }
     (scope || document).querySelectorAll('input[data-color-picker]').forEach(field => {
         if (field.dataset.colorPickerReady) return;
@@ -232,7 +277,7 @@ function initColorPickers(scope) {
             // contract as the reorder-default rows.
             const nameField = findColorNameField(field);
             if (nameField && !nameField.dataset.touched) {
-                const suggestion = label || nearestPresetName(hex);
+                const suggestion = label || nearestColorName(hex);
                 if (suggestion) {
                     nameField.value = suggestion;
                     // Flagged as synthetic: armColorNameSync ignores it, so the

@@ -224,20 +224,8 @@ NOT_A_COLOUR: dict[str, tuple[tuple[str, str], ...]] = {
         "#abc",
         "a comment explaining how a short colour code expands",
     ), (
-        "['سفید', '#FFFFFF']",
-        "product colour presets: garment data a shop picks from, not page paint",
-    ), (
-        "['مشکی', '#000000']",
-        "the same preset list",
-    ), (
-        "['سرمه‌ای', '#1E3A8A']",
-        "the same preset list",
-    ), (
-        "['قرمز', '#DC2626']",
-        "the same preset list",
-    ), (
-        "['کرم', '#E7D8B7']",
-        "the same preset list",
+        "', '#",
+        "the preset row and the custom-palette name table: garment colours a shop picks and sells, not page paint",
     ),),
 }
 

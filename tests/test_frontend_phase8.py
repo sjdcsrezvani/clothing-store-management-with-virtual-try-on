@@ -1,4 +1,9 @@
+import json
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -131,7 +136,7 @@ def test_color_palette_suggests_the_persian_name_until_hand_edited():
     js = (ROOT / "static/js/app.js").read_text()
     # A palette pick suggests the Persian name in the sibling «رنگ» field.
     assert "findColorNameField" in js
-    assert "nearestPresetName" in js
+    assert "nearestColorName" in js
     # A hand on the name field ends the sync; a synthetic fill never counts
     # as a hand, so later picks keep following until a real keystroke.
     assert "syntheticFill" in js
@@ -180,3 +185,120 @@ def test_variant_capsule_is_a_designed_component():
     assert "--on-candy" not in css
     # Reduced motion covers the capsule's transitions.
     assert ".variant-entry-body" in motion.split("prefers-reduced-motion")[1]
+
+
+COLOR_NAME_HARNESS = r"""
+const fs = require('fs');
+const vm = require('vm');
+const noop = function () { return undefined; };
+const sandbox = {
+    document: {
+        addEventListener: noop,
+        readyState: 'loading',
+        querySelectorAll: function () { return []; },
+        querySelector: function () { return null; },
+        getElementById: function () { return null; },
+        createElement: function () {
+            return { style: {}, dataset: {}, classList: { add: noop, remove: noop, toggle: noop },
+                     setAttribute: noop, addEventListener: noop, appendChild: noop, insertBefore: noop };
+        },
+    },
+    setTimeout: noop, clearTimeout: noop, setInterval: noop, clearInterval: noop,
+    console: console,
+};
+sandbox.window = sandbox;
+vm.createContext(sandbox);
+vm.runInContext(fs.readFileSync(process.argv[2], 'utf8'), sandbox);
+
+function name(hex) {
+    return vm.runInContext('nearestColorName(' + JSON.stringify(hex) + ')', sandbox);
+}
+
+function hslHex(h, s, l) {
+    s /= 100; l /= 100;
+    const k = function (n) { return (n + h / 30) % 12; };
+    const a = s * Math.min(l, 1 - l);
+    const f = function (n) {
+        const v = l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+        return Math.round(255 * v).toString(16).padStart(2, '0');
+    };
+    return '#' + f(0) + f(8) + f(4);
+}
+
+const named = {};
+['#7B1E3A', '#801E3C', '#7E1518', '#2BC4C2', '#2E9E6B', '#6F7B3E',
+ '#274A5C', '#A6A6A6', '#563321', '#C9A227', '#C8A8E8', '#6FB6E8',
+ '#4C2E52', '#FFFFFF', '#000000', '#1E3A8A', '#2563EB', '#DC2626',
+ '#EC4899', '#16A34A', '#E7D8B7', '#F4C2C2', '#C0FFC0'].forEach(function (hex) { named[hex] = name(hex); });
+
+const sweep = [];
+for (let hue = 0; hue < 360; hue += 30) {
+    [32, 62].forEach(function (l) { sweep.push([hslHex(hue, 68, l), name(hslHex(hue, 68, l))]); });
+}
+
+console.log(JSON.stringify({
+    named: named,
+    sweep: sweep,
+    empty: name(''),
+    trash: name('#xyz'),
+    short: name('#4AA'),
+}));
+"""
+
+
+needs_node = pytest.mark.skipif(shutil.which("node") is None,
+                                reason="a JavaScript engine is needed to read the colour names")
+
+
+@needs_node
+def test_custom_palette_picks_are_named_precisely(tmp_path):
+    """The complaint this answers: a custom pick snapped to the nearest of the
+    eight presets, so a زرشکی read «قرمز» and a طوسی read «سفید». The name now
+    comes from a wide garment-colour table by weighted distance, so the picked
+    colour names itself — however far from the presets it falls."""
+    script = tmp_path / "colour_names.js"
+    script.write_text(COLOR_NAME_HARNESS, encoding="utf-8")
+    result = subprocess.run([shutil.which("node"), str(script), str(ROOT / "static/js/app.js")],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    out = json.loads(result.stdout)
+
+    # The names a shopkeeper writes: wines, muted greys, dusted teals.
+    assert out["named"]["#7B1E3A"] == "زرشکی"
+    assert out["named"]["#801E3C"] == "زرشکی"
+    assert out["named"]["#7E1518"] == "جگری"
+    assert out["named"]["#2BC4C2"] == "فیروزه‌ای"
+    assert out["named"]["#2E9E6B"] == "یشمی"
+    assert out["named"]["#6F7B3E"] == "زیتونی"
+    assert out["named"]["#274A5C"] == "نفتی"
+    assert out["named"]["#A6A6A6"] == "طوسی"
+    assert out["named"]["#563321"] == "شکلاتی"
+    assert out["named"]["#C9A227"] == "خردلی"
+    assert out["named"]["#C8A8E8"] == "یاسی"
+    assert out["named"]["#6FB6E8"] == "آبی آسمانی"
+    assert out["named"]["#4C2E52"] == "بادمجانی"
+    # Washed pastels hold their own family instead of falling into a neutral:
+    # a baby pink is a صورتی, a pale mint is a نعنایی.
+    assert out["named"]["#F4C2C2"] == "صورتی روشن"
+    assert out["named"]["#C0FFC0"] == "نعنایی"
+
+    # The eight presets name themselves the same way when their hex is typed —
+    # the preset row and the custom picker speak one vocabulary.
+    assert out["named"]["#FFFFFF"] == "سفید"
+    assert out["named"]["#000000"] == "مشکی"
+    assert out["named"]["#1E3A8A"] == "سرمه‌ای"
+    assert out["named"]["#2563EB"] == "آبی"
+    assert out["named"]["#DC2626"] == "قرمز"
+    assert out["named"]["#EC4899"] == "صورتی"
+    assert out["named"]["#16A34A"] == "سبز"
+    assert out["named"]["#E7D8B7"] == "کرم"
+
+    # Most of the wheel is covered: every sweep colour gets a name, and the
+    # names spread across the vocabulary rather than collapsing to a base eight.
+    assert all(n for _, n in out["sweep"])
+    assert len({n for _, n in out["sweep"]}) >= 12
+
+    # Nothing sensible to say about nothing: empty and broken stay empty; a
+    # short #abc still names itself.
+    assert out["empty"] == "" and out["trash"] == ""
+    assert out["short"]
