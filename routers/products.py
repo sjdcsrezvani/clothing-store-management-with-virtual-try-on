@@ -26,6 +26,16 @@ from models import (
     to_english_digits,
 )
 from services.security import log_action, require_html_role
+from services.sizing import SIZE_TYPES as SIZING_TYPES, SYSTEMS as SIZING_SYSTEMS, resolve_band
+
+
+def _apply_band(variant, band) -> None:
+    """Write a resolved sizing band onto a variant; None clears it — an
+    unrecognized size keeps its raw text and simply carries no band."""
+    variant.band_min_cm = band.height_min if band else None
+    variant.band_max_cm = band.height_max if band else None
+    variant.band_min_months = band.months_min if band else None
+    variant.band_max_months = band.months_max if band else None
 from services._common import fmt, check_admin, jalali_str, page_arg
 from services.barcode import BARCODE_DENSITIES, generate_barcode_image, generate_barcode_number
 from services.templating import templates
@@ -685,6 +695,14 @@ async def admin_product_add(
 
     # Parse dynamic variant fields
     form = await request.form()
+    # Sizing phase 1: the product names the tag system and garment ladder —
+    # only labels the engine knows survive the boundary.
+    size_type = _form_text(form, "size_type") or None
+    size_system = _form_text(form, "size_system") or None
+    if size_type not in SIZING_TYPES:
+        size_type = None
+    if size_system not in SIZING_SYSTEMS:
+        size_system = None
     variant_indices = set()
     for key in form.keys():
         if key.startswith("variant_index_"):
@@ -723,6 +741,8 @@ async def admin_product_add(
         default_reorder_point=_form_nonnegative_int(form, "default_reorder_point"),
         default_reorder_quantity=_form_nonnegative_int(form, "default_reorder_quantity"),
         tag_template_id=_form_tag_template_id(form, db),
+        size_type=size_type,
+        size_system=size_system,
     )
     db.add(product)
     db.flush()
@@ -744,9 +764,9 @@ async def admin_product_add(
         reorder_point = _form_nonnegative_int(form, f"variant_reorder_point_{idx}", product.default_reorder_point)
         reorder_quantity = _form_nonnegative_int(form, f"variant_reorder_quantity_{idx}", product.default_reorder_quantity)
         storage_location = _form_text(form, f"variant_storage_location_{idx}") or None
-        size_system = _form_text(form, f"variant_size_system_{idx}") or None
         color_code = _form_text(form, f"variant_color_code_{idx}") or None
         variant_weight = _form_optional_int(form, f"variant_weight_{idx}")
+        band = resolve_band(size_system, size, size_type) if size_system else None
         try:
             color_code = _normalize_hex_color(form.get(f"variant_color_code_{idx}", ""))
         except ValueError as problem:
@@ -824,6 +844,10 @@ async def admin_product_add(
             size_system=size_system,
             color_code=color_code,
             weight_grams=variant_weight,
+            band_min_cm=band.height_min if band else None,
+            band_max_cm=band.height_max if band else None,
+            band_min_months=band.months_min if band else None,
+            band_max_months=band.months_max if band else None,
         )
         db.add(variant)
         created_variants.append((variant, stock_int))
@@ -892,6 +916,15 @@ async def admin_product_update(
 
     # Update base product
     form = await request.form()
+    old_size_system, old_size_type = product.size_system, product.size_type
+    size_type = _form_text(form, "size_type") or None
+    if size_type not in SIZING_TYPES:
+        size_type = None
+    size_system = _form_text(form, "size_system") or None
+    if size_system not in SIZING_SYSTEMS:
+        size_system = None
+    product.size_type = size_type
+    product.size_system = size_system
     product.name = name.strip()
     product.category = category.strip() or None
     product.brand = brand.strip() or None
@@ -938,9 +971,9 @@ async def admin_product_update(
         reorder_point = _form_nonnegative_int(form, f"variant_reorder_point_{idx}", product.default_reorder_point)
         reorder_quantity = _form_nonnegative_int(form, f"variant_reorder_quantity_{idx}", product.default_reorder_quantity)
         storage_location = _form_text(form, f"variant_storage_location_{idx}") or None
-        size_system = _form_text(form, f"variant_size_system_{idx}") or None
         color_code = _form_text(form, f"variant_color_code_{idx}") or None
         variant_weight = _form_optional_int(form, f"variant_weight_{idx}")
+        band = resolve_band(size_system, size, size_type) if size_system else None
         try:
             color_code = _normalize_hex_color(form.get(f"variant_color_code_{idx}", ""))
         except ValueError as problem:
@@ -1018,6 +1051,10 @@ async def admin_product_update(
             size_system=size_system,
             color_code=color_code,
             weight_grams=variant_weight,
+            band_min_cm=band.height_min if band else None,
+            band_max_cm=band.height_max if band else None,
+            band_min_months=band.months_min if band else None,
+            band_max_months=band.months_max if band else None,
         )
         db.add(variant)
         created_variants.append((variant, stock_int))
@@ -1027,6 +1064,12 @@ async def admin_product_update(
         return _product_form_error(request, db, product, True, "حداقل یک تنوع با قیمت فروش معتبر اضافه کنید.")
 
     db.flush()
+    # A changed system or ladder re-resolves every variant's band: derived
+    # data must never trail the table that produced it.
+    if (product.size_system, product.size_type) != (old_size_system, old_size_type) and product.size_system:
+        for existing in product.variants:
+            _apply_band(existing, resolve_band(product.size_system, existing.size, product.size_type))
+            existing.size_system = product.size_system
     for variant, initial_stock in created_variants:
         record_opening_stock(
             db,
@@ -1255,7 +1298,13 @@ async def admin_variant_update(
     variant.reorder_quantity = reorder_quantity_int
     variant.weight_grams = weight_int
     variant.storage_location = storage_location.strip() if storage_location else None
-    variant.size_system = size_system.strip() if size_system else None
+    if variant.product and variant.product.size_system:
+        # The product owns the tag system now; the variant holds its size and
+        # the band resolved beside it.
+        variant.size_system = variant.product.size_system
+        _apply_band(variant, resolve_band(variant.product.size_system, variant.size, variant.product.size_type))
+    else:
+        variant.size_system = size_system.strip() if size_system else None
     # Lenient where the add flow refuses: a legacy free-text colour already on
     # the row must not lock the whole edit. Valid codes still normalise.
     try:
