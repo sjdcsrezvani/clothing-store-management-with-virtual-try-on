@@ -116,6 +116,7 @@ from services.security import (
     admin_log_diff,
     admin_log_diff_fields,
 )
+from services.sizing import SYSTEMS as SIZING_SYSTEMS
 from services.store import invalidate_store_cache, get_store
 from services.sorting import parse_sort
 from services.templating import templates
@@ -2154,6 +2155,7 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
         return templates.TemplateResponse(request, "admin/settings.html", {
             "settings": {}, "tier_config": {}, "downgrade_rule": tier_downgrade_rule(db),
             "numeric_rules": {}, "store": get_store(db),
+            "sizing_systems": SIZING_SYSTEMS,
             "settings_tabs": SETTINGS_TABS, "active_tab": active_tab,
             "msg": "",
             "err": "خطای قالب: «" + "، ".join(missing) + "» در جدول قواعد نیست — صفحه از ذخیره‌سازی محافظت می‌کند.",
@@ -2163,6 +2165,7 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
         return templates.TemplateResponse(request, "admin/settings.html", {
             "settings": {}, "tier_config": {}, "downgrade_rule": tier_downgrade_rule(db),
             "numeric_rules": {}, "store": get_store(db),
+            "sizing_systems": SIZING_SYSTEMS,
             "settings_tabs": SETTINGS_TABS, "active_tab": active_tab,
             "msg": "",
             "err": "خطای قالب: «" + "، ".join(orphans) + "» در فرم نیست — یک قاعده بی‌میدان.",
@@ -2179,6 +2182,7 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
         "numeric_rules": SETTINGS_NUMERIC_RULES,
         "settings_tabs": SETTINGS_TABS, "active_tab": active_tab,
         "store": get_store(db), "msg": "", "err": "",
+        "sizing_systems": SIZING_SYSTEMS,
     }
     for processor in templates.context_processors:
         check_context.update(processor(request))
@@ -2203,6 +2207,7 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
         return templates.TemplateResponse(request, "admin/settings.html", {
             "settings": {}, "tier_config": {}, "downgrade_rule": tier_downgrade_rule(db),
             "numeric_rules": {}, "store": get_store(db),
+            "sizing_systems": SIZING_SYSTEMS,
             "settings_tabs": SETTINGS_TABS, "active_tab": active_tab,
             "msg": "",
             "err": "خطای قالب: «" + "، ".join(hard_bounds) + "» مرز خودش را نوشته — از جدول قواعد استفاده کنید.",
@@ -2231,6 +2236,7 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
         "downgrade_rule": tier_downgrade_rule(db),
         "numeric_rules": SETTINGS_NUMERIC_RULES,
         "store": get_store(db),
+        "sizing_systems": SIZING_SYSTEMS,
         "settings_tabs": SETTINGS_TABS, "active_tab": active_tab,
         "error_field": error_field,
         "gateway": gateway,

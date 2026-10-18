@@ -200,6 +200,16 @@ def band_summary(band: Band, standard: str = "age") -> str:
     return f"{_age_text(band)} · {_height_text(band)}"
 
 
+def get_sizing_standard(db) -> str:
+    """The shop's chosen display unit for sizes — a system id, «age» when unset
+    or when the stored value is one the engine cannot name."""
+    from models import Settings
+
+    row = db.query(Settings).filter(Settings.key == "sizing_standard").first()
+    value = (row.value or "").strip() if row else ""
+    return value if value in SYSTEMS else "age"
+
+
 def size_options(system: str, size_type=None):
     """The ladder for a picker: [{'value', 'label'}] — or None for a system the
     form should leave as free text."""

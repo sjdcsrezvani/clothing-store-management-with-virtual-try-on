@@ -70,6 +70,32 @@ def test_save_returns_to_its_tab_and_never_saves_tab(client, db_session):
         Settings.key == "tab").count() == 0
 
 
+def test_sizing_standard_saves_and_falls_back(client, db_session):
+    """The shop's display unit for every size; a value the engine cannot name
+    falls back to سن rather than painting an unnamed page."""
+    _owner_client(client, db_session, name="tabs-owner-sizing")
+    page = client.get("/admin/settings?tab=shop").text
+    assert 'name="sizing_standard"' in page
+    assert 'value="age" selected' in page      # the default, chosen visibly
+
+    res = client.post("/admin/settings", data={
+        "csrf_token": csrf_token(client, "/admin/settings"),
+        "tab": "shop", "sizing_standard": "height",
+    }, follow_redirects=False)
+    assert res.status_code == 303
+    db_session.expire_all()
+    from services.sizing import get_sizing_standard
+    assert db_session.query(Settings).filter(
+        Settings.key == "sizing_standard").one().value == "height"
+    assert get_sizing_standard(db_session) == "height"
+
+    # A hand-made value the engine cannot name reads as the default.
+    db_session.query(Settings).filter(
+        Settings.key == "sizing_standard").one().value = "nonsense"
+    db_session.commit()
+    assert get_sizing_standard(db_session) == "age"
+
+
 def test_numeric_error_reopens_the_owning_tab(client, db_session):
     _owner_client(client, db_session, name="tabs-owner-err")
     res = client.post("/admin/settings", data={
