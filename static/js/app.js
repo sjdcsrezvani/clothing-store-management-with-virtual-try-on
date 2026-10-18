@@ -131,6 +131,22 @@ const COLOR_NAMES = [
     ['ارغوانی', '#9B2B92'], ['بادمجانی', '#4C2E52'],
 ];
 
+// Display families for the picker's grid: every table colour sits in exactly
+// one row, in the words a shop groups colours by. The suite holds this list
+// level with the table.
+const COLOR_FAMILIES = [
+    ['خنثی', ['سفید', 'شیری', 'صدفی', 'استخوانی', 'کرم', 'بژ', 'نود', 'نخودی']],
+    ['خاکستری و مشکی', ['طوسی روشن', 'نقره‌ای', 'طوسی', 'طوسی تیره', 'دودی', 'ذغالی', 'مشکی']],
+    ['قرمز', ['قرمز', 'قرمز تیره', 'جگری', 'آلبالویی', 'زرشکی', 'شرابی', 'عنابی', 'آجری', 'گلبهی', 'سرخابی']],
+    ['صورتی', ['صورتی', 'صورتی روشن', 'صورتی پاستلی']],
+    ['نارنجی و قهوه‌ای', ['نارنجی', 'نارنجی تیره', 'هلویی', 'شتری', 'قهوه‌ای روشن', 'قهوه‌ای', 'شکلاتی', 'نسکافه‌ای', 'قهوه‌ای سوخته', 'مسی', 'عسلی']],
+    ['زرد', ['زرد', 'زرد روشن', 'لیمویی', 'طلایی', 'خردلی']],
+    ['سبز', ['سبز', 'سبز روشن', 'سبز چمنی', 'نعنایی', 'پسته‌ای', 'یشمی', 'زیتونی', 'لجنی', 'سبز ارتشی', 'سبز تیره', 'سبز کله‌غازی']],
+    ['آبی', ['فیروزه‌ای', 'آبی آسمانی', 'آبی', 'آبی طوسی', 'نفتی', 'نیلی', 'آبی تیره', 'سرمه‌ای']],
+    ['بنفش', ['یاسی', 'بنفش', 'بنفش تیره', 'ارغوانی', 'بادمجانی']],
+];
+const COLOR_NAME_HEX = new Map(COLOR_NAMES);
+
 // Short #abc codes expand to aabbcc, the only form a colour input accepts.
 const hexCode = /^#?(?:([0-9a-f]{6})|([0-9a-f])([0-9a-f])([0-9a-f]))$/i;
 
@@ -211,21 +227,57 @@ function initColorPickers(scope) {
         pop.hidden = true;
         pop.setAttribute('role', 'group');
         pop.setAttribute('aria-label', 'رنگ‌های آماده');
-        COLOR_PRESETS.forEach(([label, hex]) => {
-            const preset = document.createElement('button');
-            preset.type = 'button';
-            preset.className = 'color-preset';
-            preset.style.background = hex;
-            preset.title = label;
-            preset.setAttribute('aria-label', label);
-            preset.dataset.hex = hex;
-            preset.addEventListener('click', () => {
+        // The name the finger is over, so a dot is never a colour to guess at.
+        const nameLine = document.createElement('p');
+        nameLine.className = 'color-pick-name';
+        nameLine.setAttribute('aria-hidden', 'true');
+        pop.appendChild(nameLine);
+        function showName(text) { nameLine.textContent = text || ''; }
+        function attachName(button, label) {
+            button.addEventListener('mouseenter', () => showName(label));
+            button.addEventListener('mouseleave', () => showName(''));
+            button.addEventListener('focus', () => showName(label));
+            button.addEventListener('blur', () => showName(''));
+        }
+        function makeChip(hex, label) {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'color-preset';
+            chip.style.background = hex;
+            chip.title = label;
+            chip.setAttribute('aria-label', label);
+            chip.dataset.hex = hex;
+            chip.addEventListener('click', () => {
                 setFieldColor(hex, label);
                 closePop();
                 field.focus({ preventScroll: true });
             });
-            pop.appendChild(preset);
+            attachName(chip, label);
+            return chip;
+        }
+        function addFamily(label, entries) {
+            const familyLabel = document.createElement('p');
+            familyLabel.className = 'color-family-label';
+            familyLabel.textContent = label;
+            pop.appendChild(familyLabel);
+            const row = document.createElement('div');
+            row.className = 'color-family-row';
+            row.setAttribute('role', 'group');
+            row.setAttribute('aria-label', label);
+            entries.forEach(([hex, name]) => row.appendChild(makeChip(hex, name)));
+            pop.appendChild(row);
+        }
+        // The quick row keeps the old contract exactly: the eight garment
+        // presets, first, one tap each.
+        addFamily('پرکاربرد', COLOR_PRESETS.map(([name, hex]) => [hex, name]));
+        // Then the whole table under its family: anything the shop sells is one
+        // look away, and a pick carries its name into «رنگ» with the hex.
+        COLOR_FAMILIES.forEach(([family, names]) => {
+            addFamily(family, names.filter(name => COLOR_NAME_HEX.has(name))
+                                  .map(name => [COLOR_NAME_HEX.get(name), name]));
         });
+        const actions = document.createElement('div');
+        actions.className = 'color-actions';
         const clear = document.createElement('button');
         clear.type = 'button';
         clear.className = 'color-preset is-clear';
@@ -241,13 +293,14 @@ function initColorPickers(scope) {
             if (nameField) delete nameField.dataset.touched;
             closePop();
         });
-        pop.appendChild(clear);
+        actions.appendChild(clear);
         const custom = document.createElement('button');
         custom.type = 'button';
         custom.className = 'color-custom';
         custom.textContent = 'رنگ دلخواه…';
         custom.addEventListener('click', () => { picker.click(); });
-        pop.appendChild(custom);
+        actions.appendChild(custom);
+        pop.appendChild(actions);
         wrap.appendChild(pop);
 
         const picker = document.createElement('input');

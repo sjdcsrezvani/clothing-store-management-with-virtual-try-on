@@ -236,12 +236,17 @@ for (let hue = 0; hue < 360; hue += 30) {
     [32, 62].forEach(function (l) { sweep.push([hslHex(hue, 68, l), name(hslHex(hue, 68, l))]); });
 }
 
+const tableNames = vm.runInContext('COLOR_NAMES.map(function (pair) { return pair[0]; })', sandbox);
+const familyNames = vm.runInContext('COLOR_FAMILIES.reduce(function (all, group) { return all.concat(group[1]); }, [])', sandbox);
+
 console.log(JSON.stringify({
     named: named,
     sweep: sweep,
     empty: name(''),
     trash: name('#xyz'),
     short: name('#4AA'),
+    table_names: tableNames,
+    family_names: familyNames,
 }));
 """
 
@@ -302,3 +307,22 @@ def test_custom_palette_picks_are_named_precisely(tmp_path):
     # short #abc still names itself.
     assert out["empty"] == "" and out["trash"] == ""
     assert out["short"]
+
+    # Every table colour sits in exactly one palette family: the grid the
+    # shop picks from and the matcher that names picks speak one vocabulary,
+    # and no colour is orphaned from the grid.
+    assert sorted(out["family_names"]) == sorted(out["table_names"])
+
+
+def test_the_palette_picker_offers_every_named_colour():
+    """The popup is the shop's own palette now: the quick row it had, then a
+    chip for every named colour under its family, the name riding hover and
+    focus — with the native picker kept for anything off the table."""
+    js = (ROOT / "static/js/app.js").read_text()
+    assert "COLOR_FAMILIES" in js
+    assert "color-family-row" in js and "color-family-label" in js
+    assert "color-pick-name" in js
+    assert "'رنگ دلخواه…'" in js  # the native picker stays for off-table colours
+    css = (ROOT / "static/css/style.css").read_text()
+    assert ".color-family-label" in css and ".color-pick-name" in css
+    assert ".color-presets" in css and "overflow-y: auto" in css
