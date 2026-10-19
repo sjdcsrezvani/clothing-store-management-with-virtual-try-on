@@ -5,7 +5,7 @@ digits, months only below 24m, adults as «بزرگسال»."""
 import pytest
 
 from services.sizing import (
-    SIZE_TYPES, SYSTEMS,
+    SIZE_TYPES, SYSTEMS, DISPLAY_STANDARDS,
     Band, resolve_band, band_display, band_summary, size_options,
 )
 
@@ -15,9 +15,13 @@ def test_taxonomy_is_the_four_garment_types():
     assert SIZE_TYPES["lower"] == "پایین‌تنه"
     assert SIZE_TYPES["set"] == "سرهمی/ست"
     assert SIZE_TYPES["shoes"] == "کفش"
-    # Every system the form offers carries a Persian label.
-    assert {"age", "height", "cn", "us", "iran", "letters"} <= set(SYSTEMS)
+    # Four systems, no country names, no two names for one thing.
+    assert list(SYSTEMS) == ["age", "height", "iran", "letters"]
     assert all(spec["label"] for spec in SYSTEMS.values())
+    assert not any(word in spec["label"] for spec in SYSTEMS.values()
+                   for word in ("چین", "EU", "US", "ایران", "عدد"))
+    # Only a body can be a display unit.
+    assert set(DISPLAY_STANDARDS) == {"age", "height"}
 
 
 def test_age_band_resolves_from_the_core_table():
@@ -37,14 +41,17 @@ def test_height_codes_resolve_with_tolerance_and_younger_row_on_ties():
     assert resolve_band("height", "92") == Band(89, 95, 18, 24)
 
 
-def test_cn_codes_are_height_codes_with_five_cm_tolerance():
-    assert resolve_band("cn", "120") == Band(115, 125, 72, 84)
-    assert resolve_band("cn", "100") == Band(95, 105, 36, 48)
+def test_the_coarse_height_codes_live_in_the_same_height_system():
+    # Tags print 59/100/120 as well as 98/122 — one axis, one picker.
+    assert resolve_band("height", "120") == Band(117, 123, 72, 84)
+    assert resolve_band("height", "100") == Band(97, 103, 36, 48)
+    assert {option["value"] for option in size_options("height")} >= {"120", "100", "122"}
 
 
-def test_us_year_numerals_span_their_twelve_months():
-    assert resolve_band("us", "8") == Band(128, 134, 96, 108)
-    assert resolve_band("us", "2") == Band(92, 98, 24, 36)
+def test_bare_year_numerals_read_as_age_bands():
+    # A tag that says «8» and one that says «6-7 سال» are one system.
+    assert resolve_band("age", "8") == Band(128, 134, 96, 108)
+    assert resolve_band("age", "2") == Band(92, 98, 24, 36)
 
 
 def test_iranian_length_needs_the_type_and_seeds_are_provisional():
@@ -66,7 +73,7 @@ def test_letters_are_adult_wide_bands_with_no_age():
 def test_unparseable_or_unknown_never_raises():
     assert resolve_band("height", "abc") is None
     assert resolve_band("age", "999") is None
-    assert resolve_band("us", "25") is None
+    assert resolve_band("age", "25") is None
     assert resolve_band("height", "") is None
     assert resolve_band("nope", "8") is None
 
@@ -74,7 +81,7 @@ def test_unparseable_or_unknown_never_raises():
 def test_display_months_only_in_the_baby_zone_latin_digits():
     assert band_display(resolve_band("age", "18-24m"), "age") == "18-24 ماه"
     assert band_display(resolve_band("age", "2-3"), "age") == "2-3 سال"
-    assert band_display(resolve_band("us", "8"), "age") == "8-9 سال"
+    assert band_display(resolve_band("age", "8"), "age") == "8-9 سال"
     assert band_display(resolve_band("age", "6-7"), "age") == "6-7 سال"
     assert band_display(resolve_band("letters", "M", "upper"), "age") == "بزرگسال"
 
@@ -95,16 +102,14 @@ def test_adult_letter_spans_do_not_fake_precision():
 
 
 def test_ladders_are_seamless_and_render_options():
-    for system in ("age", "height", "cn", "us"):
+    for system in ("age", "height"):
         options = size_options(system)
         assert options, system
         bands = [resolve_band(system, option["value"]) for option in options]
         assert all(b is not None for b in bands), system
         for left, right in zip(bands, bands[1:]):
             assert left.height_max >= right.height_min, f"{system}: gap before {right}"
-    # Month adjacency holds where the ladder is month-grid aligned; CN steps
-    # by 10cm and legitimately skips month bands in the baby zone.
-    for system in ("age", "height", "us"):
+    for system in ("age", "height"):
         bands = [resolve_band(system, option["value"]) for option in size_options(system)]
         for left, right in zip(bands, bands[1:]):
             assert left.months_max >= right.months_min, f"{system}: month gap"
@@ -117,6 +122,8 @@ def test_ladders_are_seamless_and_render_options():
     letters = size_options("letters", "upper")
     assert [o["value"] for o in letters] == ["S", "M", "L", "XL", "2XL", "3XL"]
     assert size_options("nope") is None
+    assert size_options("cn") is None          # merged into height
+    assert size_options("us") is None          # merged into age
 
 
 def test_baby_seam_between_months_and_first_year_band():

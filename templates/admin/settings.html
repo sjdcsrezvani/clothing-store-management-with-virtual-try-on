@@ -48,8 +48,8 @@
             <div class="form-group">
                 <label for="sizing_standard">واحد نمایش سایز {{ tip('هر تنوع با این واحد نمایش داده می‌شود و همین واحد روی تگ چاپی می‌آید. تبدیل در هر حالت دوطرفه است؛ این فقط زبان نمایش است.') }}</label>
                 <select id="sizing_standard" name="sizing_standard" data-fancy>
-                    {% for system_id, spec in sizing_systems.items() %}
-                    <option value="{{ system_id }}" {% if settings.get('sizing_standard', 'age') == system_id %}selected{% endif %}>{{ spec.label }}</option>
+                    {% for system_id, label in sizing_standards %}
+                    <option value="{{ system_id }}" {% if settings.get('sizing_standard', 'age') == system_id %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
                 </select>
             </div>

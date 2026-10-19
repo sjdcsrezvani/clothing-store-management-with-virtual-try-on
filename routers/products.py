@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode, quote_plus
-from fastapi import APIRouter, Depends, HTTPException, Request, Form, File, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request, Form, File, UploadFile, Query
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
@@ -695,7 +695,8 @@ async def admin_product_add_form(request: Request, db: Session = Depends(get_db)
 
 @router.get("/sizing/preview", response_class=HTMLResponse)
 async def admin_sizing_preview(request: Request, system: str = "", size: str = "",
-                               size_type: str = "", db: Session = Depends(get_db)):
+                               size_type: str = Query("", alias="type"),
+                               db: Session = Depends(get_db)):
     """The one converter, answering the form's live preview: the resolved band
     in the shop's standard, «تبدیل ندارد» for a size the engine cannot name."""
     guard = require_html_role(request, db, "manager")

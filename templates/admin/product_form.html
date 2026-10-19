@@ -75,17 +75,17 @@
                     <option value="{{ type_id }}" {% if product and product.size_type == type_id %}selected{% endif %}>{{ type_label }}</option>
                     {% endfor %}
                 </select>
-                <small class="field-help">کدام جدول تبدیل روی این محصول بنشیند؛ انتخاب دسته‌بندی آن را خودکار پر می‌کند و دست شما همیشه حرف آخر را می‌زند.</small>
+                <small class="field-help">مشخص می‌کند سایز روی تگ کدام قسم لباس را توصیف می‌کند — با انتخاب دسته‌بندی خودکار پر می‌شود.</small>
             </div>
             <div class="form-group">
-                <label for="size_system">سیستم سایز روی تگ</label>
+                <label for="size_system">سایز روی تگ چه شکلی است؟</label>
                 <select id="size_system" name="size_system" data-fancy>
                     <option value="">نامشخص — بدون تبدیل</option>
                     {% for system_id, system_label in sizing_systems %}
                     <option value="{{ system_id }}" {% if product and product.size_system == system_id %}selected{% endif %}>{{ system_label }}</option>
                     {% endfor %}
                 </select>
-                <small class="field-help">سیستمی که روی تگ خریداری‌شده چاپ شده؛ تنوع‌ها فقط سایز همان تگ را می‌گیرند و برنامه معادلش را نشان می‌دهد.</small>
+                <small class="field-help">همان چیزی که روی برچسب چاپ شده. تنوع‌ها از همین فهرست انتخاب می‌شوند و معادلش کنارشان نوشته می‌شود.</small>
             </div>
         </div>
         <details class="advanced-fields">

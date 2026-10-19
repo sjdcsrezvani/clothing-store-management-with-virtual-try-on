@@ -94,15 +94,15 @@ def test_switching_the_system_re_resolves_existing_variants(client, db_session, 
     assert variant.band_min_cm is None              # no system yet, no band
     product = db_session.query(Product).filter(Product.id == variant.product_id).one()
 
-    assert _edit_product(client, product, size_system="us", size_type="upper").status_code == 303
+    assert _edit_product(client, product, size_system="age", size_type="upper").status_code == 303
     db_session.expire_all()
     variant = _variant(db_session, "SIZ-D")
     assert (variant.band_min_cm, variant.band_max_cm) == (128, 134)
-    assert variant.size_system == "us"
+    assert variant.size_system == "age"
 
 
 def test_variant_edit_recomputes_its_own_band(client, db_session, authed):
-    assert _create_product(client, size_system="us", size_type="upper",
+    assert _create_product(client, size_system="age", size_type="upper",
                            variant_size_0="8", variant_barcode_0="SIZ-E").status_code == 303
     variant = _variant(db_session, "SIZ-E")
     response = client.post(f"/admin/variants/{variant.id}", data={
@@ -127,11 +127,11 @@ def test_product_form_carries_the_sizing_pickers(client, db_session, authed):
 
 
 def test_edit_form_preselects_the_stored_system(client, db_session, authed):
-    assert _create_product(client, size_system="us", size_type="upper",
+    assert _create_product(client, size_system="age", size_type="upper",
                            variant_size_0="8", variant_barcode_0="SIZ-H").status_code == 303
     variant = _variant(db_session, "SIZ-H")
     page = client.get(f"/admin/products/{variant.product_id}").text
-    assert 'value="us" selected' in page
+    assert 'value="age" selected' in page
     assert 'value="upper" selected' in page
 
 
@@ -162,3 +162,15 @@ def test_preview_answers_in_the_shops_standard(client, db_session, authed):
     db_session.commit()
     body = client.get("/admin/sizing/preview?system=age&type=upper&size=6-7").text
     assert body.startswith("قد")
+
+
+def test_preview_reads_the_type_parameter_the_form_actually_sends(client, db_session, authed):
+    """Garment ladders need the garment type, and the form sends it as «type».
+    A mismatch here reads as a silent «تبدیل ندارد» on every Iranian size."""
+    assert "تبدیل ندارد" not in client.get(
+        "/admin/sizing/preview?system=iran&type=upper&size=50").text
+    assert "تبدیل ندارد" not in client.get(
+        "/admin/sizing/preview?system=letters&type=upper&size=M").text
+    # And a size that genuinely cannot be read still says so.
+    assert client.get(
+        "/admin/sizing/preview?system=iran&type=upper&size=999").text == "تبدیل ندارد"

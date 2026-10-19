@@ -1,11 +1,11 @@
 """Sizing engine — two-hop conversion through one axis.
 
 Every clothing system is a ladder of labels; every rung carries a person-height
-band. Body-based systems (age bands, height/EU codes, Chinese height codes, US
-year numerals) share one core growth table; garment-based systems (Iranian
-length numbers, letters) carry per-garment-type ladders. Age is derived from
-height through the core table; display speaks Latin digits and shows months
-only in the baby zone, adults as «بزرگسال».
+band. Body-based systems (age bands and year numerals, height codes) share one
+core growth table; garment-based systems (garment length, letters) carry
+per-garment-type ladders. Age is derived from height through the core table;
+display speaks Latin digits and shows months only in the baby zone, adults as
+«بزرگسال».
 
 All data lives in the app — the shop is offline. Tables are seeded from
 standard charts and calibrated by the shop; the Iranian-length seeds are
@@ -25,12 +25,18 @@ SIZE_TYPES = {
 }
 
 SYSTEMS = {
-    "age": {"label": "سن (ماه/سال)"},
-    "height": {"label": "قد / EU (سانت)"},
-    "cn": {"label": "چین (سانت)"},
-    "us": {"label": "سال عددی (US/CN)"},
-    "iran": {"label": "ایران (قد لباس)"},
-    "letters": {"label": "حروف (S تا 3XL)"},
+    "age": {"label": "سن — مثل 6-7 سال"},
+    "height": {"label": "قد — مثل 122"},
+    "iran": {"label": "شماره لباس — مثل 50"},
+    "letters": {"label": "حروف — مثل M"},
+}
+
+# What a band can honestly be said in: a person's height or their age. Garment
+# numbers and letters describe a cut, not a body, so they are never a display
+# unit — only an input.
+DISPLAY_STANDARDS = {
+    "age": "سن (ماه/سال)",
+    "height": "قد (سانت)",
 }
 
 
@@ -55,9 +61,12 @@ CORE_ROWS = [
     (168, 180, 164, 170), (180, 192, 170, 176), (192, 1200, 176, 188),
 ]
 
-_HEIGHT_RUNGS = [44, 50, 56, 62, 68, 74, 80, 86, 92,
-                 98, 104, 110, 116, 122, 128, 134, 140, 146, 152, 158, 164, 170, 176, 182, 188]
-_CN_RUNGS = [59, 66, 73, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170]
+_HEIGHT_RUNGS_EU = [44, 50, 56, 62, 68, 74, 80, 86, 92,
+                    98, 104, 110, 116, 122, 128, 134, 140, 146, 152, 158, 164, 170, 176, 182, 188]
+# Coarser height codes some tags print instead (59, 66, 73, 100, 120 …) — the
+# same body-height axis, just a different step. One system, one picker.
+_HEIGHT_RUNGS_CM = [59, 66, 73, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170]
+_HEIGHT_RUNGS = sorted(set(_HEIGHT_RUNGS_EU) | set(_HEIGHT_RUNGS_CM))
 _US_YEARS = list(range(2, 17))
 
 # Provisional seeds until the shop calibrates with real stock (per garment
@@ -103,7 +112,21 @@ def _age_band(code: str):
     for row in CORE_ROWS:
         if _age_code(row) == code:
             return Band(row[2], row[3], row[0], row[1])
+    # A bare year numeral («8») is the same statement as a year band — tags
+    # print both, so one system reads both.
+    if code.isdigit():
+        year = int(code)
+        if year in _US_YEARS:
+            return _year_band(year)
     return None
+
+
+def _year_band(year: int):
+    months_min, months_max = year * 12, year * 12 + 12
+    heights = [row for row in CORE_ROWS if row[0] < months_max and row[1] > months_min]
+    if not heights:
+        return None
+    return Band(min(r[2] for r in heights), max(r[3] for r in heights), months_min, months_max)
 
 
 def _numeric_code_band(value: str, rungs, tolerance: int):
@@ -114,19 +137,6 @@ def _numeric_code_band(value: str, rungs, tolerance: int):
         return None
     months_min, months_max = _months_for_span(number - tolerance, number + tolerance)
     return Band(number - tolerance, number + tolerance, months_min, months_max)
-
-
-def _us_band(value: str):
-    if not value.isdigit():
-        return None
-    year = int(value)
-    if year not in _US_YEARS:
-        return None
-    months_min, months_max = year * 12, year * 12 + 12
-    heights = [row for row in CORE_ROWS if row[0] < months_max and row[1] > months_min]
-    if not heights:
-        return None
-    return Band(min(r[2] for r in heights), max(r[3] for r in heights), months_min, months_max)
 
 
 def _iran_band(value: str, size_type):
@@ -158,10 +168,6 @@ def resolve_band(system: str, size, size_type=None):
         return _age_band(text)
     if system == "height":
         return _numeric_code_band(text, _HEIGHT_RUNGS, 3)
-    if system == "cn":
-        return _numeric_code_band(text, _CN_RUNGS, 5)
-    if system == "us":
-        return _us_band(text)
     if system == "iran":
         return _iran_band(text, size_type)
     if system == "letters":
@@ -201,13 +207,13 @@ def band_summary(band: Band, standard: str = "age") -> str:
 
 
 def get_sizing_standard(db) -> str:
-    """The shop's chosen display unit for sizes — a system id, «age» when unset
-    or when the stored value is one the engine cannot name."""
+    """The shop's chosen display unit — «age» when unset or when the stored
+    value is not a unit the engine can speak."""
     from models import Settings
 
     row = db.query(Settings).filter(Settings.key == "sizing_standard").first()
     value = (row.value or "").strip() if row else ""
-    return value if value in SYSTEMS else "age"
+    return value if value in DISPLAY_STANDARDS else "age"
 
 
 def size_options(system: str, size_type=None):
@@ -224,13 +230,11 @@ def size_options(system: str, size_type=None):
             else:
                 label = f"{row[0] // 12}-{row[1] // 12} سال"
             options.append({"value": code, "label": label})
+        # A tag that just prints «8» says the same thing as a year band.
+        options.extend({"value": str(year), "label": f"{year} سال"} for year in _US_YEARS)
         return options
     if system == "height":
         return [{"value": str(n), "label": str(n)} for n in _HEIGHT_RUNGS]
-    if system == "cn":
-        return [{"value": str(n), "label": str(n)} for n in _CN_RUNGS]
-    if system == "us":
-        return [{"value": str(y), "label": f"{y} سال"} for y in _US_YEARS]
     if system == "iran":
         if size_type not in _IRAN_SEEDS:
             return None
