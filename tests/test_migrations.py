@@ -295,6 +295,23 @@ def test_revision_27_collapses_junk_category_spellings_to_null(tmp_path):
             "SELECT amount FROM expenses WHERE category IS NULL")).scalars().all() == [1000]
 
 
+def test_no_version_bump_without_a_revision_body():
+    """Silence must not read as success: a version whose body has not landed
+    still advances schema_version and leaves the columns missing (a reload
+    window once did exactly that to the live shop database). Revisions 1-7, 9,
+    12 and 14 were table-creation no-ops covered by create_all; every revision
+    after them must carry a body."""
+    import re
+    from pathlib import Path
+
+    source = Path("migrations.py").read_text(encoding="utf-8")
+    body = source[source.index("def _apply_revision"):source.index("\ndef upgrade")]
+    bodies = {int(version) for version in re.findall(r"if version == (\d+):", body)}
+    legacy_noops = {1, 2, 3, 4, 5, 6, 7, 9, 12, 14}
+    missing = sorted(set(range(1, MIGRATION_VERSION + 1)) - bodies - legacy_noops)
+    assert not missing, f"revisions bumped without a body: {missing}"
+
+
 def test_revision_36_adds_the_sizing_columns(tmp_path):
     """Sizing phase 1 is purely additive: a shop that ran revision 35 gets the
     product's tag system/type and every variant's unified band as empty
