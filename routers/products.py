@@ -26,7 +26,9 @@ from models import (
     to_english_digits,
 )
 from services.security import log_action, require_html_role
-from services.sizing import SIZE_TYPES as SIZING_TYPES, SYSTEMS as SIZING_SYSTEMS, resolve_band, size_options, band_display, get_sizing_standard
+from services.sizing import (SIZE_TYPES as SIZING_TYPES, SYSTEMS as SIZING_SYSTEMS,
+                             resolve_band, size_options, band_display,
+                             get_sizing_standard, variant_size_display)
 
 
 def _apply_band(variant, band) -> None:
@@ -375,6 +377,22 @@ async def admin_products(
     # different numbers for the same shelf.
     alerts = stock_alerts(db)
 
+    # The list speaks the shop's one display unit: each variant's stored band
+    # is rendered once here, and the product summary keeps the distinct labels.
+    sizing_standard = get_sizing_standard(db)
+    variant_bands = {}
+    product_bands = {}
+    for product in products:
+        labels = []
+        for variant in product.variants:
+            if not variant.is_active:
+                continue
+            label = variant_size_display(variant, sizing_standard)
+            variant_bands[variant.id] = label
+            if label and label not in labels:
+                labels.append(label)
+        product_bands[product.id] = labels
+
     return templates.TemplateResponse(request, "admin/products.html", {
         "products": products,
         "search": search,
@@ -399,6 +417,9 @@ async def admin_products(
         }),
         "fmt": fmt,
         "jalali_str": jalali_str,
+        "sizing_standard": sizing_standard,
+        "variant_bands": variant_bands,
+        "product_bands": product_bands,
     })
 
 
@@ -497,7 +518,7 @@ async def admin_tag_settings(request: Request, db: Session = Depends(get_db)):
         .order_by(Product.name, ProductVariant.id)
         .first()
     )
-    sample_item = item_from_variant(sample_variant, fmt) if sample_variant else {
+    sample_item = item_from_variant(sample_variant, fmt, get_sizing_standard(db)) if sample_variant else {
         "variant_id": None, "barcode": "12345", "product_name": "نمونه محصول",
         "name": "نمونه محصول", "price": 250000, "price_display": fmt(250000),
         "size": "۴ سال", "color": "آبی", "sku": "SKU-001", "brand": "رای کیدز",
@@ -1619,11 +1640,12 @@ async def admin_barcodes_print(
     # instead of being forced to select one checkbox per unit in stock.
     barcode_items = []
     template_configs = {"default": config}
+    tag_standard = get_sizing_standard(db)
     for product in products:
         for variant in product.variants:
             if not variant.is_active:
                 continue
-            item = item_from_variant(variant, fmt)
+            item = item_from_variant(variant, fmt, tag_standard)
             template_key = str(product.tag_template.id) if product.tag_template and product.tag_template.is_active else "default"
             item["tag_template_key"] = template_key
             item["tag_config"] = tag_template_config(product.tag_template, config)

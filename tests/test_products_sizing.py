@@ -178,6 +178,27 @@ def test_preview_reads_the_type_and_gender_the_form_actually_sends(client, db_se
         "/admin/sizing/preview?system=iran&type=upper&size=999").text == "تبدیل ندارد"
 
 
+def test_product_list_and_tag_print_speak_the_chosen_unit(client, db_session, authed):
+    assert _create_product(client, size_system="age", size_type="upper",
+                           variant_size_0="6-7", variant_barcode_0="SIZ-LST").status_code == 303
+    page = client.get("/admin/products").text
+    assert "6-7 سال" in page
+
+    from models import Settings
+    row = db_session.query(Settings).filter(Settings.key == "sizing_standard").first()
+    if row:
+        row.value = "height"
+    else:
+        db_session.add(Settings(key="sizing_standard", value="height"))
+    db_session.commit()
+
+    page = client.get("/admin/products").text
+    assert "قد 116 تا 122" in page
+
+    tag_page = client.get("/admin/barcodes/print").text
+    assert "قد 116 تا 122" in tag_page
+
+
 def test_height_double_is_entered_by_its_lower_number(client, db_session, authed):
     assert _create_product(client, size_system="height", size_type="upper",
                            variant_size_0="122", variant_barcode_0="SIZ-H1").status_code == 303

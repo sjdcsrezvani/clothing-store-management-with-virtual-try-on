@@ -401,6 +401,35 @@ def get_sizing_standard(db) -> str:
     return value if value in DISPLAY_STANDARDS else "age"
 
 
+def band_from_variant(variant) -> Band | None:
+    """The stored band of a saved variant, or None when it never had one."""
+    values = (
+        variant.band_min_cm,
+        variant.band_max_cm,
+        variant.band_min_months,
+        variant.band_max_months,
+        getattr(variant, "band_min_adult", None),
+        getattr(variant, "band_max_adult", None),
+    )
+    if all(value is None for value in values):
+        return None
+    return Band(values[0], values[1], values[2], values[3], values[4], values[5])
+
+
+def variant_size_display(variant, standard: str = "age", fallback: bool = True) -> str:
+    """A saved variant in the shop's chosen unit. When that unit has no honest
+    value (adult numeric under body/garment length), the raw tag size is a
+    more useful fallback on lists and printed tags than a dash."""
+    band = band_from_variant(variant)
+    if band is None:
+        return variant.size or ""
+    gender = variant.product.gender if getattr(variant, "product", None) else None
+    text = band_display(band, standard, gender)
+    if text == "—" and fallback:
+        return variant.size or ""
+    return text
+
+
 def _adult_options(gender) -> list[dict]:
     table = _MEN_LETTERS if _is_man(gender) else _WOMEN_LETTERS
     numbers = _MEN_NUMBERS if _is_man(gender) else _WOMEN_NUMBERS
