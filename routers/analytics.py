@@ -12,7 +12,7 @@ from services.analytics import (
     get_revenue_by_category,
     get_revenue_by_tier, get_discount_impact,
     get_top_customers, get_categories, get_price_stats, get_variant_stats,
-    get_color_size_matrix, get_inventory_value,
+    get_color_size_matrix, get_inventory_value, get_stock_by_band,
     get_abc_products, get_sales_pattern,
     get_sell_through, get_revenue_trend, get_basket_stats,
     get_customer_health, get_margin_by_category, get_dead_stock,
@@ -87,6 +87,7 @@ async def admin_analytics(
         "turnover": {"rows": [], "total": 0, "omitted": 0, "low_count": 0, "threshold": 14},
         "basket": {"items_per_txn": 0},
         "color_size_matrix": {"colors": [], "rows": [], "max": 0, "max_revenue": 0},
+        "stock_by_band": [],
     }
 
     # Gather all analytics data
@@ -133,6 +134,7 @@ async def admin_analytics(
         data["color_stats"] = get_variant_stats(db, start, end, "color", cat)
         data["size_stats"] = get_variant_stats(db, start, end, "size", cat)
         data["color_size_matrix"] = get_color_size_matrix(db, start, end, cat)
+        data["stock_by_band"] = get_stock_by_band(db)
         data["inventory"] = get_inventory_value(db)
         data["sell_through"] = get_sell_through(db, start, end)
         data["dead_stock"] = get_dead_stock(db, start, end)
@@ -197,6 +199,7 @@ async def admin_analytics(
         "color_stats": data["color_stats"],
         "size_stats": data["size_stats"],
         "color_size_matrix": data["color_size_matrix"],
+        "stock_by_band": data["stock_by_band"],
         "inventory": data["inventory"],
         "abc_products": data["abc_products"],
         "sales_pattern": data["sales_pattern"],

@@ -10,7 +10,7 @@ from urllib.parse import urlencode, quote_plus
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, File, UploadFile, Query
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from sqlalchemy import and_, func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from database import get_db
 from models import (
     Product,
@@ -226,7 +226,7 @@ PRODUCT_STOCK_FILTERS = ("all", "low", "out")
 
 
 def _product_list_query(db, search: str = "", category: str = "", stock: str = "all",
-                        active_only: bool = True):
+                        active_only: bool = True, standard: str | None = None):
     """The filtered products query the list, the CSV and the bulk bar share.
 
     Price and stock are variant aggregates, so the query carries them as
@@ -259,14 +259,32 @@ def _product_list_query(db, search: str = "", category: str = "", stock: str = "
     )
 
     if search:
-        # Search product name or variant barcode
-        query = query.filter(
+        # Band labels are derived, so a size search also finds the products
+        # whose band label holds the typed number («116» finds a «122» tag).
+        # shortcut: this scans the active variants; a stored label column is
+        # the upgrade if the catalogue outgrows a few thousand pieces.
+        needle = to_english_digits(search).strip().lower()
+        band_product_ids = set()
+        if standard and needle:
+            for variant in (
+                db.query(ProductVariant).join(Product).options(joinedload(ProductVariant.product))
+                .filter(Product.is_active == active_only, ProductVariant.is_active == True)  # noqa: E712
+                .all()
+            ):
+                if needle in variant_size_display(variant, standard).lower():
+                    band_product_ids.add(variant.product_id)
+
+        conditions = (
             Product.name.contains(search) |
             Product.base_sku.contains(search) |
             Product.category.contains(search) |
             Product.variants.any(ProductVariant.barcode.contains(search)) |
-            Product.variants.any(ProductVariant.sku.contains(search))
+            Product.variants.any(ProductVariant.sku.contains(search)) |
+            Product.variants.any(ProductVariant.size.contains(search))
         )
+        if band_product_ids:
+            conditions = conditions | Product.id.in_(band_product_ids)
+        query = query.filter(conditions)
 
     if category:
         query = query.filter(Product.category == category)
@@ -362,9 +380,11 @@ async def admin_products(
     # Ledger sorting, same convention as the sales list: an unknown key or
     # direction answers the default newest-first list, never an error.
     sort_key, sort_dir = parse_sort(request.query_params, PRODUCT_SORTS, "newest")
+    sizing_standard = get_sizing_standard(db)
 
     query, price_sq, avail_sq = _product_list_query(
-        db, search, category, stock, active_only=not archived_view)
+        db, search, category, stock, active_only=not archived_view,
+        standard=sizing_standard)
     total = query.count()
     total_pages = max(1, (total + per_page - 1) // per_page)
     page = min(max(page, 1), total_pages)
@@ -379,7 +399,6 @@ async def admin_products(
 
     # The list speaks the shop's one display unit: each variant's stored band
     # is rendered once here, and the product summary keeps the distinct labels.
-    sizing_standard = get_sizing_standard(db)
     variant_bands = {}
     product_bands = {}
     for product in products:
@@ -438,7 +457,8 @@ async def admin_products_export(
     if stock not in PRODUCT_STOCK_FILTERS:
         stock = "all"
     sort_key, sort_dir = parse_sort(request.query_params, PRODUCT_SORTS, "newest")
-    query, price_sq, avail_sq = _product_list_query(db, search, category, stock)
+    query, price_sq, avail_sq = _product_list_query(
+        db, search, category, stock, standard=get_sizing_standard(db))
     order, tiebreak = _product_order(sort_key, sort_dir, price_sq, avail_sq)
 
     rows = [["نام", "برند", "دسته‌بندی", "SKU پایه", "تنوع فعال",

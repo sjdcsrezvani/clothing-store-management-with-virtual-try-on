@@ -259,6 +259,21 @@
                 {% endfor %}
             </div>
         </div>
+        <div class="card">
+            <h3>موجودی به تفکیک سایز <span class="tip-icon" tabindex="0" role="button" data-tip="تعداد و سرمایه انبار به تفکیک سایز. سایزهایی که تگ‌هایشان یکی است یک ردیف‌اند؛ ردیف بالاتر یعنی سرمایه بیشتری روی آن سایز خوابیده.">?</span></h3>
+            {% if stock_by_band %}
+            <div class="table-scroll">
+                <table class="data-table">
+                    <thead><tr><th>سایز</th><th>تعداد</th><th>سرمایه</th></tr></thead>
+                    <tbody>
+                    {% for row in stock_by_band %}
+                        <tr><td>{{ row.size }}</td><td class="tnum">{{ fmt(row.units) }}</td><td class="tnum">{{ fmt(row.cost) }} تومان</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}<p class="muted">موجودی‌ای ثبت نشده.</p>{% endif %}
+        </div>
     </div>
 </div>
 

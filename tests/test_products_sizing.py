@@ -199,6 +199,24 @@ def test_product_list_and_tag_print_speak_the_chosen_unit(client, db_session, au
     assert "قد 116 تا 122" in tag_page
 
 
+def test_search_finds_a_size_by_its_band_label(client, db_session, authed):
+    from models import Settings
+
+    assert _create_product(client, name="پیراهن جستجوی سایز", size_system="height",
+                           size_type="upper", variant_size_0="122",
+                           variant_barcode_0="SIZ-S").status_code == 303
+    row = db_session.query(Settings).filter(Settings.key == "sizing_standard").first()
+    if row:
+        row.value = "height"
+    else:
+        db_session.add(Settings(key="sizing_standard", value="height"))
+    db_session.commit()
+
+    # 116 is in the band's label, not in the raw 122 tag.
+    page = client.get("/admin/products?search=116").text
+    assert "پیراهن جستجوی سایز" in page
+
+
 def test_height_double_is_entered_by_its_lower_number(client, db_session, authed):
     assert _create_product(client, size_system="height", size_type="upper",
                            variant_size_0="122", variant_barcode_0="SIZ-H1").status_code == 303
