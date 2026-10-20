@@ -17,7 +17,9 @@ from pathlib import Path
 
 import pytest
 
-from services.chart_notes import CHART_IDS, NO_DATA, chart_notes
+from services.chart_notes import (
+    CHART_IDS, NO_DATA, category_chart_notes, chart_notes, toggle_notes,
+)
 from services.themes import THEMES
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,6 +50,83 @@ def _loaded_period() -> dict:
                          "segments": [{"label": "تا 500 هزار", "count": 7},
                                       {"label": "1 تا 2 میلیون", "count": 3}]},
     )
+
+
+def _category_period() -> dict:
+    """The same figures seen by revenue and by units disagree on the winner."""
+    return dict(
+        group_type={
+            "group": [
+                {"key": "girl", "label": "دخترانه", "revenue": 1000, "units": 1},
+                {"key": "boy", "label": "پسرانه", "revenue": 500, "units": 10},
+            ],
+            "type": [
+                {"key": "upper", "label": "بالاتنه", "revenue": 800, "units": 2},
+                {"key": "lower", "label": "پایین‌تنه", "revenue": 700, "units": 9},
+            ],
+        },
+        category_age={
+            "categories": ["پیراهن", "شلوار"],
+            "series": [
+                {"key": "baby", "label": "نوزاد (0–2)", "revenue": [0, 0], "units": [0, 4]},
+                {"key": "child", "label": "کودک (3–7)", "revenue": [600, 0], "units": [1, 0]},
+                {"key": "teen", "label": "نوجوان (8–15)", "revenue": [0, 0], "units": [0, 0]},
+                {"key": "adult", "label": "بزرگسال (16+)", "revenue": [0, 400], "units": [0, 6]},
+                {"key": "none", "label": "نامشخص", "revenue": [0, 0], "units": [0, 0]},
+            ],
+            "totals": {"revenue": 1000, "units": 11},
+        },
+        returns_band=[
+            {"label": "6-7 سال", "returned_units": 3, "sold_units": 20,
+             "rate": 15.0, "amount": 900000},
+        ],
+        system_mix=[
+            {"key": "age", "label": "سن (18m/3T/8)", "units": 20, "revenue": 2000},
+            {"key": "adult", "label": "بزرگسال (S/38)", "units": 5, "revenue": 500},
+        ],
+    )
+
+
+def test_category_sentences_name_the_figures_their_charts_draw():
+    notes = category_chart_notes(**_category_period(), span="این بازه")
+    assert "«دخترانه»" in notes["groupTypeChart"]
+    assert "1,000 ت" in notes["groupTypeChart"]
+    assert "«بالاتنه»" in notes["groupTypeChart"]
+    assert "«پیراهن»" in notes["categoryAgeChart"]
+    assert "600 ت" in notes["categoryAgeChart"]
+    assert "«کودک (3–7)»" in notes["categoryAgeChart"]
+    assert "60٪" in notes["categoryAgeChart"]
+    assert "«6-7 سال»" in notes["returnsBandChart"]
+    assert "3 واحد" in notes["returnsBandChart"]
+    assert "15٪" in notes["returnsBandChart"]
+    assert "جمع 3 واحد" in notes["returnsBandChart"]
+    assert "«سن (18m/3T/8)»" in notes["systemMixChart"]
+    assert "20 واحد" in notes["systemMixChart"]
+    assert "80٪" in notes["systemMixChart"]
+
+
+def test_toggle_sentences_follow_the_metric_not_the_first_render():
+    period = _category_period()
+    toggles = toggle_notes(group_type=period["group_type"],
+                           category_age=period["category_age"], span="این بازه")
+    revenue = toggles["groupTypeChart"]["revenue"]
+    units = toggles["groupTypeChart"]["units"]
+    assert "«دخترانه»" in revenue and "«بالاتنه»" in revenue
+    assert "«پسرانه»" in units and "«پایین‌تنه»" in units
+    assert "10 واحد" in units
+
+    age_revenue = toggles["categoryAgeChart"]["revenue"]
+    age_units = toggles["categoryAgeChart"]["units"]
+    assert "«پیراهن»" in age_revenue and "«کودک (3–7)»" in age_revenue
+    assert "«شلوار»" in age_units and "«بزرگسال (16+)»" in age_units
+
+
+def test_category_sentences_stay_quiet_when_there_is_nothing_to_say():
+    empty = category_chart_notes(span="این بازه")
+    assert set(empty.values()) == {NO_DATA}
+    toggles = toggle_notes(span="این بازه")
+    assert set(toggles["groupTypeChart"].values()) == {NO_DATA}
+    assert set(toggles["categoryAgeChart"].values()) == {NO_DATA}
 
 
 def test_every_chart_has_a_sentence_even_when_the_period_is_empty():

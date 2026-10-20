@@ -262,6 +262,124 @@ def _heat(heatmap) -> str:
             f"بوده؛ جمع ۳۶۵ روز {_money(total)}.")
 
 
+def _group_type(data, metric="revenue", span=DEFAULT_SPAN) -> str:
+    data = data if isinstance(data, dict) else {}
+
+    def top(rows):
+        rows = [row for row in _rows(rows) if float(row.get(metric) or 0) > 0]
+        if not rows:
+            return None
+        return max(rows, key=lambda row: float(row.get(metric) or 0))
+
+    def phrase(row):
+        value = float(row.get(metric) or 0)
+        amount = f"{int(value)} واحد" if metric == "units" else _money(value)
+        return f"«{row.get('label') or 'نامشخص'}» با {amount}"
+
+    group = top(data.get("group"))
+    kind = top(data.get("type"))
+    if group is None and kind is None:
+        return NO_DATA
+    parts = []
+    if group is not None:
+        parts.append("گروه " + phrase(group))
+    if kind is not None:
+        parts.append("نوع " + phrase(kind))
+    lead = "بیشترین تعداد فروش" if metric == "units" else "بیشترین فروش"
+    return f"در {span}، {lead} " + " و ".join(parts) + " بوده است."
+
+
+def _category_age(data, metric="revenue", span=DEFAULT_SPAN) -> str:
+    data = data if isinstance(data, dict) else {}
+    categories = [str(category) for category in (data.get("categories") or [])]
+    series = _rows(data.get("series"))
+    if not categories or not series:
+        return NO_DATA
+
+    def total_for(index):
+        return sum(float((row.get(metric) or [])[index] or 0)
+                   for row in series if index < len(row.get(metric) or []))
+
+    category_totals = [(category, total_for(index))
+                       for index, category in enumerate(categories)]
+    if not any(value for _, value in category_totals):
+        return NO_DATA
+    top_category = max(category_totals, key=lambda pair: pair[1])
+    age_totals = [
+        (row.get("label") or "نامشخص",
+         sum(float(value or 0) for value in (row.get(metric) or [])))
+        for row in series
+    ]
+    top_age = max(age_totals, key=lambda pair: pair[1])
+    grand = sum(value for _, value in category_totals)
+    amount = f"{int(top_category[1])} واحد" if metric == "units" else _money(top_category[1])
+    return (f"در {span}، دسته «{top_category[0]}» با {amount} بیشترین فروش را دارد؛ "
+            f"«{top_age[0]}» با {_share(top_age[1], grand)}٪ بزرگ‌ترین گروه سنی است.")
+
+
+def _returns_band(rows, span=DEFAULT_SPAN) -> str:
+    rows = [row for row in _rows(rows) if float(row.get("returned_units") or 0)]
+    if not rows:
+        return NO_DATA
+    top = max(rows, key=lambda row: float(row.get("returned_units") or 0))
+    total = sum(float(row.get("returned_units") or 0) for row in rows)
+    rate = top.get("rate")
+    rate_text = "نرخ نامشخص" if rate is None else f"نرخ {float(rate):g}٪"
+    return (f"بیشترین مرجوعی {span} در سایز «{top.get('label') or 'نامشخص'}» با "
+            f"{int(float(top.get('returned_units') or 0))} واحد و {rate_text} است؛ "
+            f"جمع {int(total)} واحد مرجوعی.")
+
+
+def _system_mix(rows, span=DEFAULT_SPAN) -> str:
+    rows = [row for row in _rows(rows) if float(row.get("units") or 0)]
+    if not rows:
+        return NO_DATA
+    total = sum(float(row.get("units") or 0) for row in rows)
+    top = max(rows, key=lambda row: float(row.get("units") or 0))
+    return (f"بیشترین فروش {span} با تگ «{top.get('label') or 'نامشخص'}» ثبت شده: "
+            f"{int(float(top.get('units') or 0))} واحد "
+            f"({_share(top.get('units'), total)}٪).")
+
+
+def category_chart_notes(*, group_type=None, category_age=None, returns_band=None,
+                         system_mix=None, span: str = DEFAULT_SPAN) -> dict[str, str]:
+    """The four category/size sentences, before the page wires in their hosts."""
+    notes = {
+        "groupTypeChart": _group_type(group_type, "revenue", span),
+        "categoryAgeChart": _category_age(category_age, "revenue", span),
+        "returnsBandChart": _returns_band(returns_band, span),
+        "systemMixChart": _system_mix(system_mix, span),
+    }
+    if span != DEFAULT_SPAN:
+        empty = NO_DATA.replace(DEFAULT_SPAN, span)
+        notes = {key: (empty if value == NO_DATA else value)
+                 for key, value in notes.items()}
+    return notes
+
+
+def toggle_notes(*, group_type=None, category_age=None,
+                 span: str = DEFAULT_SPAN) -> dict[str, dict[str, str]]:
+    """Alternate sentences for the two metric toggles, keyed by mode."""
+    notes = {
+        "groupTypeChart": {
+            "revenue": _group_type(group_type, "revenue", span),
+            "units": _group_type(group_type, "units", span),
+        },
+        "categoryAgeChart": {
+            "revenue": _category_age(category_age, "revenue", span),
+            "units": _category_age(category_age, "units", span),
+        },
+    }
+    if span != DEFAULT_SPAN:
+        empty = NO_DATA.replace(DEFAULT_SPAN, span)
+        notes = {
+            key: {mode: (empty if value == NO_DATA else value)
+                  for mode, value in modes.items()}
+            for key, modes in notes.items()
+        }
+    return notes
+
+
 def chart_notes(*, price_stats=None, color_stats=None, size_stats=None, daily=None,
                 categories=None, tier_revenue=None, revenue_trend=None,
                 sales_pattern=None, price_dist=None, margin_by_cat=None,
