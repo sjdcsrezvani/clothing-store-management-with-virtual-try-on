@@ -18,10 +18,18 @@
         return node ? node.value : '';
     }
 
-    function optionsFor(system, sizeType) {
+    function fieldGender(field) {
+        return (field && field.dataset.sizeGender) || settingValue('gender') || '';
+    }
+
+    function optionsFor(system, field) {
         var table = ladders();
-        if (!system || !sizeType || !table[system]) return null;
-        return table[system][sizeType] || null;
+        if (!system || !table[system]) return null;
+        if (system === 'adult') {
+            var gender = fieldGender(field) === 'man' ? 'man' : 'woman';
+            return (table.adult && table.adult[gender]) || null;
+        }
+        return table[system] || null;
     }
 
     function activeControl(field) {
@@ -40,11 +48,13 @@
         if (!node) return;
         var system = field.dataset.sizeSystem || settingValue('size_system');
         var sizeType = field.dataset.sizeType || settingValue('size_type');
+        var gender = fieldGender(field);
         var size = valueOf(field);
         if (!system || !size) { node.hidden = true; node.textContent = ''; return; }
         node.hidden = false;
         htmx.ajax('GET', '/admin/sizing/preview?system=' + encodeURIComponent(system)
             + '&type=' + encodeURIComponent(sizeType)
+            + '&gender=' + encodeURIComponent(gender)
             + '&size=' + encodeURIComponent(size), { target: node });
     }
 
@@ -74,8 +84,7 @@
         delete field.dataset.sizeValue;
         if (!current) current = valueOf(field);
         var system = field.dataset.sizeSystem || settingValue('size_system');
-        var sizeType = field.dataset.sizeType || settingValue('size_type');
-        var options = optionsFor(system, sizeType);
+        var options = optionsFor(system, field);
         if (!options) {
             // No ladder for this combination: plain free text, as before.
             select.hidden = true;
@@ -149,7 +158,7 @@
     };
 
     function bindSettings() {
-        ['size_system', 'size_type'].forEach(function (id) {
+        ['size_system', 'size_type', 'gender'].forEach(function (id) {
             var node = document.getElementById(id);
             if (node && node.dataset.sizingBound !== 'true') {
                 node.dataset.sizingBound = 'true';

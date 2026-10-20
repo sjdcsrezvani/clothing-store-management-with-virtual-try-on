@@ -26,7 +26,7 @@ from models import (
     to_english_digits,
 )
 from services.security import log_action, require_html_role
-from services.sizing import SIZE_TYPES as SIZING_TYPES, SYSTEMS as SIZING_SYSTEMS, resolve_band, size_options, band_summary, get_sizing_standard
+from services.sizing import SIZE_TYPES as SIZING_TYPES, SYSTEMS as SIZING_SYSTEMS, resolve_band, size_options, band_display, get_sizing_standard
 
 
 def _apply_band(variant, band) -> None:
@@ -36,6 +36,8 @@ def _apply_band(variant, band) -> None:
     variant.band_max_cm = band.height_max if band else None
     variant.band_min_months = band.months_min if band else None
     variant.band_max_months = band.months_max if band else None
+    variant.band_min_adult = band.adult_min if band else None
+    variant.band_max_adult = band.adult_max if band else None
 from services._common import fmt, check_admin, jalali_str, page_arg
 from services.barcode import BARCODE_DENSITIES, generate_barcode_image, generate_barcode_number
 from services.templating import templates
@@ -155,11 +157,13 @@ def _catalog_datalists(db) -> dict:
 
 
 def _sizing_context() -> dict:
-    """Sizing phase 1: the engine's ladders, embedded once per form render so
-    the size pickers and the preview line never guess. Static tables, no I/O."""
-    ladders = {
-        system: {size_type: size_options(system, size_type) for size_type in SIZING_TYPES}
-        for system in SIZING_SYSTEMS
+    """The engine's ladders, embedded once per form render so the size pickers
+    and the preview line never guess. Adult letters depend on gender, so both
+    ladders ship and the script picks by the product's gender."""
+    ladders = {system: size_options(system) for system in SIZING_SYSTEMS}
+    ladders["adult"] = {
+        "woman": size_options("adult", "woman"),
+        "man": size_options("adult", "man"),
     }
     return {
         "sizing_types": list(SIZING_TYPES.items()),
@@ -696,16 +700,18 @@ async def admin_product_add_form(request: Request, db: Session = Depends(get_db)
 @router.get("/sizing/preview", response_class=HTMLResponse)
 async def admin_sizing_preview(request: Request, system: str = "", size: str = "",
                                size_type: str = Query("", alias="type"),
+                               gender: str = Query(""),
                                db: Session = Depends(get_db)):
     """The one converter, answering the form's live preview: the resolved band
-    in the shop's standard, «تبدیل ندارد» for a size the engine cannot name."""
+    in the shop's single display unit, «تبدیل ندارد» for a size the engine
+    cannot name."""
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
-    band = resolve_band(system, size, size_type) if system in SIZING_SYSTEMS else None
+    band = resolve_band(system, size, size_type, gender) if system in SIZING_SYSTEMS else None
     text = size.strip()
     if band is not None:
-        text = band_summary(band, get_sizing_standard(db))
+        text = band_display(band, get_sizing_standard(db), gender)
     elif not text:
         text = ""
     else:
@@ -735,6 +741,7 @@ async def admin_product_add(
     # only labels the engine knows survive the boundary.
     size_type = _form_text(form, "size_type") or None
     size_system = _form_text(form, "size_system") or None
+    gender = _form_text(form, "gender") or None
     if size_type not in SIZING_TYPES:
         size_type = None
     if size_system not in SIZING_SYSTEMS:
@@ -769,7 +776,7 @@ async def admin_product_add(
         base_sku=_form_text(form, "base_sku") or None,
         base_barcode=to_english_digits(_form_text(form, "base_barcode")) or None,
         garment_type=_form_text(form, "garment_type") or None,
-        gender=_form_text(form, "gender") or None,
+        gender=gender,
         material=_form_text(form, "material") or None,
         season=_form_text(form, "season") or None,
         collection=_form_text(form, "collection") or None,
@@ -803,7 +810,7 @@ async def admin_product_add(
         storage_location = _form_text(form, f"variant_storage_location_{idx}") or None
         color_code = _form_text(form, f"variant_color_code_{idx}") or None
         variant_weight = _form_optional_int(form, f"variant_weight_{idx}")
-        band = resolve_band(size_system, size, size_type) if size_system else None
+        band = resolve_band(size_system, size, size_type, gender) if size_system else None
         try:
             color_code = _normalize_hex_color(form.get(f"variant_color_code_{idx}", ""))
         except ValueError as problem:
@@ -885,6 +892,8 @@ async def admin_product_add(
             band_max_cm=band.height_max if band else None,
             band_min_months=band.months_min if band else None,
             band_max_months=band.months_max if band else None,
+            band_min_adult=band.adult_min if band else None,
+            band_max_adult=band.adult_max if band else None,
         )
         db.add(variant)
         created_variants.append((variant, stock_int))
@@ -954,7 +963,7 @@ async def admin_product_update(
 
     # Update base product
     form = await request.form()
-    old_size_system, old_size_type = product.size_system, product.size_type
+    old_size_system, old_size_type, old_gender = product.size_system, product.size_type, product.gender
     size_type = _form_text(form, "size_type") or None
     if size_type not in SIZING_TYPES:
         size_type = None
@@ -1011,7 +1020,7 @@ async def admin_product_update(
         storage_location = _form_text(form, f"variant_storage_location_{idx}") or None
         color_code = _form_text(form, f"variant_color_code_{idx}") or None
         variant_weight = _form_optional_int(form, f"variant_weight_{idx}")
-        band = resolve_band(size_system, size, size_type) if size_system else None
+        band = resolve_band(size_system, size, size_type, product.gender) if size_system else None
         try:
             color_code = _normalize_hex_color(form.get(f"variant_color_code_{idx}", ""))
         except ValueError as problem:
@@ -1093,6 +1102,8 @@ async def admin_product_update(
             band_max_cm=band.height_max if band else None,
             band_min_months=band.months_min if band else None,
             band_max_months=band.months_max if band else None,
+            band_min_adult=band.adult_min if band else None,
+            band_max_adult=band.adult_max if band else None,
         )
         db.add(variant)
         created_variants.append((variant, stock_int))
@@ -1104,9 +1115,9 @@ async def admin_product_update(
     db.flush()
     # A changed system or ladder re-resolves every variant's band: derived
     # data must never trail the table that produced it.
-    if (product.size_system, product.size_type) != (old_size_system, old_size_type) and product.size_system:
+    if (product.size_system, product.size_type, product.gender) != (old_size_system, old_size_type, old_gender) and product.size_system:
         for existing in product.variants:
-            _apply_band(existing, resolve_band(product.size_system, existing.size, product.size_type))
+            _apply_band(existing, resolve_band(product.size_system, existing.size, product.size_type, product.gender))
             existing.size_system = product.size_system
     for variant, initial_stock in created_variants:
         record_opening_stock(
@@ -1341,7 +1352,7 @@ async def admin_variant_update(
         # The product owns the tag system now; the variant holds its size and
         # the band resolved beside it.
         variant.size_system = variant.product.size_system
-        _apply_band(variant, resolve_band(variant.product.size_system, variant.size, variant.product.size_type))
+        _apply_band(variant, resolve_band(variant.product.size_system, variant.size, variant.product.size_type, variant.product.gender))
     else:
         variant.size_system = size_system.strip() if size_system else None
     # Lenient where the add flow refuses: a legacy free-text colour already on

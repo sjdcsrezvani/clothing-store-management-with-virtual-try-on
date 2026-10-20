@@ -145,9 +145,10 @@ def test_variant_page_carries_its_products_system(client, db_session, authed):
     assert 'id="sizing-ladders"' in page
 
 
-def test_preview_answers_in_the_shops_standard(client, db_session, authed):
+def test_preview_answers_in_the_shops_single_standard(client, db_session, authed):
     page = client.get("/admin/sizing/preview?system=age&type=upper&size=6-7").text
-    assert "6-7 سال" in page and "قد 116 تا 122" in page
+    assert page == "6-7 سال"
+    assert "قد" not in page
     junk = client.get("/admin/sizing/preview?system=iran&type=upper&size=خیلی%20بزرگ").text
     assert "تبدیل ندارد" in junk
     empty = client.get("/admin/sizing/preview?system=age&type=upper&size=").text
@@ -162,15 +163,70 @@ def test_preview_answers_in_the_shops_standard(client, db_session, authed):
     db_session.commit()
     body = client.get("/admin/sizing/preview?system=age&type=upper&size=6-7").text
     assert body.startswith("قد")
+    assert "سال" not in body
 
 
-def test_preview_reads_the_type_parameter_the_form_actually_sends(client, db_session, authed):
-    """Garment ladders need the garment type, and the form sends it as «type».
-    A mismatch here reads as a silent «تبدیل ندارد» on every Iranian size."""
+def test_preview_reads_the_type_and_gender_the_form_actually_sends(client, db_session, authed):
     assert "تبدیل ندارد" not in client.get(
         "/admin/sizing/preview?system=iran&type=upper&size=50").text
     assert "تبدیل ندارد" not in client.get(
-        "/admin/sizing/preview?system=letters&type=upper&size=M").text
+        "/admin/sizing/preview?system=kids_letters&type=upper&size=M").text
+    assert "تبدیل ندارد" not in client.get(
+        "/admin/sizing/preview?system=adult&type=upper&size=38&gender=woman").text
     # And a size that genuinely cannot be read still says so.
     assert client.get(
         "/admin/sizing/preview?system=iran&type=upper&size=999").text == "تبدیل ندارد"
+
+
+def test_height_double_is_entered_by_its_lower_number(client, db_session, authed):
+    assert _create_product(client, size_system="height", size_type="upper",
+                           variant_size_0="122", variant_barcode_0="SIZ-H1").status_code == 303
+    variant = _variant(db_session, "SIZ-H1")
+    assert (variant.band_min_cm, variant.band_max_cm) == (116, 128)
+    assert (variant.band_min_months, variant.band_max_months) == (72, 96)
+
+    assert _create_product(client, size_system="height", size_type="upper",
+                           variant_size_0="112", variant_barcode_0="SIZ-H2").status_code == 303
+    variant = _variant(db_session, "SIZ-H2")
+    assert (variant.band_min_cm, variant.band_max_cm) == (112, 118)
+
+
+def test_adult_letters_and_numbers_store_the_adult_band(client, db_session, authed):
+    assert _create_product(client, size_system="adult", size_type="upper",
+                           gender="woman", variant_size_0="S", variant_barcode_0="SIZ-AD1").status_code == 303
+    variant = _variant(db_session, "SIZ-AD1")
+    assert (variant.band_min_adult, variant.band_max_adult) == (36, 38)
+    assert variant.band_min_cm is None
+
+    assert _create_product(client, size_system="adult", size_type="upper",
+                           gender="man", variant_size_0="50", variant_barcode_0="SIZ-AD2").status_code == 303
+    variant = _variant(db_session, "SIZ-AD2")
+    assert (variant.band_min_adult, variant.band_max_adult) == (50, 50)
+
+
+def test_changing_adult_gender_re_resolves_letter_bands(client, db_session, authed):
+    assert _create_product(client, size_system="adult", size_type="upper",
+                           gender="woman", variant_size_0="S", variant_barcode_0="SIZ-ADG").status_code == 303
+    variant = _variant(db_session, "SIZ-ADG")
+    assert (variant.band_min_adult, variant.band_max_adult) == (36, 38)
+
+    product = db_session.query(Product).filter(Product.id == variant.product_id).one()
+    assert _edit_product(client, product, size_system="adult", size_type="upper",
+                         gender="man").status_code == 303
+    db_session.expire_all()
+    variant = _variant(db_session, "SIZ-ADG")
+    assert (variant.band_min_adult, variant.band_max_adult) == (46, 48)
+
+
+def test_kids_letters_and_socks_save_their_child_bands(client, db_session, authed):
+    assert _create_product(client, size_system="kids_letters", size_type="upper",
+                           variant_size_0="M(8/10)", variant_barcode_0="SIZ-KL").status_code == 303
+    variant = _variant(db_session, "SIZ-KL")
+    assert (variant.band_min_cm, variant.band_max_cm) == (128, 140)
+    assert (variant.band_min_months, variant.band_max_months) == (96, 120)
+
+    assert _create_product(client, size_system="sock", size_type="lower",
+                           variant_size_0="23-26", variant_barcode_0="SIZ-SK").status_code == 303
+    variant = _variant(db_session, "SIZ-SK")
+    assert (variant.band_min_cm, variant.band_max_cm) == (92, 104)
+    assert (variant.band_min_months, variant.band_max_months) == (24, 48)

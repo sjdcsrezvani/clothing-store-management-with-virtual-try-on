@@ -378,6 +378,9 @@ class ProductVariant(Base):
     band_max_cm = Column(Integer, nullable=True)
     band_min_months = Column(Integer, nullable=True)
     band_max_months = Column(Integer, nullable=True)
+    # Adult bands are numeric size codes (European convention), not heights.
+    band_min_adult = Column(Integer, nullable=True)
+    band_max_adult = Column(Integer, nullable=True)
 
     # Variant-specific SKU (optional)
     sku = Column(String(50), nullable=True)

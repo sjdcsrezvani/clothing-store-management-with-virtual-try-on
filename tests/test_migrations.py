@@ -312,11 +312,11 @@ def test_no_version_bump_without_a_revision_body():
     assert not missing, f"revisions bumped without a body: {missing}"
 
 
-def test_revision_36_adds_the_sizing_columns(tmp_path):
-    """Sizing phase 1 is purely additive: a shop that ran revision 35 gets the
-    product's tag system/type and every variant's unified band as empty
-    columns — legacy rows read exactly as before, nothing is backfilled by
-    guessing."""
+def test_revision_36_and_37_add_the_sizing_columns(tmp_path):
+    """Sizing is purely additive: a shop that ran revision 35 gets the
+    product's tag system/type, every variant's child band and the adult
+    numeric band as empty columns — legacy rows read exactly as before,
+    nothing is backfilled by guessing."""
     engine = create_engine(f"sqlite:///{tmp_path / 'v35.db'}")
     with engine.begin() as conn:
         conn.execute(text("CREATE TABLE schema_version (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)"))
@@ -326,12 +326,13 @@ def test_revision_36_adds_the_sizing_columns(tmp_path):
         conn.execute(text("INSERT INTO products (name) VALUES ('پیراهن')"))
         conn.execute(text("INSERT INTO product_variants (product_id, size) VALUES (1, '110')"))
 
-    assert upgrade(engine) == MIGRATION_VERSION == 36
+    assert upgrade(engine) == MIGRATION_VERSION == 37
 
     with engine.connect() as conn:
         products = {row[1] for row in conn.execute(text("PRAGMA table_info(products)"))}
         variants = {row[1] for row in conn.execute(text("PRAGMA table_info(product_variants)"))}
         assert {"size_type", "size_system"} <= products
-        assert {"band_min_cm", "band_max_cm", "band_min_months", "band_max_months"} <= variants
+        assert {"band_min_cm", "band_max_cm", "band_min_months", "band_max_months",
+                "band_min_adult", "band_max_adult"} <= variants
         row = conn.execute(text("SELECT size, band_min_cm FROM product_variants WHERE id=1")).one()
         assert row == ("110", None)

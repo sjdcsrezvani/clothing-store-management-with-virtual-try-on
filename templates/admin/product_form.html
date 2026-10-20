@@ -68,14 +68,14 @@
         </datalist>
         <div class="form-row">
             <div class="form-group">
-                <label for="size_type">نوع سایزبندی</label>
+                <label for="size_type">نوع لباس</label>
                 <select id="size_type" name="size_type" data-fancy>
                     <option value="">بدون تبدیل سایز</option>
                     {% for type_id, type_label in sizing_types %}
                     <option value="{{ type_id }}" {% if product and product.size_type == type_id %}selected{% endif %}>{{ type_label }}</option>
                     {% endfor %}
                 </select>
-                <small class="field-help">مشخص می‌کند سایز روی تگ کدام قسم لباس را توصیف می‌کند — با انتخاب دسته‌بندی خودکار پر می‌شود.</small>
+                <small class="field-help">برای دسته‌بندی محصول (بالاتنه/پایین‌تنه/ست)؛ روی تبدیل سایز اثر ندارد و با انتخاب دسته‌بندی خودکار پر می‌شود.</small>
             </div>
             <div class="form-group">
                 <label for="size_system">سایز روی تگ چه شکلی است؟</label>
@@ -85,7 +85,7 @@
                     <option value="{{ system_id }}" {% if product and product.size_system == system_id %}selected{% endif %}>{{ system_label }}</option>
                     {% endfor %}
                 </select>
-                <small class="field-help">همان چیزی که روی برچسب چاپ شده. تنوع‌ها از همین فهرست انتخاب می‌شوند و معادلش کنارشان نوشته می‌شود.</small>
+                <small class="field-help">همان چیزی که روی برچسب چاپ شده؛ برای سایز دوگانه مثل 122/128 فقط عدد کوچک‌تر (122) را وارد کنید. تنوع‌ها از همین فهرست انتخاب می‌شوند و معادلشان کنارشان نوشته می‌شود.</small>
             </div>
         </div>
         <details class="advanced-fields">

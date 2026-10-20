@@ -165,6 +165,8 @@ def _apply_missing_columns(migration_engine=None):
             ("storage_location", "VARCHAR(100)"),
             ("size_system", "VARCHAR(30)"),
             ("color_code", "VARCHAR(30)"),
+            ("band_min_adult", "INTEGER"),
+            ("band_max_adult", "INTEGER"),
         ],
         "sales": [
             ("credit_settled", "BOOLEAN"),

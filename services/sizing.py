@@ -1,18 +1,18 @@
-"""Sizing engine — two-hop conversion through one axis.
+"""Sizing engine — every tag language through one band.
 
-Every clothing system is a ladder of labels; every rung carries a person-height
-band. Body-based systems (age bands and year numerals, height codes) share one
-core growth table; garment-based systems (garment length, letters) carry
-per-garment-type ladders. Age is derived from height through the core table;
-display speaks Latin digits and shows months only in the baby zone, adults as
-«بزرگسال».
+A tag is entered as one number/letter, never a range. The band is the honest
+range behind it: a child's body height and age, or an adult numeric size. The
+shop's display setting picks exactly one unit — age, letters, body height or
+garment number — and the same band answers all four where it can. Adult
+numeric sizes are body-measurement codes, not heights, so body/garment display
+is «—» for them.
 
 All data lives in the app — the shop is offline. Tables are seeded from
-standard charts and calibrated by the shop; the Iranian-length seeds are
-explicitly provisional.
+published charts and calibrated by the shop.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from models import to_english_digits
@@ -25,33 +25,36 @@ SIZE_TYPES = {
 }
 
 SYSTEMS = {
-    "age": {"label": "سن — مثل 6-7 سال"},
-    "height": {"label": "قد — مثل 122"},
-    "iran": {"label": "شماره لباس — مثل 50"},
-    "letters": {"label": "حروف — مثل M"},
+    "age": {"label": "سن — مثل 18m، 3T یا 8"},
+    "height": {"label": "قد — مثل 120 یا 122"},
+    "kids_letters": {"label": "حروف بچگانه — مثل M(8/10)"},
+    "adult": {"label": "بزرگسال — مثل S یا 38"},
+    "iran": {"label": "شماره لباس — مثل 45"},
+    "sock": {"label": "سایز جوراب — مثل 23-26"},
 }
 
-# What a band can honestly be said in: a person's height or their age. Garment
-# numbers and letters describe a cut, not a body, so they are never a display
-# unit — only an input.
 DISPLAY_STANDARDS = {
-    "age": "سن (ماه/سال)",
-    "height": "قد (سانت)",
+    "age": "سن (سال/ماه)",
+    "letters": "حروف (XS تا 3XL)",
+    "height": "قد شخص (سانت)",
+    "garment": "قد لباس (شماره)",
 }
 
 
 @dataclass(frozen=True)
 class Band:
-    """A resolved size: person height (cm) and age (months) — one of them may be
-    authoritative; adults carry no age."""
-    height_min: int
-    height_max: int
+    """A resolved size. Child bands carry a height and an age; adult bands
+    carry a numeric size code. One of the two sides is authoritative."""
+    height_min: int | None
+    height_max: int | None
     months_min: int | None
     months_max: int | None
+    adult_min: int | None = None
+    adult_max: int | None = None
 
 
-# The one core table (H&M/BOSS/TOG24 consensus): month band -> height band.
-# The last row is the adult tail — months beyond 16y display as «بزرگسال».
+# The one core table: month band -> height band. The last row is the adult
+# tail — months from 16y display as «بزرگسال».
 CORE_ROWS = [
     (0, 1, 44, 50), (1, 2, 50, 56), (2, 4, 56, 62), (4, 6, 62, 68),
     (6, 9, 68, 74), (9, 12, 74, 80), (12, 18, 80, 86), (18, 24, 86, 92),
@@ -61,34 +64,113 @@ CORE_ROWS = [
     (168, 180, 164, 170), (180, 192, 170, 176), (192, 1200, 176, 188),
 ]
 
+# Height pickers offer single numbers only. Double tags are entered by their
+# lower number; the table below keeps the full pair and its band.
 _HEIGHT_RUNGS_EU = [44, 50, 56, 62, 68, 74, 80, 86, 92,
                     98, 104, 110, 116, 122, 128, 134, 140, 146, 152, 158, 164, 170, 176, 182, 188]
-# Coarser height codes some tags print instead (59, 66, 73, 100, 120 …) — the
-# same body-height axis, just a different step. One system, one picker.
 _HEIGHT_RUNGS_CM = [59, 66, 73, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170]
-_HEIGHT_RUNGS = sorted(set(_HEIGHT_RUNGS_EU) | set(_HEIGHT_RUNGS_CM))
-_US_YEARS = list(range(2, 17))
+_HEIGHT_SINGLES = sorted(set(_HEIGHT_RUNGS_EU) | set(_HEIGHT_RUNGS_CM) | {112})
+_CN_ONLY = {59, 66, 73, 90, 100, 120, 130, 150, 160}
 
-# Provisional seeds until the shop calibrates with real stock (per garment
-# type): center height = base + slope * (N - 40).
-_IRAN_SEEDS = {
-    "upper": (92, 2.8, 7),
-    "set": (92, 2.8, 7),
-    "lower": (92, 2.15, 6),
+# lower number -> (height_min, height_max, months_min, months_max)
+_HEIGHT_DOUBLES = {
+    86: (80, 92, 12, 24),
+    98: (92, 104, 24, 48),
+    110: (104, 116, 48, 72),
+    112: (112, 118, 60, 72),
+    122: (116, 128, 72, 96),
+    134: (128, 140, 96, 120),
+    146: (140, 152, 120, 144),
+    158: (152, 164, 144, 168),
+    170: (164, 176, 168, 192),
 }
-_IRAN_RUNGS = [str(n) for n in range(35, 85, 5)]
 
-# Adult letters: deliberately wide, overlapping bands — letters are body-fit
-# codes, not heights; the shop calibrates with what it actually stocks.
-_LETTER_BANDS = {
-    "S": (150, 168), "M": (158, 175), "L": (165, 182),
-    "XL": (172, 190), "2XL": (178, 195), "3XL": (182, 200),
+_KIDS_LETTERS = {
+    "XS": (48, 60, 104, 110),
+    "S": (72, 84, 116, 122),
+    "M": (96, 120, 128, 140),
+    "L": (120, 144, 140, 152),
+    "XL": (144, 168, 152, 164),
 }
+
+_WOMEN_NUMBERS = list(range(32, 53, 2))
+_MEN_NUMBERS = list(range(44, 63, 2))
+_WOMEN_LETTERS = {
+    "XS": (34, 34), "S": (36, 38), "M": (38, 40), "L": (40, 42),
+    "XL": (42, 44), "XXL": (44, 46), "3XL": (46, 48),
+}
+_MEN_LETTERS = {
+    "XS": (44, 46), "S": (46, 48), "M": (48, 50), "L": (50, 52),
+    "XL": (52, 54), "XXL": (54, 56), "3XL": (56, 58),
+}
+
+# Published Iranian garment table. The size number is the tag number; the age
+# bands are the chart's own (they deliberately skip alternate years).
+_IRAN_ROWS = [
+    ("25", 0, 6, 44, 68),
+    ("30", 6, 12, 68, 80),
+    ("35", 12, 24, 80, 92),
+    ("40", 36, 48, 98, 104),
+    ("45", 48, 60, 104, 110),
+    ("50", 72, 84, 116, 122),
+    ("55", 96, 108, 128, 134),
+    ("60", 120, 132, 140, 146),
+    ("65", 144, 156, 152, 158),
+]
+_IRAN_BY_VALUE = {row[0]: row for row in _IRAN_ROWS}
+
+_SOCK_ROWS = [
+    ("15-18", 0, 12, 44, 80),
+    ("19-22", 12, 24, 80, 92),
+    ("23-26", 24, 48, 92, 104),
+    ("27-30", 48, 72, 104, 116),
+    ("31-34", 72, 96, 116, 128),
+    ("35-38", 96, 120, 128, 140),
+]
+_SOCK_BY_VALUE = {row[0]: row for row in _SOCK_ROWS}
+
+_TODDLER = re.compile(r"^([2-5])\s*T$", re.I)
+_MONTH_RANGE = re.compile(r"^(\d+)\s*-\s*(\d+)\s*(?:m|ماه|ماهه)$", re.I)
+_MONTH_SINGLE = re.compile(r"^(\d+)\s*(?:m|ماه|ماهه)$", re.I)
+_YEAR_RANGE = re.compile(r"^(\d+)\s*-\s*(\d+)\s*(?:سال|anos?)?$", re.I)
+_YEAR_SINGLE = re.compile(r"^(\d+)\s*(?:سال|anos?)?$", re.I)
+_HEIGHT_RANGE = re.compile(r"^(\d+)\s*[-/]\s*(\d+)$")
+_LETTER_PREFIX = re.compile(r"^([A-Z]+)")
+
+
+def _clean(value) -> str:
+    return (to_english_digits(str(value or ""))
+            .strip().replace("–", "-").replace("—", "-").replace("−", "-"))
+
+
+def _is_man(gender) -> bool:
+    return str(gender or "").strip().lower() == "man"
+
+
+def _span_label(months_min: int, months_max: int) -> str:
+    if months_max <= 24:
+        return f"{months_min}-{months_max} ماه"
+    return f"{months_min // 12}-{-(-months_max // 12)} سال"
+
+
+def _band_from_months(months_min: int, months_max: int):
+    rows = [row for row in CORE_ROWS if row[0] < months_max and row[1] > months_min]
+    if not rows:
+        return None
+    return Band(min(row[2] for row in rows), max(row[3] for row in rows),
+                months_min, months_max)
+
+
+def _row_for_month(months: int):
+    for row in CORE_ROWS:
+        if row[0] <= months < row[1]:
+            return row
+    return None
 
 
 def _months_for_span(height_min: int, height_max: int):
     """The core row that overlaps [height_min, height_max) the most; a tie
-    goes to the younger row (charts read EU 122 as 6-7 years)."""
+    goes to the younger row."""
     best, best_overlap = None, 0
     for row in CORE_ROWS:
         overlap = min(height_max, row[3]) - max(height_min, row[2])
@@ -99,84 +181,139 @@ def _months_for_span(height_min: int, height_max: int):
     return best[0], best[1]
 
 
-def _age_code(row) -> str | None:
-    months_min, months_max = row[0], row[1]
-    if months_max <= 24:
-        return f"{months_min}-{months_max}m"
-    if months_max > 192 or months_min % 12 or months_max % 12:
+def _year_band(year: int):
+    if year < 1 or year > 16:
         return None
-    return f"{months_min // 12}-{months_max // 12}"
+    return _band_from_months(year * 12, year * 12 + 12)
 
 
-def _age_band(code: str):
-    for row in CORE_ROWS:
-        if _age_code(row) == code:
-            return Band(row[2], row[3], row[0], row[1])
-    # A bare year numeral («8») is the same statement as a year band — tags
-    # print both, so one system reads both.
-    if code.isdigit():
-        year = int(code)
-        if year in _US_YEARS:
-            return _year_band(year)
+def _age_band(text: str):
+    match = _TODDLER.match(text)
+    if match:
+        return _year_band(int(match.group(1)))
+
+    match = _MONTH_RANGE.match(text)
+    if match:
+        left, right = sorted((int(match.group(1)), int(match.group(2))))
+        return _band_from_months(left, right)
+
+    match = _MONTH_SINGLE.match(text)
+    if match:
+        row = _row_for_month(int(match.group(1)))
+        if row is None:
+            return None
+        return Band(row[2], row[3], row[0], row[1])
+
+    match = _YEAR_RANGE.match(text)
+    if match:
+        left, right = sorted((int(match.group(1)), int(match.group(2))))
+        if left < 1 or right > 16 or left >= right:
+            return None
+        return _band_from_months(left * 12, right * 12)
+
+    match = _YEAR_SINGLE.match(text)
+    if match:
+        return _year_band(int(match.group(1)))
     return None
 
 
-def _year_band(year: int):
-    months_min, months_max = year * 12, year * 12 + 12
-    heights = [row for row in CORE_ROWS if row[0] < months_max and row[1] > months_min]
-    if not heights:
+def _height_band(text: str):
+    match = _HEIGHT_RANGE.match(text)
+    if match:
+        left, right = sorted((int(match.group(1)), int(match.group(2))))
+        pair = _HEIGHT_DOUBLES.get(left)
+        if pair and pair[1] == right:
+            return Band(pair[0], pair[1], pair[2], pair[3])
+        months = _months_for_span(left, right)
+        return Band(left, right, months[0], months[1])
+
+    if not text.isdigit():
         return None
-    return Band(min(r[2] for r in heights), max(r[3] for r in heights), months_min, months_max)
-
-
-def _numeric_code_band(value: str, rungs, tolerance: int):
-    if not value.isdigit():
+    number = int(text)
+    pair = _HEIGHT_DOUBLES.get(number)
+    if pair:
+        return Band(pair[0], pair[1], pair[2], pair[3])
+    if number < 44 or number > 188:
         return None
-    number = int(value)
-    if number not in rungs:
+    tolerance = 5 if number in _CN_ONLY else 3
+    months = _months_for_span(number - tolerance, number + tolerance)
+    return Band(number - tolerance, number + tolerance, months[0], months[1])
+
+
+def _kids_letters_band(text: str):
+    match = _LETTER_PREFIX.match(text.upper())
+    if not match:
         return None
-    months_min, months_max = _months_for_span(number - tolerance, number + tolerance)
-    return Band(number - tolerance, number + tolerance, months_min, months_max)
-
-
-def _iran_band(value: str, size_type):
-    if size_type not in _IRAN_SEEDS or value not in _IRAN_RUNGS:
+    row = _KIDS_LETTERS.get(match.group(1))
+    if not row:
         return None
-    base, slope, half = _IRAN_SEEDS[size_type]
-    center = int(base + slope * (int(value) - 40) + 0.5)
-    months_min, months_max = _months_for_span(center - half, center + half)
-    return Band(center - half, center + half, months_min, months_max)
+    return Band(row[2], row[3], row[0], row[1])
 
 
-def _letters_band(value: str, size_type):
-    if size_type not in ("upper", "lower", "set"):
+def _adult_band(text: str, gender=None):
+    key = text.upper().replace("2XL", "XXL").replace("XXXL", "3XL")
+    table = _MEN_LETTERS if _is_man(gender) else _WOMEN_LETTERS
+    row = table.get(key)
+    if row:
+        return Band(None, None, None, None, row[0], row[1])
+    numbers = _MEN_NUMBERS if _is_man(gender) else _WOMEN_NUMBERS
+    match = re.match(r"^(\d+)\s*[-/]\s*(\d+)$", key)
+    if match:
+        left, right = sorted((int(match.group(1)), int(match.group(2))))
+        if left in numbers and right in numbers:
+            return Band(None, None, None, None, left, right)
         return None
-    key = value.strip().upper()
-    band = _LETTER_BANDS.get(key)
-    if band is None:
+    if not key.isdigit():
         return None
-    return Band(band[0], band[1], None, None)
+    number = int(key)
+    if number in numbers:
+        return Band(None, None, None, None, number, number)
+    return None
 
 
-def resolve_band(system: str, size, size_type=None):
+def _iran_band(text: str):
+    row = _IRAN_BY_VALUE.get(text)
+    if not row:
+        return None
+    return Band(row[3], row[4], row[1], row[2])
+
+
+def _sock_band(text: str):
+    key = text.replace(" ", "").replace("/", "-")
+    row = _SOCK_BY_VALUE.get(key)
+    if not row:
+        return None
+    return Band(row[3], row[4], row[1], row[2])
+
+
+def resolve_band(system: str, size, size_type=None, gender=None):
     """Resolve a tag size into a Band, or None when it cannot be understood —
-    a None never blocks a save."""
-    text = to_english_digits(str(size or "")).strip().replace("–", "-").replace("—", "-")
+    a None never blocks a save. Entry is one number/letter; a double tag is
+    entered by its lower number and the tables keep the pair."""
+    text = _clean(size)
     if not text:
         return None
     if system == "age":
         return _age_band(text)
     if system == "height":
-        return _numeric_code_band(text, _HEIGHT_RUNGS, 3)
+        return _height_band(text)
+    if system == "kids_letters":
+        return _kids_letters_band(text)
+    if system == "adult":
+        return _adult_band(text, gender)
     if system == "iran":
-        return _iran_band(text, size_type)
-    if system == "letters":
-        return _letters_band(text, size_type)
+        return _iran_band(text)
+    if system == "sock":
+        return _sock_band(text)
     return None
 
 
 def _age_text(band: Band) -> str:
-    if band.months_min is None or band.months_min >= 192:
+    if band.adult_min is not None:
+        return "بزرگسال"
+    if band.months_min is None:
+        return "—"
+    if band.months_min >= 192:
         return "بزرگسال"
     left, right = band.months_min, band.months_max
     if right <= 24:
@@ -188,22 +325,70 @@ def _age_text(band: Band) -> str:
 
 
 def _height_text(band: Band) -> str:
+    if band.height_min is None or band.height_max is None:
+        return "—"
     return f"قد {band.height_min} تا {band.height_max}"
 
 
-def band_display(band: Band, standard: str = "age") -> str:
-    """The band in one chosen display system."""
+def _kids_letters_text(band: Band, gender=None) -> str:
+    if band.adult_min is not None:
+        table = _MEN_LETTERS if _is_man(gender) else _WOMEN_LETTERS
+        low, high = band.adult_min, band.adult_max
+        if low == high:
+            for key, (left, right) in table.items():
+                if left <= low <= right:
+                    return key
+            return "—"
+        hits = [key for key, (left, right) in table.items()
+                if high > left and low < right]
+        if not hits:
+            return "—"
+        return hits[0] if len(hits) == 1 else f"{hits[0]} تا {hits[-1]}"
+
+    if band.months_min is None:
+        return "—"
+    hits = [key for key, (start, end, _, _) in _KIDS_LETTERS.items()
+            if band.months_max > start and band.months_min < end]
+    if not hits:
+        return "—"
+    return hits[0] if len(hits) == 1 else f"{hits[0]} تا {hits[-1]}"
+
+
+def _garment_text(band: Band) -> str:
+    if band.adult_min is not None:
+        return "—"
+    if band.months_min is not None:
+        middle = (band.months_min + band.months_max) / 2
+        for value, start, end, _, _ in _IRAN_ROWS:
+            if start <= middle <= end:
+                return value
+        best, best_distance = None, None
+        for value, start, end, _, _ in _IRAN_ROWS:
+            distance = min(abs(middle - start), abs(middle - end))
+            if best_distance is None or distance < best_distance:
+                best, best_distance = value, distance
+        return best if best_distance is not None and best_distance <= 12 else "—"
+
+    if band.height_min is None:
+        return "—"
+    middle = (band.height_min + band.height_max) / 2
+    for value, _, _, start, end in _IRAN_ROWS:
+        if start <= middle <= end:
+            return value
+    return "—"
+
+
+def band_display(band: Band, standard: str = "age", gender=None) -> str:
+    """The band in exactly one chosen display unit."""
+    if band is None:
+        return "—"
     if standard == "height":
         return _height_text(band)
+    if standard == "letters":
+        return _kids_letters_text(band, gender)
+    if standard == "garment":
+        return _garment_text(band)
     return _age_text(band)
-
-
-def band_summary(band: Band, standard: str = "age") -> str:
-    """The conversion line the forms show: the chosen standard first, the other
-    beside it. Same values, two readings."""
-    if standard == "height":
-        return f"{_height_text(band)} · {_age_text(band)}"
-    return f"{_age_text(band)} · {_height_text(band)}"
 
 
 def get_sizing_standard(db) -> str:
@@ -216,31 +401,38 @@ def get_sizing_standard(db) -> str:
     return value if value in DISPLAY_STANDARDS else "age"
 
 
-def size_options(system: str, size_type=None):
-    """The ladder for a picker: [{'value', 'label'}] — or None for a system the
-    form should leave as free text."""
+def _adult_options(gender) -> list[dict]:
+    table = _MEN_LETTERS if _is_man(gender) else _WOMEN_LETTERS
+    numbers = _MEN_NUMBERS if _is_man(gender) else _WOMEN_NUMBERS
+    options = []
+    for key, (left, right) in table.items():
+        label = f"{key} ({left})" if left == right else f"{key} ({left}-{right})"
+        options.append({"value": key, "label": label})
+    options.extend({"value": str(number), "label": str(number)} for number in numbers)
+    return options
+
+
+def size_options(system: str, gender=None):
+    """The single-value ladder for a picker, or None for free text."""
     if system == "age":
-        options = []
-        for row in CORE_ROWS:
-            code = _age_code(row)
-            if code is None:
-                continue
-            if row[1] <= 24:
-                label = f"{row[0]}-{row[1]} ماه"
-            else:
-                label = f"{row[0] // 12}-{row[1] // 12} سال"
-            options.append({"value": code, "label": label})
-        # A tag that just prints «8» says the same thing as a year band.
-        options.extend({"value": str(year), "label": f"{year} سال"} for year in _US_YEARS)
+        options = [{"value": f"{months}m", "label": f"{months} ماه"}
+                   for months in (0, 3, 6, 9, 12, 18, 24)]
+        options.extend({"value": str(year), "label": f"{year} سال"}
+                       for year in range(2, 17))
+        options.extend({"value": f"{year}T", "label": f"{year}T ({_span_label(year * 12, year * 12 + 12)})"}
+                       for year in (2, 3, 4, 5))
         return options
     if system == "height":
-        return [{"value": str(n), "label": str(n)} for n in _HEIGHT_RUNGS]
+        return [{"value": str(number), "label": str(number)} for number in _HEIGHT_SINGLES]
+    if system == "kids_letters":
+        return [{"value": key, "label": f"{key} ({_span_label(start, end)})"}
+                for key, (start, end, _, _) in _KIDS_LETTERS.items()]
+    if system == "adult":
+        return _adult_options(gender)
     if system == "iran":
-        if size_type not in _IRAN_SEEDS:
-            return None
-        return [{"value": n, "label": n} for n in _IRAN_RUNGS]
-    if system == "letters":
-        if size_type not in ("upper", "lower", "set"):
-            return None
-        return [{"value": key, "label": key} for key in _LETTER_BANDS]
+        return [{"value": value, "label": f"{value} ({_span_label(start, end)})"}
+                for value, start, end, _, _ in _IRAN_ROWS]
+    if system == "sock":
+        return [{"value": value, "label": f"{value} ({_span_label(start, end)})"}
+                for value, start, end, _, _ in _SOCK_ROWS]
     return None

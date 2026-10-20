@@ -46,7 +46,7 @@
         <h4>سایز‌بندی</h4>
         <div class="form-row">
             <div class="form-group">
-                <label for="sizing_standard">واحد نمایش سایز {{ tip('هر تنوع با این واحد نمایش داده می‌شود و همین واحد روی تگ چاپی می‌آید. تبدیل در هر حالت دوطرفه است؛ این فقط زبان نمایش است.') }}</label>
+                <label for="sizing_standard">واحد نمایش سایز {{ tip('هر تنوع فقط با همین واحد نمایش داده می‌شود. سایز عددی بزرگسال قد یا قد لباس معادل ندارد و در آن دو واحد «—» می‌ماند.') }}</label>
                 <select id="sizing_standard" name="sizing_standard" data-fancy>
                     {% for system_id, label in sizing_standards %}
                     <option value="{{ system_id }}" {% if settings.get('sizing_standard', 'age') == system_id %}selected{% endif %}>{{ label }}</option>

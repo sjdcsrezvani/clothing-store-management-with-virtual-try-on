@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 36
+MIGRATION_VERSION = 37
 
 
 def migration_status(engine) -> int:
@@ -453,6 +453,13 @@ def _rebuild_sms_messages(conn) -> None:
 
 
 def _apply_revision(conn, version: int) -> None:
+    if version == 37:
+        # Sizing phase 1.5: adult numeric bands sit beside the child
+        # height/age band. Nullable — child rows keep NULL.
+        _add_column_if_missing(conn, "product_variants", "band_min_adult", "INTEGER")
+        _add_column_if_missing(conn, "product_variants", "band_max_adult", "INTEGER")
+        return
+
     if version == 36:
         # Sizing phase 1: the product names its tag system and garment type;
         # every variant carries the resolved unified band (person height cm /
