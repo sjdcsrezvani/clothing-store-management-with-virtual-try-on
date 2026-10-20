@@ -19,9 +19,9 @@ from services.analytics import (
 from services.sizing import resolve_band
 
 
-def _product(db, name, system):
+def _product(db, name, system, gender=None):
     product = Product(name=name, category="پیراهن", size_system=system,
-                      size_type="upper", is_active=True)
+                      size_type="upper", gender=gender, is_active=True)
     db.add(product)
     db.flush()
     return product
@@ -60,13 +60,21 @@ def _sell(db, now, *pairs, refunded=False):
     return sale
 
 
-def _use_standard(db, value):
-    row = db.query(Settings).filter(Settings.key == "sizing_standard").first()
+def _use_setting(db, key, value):
+    row = db.query(Settings).filter(Settings.key == key).first()
     if row:
         row.value = value
     else:
-        db.add(Settings(key="sizing_standard", value=value))
+        db.add(Settings(key=key, value=value))
     db.commit()
+
+
+def _use_standard(db, value):
+    _use_setting(db, "sizing_standard", value)
+
+
+def _use_adult_standard(db, value):
+    _use_setting(db, "sizing_standard_adult", value)
 
 
 def _window():
@@ -115,6 +123,25 @@ def test_one_band_is_one_row_across_tag_systems(client, db_session, authed):
     _sell(db_session, now, (age, v_age), refunded=True)
     returns = get_returns(db_session, start, end)
     assert returns["variants"][0]["size"] == "قد 116 تا 122"
+
+
+def test_adult_and_kids_read_their_own_units(client, db_session, authed):
+    now, start, end = _window()
+    kid = _product(db_session, "پیراهن بچگانه", "age")
+    adult = _product(db_session, "پیراهن بزرگسال", "adult", gender="woman")
+    v_kid = _variant(db_session, kid, "6-7", barcode="AN-KID")
+    v_adult = _variant(db_session, adult, "38", barcode="AN-AD")
+    _sell(db_session, now, (kid, v_kid), (adult, v_adult))
+
+    _use_standard(db_session, "age")
+    _use_adult_standard(db_session, "numeric")
+    labels = {row["label"] for row in get_variant_stats(db_session, start, end, "size")}
+    assert labels == {"6-7 سال", "38"}
+    assert {row["size"] for row in get_stock_by_band(db_session)} == {"6-7 سال", "38"}
+
+    _use_adult_standard(db_session, "letters")
+    labels = {row["label"] for row in get_variant_stats(db_session, start, end, "size")}
+    assert labels == {"6-7 سال", "S"}
 
 
 def test_the_product_tab_shows_stock_by_band(client, db_session, authed):

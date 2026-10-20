@@ -2,7 +2,7 @@
 shop's chosen display unit is the only thing printed. Entry is one number or
 letter; doubles are entered by their lower number and keep their pair."""
 from services.sizing import (
-    SIZE_TYPES, SYSTEMS, DISPLAY_STANDARDS,
+    SIZE_TYPES, SYSTEMS, DISPLAY_STANDARDS, DISPLAY_STANDARDS_ADULT,
     Band, resolve_band, band_display, size_options,
 )
 
@@ -105,6 +105,18 @@ def test_ambiguous_uk_us_scales_need_their_marker():
     assert resolve_band("shoe_us", "1C") == Band(44, 80, 0, 12)
     assert resolve_band("shoe_us", "1Y") == Band(116, 128, 72, 96)
     assert resolve_band("shoe_us", "12") == Band(104, 116, 48, 72)
+
+
+def test_adults_have_their_own_truthful_units():
+    assert list(DISPLAY_STANDARDS_ADULT) == ["letters", "numeric"]
+    woman = resolve_band("adult", "38", gender="woman")
+    man = resolve_band("adult", "M", gender="man")
+    assert band_display(woman, "numeric") == "38"
+    assert band_display(woman, "letters", "woman") == "S"
+    assert band_display(man, "numeric") == "48-50"
+    assert band_display(man, "letters", "man") == "M"
+    # Numeric is an adult unit; a child band has no such number.
+    assert band_display(resolve_band("age", "6-7"), "numeric") == "—"
 
 
 def test_display_prints_exactly_one_unit():

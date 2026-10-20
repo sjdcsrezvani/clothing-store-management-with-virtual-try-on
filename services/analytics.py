@@ -566,11 +566,12 @@ def get_price_stats(db, start, end, category=None):
         "avg_profit": round(avg_price - avg_cost),
     }
 
-def get_variant_stats(db, start, end, attr, category=None, standard=None):
+def get_variant_stats(db, start, end, attr, category=None, standard=None, adult_standard=None):
     """Units sold broken down by variant attribute ('size' or 'color'), sorted.
     Sizes are grouped by the band the shop displays, so two tags that mean the
     same size are one row instead of two neighbouring ones."""
     standard = standard or get_sizing_standard(db)
+    adult_standard = adult_standard or get_sizing_standard(db, adult=True)
     q = db.query(
         ProductVariant,
         func.sum(SaleItem.quantity).label("quantity"),
@@ -592,7 +593,7 @@ def get_variant_stats(db, start, end, attr, category=None, standard=None):
         if attr == "size":
             if variant.size is None:
                 continue
-            label = variant_size_display(variant, standard)
+            label = variant_size_display(variant, standard, adult_standard=adult_standard)
         else:
             if variant.color is None:
                 continue
@@ -604,10 +605,11 @@ def get_variant_stats(db, start, end, attr, category=None, standard=None):
     return sorted(buckets.values(), key=lambda r: r["quantity"], reverse=True)
 
 
-def get_color_size_matrix(db, start, end, category=None, standard=None):
+def get_color_size_matrix(db, start, end, category=None, standard=None, adult_standard=None):
     """Units sold as a colour×size matrix (heatmap) — the garment restock view.
     The size axis is the band, so a tag's spelling does not split one size."""
     standard = standard or get_sizing_standard(db)
+    adult_standard = adult_standard or get_sizing_standard(db, adult=True)
     rows = db.query(
         ProductVariant,
         func.sum(SaleItem.quantity).label("quantity"),
@@ -638,7 +640,7 @@ def get_color_size_matrix(db, start, end, category=None, standard=None):
         if variant.color is None or variant.size is None:
             continue
         color = variant.color
-        size = variant_size_display(variant, standard)
+        size = variant_size_display(variant, standard, adult_standard=adult_standard)
         if color not in cells:
             cells[color] = {}
             colors.append(color)
@@ -699,10 +701,11 @@ def get_inventory_value(db):
         "low_stock": low_list,
     }
 
-def get_stock_by_band(db, standard=None):
+def get_stock_by_band(db, standard=None, adult_standard=None):
     """Units and tied-up cost per size band — the shelf read by size, in the
     shop's chosen unit, so two tags for one band count once."""
     standard = standard or get_sizing_standard(db)
+    adult_standard = adult_standard or get_sizing_standard(db, adult=True)
     variants = db.query(ProductVariant).join(Product).options(
         joinedload(ProductVariant.product)
     ).filter(
@@ -712,7 +715,7 @@ def get_stock_by_band(db, standard=None):
     ).all()
     buckets = {}
     for variant in variants:
-        label = variant_size_display(variant, standard) or "—"
+        label = variant_size_display(variant, standard, adult_standard=adult_standard) or "—"
         bucket = buckets.setdefault(
             label, {"size": label, "units": 0, "cost": 0, "retail": 0})
         bucket["units"] += variant.stock_quantity or 0
@@ -959,10 +962,11 @@ def get_margin_by_category(db, start, end):
     return sorted(result, key=lambda x: -1e9 if x["margin"] is None else x["margin"],
                   reverse=True)
 
-def get_dead_stock(db, start, end, days_threshold=90, standard=None):
+def get_dead_stock(db, start, end, days_threshold=90, standard=None, adult_standard=None):
     """Variants sitting in stock with zero sales in the period.
     These are tying up capital with zero return."""
     standard = standard or get_sizing_standard(db)
+    adult_standard = adult_standard or get_sizing_standard(db, adult=True)
     sold_vids = db.query(SaleItem.variant_id).join(Sale).filter(
         Sale.payment_confirmed == True, Sale.is_refunded == False,
         Sale.created_at.between(start, end),
@@ -984,7 +988,7 @@ def get_dead_stock(db, start, end, days_threshold=90, standard=None):
                 "product_id": v.product_id,
             "name": name,
             "category": _clean_category(cat),
-                "size": variant_size_display(v, standard),
+                "size": variant_size_display(v, standard, adult_standard=adult_standard),
                 "color": v.color or "",
                 "stock": v.stock_quantity,
                 "value": v.cost_price * v.stock_quantity,
@@ -1024,10 +1028,11 @@ def get_price_distribution(db, start, end):
         buckets[bucket]["revenue"] += rev or 0
     return sorted(buckets.values(), key=lambda x: x["price"])
 
-def get_top_selling_variants(db, start, end, limit=10, standard=None):
+def get_top_selling_variants(db, start, end, limit=10, standard=None, adult_standard=None):
     """Top selling specific variants (product + size + color).
     The actual items flying off the shelves, sized in the shop's unit."""
     standard = standard or get_sizing_standard(db)
+    adult_standard = adult_standard or get_sizing_standard(db, adult=True)
     rows = db.query(
         ProductVariant,
         func.sum(SaleItem.quantity).label("qty"),
@@ -1042,7 +1047,7 @@ def get_top_selling_variants(db, start, end, limit=10, standard=None):
      .limit(limit).all()
     return [{
         "name": variant.product.name if variant.product else "",
-        "size": variant_size_display(variant, standard),
+        "size": variant_size_display(variant, standard, adult_standard=adult_standard),
         "color": variant.color or "",
         "qty": qty or 0,
         "revenue": revenue or 0,
@@ -1117,7 +1122,7 @@ def get_return_rate(db, start, end) -> dict:
 REORDER_DAYS = 14
 
 
-def get_turnover(db, start, end, limit=50, standard=None) -> dict:
+def get_turnover(db, start, end, limit=50, standard=None, adult_standard=None) -> dict:
     """Days of stock left per selling variant, most urgent first.
 
     Sell rate comes from the viewed range, stock from the shelf: a variant
@@ -1127,6 +1132,7 @@ def get_turnover(db, start, end, limit=50, standard=None) -> dict:
     worklist, with the count of rows left out stated beside it.
     """
     standard = standard or get_sizing_standard(db)
+    adult_standard = adult_standard or get_sizing_standard(db, adult=True)
     days = max((end - start).days, 1)
     sold = dict(db.query(
         SaleItem.variant_id, func.sum(SaleItem.quantity),
@@ -1153,7 +1159,7 @@ def get_turnover(db, start, end, limit=50, standard=None) -> dict:
             "variant_id": variant.id,
             "product_id": variant.product_id,
             "name": name,
-            "size": variant_size_display(variant, standard),
+            "size": variant_size_display(variant, standard, adult_standard=adult_standard),
             "color": variant.color or "",
             "stock": variant.stock_quantity or 0,
             "sold": qty,
@@ -1204,9 +1210,10 @@ def get_staff_performance(db, start, end) -> dict:
                              "revenue": unattributed[1] or 0}}
 
 
-def get_returns(db, start, end, limit=10, standard=None) -> dict:
+def get_returns(db, start, end, limit=10, standard=None, adult_standard=None) -> dict:
     """What came back: top variants by returned units, and the reasons given."""
     standard = standard or get_sizing_standard(db)
+    adult_standard = adult_standard or get_sizing_standard(db, adult=True)
     items = db.query(
         ProductVariant,
         func.sum(SaleItem.quantity).label("qty"),
@@ -1229,7 +1236,7 @@ def get_returns(db, start, end, limit=10, standard=None) -> dict:
     ).group_by(Sale.refund_reason).order_by(func.count(Sale.id).desc()).all()
     return {
         "variants": [{"name": variant.product.name if variant.product else "—",
-                      "size": variant_size_display(variant, standard),
+                      "size": variant_size_display(variant, standard, adult_standard=adult_standard),
                       "color": variant.color or "",
                       "qty": qty or 0, "amount": amount or 0}
                      for variant, qty, amount in items],

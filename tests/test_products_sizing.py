@@ -211,6 +211,42 @@ def test_product_list_and_tag_print_speak_the_chosen_unit(client, db_session, au
     assert "قد 116 تا 122" in tag_page
 
 
+def test_adult_products_use_their_own_unit(client, db_session, authed):
+    assert _create_product(client, name="پیراهن بچگانه", size_system="age",
+                           size_type="upper", variant_size_0="6-7",
+                           variant_barcode_0="SIZ-KID").status_code == 303
+    assert _create_product(client, name="پیراهن بزرگسال", size_system="adult",
+                           size_type="upper", gender="woman",
+                           variant_size_0="38", variant_barcode_0="SIZ-AD").status_code == 303
+
+    from models import Settings
+    for key, value in (("sizing_standard", "age"),
+                       ("sizing_standard_adult", "numeric")):
+        row = db_session.query(Settings).filter(Settings.key == key).first()
+        if row:
+            row.value = value
+        else:
+            db_session.add(Settings(key=key, value=value))
+    db_session.commit()
+
+    page = client.get("/admin/products").text
+    assert "6-7 سال" in page
+    assert "سایز: 38" in page
+    assert client.get(
+        "/admin/sizing/preview?system=adult&type=upper&size=38&gender=woman").text == "38"
+
+    row = db_session.query(Settings).filter(
+        Settings.key == "sizing_standard_adult").one()
+    row.value = "letters"
+    db_session.commit()
+
+    page = client.get("/admin/products").text
+    assert "6-7 سال" in page
+    assert "سایز: S" in page
+    assert client.get(
+        "/admin/sizing/preview?system=adult&type=upper&size=38&gender=woman").text == "S"
+
+
 def test_search_finds_a_size_by_its_band_label(client, db_session, authed):
     from models import Settings
 

@@ -588,7 +588,8 @@ def render_tag_html(config: dict[str, Any], item: dict[str, Any], store: dict[st
     return f'<div class="tag-render" dir="rtl" style="{root_style}">{"".join(children)}</div>'
 
 
-def item_from_variant(variant, fmt=None, standard: str | None = None) -> dict[str, Any]:
+def item_from_variant(variant, fmt=None, standard: str | None = None,
+                      adult_standard: str | None = None) -> dict[str, Any]:
     product = variant.product
     return {
         "variant_id": variant.id,
@@ -597,7 +598,8 @@ def item_from_variant(variant, fmt=None, standard: str | None = None) -> dict[st
         "name": variant.display_name,
         "price": variant.price,
         "price_display": fmt(variant.price) if fmt else f"{variant.price:,}",
-        "size": variant_size_display(variant, standard) if standard else variant.size,
+        "size": variant_size_display(variant, standard, adult_standard=adult_standard)
+                if standard else variant.size,
         "color": variant.color,
         "sku": variant.sku,
         "brand": product.brand if product else "",

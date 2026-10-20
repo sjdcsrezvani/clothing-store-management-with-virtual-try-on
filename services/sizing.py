@@ -44,6 +44,13 @@ DISPLAY_STANDARDS = {
     "garment": "قد لباس (شماره)",
 }
 
+# Adult numeric bands carry a size code, not a height: letters and the tag's
+# own number are the only honest display units for them.
+DISPLAY_STANDARDS_ADULT = {
+    "letters": "حروف (XS تا 3XL)",
+    "numeric": "عددی (مثل 38-40)",
+}
+
 
 @dataclass(frozen=True)
 class Band:
@@ -474,6 +481,14 @@ def _garment_text(band: Band) -> str:
     return "—"
 
 
+def _adult_numeric_text(band: Band) -> str:
+    if band.adult_min is None:
+        return "—"
+    if band.adult_min == band.adult_max:
+        return str(band.adult_min)
+    return f"{band.adult_min}-{band.adult_max}"
+
+
 def band_display(band: Band, standard: str = "age", gender=None) -> str:
     """The band in exactly one chosen display unit."""
     if band is None:
@@ -484,17 +499,28 @@ def band_display(band: Band, standard: str = "age", gender=None) -> str:
         return _kids_letters_text(band, gender)
     if standard == "garment":
         return _garment_text(band)
+    if standard == "numeric":
+        return _adult_numeric_text(band)
     return _age_text(band)
 
 
-def get_sizing_standard(db) -> str:
-    """The shop's chosen display unit — «age» when unset or when the stored
-    value is not a unit the engine can speak."""
+def get_sizing_standard(db, adult: bool = False) -> str:
+    """The shop's chosen display unit for kids/teens or for adults — the
+    default when unset, and the fallback when the stored value is not a unit
+    that side of the shop can speak."""
     from models import Settings
 
-    row = db.query(Settings).filter(Settings.key == "sizing_standard").first()
+    key = "sizing_standard_adult" if adult else "sizing_standard"
+    allowed = DISPLAY_STANDARDS_ADULT if adult else DISPLAY_STANDARDS
+    default = "letters" if adult else "age"
+    row = db.query(Settings).filter(Settings.key == key).first()
     value = (row.value or "").strip() if row else ""
-    return value if value in DISPLAY_STANDARDS else "age"
+    return value if value in allowed else default
+
+
+def get_sizing_standards(db) -> tuple[str, str]:
+    """(kids/teens unit, adult unit) in one read for a page that shows both."""
+    return get_sizing_standard(db), get_sizing_standard(db, adult=True)
 
 
 def band_from_variant(variant) -> Band | None:
@@ -512,15 +538,18 @@ def band_from_variant(variant) -> Band | None:
     return Band(values[0], values[1], values[2], values[3], values[4], values[5])
 
 
-def variant_size_display(variant, standard: str = "age", fallback: bool = True) -> str:
-    """A saved variant in the shop's chosen unit. When that unit has no honest
-    value (adult numeric under body/garment length), the raw tag size is a
-    more useful fallback on lists and printed tags than a dash."""
+def variant_size_display(variant, standard: str = "age", fallback: bool = True,
+                         adult_standard: str | None = None) -> str:
+    """A saved variant in the shop's chosen unit. The band decides which of the
+    two settings applies: adult numeric bands have no height, so they take the
+    adult unit; kids/teens keep the kids unit. When the chosen unit has no
+    honest value, the raw tag size is a more useful fallback than a dash."""
     band = band_from_variant(variant)
     if band is None:
         return variant.size or ""
+    chosen = adult_standard if band.adult_min is not None and adult_standard else standard
     gender = variant.product.gender if getattr(variant, "product", None) else None
-    text = band_display(band, standard, gender)
+    text = band_display(band, chosen, gender)
     if text == "—" and fallback:
         return variant.size or ""
     return text

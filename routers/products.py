@@ -28,7 +28,7 @@ from models import (
 from services.security import log_action, require_html_role
 from services.sizing import (SIZE_TYPES as SIZING_TYPES, SYSTEMS as SIZING_SYSTEMS,
                              resolve_band, size_options, band_display,
-                             get_sizing_standard, variant_size_display)
+                             get_sizing_standards, variant_size_display)
 
 
 def _apply_band(variant, band) -> None:
@@ -226,7 +226,8 @@ PRODUCT_STOCK_FILTERS = ("all", "low", "out")
 
 
 def _product_list_query(db, search: str = "", category: str = "", stock: str = "all",
-                        active_only: bool = True, standard: str | None = None):
+                        active_only: bool = True, standard: str | None = None,
+                        adult_standard: str | None = None):
     """The filtered products query the list, the CSV and the bulk bar share.
 
     Price and stock are variant aggregates, so the query carries them as
@@ -271,7 +272,8 @@ def _product_list_query(db, search: str = "", category: str = "", stock: str = "
                 .filter(Product.is_active == active_only, ProductVariant.is_active == True)  # noqa: E712
                 .all()
             ):
-                if needle in variant_size_display(variant, standard).lower():
+                if needle in variant_size_display(
+                        variant, standard, adult_standard=adult_standard).lower():
                     band_product_ids.add(variant.product_id)
 
         conditions = (
@@ -380,11 +382,11 @@ async def admin_products(
     # Ledger sorting, same convention as the sales list: an unknown key or
     # direction answers the default newest-first list, never an error.
     sort_key, sort_dir = parse_sort(request.query_params, PRODUCT_SORTS, "newest")
-    sizing_standard = get_sizing_standard(db)
+    sizing_standard, sizing_standard_adult = get_sizing_standards(db)
 
     query, price_sq, avail_sq = _product_list_query(
         db, search, category, stock, active_only=not archived_view,
-        standard=sizing_standard)
+        standard=sizing_standard, adult_standard=sizing_standard_adult)
     total = query.count()
     total_pages = max(1, (total + per_page - 1) // per_page)
     page = min(max(page, 1), total_pages)
@@ -406,7 +408,8 @@ async def admin_products(
         for variant in product.variants:
             if not variant.is_active:
                 continue
-            label = variant_size_display(variant, sizing_standard)
+            label = variant_size_display(
+                variant, sizing_standard, adult_standard=sizing_standard_adult)
             variant_bands[variant.id] = label
             if label and label not in labels:
                 labels.append(label)
@@ -457,8 +460,10 @@ async def admin_products_export(
     if stock not in PRODUCT_STOCK_FILTERS:
         stock = "all"
     sort_key, sort_dir = parse_sort(request.query_params, PRODUCT_SORTS, "newest")
+    kids_standard, adult_standard = get_sizing_standards(db)
     query, price_sq, avail_sq = _product_list_query(
-        db, search, category, stock, standard=get_sizing_standard(db))
+        db, search, category, stock, standard=kids_standard,
+        adult_standard=adult_standard)
     order, tiebreak = _product_order(sort_key, sort_dir, price_sq, avail_sq)
 
     rows = [["نام", "برند", "دسته‌بندی", "SKU پایه", "تنوع فعال",
@@ -538,7 +543,9 @@ async def admin_tag_settings(request: Request, db: Session = Depends(get_db)):
         .order_by(Product.name, ProductVariant.id)
         .first()
     )
-    sample_item = item_from_variant(sample_variant, fmt, get_sizing_standard(db)) if sample_variant else {
+    sample_kids, sample_adult = get_sizing_standards(db)
+    sample_item = item_from_variant(
+        sample_variant, fmt, sample_kids, sample_adult) if sample_variant else {
         "variant_id": None, "barcode": "12345", "product_name": "نمونه محصول",
         "name": "نمونه محصول", "price": 250000, "price_display": fmt(250000),
         "size": "۴ سال", "color": "آبی", "sku": "SKU-001", "brand": "رای کیدز",
@@ -752,7 +759,9 @@ async def admin_sizing_preview(request: Request, system: str = "", size: str = "
     band = resolve_band(system, size, size_type, gender) if system in SIZING_SYSTEMS else None
     text = size.strip()
     if band is not None:
-        text = band_display(band, get_sizing_standard(db), gender)
+        kids_standard, adult_standard = get_sizing_standards(db)
+        standard = adult_standard if band.adult_min is not None else kids_standard
+        text = band_display(band, standard, gender)
     elif not text:
         text = ""
     else:
@@ -1660,12 +1669,12 @@ async def admin_barcodes_print(
     # instead of being forced to select one checkbox per unit in stock.
     barcode_items = []
     template_configs = {"default": config}
-    tag_standard = get_sizing_standard(db)
+    tag_standard, tag_adult = get_sizing_standards(db)
     for product in products:
         for variant in product.variants:
             if not variant.is_active:
                 continue
-            item = item_from_variant(variant, fmt, tag_standard)
+            item = item_from_variant(variant, fmt, tag_standard, tag_adult)
             template_key = str(product.tag_template.id) if product.tag_template and product.tag_template.is_active else "default"
             item["tag_template_key"] = template_key
             item["tag_config"] = tag_template_config(product.tag_template, config)

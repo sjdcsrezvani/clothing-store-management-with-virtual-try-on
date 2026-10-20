@@ -96,6 +96,32 @@ def test_sizing_standard_saves_and_falls_back(client, db_session):
     assert get_sizing_standard(db_session) == "age"
 
 
+def test_adult_sizing_standard_is_separate(client, db_session):
+    """Kids/teens and adults choose their own unit: year is a kid unit, while
+    an adult numeric band has letters or its own number, never a height."""
+    _owner_client(client, db_session, name="tabs-owner-adult-sizing")
+    page = client.get("/admin/settings?tab=shop").text
+    assert 'name="sizing_standard_adult"' in page
+    assert 'value="letters" selected' in page
+
+    res = client.post("/admin/settings", data={
+        "csrf_token": csrf_token(client, "/admin/settings"),
+        "tab": "shop", "sizing_standard_adult": "numeric",
+    }, follow_redirects=False)
+    assert res.status_code == 303
+    db_session.expire_all()
+    from services.sizing import get_sizing_standard
+    assert db_session.query(Settings).filter(
+        Settings.key == "sizing_standard_adult").one().value == "numeric"
+    assert get_sizing_standard(db_session, adult=True) == "numeric"
+    assert get_sizing_standard(db_session) == "age"      # kids untouched
+
+    db_session.query(Settings).filter(
+        Settings.key == "sizing_standard_adult").one().value = "height"
+    db_session.commit()
+    assert get_sizing_standard(db_session, adult=True) == "letters"
+
+
 def test_numeric_error_reopens_the_owning_tab(client, db_session):
     _owner_client(client, db_session, name="tabs-owner-err")
     res = client.post("/admin/settings", data={
