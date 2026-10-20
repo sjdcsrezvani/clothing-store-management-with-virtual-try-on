@@ -111,9 +111,16 @@ def test_adults_have_their_own_truthful_units():
     assert list(DISPLAY_STANDARDS_ADULT) == ["letters", "numeric"]
     woman = resolve_band("adult", "38", gender="woman")
     man = resolve_band("adult", "M", gender="man")
-    assert band_display(woman, "numeric") == "38"
-    assert band_display(woman, "letters", "woman") == "S"
-    assert band_display(man, "numeric") == "48-50"
+    assert band_display(woman, "numeric", "woman") == "38 زنانه"
+    assert band_display(woman, "letters", "woman") == "M"
+    # The shared boundary follows the letter that starts there.
+    assert band_display(resolve_band("adult", "40", gender="woman"), "letters", "woman") == "L"
+    assert band_display(resolve_band("adult", "42", gender="woman"), "letters", "woman") == "XL"
+    assert band_display(resolve_band("adult", "46", gender="woman"), "letters", "woman") == "3XL"
+    assert band_display(resolve_band("adult", "48", gender="woman"), "letters", "woman") == "3XL"
+    assert band_display(resolve_band("adult", "50", gender="woman"), "letters", "woman") == "—"
+    assert band_display(resolve_band("adult", "46", gender="man"), "letters", "man") == "S"
+    assert band_display(man, "numeric", "man") == "48-50 مردانه"
     assert band_display(man, "letters", "man") == "M"
     # Numeric is an adult unit; a child band has no such number.
     assert band_display(resolve_band("age", "6-7"), "numeric") == "—"
@@ -132,7 +139,7 @@ def test_display_prints_exactly_one_unit():
 def test_adult_numeric_prints_adult_in_age_and_dash_in_body_units():
     band = resolve_band("adult", "38", gender="woman")
     assert band_display(band, "age") == "بزرگسال"
-    assert band_display(band, "letters", "woman") == "S"
+    assert band_display(band, "letters", "woman") == "M"
     assert band_display(band, "height") == "—"
     assert band_display(band, "garment") == "—"
 

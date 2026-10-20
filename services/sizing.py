@@ -438,6 +438,13 @@ def _kids_letters_text(band: Band, gender=None) -> str:
         table = _MEN_LETTERS if _is_man(gender) else _WOMEN_LETTERS
         low, high = band.adult_min, band.adult_max
         if low == high:
+            # A number on a shared boundary belongs to the letter whose range
+            # starts there (women's 38 -> M, 40 -> L), matching the letter
+            # tag's own numeric range. The containing range is only the tail
+            # fallback (women's 48 -> 3XL), where no letter starts.
+            for key, (left, _right) in table.items():
+                if left == low:
+                    return key
             for key, (left, right) in table.items():
                 if left <= low <= right:
                     return key
@@ -481,12 +488,19 @@ def _garment_text(band: Band) -> str:
     return "—"
 
 
-def _adult_numeric_text(band: Band) -> str:
+def _adult_numeric_text(band: Band, gender=None) -> str:
     if band.adult_min is None:
         return "—"
-    if band.adult_min == band.adult_max:
-        return str(band.adult_min)
-    return f"{band.adult_min}-{band.adult_max}"
+    text = (str(band.adult_min) if band.adult_min == band.adult_max
+            else f"{band.adult_min}-{band.adult_max}")
+    # The same number is a different body size on the men's and women's
+    # ladders; the marker keeps lists and size analytics from merging them.
+    side = str(gender or "").strip().lower()
+    if side == "man":
+        return f"{text} مردانه"
+    if side == "woman":
+        return f"{text} زنانه"
+    return text
 
 
 def band_display(band: Band, standard: str = "age", gender=None) -> str:
@@ -500,7 +514,7 @@ def band_display(band: Band, standard: str = "age", gender=None) -> str:
     if standard == "garment":
         return _garment_text(band)
     if standard == "numeric":
-        return _adult_numeric_text(band)
+        return _adult_numeric_text(band, gender)
     return _age_text(band)
 
 

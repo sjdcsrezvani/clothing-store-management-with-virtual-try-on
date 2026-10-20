@@ -233,7 +233,7 @@ def test_adult_products_use_their_own_unit(client, db_session, authed):
     assert "6-7 سال" in page
     assert "سایز: 38" in page
     assert client.get(
-        "/admin/sizing/preview?system=adult&type=upper&size=38&gender=woman").text == "38"
+        "/admin/sizing/preview?system=adult&type=upper&size=38&gender=woman").text == "38 زنانه"
 
     row = db_session.query(Settings).filter(
         Settings.key == "sizing_standard_adult").one()
@@ -242,9 +242,9 @@ def test_adult_products_use_their_own_unit(client, db_session, authed):
 
     page = client.get("/admin/products").text
     assert "6-7 سال" in page
-    assert "سایز: S" in page
+    assert "سایز: M" in page
     assert client.get(
-        "/admin/sizing/preview?system=adult&type=upper&size=38&gender=woman").text == "S"
+        "/admin/sizing/preview?system=adult&type=upper&size=38&gender=woman").text == "M"
 
 
 def test_search_finds_a_size_by_its_band_label(client, db_session, authed):

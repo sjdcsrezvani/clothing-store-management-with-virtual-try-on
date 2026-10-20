@@ -28,7 +28,7 @@ def _product(db, name, system, gender=None):
 
 
 def _variant(db, product, size, *, color="مشکی", stock=5, barcode):
-    band = resolve_band(product.size_system, size, product.size_type)
+    band = resolve_band(product.size_system, size, product.size_type, product.gender)
     variant = ProductVariant(
         product_id=product.id, size=size, color=color, price=500_000,
         cost_price=200_000, stock_quantity=stock, barcode=barcode,
@@ -136,12 +136,26 @@ def test_adult_and_kids_read_their_own_units(client, db_session, authed):
     _use_standard(db_session, "age")
     _use_adult_standard(db_session, "numeric")
     labels = {row["label"] for row in get_variant_stats(db_session, start, end, "size")}
-    assert labels == {"6-7 سال", "38"}
-    assert {row["size"] for row in get_stock_by_band(db_session)} == {"6-7 سال", "38"}
+    assert labels == {"6-7 سال", "38 زنانه"}
+    assert {row["size"] for row in get_stock_by_band(db_session)} == {"6-7 سال", "38 زنانه"}
 
     _use_adult_standard(db_session, "letters")
     labels = {row["label"] for row in get_variant_stats(db_session, start, end, "size")}
-    assert labels == {"6-7 سال", "S"}
+    assert labels == {"6-7 سال", "M"}
+
+
+def test_the_same_adult_number_on_two_genders_stays_two_rows(client, db_session, authed):
+    now, start, end = _window()
+    women = _product(db_session, "پیراهن زنانه", "adult", gender="woman")
+    men = _product(db_session, "پیراهن مردانه", "adult", gender="man")
+    v_women = _variant(db_session, women, "46", barcode="AN-W46")
+    v_men = _variant(db_session, men, "46", barcode="AN-M46")
+    _sell(db_session, now, (women, v_women), (men, v_men))
+    _use_adult_standard(db_session, "numeric")
+
+    rows = {row["label"]: row["quantity"]
+            for row in get_variant_stats(db_session, start, end, "size")}
+    assert rows == {"46 زنانه": 1, "46 مردانه": 1}
 
 
 def test_the_product_tab_shows_stock_by_band(client, db_session, authed):
