@@ -5,7 +5,7 @@ import jdatetime
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, case, and_, or_
 from models import Customer, Sale, SaleItem, Product, ProductVariant, Referral, Expense, Payment, Purchase, Refund, SupplierPayment
-from services.sizing import get_sizing_standard, variant_size_display
+from services.sizing import Band, band_age_group, get_sizing_standard, variant_size_display
 from services._common import (
     parse_jalali_input,
     parse_jalali_input_end,
@@ -181,6 +181,26 @@ def get_new_customers(db: Session, start: datetime, end: datetime) -> int:
     )
     return len([cid for cid in bought_in if cid not in bought_before])
 
+def _line_dimensions(variant_id, raw_size, category, gender, size_type,
+                     product_system, variant_system, band_values) -> dict:
+    """The product/variant dimensions every new reading groups by.
+
+    The band is rebuilt from the stored columns; no raw tag becomes a band.
+    A product's system wins over a legacy variant-level system.
+    """
+    band = Band(*band_values) if any(value is not None for value in band_values) else None
+    return {
+        "variant_id": variant_id,
+        "raw_size": raw_size,
+        "band": band,
+        "category": category,
+        "gender": gender,
+        "size_type": size_type,
+        "size_system": product_system or variant_system,
+        "age_group": band_age_group(band),
+    }
+
+
 def _net_sale_lines(db: Session, start: datetime, end: datetime):
     """Per-item net revenue and cost sharing canonical_report's exact semantics.
 
@@ -214,19 +234,30 @@ def _net_sale_lines(db: Session, start: datetime, end: datetime):
     for refund in refunds:
         refund_by_sale.setdefault(refund.sale_id, []).append(refund)
     rows = db.query(
-        SaleItem.sale_id, SaleItem.total_price,
+        SaleItem.sale_id, SaleItem.variant_id, SaleItem.total_price,
         SaleItem.unit_cost, SaleItem.quantity,
-        Product.category,
+        ProductVariant.size, Product.category, Product.gender,
+        Product.size_type, Product.size_system, ProductVariant.size_system,
+        ProductVariant.band_min_cm, ProductVariant.band_max_cm,
+        ProductVariant.band_min_months, ProductVariant.band_max_months,
+        ProductVariant.band_min_adult, ProductVariant.band_max_adult,
     ).join(Product, Product.id == SaleItem.product_id
+           ).outerjoin(ProductVariant, ProductVariant.id == SaleItem.variant_id
            ).filter(SaleItem.sale_id.in_(sale_ids)).all()
     by_sale: dict[int, list[dict]] = {}
-    for sid, gross, unit_cost, qty, cat in rows:
+    for row in rows:
+        (sid, variant_id, gross, unit_cost, qty, raw_size, category, gender,
+         size_type, product_system, variant_system, *band_values) = row
         by_sale.setdefault(sid, []).append({
             "gross": gross or 0,
             "cost": (unit_cost or 0) * (qty or 0),
             "qty": qty or 0,
-            "category": cat,
+            "dims": _line_dimensions(
+                variant_id, raw_size, category, gender, size_type,
+                product_system, variant_system, band_values),
         })
+    empty_dims = _line_dimensions(None, None, None, None, None, None, None,
+                                  (None,) * 6)
 
     def _split(amount: int, weights: list[int]) -> list[int]:
         total = sum(weights)
@@ -256,7 +287,7 @@ def _net_sale_lines(db: Session, start: datetime, end: datetime):
             for item, net in zip(sale_items, nets):
                 item_lines.append({
                     "sale_id": sale.id, "day": day,
-                    "category": item["category"],
+                    **item["dims"],
                     "net": net,
                     "cost": 0 if cost_off else item["cost"],
                     "qty": 0 if cost_off else item["qty"],
@@ -268,7 +299,7 @@ def _net_sale_lines(db: Session, start: datetime, end: datetime):
             nets = [(sale.total_amount or 0) - discount]
             item_lines.append({
                 "sale_id": sale.id, "day": day,
-                "category": None,
+                **empty_dims,
                 "net": nets[0],
                 "cost": 0,
                 "qty": 0,
@@ -278,11 +309,12 @@ def _net_sale_lines(db: Session, start: datetime, end: datetime):
             amount = refund.total_amount or 0
             refund_day = refund.created_at.date() if refund.created_at else day
             parts = _split(amount, refund_weights) if refund_weights else [amount]
-            cats = ([i["category"] for i in sale_items] if sale_items else [None])
-            for cat, part in zip(cats, parts):
+            items = sale_items if sale_items else [{"dims": empty_dims}]
+            for item, part in zip(items, parts):
                 refund_lines.append({
                     "sale_id": sale.id, "day": refund_day,
-                    "category": cat, "amount": part,
+                    **item["dims"],
+                    "amount": part,
                 })
     return item_lines, refund_lines, sales
 

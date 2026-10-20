@@ -64,6 +64,28 @@ class Band:
     adult_max: int | None = None
 
 
+def band_age_group(band: Band | None) -> str | None:
+    """The reporting bucket behind a band: baby, child, teen or adult.
+
+    The midpoint decides a band that straddles a boundary; an adult numeric
+    band is adult even though it has no months. No band is no bucket.
+    """
+    if band is None:
+        return None
+    if band.adult_min is not None:
+        return "adult"
+    if band.months_min is None or band.months_max is None:
+        return None
+    middle = (band.months_min + band.months_max) / 2
+    if middle < 36:
+        return "baby"
+    if middle < 96:
+        return "child"
+    if middle < 192:
+        return "teen"
+    return "adult"
+
+
 # The one core table: month band -> height band. The last row is the adult
 # tail — months from 16y display as «بزرگسال».
 CORE_ROWS = [
