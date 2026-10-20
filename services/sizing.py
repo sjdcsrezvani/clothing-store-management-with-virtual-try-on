@@ -31,6 +31,10 @@ SYSTEMS = {
     "adult": {"label": "بزرگسال — مثل S یا 38"},
     "iran": {"label": "شماره لباس — مثل 45"},
     "sock": {"label": "سایز جوراب — مثل 23-26"},
+    "shoe_eu": {"label": "سایز کفش — مثل 30"},
+    "shoe_uk": {"label": "سایز کفش — مثل 7"},
+    "shoe_us": {"label": "سایز کفش — مثل 8C"},
+    "shoe_cm": {"label": "طول پا — مثل 14 سانت"},
 }
 
 DISPLAY_STANDARDS = {
@@ -128,6 +132,47 @@ _SOCK_ROWS = [
     ("35-38", 96, 120, 128, 140),
 ]
 _SOCK_BY_VALUE = {row[0]: row for row in _SOCK_ROWS}
+
+# Kids' shoe sizes — one chart (EU, UK, US, heel-toe cm; Adidas kids as the
+# seed) so four tag languages land on the same coarse sock band. A shoe size
+# is not a body height, so the range is the honest answer. UK 1-5 and US 1-5.5
+# exist on two scales; the picker writes the k/C/Y marker, and a bare number
+# from that overlap resolves to nothing rather than to the wrong child.
+_SHOE_ROWS = [
+    (15, "0k", "1C", 8.1),
+    (16, "0k", "1C", 8.1),
+    (17, "1k", "2C", 9.0),
+    (18, "2k", "3C", 9.8),
+    (19, "3k", "4C", 10.6),
+    (20, "4k", "5C", 11.5),
+    (21, "5k", "5.5C", 12.3),
+    (22, "5.5k", "6C", 12.8),
+    (23, "6k", "6.5C", 13.2),
+    (24, "7k", "7.5C", 14.0),
+    (25, "7.5k", "8C", 14.5),
+    (26, "8.5k", "9C", 15.3),
+    (27, "9.5k", "10C", 16.1),
+    (28, "10k", "10.5C", 16.6),
+    (29, "11k", "11.5C", 17.4),
+    (30, "11.5k", "12C", 17.8),
+    (31, "12.5k", "13C", 18.7),
+    (32, "13.5k", "1Y", 19.5),
+    (33, "1y", "1.5Y", 20.0),
+    (34, "2y", "2.5Y", 20.8),
+    (35, "2.5y", "3Y", 21.2),
+    (36, "3.5y", "4Y", 22.1),
+    (37, "4.5y", "5Y", 22.9),
+    (38, "5y", "5.5Y", 23.3),
+]
+_SHOE_UK = {row[1]: row[0] for row in _SHOE_ROWS}
+_SHOE_US = {row[2]: row[0] for row in _SHOE_ROWS}
+# A bare UK/US number is usable only outside the two-scale overlap.
+_AMBIGUOUS_UK = {"1", "1.5", "2", "2.5", "3", "3.5", "4", "4.5", "5"}
+_AMBIGUOUS_US = {"1", "1.5", "2", "2.5", "3", "3.5", "4", "4.5", "5", "5.5"}
+_SHOE_UK_BARE = {key[:-1]: eu for key, eu in _SHOE_UK.items()
+                 if key.endswith("k") and key[:-1] not in _AMBIGUOUS_UK}
+_SHOE_US_BARE = {key[:-1]: eu for key, eu in _SHOE_US.items()
+                 if key.endswith("C") and key[:-1] not in _AMBIGUOUS_US}
 
 _TODDLER = re.compile(r"^([2-5])\s*T$", re.I)
 _MONTH_RANGE = re.compile(r"^(\d+)\s*-\s*(\d+)\s*(?:m|ماه|ماهه)$", re.I)
@@ -286,6 +331,49 @@ def _sock_band(text: str):
     return Band(row[3], row[4], row[1], row[2])
 
 
+def _sock_band_for_eu(eu: int):
+    for value, months_min, months_max, height_min, height_max in _SOCK_ROWS:
+        low, high = value.split("-")
+        if int(low) <= eu <= int(high):
+            return Band(height_min, height_max, months_min, months_max)
+    return None
+
+
+def _shoe_eu_band(text: str):
+    match = re.fullmatch(r"(\d+(?:\.\d+)?)", text)
+    if not match:
+        return None
+    number = float(match.group(1))
+    # Adult shoes (EU 39+) have no clothing band; the raw tag is the honest
+    # display, so they save without conversion.
+    if number < 15 or number > 38:
+        return None
+    return _sock_band_for_eu(round(number))
+
+
+def _shoe_uk_band(text: str):
+    key = text.lower().replace(" ", "")
+    eu = _SHOE_UK.get(key) or _SHOE_UK_BARE.get(key)
+    return _sock_band_for_eu(eu) if eu else None
+
+
+def _shoe_us_band(text: str):
+    key = text.upper().replace(" ", "")
+    eu = _SHOE_US.get(key) or _SHOE_US_BARE.get(key)
+    return _sock_band_for_eu(eu) if eu else None
+
+
+def _shoe_cm_band(text: str):
+    match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(?:cm|سانت(?:ی‌متر)?|سانتی‌متر)?", text, re.I)
+    if not match:
+        return None
+    value = float(match.group(1))
+    if value < 7.5 or value > 23.5:
+        return None
+    row = min(_SHOE_ROWS, key=lambda item: abs(item[3] - value))
+    return _sock_band_for_eu(row[0])
+
+
 def resolve_band(system: str, size, size_type=None, gender=None):
     """Resolve a tag size into a Band, or None when it cannot be understood —
     a None never blocks a save. Entry is one number/letter; a double tag is
@@ -305,6 +393,14 @@ def resolve_band(system: str, size, size_type=None, gender=None):
         return _iran_band(text)
     if system == "sock":
         return _sock_band(text)
+    if system == "shoe_eu":
+        return _shoe_eu_band(text)
+    if system == "shoe_uk":
+        return _shoe_uk_band(text)
+    if system == "shoe_us":
+        return _shoe_us_band(text)
+    if system == "shoe_cm":
+        return _shoe_cm_band(text)
     return None
 
 
@@ -441,6 +537,23 @@ def _adult_options(gender) -> list[dict]:
     return options
 
 
+def _shoe_options(index: int) -> list[dict]:
+    """The UK/US ladders: a marker keeps the two scales apart, and every
+    option names its EU equivalent and age band so the right one is obvious."""
+    options, seen = [], set()
+    for row in _SHOE_ROWS:
+        value = row[index]
+        if value in seen:
+            continue
+        seen.add(value)
+        band = _sock_band_for_eu(row[0])
+        options.append({
+            "value": value,
+            "label": f"{value} (معادل {row[0]} · {_span_label(band.months_min, band.months_max)})",
+        })
+    return options
+
+
 def size_options(system: str, gender=None):
     """The single-value ladder for a picker, or None for free text."""
     if system == "age":
@@ -464,4 +577,27 @@ def size_options(system: str, gender=None):
     if system == "sock":
         return [{"value": value, "label": f"{value} ({_span_label(start, end)})"}
                 for value, start, end, _, _ in _SOCK_ROWS]
+    if system == "shoe_eu":
+        options = []
+        for eu, _, _, _ in _SHOE_ROWS:
+            band = _sock_band_for_eu(eu)
+            options.append({
+                "value": str(eu),
+                "label": f"{eu} ({_span_label(band.months_min, band.months_max)})",
+            })
+        return options
+    if system == "shoe_uk":
+        return _shoe_options(1)
+    if system == "shoe_us":
+        return _shoe_options(2)
+    if system == "shoe_cm":
+        options = []
+        for cm in range(8, 24):
+            row = min(_SHOE_ROWS, key=lambda item: abs(item[3] - cm))
+            band = _sock_band_for_eu(row[0])
+            options.append({
+                "value": str(cm),
+                "label": f"{cm} (معادل {row[0]} · {_span_label(band.months_min, band.months_max)})",
+            })
+        return options
     return None

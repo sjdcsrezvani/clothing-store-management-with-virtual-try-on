@@ -7,9 +7,12 @@ from services.sizing import (
 )
 
 
-def test_taxonomy_is_six_distinct_tag_languages_and_four_units():
+def test_taxonomy_is_ten_tag_languages_and_four_units():
     assert SIZE_TYPES["upper"] == "بالاتنه"
-    assert list(SYSTEMS) == ["age", "height", "kids_letters", "adult", "iran", "sock"]
+    assert list(SYSTEMS) == [
+        "age", "height", "kids_letters", "adult", "iran", "sock",
+        "shoe_eu", "shoe_uk", "shoe_us", "shoe_cm",
+    ]
     assert all(spec["label"] for spec in SYSTEMS.values())
     assert not any(word in spec["label"] for spec in SYSTEMS.values()
                    for word in ("چین", "EU", "US", "ایران"))
@@ -79,6 +82,31 @@ def test_sock_ranges_resolve_to_child_bands():
     assert resolve_band("sock", "15-18") == Band(44, 80, 0, 12)
 
 
+def test_four_shoe_tag_languages_land_on_one_band():
+    expected = Band(92, 104, 24, 48)
+    assert resolve_band("shoe_eu", "24") == expected
+    assert resolve_band("shoe_uk", "7") == expected
+    assert resolve_band("shoe_uk", "7k") == expected
+    assert resolve_band("shoe_us", "8") == expected
+    assert resolve_band("shoe_us", "8C") == expected
+    assert resolve_band("shoe_cm", "14") == expected
+    assert resolve_band("shoe_cm", "14cm") == expected
+    assert resolve_band("shoe_cm", "14.5") == expected
+    assert resolve_band("shoe_eu", "۳۰") == Band(104, 116, 48, 72)
+    assert resolve_band("shoe_eu", "39") is None          # adult: raw tag, no band
+    assert resolve_band("shoe_cm", "24.5") is None
+
+
+def test_ambiguous_uk_us_scales_need_their_marker():
+    assert resolve_band("shoe_uk", "1") is None
+    assert resolve_band("shoe_us", "1") is None
+    assert resolve_band("shoe_uk", "1k") == Band(44, 80, 0, 12)
+    assert resolve_band("shoe_uk", "1y") == Band(116, 128, 72, 96)
+    assert resolve_band("shoe_us", "1C") == Band(44, 80, 0, 12)
+    assert resolve_band("shoe_us", "1Y") == Band(116, 128, 72, 96)
+    assert resolve_band("shoe_us", "12") == Band(104, 116, 48, 72)
+
+
 def test_display_prints_exactly_one_unit():
     band = resolve_band("height", "122")
     assert band_display(band, "age") == "6-8 سال"
@@ -123,7 +151,8 @@ def test_unparseable_or_unknown_never_raises():
 
 
 def test_every_ladder_option_resolves_and_height_uses_single_numbers():
-    for system in ("age", "height", "kids_letters", "iran", "sock"):
+    for system in ("age", "height", "kids_letters", "iran", "sock",
+                   "shoe_eu", "shoe_uk", "shoe_us", "shoe_cm"):
         options = size_options(system)
         assert options, system
         assert all(resolve_band(system, option["value"]) is not None for option in options), system
@@ -154,5 +183,9 @@ def test_iranian_and_sock_pickers_carry_age_labels_and_single_values():
     assert all("(" in option["label"] for option in iran)
     sock = size_options("sock")
     assert [option["value"] for option in sock] == ["15-18", "19-22", "23-26", "27-30", "31-34", "35-38"]
+    assert [option["value"] for option in size_options("shoe_eu")][:2] == ["15", "16"]
+    assert {"1k", "7k", "1y"} <= {option["value"] for option in size_options("shoe_uk")}
+    assert {"1C", "8C", "1Y"} <= {option["value"] for option in size_options("shoe_us")}
+    assert {"8", "14", "23"} <= {option["value"] for option in size_options("shoe_cm")}
     assert size_options("nope") is None
     assert size_options("letters") is None

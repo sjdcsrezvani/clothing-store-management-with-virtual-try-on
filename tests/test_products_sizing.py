@@ -54,6 +54,15 @@ def test_age_sizes_resolve_into_bands_on_save(client, db_session, authed):
     assert (product.size_system, product.size_type) == ("age", "upper")
 
 
+def test_shoe_sizes_save_the_shared_band(client, db_session, authed):
+    assert _create_product(client, size_system="shoe_eu", size_type="shoes",
+                           variant_size_0="30", variant_barcode_0="SIZ-SHOE").status_code == 303
+    variant = _variant(db_session, "SIZ-SHOE")
+    assert (variant.size, variant.size_system) == ("30", "shoe_eu")
+    assert (variant.band_min_cm, variant.band_max_cm) == (104, 116)
+    assert (variant.band_min_months, variant.band_max_months) == (48, 72)
+
+
 def test_persian_digit_sizes_resolve_too(client, db_session, authed):
     assert _create_product(client, size_system="age", size_type="upper",
                            variant_size_0="۶-۷", variant_barcode_0="SIZ-F").status_code == 303
@@ -124,6 +133,7 @@ def test_product_form_carries_the_sizing_pickers(client, db_session, authed):
     assert "/static/js/sizing.js" in page
     assert "data-size-select" in page            # the row template the script stamps
     assert "variant_size_system_" not in page    # the per-variant system field is gone
+    assert "سایز کفش — مثل 8C" in page and "طول پا — مثل 14 سانت" in page
 
 
 def test_edit_form_preselects_the_stored_system(client, db_session, authed):
@@ -173,6 +183,8 @@ def test_preview_reads_the_type_and_gender_the_form_actually_sends(client, db_se
         "/admin/sizing/preview?system=kids_letters&type=upper&size=M").text
     assert "تبدیل ندارد" not in client.get(
         "/admin/sizing/preview?system=adult&type=upper&size=38&gender=woman").text
+    assert client.get(
+        "/admin/sizing/preview?system=shoe_uk&type=shoes&size=7").text == "2-4 سال"
     # And a size that genuinely cannot be read still says so.
     assert client.get(
         "/admin/sizing/preview?system=iran&type=upper&size=999").text == "تبدیل ندارد"
