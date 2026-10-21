@@ -1,13 +1,15 @@
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from database import get_db
-from models import Settings, to_english_digits
+from models import Product, Settings, to_english_digits
 from services._common import fmt, check_admin, get_setting_int, jalali_str, share
 from services.security import log_action, require_html_role
 from services.templating import templates
 from services.reporting import canonical_report
-from services.chart_notes import chart_notes
+from services.chart_notes import chart_notes, toggle_notes
+from services.sizing import SIZE_TYPES
 from services.analytics import (
+    AGE_GROUP_LABELS, GENDER_LABELS, SYSTEM_LABELS,
     period_range, get_daily_revenue,
     get_revenue_by_category,
     get_revenue_by_tier, get_discount_impact,
@@ -19,6 +21,8 @@ from services.analytics import (
     get_price_distribution, get_top_selling_variants, get_new_customers,
     get_revenue_by_payment, get_return_rate, get_returns, get_staff_performance,
     get_turnover, get_year_heatmap,
+    get_category_age_sales, get_category_size_matrix, get_group_type_sales,
+    get_returns_by_band, get_sales_by_size_system, get_sizing_coverage,
 )
 
 router = APIRouter(prefix="/admin")
@@ -26,11 +30,38 @@ router = APIRouter(prefix="/admin")
 ANALYTICS_TABS = {
     "sales": "فروش",
     "product": "محصول",
+    "sizes": "دسته‌ها و سایز",
     "inventory": "انبار",
     "customers": "مشتریان",
     "profit": "سود",
     "trends": "روند",
 }
+
+
+def _multi_values(request: Request, name: str, allowed=None) -> list[str]:
+    values = [value for value in request.query_params.getlist(name) if value]
+    if allowed is not None:
+        values = [value for value in values if value in allowed]
+    return list(dict.fromkeys(values))
+
+
+def _active_categories(db) -> list[str]:
+    rows = db.query(Product.category).filter(
+        Product.is_active == True,  # noqa: E712
+        Product.category != None,  # noqa: E711
+    ).distinct().all()
+    return sorted({row[0] for row in rows if row[0]})
+
+
+def _size_filters(request: Request, db) -> dict:
+    categories = set(_active_categories(db)) | {"none"}
+    return {
+        "categories": _multi_values(request, "category", categories),
+        "types": _multi_values(request, "type", set(SIZE_TYPES) | {"none"}),
+        "groups": _multi_values(request, "group", set(GENDER_LABELS) | {"none"}),
+        "systems": _multi_values(request, "system", set(SYSTEM_LABELS) | {"none"}),
+        "ages": _multi_values(request, "age", set(AGE_GROUP_LABELS) | {"none"}),
+    }
 
 
 @router.get("/analytics", response_class=HTMLResponse)
@@ -88,6 +119,21 @@ async def admin_analytics(
         "basket": {"items_per_txn": 0},
         "color_size_matrix": {"colors": [], "rows": [], "max": 0, "max_revenue": 0},
         "stock_by_band": [],
+        "group_type": {"group": [], "type": []},
+        "category_age": {"categories": [], "series": [],
+                         "totals": {"revenue": 0, "units": 0}},
+        "category_size": {"categories": [], "sizes": [], "rows": [],
+                          "max": 0, "max_revenue": 0},
+        "returns_band": [],
+        "system_mix": [],
+        "coverage": {"products_total": 0, "products_with_system": 0,
+                     "products_without_system": 0, "variants_total": 0,
+                     "variants_with_band": 0, "variants_without_band": 0,
+                     "band_pct": None, "system_pct": None, "missing": []},
+        "filter_options": {"categories": [], "types": [], "groups": [],
+                           "systems": [], "ages": []},
+        "selected_filters": {"categories": [], "types": [], "groups": [],
+                             "systems": [], "ages": []},
     }
 
     # Gather all analytics data
@@ -140,6 +186,24 @@ async def admin_analytics(
         data["dead_stock"] = get_dead_stock(db, start, end)
         data["top_variants"] = get_top_selling_variants(db, start, end)
 
+    if active_tab == "sizes":
+        filters = _size_filters(request, db)
+        data["selected_filters"] = filters
+        data["filter_options"] = {
+            "categories": [(value, value) for value in _active_categories(db)] +
+                          [("none", "نامشخص")],
+            "types": list(SIZE_TYPES.items()) + [("none", "نامشخص")],
+            "groups": list(GENDER_LABELS.items()) + [("none", "نامشخص")],
+            "systems": list(SYSTEM_LABELS.items()) + [("none", "نامشخص")],
+            "ages": list(AGE_GROUP_LABELS.items()),
+        }
+        data["group_type"] = get_group_type_sales(db, start, end, filters)
+        data["category_age"] = get_category_age_sales(db, start, end, filters)
+        data["category_size"] = get_category_size_matrix(db, start, end, filters)
+        data["returns_band"] = get_returns_by_band(db, start, end, filters)
+        data["system_mix"] = get_sales_by_size_system(db, start, end, filters)
+        data["coverage"] = get_sizing_coverage(db)
+
     if active_tab == "inventory":
         data["turnover"] = get_turnover(db, start, end)
         data["dead_stock"] = get_dead_stock(db, start, end)
@@ -182,8 +246,12 @@ async def admin_analytics(
         price_dist=data["price_dist"], margin_by_cat=data["margin_by_cat"],
         customer_health=data["customer_health"], payment_mix=data["payment_mix"],
         discounts=data["discounts"], heatmap=data["heatmap"],
-        staff=data["staff"],
+        staff=data["staff"], group_type=data["group_type"],
+        category_age=data["category_age"], returns_band=data["returns_band"],
+        system_mix=data["system_mix"],
     )
+    toggles = toggle_notes(
+        group_type=data["group_type"], category_age=data["category_age"])
 
     return templates.TemplateResponse(request, "admin/analytics.html", {
         "show_charts": True,
@@ -200,6 +268,15 @@ async def admin_analytics(
         "size_stats": data["size_stats"],
         "color_size_matrix": data["color_size_matrix"],
         "stock_by_band": data["stock_by_band"],
+        "group_type": data["group_type"],
+        "category_age": data["category_age"],
+        "category_size": data["category_size"],
+        "returns_band": data["returns_band"],
+        "system_mix": data["system_mix"],
+        "coverage": data["coverage"],
+        "filter_options": data["filter_options"],
+        "selected_filters": data["selected_filters"],
+        "toggle_notes": toggles,
         "inventory": data["inventory"],
         "abc_products": data["abc_products"],
         "sales_pattern": data["sales_pattern"],

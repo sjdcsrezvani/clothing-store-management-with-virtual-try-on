@@ -3,7 +3,9 @@
 Age is derived from the band, never from the raw tag. The enriched net line is
 the single source for the new category, type, group and system readings.
 """
+import re
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode
 
 import pytest
 
@@ -330,6 +332,61 @@ def test_system_mix_counts_sold_units_and_unknown(db_session):
 
     age_only = get_sales_by_size_system(db_session, start, end, {"systems": ["age"]})
     assert [row["key"] for row in age_only] == ["age"]
+
+
+def test_the_sizes_tab_renders_filters_charts_and_coverage(client, db_session, authed):
+    now, start, end = _window()
+    product = _product(db_session, "پیراهن دخترانه", category="پیراهن",
+                       gender="girl")
+    variant = _variant(db_session, product, "6-7", barcode="PAGE-ONE")
+    _sell(db_session, now, (product, variant))
+
+    page = client.get("/admin/analytics?tab=sizes&period=all").text
+    assert "دسته‌ها و سایز" in page
+    assert "پوشش سایز" in page
+    assert "دسته‌بندی × سایز" in page
+    assert "6-7 سال" in page
+    assert "پیراهن" in page
+    for host in ("groupTypeChart", "categoryAgeChart", "returnsBandChart",
+                 "systemMixChart"):
+        assert f'id="{host}"' in page
+        assert f'data-chart="{host}"' in page
+
+
+def test_size_filters_persist_as_multiple_checkboxes(client, db_session, authed):
+    _product(db_session, "پیراهن", category="پیراهن", gender="girl")
+    _product(db_session, "شلوار", category="شلوار", gender="boy")
+    db_session.commit()
+    query = urlencode([
+        ("tab", "sizes"), ("period", "all"),
+        ("category", "پیراهن"), ("category", "شلوار"), ("group", "girl"),
+    ])
+    page = client.get(f"/admin/analytics?{query}").text
+    checked = set(re.findall(
+        r'name="category" value="([^"]+)"[^>]*checked', page))
+    assert checked == {"پیراهن", "شلوار"}
+    assert re.search(r'name="group" value="girl"[^>]*checked', page)
+
+
+def test_chart_script_can_rerun_after_a_boosted_filter(client, db_session, authed):
+    """The filter form is htmx-boosted; the chart script must survive a second
+    evaluation instead of dying on a top-level `const` redeclaration."""
+    page = client.get("/admin/analytics?tab=sizes&period=all").text
+    assert "typeof Chart === 'undefined'" not in page
+    assert re.search(r"<script>\s*\(function \(\) \{\s*const dailyData", page)
+
+
+def test_coverage_card_names_products_without_a_system(client, db_session, authed):
+    _product(db_session, "بدون سیستم", category="تیشرت", system=None,
+             size_type=None)
+    unknown = _product(db_session, "ناقص", category="پیراهن", system="age")
+    _variant(db_session, unknown, "??", stock=4, barcode="PAGE-UNKNOWN")
+    db_session.commit()
+
+    page = client.get("/admin/analytics?tab=sizes&period=all").text
+    assert "پوشش سایز" in page
+    assert "بدون سیستم" in page
+    assert "تنوع بدون باند" in page
 
 
 def test_coverage_counts_active_products_and_variants(db_session):

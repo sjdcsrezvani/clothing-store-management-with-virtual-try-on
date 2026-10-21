@@ -53,6 +53,10 @@ CHART_IDS = (
     "discountChart",
     "heatChart",
     "staffChart",
+    "groupTypeChart",
+    "categoryAgeChart",
+    "returnsBandChart",
+    "systemMixChart",
 )
 
 
@@ -384,7 +388,9 @@ def chart_notes(*, price_stats=None, color_stats=None, size_stats=None, daily=No
                 categories=None, tier_revenue=None, revenue_trend=None,
                 sales_pattern=None, price_dist=None, margin_by_cat=None,
                 customer_health=None, payment_mix=None, discounts=None,
-                heatmap=None, staff=None, span: str = DEFAULT_SPAN) -> dict[str, str]:
+                heatmap=None, staff=None, group_type=None, category_age=None,
+                returns_band=None, system_mix=None,
+                span: str = DEFAULT_SPAN) -> dict[str, str]:
     """One sentence per chart, keyed by the canvas it belongs to.
 
     Every argument is optional and any of them may be empty: an owner looking at a
@@ -413,6 +419,9 @@ def chart_notes(*, price_stats=None, color_stats=None, size_stats=None, daily=No
         "heatChart": _heat(heatmap),
         "staffChart": _staff(staff, span),
     }
+    notes.update(category_chart_notes(
+        group_type=group_type, category_age=category_age,
+        returns_band=returns_band, system_mix=system_mix, span=span))
     if span != DEFAULT_SPAN:
         # A reader with no charts in front of them is not reading about «این
         # بازه»: the empty sentence is rewritten to name their period too.

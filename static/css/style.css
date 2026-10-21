@@ -4276,3 +4276,85 @@ html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
 .gen-track { width: min(420px, 80vw); height: 10px; border-radius: 6px; background: color-mix(in srgb, var(--scrim-text) 15%, transparent); overflow: hidden; }
 .gen-bar { width: 10%; height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--candy), var(--lavender), var(--sky)); background-size: 200% 100%; animation: gen-shine 1.6s linear infinite; transition: width .8s ease; }
 .gen-note { color: color-mix(in srgb, var(--scrim-text) 60%, transparent); font-size: 0.85rem; }
+
+/* ===================== Analytics: categories and sizes tab ===================== */
+.filter-panels {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+    gap: 0.55rem;
+    align-items: start;
+}
+.filter-panel {
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    background: var(--surface-soft);
+    overflow: hidden;
+}
+.filter-panel summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+    min-height: 44px;
+    padding: 0.45rem 0.65rem;
+    font-weight: 600;
+    font-size: 0.82rem;
+}
+.filter-panel summary::-webkit-details-marker { display: none; }
+.filter-panel[open] summary { border-bottom: 1px solid var(--rule); }
+.filter-count {
+    min-width: 1.35rem;
+    padding: 0.05rem 0.35rem;
+    border-radius: 999px;
+    background: var(--brand-fill);
+    color: var(--brand-label);
+    font-size: 0.7rem;
+    text-align: center;
+}
+.filter-panel-body {
+    display: grid;
+    gap: 0.25rem;
+    padding: 0.5rem 0.65rem 0.6rem;
+    max-height: 220px;
+    overflow: auto;
+}
+.filter-check {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    cursor: pointer;
+}
+.filter-check input { flex: 0 0 auto; }
+.filter-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.65rem;
+}
+.compact-tools { margin: 0.15rem 0 0.35rem; }
+.coverage-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+    gap: 0.55rem;
+    margin: 0.65rem 0;
+}
+.coverage-stat {
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    background: var(--surface-soft);
+    padding: 0.55rem 0.65rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    font-size: 0.8rem;
+}
+.coverage-stat b { font-size: 1rem; }
+@media (max-width: 640px) {
+    .filter-panels { grid-template-columns: 1fr; }
+    .filter-panel-body { max-height: 180px; }
+}
