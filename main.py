@@ -385,6 +385,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="سیستم فروش", lifespan=lifespan)
 
+
+@app.get("/health", include_in_schema=False)
+async def health():
+    """Liveness probe for the process manager; deliberately no database work."""
+    return {"status": "ok"}
+
+
 # Middleware order matters: SessionMiddleware must run OUTSIDE CSRFMiddleware so
 # the session (and its CSRF token) is available when CSRF validates. Starlette
 # wraps in reverse order of add_middleware, so CSRF is added first.
