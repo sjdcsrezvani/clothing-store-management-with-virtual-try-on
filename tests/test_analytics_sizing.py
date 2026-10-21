@@ -84,7 +84,7 @@ def _window():
 
 def test_one_band_is_one_row_across_tag_systems(client, db_session, authed):
     now, start, end = _window()
-    age = _product(db_session, "پیراهن سنی", "age")
+    age = _product(db_session, "پیراهن سنی", "age", gender="girl")
     iran = _product(db_session, "پیراهن ایرانی", "iran")
     v_age = _variant(db_session, age, "6-7", barcode="AN-AGE")
     v_iran = _variant(db_session, iran, "50", barcode="AN-IRAN")
@@ -99,6 +99,8 @@ def test_one_band_is_one_row_across_tag_systems(client, db_session, authed):
 
     top = get_top_selling_variants(db_session, start, end)
     assert {row["size"] for row in top} == {"6-7 سال"}
+    assert {row["group"] for row in top} == {"دخترانه", "نامشخص"}
+    assert {row["type"] for row in top} == {"بالاتنه"}
 
     stock = get_stock_by_band(db_session)
     assert stock[0]["size"] == "6-7 سال"
@@ -115,14 +117,27 @@ def test_one_band_is_one_row_across_tag_systems(client, db_session, authed):
     assert {row["size"] for row in get_turnover(db_session, start, end)["rows"]} == {"قد 116 تا 122"}
 
     # Dead stock and returns use the same label as the sold rows.
-    dead_product = _product(db_session, "پیراهن بدون فروش", "age")
+    dead_product = _product(db_session, "پیراهن بدون فروش", "age", gender="boy")
     _variant(db_session, dead_product, "8", stock=2, barcode="AN-DEAD")
     dead = get_dead_stock(db_session, start, end)
     assert dead["variants"][0]["size"] == "قد 128 تا 134"
+    assert (dead["variants"][0]["group"], dead["variants"][0]["type"]) == ("پسرانه", "بالاتنه")
 
     _sell(db_session, now, (age, v_age), refunded=True)
     returns = get_returns(db_session, start, end)
     assert returns["variants"][0]["size"] == "قد 116 تا 122"
+    assert (returns["variants"][0]["group"], returns["variants"][0]["type"]) == ("دخترانه", "بالاتنه")
+
+    # The same combination reaches the three existing tables.
+    product_page = client.get("/admin/analytics?tab=product&period=all").text
+    assert "گروه / نوع" in product_page
+    assert "دخترانه / بالاتنه" in product_page
+    inventory_page = client.get("/admin/analytics?tab=inventory&period=all").text
+    assert "گروه / نوع" in inventory_page
+    assert "پسرانه / بالاتنه" in inventory_page
+    sales_page = client.get("/admin/analytics?tab=sales&period=all").text
+    assert "گروه / نوع" in sales_page
+    assert "دخترانه / بالاتنه" in sales_page
 
 
 def test_adult_and_kids_read_their_own_units(client, db_session, authed):

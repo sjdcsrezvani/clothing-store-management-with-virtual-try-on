@@ -684,6 +684,13 @@ def _category_key(category) -> str:
     return "none" if cleaned == "بدون دسته" else cleaned
 
 
+def _group_type_fields(product) -> dict:
+    return {
+        "group": GENDER_LABELS.get(getattr(product, "gender", None), "نامشخص"),
+        "type": SIZE_TYPES.get(getattr(product, "size_type", None), "نامشخص"),
+    }
+
+
 def _line_size_label(line, standard, adult_standard):
     """The display label and the band's sort key, never the raw tag for no band."""
     band = line.get("band")
@@ -1378,6 +1385,7 @@ def get_dead_stock(db, start, end, days_threshold=90, standard=None, adult_stand
                 "stock": v.stock_quantity,
                 "value": v.cost_price * v.stock_quantity,
                 "retail": v.price * v.stock_quantity,
+                **_group_type_fields(v.product),
             })
     dead.sort(key=lambda x: x["value"], reverse=True)
     total_dead_value = sum(d["value"] for d in dead)
@@ -1436,6 +1444,7 @@ def get_top_selling_variants(db, start, end, limit=10, standard=None, adult_stan
         "color": variant.color or "",
         "qty": qty or 0,
         "revenue": revenue or 0,
+        **_group_type_fields(variant.product),
         } for variant, qty, revenue in rows]
 
 
@@ -1623,7 +1632,8 @@ def get_returns(db, start, end, limit=10, standard=None, adult_standard=None) ->
         "variants": [{"name": variant.product.name if variant.product else "—",
                       "size": variant_size_display(variant, standard, adult_standard=adult_standard),
                       "color": variant.color or "",
-                      "qty": qty or 0, "amount": amount or 0}
+                      "qty": qty or 0, "amount": amount or 0,
+                      **_group_type_fields(variant.product)}
                      for variant, qty, amount in items],
         "reasons": [{"reason": reason or "بدون دلیل", "count": count}
                     for reason, count in reasons],

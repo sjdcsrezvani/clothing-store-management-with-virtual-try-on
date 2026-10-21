@@ -148,14 +148,16 @@
     <div class="card">
         <h3>مرجوعی‌ها <span class="tip-icon" tabindex="0" role="button" data-tip="کدام تنوع‌ها برمی‌گردند و با چه دلیلی. تکرار یک دلیل یعنی مشکلی در خرید یا معرفی کالا.">?</span></h3>
         {% if returns.variants %}
+        <div class="table-scroll">
         <table class="data-table">
-            <thead><tr><th>کالا</th><th>تعداد</th><th>مبلغ</th></tr></thead>
+            <thead><tr><th>کالا</th><th>گروه / نوع</th><th>تعداد</th><th>مبلغ</th></tr></thead>
             <tbody>
             {% for v in returns.variants %}
-                <tr><td>{{ v.name }}{% if v.size or v.color %} <small class="muted">{{ v.size }} {{ v.color }}</small>{% endif %}</td><td class="tnum">{{ v.qty }}</td><td class="tnum">{{ fmt(v.amount) }} تومان</td></tr>
+                <tr><td>{{ v.name }}{% if v.size or v.color %} <small class="muted">{{ v.size }} {{ v.color }}</small>{% endif %}</td><td>{{ v.group }} / {{ v.type }}</td><td class="tnum">{{ v.qty }}</td><td class="tnum">{{ fmt(v.amount) }} تومان</td></tr>
             {% endfor %}
             </tbody>
         </table>
+        </div>
         {% else %}<p class="muted">در این بازه مرجوعی ثبت نشده.</p>{% endif %}
         {% if returns.reasons %}
         <div class="kv-divider">
@@ -266,14 +268,16 @@
 <div class="tables-grid">
     <div class="card">
         <h3>پرفروش‌ترین واریانت‌ها <span class="tip-icon" tabindex="0" role="button" data-tip="پرفروش‌ترین ترکیب‌های مشخص محصول + سایز + رنگ. این‌ها اقلامی هستند که واقعاً از قفسه پرواز می‌کنند — سفارش مجدد آن‌ها اولویت اول است.">?</span></h3>
+        <div class="table-scroll">
         <table class="data-table">
-            <thead><tr><th>نام</th><th>سایز</th><th>رنگ</th><th>تعداد</th><th>فروش</th></tr></thead>
+            <thead><tr><th>نام</th><th>گروه / نوع</th><th>سایز</th><th>رنگ</th><th>تعداد</th><th>فروش</th></tr></thead>
             <tbody>
             {% for v in top_variants %}
-                <tr><td>{{ v.name }}</td><td>{{ v.size }}</td><td>{{ v.color }}</td><td class="tnum">{{ v.qty }}</td><td class="tnum">{{ fmt(v.revenue) }}</td></tr>
+                <tr><td>{{ v.name }}</td><td>{{ v.group }} / {{ v.type }}</td><td>{{ v.size }}</td><td>{{ v.color }}</td><td class="tnum">{{ v.qty }}</td><td class="tnum">{{ fmt(v.revenue) }}</td></tr>
             {% endfor %}
             </tbody>
         </table>
+        </div>
     </div>
 </div>
 </section>
@@ -476,14 +480,16 @@
         <h3>کالای مرده (بدون فروش در این دوره) <span class="tip-icon" tabindex="0" role="button" data-tip="اقلامی که در این بازه هیچ فروشی نداشته‌اند ولی هنوز در انبار هستند. سرمایه شما را بی‌استفاده نگه داشته‌اند. راه‌حل: تخفیف ویژه، بسته‌بندی مجدد، یا حذف از مجموعه.">?</span></h3>
         <p class="fine-print">ارزش کل: <b>{{ fmt(dead_stock.total_value) }} تومان</b> — {{ dead_stock.count }} قلم</p>
         {% if dead_stock.variants %}
+        <div class="table-scroll">
         <table class="data-table">
-            <thead><tr><th>نام</th><th>سایز</th><th>رنگ</th><th>موجودی</th><th>ارزش</th></tr></thead>
+            <thead><tr><th>نام</th><th>گروه / نوع</th><th>سایز</th><th>رنگ</th><th>موجودی</th><th>ارزش</th></tr></thead>
             <tbody>
             {% for d in dead_stock.variants[:10] %}
-                <tr><td><a href="/admin/products/{{ d.product_id }}">{{ d.name }}</a></td><td>{{ d.size }}</td><td>{{ d.color }}</td><td class="tnum">{{ d.stock }}</td><td class="tnum">{{ fmt(d.value) }} تومان</td></tr>
+                <tr><td><a href="/admin/products/{{ d.product_id }}">{{ d.name }}</a></td><td>{{ d.group }} / {{ d.type }}</td><td>{{ d.size }}</td><td>{{ d.color }}</td><td class="tnum">{{ d.stock }}</td><td class="tnum">{{ fmt(d.value) }} تومان</td></tr>
             {% endfor %}
             </tbody>
         </table>
+        </div>
         {% else %}<p class="muted">همه اقلام فروش داشته‌اند.</p>{% endif %}
     </div>
 </div>
