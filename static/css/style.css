@@ -2452,6 +2452,13 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 /* Form-level refusal: names the problem above the note, never a popup. */
 .form-error { padding: 0.6rem 0.85rem; background: var(--danger-bg); color: var(--link-hover); border-radius: var(--radius-sm); font-size: 0.86rem; font-weight: 700; }
 .form-error[hidden] { display: none; }
+.product-form-error { margin: 0 0 1rem; }
+.form-group .field-error { display: block; margin-top: 0.3rem; color: var(--link-hover); font-size: 0.78rem; font-weight: 700; }
+input.is-invalid, select.is-invalid, textarea.is-invalid { border-color: var(--danger); }
+input.is-invalid:focus, select.is-invalid:focus, textarea.is-invalid:focus {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 20%, transparent);
+}
 @media (prefers-reduced-motion: reduce) {
   .purchase-item-row.is-flash { animation: none; }
 }

@@ -165,6 +165,26 @@ def test_product_form_variant_script_survives_a_boosted_return():
     assert "window.toEnglishDigits" in page
 
 
+def test_product_form_validates_required_fields_in_the_page():
+    page = (ROOT / "templates/admin/product_form.html").read_text()
+    css = (ROOT / "static/css/style.css").read_text()
+    js = (ROOT / "static/js/app.js").read_text()
+    # Native browser bubbles are English and can point at a folded variant row;
+    # the form answers beside the field and opens the row it names.
+    assert "novalidate" in page
+    assert 'id="product-form-error"' in page
+    assert 'id="add-variant-btn"' in page
+    assert "classList.add('is-invalid')" in page
+    assert "setEntryOpen(entry, true)" in page
+    assert ".form-group .field-error" in css
+    # The shell boosts every form, so a boosted submit sends its own request:
+    # the flight itself has to be stopped, not just the submit event.
+    assert "htmx:beforeRequest" in page
+    # A refused submit must leave the button usable — a locked button after a
+    # validation refusal is how a shop loses the sale.
+    assert "event.defaultPrevented" in js
+
+
 def test_variant_capsule_is_a_designed_component():
     form = (ROOT / "templates/admin/product_form.html").read_text()
     css = (ROOT / "static/css/style.css").read_text()

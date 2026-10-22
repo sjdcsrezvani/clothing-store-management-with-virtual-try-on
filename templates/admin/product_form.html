@@ -14,7 +14,7 @@
 
 {% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
 
-<form id="product-form" method="post" action="{% if edit_mode %}/admin/products/{{ product.id }}{% else %}/admin/products/add{% endif %}" enctype="multipart/form-data">
+<form id="product-form" method="post" action="{% if edit_mode %}/admin/products/{{ product.id }}{% else %}/admin/products/add{% endif %}" enctype="multipart/form-data" novalidate>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     {% if edit_mode %}<input type="hidden" name="next" value="{{ return_to or '' }}">{% endif %}
     <section class="card catalog-section">
@@ -204,7 +204,8 @@
             <span class="section-step">{% if edit_mode %}۳{% else %}۲{% endif %}</span>
         </div>
         <div id="variants-container"></div>
-        <button type="button" class="btn btn-ghost" onclick="addVariant()">افزودن تنوع</button>
+        <button type="button" class="btn btn-ghost" id="add-variant-btn" onclick="addVariant()">افزودن تنوع</button>
+        <p class="form-error product-form-error" id="product-form-error" role="alert" hidden></p>
         <div class="form-actions-row product-form-actions">
             <button type="submit" class="btn btn-primary btn-large">{% if edit_mode %}ذخیره تغییرات{% else %}ثبت محصول{% endif %}</button>
             <a href="{{ return_to or '/admin/products' }}" class="btn btn-ghost">لغو</a>
@@ -447,6 +448,153 @@ if (document.readyState === 'loading') {
     }
     category.addEventListener('change', suggest);
     category.addEventListener('blur', suggest);
+})();
+
+// Required fields: answer in the page, not with the browser's English bubble.
+// The row is opened when its price is the missing field; the first problem is
+// focused after the summary appears beside the submit button.
+(function () {
+    var form = document.getElementById('product-form');
+    if (!form || form.dataset.validationBound) return;
+    form.dataset.validationBound = 'true';
+    var summary = document.getElementById('product-form-error');
+    var addButton = document.getElementById('add-variant-btn');
+    var errorSeq = 0;
+
+    function hasVariants() {
+        return !!(container && container.querySelector('.variant-entry'));
+    }
+
+    function errorId(field) {
+        if (!field.dataset.errorId) {
+            errorSeq += 1;
+            field.dataset.errorId = 'product-field-error-' + errorSeq;
+        }
+        return field.dataset.errorId;
+    }
+
+    function fieldName(field) {
+        var group = field.closest('.form-group');
+        var label = group ? group.querySelector('label') : null;
+        if (!label) return '';
+        return label.textContent.replace(/\*/g, '').replace(/\s+/g, ' ').trim();
+    }
+
+    function showFieldError(field) {
+        var group = field.closest('.form-group');
+        if (!group) return;
+        var id = errorId(field);
+        var message = document.getElementById(id);
+        if (!message) {
+            message = document.createElement('small');
+            message.className = 'field-error';
+            message.id = id;
+            message.setAttribute('data-for', field.name || '');
+            field.insertAdjacentElement('afterend', message);
+        }
+        var name = fieldName(field);
+        message.textContent = name ? name + ' را وارد کنید.' : 'این فیلد الزامی است.';
+        field.classList.add('is-invalid');
+        field.setAttribute('aria-invalid', 'true');
+        var described = (field.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+        if (described.indexOf(id) === -1) described.push(id);
+        field.setAttribute('aria-describedby', described.join(' '));
+    }
+
+    function clearFieldError(field) {
+        field.classList.remove('is-invalid');
+        field.removeAttribute('aria-invalid');
+        var id = field.dataset.errorId;
+        if (!id) return;
+        var message = document.getElementById(id);
+        if (message) message.remove();
+        var described = (field.getAttribute('aria-describedby') || '').split(/\s+/)
+            .filter(Boolean).filter(function (value) { return value !== id; });
+        if (described.length) field.setAttribute('aria-describedby', described.join(' '));
+        else field.removeAttribute('aria-describedby');
+    }
+
+    function validateFields() {
+        var invalid = [];
+        var fields = form.querySelectorAll('input[required], select[required], textarea[required]');
+        Array.prototype.forEach.call(fields, function (field) {
+            if (field.disabled || field.type === 'hidden') return;
+            if (field.closest('[hidden]')) return;
+            if (!String(field.value || '').trim()) {
+                showFieldError(field);
+                invalid.push(field);
+            } else {
+                clearFieldError(field);
+            }
+        });
+        return invalid;
+    }
+
+    function showSummary(text) {
+        if (!summary) return;
+        summary.textContent = text;
+        summary.hidden = false;
+    }
+
+    function hideSummary() {
+        if (summary) summary.hidden = true;
+    }
+
+    function focusField(field) {
+        var entry = field.closest('.variant-entry');
+        if (entry) setEntryOpen(entry, true);
+        window.requestAnimationFrame(function () {
+            try { field.focus({ preventScroll: true }); } catch (error) { field.focus(); }
+            if (field.scrollIntoView) field.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        });
+    }
+
+    function reportProblems(invalid) {
+        var missingVariant = !hasVariants();
+        if (!invalid.length && !missingVariant) {
+            hideSummary();
+            return false;
+        }
+        var parts = [];
+        if (missingVariant) parts.push('حداقل یک تنوع اضافه کنید.');
+        if (invalid.length === 1) parts.push('یک فیلد الزامی را کامل کنید.');
+        else if (invalid.length > 1) parts.push(invalid.length + ' فیلد الزامی را کامل کنید.');
+        showSummary(parts.join(' '));
+        if (invalid.length) {
+            focusField(invalid[0]);
+        } else if (addButton) {
+            addButton.focus();
+            if (addButton.scrollIntoView) addButton.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+        return true;
+    }
+
+    form.addEventListener('submit', function (event) {
+        if (reportProblems(validateFields())) event.preventDefault();
+    });
+
+    // The shell boosts every form, and a boosted submit sends its own
+    // request: cancelling the submit event is not enough, the flight itself
+    // has to be stopped before it leaves the shop.
+    form.addEventListener('htmx:beforeRequest', function (event) {
+        if (!event.detail || event.detail.elt !== form) return;
+        if (reportProblems(validateFields())) event.preventDefault();
+    });
+
+    function clearOnEdit(event) {
+        var field = event.target;
+        if (!field.matches || !field.matches('input, select, textarea')) return;
+        if (field.classList.contains('is-invalid')) clearFieldError(field);
+        if (summary && !summary.hidden && !form.querySelector('.is-invalid')) hideSummary();
+    }
+    form.addEventListener('input', clearOnEdit);
+    form.addEventListener('change', clearOnEdit);
+    if (addButton) addButton.addEventListener('click', hideSummary);
+    if (container) {
+        container.addEventListener('click', function (event) {
+            if (event.target.closest && event.target.closest('.variant-remove')) hideSummary();
+        });
+    }
 })();
 
 // The demand button is htmx: the hidden form posts itself, htmx swaps the

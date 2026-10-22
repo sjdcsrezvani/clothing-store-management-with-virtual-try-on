@@ -34,7 +34,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.querySelectorAll('form').forEach(form => {
-        form.addEventListener('submit', () => {
+        form.addEventListener('submit', (event) => {
+            // A form another handler refused owns its own button: locking it
+            // after a validation refusal leaves the shop unable to try again.
+            if (event.defaultPrevented) return;
             const submit = form.querySelector('button[type="submit"]');
             if (!submit || submit.dataset.allowRepeat === 'true') return;
             submit.disabled = true;
