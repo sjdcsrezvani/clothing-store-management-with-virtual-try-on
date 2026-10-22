@@ -9,6 +9,9 @@ inside a region and any control that leaves the page never swap, the veil is
 worn while rows fly, and focus lands on the marked heading after the swap.
 """
 from pathlib import Path
+import json
+import shutil
+import subprocess
 
 import pytest
 
@@ -183,3 +186,54 @@ def test_same_path_links_are_swappable_and_escapes_are_not():
     html = (ROOT / "templates/admin/products.html").read_text()
     assert "/admin/products/{{ product.id }}" in html  # edit leaves the page
     assert "/admin/products/export?" in html  # the CSV is a download, not rows
+
+
+SHELL_BOOT_HARNESS = r"""
+const fs = require('fs');
+const vm = require('vm');
+
+const listeners = { document: [], body: [] };
+const doc = {
+    body: null,
+    addEventListener: (type, handler) => listeners.document.push([type, handler]),
+    querySelector: () => null,
+};
+const sandbox = {
+    document: doc,
+    window: { location: { href: 'http://shop/', assign: () => {} } },
+    EventTarget, Map, URL, console,
+};
+vm.createContext(sandbox);
+// The head pass, with no body on the document, exactly as the browser runs it.
+vm.runInContext(fs.readFileSync(process.argv[2], 'utf8'), sandbox);
+
+const before = listeners.body.length;
+// The body arrives; the shell's page-level listeners land now.
+doc.body = { addEventListener: (type, handler) => listeners.body.push([type, handler]) };
+listeners.document
+    .filter(([type]) => type === 'DOMContentLoaded')
+    .forEach(([, handler]) => handler());
+console.log(JSON.stringify({
+    before,
+    after: listeners.body.map(([type]) => type),
+}));
+"""
+
+
+@pytest.mark.skipif(shutil.which("node") is None,
+                    reason="a JavaScript engine is needed to boot the shell")
+def test_the_shell_binds_its_body_bridge_after_the_body_exists(tmp_path):
+    """The shell loads in <head>, where document.body is null. Binding it
+    there threw, and every list page lost the bridge: a «ویرایش» click (or any
+    row control that leaves the page) pushed the URL and swapped nothing."""
+    script = tmp_path / "shell_boot.js"
+    script.write_text(SHELL_BOOT_HARNESS, encoding="utf-8")
+    result = subprocess.run(
+        [shutil.which("node"), str(script), str(ROOT / "static/js/htmx-shell.js")],
+        capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    out = json.loads(result.stdout)
+    assert out["before"] == 0
+    assert "htmx:configRequest" in out["after"]
+    assert "htmx:beforeRequest" in out["after"]
+    assert "htmx:load" in out["after"]

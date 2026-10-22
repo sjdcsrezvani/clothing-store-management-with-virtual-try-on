@@ -101,58 +101,66 @@
        here — a control that leaves the page keeps navigating fully, a POST
        never swaps, the region wears its veil while its rows fly, focus lands
        on the marked heading after the swap, and the scroll never moves. */
-    document.body.addEventListener('htmx:configRequest', function (event) {
-        var elt = event.detail.elt;
-        if (!elt || !elt.closest || !elt.closest('[data-list-region]')) return;
-        var isGet = (event.detail.verb || 'get').toLowerCase() === 'get';
-        var target = null;
-        try {
-            target = new URL(event.detail.path, window.location.href);
-        } catch (error) {
-            return;
-        }
-        if (isGet && target.pathname === window.location.pathname) return;
-        event.preventDefault();
-        if (isGet) window.location.assign(target.href);
-        else elt.submit(); // a POST inside a region acts like it always did
-    });
+    function bindBody() {
+        document.body.addEventListener('htmx:configRequest', function (event) {
+            var elt = event.detail.elt;
+            if (!elt || !elt.closest || !elt.closest('[data-list-region]')) return;
+            var isGet = (event.detail.verb || 'get').toLowerCase() === 'get';
+            var target = null;
+            try {
+                target = new URL(event.detail.path, window.location.href);
+            } catch (error) {
+                return;
+            }
+            if (isGet && target.pathname === window.location.pathname) return;
+            event.preventDefault();
+            if (isGet) window.location.assign(target.href);
+            else elt.submit(); // a POST inside a region acts like it always did
+        });
 
-    document.body.addEventListener('htmx:beforeRequest', function (event) {
-        var elt = event.detail && event.detail.elt;
-        var region = elt && elt.closest ? elt.closest('[data-list-region]') : null;
-        if (!region) return;
-        if (region.getAttribute('aria-busy') === 'true') {
-            event.preventDefault(); // one flight per region, as before
-            return;
-        }
-        region.classList.add('is-loading');
-        region.setAttribute('aria-busy', 'true');
-    });
+        document.body.addEventListener('htmx:beforeRequest', function (event) {
+            var elt = event.detail && event.detail.elt;
+            var region = elt && elt.closest ? elt.closest('[data-list-region]') : null;
+            if (!region) return;
+            if (region.getAttribute('aria-busy') === 'true') {
+                event.preventDefault(); // one flight per region, as before
+                return;
+            }
+            region.classList.add('is-loading');
+            region.setAttribute('aria-busy', 'true');
+        });
 
-    // The swap itself replaces the region node, veil and all; these only lift
-    // it off a region that survived a flight which did not swap.
-    var liftVeil = function (event) {
-        var elt = event.detail && event.detail.elt;
-        var region = elt && elt.closest ? elt.closest('[data-list-region]') : null;
-        if (region) {
-            region.classList.remove('is-loading');
-            region.removeAttribute('aria-busy');
-        }
-    };
-    document.body.addEventListener('htmx:responseError', liftVeil);
-    document.body.addEventListener('htmx:sendError', liftVeil);
+        // The swap itself replaces the region node, veil and all; these only
+        // lift it off a region that survived a flight which did not swap.
+        var liftVeil = function (event) {
+            var elt = event.detail && event.detail.elt;
+            var region = elt && elt.closest ? elt.closest('[data-list-region]') : null;
+            if (region) {
+                region.classList.remove('is-loading');
+                region.removeAttribute('aria-busy');
+            }
+        };
+        document.body.addEventListener('htmx:responseError', liftVeil);
+        document.body.addEventListener('htmx:sendError', liftVeil);
 
-    document.body.addEventListener('htmx:load', function (event) {
-        // A boosted nav answers with the server's flash row inside the new
-        // body; the toaster already adopts those on a real load — adopt here.
-        if (window.RaykidToast && window.RaykidToast.adopt) window.RaykidToast.adopt();
-        var node = event.target;
-        var region = node && node.matches ? node.closest('[data-list-region]') : null;
-        if (!region) return;
-        var head = region.querySelector('[data-list-heading]') || region;
-        if (head === region && !region.hasAttribute('tabindex')) {
-            region.setAttribute('tabindex', '-1');
-        }
-        head.focus({ preventScroll: true });
-    });
+        document.body.addEventListener('htmx:load', function (event) {
+            // A boosted nav answers with the server's flash row inside the new
+            // body; the toaster already adopts those on a real load — adopt here.
+            if (window.RaykidToast && window.RaykidToast.adopt) window.RaykidToast.adopt();
+            var node = event.target;
+            var region = node && node.matches ? node.closest('[data-list-region]') : null;
+            if (!region) return;
+            var head = region.querySelector('[data-list-heading]') || region;
+            if (head === region && !region.hasAttribute('tabindex')) {
+                region.setAttribute('tabindex', '-1');
+            }
+            head.focus({ preventScroll: true });
+        });
+    }
+
+    // This file loads in <head>, where the body does not exist yet. Binding
+    // it there threw and every page lost the bridge above: a «ویرایش» click
+    // inside a list region pushed the URL and swapped nothing.
+    if (document.body) bindBody();
+    else document.addEventListener('DOMContentLoaded', bindBody);
 })();
