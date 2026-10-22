@@ -196,7 +196,10 @@ async def admin_login(request: Request, username: str = Form("owner"), password:
         log_action(db, "login", "ورود موفق", request=request, target_type="staff_user", target_id=user.id)
         # The till for a cashier, the dashboard for everyone above them. Sending
         # everybody to /admin meant a cashier's first page was a refusal.
-        return RedirectResponse(url=home_for(user.role), status_code=303)
+        target = home_for(user.role)
+        if target == "/admin":
+            target = "/admin/"  # skip the trailing-slash redirect on login
+        return RedirectResponse(url=target, status_code=303)
     login_failure(request)
     log_action(db, "login_failed", "رمز عبور اشتباه", request=request)
     return templates.TemplateResponse(request, "admin/login.html", {"error": "رمز عبور اشتباه است", "username": username, "store_logo": _login_logo(db)})

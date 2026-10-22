@@ -510,7 +510,7 @@ def test_a_login_lands_on_a_page_that_role_can_open(client, db_session, role, ex
     }, follow_redirects=False)
 
     assert response.status_code == 303
-    assert response.headers["location"] == expected
+    assert response.headers["location"].rstrip("/") == expected
     assert home_for(role) == expected
     assert client.get(expected).status_code == 200
 

@@ -20,7 +20,7 @@ def test_login_correct_password_grants_access(client):
     token = csrf_token(client)
     resp = client.post("/admin/login", data={"username": "owner", "password": "test-admin-pass", "csrf_token": token}, follow_redirects=False)
     assert resp.status_code == 303
-    assert resp.headers["location"].endswith("/admin")
+    assert resp.headers["location"].endswith("/admin/")
     resp = client.get("/admin")
     assert resp.status_code == 200
     # The dashboard's own name, from the same registry the topbar draws its
