@@ -32,10 +32,7 @@
             <div class="form-group"><span class="field-label">بارکد</span><span class="barcode-record tnum" dir="ltr">{{ variant.barcode }}</span><small class="field-help">بعد از ساخت قفل است؛ برای لیبل آسیب‌دیده «تولید مجدد» بزنید.</small></div>
         </div>
         <div class="form-actions-row">
-            <form method="post" action="/admin/variants/{{ variant.id }}/regenerate-barcode" onsubmit="return confirm('بارکد تازه ساخته می‌شود و بارکد فعلی روی تگ‌های چاپ‌شده بی‌اعتبار می‌گردد. ادامه؟')">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <button type="submit" class="btn btn-sm btn-ghost">تولید مجدد بارکد</button>
-            </form>
+            <button type="submit" form="regenerate-barcode-form" class="btn btn-sm btn-ghost">تولید مجدد بارکد</button>
         </div>
 
         <div class="section-heading-row section-heading-spaced"><div><h3>موجودی و سفارش</h3><p class="muted">رزرو فعلی: <strong>{{ variant.reserved_quantity or 0 }}</strong> عدد · قابل فروش: <strong>{{ variant.available_quantity }}</strong> عدد</p></div><span class="section-step">۲</span></div>
@@ -68,15 +65,9 @@
                 {% if loop.first %}<span class="badge badge-info">اصلی</span>{% endif %}
                 <span class="variant-gallery-actions">
                     {% if not loop.first %}
-                    <form method="post" action="/admin/variant-images/{{ frame.id }}/primary">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                        <button type="submit" class="btn btn-sm btn-ghost">اصلی شود</button>
-                    </form>
+                    <button type="submit" form="variant-image-primary-{{ frame.id }}" class="btn btn-sm btn-ghost">اصلی شود</button>
                     {% endif %}
-                    <form method="post" action="/admin/variant-images/{{ frame.id }}/delete" onsubmit="return confirm('این قاب حذف شود؟')">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                        <button type="submit" class="btn btn-sm btn-danger-quiet">حذف</button>
-                    </form>
+                    <button type="submit" form="variant-image-delete-{{ frame.id }}" class="btn btn-sm btn-danger-quiet">حذف</button>
                 </span>
             </li>
             {% endfor %}
@@ -88,6 +79,24 @@
         </div>
     </form>
 </section>
+
+{# Row actions live outside the main form: a form nested inside a form is not
+   a form — the parser drops the inner tag and the first inner `</form>`
+   closes the outer one, leaving «ذخیره تغییرات» outside with nothing to
+   submit. Each button points at its own form by id. #}
+<div hidden>
+    <form id="regenerate-barcode-form" method="post" action="/admin/variants/{{ variant.id }}/regenerate-barcode" onsubmit="return confirm('بارکد تازه ساخته می‌شود و بارکد فعلی روی تگ‌های چاپ‌شده بی‌اعتبار می‌گردد. ادامه؟')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    </form>
+    {% for frame in variant.images|sort(attribute='sort_order') %}
+    <form id="variant-image-primary-{{ frame.id }}" method="post" action="/admin/variant-images/{{ frame.id }}/primary">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    </form>
+    <form id="variant-image-delete-{{ frame.id }}" method="post" action="/admin/variant-images/{{ frame.id }}/delete" onsubmit="return confirm('این قاب حذف شود؟')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    </form>
+    {% endfor %}
+</div>
 
 <aside class="variant-edit-side">
     <section class="card variant-summary-card">

@@ -258,6 +258,25 @@ def test_the_reorder_quantity_is_gone():
     assert "نقطه سفارش" in product_form
 
 
+def test_variant_edit_form_owns_its_save_button():
+    """A form cannot nest: the parser drops the inner <form> and the first
+    inner </form> shuts the outer form early — «ذخیره تغییرات» would sit
+    outside with nothing to submit. Row actions keep their own forms outside
+    the main one and reach them by id, so the save keeps its fields."""
+    page = (ROOT / "templates/admin/variant_form.html").read_text()
+    start = page.index('<form method="post" action="/admin/variants/{{ variant.id }}"')
+    end = page.index("</form>", start)
+    main = page[start:end]
+    assert main.count("<form") == 1  # nothing opens inside the main form
+    assert "ذخیره تغییرات" in main
+    assert "stock_quantity" in main
+    for form_id in ("regenerate-barcode-form",
+                    "variant-image-primary-{{ frame.id }}",
+                    "variant-image-delete-{{ frame.id }}"):
+        assert f'id="{form_id}"' in page
+        assert f'form="{form_id}"' in page
+
+
 def test_variant_capsule_is_a_designed_component():
     form = (ROOT / "templates/admin/product_form.html").read_text()
     css = (ROOT / "static/css/style.css").read_text()
