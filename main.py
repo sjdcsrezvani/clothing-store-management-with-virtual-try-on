@@ -392,6 +392,13 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/v1/models", include_in_schema=False)
+async def model_discovery_probe():
+    """Local AI clients probe this as if we were an OpenAI server. We serve no
+    models; an empty list is the truthful answer and stops the 404 noise."""
+    return {"object": "list", "data": []}
+
+
 # Middleware order matters: SessionMiddleware must run OUTSIDE CSRFMiddleware so
 # the session (and its CSRF token) is available when CSRF validates. Starlette
 # wraps in reverse order of add_middleware, so CSRF is added first.

@@ -6,3 +6,10 @@ def test_health_is_a_public_liveness_probe(client):
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_model_discovery_probe_answers_without_models(client):
+    response = client.get("/v1/models")
+
+    assert response.status_code == 200
+    assert response.json() == {"object": "list", "data": []}
