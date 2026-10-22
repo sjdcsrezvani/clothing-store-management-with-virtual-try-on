@@ -2236,6 +2236,24 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .advanced-fields > summary { cursor: pointer; font-weight: 800; color: var(--link); width: fit-content; }
 .advanced-fields > summary small { color: var(--ink-soft); font-weight: 400; }
 .advanced-fields .form-row { margin-top: 0.9rem; }
+/* The size run: a colour's sizes, one answer each. The ladder scrolls, the
+   shop's own sizes stay the yardstick. */
+.size-run { margin-top: 0.8rem; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface-soft); }
+.size-run > summary { cursor: pointer; font-weight: 800; color: var(--link); width: fit-content; padding: 0.7rem 0.9rem; }
+.size-run > summary small { color: var(--ink-soft); font-weight: 400; }
+.size-run-body { padding: 0 0.9rem 0.9rem; }
+.size-run-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.size-run-sizes { max-height: 15rem; overflow-y: auto; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--card); }
+.size-run-hint { margin: 0; padding: 0.8rem; }
+.size-run-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.size-run-table th, .size-run-table td { padding: 0.3rem 0.6rem; text-align: start; border-block-end: 1px solid var(--rule); }
+.size-run-table thead th { position: sticky; top: 0; z-index: 1; background: var(--surface-soft); color: var(--ink-soft); font-size: 0.75rem; }
+.size-run-table tbody th { font-weight: 600; }
+.size-run-table td { width: 9rem; }
+.size-run-stock { width: 100%; min-height: 2rem; }
+.size-run-used { margin-inline-start: 0.4rem; color: var(--ink-soft); font-size: 0.72rem; }
+.size-run-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 0.8rem; margin-top: 0.8rem; }
+.size-run-note { color: var(--ink-soft); font-size: 0.82rem; }
 /* Field hints: a ⓘ button whose popup rises from the label. Shown on hover
    and on keyboard focus alike; a tap focuses the button, so touch gets it
    with no script. Transform and opacity only; still without motion. */
@@ -2251,7 +2269,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .tag-quantity { width: 4.8rem !important; min-height: 32px !important; padding: 0.25rem 0.35rem !important; text-align: center; font-size: 0.78rem !important; }
 
 @media (max-width: 900px) {
-  .product-form-grid-wide, .variant-entry-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .product-form-grid-wide, .variant-entry-grid, .size-run-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .variant-edit-layout { grid-template-columns: 1fr; }
   .variant-edit-side { position: static; }
   .tag-settings-layout { grid-template-columns: 1fr; }
@@ -2260,7 +2278,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
   .tag-settings-side .card:last-child { grid-column: 1 / -1; }
 }
 @media (max-width: 600px) {
-  .product-form-grid-wide, .variant-entry-grid { grid-template-columns: 1fr; }
+  .product-form-grid-wide, .variant-entry-grid, .size-run-grid { grid-template-columns: 1fr; }
   .products-kpi { grid-template-columns: 1fr; }
   .section-heading-row, .product-list-heading { align-items: stretch; flex-direction: column; }
   /* The buttons share each row and grow to fill it: three of them fit one row

@@ -155,6 +155,11 @@
         setup: function (scope) {
             (scope || document).querySelectorAll('[data-size-field]').forEach(setup);
         },
+        // The ladder itself, so a page that builds sizes of its own (the
+        // product form's size run) speaks the same vocabulary as the pickers.
+        optionsFor: function (system, field) {
+            return optionsFor(system, field);
+        },
     };
 
     function bindSettings() {

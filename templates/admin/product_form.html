@@ -204,6 +204,43 @@
             <span class="section-step">{% if edit_mode %}۳{% else %}۲{% endif %}</span>
         </div>
         <div id="variants-container"></div>
+        <details class="size-run" id="size-run">
+            <summary>ساخت گروهی تنوع‌ها <small>سایزهای یک رنگ را یکجا بساز</small></summary>
+            <div class="size-run-body">
+                <div class="form-row size-run-grid">
+                    <div class="form-group">
+                        <label for="size_run_price">قیمت فروش</label>
+                        <input type="text" inputmode="numeric" id="size_run_price" name="size_run_price" placeholder="مثال: 350000">
+                    </div>
+                    <div class="form-group">
+                        <label for="size_run_cost">قیمت خرید</label>
+                        <input type="text" inputmode="numeric" id="size_run_cost" name="size_run_cost" placeholder="مثال: 220000">
+                    </div>
+                    <div class="form-group">
+                        <label for="size_run_color">رنگ</label>
+                        <input type="text" id="size_run_color" name="size_run_color" placeholder="مثلاً آبی" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label for="size_run_color_code">کد رنگ</label>
+                        <input type="text" id="size_run_color_code" name="size_run_color_code" dir="ltr" placeholder="#4AA3DF" data-color-picker>
+                    </div>
+                    <div class="form-group">
+                        <label for="size_run_location">محل انبار</label>
+                        <input type="text" id="size_run_location" name="size_run_location" placeholder="قفسه A-2">
+                    </div>
+                    <div class="form-group">
+                        <label for="size_run_photo">تصویر این رنگ</label>
+                        <input type="file" id="size_run_photo" name="size_run_photo" accept="image/png,image/jpeg,image/webp">
+                        <small class="field-help">یک عکس برای همه سایزهای این رنگ.</small>
+                    </div>
+                </div>
+                <div class="size-run-sizes" id="size-run-sizes"></div>
+                <div class="size-run-actions">
+                    <button type="button" class="btn btn-primary" id="size-run-create" onclick="createSizeRun()">ساخت تنوع‌ها</button>
+                    <span class="size-run-note" id="size-run-note" role="status"></span>
+                </div>
+            </div>
+        </details>
         <button type="button" class="btn btn-ghost" id="add-variant-btn" onclick="addVariant()">افزودن تنوع</button>
         <p class="form-error product-form-error" id="product-form-error" role="alert" hidden></p>
         <div class="form-actions-row product-form-actions">
@@ -295,6 +332,212 @@ function copyPhoto(from, to) {
     }
 }
 
+/* ---- The size run: a colour's sizes, built in one go ----------------- */
+
+function sizeRunValue(id) {
+    const field = document.getElementById(id);
+    return field ? String(field.value || '').trim() : '';
+}
+
+/* The shop's own ladder — the very one the rows' size pickers use, so the
+   panel and the rows can never disagree about what a size is. */
+function sizeRunOptions() {
+    const system = sizeRunValue('size_system');
+    if (!system || !window.RaykidSizing || !window.RaykidSizing.optionsFor) return [];
+    return window.RaykidSizing.optionsFor(system, null) || [];
+}
+
+/* A size already on the shelf in the same colour is the same variant twice:
+   the panel marks it and leaves it alone. The shelf is the rows of this form
+   and, on an existing product, the variants it already has. */
+function sizeRunExistingPairs() {
+    const node = document.getElementById('size-run-existing');
+    if (!node) return [];
+    try { return JSON.parse(node.textContent || '[]'); } catch (error) { return []; }
+}
+
+function sizeRunUsedSizes(color) {
+    const used = [];
+    if (!color) return used;
+    const remember = size => {
+        if (size && used.indexOf(size) === -1) used.push(size);
+    };
+    container.querySelectorAll('.variant-entry').forEach(entry => {
+        const sizeField = entry.querySelector('[name^="variant_size_"]');
+        const colorField = entry.querySelector('[name^="variant_color_"]');
+        const size = sizeField ? String(sizeField.value || '').trim() : '';
+        const rowColor = colorField ? String(colorField.value || '').trim() : '';
+        if (rowColor === color) remember(size);
+    });
+    sizeRunExistingPairs().forEach(pair => {
+        if (pair && pair.color === color) remember(String(pair.size || '').trim());
+    });
+    return used;
+}
+
+function renderSizeRun() {
+    const box = document.getElementById('size-run-sizes');
+    if (!box) return;
+    const options = sizeRunOptions();
+    box.innerHTML = '';
+    if (!options.length) {
+        const hint = document.createElement('p');
+        hint.className = 'muted size-run-hint';
+        hint.textContent = 'اول «سایز روی تگ چه شکلی است؟» را انتخاب کنید تا سایزهای فروشگاه اینجا بیاید.';
+        box.appendChild(hint);
+        return;
+    }
+    const table = document.createElement('table');
+    table.className = 'size-run-table';
+    const head = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    ['سایز', 'موجودی'].forEach(text => {
+        const cell = document.createElement('th');
+        cell.scope = 'col';
+        cell.textContent = text;
+        headRow.appendChild(cell);
+    });
+    head.appendChild(headRow);
+    table.appendChild(head);
+    const body = document.createElement('tbody');
+    options.forEach(option => {
+        const row = document.createElement('tr');
+        const name = document.createElement('th');
+        name.scope = 'row';
+        name.textContent = option.label;
+        row.appendChild(name);
+        const cell = document.createElement('td');
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.inputMode = 'numeric';
+        input.className = 'size-run-stock';
+        input.dataset.sizeValue = option.value;
+        input.setAttribute('aria-label', 'موجودی ' + option.label);
+        cell.appendChild(input);
+        const mark = document.createElement('span');
+        mark.className = 'size-run-used';
+        mark.textContent = 'هست';
+        mark.hidden = true;
+        cell.appendChild(mark);
+        row.appendChild(cell);
+        body.appendChild(row);
+    });
+    table.appendChild(body);
+    box.appendChild(table);
+    updateSizeRunMarks();
+}
+
+/* The colour decides what counts as the same variant, so the marks follow
+   the colour as it is typed — without rebuilding the table under the hand. */
+function updateSizeRunMarks() {
+    const box = document.getElementById('size-run-sizes');
+    if (!box) return;
+    const used = sizeRunUsedSizes(sizeRunValue('size_run_color'));
+    box.querySelectorAll('.size-run-stock').forEach(input => {
+        const mark = input.parentElement.querySelector('.size-run-used');
+        if (mark) mark.hidden = used.indexOf(input.dataset.sizeValue) === -1;
+    });
+}
+
+/* A row nobody has touched yet is the form's starter, not a variant: when a
+   run fills the shelf, it goes — otherwise it blocks the save with a price
+   it never had. */
+function removeEmptyVariantRows() {
+    container.querySelectorAll('.variant-entry').forEach(entry => {
+        const typed = ['size', 'color', 'price', 'cost_price', 'weight', 'barcode', 'sku', 'storage_location']
+            .some(key => {
+                const field = sharedField(entry, key);
+                return field && String(field.value || '').trim() !== '';
+            });
+        const photo = sharedField(entry, 'image');
+        const hasPhoto = photo && photo.files && photo.files.length > 0;
+        if (!typed && !hasPhoto && variantNum(fieldVal(entry, 'stock')) <= 0) entry.remove();
+    });
+    refreshFormTotal();
+}
+
+function createSizeRun() {
+    const box = document.getElementById('size-run-sizes');
+    const note = document.getElementById('size-run-note');
+    if (!box) return;
+    const inputs = Array.from(box.querySelectorAll('.size-run-stock'));
+    if (!inputs.length) {
+        if (note) note.textContent = 'اول سیستم سایز را انتخاب کنید.';
+        return;
+    }
+    const included = inputs.filter(input => String(input.value || '').trim() !== '');
+    if (!included.length) {
+        if (note) note.textContent = 'برای ساختن تنوع، موجودی حداقل یک سایز را بنویس.';
+        return;
+    }
+    const color = sizeRunValue('size_run_color');
+    const used = sizeRunUsedSizes(color);
+    const shared = {
+        color: color,
+        color_code: sizeRunValue('size_run_color_code'),
+        price: sizeRunValue('size_run_price'),
+        cost: sizeRunValue('size_run_cost'),
+        location: sizeRunValue('size_run_location')
+    };
+    const photo = document.getElementById('size_run_photo');
+    let made = 0;
+    let skipped = 0;
+    removeEmptyVariantRows();
+    included.forEach(input => {
+        const stock = String(input.value || '').trim();
+        const size = input.dataset.sizeValue;
+        if (used.indexOf(size) !== -1) { skipped += 1; return; }
+        addVariant({ size: size, stock: stock, shared: shared, photo: photo });
+        made += 1;
+    });
+    // The run has used the photo: a colour change from here owns a new one.
+    const panel = document.getElementById('size-run');
+    if (panel) delete panel.dataset.photoPicked;
+    if (note) {
+        const parts = [];
+        if (made) parts.push(made + ' تنوع ساخته شد.');
+        if (skipped) parts.push(skipped + ' تنوع تکراری ساخته نشد.');
+        if (!parts.length) parts.push('برای ساختن تنوع، موجودی حداقل یک سایز را بنویس.');
+        note.textContent = parts.join(' ');
+    }
+    updateSizeRunMarks();
+}
+
+/* A run's row: the shared values of the colour, the size of the run, the
+   stock of that size, and the colour's own photo. */
+function applySizeRun(entry, spec) {
+    const shared = spec.shared || {};
+    const values = {
+        color: shared.color,
+        color_code: shared.color_code,
+        price: shared.price,
+        cost_price: shared.cost,
+        storage_location: shared.location,
+        stock: spec.stock
+    };
+    Object.keys(values).forEach(key => {
+        const field = sharedField(entry, key);
+        const value = values[key];
+        if (field && value !== undefined && value !== null && String(value) !== '') field.value = value;
+    });
+    setEntrySize(entry, spec.size);
+    if (spec.photo) copyPhoto(spec.photo, sharedField(entry, 'image'));
+    // The colour code paints a swatch and the row's dot: both read the
+    // field's value, so the field has to say it changed.
+    const code = sharedField(entry, 'color_code');
+    if (code) code.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/* The size lands in the row's own picker — a ladder size in the select,
+   free text in the «سایر» box. */
+function setEntrySize(entry, size) {
+    if (!size) return;
+    const field = entry.querySelector('[name^="variant_size_"]');
+    if (!field) return;
+    field.value = size;
+    field.dispatchEvent(new Event(field.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }));
+}
+
 function refreshEntry(entry) {
     const size = fieldVal(entry, 'size') || 'بدون سایز';
     const color = fieldVal(entry, 'color');
@@ -349,7 +592,7 @@ function syncSkuRow(entry) {
     sku.value = size ? `${clean}-${size}` : clean;
 }
 
-function addVariant() {
+function addVariant(spec) {
     // Next free index: the hidden marker stamps every used one, so a return
     // never reuses a name already in the DOM.
     let index = 0;
@@ -407,7 +650,10 @@ function addVariant() {
     initColorPickers(container);
     if (window.RaykidSizing) window.RaykidSizing.setup(container);
     const fresh = container.lastElementChild;
-    if (previous && previous.classList.contains('variant-entry')) {
+    if (spec) {
+        // A row out of a size run: the colour's values, the run's size.
+        applySizeRun(fresh, spec);
+    } else if (previous && previous.classList.contains('variant-entry')) {
         copySharedFields(previous, fresh);
         copyPhoto(sharedField(previous, 'image'), sharedField(fresh, 'image'));
     }
@@ -462,6 +708,41 @@ function bindDefaultSync(sourceId, kind) {
 }
 // Deferred scripts (app.js) land after parsing, so everything that touches
 // their globals guards with window.* — the helpers above already do.
+/* The run panel follows the shop's ladder: a change of tag system or gender
+   redraws the sizes it offers, and the colour it carries decides which of
+   them are already on the shelf. */
+function bootSizeRun() {
+    const panel = document.getElementById('size-run');
+    if (!panel || panel.dataset.booted) return;
+    panel.dataset.booted = 'true';
+    if (typeof initColorPickers === 'function') initColorPickers(panel);
+    ['size_system', 'gender'].forEach(id => {
+        const field = document.getElementById(id);
+        if (!field || field.dataset.sizeRunBound) return;
+        field.dataset.sizeRunBound = 'true';
+        field.addEventListener('change', renderSizeRun);
+    });
+    const color = document.getElementById('size_run_color');
+    if (color && !color.dataset.sizeRunBound) {
+        color.dataset.sizeRunBound = 'true';
+        color.addEventListener('input', updateSizeRunMarks);
+        // A different colour needs a different photo: the one still in the
+        // panel belongs to the previous colour and must not ride along.
+        // A photo picked since the last run is a hand's choice — kept.
+        color.addEventListener('change', () => {
+            if (panel.dataset.photoPicked === '1') return;
+            const photo = document.getElementById('size_run_photo');
+            if (photo) photo.value = '';
+        });
+    }
+    const photo = document.getElementById('size_run_photo');
+    if (photo && !photo.dataset.sizeRunBound) {
+        photo.dataset.sizeRunBound = 'true';
+        photo.addEventListener('change', () => { panel.dataset.photoPicked = '1'; });
+    }
+    renderSizeRun();
+}
+
 function bootVariantForm() {
     if (!container || container.dataset.booted) return;
     container.dataset.booted = 'true';
@@ -471,6 +752,7 @@ function bootVariantForm() {
     if (baseSkuField) baseSkuField.addEventListener('input', () => {
         container.querySelectorAll('.variant-entry').forEach(syncSkuRow);
     });
+    bootSizeRun();
     {% if not edit_mode or not product.variants %}addVariant();{% endif %}
 }
 if (document.readyState === 'loading') {
@@ -648,5 +930,10 @@ if (document.readyState === 'loading') {
 // count until a reload, never a silent second POST.
 </script>
 <script type="application/json" id="sizing-ladders">{{ sizing_ladders_json|safe }}</script>
+{% if edit_mode and product.variants %}
+{# The variants this product already has: a size already in this colour is
+   the same variant twice, so the run panel leaves it alone. #}
+<script type="application/json" id="size-run-existing">[{% for variant in product.variants if variant.is_active %}{"size": {{ variant.size|tojson }}, "color": {{ variant.color|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}]</script>
+{% endif %}
 <script src="/static/js/sizing.js?v={{ static_version }}"></script>
 {% endblock %}

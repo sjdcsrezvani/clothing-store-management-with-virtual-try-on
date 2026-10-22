@@ -209,6 +209,38 @@ def test_a_new_variant_row_inherits_the_run_from_the_row_above():
     assert "copySharedFields(previous, fresh)" in page
 
 
+def test_the_size_run_builds_a_colour_s_sizes_in_one_go():
+    """A run of sizes is one answer each: the ladder's sizes with a stock
+    box, the colour's values typed once, and one photo for the whole run."""
+    page = (ROOT / "templates/admin/product_form.html").read_text()
+    sizing = (ROOT / "static/js/sizing.js").read_text()
+    css = (ROOT / "static/css/style.css").read_text()
+    # One panel, built from the shop's own ladder — the rows and the run
+    # cannot disagree about what a size is.
+    assert 'id="size-run"' in page
+    assert "function renderSizeRun" in page
+    assert "window.RaykidSizing.optionsFor(system, null)" in page
+    assert "optionsFor: function (system, field)" in sizing
+    # The colour's values are typed once for the run.
+    for field_id in ("size_run_price", "size_run_cost", "size_run_color",
+                     "size_run_color_code", "size_run_location", "size_run_photo"):
+        assert 'id="%s"' % field_id in page
+    # An empty stock box means the shop does not have that size — it is left
+    # out, not created with zero. And the untouched starter row goes when a
+    # run fills the shelf, so it cannot block the save with a price it never
+    # had.
+    assert ".filter(input => String(input.value || '').trim() !== '')" in page
+    assert "function removeEmptyVariantRows" in page
+    # The same size in the same colour is the same variant twice: the panel
+    # marks it and leaves it alone — the rows here and, on an edit, the
+    # variants the product already has.
+    assert "function sizeRunUsedSizes" in page
+    assert 'id="size-run-existing"' in page
+    # The run's photo rides to every size of the colour.
+    assert "copyPhoto(spec.photo, sharedField(entry, 'image'))" in page
+    assert ".size-run-table" in css
+
+
 def test_variant_capsule_is_a_designed_component():
     form = (ROOT / "templates/admin/product_form.html").read_text()
     css = (ROOT / "static/css/style.css").read_text()
