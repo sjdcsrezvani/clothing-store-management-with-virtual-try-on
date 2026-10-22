@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -183,6 +184,29 @@ def test_product_form_validates_required_fields_in_the_page():
     # A refused submit must leave the button usable — a locked button after a
     # validation refusal is how a shop loses the sale.
     assert "event.defaultPrevented" in js
+
+
+def test_a_new_variant_row_inherits_the_run_from_the_row_above():
+    """A size is not typed from scratch: the new row takes the colour, the
+    price and the shelf from the row above it, so a run of sizes costs two
+    answers per row — the size and the stock."""
+    page = (ROOT / "templates/admin/product_form.html").read_text()
+    match = re.search(r"var SHARED_FIELDS = \[([^\]]*)\]", page)
+    assert match, "the inherited fields are declared in one place"
+    fields = [item.strip().strip("'\"") for item in match.group(1).split(",") if item.strip()]
+    # What every size of one garment shares.
+    assert fields == ["color", "color_code", "price", "cost_price", "storage_location"]
+    # What never rides along: the size (a forgotten size would become a twin
+    # row), the stock (it would invent units), the barcode (unique in the
+    # database), the SKU (derived from the size) and the weight (sizes of one
+    # product rarely share one).
+    for field in ("size", "stock", "barcode", "sku", "weight"):
+        assert field not in fields
+    # The photo travels with the colour.
+    assert "function copyPhoto" in page
+    assert "new DataTransfer()" in page
+    # The copy happens where the row is built.
+    assert "copySharedFields(previous, fresh)" in page
 
 
 def test_variant_capsule_is_a_designed_component():

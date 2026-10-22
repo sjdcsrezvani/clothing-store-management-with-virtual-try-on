@@ -255,6 +255,46 @@ function fieldVal(entry, prefix) {
     return el ? el.value.trim() : '';
 }
 
+/* A new row inherits the run from the row above: the colour, the price, the
+   shelf — what every size of one garment shares. The fields that must not
+   ride along never do: the size (a forgotten size becomes a silent twin
+   row), the stock (it would invent units), the barcode (unique in the
+   database — a copy fails the whole save), the SKU (derived from the size)
+   and the weight (sizes of one product rarely share one). */
+var SHARED_FIELDS = ['color', 'color_code', 'price', 'cost_price', 'storage_location'];
+
+function sharedField(entry, key) {
+    return entry ? entry.querySelector(`[name^="variant_${key}_"]`) : null;
+}
+
+function copySharedFields(from, to) {
+    if (!from || !to) return;
+    SHARED_FIELDS.forEach(key => {
+        const source = sharedField(from, key);
+        const target = sharedField(to, key);
+        if (source && target) target.value = source.value;
+    });
+    // The colour code paints a swatch and the row's own dot: both read the
+    // field's value, so the field has to say it changed.
+    const code = sharedField(to, 'color_code');
+    if (code) code.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/* The photo belongs to the colour, and the browser will not let script fill
+   a file input — but it will hand the very same file over. A browser that
+   refuses leaves the field empty; the row still saves. */
+function copyPhoto(from, to) {
+    try {
+        const file = from && from.files && from.files[0];
+        if (!file || !to) return;
+        const transfer = new DataTransfer();
+        transfer.items.add(file);
+        to.files = transfer.files;
+    } catch (error) {
+        // An empty photo field is still a valid row.
+    }
+}
+
 function refreshEntry(entry) {
     const size = fieldVal(entry, 'size') || 'بدون سایز';
     const color = fieldVal(entry, 'color');
@@ -320,6 +360,8 @@ function addVariant() {
     const entryNo = container.querySelectorAll('.variant-entry').length + 1;
     // The row being built becomes the open one; finished rows fold away.
     container.querySelectorAll('.variant-entry').forEach(entry => setEntryOpen(entry, false));
+    // The row this one inherits from: the run above it.
+    const previous = container.lastElementChild;
     container.insertAdjacentHTML('beforeend', `
         <article class="variant-entry" data-open="true">
             <button type="button" class="variant-remove" onclick="this.closest('.variant-entry').remove(); refreshFormTotal();" aria-label="حذف تنوع">×</button>
@@ -365,6 +407,10 @@ function addVariant() {
     initColorPickers(container);
     if (window.RaykidSizing) window.RaykidSizing.setup(container);
     const fresh = container.lastElementChild;
+    if (previous && previous.classList.contains('variant-entry')) {
+        copySharedFields(previous, fresh);
+        copyPhoto(sharedField(previous, 'image'), sharedField(fresh, 'image'));
+    }
     syncSkuRow(fresh);
     refreshEntry(fresh);
     refreshFormTotal();
