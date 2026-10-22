@@ -1408,8 +1408,10 @@ async def admin_variant_update(
     from services.security import log_action
     log_action(db, "variant_update", f"ویرایش تنوع #{variant.id}", request=request, target_type="variant", target_id=variant.id)
 
+    # A variant has one parent: a save lands on that product's page, whatever
+    # list state the link that opened the row carried.
     return RedirectResponse(
-        url=_safe_next(form.get("next", ""), "/admin/products/" + str(variant.product_id)),
+        url=f"/admin/products/{variant.product_id}",
         status_code=303,
     )
 

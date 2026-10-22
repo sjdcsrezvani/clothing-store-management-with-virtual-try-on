@@ -5,6 +5,7 @@ Unknown sort keys and page sizes answer the default list — a hand-typed query
 is a list, never an error.
 """
 from models import Product, ProductVariant
+from tests.conftest import csrf_token
 
 
 def _product(db_session, name, price=100_000, stock=5, barcode="B-1", category="لباس"):
@@ -146,3 +147,19 @@ def test_pagination_preserves_every_param(client, authed, db_session):
         _product(db_session, f"صفحه {index:02d}", barcode=f"P-{index}")
     html = client.get("/admin/products?stock=all&sort=name&dir=asc&per_page=10").text
     assert "stock=all" in html and "sort=name" in html and "per_page=10" in html
+
+
+def test_variant_save_lands_on_its_product(client, authed, db_session):
+    """The variant edit page can be opened from the list, which passes the list
+    as `next`; a save still lands on the product the variant belongs to — the
+    record you were editing, never the manager page."""
+    product = _product(db_session, "پیراهن بازگشت", barcode="RET-1")
+    variant = db_session.query(ProductVariant).filter_by(barcode="RET-1").one()
+    response = client.post(f"/admin/variants/{variant.id}", data={
+        "csrf_token": csrf_token(client, "/admin/products/add"),
+        "size": "", "color": "", "price": "100000", "cost_price": "0",
+        "stock_quantity": "5", "sku": "", "tryon_details": "",
+        "next": "/admin/products",
+    }, follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/admin/products/{product.id}"
