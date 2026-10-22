@@ -241,6 +241,23 @@ def test_the_size_run_builds_a_colour_s_sizes_in_one_go():
     assert ".size-run-table" in css
 
 
+def test_the_reorder_quantity_is_gone():
+    """«مقدار سفارش» was stored but never read: the low-stock alarm and the
+    reorder hint both speak the reorder point alone. It is out of the forms
+    and out of the model, so it cannot creep back."""
+    product_form = (ROOT / "templates/admin/product_form.html").read_text()
+    variant_form = (ROOT / "templates/admin/variant_form.html").read_text()
+    for path in (product_form, variant_form,
+                 (ROOT / "routers/products.py").read_text(),
+                 (ROOT / "main.py").read_text(),
+                 (ROOT / "models.py").read_text()):
+        assert "reorder_quantity" not in path
+    assert "مقدار سفارش" not in product_form
+    assert "مقدار سفارش" not in variant_form
+    # The point stays: it is what the alarm reads.
+    assert "نقطه سفارش" in product_form
+
+
 def test_variant_capsule_is_a_designed_component():
     form = (ROOT / "templates/admin/product_form.html").read_text()
     css = (ROOT / "static/css/style.css").read_text()

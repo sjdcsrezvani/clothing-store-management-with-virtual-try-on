@@ -121,12 +121,6 @@
                 </label>
                 <input type="text" inputmode="numeric" id="default_reorder_point" name="default_reorder_point" min="0" aria-describedby="hint-drp" value="{{ (product.default_reorder_point or 0) if product else 0 }}" placeholder="مثال: 5">
             </div>
-            <div class="form-group">
-                <label for="default_reorder_quantity">مقدار سفارش پیش‌فرض
-                    <span class="hint"><button type="button" class="hint-btn" aria-label="راهنمای مقدار سفارش پیش‌فرض">ⓘ</button><span class="hint-pop" role="tooltip" id="hint-drq">مقدار شروع «مقدار سفارش» برای تنوع‌های تازه؛ فقط یک یادداشت راهنماست و هیچ سفارشی را خودکار ثبت نمی‌کند.</span></span>
-                </label>
-                <input type="text" inputmode="numeric" id="default_reorder_quantity" name="default_reorder_quantity" min="0" aria-describedby="hint-drq" value="{{ (product.default_reorder_quantity or 0) if product else 0 }}" placeholder="مثال: 12">
-            </div>
             <div class="form-group form-span-2">
                 <label for="tag_template_id">قالب تگ محصول</label>
                 <select id="tag_template_id" name="tag_template_id" data-fancy>
@@ -637,9 +631,6 @@ function addVariant(spec) {
                 <div class="form-group"><label>نقطه سفارش
                     <span class="hint"><button type="button" class="hint-btn" aria-label="راهنمای نقطه سفارش">ⓘ</button><span class="hint-pop" role="tooltip" id="hint-vrp-${index}">اگر موجودی قابل‌فروش این تنوع به این عدد برسد یا کمتر شود، تنوع نیازمند سفارش می‌شود.</span></span>
                 </label><input type="text" inputmode="numeric" name="variant_reorder_point_${index}" min="0" data-sync-default="point" aria-describedby="hint-vrp-${index}" value="{{ (product.default_reorder_point or 0) if product else 0 }}" placeholder="مثال: 5"></div>
-                <div class="form-group"><label>مقدار سفارش
-                    <span class="hint"><button type="button" class="hint-btn" aria-label="راهنمای مقدار سفارش">ⓘ</button><span class="hint-pop" role="tooltip" id="hint-vrq-${index}">چند عدد از این تنوع سفارش بدهید؛ فقط راهنماست و سفارش خودکار ثبت نمی‌شود.</span></span>
-                </label><input type="text" inputmode="numeric" name="variant_reorder_quantity_${index}" min="0" data-sync-default="quantity" aria-describedby="hint-vrq-${index}" value="{{ (product.default_reorder_quantity or 0) if product else 0 }}" placeholder="مثال: 12"></div>
                 <div class="form-group"><label>محل انبار</label><input type="text" name="variant_storage_location_${index}" placeholder="قفسه A-2"></div>
             </div>
             <div class="form-group"><label>تصویر تنوع</label><input type="file" name="variant_image_${index}" accept="image/png,image/jpeg,image/webp"></div>
@@ -747,7 +738,6 @@ function bootVariantForm() {
     if (!container || container.dataset.booted) return;
     container.dataset.booted = 'true';
     bindDefaultSync('default_reorder_point', 'point');
-    bindDefaultSync('default_reorder_quantity', 'quantity');
     const baseSkuField = document.getElementById('base_sku');
     if (baseSkuField) baseSkuField.addEventListener('input', () => {
         container.querySelectorAll('.variant-entry').forEach(syncSkuRow);

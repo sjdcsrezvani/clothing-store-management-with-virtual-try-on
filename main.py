@@ -153,7 +153,6 @@ def _apply_missing_columns(migration_engine=None):
             ("care_instructions", "TEXT"),
             ("supplier_id", "INTEGER"),
             ("default_reorder_point", "INTEGER DEFAULT 0"),
-            ("default_reorder_quantity", "INTEGER DEFAULT 0"),
             ("tag_template_id", "INTEGER"),
         ],
         "product_variants": [
@@ -161,7 +160,6 @@ def _apply_missing_columns(migration_engine=None):
             ("fake_cost_price", "INTEGER"),
             ("tryon_details", "TEXT"),
             ("reorder_point", "INTEGER DEFAULT 0"),
-            ("reorder_quantity", "INTEGER DEFAULT 0"),
             ("storage_location", "VARCHAR(100)"),
             ("size_system", "VARCHAR(30)"),
             ("color_code", "VARCHAR(30)"),

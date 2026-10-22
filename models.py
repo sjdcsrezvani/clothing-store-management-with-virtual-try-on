@@ -289,7 +289,6 @@ class Product(Base):
     care_instructions = Column(Text, nullable=True)
     supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True, index=True)
     default_reorder_point = Column(Integer, nullable=False, default=0)
-    default_reorder_quantity = Column(Integer, nullable=False, default=0)
     # Optional product-level tag layout; variants inherit this template.
     tag_template_id = Column(Integer, ForeignKey("tag_templates.id"), nullable=True, index=True)
     is_active = Column(Boolean, default=True)
@@ -360,7 +359,6 @@ class ProductVariant(Base):
     # while it was out of stock. +1 by owner; reset by owner after restocking.
     demand_count = Column(Integer, default=0)
     reorder_point = Column(Integer, nullable=False, default=0)
-    reorder_quantity = Column(Integer, nullable=False, default=0)
     # Arrival checklist: the purchase receipt that took this variant in.
     # Set once at finalize, cleared on reversal — a flagged variant never
     # shows in another receipt's picker, so one arrival cannot be bought twice.
@@ -399,7 +397,6 @@ class ProductVariant(Base):
         CheckConstraint("reserved_quantity >= 0", name="ck_variants_reserved_nonnegative"),
         CheckConstraint("demand_count >= 0", name="ck_variants_demand_nonnegative"),
         CheckConstraint("reorder_point >= 0", name="ck_variants_reorder_point_nonnegative"),
-        CheckConstraint("reorder_quantity >= 0", name="ck_variants_reorder_quantity_nonnegative"),
     )
 
     product = relationship("Product", back_populates="variants")

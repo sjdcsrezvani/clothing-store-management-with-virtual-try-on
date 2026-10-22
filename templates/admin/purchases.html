@@ -337,7 +337,7 @@
     {% for v in p.variants if v.is_active and v.received_purchase_id is none %}
     {"id": {{ v.id }}, "label": {{ v.display_name|tojson }}, "barcode": {{ (v.barcode or '')|tojson }},
      "price": {{ v.price or 0 }}, "cost": {{ v.cost_price or 0 }}, "stock": {{ v.stock_quantity or 0 }},
-     "reorder_point": {{ v.reorder_point or 0 }}, "reorder_quantity": {{ v.reorder_quantity or 0 }}}{% if not loop.last %},{% endif %}
+     "reorder_point": {{ v.reorder_point or 0 }}}{% if not loop.last %},{% endif %}
     {% endfor %}
   ]
 }{% if not loop.last %},{% endif %}
@@ -391,7 +391,7 @@
         byId[id] = {
             id: line.variant_id, label: line.label, barcode: line.barcode || '',
             price: 0, cost: line.cost || 0, stock: line.stock || 0, reorder_point: 0,
-            reorder_quantity: 0, productName: line.label, supplierId: String(line.supplier_id || ''),
+            productName: line.label, supplierId: String(line.supplier_id || ''),
         };
     });
 

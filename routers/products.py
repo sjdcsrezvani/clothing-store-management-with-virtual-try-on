@@ -833,7 +833,6 @@ async def admin_product_add(
         care_instructions=_form_text(form, "care_instructions") or None,
         supplier_id=_form_optional_int(form, "supplier_id"),
         default_reorder_point=_form_nonnegative_int(form, "default_reorder_point"),
-        default_reorder_quantity=_form_nonnegative_int(form, "default_reorder_quantity"),
         tag_template_id=_form_tag_template_id(form, db),
         size_type=size_type,
         size_system=size_system,
@@ -856,7 +855,6 @@ async def admin_product_add(
         barcode = form.get(f"variant_barcode_{idx}", "")
         sku = form.get(f"variant_sku_{idx}", "")
         reorder_point = _form_nonnegative_int(form, f"variant_reorder_point_{idx}", product.default_reorder_point)
-        reorder_quantity = _form_nonnegative_int(form, f"variant_reorder_quantity_{idx}", product.default_reorder_quantity)
         storage_location = _form_text(form, f"variant_storage_location_{idx}") or None
         color_code = _form_text(form, f"variant_color_code_{idx}") or None
         variant_weight = _form_optional_int(form, f"variant_weight_{idx}")
@@ -933,7 +931,6 @@ async def admin_product_add(
             sku=sku if sku else None,
             image_path=variant_image_path,
             reorder_point=reorder_point,
-            reorder_quantity=reorder_quantity,
             storage_location=storage_location,
             size_system=size_system,
             color_code=color_code,
@@ -1036,7 +1033,6 @@ async def admin_product_update(
     product.care_instructions = _form_text(form, "care_instructions") or None
     product.supplier_id = _form_optional_int(form, "supplier_id")
     product.default_reorder_point = _form_nonnegative_int(form, "default_reorder_point")
-    product.default_reorder_quantity = _form_nonnegative_int(form, "default_reorder_quantity")
     product.tag_template_id = _form_tag_template_id(form, db)
     product.updated_at = datetime.now(timezone.utc)
 
@@ -1066,7 +1062,6 @@ async def admin_product_update(
         barcode = form.get(f"variant_barcode_{idx}", "")
         sku = form.get(f"variant_sku_{idx}", "")
         reorder_point = _form_nonnegative_int(form, f"variant_reorder_point_{idx}", product.default_reorder_point)
-        reorder_quantity = _form_nonnegative_int(form, f"variant_reorder_quantity_{idx}", product.default_reorder_quantity)
         storage_location = _form_text(form, f"variant_storage_location_{idx}") or None
         color_code = _form_text(form, f"variant_color_code_{idx}") or None
         variant_weight = _form_optional_int(form, f"variant_weight_{idx}")
@@ -1143,7 +1138,6 @@ async def admin_product_update(
             sku=sku if sku else None,
             image_path=variant_image_path,
             reorder_point=reorder_point,
-            reorder_quantity=reorder_quantity,
             storage_location=storage_location,
             size_system=size_system,
             color_code=color_code,
@@ -1235,7 +1229,6 @@ async def admin_variant_update(
     sku: str = Form(""),
     tryon_details: str = Form(""),
     reorder_point: str = Form("0"),
-    reorder_quantity: str = Form("0"),
     weight_grams: str = Form(""),
     storage_location: str = Form(""),
     size_system: str = Form(""),
@@ -1306,7 +1299,6 @@ async def admin_variant_update(
         })
     try:
         reorder_point_int = max(0, int(to_english_digits(reorder_point or "0")))
-        reorder_quantity_int = max(0, int(to_english_digits(reorder_quantity or "0")))
     except ValueError:
         return templates.TemplateResponse(request, "admin/variant_form.html", {
             "variant": variant,
@@ -1395,7 +1387,6 @@ async def admin_variant_update(
     variant.sku = sku.strip() if sku else None
     variant.tryon_details = tryon_details.strip() if tryon_details.strip() else None
     variant.reorder_point = reorder_point_int
-    variant.reorder_quantity = reorder_quantity_int
     variant.weight_grams = weight_int
     variant.storage_location = storage_location.strip() if storage_location else None
     if variant.product and variant.product.size_system:
