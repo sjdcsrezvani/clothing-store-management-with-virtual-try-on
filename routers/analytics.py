@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from urllib.parse import urlencode
 from database import get_db
 from models import Product, Settings, to_english_digits
 from services._common import fmt, check_admin, get_setting_int, jalali_str, share
@@ -461,11 +462,16 @@ async def analytics_goal(request: Request, amount: str = Form(""), db=Depends(ge
 
 
 @router.post("/analytics/digits", response_class=HTMLResponse)
-async def analytics_digits(request: Request, mode: str = Form("fa"), db=Depends(get_db)):
+async def analytics_digits(request: Request, mode: str = Form("fa"),
+                           tab: str = Form("sales"), period: str = Form("month"),
+                           start_date: str = Form(""), end_date: str = Form(""),
+                           category: str = Form(""), db=Depends(get_db)):
     """Chart digit script, scoped to charts: Persian groupings or Latin ones.
 
     The standing Latin-kept vote covers inputs and examples; axes are a
-    display surface, so this toggle lives here and nowhere else.
+    display surface, so this toggle lives here and nowhere else. The page's
+    own range and tab come back with it, so flipping the script never moves
+    the reader somewhere else.
     """
     guard = require_html_role(request, db, "owner")
     if not hasattr(guard, "role"):
@@ -477,4 +483,9 @@ async def analytics_digits(request: Request, mode: str = Form("fa"), db=Depends(
     else:
         db.add(Settings(key="chart_digits_latin", value=value))
     db.commit()
-    return RedirectResponse(url="/admin/analytics?msg=ارقام نمودارها تغییر کرد.", status_code=303)
+    query = urlencode({
+        "tab": tab, "period": period, "start_date": start_date,
+        "end_date": end_date, "category": category,
+        "msg": "ارقام نمودارها تغییر کرد.",
+    })
+    return RedirectResponse(url=f"/admin/analytics?{query}", status_code=303)

@@ -20,17 +20,26 @@ def current_period_key(value: datetime | None = None) -> str:
     return f"{jd.year:04d}-{jd.month:02d}"
 
 
-def is_payroll_due(hire_date, period_key: str) -> bool:
+def is_payroll_due(hire_date, period_key: str, created_at=None) -> bool:
     """Whether a full month of service precedes ``period_key``: no pay is due
-    for a month the person had not finished working. A missing hire date
-    counts as due — legacy staff must never silently drop off payday."""
-    if hire_date is None:
-        return True
+    for a month the person had not finished working.
+
+    A blank hire date keeps the legacy rule — every month is payable — except
+    the month the row itself was created: someone added today has not finished
+    a month, so payday today must not dun them. Passing ``created_at`` is what
+    makes that distinction; without it the old always-due answer stands.
+    """
     try:
         year, month = int(period_key[:4]), int(period_key[5:7])
     except (TypeError, ValueError):
         return True
     import jdatetime
+    if hire_date is None:
+        if created_at is None:
+            return True
+        day = created_at.date() if isinstance(created_at, datetime) else created_at
+        jd = jdatetime.date.fromgregorian(date=day)
+        return (jd.year, jd.month) != (year, month)
     day = hire_date.date() if isinstance(hire_date, datetime) else hire_date
     jd = jdatetime.date.fromgregorian(date=day)
     return (jd.year, jd.month) < (year, month)
@@ -235,7 +244,7 @@ def run_monthly_payday(db, operator_user: StaffUser, period_key: str,
     report: dict = {"period": period_key, "created": [], "skipped": [],
                     "waiting": [], "failed": []}
     for person in payable:
-        if not is_payroll_due(person.hire_date, period_key):
+        if not is_payroll_due(person.hire_date, period_key, person.created_at):
             # Hired inside the pay month: the first month is not payable yet.
             report["waiting"].append(person.full_name or person.username)
             continue

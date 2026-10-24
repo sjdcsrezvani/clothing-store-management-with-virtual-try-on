@@ -123,7 +123,13 @@ def test_toggle_sentences_follow_the_metric_not_the_first_render():
 
 def test_category_sentences_stay_quiet_when_there_is_nothing_to_say():
     empty = category_chart_notes(span="این بازه")
-    assert set(empty.values()) == {NO_DATA}
+    assert {key: value for key, value in empty.items() if key != "returnsBandChart"} == {
+        "groupTypeChart": NO_DATA,
+        "categoryAgeChart": NO_DATA,
+        "systemMixChart": NO_DATA,
+    }
+    # A quiet returns chart says returns were quiet, not that the shop sold nothing.
+    assert empty["returnsBandChart"] == "در این بازه مرجوعی ثبت نشده."
     toggles = toggle_notes(span="این بازه")
     assert set(toggles["groupTypeChart"].values()) == {NO_DATA}
     assert set(toggles["categoryAgeChart"].values()) == {NO_DATA}
@@ -138,10 +144,22 @@ def test_every_chart_has_a_sentence_even_when_the_period_is_empty():
     """
     notes = chart_notes()
     assert set(notes) == set(CHART_IDS)
-    assert set(notes.values()) == {NO_DATA}
+    # A chart of returns/discounts can be quiet while the shop still sold: its
+    # empty sentence names what is missing, not a sale that did happen.
+    assert notes["dailyChart"] == NO_DATA
+    assert notes["returnsBandChart"] == "در این بازه مرجوعی ثبت نشده."
+    assert notes["discountChart"] == "در این بازه تخفیفی ثبت نشده."
     assert NO_DATA.strip().endswith(".")
     for canvas, sentence in notes.items():
         assert sentence.strip() == sentence and sentence, canvas
+
+
+def test_staff_sentence_names_the_unattributed_row():
+    """A card-only sale has no cashier; the card above the table must not
+    claim the shop sold nothing when «نامشخص» is right below it."""
+    notes = chart_notes(staff={"rows": [], "unattributed": {"invoices": 1, "revenue": 2000}})
+    assert "نامشخص" in notes["staffChart"]
+    assert "2,000 ت" in notes["staffChart"]
 
 
 def test_each_sentence_names_the_figure_its_chart_draws():
@@ -249,8 +267,13 @@ def test_the_sentences_and_the_canvases_are_the_same_set(client, db_session):
         assert pair.group(1).strip(), f"{host} has an empty sentence"
 
     # This shop's database is empty in this test, so every caption says so rather
-    # than leaving the owner a chart with no explanation under it.
-    assert set(re.findall(r'data-chart="[^"]+">([^<]*)</p>', html)) == {NO_DATA}
+    # than leaving the owner a chart with no explanation under it. Returns and
+    # discounts have their own quiet sentences: neither is a sale.
+    assert set(re.findall(r'data-chart="[^"]+">([^<]*)</p>', html)) == {
+        NO_DATA,
+        "در این بازه مرجوعی ثبت نشده.",
+        "در این بازه تخفیفی ثبت نشده.",
+    }
 
 
 # ===== The renderer, driven for real =======================================
@@ -964,6 +987,9 @@ def test_the_report_can_be_printed_from_the_page_itself():
     # block's own hide-list names it (chrome — breadcrumb, admin-nav — is the
     # shell block's business now, so it no longer appears here).
     assert ".filter-bar, .search-form, .tip-icon, .screen-only" in css
+    # Charts draw in their own LTR box: inherited RTL flips SVG text anchors
+    # and hides horizontal category names under their bars.
+    assert ".chart-host svg { direction: ltr; }" in css
 
 
 def test_chart_engine_is_vendored_and_never_a_cdn(client, db_session, authed):
@@ -1111,6 +1137,13 @@ def test_the_rendered_config_script_parses(client, db_session, tmp_path):
     config = next(b for b in blocks if "AC.create(document.getElementById" in b)
     assert config.count("AC.create(document.getElementById") == 16
     assert "new Chart(" not in config
+    assert "window.chartValueText" not in config
+    assert "AC.money(p.price)" in config
+    assert "staffData.unattributed" in config
+    assert "showEmptyCircle: false" in config
+    heat = config[config.index("getElementById('heatChart')"):]
+    assert "opt.tooltip.trigger = 'item';" in heat
+    assert "opt.xAxis = { type: 'category'," in heat
     for canvas in ("mixChart", "discountChart", "heatChart", "staffChart"):
         assert f"getElementById('{canvas}')" in config, canvas
     script = tmp_path / "analytics-config.js"
@@ -1376,6 +1409,14 @@ def test_chart_digits_toggle_is_charts_only_and_sticks(client, db_session, authe
     assert client.post("/admin/analytics/digits", data={"csrf_token": token, "mode": "fa"},
                        follow_redirects=False).status_code == 303
     assert "window.CHART_DIGITS = 'fa'" in client.get("/admin/analytics").text
+    contextual = client.post(
+        "/admin/analytics/digits",
+        data={"csrf_token": token, "mode": "latin", "tab": "sizes",
+              "period": "year", "category": "shirts"},
+        follow_redirects=False)
+    location = contextual.headers["location"]
+    assert "tab=sizes" in location and "period=year" in location
+    assert "category=shirts" in location
 
 
 def test_export_doors_are_buttons_and_tips_open_for_everyone(client, db_session, authed):
@@ -1394,6 +1435,10 @@ def test_export_doors_are_buttons_and_tips_open_for_everyone(client, db_session,
     # The bubble every trigger writes into: deleted once by a template edit
     # while 48 triggers kept pointing at it, killing every tip silently.
     assert 'id="globalTip"' in page
+    # A page with the JS bubble must not also paint the CSS ::after card on
+    # hover: both showed at once, stacked behind each other.
+    css = (ROOT / "static" / "css" / "style.css").read_text(encoding="utf-8")
+    assert '.tip-icon[aria-expanded="true"]::after { content: none; }' in css
 
 
 # Fake DOM + assertions wrapping the real tip script (see test below).

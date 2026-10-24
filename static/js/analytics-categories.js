@@ -17,8 +17,10 @@
             });
             table.querySelectorAll('td[data-qty]').forEach(function (cell) {
                 var raw = parseInt(mode === 'revenue' ? cell.getAttribute('data-revenue') : cell.getAttribute('data-qty'), 10) || 0;
+                // A table figure, not a chart: Latin digits like every other
+                // number on the page. Only axes follow the chart-script toggle.
                 cell.textContent = raw.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-                    .replace(/[0-9]/g, function (d) { return '۰۱۲۳۴۵۶۷۸۹'[+d]; }) + (mode === 'revenue' ? ' تومان' : '');
+                    + (mode === 'revenue' ? ' تومان' : '');
             });
         });
     });
@@ -114,9 +116,7 @@
         opt.grid = Object.assign({}, opt.grid, { bottom: 58, left: 80 });
         opt.tooltip.valueFormatter = money ? AC.money : AC.grouped;
         opt.xAxis = AC.valueAxis(paper, money);
-        var ageAxis = AC.categoryAxis(rows.map(function (row) { return row.label; }), paper);
-        ageAxis.axisLabel.align = 'left';
-        opt.yAxis = ageAxis;
+        opt.yAxis = AC.categoryAxis(rows.map(function (row) { return row.label; }), paper);
         opt.series = source.map(function (row, index) {
             return {
                 name: row.label,
@@ -192,9 +192,7 @@
             opt.tooltip.valueFormatter = AC.grouped;
             opt.grid = Object.assign({}, opt.grid, { left: 100 });
             opt.xAxis = AC.valueAxis(paper, false);
-            var systemAxis = AC.categoryAxis(rows.map(function (row) { return row.label; }), paper);
-            systemAxis.axisLabel.align = 'left';
-            opt.yAxis = systemAxis;
+            opt.yAxis = AC.categoryAxis(rows.map(function (row) { return row.label; }), paper);
             opt.series = [{
                 name: 'تعداد', type: 'bar', barMaxWidth: 22,
                 data: rows.map(function (row) { return row.units; }),

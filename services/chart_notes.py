@@ -248,7 +248,7 @@ def _mix(payment_mix, span: str = DEFAULT_SPAN) -> str:
 def _discounts(discounts, span: str = DEFAULT_SPAN) -> str:
     rows = [row for row in _rows(discounts) if float(row.get("total_amount") or 0)]
     if not rows:
-        return NO_DATA
+        return f"در {span} تخفیفی ثبت نشده."
     total = sum(float(row.get("total_amount") or 0) for row in rows)
     top = max(rows, key=lambda row: float(row.get("total_amount") or 0))
     return (f"تخفیف {span} جمعا {_money(total)} کم کرده؛ «{top.get('type')}» با "
@@ -324,7 +324,7 @@ def _category_age(data, metric="revenue", span=DEFAULT_SPAN) -> str:
 def _returns_band(rows, span=DEFAULT_SPAN) -> str:
     rows = [row for row in _rows(rows) if float(row.get("returned_units") or 0)]
     if not rows:
-        return NO_DATA
+        return f"در {span} مرجوعی ثبت نشده."
     top = max(rows, key=lambda row: float(row.get("returned_units") or 0))
     total = sum(float(row.get("returned_units") or 0) for row in rows)
     rate = top.get("rate")
@@ -435,6 +435,12 @@ def _staff(staff, span: str = DEFAULT_SPAN) -> str:
     perf = staff if isinstance(staff, dict) else {}
     rows = [row for row in _rows(perf.get("rows")) if float(row.get("revenue") or 0)]
     if not rows:
+        # A shift-less or card sale names no cashier; it stands in the table's
+        # «نامشخص» row. Saying «no sales» beside that row would contradict it.
+        unattributed = float((perf.get("unattributed") or {}).get("revenue") or 0)
+        if unattributed:
+            return (f"در {span} فروشی زیر شیفت ثبت نشده؛ {_money(unattributed)} "
+                    f"در ردیف «نامشخص» ایستاده است.")
         return NO_DATA
     total = sum(float(row.get("revenue") or 0) for row in rows)
     top = max(rows, key=lambda row: float(row.get("revenue") or 0))

@@ -1025,8 +1025,9 @@ async def _send_to_terminal(request: Request, checkout_nonce: str, db: Session):
                 r4, r8 = build_footer_payload(shop, ref), None
         except Exception:
             r4, r8 = None, None
+        # Every price in the app is toman; the Parsian terminal reads rial.
         result = await asyncio.to_thread(
-            send_terminal_sale, cfg["host"], cfg["port"], amount, r4=r4, r8=r8,
+            send_terminal_sale, cfg["host"], cfg["port"], amount * 10, r4=r4, r8=r8,
         )
     except Exception as error:
         transaction.request_finished_at = datetime.now(timezone.utc)
@@ -1241,10 +1242,29 @@ async def sales_confirm(
         )
     try:
         if checkout.state in {"payment_pending", "payment_approved"}:
+            # The terminal approved a stored total, so the basket and money
+            # stay frozen — but the breakdown is rebuilt from the draft's own
+            # pinned inputs. A partial dict used to reach the sale with no
+            # 'referred_discount' key and every card sale to a known customer
+            # died after the terminal had already charged the card.
+            campaign = db.query(Campaign).filter(
+                Campaign.id == checkout.campaign_id).first() if checkout.campaign_id else None
+            discounts = calculate_discounts(
+                customer,
+                checkout.total_amount,
+                db,
+                use_referrer_discount=checkout.use_referrer_discount,
+                custom_amount=checkout.custom_discount_amount,
+                custom_percent=checkout.custom_discount_percent,
+                campaign=campaign,
+            )
+            # The approved figure is the money; the recomputed lines only say
+            # which discounts it was made of.
+            discounts["total_discount"] = checkout.discount_amount
             checkout_data = {
                 "basket": json.loads(checkout.basket_json or "[]"),
                 "total_amount": checkout.total_amount,
-                "discounts": {"total_discount": checkout.discount_amount, "details": []},
+                "discounts": discounts,
                 "credit_surcharge": checkout.credit_surcharge,
                 "final_amount": checkout.final_amount,
             }

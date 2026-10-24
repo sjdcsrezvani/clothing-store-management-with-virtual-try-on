@@ -16,17 +16,18 @@
     {% if range_notice %}<p class="filter-problem" role="status">⚠️ {{ range_notice }}</p>{% endif %}
     <form method="get" action="/admin/analytics" class="filter-bar">
         <div class="search-form">
-            <a href="/admin/analytics?period=today" class="btn {% if period == 'today' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">امروز</a>
-            <a href="/admin/analytics?period=week" class="btn {% if period == 'week' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">هفته</a>
-            <a href="/admin/analytics?period=month" class="btn {% if period == 'month' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">ماه</a>
-            <a href="/admin/analytics?period=year" class="btn {% if period == 'year' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">سال</a>
-            <a href="/admin/analytics?period=all" class="btn {% if period == 'all' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">همه</a>
+            <a href="/admin/analytics?period=today&tab={{ tab }}&category={{ category|urlencode }}" class="btn {% if period == 'today' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">امروز</a>
+            <a href="/admin/analytics?period=week&tab={{ tab }}&category={{ category|urlencode }}" class="btn {% if period == 'week' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">هفته</a>
+            <a href="/admin/analytics?period=month&tab={{ tab }}&category={{ category|urlencode }}" class="btn {% if period == 'month' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">ماه</a>
+            <a href="/admin/analytics?period=year&tab={{ tab }}&category={{ category|urlencode }}" class="btn {% if period == 'year' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">سال</a>
+            <a href="/admin/analytics?period=all&tab={{ tab }}&category={{ category|urlencode }}" class="btn {% if period == 'all' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">همه</a>
         </div>
         <div class="search-form filter-custom-row">
             <input type="text" id="analytics-start" name="start_date" value="{{ start_date }}" placeholder="۱۴۰۵/۰۱/۰۱" class="persian-date-input" data-pdp-pair="#analytics-end">
             <span>تا</span>
             <input type="text" id="analytics-end" name="end_date" value="{{ end_date }}" placeholder="۱۴۰۵/۰۶/۳۱" class="persian-date-input">
             <input type="hidden" name="period" value="custom">
+            <input type="hidden" name="tab" value="{{ tab }}">
             <input type="hidden" name="category" value="{{ category }}">
             <button type="submit" class="btn btn-primary btn-sm">اعمال</button>
         </div>
@@ -34,6 +35,11 @@
     <form method="post" action="/admin/analytics/digits" class="filter-bar is-inline flush-bottom">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="mode" value="{% if chart_digits == 'latin' %}fa{% else %}latin{% endif %}">
+        <input type="hidden" name="tab" value="{{ tab }}">
+        <input type="hidden" name="period" value="{{ period }}">
+        <input type="hidden" name="start_date" value="{{ start_date }}">
+        <input type="hidden" name="end_date" value="{{ end_date }}">
+        <input type="hidden" name="category" value="{{ category }}">
         <button type="submit" class="btn btn-sm btn-ghost">ارقام {% if chart_digits == 'latin' %}فارسی{% else %}لاتین{% endif %} در نمودارها</button>
     </form>
 </div>
@@ -636,10 +642,8 @@ window.ANALYTICS_SIZES = {
 };
 window.CHART_TOGGLE_NOTES = {{ toggle_notes|tojson }};
 
-// `window.chartValueText` is the formatter the page uses for a label it
-// writes itself (price histogram ticks) — one source, so an axis tick and a
-// bar's value can never say different things. Theme tones now flow through
-// the AnalyticsCharts bridge instead of these locals.
+// Every formatter is the bridge's own: one source, so an axis tick and a
+// bar's value can never say different things.
 var AC = window.AnalyticsCharts;
 if (window.echarts && AC) {
     var dailyRevenues = dailyData.map(function (d) { return d.revenue; });
@@ -704,7 +708,7 @@ if (window.echarts && AC) {
         opt.tooltip.trigger = 'item';
         opt.tooltip.formatter = doughnutTip('money');
         opt.series = [{
-            type: 'pie', radius: ['45%', '70%'],
+            type: 'pie', radius: ['45%', '70%'], showEmptyCircle: false,
             data: categoryData.map(function (c) { return { name: c.category, value: c.revenue }; }),
             itemStyle: { color: function (p) { return PALETTE6(T)[p.dataIndex % 6]; } },
             label: { formatter: doughnutLabel },
@@ -810,7 +814,7 @@ if (window.echarts && AC) {
         var opt = AC.base(paper);
         opt.legend = { show: false };
         opt.tooltip.valueFormatter = function (v) { return AC.grouped(v); };
-        opt.xAxis = AC.categoryAxis(priceDist.map(function (p) { return window.chartValueText(p.price, 'count') + ' تومان'; }), paper);
+        opt.xAxis = AC.categoryAxis(priceDist.map(function (p) { return AC.money(p.price); }), paper);
         opt.yAxis = AC.valueAxis(paper, false);
         opt.series = [{
             name: 'تعداد', type: 'bar',
@@ -841,7 +845,7 @@ if (window.echarts && AC) {
         opt.tooltip.trigger = 'item';
         opt.tooltip.formatter = doughnutTip('count');
         opt.series = [{
-            type: 'pie', radius: ['45%', '70%'],
+            type: 'pie', radius: ['45%', '70%'], showEmptyCircle: false,
             data: customerHealth.segments.map(function (s) { return { name: s.label, value: s.count }; }),
             itemStyle: { color: function (p) { return [T.lavender, T.sunshine, T.sky, T.candy][p.dataIndex % 4]; } },
             label: { formatter: doughnutLabel },
@@ -858,7 +862,7 @@ if (window.echarts && AC) {
         opt.tooltip.trigger = 'item';
         opt.tooltip.formatter = doughnutTip('money');
         opt.series = [{
-            type: 'pie', radius: ['45%', '70%'],
+            type: 'pie', radius: ['45%', '70%'], showEmptyCircle: false,
             data: paymentMix.map(function (m) { return { name: m.label, value: m.revenue }; }),
             itemStyle: { color: function (p) { return [T.mint, T.sky, T.sunshine][p.dataIndex % 3]; } },
             label: { formatter: doughnutLabel },
@@ -870,12 +874,18 @@ if (window.echarts && AC) {
         var opt = AC.base(paper);
         opt.legend = { show: false };
         opt.tooltip.valueFormatter = function (v) { return AC.money(v); };
-        var names = staffData.rows.map(function (r) { return r.name; });
+        var staffRows = staffData.rows.slice();
+        // Shift-less sales are parked in the table's «نامشخص» row; the chart
+        // above it would otherwise show nothing while the caption names money.
+        if (staffData.unattributed && staffData.unattributed.revenue) {
+            staffRows.push({ name: 'نامشخص', revenue: staffData.unattributed.revenue });
+        }
+        var names = staffRows.map(function (r) { return r.name; });
         opt.xAxis = AC.categoryAxis(names.length ? names : ['—'], paper);
         opt.yAxis = AC.valueAxis(paper, true);
         opt.series = [{
             name: 'فروش', type: 'bar',
-            data: names.length ? staffData.rows.map(function (r) { return r.revenue; }) : [0],
+            data: names.length ? staffRows.map(function (r) { return r.revenue; }) : [0],
             itemStyle: { color: T.sky, borderRadius: [3, 3, 0] },
         }];
         return opt;
@@ -886,7 +896,7 @@ if (window.echarts && AC) {
         opt.tooltip.trigger = 'item';
         opt.tooltip.formatter = doughnutTip('money');
         opt.series = [{
-            type: 'pie', radius: ['45%', '70%'],
+            type: 'pie', radius: ['45%', '70%'], showEmptyCircle: false,
             data: discountsData.map(function (d) { return { name: d.type, value: d.total_amount }; }),
             itemStyle: { color: function (p) { return PALETTE6(T)[p.dataIndex % 6]; } },
             label: { formatter: doughnutLabel },
@@ -897,12 +907,18 @@ if (window.echarts && AC) {
         var T = AC.tones(paper);
         var opt = AC.base(paper);
         opt.legend = { show: false };
+        // A heatmap point is one cell; axis trigger hands the formatter the
+        // whole row and `p.value[2]` throws.
+        opt.tooltip.trigger = 'item';
         opt.tooltip.formatter = function (p) {
             var cell = heatCells[p.dataIndex];
             return (cell ? cell.date + ' (' + cell.day_name + ')' : '') + ': ' + AC.money(p.value[2]);
         };
         opt.grid = { left: 8, right: 12, top: 8, bottom: 8, containLabel: true };
-        opt.xAxis = { type: 'value', min: 0, max: Math.max(heatWeeks, 1),
+        // ECharts 6 only lays heatmap cells out on a category axis; a value
+        // x-axis gives every cell a null width, so the calendar paints nothing.
+        opt.xAxis = { type: 'category',
+            data: Array.from({ length: Math.max(heatWeeks, 1) }, function (_, i) { return String(i); }),
             axisLine: { show: false }, axisTick: { show: false },
             axisLabel: { show: false }, splitLine: { show: false } };
         opt.yAxis = { type: 'category', inverse: true,

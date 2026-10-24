@@ -1609,6 +1609,10 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
    element cannot take children). Explicit height: without one the box
    collapses and the chart paints into a strip. */
 .chart-host { width: 100% !important; height: 260px !important; display: block; }
+/* The page is RTL, but ECharts anchors axis text assuming an LTR drawing box;
+   inherited RTL turns «end» into the plot side and clips names under bars.
+   Keep the drawing LTR — bidi still shapes the Persian words themselves. */
+.chart-host svg { direction: ltr; }
 #heatChart { height: 300px !important; }
 .print-heading { display: none; }
 
@@ -1787,6 +1791,23 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 .staff-profile-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem; margin-bottom: 1rem; }
 .staff-profile-head h3 { margin: 0; }
 .role-matrix td:first-child, .role-matrix th:first-child { text-align: start; }
+/* Payday banner: the one decision on the staff page, so it gets the brand
+   rail and a soft wash instead of reading as another plain card. The action
+   sits on its own line — a label and a 10-digit button never share a row. */
+.payroll-due { display: grid; gap: 1rem; border-inline-start: 4px solid var(--candy); background: linear-gradient(135deg, color-mix(in srgb, var(--candy) 7%, var(--card)) 0%, var(--card) 60%); }
+.payroll-due-main { display: flex; gap: 0.9rem; align-items: flex-start; }
+.payroll-due-badge { flex: 0 0 auto; display: grid; place-items: center; width: 2.6rem; height: 2.6rem; border-radius: 999px; color: var(--link); background: color-mix(in srgb, var(--candy) 14%, var(--card)); }
+.payroll-due-badge .ui-icon { width: 1.25rem; height: 1.25rem; }
+.payroll-due-copy h3 { margin: 0.15rem 0 0.35rem; }
+.payroll-due-copy p { margin: 0; }
+.payroll-due-form { display: flex; flex-wrap: wrap; align-items: end; gap: 0.75rem; padding-top: 0.9rem; border-top: 1px solid color-mix(in srgb, var(--candy) 18%, var(--rule)); }
+.payroll-due-method { display: grid; gap: 0.3rem; font-size: 0.8rem; font-weight: 600; color: var(--ink-soft); }
+.payroll-due-method select { min-width: 9rem; }
+@media (max-width: 700px) {
+  .payroll-due-form { align-items: stretch; }
+  .payroll-due-form .btn { width: 100%; }
+  .payroll-due-method select { width: 100%; }
+}
 .salary-box { margin-top: 1rem; padding: 1rem; border: 1px solid color-mix(in srgb, var(--mint) 35%, var(--rule)); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--mint) 5%, var(--card)); }
 .salary-box h4 { margin-bottom: 0.7rem; }
 .print-document { max-width: 820px; margin: 1.5rem auto; background: var(--card); padding: 2rem; box-shadow: var(--shadow-hover); border-radius: var(--radius); }
@@ -3781,6 +3802,12 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
 .pos-table tr.check-overdue { background: color-mix(in srgb, var(--candy) 8%, transparent); }
 .pos-table .btn-sm { min-height: 44px; display: inline-flex; align-items: center; }
 .pos-table .filter-field { margin-bottom: 0.5rem; }
+/* The review form is bulky (outcome, evidence, three references, card); it
+   stays closed until the row is actually being reconciled, or every row on
+   the page is a screenful. */
+.pos-review summary { list-style: none; cursor: pointer; }
+.pos-review summary::-webkit-details-marker { display: none; }
+.pos-review[open] summary { margin-bottom: 0.5rem; }
 /* Triggered alerts read as a worklist, one cheque per row. */
 .check-alert-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.6rem 0; border-bottom: 1px solid var(--rule); }
 .check-alert-row:last-child { border-bottom: none; }
@@ -4070,6 +4097,9 @@ button.text-link { background: none; border: none; padding: 0; font: inherit; cu
 .settings-note { margin: 0; }
 .form-group.is-error input, .form-group.is-error select { border-color: var(--danger); }
 .tip-icon:hover::after, .tip-icon:focus-visible::after, .field-tip:hover::after, .field-tip:focus-visible::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 0.4rem); inset-inline-start: 0; width: max-content; max-width: 16rem; white-space: normal; background: var(--card); color: var(--ink); border: 1px solid var(--rule); border-radius: var(--radius-sm); padding: 0.5rem 0.7rem; font-size: 0.78rem; font-weight: 400; z-index: 5; box-shadow: var(--shadow-overlay); }
+/* Pages with the JS bubble mark the trigger expanded; that bubble replaces
+   the CSS card instead of stacking a second one behind it. */
+.tip-icon[aria-expanded="true"]::after { content: none; }
 .tip-icon { position: relative; }
 .settings-card .tip-icon { margin-inline-start: auto; flex-shrink: 0; }
 

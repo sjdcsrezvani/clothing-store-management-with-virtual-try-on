@@ -1113,7 +1113,7 @@ async def admin_staff(request: Request, q: str = "", status: str = "all", page: 
     unpaid_names = [(person.full_name or person.username)
                     for person in unpaid_staff
                     if person.id not in paid_ids
-                    and is_payroll_due(person.hire_date, current)]
+                    and is_payroll_due(person.hire_date, current, person.created_at)]
     base_qs = urlencode({
         **({"q": search} if search else {}),
         **({"status": status_filter} if status_filter != "all" else {}),
@@ -1218,7 +1218,7 @@ async def admin_staff_profile(staff_id: int, request: Request, tab: str = "overv
         CashSession.cashier_user_id == staff_user.id,
         CashSession.status == "open").order_by(CashSession.opened_at.desc()).first()
     unpaid_month = staff_user.is_active and staff_user.salary_amount > 0 \
-        and is_payroll_due(staff_user.hire_date, current) and not db.query(
+        and is_payroll_due(staff_user.hire_date, current, staff_user.created_at) and not db.query(
         SalaryPayment).filter(SalaryPayment.staff_user_id == staff_user.id,
                               SalaryPayment.period_key == current).first()
     # Yearly rollups from live payments: the year is the period prefix.
@@ -2755,7 +2755,7 @@ def _pos_list_conds(search: str, status_filter: str) -> list:
 async def admin_pos_reconciliation(
     request: Request,
     q: str = "",
-    status: str = "all",
+    status: str = "unresolved",
     page: str = "1",
     per_page: str = "25",
     sort: str = "date",
@@ -2769,7 +2769,7 @@ async def admin_pos_reconciliation(
 
     from urllib.parse import urlencode
     search = (q or "").strip()
-    status_filter = status if status in POS_STATUSES else "all"
+    status_filter = status if status in POS_STATUSES else "unresolved"
     page_int = page_arg(page)
     per_page_int = int(per_page) if str(per_page).isdigit() and int(per_page) in (10, 25, 50) else 25
     sort_key, sort_dir = parse_sort(request.query_params, {"date": "desc", "amount": "desc"}, "date")
@@ -2804,7 +2804,7 @@ async def admin_pos_reconciliation(
         "terminal_error": "خطای کارت‌خوان",
         "provider_investigation": "بررسی ارائه‌دهنده",
     }
-    has_filters = bool(search or status_filter != "all")
+    has_filters = bool(search or status_filter not in ("all", "unresolved"))
     from urllib.parse import urlencode
     base_qs = urlencode({
         **({"q": search} if search else {}),

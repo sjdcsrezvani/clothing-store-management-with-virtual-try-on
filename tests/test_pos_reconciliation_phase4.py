@@ -134,6 +134,13 @@ def test_page_names_risk_witnesses_alarm_and_terminal(client, db_session, authed
     assert "نتیجه بررسی" in fresh                             # visible labels
     assert "دلیل و مدرک" in fresh
     assert "کارت‌خوان" in fresh                               # terminal status line
+    # The bulky review form is collapsed behind its own row action, not
+    # printed open on every transaction.
+    assert '<details class="pos-review">' in fresh
+    assert '<summary class="btn btn-sm btn-ghost">بررسی</summary>' in fresh
+    details = fresh[fresh.index('<details class="pos-review">'):]
+    details = details[:details.index('</details>')]
+    assert "data-pos-form" in details and " open" not in details.split(">", 1)[0]
 
     # Resolve it: the row then names its witness and date, not just its note.
     alarm = db_session.query(POSTransaction).filter(
@@ -145,6 +152,40 @@ def test_page_names_risk_witnesses_alarm_and_terminal(client, db_session, authed
     witnessed = client.get("/admin/pos-reconciliation").text
     assert "ثبت:" in witnessed
     assert "bank slip 7" in witnessed
+
+
+def test_default_queue_hides_terminal_answers_and_never_offers_review_for_them(
+        client, db_session, authed):
+    """cancelled/declined are answers, not a queue item. The page opens on the
+    unresolved set; «همه» may show them, but without a review form."""
+    import re
+    from models import POSTransaction
+    db_session.add_all([
+        POSTransaction(checkout_nonce="phase4-q-approved", amount=111000,
+                       host="127.0.0.1", port=8500, status="approved",
+                       provider_reference="APPROVED-VISIBLE"),
+        POSTransaction(checkout_nonce="phase4-q-cancelled", amount=222000,
+                       host="127.0.0.1", port=8500, status="cancelled",
+                       provider_reference="CANCELLED-HIDDEN"),
+    ])
+    db_session.commit()
+
+    default = client.get("/admin/pos-reconciliation").text
+    assert "APPROVED-VISIBLE" in default              # approved, but no invoice
+    assert "CANCELLED-HIDDEN" not in default           # terminal already answered
+    assert '<option value="unresolved" selected>' in default
+    assert "1 مورد" in default and "با همین فیلترها" not in default
+
+    everything = client.get("/admin/pos-reconciliation?status=all").text
+    assert "CANCELLED-HIDDEN" in everything
+    cancelled_row = re.search(
+        r"<tr[^>]*>(?:(?!</tr>).)*CANCELLED-HIDDEN(?:(?!</tr>).)*</tr>",
+        everything, re.S).group(0)
+    assert "data-pos-form" not in cancelled_row
+    approved_row = re.search(
+        r"<tr[^>]*>(?:(?!</tr>).)*APPROVED-VISIBLE(?:(?!</tr>).)*</tr>",
+        everything, re.S).group(0)
+    assert "data-pos-form" in approved_row
 
 
 def test_list_pages_searches_filters_and_sorts(client, db_session, authed):

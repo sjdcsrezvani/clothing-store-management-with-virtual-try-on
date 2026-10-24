@@ -147,7 +147,7 @@ def test_the_pages_that_take_a_period_say_which_range_they_used(client, authed):
     """
     analytics = client.get("/admin/analytics?period=banana").text
     assert "شناخته نشد" in analytics
-    assert 'href="/admin/analytics?period=month" class="btn btn-primary' in analytics
+    assert re.search(r'href="/admin/analytics\?period=month[^"]*" class="btn btn-primary', analytics)
 
     accounting = client.get("/admin/accounting?period=banana").text
     assert "شناخته نشد" in accounting

@@ -263,7 +263,7 @@ def get_terminal_config(db) -> dict:
     values = {
         row.key: row.value
         for row in db.query(Settings).filter(
-            Settings.key.in_(["pos_terminal_host", "pos_terminal_port"])
+            Settings.key.in_(["pos_terminal_host", "pos_terminal_port", "pos_receipt_2item"])
         ).all()
     }
     host = DEFAULT_HOST

@@ -171,9 +171,12 @@ def test_identity_and_bank_validators(client, db_session):
 
 
 def test_deactivation_names_what_it_strands(client, db_session):
+    from datetime import datetime, timedelta, timezone
     _owner_client(client, db_session, name="phaseb-owner-impact")
     worker, _ = _staff(db_session, "phaseb-impact", "cashier")
     worker.salary_amount = 10_000_000
+    # A completed first month: the current month is genuinely unpaid.
+    worker.hire_date = datetime.now(timezone.utc) - timedelta(days=60)
     db_session.add(CashSession(cashier_user_id=worker.id, opening_balance=100_000, status="open"))
     db_session.commit()
 
