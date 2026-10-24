@@ -259,6 +259,23 @@
 .t-acc-chevron path { vector-effect: non-scaling-stroke; }
 .t-acc[data-open="true"] .t-acc-chevron { transform: scaleY(-1); }
 
+/* ── Variant capsule (product form): the same accordion, driven by the
+   row's own data-open flag. Motion lives here with the scale; the card's
+   colours stay in style.css under the theme catalogue. ── */
+.variant-entry-body { display: grid; grid-template-rows: 1fr; transition: grid-template-rows var(--acc-expand) var(--acc-ease); }
+.variant-entry[data-open="false"] .variant-entry-body { grid-template-rows: 0fr; transition: grid-template-rows var(--acc-collapse) var(--acc-ease); }
+.variant-entry-body-inner {
+  overflow: hidden; min-height: 0; opacity: 1; filter: blur(0);
+  transition: opacity var(--acc-expand) var(--acc-ease), filter var(--acc-expand) var(--acc-ease);
+}
+.variant-entry[data-open="false"] .variant-entry-body-inner {
+  opacity: 0; filter: blur(var(--blur-small));
+  transition: opacity var(--acc-collapse) var(--acc-ease), filter var(--acc-collapse) var(--acc-ease);
+}
+.variant-entry-chevron { transition: transform var(--acc-chevron) var(--acc-ease), background-color var(--duration-quick) var(--ease-smooth-out), color var(--duration-quick) var(--ease-smooth-out), border-color var(--duration-quick) var(--ease-smooth-out); }
+.variant-entry-heading { transition: background-color var(--duration-quick) var(--ease-smooth-out); }
+.variant-remove { transition: background-color var(--duration-quick) var(--ease-smooth-out), color var(--duration-quick) var(--ease-smooth-out), border-color var(--duration-quick) var(--ease-smooth-out); }
+
 /* ── Banner stack (Sonner-style depths; geometry driven by JS) ── */
 .t-stack { position: relative; }
 .t-stack-banner {
@@ -443,6 +460,8 @@
 @media (prefers-reduced-motion: reduce) {
   .t-modal, .t-toast, .t-dropdown, .t-panel-slide,
   .t-acc-panel, .t-acc-panel-inner, .t-acc-chevron,
+  .variant-entry-body, .variant-entry-body-inner, .variant-entry-chevron,
+  .variant-entry-heading, .variant-remove,
   .t-skel-skeleton, .t-skel-content,
   .t-stack-banner, .t-sheet, .t-modal-card,
   [data-dialog] { transition: none !important; transform: none !important; filter: none !important; }

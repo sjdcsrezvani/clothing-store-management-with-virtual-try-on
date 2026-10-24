@@ -1,24 +1,29 @@
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from urllib.parse import urlencode
 from database import get_db
-from models import Settings, to_english_digits
+from models import Product, Settings, to_english_digits
 from services._common import fmt, check_admin, get_setting_int, jalali_str, share
 from services.security import log_action, require_html_role
 from services.templating import templates
 from services.reporting import canonical_report
-from services.chart_notes import chart_notes
+from services.chart_notes import chart_notes, toggle_notes
+from services.sizing import SIZE_TYPES
 from services.analytics import (
+    AGE_GROUP_LABELS, GENDER_LABELS, SYSTEM_LABELS,
     period_range, get_daily_revenue,
     get_revenue_by_category,
     get_revenue_by_tier, get_discount_impact,
     get_top_customers, get_categories, get_price_stats, get_variant_stats,
-    get_color_size_matrix, get_inventory_value,
+    get_color_size_matrix, get_inventory_value, get_stock_by_band,
     get_abc_products, get_sales_pattern,
     get_sell_through, get_revenue_trend, get_basket_stats,
     get_customer_health, get_margin_by_category, get_dead_stock,
     get_price_distribution, get_top_selling_variants, get_new_customers,
     get_revenue_by_payment, get_return_rate, get_returns, get_staff_performance,
     get_turnover, get_year_heatmap,
+    get_category_age_sales, get_category_size_matrix, get_group_type_sales,
+    get_returns_by_band, get_sales_by_size_system, get_sizing_coverage,
 )
 
 router = APIRouter(prefix="/admin")
@@ -26,11 +31,38 @@ router = APIRouter(prefix="/admin")
 ANALYTICS_TABS = {
     "sales": "فروش",
     "product": "محصول",
+    "sizes": "دسته‌ها و سایز",
     "inventory": "انبار",
     "customers": "مشتریان",
     "profit": "سود",
     "trends": "روند",
 }
+
+
+def _multi_values(request: Request, name: str, allowed=None) -> list[str]:
+    values = [value for value in request.query_params.getlist(name) if value]
+    if allowed is not None:
+        values = [value for value in values if value in allowed]
+    return list(dict.fromkeys(values))
+
+
+def _active_categories(db) -> list[str]:
+    rows = db.query(Product.category).filter(
+        Product.is_active == True,  # noqa: E712
+        Product.category != None,  # noqa: E711
+    ).distinct().all()
+    return sorted({row[0] for row in rows if row[0]})
+
+
+def _size_filters(request: Request, db) -> dict:
+    categories = set(_active_categories(db)) | {"none"}
+    return {
+        "categories": _multi_values(request, "category", categories),
+        "types": _multi_values(request, "type", set(SIZE_TYPES) | {"none"}),
+        "groups": _multi_values(request, "group", set(GENDER_LABELS) | {"none"}),
+        "systems": _multi_values(request, "system", set(SYSTEM_LABELS) | {"none"}),
+        "ages": _multi_values(request, "age", set(AGE_GROUP_LABELS) | {"none"}),
+    }
 
 
 @router.get("/analytics", response_class=HTMLResponse)
@@ -87,6 +119,22 @@ async def admin_analytics(
         "turnover": {"rows": [], "total": 0, "omitted": 0, "low_count": 0, "threshold": 14},
         "basket": {"items_per_txn": 0},
         "color_size_matrix": {"colors": [], "rows": [], "max": 0, "max_revenue": 0},
+        "stock_by_band": [],
+        "group_type": {"group": [], "type": []},
+        "category_age": {"categories": [], "series": [],
+                         "totals": {"revenue": 0, "units": 0}},
+        "category_size": {"categories": [], "sizes": [], "rows": [],
+                          "max": 0, "max_revenue": 0},
+        "returns_band": [],
+        "system_mix": [],
+        "coverage": {"products_total": 0, "products_with_system": 0,
+                     "products_without_system": 0, "variants_total": 0,
+                     "variants_with_band": 0, "variants_without_band": 0,
+                     "band_pct": None, "system_pct": None, "missing": []},
+        "filter_options": {"categories": [], "types": [], "groups": [],
+                           "systems": [], "ages": []},
+        "selected_filters": {"categories": [], "types": [], "groups": [],
+                             "systems": [], "ages": []},
     }
 
     # Gather all analytics data
@@ -133,10 +181,29 @@ async def admin_analytics(
         data["color_stats"] = get_variant_stats(db, start, end, "color", cat)
         data["size_stats"] = get_variant_stats(db, start, end, "size", cat)
         data["color_size_matrix"] = get_color_size_matrix(db, start, end, cat)
+        data["stock_by_band"] = get_stock_by_band(db)
         data["inventory"] = get_inventory_value(db)
         data["sell_through"] = get_sell_through(db, start, end)
         data["dead_stock"] = get_dead_stock(db, start, end)
         data["top_variants"] = get_top_selling_variants(db, start, end)
+
+    if active_tab == "sizes":
+        filters = _size_filters(request, db)
+        data["selected_filters"] = filters
+        data["filter_options"] = {
+            "categories": [(value, value) for value in _active_categories(db)] +
+                          [("none", "نامشخص")],
+            "types": list(SIZE_TYPES.items()) + [("none", "نامشخص")],
+            "groups": list(GENDER_LABELS.items()) + [("none", "نامشخص")],
+            "systems": list(SYSTEM_LABELS.items()) + [("none", "نامشخص")],
+            "ages": list(AGE_GROUP_LABELS.items()),
+        }
+        data["group_type"] = get_group_type_sales(db, start, end, filters)
+        data["category_age"] = get_category_age_sales(db, start, end, filters)
+        data["category_size"] = get_category_size_matrix(db, start, end, filters)
+        data["returns_band"] = get_returns_by_band(db, start, end, filters)
+        data["system_mix"] = get_sales_by_size_system(db, start, end, filters)
+        data["coverage"] = get_sizing_coverage(db)
 
     if active_tab == "inventory":
         data["turnover"] = get_turnover(db, start, end)
@@ -180,8 +247,12 @@ async def admin_analytics(
         price_dist=data["price_dist"], margin_by_cat=data["margin_by_cat"],
         customer_health=data["customer_health"], payment_mix=data["payment_mix"],
         discounts=data["discounts"], heatmap=data["heatmap"],
-        staff=data["staff"],
+        staff=data["staff"], group_type=data["group_type"],
+        category_age=data["category_age"], returns_band=data["returns_band"],
+        system_mix=data["system_mix"],
     )
+    toggles = toggle_notes(
+        group_type=data["group_type"], category_age=data["category_age"])
 
     return templates.TemplateResponse(request, "admin/analytics.html", {
         "show_charts": True,
@@ -197,6 +268,16 @@ async def admin_analytics(
         "color_stats": data["color_stats"],
         "size_stats": data["size_stats"],
         "color_size_matrix": data["color_size_matrix"],
+        "stock_by_band": data["stock_by_band"],
+        "group_type": data["group_type"],
+        "category_age": data["category_age"],
+        "category_size": data["category_size"],
+        "returns_band": data["returns_band"],
+        "system_mix": data["system_mix"],
+        "coverage": data["coverage"],
+        "filter_options": data["filter_options"],
+        "selected_filters": data["selected_filters"],
+        "toggle_notes": toggles,
         "inventory": data["inventory"],
         "abc_products": data["abc_products"],
         "sales_pattern": data["sales_pattern"],
@@ -381,11 +462,16 @@ async def analytics_goal(request: Request, amount: str = Form(""), db=Depends(ge
 
 
 @router.post("/analytics/digits", response_class=HTMLResponse)
-async def analytics_digits(request: Request, mode: str = Form("fa"), db=Depends(get_db)):
+async def analytics_digits(request: Request, mode: str = Form("fa"),
+                           tab: str = Form("sales"), period: str = Form("month"),
+                           start_date: str = Form(""), end_date: str = Form(""),
+                           category: str = Form(""), db=Depends(get_db)):
     """Chart digit script, scoped to charts: Persian groupings or Latin ones.
 
     The standing Latin-kept vote covers inputs and examples; axes are a
-    display surface, so this toggle lives here and nowhere else.
+    display surface, so this toggle lives here and nowhere else. The page's
+    own range and tab come back with it, so flipping the script never moves
+    the reader somewhere else.
     """
     guard = require_html_role(request, db, "owner")
     if not hasattr(guard, "role"):
@@ -397,4 +483,9 @@ async def analytics_digits(request: Request, mode: str = Form("fa"), db=Depends(
     else:
         db.add(Settings(key="chart_digits_latin", value=value))
     db.commit()
-    return RedirectResponse(url="/admin/analytics?msg=ارقام نمودارها تغییر کرد.", status_code=303)
+    query = urlencode({
+        "tab": tab, "period": period, "start_date": start_date,
+        "end_date": end_date, "category": category,
+        "msg": "ارقام نمودارها تغییر کرد.",
+    })
+    return RedirectResponse(url=f"/admin/analytics?{query}", status_code=303)

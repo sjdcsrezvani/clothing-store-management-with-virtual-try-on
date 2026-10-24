@@ -272,7 +272,7 @@ html[data-theme-mode="dark"] .card::before, html[data-theme-mode="dark-shell"] .
 html[data-theme-mode="high-contrast"] .card, html[data-theme-mode="high-contrast"] .stat-card, html[data-theme-mode="high-contrast"] .kpi-card { border: 2px solid var(--rule); }
 .page-container { max-width: 1240px; margin: 0 auto; padding: 1.8rem 1.5rem 3rem; }
 @media (min-width: 901px) {
-  .page-container > * { animation: pageRise 250ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .page-container > * { animation: pageRise 250ms cubic-bezier(0.22, 1, 0.36, 1) backwards; }
   .page-container > *:nth-child(2) { animation-delay: 40ms; }
   .page-container > *:nth-child(3) { animation-delay: 80ms; }
 }
@@ -734,6 +734,19 @@ tbody tr:last-child td { border-bottom: none; }
   gap: 1rem;
   margin-bottom: 1.5rem;
 }
+/* Cashier greeting: one line, no card chrome — the cards carry the weight.
+   Generous line-height for the tall Persian glyphs, balanced wrapping so a
+   long line never strands one word, and a jitter-free clock: tabular figures
+   that never shift the line when the minutes tick. */
+.dash-greeting { font-size: 1.1rem; font-weight: 600; line-height: 2.1; margin: 0 0 1rem; text-wrap: balance; }
+.dash-greeting [data-clock] { font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* The cashier's own week: day chips with their takings, the viewed day calm. */
+.history-strip { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.history-day { display: flex; flex-direction: column; gap: 0.15rem; padding: 0.5rem 0.9rem; min-height: 44px; justify-content: center; border: 1px solid var(--rule); border-radius: 999px; font-size: 0.85rem; color: var(--ink); text-decoration: none; }
+.history-day.is-active { border-color: var(--candy); font-weight: 700; }
+/* Target progress: the track is theme chrome, the fill reads the data width. */
+.progress-track { height: 8px; border-radius: 999px; background: var(--surface-soft); margin-top: 0.5rem; overflow: hidden; }
+.progress-fill { height: 100%; width: 0; border-radius: 999px; background: var(--candy); }
 
 .stat-card {
   background: var(--card);
@@ -904,6 +917,13 @@ tbody tr:last-child td { border-bottom: none; }
   overflow-y: auto;
   margin: 0.5rem 0;
 }
+/* Till density: the whole scan step fits 768px height at desktop widths —
+   tighter rhythm, one step smaller type, list scrolls inside. */
+.checkout-layout { font-size: 0.95rem; }
+.checkout-layout .card { padding: 0.8rem 1rem; }
+.checkout-layout h3 { font-size: 1rem; margin-bottom: 0.4rem; }
+.checkout-layout h4 { font-size: 0.9rem; margin: 0.6rem 0 0.3rem; }
+.checkout-layout .form-group { margin-bottom: 0.5rem; }
 
 .basket-item {
   display: grid;
@@ -914,6 +934,25 @@ tbody tr:last-child td { border-bottom: none; }
   border-bottom: 1px solid var(--rule);
 }
 .basket-item:last-child { border-bottom: none; }
+/* The row that just landed flashes once (same keyframes as the purchases
+   duplicate flash), so the eye finds it without reading every line. */
+.basket-item.is-new { animation: row-flash 1.2s ease; border-radius: var(--radius-sm); }
+@media (prefers-reduced-motion: reduce) {
+  .basket-item.is-new { animation: none; }
+}
+/* Till chrome without inline styles (print and responsive can override). */
+.form-gap-top { margin-top: 0.5rem; }
+.card-narrow { max-width: 560px; margin: 1.5rem auto; }
+.mb-0 { margin-bottom: 0; }
+.check-row { display: flex; gap: 0.5rem; align-items: center; }
+.basket-count { background: var(--brand-fill); color: var(--brand-label); padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.8rem; }
+#terminal-status { margin-top: 0.6rem; }
+.profit-meter { position: fixed; bottom: 4px; left: 6px; font-size: 0.62rem; line-height: 1; opacity: 0.42; color: var(--ink-soft); letter-spacing: 0.5px; z-index: 50; background: var(--card); padding: 1px 3px; border-radius: 2px; }
+.profit-pct { color: var(--info-ink); margin-inline-start: 0.35rem; }
+/* Product name search: quiet result rows under the scan box. */
+.search-results { display: flex; flex-direction: column; gap: 0.25rem; margin-top: 0.4rem; }
+.search-results button { text-align: right; padding: 0.5rem 0.7rem; min-height: 44px; border: 1px solid var(--rule); border-radius: 8px; background: var(--card); color: var(--ink); font-family: inherit; font-size: 0.9rem; cursor: pointer; }
+.search-results button:hover { border-color: var(--candy); }
 
 .basket-item-info strong { font-size: 0.95rem; display: block; }
 .basket-item-info small  { color: var(--ink-soft); font-size: 0.8rem; }
@@ -930,7 +969,7 @@ tbody tr:last-child td { border-bottom: none; }
   color: var(--persimmon);
   border: 1px solid transparent;
   border-radius: 50%;
-  width: 30px; height: 30px;
+  width: 44px; height: 44px;
   cursor: pointer;
   font-weight: 700;
   font-family: inherit;
@@ -988,7 +1027,7 @@ tbody tr:last-child td { border-bottom: none; }
 .btn-confirm { font-size: 1.1rem; padding: 1.1rem; margin-top: 0.8rem; }
 /* The wizard's own rhythm (try-on mirrors the till): timeline breathing room,
    the pairing subsection inside step 1, the scan row, the generate button. */
-.wizard-timeline { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+.wizard-timeline { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; margin-bottom: 1.5rem; list-style: none; margin-top: 0; margin-left: 0; margin-right: 0; padding: 0; }
 .tryon-pairing {
   margin-top: 1rem;
   padding-top: 1rem;
@@ -997,12 +1036,12 @@ tbody tr:last-child td { border-bottom: none; }
 .tryon-pairing h4 { margin-bottom: 0.5rem; font-size: 0.95rem; }
 .tryon-pairing .muted { color: var(--ink-soft); font-size: 0.85rem; margin-bottom: 0.6rem; }
 .tryon-scan-form { display: flex; gap: 0.5rem; margin-bottom: 0.8rem; align-items: center; }
-.tryon-scan-form input[type="text"] { flex: 1; direction: ltr; font-size: 1rem; }
+.tryon-scan-form input[type="text"] { flex: 1; font-size: 1rem; }
 .btn-generate { font-size: 1.1rem; margin-top: 1rem; }
-.payment-timeline { display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.8rem; color: var(--ink-soft); font-size: 0.72rem; }
+.payment-timeline { display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.8rem; color: var(--ink-soft); font-size: 0.72rem; list-style: none; margin-top: 0; margin-left: 0; margin-right: 0; padding: 0; }
 .timeline-step { padding: 0.35rem 0.5rem; border-radius: 999px; border: 1px solid var(--rule); white-space: nowrap; }
 .timeline-step.active { color: var(--link-hover); border-color: var(--candy); background: color-mix(in srgb, var(--card) 82%, var(--candy)); font-weight: 700; }
-.timeline-line { flex: 1; height: 1px; background: var(--rule); }
+.timeline-line { flex: 1; min-width: 12px; height: 1px; background: var(--rule); list-style: none; }
 .cash-calculator { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; align-items: end; margin: 0.8rem 0; padding: 0.8rem; background: var(--surface-soft); border-radius: var(--radius-sm); }
 .cash-calculator label { font-size: 0.8rem; font-weight: 700; grid-column: 1 / -1; }
 .cash-calculator strong { padding: 0.7rem; color: var(--success-ink); }
@@ -1011,6 +1050,9 @@ tbody tr:last-child td { border-bottom: none; }
   display: flex;
   gap: 0.5rem;
   margin-bottom: 1rem;
+  border: 0;
+  padding: 0;
+  min-inline-size: 0;
 }
 
 .payment-option {
@@ -1019,6 +1061,7 @@ tbody tr:last-child td { border-bottom: none; }
   gap: 0.5rem;
   cursor: pointer;
   padding: 0.6rem 1rem;
+  min-height: 44px;
   border: 2px solid var(--rule);
   border-radius: var(--radius-sm);
   transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
@@ -1131,6 +1174,9 @@ html[data-theme-mode="high-contrast"] { color-scheme: light; }
   justify-content: center;
   margin-top: 1.5rem;
 }
+.refund-notice { flex: 1; text-align: right; }
+.refund-form { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.refund-reason { padding: 0.5rem 0.7rem; border: 2px solid var(--rule); border-radius: 8px; max-width: 180px; font-family: inherit; }
 
 /* Local icons keep operational navigation consistent without a network dependency. */
 .icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
@@ -1371,6 +1417,14 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 .ranked-units { color: var(--ink-soft); font-size: 0.75rem; }
 .ranked-money { font-weight: 800; }
 .ranked-profit { color: var(--success-ink); font-size: 0.78rem; }
+.ranked-discount { color: var(--ink-soft); font-size: 0.75rem; }
+/* Staff board toggle + inline goal editor live in the section heading area. */
+.rank-toggle { display: flex; gap: 0.25rem; }
+.rank-toggle a { padding: 0.4rem 0.9rem; min-height: 44px; display: inline-flex; align-items: center; border: 1px solid var(--rule); border-radius: 999px; font-size: 0.85rem; color: var(--ink-soft); text-decoration: none; }
+.rank-toggle a[aria-current] { border-color: var(--candy); color: var(--ink); font-weight: 700; }
+.targets-editor { margin-top: 1rem; }
+.targets-editor summary { cursor: pointer; color: var(--link); font-weight: 600; min-height: 44px; display: inline-flex; align-items: center; }
+.targets-editor .form-row { margin-top: 0.6rem; }
 
 /* The month in prose — the dashboard's reading strip. Prose lines like the
    ranked rows', but no ranks and no figures to align: it is a paragraph list. */
@@ -1555,6 +1609,10 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
    element cannot take children). Explicit height: without one the box
    collapses and the chart paints into a strip. */
 .chart-host { width: 100% !important; height: 260px !important; display: block; }
+/* The page is RTL, but ECharts anchors axis text assuming an LTR drawing box;
+   inherited RTL turns «end» into the plot side and clips names under bars.
+   Keep the drawing LTR — bidi still shapes the Persian words themselves. */
+.chart-host svg { direction: ltr; }
 #heatChart { height: 300px !important; }
 .print-heading { display: none; }
 
@@ -1733,6 +1791,23 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 .staff-profile-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem; margin-bottom: 1rem; }
 .staff-profile-head h3 { margin: 0; }
 .role-matrix td:first-child, .role-matrix th:first-child { text-align: start; }
+/* Payday banner: the one decision on the staff page, so it gets the brand
+   rail and a soft wash instead of reading as another plain card. The action
+   sits on its own line — a label and a 10-digit button never share a row. */
+.payroll-due { display: grid; gap: 1rem; border-inline-start: 4px solid var(--candy); background: linear-gradient(135deg, color-mix(in srgb, var(--candy) 7%, var(--card)) 0%, var(--card) 60%); }
+.payroll-due-main { display: flex; gap: 0.9rem; align-items: flex-start; }
+.payroll-due-badge { flex: 0 0 auto; display: grid; place-items: center; width: 2.6rem; height: 2.6rem; border-radius: 999px; color: var(--link); background: color-mix(in srgb, var(--candy) 14%, var(--card)); }
+.payroll-due-badge .ui-icon { width: 1.25rem; height: 1.25rem; }
+.payroll-due-copy h3 { margin: 0.15rem 0 0.35rem; }
+.payroll-due-copy p { margin: 0; }
+.payroll-due-form { display: flex; flex-wrap: wrap; align-items: end; gap: 0.75rem; padding-top: 0.9rem; border-top: 1px solid color-mix(in srgb, var(--candy) 18%, var(--rule)); }
+.payroll-due-method { display: grid; gap: 0.3rem; font-size: 0.8rem; font-weight: 600; color: var(--ink-soft); }
+.payroll-due-method select { min-width: 9rem; }
+@media (max-width: 700px) {
+  .payroll-due-form { align-items: stretch; }
+  .payroll-due-form .btn { width: 100%; }
+  .payroll-due-method select { width: 100%; }
+}
 .salary-box { margin-top: 1rem; padding: 1rem; border: 1px solid color-mix(in srgb, var(--mint) 35%, var(--rule)); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--mint) 5%, var(--card)); }
 .salary-box h4 { margin-bottom: 0.7rem; }
 .print-document { max-width: 820px; margin: 1.5rem auto; background: var(--card); padding: 2rem; box-shadow: var(--shadow-hover); border-radius: var(--radius); }
@@ -2073,23 +2148,50 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 @media (prefers-reduced-motion: reduce) {
   .demand-updated { animation: none; }
 }
-.variant-entry { position: relative; margin-top: 0.8rem; padding: 1rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--surface-soft); }
-.variant-entry-heading { display: flex; align-items: center; gap: 0.7rem; width: 100%; margin: 0 0 0.8rem; padding: 0; padding-inline-end: 2rem; border: 0; background: none; font: inherit; text-align: start; cursor: pointer; color: var(--ink); }
+.variant-entry { position: relative; margin-top: 0.8rem; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / 0.06); overflow: clip; }
+/* The header is a real bar: full-bleed tint, generous hit area, the summary
+   beside the title — not a bare row of text floating over the card. */
+.variant-entry-heading { display: flex; align-items: center; gap: 0.7rem; width: 100%; margin: 0; padding: 0.7rem 0.9rem; padding-inline-end: 3rem; border: 0; border-block-end: 1px solid var(--rule); background: var(--surface-soft); font: inherit; text-align: start; cursor: pointer; color: var(--ink); }
+.variant-entry[data-open="false"] .variant-entry-heading { border-block-end-color: transparent; }
+@media (hover: hover) and (pointer: fine) {
+  .variant-entry-heading:hover { filter: brightness(0.985); }
+}
+.variant-entry-heading:focus-visible { outline: 2px solid var(--candy); outline-offset: -2px; }
+/* Number chip: the row's own index — outlined while the row is unfinished
+   (price missing), filled once it can sell. */
+.variant-entry-index { flex: 0 0 auto; display: inline-grid; place-items: center; min-width: 1.7rem; height: 1.7rem; padding-inline: 0.4rem; border-radius: 999px; background: transparent; border: 1.5px solid var(--brand-fill); color: var(--brand-fill); font-size: 0.78rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.variant-entry.is-complete .variant-entry-index { background: var(--brand-fill); border-color: var(--brand-fill); color: var(--brand-label); }
 .variant-entry-heading strong { font-size: 0.92rem; }
 .variant-entry-summary { color: var(--ink-soft); font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.variant-entry-caret { margin-inline-start: auto; color: var(--ink-soft); transition: transform 150ms ease; }
-.variant-entry[data-open="false"] .variant-entry-body { display: none; }
-.variant-entry[data-open="false"] .variant-entry-heading { margin-bottom: 0; }
-.variant-entry[data-open="false"] .variant-entry-caret { transform: rotate(90deg); }
+/* Colour dot: the variant's own picked colour, drawn from the row's live
+   field by JS — a garment row should show its garment. */
+.variant-entry-dot { flex: 0 0 auto; width: 1rem; height: 1rem; border-radius: 50%; border: 1.5px solid var(--rule); background: transparent; }
+.variant-entry-dot.has-color { border-color: color-mix(in srgb, var(--ink) 20%, transparent); }
+/* Chevron: a drawn chevron in a ringed button, not a bare glyph — it reads
+   as the control it is. Flips on the open state with the accordion curve. */
+.variant-entry-chevron { margin-inline-start: auto; flex: 0 0 auto; display: inline-grid; place-items: center; width: 1.9rem; height: 1.9rem; border: 1.5px solid var(--rule); border-radius: 50%; color: var(--ink-soft); }
+.variant-entry-chevron svg { width: 0.85rem; height: 0.85rem; }
+.variant-entry-chevron svg path { vector-effect: non-scaling-stroke; }
+.variant-entry[data-open="true"] .variant-entry-chevron { transform: rotate(180deg); background: var(--brand-fill); border-color: var(--brand-fill); color: var(--brand-label); }
+@media (hover: hover) and (pointer: fine) {
+  .variant-entry-heading:hover .variant-entry-chevron { border-color: var(--brand-fill); color: var(--brand-fill); }
+  .variant-entry[data-open="true"] .variant-entry-heading:hover .variant-entry-chevron { color: var(--brand-label); }
+}
+/* Open/close geometry lives in motion.css beside the accordion scale, so the
+   theme catalogue never owns a duration. */
+.variant-entry-body { display: grid; }
+.variant-entry-body-inner { min-height: 0; }
+.variant-entry-body-pad { padding: 1rem; padding-block-start: 0.9rem; }
 .variant-entry-total { margin-top: 0.7rem; font-size: 0.85rem; color: var(--ink-soft); }
 .variant-entry-total strong { color: var(--ink); }
 .form-stock-total { margin-inline-start: auto; font-size: 0.88rem; color: var(--ink-soft); }
 .form-stock-total strong { color: var(--ink); }
-@media (prefers-reduced-motion: reduce) {
-  .variant-entry-caret { transition: none; }
+/* The delete control: quiet until hovered, clearly destructive on hover. */
+.variant-remove { position: absolute; top: 0.55rem; left: 0.55rem; z-index: 1; width: 1.9rem; min-height: 1.9rem; border: 1px solid transparent; border-radius: 50%; background: transparent; color: var(--ink-soft); font-size: 1.1rem; line-height: 1; cursor: pointer; }
+@media (hover: hover) and (pointer: fine) {
+  .variant-remove:hover { color: var(--link-hover); border-color: var(--rule); }
 }
 .variant-entry-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.variant-remove { position: absolute; top: 0.7rem; left: 0.7rem; width: 2rem; min-height: 2rem; border: 1px solid var(--rule); border-radius: 50%; background: var(--card); color: var(--link-hover); font-size: 1.2rem; cursor: pointer; }
 .variant-edit-layout { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(250px, 0.65fr); gap: 1.2rem; align-items: start; }
 /* The whole side column sticks, not just the summary card: a single sticky
    card would slide down over the danger card below it. */
@@ -2129,7 +2231,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .color-swatch:hover { border-color: var(--candy); }
 .color-swatch:active { transform: scale(0.92); }
 .color-swatch.is-empty { background-image: linear-gradient(45deg, transparent 44%, var(--ink-soft) 44%, var(--ink-soft) 56%, transparent 56%); }
-.color-presets { position: absolute; top: calc(100% + 6px); inset-inline-start: 0; z-index: 60; display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; max-width: min(280px, 80vw); padding: 0.6rem; background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius-sm); box-shadow: var(--shadow-overlay); }
+.color-presets { position: fixed; z-index: 60; display: flex; flex-direction: column; align-items: stretch; gap: 0.45rem; width: min(330px, calc(100vw - 16px)); max-height: min(60vh, 430px); overflow-y: auto; padding: 0.6rem; background: var(--card); border: 1px solid var(--rule); border-radius: var(--radius-sm); box-shadow: var(--shadow-overlay); }
 .color-presets[hidden] { display: none; }
 .color-preset { width: 1.7rem; height: 1.7rem; min-height: 0; padding: 0; border: 2px solid var(--rule); border-radius: 50%; cursor: pointer; transition: transform 150ms ease-out; }
 .color-preset:hover { transform: scale(1.12); }
@@ -2137,6 +2239,12 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .color-preset.is-clear { display: inline-flex; align-items: center; justify-content: center; background: transparent; color: var(--ink-soft); font-size: 1rem; line-height: 1; }
 .color-custom { border: 0; background: none; padding: 0.3rem 0.4rem; min-height: 0; color: var(--link); font: inherit; font-size: 0.8rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .color-custom:hover { color: var(--link-hover); }
+.color-pick-name { margin: 0; min-height: 1.15em; font-size: 0.78rem; font-weight: 700; color: var(--ink); }
+.color-family-label { margin: 0; font-size: 0.72rem; font-weight: 700; color: var(--ink-soft); }
+.color-family-row { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.color-actions { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; border-top: 1px solid var(--rule); padding-top: 0.45rem; }
+.size-field { display: grid; gap: 0.35rem; }
+.size-field select[hidden], .size-field input[hidden], .size-preview[hidden] { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .color-swatch, .color-preset { transition: none; }
 }
@@ -2149,6 +2257,24 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .advanced-fields > summary { cursor: pointer; font-weight: 800; color: var(--link); width: fit-content; }
 .advanced-fields > summary small { color: var(--ink-soft); font-weight: 400; }
 .advanced-fields .form-row { margin-top: 0.9rem; }
+/* The size run: a colour's sizes, one answer each. The ladder scrolls, the
+   shop's own sizes stay the yardstick. */
+.size-run { margin-top: 0.8rem; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface-soft); }
+.size-run > summary { cursor: pointer; font-weight: 800; color: var(--link); width: fit-content; padding: 0.7rem 0.9rem; }
+.size-run > summary small { color: var(--ink-soft); font-weight: 400; }
+.size-run-body { padding: 0 0.9rem 0.9rem; }
+.size-run-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.size-run-sizes { max-height: 15rem; overflow-y: auto; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--card); }
+.size-run-hint { margin: 0; padding: 0.8rem; }
+.size-run-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.size-run-table th, .size-run-table td { padding: 0.3rem 0.6rem; text-align: start; border-block-end: 1px solid var(--rule); }
+.size-run-table thead th { position: sticky; top: 0; z-index: 1; background: var(--surface-soft); color: var(--ink-soft); font-size: 0.75rem; }
+.size-run-table tbody th { font-weight: 600; }
+.size-run-table td { width: 9rem; }
+.size-run-stock { width: 100%; min-height: 2rem; }
+.size-run-used { margin-inline-start: 0.4rem; color: var(--ink-soft); font-size: 0.72rem; }
+.size-run-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 0.8rem; margin-top: 0.8rem; }
+.size-run-note { color: var(--ink-soft); font-size: 0.82rem; }
 /* Field hints: a ⓘ button whose popup rises from the label. Shown on hover
    and on keyboard focus alike; a tap focuses the button, so touch gets it
    with no script. Transform and opacity only; still without motion. */
@@ -2164,7 +2290,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .tag-quantity { width: 4.8rem !important; min-height: 32px !important; padding: 0.25rem 0.35rem !important; text-align: center; font-size: 0.78rem !important; }
 
 @media (max-width: 900px) {
-  .product-form-grid-wide, .variant-entry-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .product-form-grid-wide, .variant-entry-grid, .size-run-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .variant-edit-layout { grid-template-columns: 1fr; }
   .variant-edit-side { position: static; }
   .tag-settings-layout { grid-template-columns: 1fr; }
@@ -2173,7 +2299,7 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
   .tag-settings-side .card:last-child { grid-column: 1 / -1; }
 }
 @media (max-width: 600px) {
-  .product-form-grid-wide, .variant-entry-grid { grid-template-columns: 1fr; }
+  .product-form-grid-wide, .variant-entry-grid, .size-run-grid { grid-template-columns: 1fr; }
   .products-kpi { grid-template-columns: 1fr; }
   .section-heading-row, .product-list-heading { align-items: stretch; flex-direction: column; }
   /* The buttons share each row and grow to fill it: three of them fit one row
@@ -2365,6 +2491,13 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 /* Form-level refusal: names the problem above the note, never a popup. */
 .form-error { padding: 0.6rem 0.85rem; background: var(--danger-bg); color: var(--link-hover); border-radius: var(--radius-sm); font-size: 0.86rem; font-weight: 700; }
 .form-error[hidden] { display: none; }
+.product-form-error { margin: 0 0 1rem; }
+.form-group .field-error { display: block; margin-top: 0.3rem; color: var(--link-hover); font-size: 0.78rem; font-weight: 700; }
+input.is-invalid, select.is-invalid, textarea.is-invalid { border-color: var(--danger); }
+input.is-invalid:focus, select.is-invalid:focus, textarea.is-invalid:focus {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 20%, transparent);
+}
 @media (prefers-reduced-motion: reduce) {
   .purchase-item-row.is-flash { animation: none; }
 }
@@ -3669,6 +3802,12 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
 .pos-table tr.check-overdue { background: color-mix(in srgb, var(--candy) 8%, transparent); }
 .pos-table .btn-sm { min-height: 44px; display: inline-flex; align-items: center; }
 .pos-table .filter-field { margin-bottom: 0.5rem; }
+/* The review form is bulky (outcome, evidence, three references, card); it
+   stays closed until the row is actually being reconciled, or every row on
+   the page is a screenful. */
+.pos-review summary { list-style: none; cursor: pointer; }
+.pos-review summary::-webkit-details-marker { display: none; }
+.pos-review[open] summary { margin-bottom: 0.5rem; }
 /* Triggered alerts read as a worklist, one cheque per row. */
 .check-alert-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.6rem 0; border-bottom: 1px solid var(--rule); }
 .check-alert-row:last-child { border-bottom: none; }
@@ -3699,7 +3838,7 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
 @media print {
   .page-heading .admin-nav, .filter-card { display: none !important; }
   #cashbox-confirm, #cashbox-reverse-confirm,
-  #expense-add-confirm, #expense-void-confirm, #recurring-stop-confirm { display: none !important; }
+  #expense-add-confirm, #expense-void-confirm { display: none !important; }
 }
 /* Nine columns never fit a phone: narrow screens stack rows into labelled
    cards instead of scrolling sideways, like every other admin list. */
@@ -3749,19 +3888,8 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
     content: attr(data-label); color: var(--ink-soft); font-size: 0.72rem; flex-shrink: 0; }
 }
 
-/* The digest preview: what opting in puts on the owner's phone, rendered from
-   last month's own figures before any phone is saved. */
-.digest-preview { display: grid; gap: 0.4rem; margin-top: 0.6rem; }
-.digest-preview-label {
-  font-size: 0.78rem; color: var(--ink-soft); font-weight: 600;
-}
-.digest-preview-bubble { max-width: 100%; }
-/* The hand-send action under the preview: its own form, so it never posts the
-   settings form's fields along with it. */
-.digest-preview-actions { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.2rem; }
-.digest-preview-actions small { color: var(--ink-soft); }
-
-/* A digest row's month, named where the owner scans senders and dates. */
+/* A historical digest row's month, named where the owner scans senders and
+   dates. The monthly send is gone; the log keeps its rows. */
 .digest-month-chip {
   display: inline-block; margin-inline-start: 0.35rem;
   padding: 0.05rem 0.45rem;
@@ -3770,14 +3898,6 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
   background: color-mix(in srgb, var(--lavender) 14%, var(--card));
   color: var(--ink); font-weight: 600;
 }
-/* One form to send a past month's summary again, on the digests' own view. */
-.digest-resend {
-  display: grid; gap: 0.4rem; margin-top: 0.9rem;
-  padding-top: 0.9rem; border-top: 1px solid var(--rule);
-}
-.digest-resend label { font-weight: 600; font-size: 0.85rem; }
-.digest-resend-row { display: flex; gap: 0.5rem; align-items: center; }
-.digest-resend-row select { min-width: 12rem; }
 
 /* The profile's drift banner: a warning the width of the page, so a counter
    that disagrees with the invoices is read before the KPIs under it. */
@@ -3977,6 +4097,9 @@ button.text-link { background: none; border: none; padding: 0; font: inherit; cu
 .settings-note { margin: 0; }
 .form-group.is-error input, .form-group.is-error select { border-color: var(--danger); }
 .tip-icon:hover::after, .tip-icon:focus-visible::after, .field-tip:hover::after, .field-tip:focus-visible::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 0.4rem); inset-inline-start: 0; width: max-content; max-width: 16rem; white-space: normal; background: var(--card); color: var(--ink); border: 1px solid var(--rule); border-radius: var(--radius-sm); padding: 0.5rem 0.7rem; font-size: 0.78rem; font-weight: 400; z-index: 5; box-shadow: var(--shadow-overlay); }
+/* Pages with the JS bubble mark the trigger expanded; that bubble replaces
+   the CSS card instead of stacking a second one behind it. */
+.tip-icon[aria-expanded="true"]::after { content: none; }
 .tip-icon { position: relative; }
 .settings-card .tip-icon { margin-inline-start: auto; flex-shrink: 0; }
 
@@ -4027,7 +4150,7 @@ html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
 .till-brand { margin-top: 1rem; font-size: 0.8rem; color: var(--ink-soft); }
 .scan-last { margin: 0.6rem 0 0; font-size: 0.85rem; color: var(--success-ink); font-weight: 700; }
 .basket-stepper { display: inline-flex; gap: 0.25rem; }
-.btn-step { min-width: 2rem; min-height: 2rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--card); color: var(--ink); font-size: 1rem; font-weight: 800; cursor: pointer; line-height: 1; }
+.btn-step { min-width: 44px; min-height: 44px; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--card); color: var(--ink); font-size: 1.1rem; font-weight: 800; cursor: pointer; line-height: 1; }
 .btn-step:hover { border-color: var(--candy); color: var(--link-hover); }
 .timeline-step.done { color: var(--link-hover); border-color: var(--candy); font-weight: 700; }
 .credit-note { font-size: 0.8rem; color: var(--ink-soft); margin-top: 0.4rem; }
@@ -4036,14 +4159,8 @@ html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
 .terminal-indicator { margin-bottom: 0.4rem; }
 
 /* ===================== Till phase 3 =====================
-   Split editor, customer swap disclosure, draft resume rows. */
+   Split editor. */
 .split-editor { margin-top: 0.7rem; padding-top: 0.7rem; border-top: 1px dashed var(--rule); }
-.customer-swap { margin-top: 0.8rem; }
-.customer-swap summary { cursor: pointer; color: var(--ink-soft); font-size: 0.85rem; font-weight: 700; }
-.customer-swap summary:hover { color: var(--link-hover); }
-.customer-swap form { margin-top: 0.5rem; }
-.draft-row { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; padding: 0.5rem 0; border-top: 1px solid var(--rule); }
-.draft-row:first-of-type { border-top: 0; }
 
 /* ===================== Thermal invoice =====================
    The paper invoice must survive an 80mm thermal roll: no chrome, no color,
@@ -4081,8 +4198,6 @@ html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
 .void-mark { display: none; }
 @media print {
   .paper-toggle, .invoice-flash, .invoice-trail { display: none !important; }
-  /* Paper carries no emoji: the screen's decorations hide, their labels stay. */
-  .invoice .em { display: none !important; }
   .invoice-logo { max-height: 44px; filter: grayscale(1) contrast(1.3); }
   .invoice-barcode svg rect { fill: var(--paper-ink) !important; }
   body[data-paper="thermal"] .invoice { max-width: 72mm; margin: 0 auto; }
@@ -4105,3 +4220,177 @@ html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
 .password-peek { white-space: nowrap; }
 .caps-hint { display: block; margin-top: 0.3rem; }
 .caps-hint[hidden] { display: none; }
+
+/* ===================== Virtual try-on =====================
+   Everything token-driven so the active theme owns these pages: no fixed
+   colors, no emoji art, no inline styles. Mobile-first: rows wrap at 320px,
+   the generate button sticks within reach. */
+.tryon-photo-frame { position: relative; text-align: center; margin-bottom: 0.8rem; }
+.tryon-photo { max-width: 200px; max-height: 200px; border-radius: 12px; object-fit: cover; box-shadow: var(--shadow-hover); }
+.tryon-guide { position: absolute; inset: 8% 22%; border: 2px dashed var(--candy); border-radius: 12px; pointer-events: none; }
+.tryon-guide-note { font-size: 0.8rem; margin: 0.3rem 0 0; }
+.tryon-photo-empty { text-align: center; padding: 1.5rem; background: var(--surface-soft); border-radius: 8px; margin-bottom: 0.8rem; }
+.tryon-upload-toggle { cursor: pointer; font-weight: 600; color: var(--link); }
+.tryon-upload-form { margin-top: 0.8rem; }
+/* The swapped-in upload answer reuses the phone's send-status markup. */
+.tryon-upload-form .send-status { display: block; font-size: 0.85rem; }
+.tryon-upload-form .send-status.is-ok { color: var(--success-ink); }
+.tryon-upload-form .send-status.is-err { color: var(--danger); }
+.tryon-privacy { margin-top: 0.8rem; font-size: 0.85rem; }
+.tryon-pairing h4 { margin-bottom: 0.3rem; }
+.tryon-qr { text-align: center; margin-bottom: 0.8rem; }
+.tryon-qr img { width: 200px; height: 200px; border-radius: 12px; border: 2px solid var(--rule); }
+.tryon-qr-note { font-size: 0.85rem; }
+.tryon-lead { margin-bottom: 0.8rem; }
+.tryon-scan-form { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.tryon-scan-form input { flex: 1; min-width: 140px; }
+.tryon-scanned { margin-top: 0.5rem; }
+.tryon-scanned-title { font-size: 0.9rem; }
+.tryon-scanned-list { margin-top: 0.4rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.tryon-scanned-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.6rem; background: var(--surface-soft); border-radius: 6px; flex-wrap: wrap; }
+.tryon-thumb { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; }
+.tryon-thumb-empty { display: inline-flex; align-items: center; justify-content: center; background: var(--surface-soft); border: 1px solid var(--rule); color: var(--ink-soft); }
+.tryon-scanned-name { flex: 1; min-width: 120px; }
+.tryon-variant-form select { max-width: 140px; }
+.tryon-ref-note { margin-top: 0.5rem; font-size: 0.8rem; }
+.tryon-empty { text-align: center; padding: 1rem; color: var(--ink-soft); }
+.tryon-empty-large { text-align: center; padding: 3rem 1rem; }
+.tryon-empty-large .btn { margin-top: 1rem; }
+.gen-engine { margin-top: 0.8rem; font-size: 0.9rem; }
+.btn-generate { position: sticky; bottom: 0.6rem; }
+.tryon-result { text-align: center; border-color: var(--candy); }
+.tryon-final-preview { display: inline-block; max-width: 100%; }
+.tryon-final-preview .lightbox-open { max-width: 100%; }
+.tryon-final-preview img { max-width: 100%; max-height: 400px; border-radius: 12px; box-shadow: var(--shadow-hover); display: block; }
+.tryon-result-actions { display: flex; gap: 0.5rem; justify-content: center; margin-top: 1rem; flex-wrap: wrap; }
+.tryon-result-actions form { display: inline; }
+.tryon-filters { display: flex; gap: 0.5rem; align-items: end; flex-wrap: wrap; margin-bottom: 0.8rem; }
+.tryon-filters label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.85rem; }
+.tryon-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.8rem; }
+.tryon-gallery-item { border-radius: 8px; overflow: hidden; box-shadow: var(--shadow); background: var(--card); }
+.tryon-gallery-item .lightbox-open { position: relative; width: 100%; padding: 0; border: none; background: none; cursor: pointer; }
+.tryon-gallery-thumb { width: 100%; height: 160px; object-fit: cover; display: block; }
+.tryon-gallery-logo { position: absolute; top: 0; left: 0; width: 80px; height: 80px; pointer-events: none; }
+.tryon-gallery-date { padding: 0.5rem; font-size: 0.7rem; text-align: center; }
+.tryon-gallery-variants { padding: 0 0.4rem 0.4rem; display: flex; gap: 0.3rem; flex-wrap: wrap; justify-content: center; }
+.tryon-gallery-variant { text-align: center; max-width: 70px; }
+.tryon-gallery-variant img { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; border: 1px solid var(--rule); }
+.tryon-gallery-variant-label { font-size: 0.6rem; margin-top: 2px; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tryon-gallery-actions { display: flex; gap: 0.3rem; padding: 0 0.4rem 0.5rem; justify-content: center; }
+.lightbox-scrim { display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--scrim); z-index: 9999; align-items: center; justify-content: center; }
+.lightbox-stage { position: relative; display: inline-block; line-height: 0; }
+.lightbox-stage img:first-child { max-width: 95vw; max-height: 95vh; object-fit: contain; border-radius: 8px; display: block; }
+.lightbox-logo { position: absolute; top: 0; left: 0; width: 200px; height: 200px; pointer-events: none; }
+@media (max-width: 480px) {
+  .tryon-scan-form input { min-width: 0; }
+  .tryon-gallery { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .tryon-qr img { width: 160px; height: 160px; }
+}
+.tryon-saved-link { font-size: 1.05rem; font-weight: 600; }
+
+/* ===================== Try-on generation overlay ===================== */
+@keyframes gen-spin { to { transform: rotate(360deg); } }
+@keyframes gen-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+@keyframes gen-shine { to { background-position: -200% 0; } }
+.gen-spinner {
+    width: 74px; height: 74px; border-radius: 50%;
+    border: 5px solid color-mix(in srgb, var(--scrim-text) 15%, transparent);
+    border-top-color: var(--candy); border-right-color: var(--lavender); border-bottom-color: var(--sky);
+    animation: gen-spin 1s linear infinite;
+    box-shadow: 0 0 30px color-mix(in srgb, var(--lavender) 35%, transparent);
+}
+.gen-float { display:inline-block; animation: gen-float 2.2s ease-in-out infinite; }
+
+.tryon-upload-frame { display: none; }
+.tryon-estimate { font-size: 0.85rem; margin: 0.4rem 0 0; }
+.tryon-cancel-form { margin-top: 0.5rem; }
+.tryon-live { font-size: 0.85rem; margin-top: 0.4rem; }
+.tryon-saved-shortcut { display: block; text-decoration: none; color: inherit; text-align: center; }
+.tryon-saved-count { font-size: 0.85rem; margin-top: 0.3rem; }
+.gen-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--scrim); backdrop-filter: blur(6px); z-index: 10001; flex-direction: column; align-items: center; justify-content: center; gap: 1.2rem; }
+.gen-step-text { color: var(--scrim-text); font-size: 1.25rem; font-weight: 600; text-align: center; padding: 0 1rem; }
+.gen-track { width: min(420px, 80vw); height: 10px; border-radius: 6px; background: color-mix(in srgb, var(--scrim-text) 15%, transparent); overflow: hidden; }
+.gen-bar { width: 10%; height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--candy), var(--lavender), var(--sky)); background-size: 200% 100%; animation: gen-shine 1.6s linear infinite; transition: width .8s ease; }
+.gen-note { color: color-mix(in srgb, var(--scrim-text) 60%, transparent); font-size: 0.85rem; }
+
+/* ===================== Analytics: categories and sizes tab ===================== */
+.filter-panels {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+    gap: 0.55rem;
+    align-items: start;
+}
+.filter-panel {
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    background: var(--surface-soft);
+    overflow: hidden;
+}
+.filter-panel summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+    min-height: 44px;
+    padding: 0.45rem 0.65rem;
+    font-weight: 600;
+    font-size: 0.82rem;
+}
+.filter-panel summary::-webkit-details-marker { display: none; }
+.filter-panel[open] summary { border-bottom: 1px solid var(--rule); }
+.filter-count {
+    min-width: 1.35rem;
+    padding: 0.05rem 0.35rem;
+    border-radius: 999px;
+    background: var(--brand-fill);
+    color: var(--brand-label);
+    font-size: 0.7rem;
+    text-align: center;
+}
+.filter-panel-body {
+    display: grid;
+    gap: 0.25rem;
+    padding: 0.5rem 0.65rem 0.6rem;
+    max-height: 220px;
+    overflow: auto;
+}
+.filter-check {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    cursor: pointer;
+}
+.filter-check input { flex: 0 0 auto; }
+.filter-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.65rem;
+}
+.compact-tools { margin: 0.15rem 0 0.35rem; }
+.coverage-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+    gap: 0.55rem;
+    margin: 0.65rem 0;
+}
+.coverage-stat {
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    background: var(--surface-soft);
+    padding: 0.55rem 0.65rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    font-size: 0.8rem;
+}
+.coverage-stat b { font-size: 1rem; }
+@media (max-width: 640px) {
+    .filter-panels { grid-template-columns: 1fr; }
+    .filter-panel-body { max-height: 180px; }
+}

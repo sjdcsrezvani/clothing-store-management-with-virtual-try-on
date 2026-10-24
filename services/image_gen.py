@@ -14,9 +14,59 @@ from typing import Optional
 import httpx
 from PIL import Image, ImageOps
 
-from config import TRYON_API_KEY, TRYON_API_URL
+from config import TRYON_API_KEY as ENV_TRYON_API_KEY, TRYON_API_URL as ENV_TRYON_API_URL
 
 logger = logging.getLogger(__name__)
+
+TRYON_KEY_SETTING = "tryon_api_key"
+TRYON_URL_SETTING = "tryon_api_url"
+
+
+def get_tryon_credentials(db=None):
+    """Resolve (key, url): Settings first, one-time auto-migrate from env.
+
+    The setup-time write was a dead store for years — generation read only
+    the import-time env constant. Now the Settings row is the source of
+    truth; a present env value migrates itself in once and the env becomes
+    the fallback. Values never hit logs — callers keep them in locals.
+    """
+    key = ""
+    url = ""
+    migrated = False
+    if db is not None:
+        try:
+            from models import Settings
+            rows = {r.key: (r.value or "") for r in db.query(Settings).filter(
+                Settings.key.in_([TRYON_KEY_SETTING, TRYON_URL_SETTING])).all()}
+            key = rows.get(TRYON_KEY_SETTING, "").strip()
+            url = rows.get(TRYON_URL_SETTING, "").strip()
+            if not key and (ENV_TRYON_API_KEY or "").strip():
+                key = ENV_TRYON_API_KEY.strip()
+                db.add(Settings(key=TRYON_KEY_SETTING, value=key))
+                db.commit()
+                migrated = True
+            if not url:
+                url = (ENV_TRYON_API_URL or "").strip()
+                if url:
+                    db.add(Settings(key=TRYON_URL_SETTING, value=url))
+                    db.commit()
+        except Exception:
+            logger.warning("tryon credential read failed; using env fallback")
+    if not key:
+        key = (ENV_TRYON_API_KEY or "").strip()
+    if not url:
+        url = (ENV_TRYON_API_URL or "").strip()
+    if migrated:
+        logger.info("tryon api key auto-migrated from environment to Settings")
+    return key, url
+
+
+def mask_tryon_key(key: str) -> str:
+    """Display form of a stored key: tail only, never the secret."""
+    key = (key or "").strip()
+    if len(key) <= 8:
+        return "••••" if key else ""
+    return "…" + key[-4:]
 
 MAX_DIM = 1024
 # S24 Ultra native JPEGs are routinely 8–25 MB; raise the ceiling so the
@@ -138,7 +188,26 @@ class ImageGenerationError(Exception):
     pass
 
 
-class ImageGenService:
+class ImageProvider:
+    """Pluggable image backend. Gapgpt is wired; the next provider
+    implements these two methods and the factory below picks it."""
+
+    name = "gapgpt"
+
+    def generate(self, prompt: str, reference_image_paths=None, width: int = 1024,
+                 height: int = 1024, prompt_mid: str = "", prompt_suffix: str = "") -> bytes:
+        raise NotImplementedError
+
+    def test_connection(self, timeout: float = 15.0) -> dict:
+        """Cheap non-billable probe. Never generates."""
+        raise NotImplementedError
+
+
+def get_provider(api_key: str = "", api_url: str = "") -> ImageProvider:
+    return ImageGenService(api_key=api_key or None, api_url=api_url or None)
+
+
+class ImageGenService(ImageProvider):
     """Generate images of kids wearing clothes via the gapgpt gateway."""
 
     # Don't retry on billable failures. gpt-image-2 charges at generation time
@@ -147,7 +216,11 @@ class ImageGenService:
     # errors where the model definitely never received the request.
     MAX_ATTEMPTS = 1
 
-    def __init__(self):
+    def __init__(self, api_key: str | None = None, api_url: str | None = None):
+        # Credentials resolve here (not at import) so a rotated Settings key
+        # takes effect without a restart; env remains the fallback.
+        self.api_key = api_key if api_key else (ENV_TRYON_API_KEY or "").strip()
+        self.api_url = api_url if api_url else (ENV_TRYON_API_URL or "").strip()
         # 300s read timeout. gpt-image-2 normally finishes in 30–90s, but when
         # gapgpt's queue is busy a generation can take 2–4 minutes. Cutting the
         # socket earlier (we tried 120s) caused the worst outcome: the provider
@@ -181,8 +254,17 @@ class ImageGenService:
 
         kid = self._prep(paths[0])
         files = [("image[]", ("person.jpg", kid, "image/jpeg"))]
+        # Garment prep is independent PIL work — parallel, memoized by
+        # (path, mtime, size), so a 3-garment run pays ~1× instead of 3×.
+        # _prep itself skips re-encoding already-small JPEGs (fast path).
+        import concurrent.futures
+        prepped = {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+            futures = {pool.submit(self._prep_memo, p): p for p in paths[1:]}
+            for future in concurrent.futures.as_completed(futures):
+                prepped[futures[future]] = future.result()
         for i, garment in enumerate(paths[1:], 1):
-            files.append(("image[]", (f"garment{i}.jpg", self._prep(garment), "image/jpeg")))
+            files.append(("image[]", (f"garment{i}.jpg", prepped[garment], "image/jpeg")))
 
         # Matches the working virtual-tryon.html example request.
         data = {
@@ -192,14 +274,14 @@ class ImageGenService:
             "prompt": self._build_prompt(prompt, prompt_mid, prompt_suffix),
             "size": f"{width}x{height}",
         }
-        headers = {"Authorization": f"Bearer {TRYON_API_KEY}"}
+        headers = {"Authorization": f"Bearer {self.api_key}"}
 
         logger.info("gapgpt try-on: kid + %d garment(s)", len(paths) - 1)
 
         last_err: Optional[Exception] = None
         for attempt in range(1, self.MAX_ATTEMPTS + 1):
             try:
-                resp = self.client.post(TRYON_API_URL, headers=headers, data=data, files=files)
+                resp = self.client.post(self.api_url, headers=headers, data=data, files=files)
             except httpx.ConnectTimeout as e:
                 # TCP connect timed out — gapgpt never received the request.
                 # Safe to retry once.
@@ -282,12 +364,67 @@ class ImageGenService:
             out += f" {suffix}"
         return out
 
+    def test_connection(self, timeout: float = 15.0) -> dict:
+        """Cheap non-billable probe: the gateway models endpoint, short leash."""
+        if not self.api_key:
+            return {"ok": False, "error": "کلید ذخیره نشده است."}
+        try:
+            base = self.api_url.split("/v1/")[0] if "/v1/" in self.api_url else self.api_url.rstrip("/")
+            resp = self.client.get(
+                base + "/v1/models",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                timeout=httpx.Timeout(connect=10.0, read=timeout, write=10.0, pool=10.0),
+            )
+        except httpx.HTTPError as e:
+            return {"ok": False, "error": f"دسترسی به درگاه ناموفق بود: {e.__class__.__name__}"}
+        if resp.status_code == 200:
+            return {"ok": True}
+        if resp.status_code in (401, 403):
+            return {"ok": False, "error": "کلید معتبر نیست (401/403)."}
+        return {"ok": False, "error": f"درگاه پاسخ {resp.status_code} داد."}
+
     # ── Image preprocessing ──
+
+    _prep_cache: dict = {}
+
+    def _prep_memo(self, path: str, max_bytes: int = MAX_BYTES) -> bytes:
+        """Memoized _prep keyed by (path, mtime, size) — catalog garment
+        photos repeat across generations, so repeat runs skip the work."""
+        try:
+            stat = Path(path).stat()
+            memo_key = (path, stat.st_mtime_ns, stat.st_size)
+        except OSError:
+            return self._prep(path, max_bytes)
+        hit = self._prep_cache.get(memo_key)
+        if hit is not None:
+            return hit
+        data = self._prep(path, max_bytes)
+        if len(self._prep_cache) > 64:
+            self._prep_cache.clear()
+        self._prep_cache[memo_key] = data
+        return data
 
     def _prep(self, path: str, max_bytes: int = MAX_BYTES) -> bytes:
         """Resize longest edge to MAX_DIM, EXIF-fix, flatten alpha, JPEG-encode to <=max_bytes.
         Smaller input = faster upload + faster model. Resize preserves all garment/face detail
-        since 1024px is well above what the model actually consumes."""
+        since 1024px is well above what the model actually consumes.
+        Fast path: an already-small JPEG ships as-is (EXIF transpose only),
+        skipping the decode/re-encode loop entirely."""
+        raw_size = 0
+        try:
+            raw_size = Path(path).stat().st_size
+        except OSError:
+            pass
+        with Image.open(path) as probe:
+            if (probe.format == "JPEG" and max(probe.size) <= MAX_DIM
+                    and 0 < raw_size <= max_bytes):
+                try:
+                    orientation = probe.getexif().get(0x0112, 1)
+                except Exception:
+                    orientation = 1
+                if orientation == 1 and probe.mode == "RGB":
+                    with open(path, "rb") as handle:
+                        return handle.read()
         img = ImageOps.exif_transpose(Image.open(path))
         if img.mode in ("RGBA", "LA", "P"):
             img = img.convert("RGBA")

@@ -34,7 +34,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.querySelectorAll('form').forEach(form => {
-        form.addEventListener('submit', () => {
+        form.addEventListener('submit', (event) => {
+            // A form another handler refused owns its own button: locking it
+            // after a validation refusal leaves the shop unable to try again.
+            if (event.defaultPrevented) return;
             const submit = form.querySelector('button[type="submit"]');
             if (!submit || submit.dataset.allowRepeat === 'true') return;
             submit.disabled = true;
@@ -90,9 +93,118 @@ const COLOR_PRESETS = [
     ['سبز', '#16A34A'], ['کرم', '#E7D8B7'],
 ];
 
+/* Persian names for the custom-palette picker («رنگ دلخواه»): every hex it
+   hands back is named by its closest neighbour here, so a زرشکی pick reads
+   «زرشکی», not the nearest of the eight presets. Garment data again, not
+   theme tokens — literal hex is correct. */
+const COLOR_NAMES = [
+    ['سفید', '#FFFFFF'], ['شیری', '#FBF5E8'],
+    ['صدفی', '#F4EDE4'], ['استخوانی', '#EFE5D2'],
+    ['کرم', '#E7D8B7'], ['بژ', '#DCC9A8'],
+    ['نود', '#E8C4A0'], ['نخودی', '#E4D5A5'],
+    ['طوسی روشن', '#D8D8D8'], ['نقره‌ای', '#C0C0C0'],
+    ['طوسی', '#A6A6A6'], ['طوسی تیره', '#757575'],
+    ['دودی', '#5A5A5A'], ['ذغالی', '#363636'],
+    ['مشکی', '#000000'], ['قرمز', '#DC2626'],
+    ['قرمز تیره', '#AE1C1C'], ['جگری', '#7E1518'],
+    ['آلبالویی', '#8C1B33'], ['زرشکی', '#801E3C'],
+    ['شرابی', '#5E1526'], ['عنابی', '#6B2028'],
+    ['آجری', '#B04A34'], ['گلبهی', '#E58C8C'],
+    ['سرخابی', '#C2185B'], ['صورتی', '#EC4899'],
+    ['صورتی روشن', '#F5B8CE'], ['صورتی پاستلی', '#FADCE8'],
+    ['نارنجی', '#F97316'], ['نارنجی تیره', '#C2410C'],
+    ['هلویی', '#FDB28A'], ['شتری', '#BE9A6A'],
+    ['قهوه‌ای روشن', '#B08052'], ['قهوه‌ای', '#7E4E2B'],
+    ['شکلاتی', '#563321'], ['نسکافه‌ای', '#4E3A2B'],
+    ['قهوه‌ای سوخته', '#3B2417'], ['مسی', '#B87333'],
+    ['عسلی', '#E0A428'], ['زرد', '#EAB308'],
+    ['زرد روشن', '#F6E266'], ['لیمویی', '#BCD64A'],
+    ['طلایی', '#D4AF37'], ['خردلی', '#C9A227'],
+    ['سبز', '#16A34A'], ['سبز روشن', '#4ADE80'],
+    ['سبز چمنی', '#4CAF50'], ['نعنایی', '#A8E6C4'],
+    ['پسته‌ای', '#9CBF70'], ['یشمی', '#2E9E6B'],
+    ['زیتونی', '#6F7B3E'], ['لجنی', '#566741'],
+    ['سبز ارتشی', '#3F4B33'], ['سبز تیره', '#14532D'],
+    ['سبز کله‌غازی', '#1D5A4A'], ['فیروزه‌ای', '#2BC4C2'],
+    ['آبی آسمانی', '#6FB6E8'], ['آبی', '#2563EB'],
+    ['آبی طوسی', '#6C7E96'], ['نفتی', '#274A5C'],
+    ['نیلی', '#3B4A99'], ['آبی تیره', '#1E40AF'],
+    ['سرمه‌ای', '#1E3A8A'], ['یاسی', '#C8A8E8'],
+    ['بنفش', '#9333EA'], ['بنفش تیره', '#5B21B6'],
+    ['ارغوانی', '#9B2B92'], ['بادمجانی', '#4C2E52'],
+];
+
+// Display families for the picker's grid: every table colour sits in exactly
+// one row, in the words a shop groups colours by. The suite holds this list
+// level with the table.
+const COLOR_FAMILIES = [
+    ['خنثی', ['سفید', 'شیری', 'صدفی', 'استخوانی', 'کرم', 'بژ', 'نود', 'نخودی']],
+    ['خاکستری و مشکی', ['طوسی روشن', 'نقره‌ای', 'طوسی', 'طوسی تیره', 'دودی', 'ذغالی', 'مشکی']],
+    ['قرمز', ['قرمز', 'قرمز تیره', 'جگری', 'آلبالویی', 'زرشکی', 'شرابی', 'عنابی', 'آجری', 'گلبهی', 'سرخابی']],
+    ['صورتی', ['صورتی', 'صورتی روشن', 'صورتی پاستلی']],
+    ['نارنجی و قهوه‌ای', ['نارنجی', 'نارنجی تیره', 'هلویی', 'شتری', 'قهوه‌ای روشن', 'قهوه‌ای', 'شکلاتی', 'نسکافه‌ای', 'قهوه‌ای سوخته', 'مسی', 'عسلی']],
+    ['زرد', ['زرد', 'زرد روشن', 'لیمویی', 'طلایی', 'خردلی']],
+    ['سبز', ['سبز', 'سبز روشن', 'سبز چمنی', 'نعنایی', 'پسته‌ای', 'یشمی', 'زیتونی', 'لجنی', 'سبز ارتشی', 'سبز تیره', 'سبز کله‌غازی']],
+    ['آبی', ['فیروزه‌ای', 'آبی آسمانی', 'آبی', 'آبی طوسی', 'نفتی', 'نیلی', 'آبی تیره', 'سرمه‌ای']],
+    ['بنفش', ['یاسی', 'بنفش', 'بنفش تیره', 'ارغوانی', 'بادمجانی']],
+];
+const COLOR_NAME_HEX = new Map(COLOR_NAMES);
+
+// Short #abc codes expand to aabbcc, the only form a colour input accepts.
+const hexCode = /^#?(?:([0-9a-f]{6})|([0-9a-f])([0-9a-f])([0-9a-f]))$/i;
+
+function nearestColorName(hex) {
+    const m = hexCode.exec((hex || '').trim());
+    if (!m) return '';
+    const full = (m[1] || (m[2] + m[2] + m[3] + m[3] + m[4] + m[4])).toLowerCase();
+    const r = parseInt(full.slice(0, 2), 16);
+    const g = parseInt(full.slice(2, 4), 16);
+    const b = parseInt(full.slice(4, 6), 16);
+    let best = '', bestDist = Infinity;
+    COLOR_NAMES.forEach(([label, anchor]) => {
+        const p = anchor.toLowerCase();
+        const pr = parseInt(p.slice(1, 3), 16);
+        const pg = parseInt(p.slice(3, 5), 16);
+        const pb = parseInt(p.slice(5, 7), 16);
+        // Weighted RGB: greens weigh most, then reds, then blues — plain RGB
+        // distance names muted olives and wines wrong.
+        const dr = r - pr, dg = g - pg, db = b - pb;
+        const rmean = (r + pr) / 2;
+        const dist = (2 + rmean / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rmean) / 256) * db * db;
+        if (dist < bestDist) { bestDist = dist; best = label; }
+    });
+    return best;
+}
+
 function initColorPickers(scope) {
-    // Short #abc codes expand to aabbcc, the only form a colour input accepts.
-    const hexCode = /^#?(?:([0-9a-f]{6})|([0-9a-f])([0-9a-f])([0-9a-f]))$/i;
+    // The «رنگ» name field next to a «کد رنگ» code field: on the variant page
+    // the pair is #color / #color_code, in product-form rows it is
+    // variant_color_N / variant_color_code_N.
+    // A hand on a «رنگ» name field ends the palette-sync for that field —
+    // the same contract as the reorder-default rows. Programmatic fills
+    // (palette picks) dispatch a flagged event so they never count as a hand.
+    function armColorNameSync(nameField) {
+        if (!nameField || nameField.dataset.colorNameReady) return;
+        nameField.dataset.colorNameReady = 'true';
+        nameField.addEventListener('input', (event) => {
+            if (event && event.syntheticFill) return;
+            nameField.dataset.touched = '1';
+        });
+    }
+    function findColorNameField(codeField) {
+        if (codeField.id === 'color_code') {
+            const byId = document.getElementById('color');
+            if (byId) { armColorNameSync(byId); return byId; }
+        }
+        const name = codeField.name || '';
+        if (name.includes('color_code')) {
+            const want = name.replace('color_code', 'color');
+            const holder = codeField.closest('form, .variant-entry-body, .form-row') || document;
+            const found = holder.querySelector(`input[name="${want}"]`);
+            if (found && found !== codeField) { armColorNameSync(found); return found; }
+        }
+        return null;
+    }
     (scope || document).querySelectorAll('input[data-color-picker]').forEach(field => {
         if (field.dataset.colorPickerReady) return;
         field.dataset.colorPickerReady = 'true';
@@ -118,21 +230,57 @@ function initColorPickers(scope) {
         pop.hidden = true;
         pop.setAttribute('role', 'group');
         pop.setAttribute('aria-label', 'رنگ‌های آماده');
-        COLOR_PRESETS.forEach(([label, hex]) => {
-            const preset = document.createElement('button');
-            preset.type = 'button';
-            preset.className = 'color-preset';
-            preset.style.background = hex;
-            preset.title = label;
-            preset.setAttribute('aria-label', label);
-            preset.dataset.hex = hex;
-            preset.addEventListener('click', () => {
-                setFieldColor(hex);
+        // The name the finger is over, so a dot is never a colour to guess at.
+        const nameLine = document.createElement('p');
+        nameLine.className = 'color-pick-name';
+        nameLine.setAttribute('aria-hidden', 'true');
+        pop.appendChild(nameLine);
+        function showName(text) { nameLine.textContent = text || ''; }
+        function attachName(button, label) {
+            button.addEventListener('mouseenter', () => showName(label));
+            button.addEventListener('mouseleave', () => showName(''));
+            button.addEventListener('focus', () => showName(label));
+            button.addEventListener('blur', () => showName(''));
+        }
+        function makeChip(hex, label) {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'color-preset';
+            chip.style.background = hex;
+            chip.title = label;
+            chip.setAttribute('aria-label', label);
+            chip.dataset.hex = hex;
+            chip.addEventListener('click', () => {
+                setFieldColor(hex, label);
                 closePop();
                 field.focus({ preventScroll: true });
             });
-            pop.appendChild(preset);
+            attachName(chip, label);
+            return chip;
+        }
+        function addFamily(label, entries) {
+            const familyLabel = document.createElement('p');
+            familyLabel.className = 'color-family-label';
+            familyLabel.textContent = label;
+            pop.appendChild(familyLabel);
+            const row = document.createElement('div');
+            row.className = 'color-family-row';
+            row.setAttribute('role', 'group');
+            row.setAttribute('aria-label', label);
+            entries.forEach(([hex, name]) => row.appendChild(makeChip(hex, name)));
+            pop.appendChild(row);
+        }
+        // The quick row keeps the old contract exactly: the eight garment
+        // presets, first, one tap each.
+        addFamily('پرکاربرد', COLOR_PRESETS.map(([name, hex]) => [hex, name]));
+        // Then the whole table under its family: anything the shop sells is one
+        // look away, and a pick carries its name into «رنگ» with the hex.
+        COLOR_FAMILIES.forEach(([family, names]) => {
+            addFamily(family, names.filter(name => COLOR_NAME_HEX.has(name))
+                                  .map(name => [COLOR_NAME_HEX.get(name), name]));
         });
+        const actions = document.createElement('div');
+        actions.className = 'color-actions';
         const clear = document.createElement('button');
         clear.type = 'button';
         clear.className = 'color-preset is-clear';
@@ -143,16 +291,23 @@ function initColorPickers(scope) {
             field.value = '';
             field.dispatchEvent(new Event('change', { bubbles: true }));
             paintSwatch();
+            // «بدون رنگ» releases the name field back to following picks.
+            const nameField = findColorNameField(field);
+            if (nameField) delete nameField.dataset.touched;
             closePop();
         });
-        pop.appendChild(clear);
+        actions.appendChild(clear);
         const custom = document.createElement('button');
         custom.type = 'button';
         custom.className = 'color-custom';
         custom.textContent = 'رنگ دلخواه…';
         custom.addEventListener('click', () => { picker.click(); });
-        pop.appendChild(custom);
-        wrap.appendChild(pop);
+        actions.appendChild(custom);
+        pop.appendChild(actions);
+        // A panel fixed to the viewport, not a child of the card: the variant
+        // row clips its children (`overflow: clip` for the accordion), so the
+        // palette must live on the body and be placed by script.
+        document.body.appendChild(pop);
 
         const picker = document.createElement('input');
         picker.type = 'color';
@@ -172,10 +327,25 @@ function initColorPickers(scope) {
             });
         }
 
-        function setFieldColor(hex) {
+        function setFieldColor(hex, label) {
             field.value = hex.toUpperCase();
             field.dispatchEvent(new Event('change', { bubbles: true }));
             paintSwatch();
+            // A palette pick suggests the Persian name in the sibling «رنگ»
+            // field — until a hand on that field ends the sync, the same
+            // contract as the reorder-default rows.
+            const nameField = findColorNameField(field);
+            if (nameField && !nameField.dataset.touched) {
+                const suggestion = label || nearestColorName(hex);
+                if (suggestion) {
+                    nameField.value = suggestion;
+                    // Flagged as synthetic: armColorNameSync ignores it, so the
+                    // field keeps following later picks until a real keystroke.
+                    const fill = new Event('input', { bubbles: true });
+                    fill.syntheticFill = true;
+                    nameField.dispatchEvent(fill);
+                }
+            }
         }
 
         function closePop() {
@@ -187,6 +357,25 @@ function initColorPickers(scope) {
             setFieldColor(picker.value);
         });
 
+        // Anchored to the swatch on the viewport, then clamped to it: the
+        // panel floats anywhere but leaves the screen on neither axis. It
+        // grows to the roomier side and scrolls inside itself rather than
+        // stretching to a page edge.
+        function placePop() {
+            const rect = swatch.getBoundingClientRect();
+            const vw = document.documentElement.clientWidth;
+            const vh = document.documentElement.clientHeight;
+            const below = vh - rect.bottom - 8;
+            const above = rect.top - 8;
+            const flipAbove = below < 240 && above > below;
+            const room = (flipAbove ? above : below) - 6;
+            pop.style.maxHeight = Math.max(180, Math.min(room, Math.round(vh * 0.6))) + 'px';
+            const height = pop.offsetHeight;
+            pop.style.top = (flipAbove ? Math.max(8, rect.top - height - 6) : rect.bottom + 6) + 'px';
+            const width = pop.offsetWidth;
+            pop.style.right = Math.max(8, Math.min(vw - rect.right, vw - width - 8)) + 'px';
+        }
+
         swatch.addEventListener('click', event => {
             event.stopPropagation();
             const open = pop.hidden;
@@ -194,6 +383,7 @@ function initColorPickers(scope) {
             document.querySelectorAll('.color-swatch').forEach(other => { other.setAttribute('aria-expanded', 'false'); });
             pop.hidden = !open;
             swatch.setAttribute('aria-expanded', open ? 'true' : 'false');
+            if (open) placePop();
         });
 
         field.addEventListener('input', paintSwatch);
@@ -207,10 +397,19 @@ function initColorPickers(scope) {
 }
 
 document.addEventListener('click', event => {
-    if (event.target.closest && event.target.closest('.color-pick')) return;
+    if (event.target.closest && (event.target.closest('.color-pick') || event.target.closest('.color-presets'))) return;
     document.querySelectorAll('.color-presets').forEach(pop => { pop.hidden = true; });
     document.querySelectorAll('.color-swatch').forEach(swatch => { swatch.setAttribute('aria-expanded', 'false'); });
 });
+
+// The palette is fixed to the viewport while the field scrolls away with the
+// page: close it rather than let it hang over whatever scrolled under it. Its
+// own scrolling is not a scroll away.
+document.addEventListener('scroll', event => {
+    if (event.target && event.target.closest && event.target.closest('.color-presets')) return;
+    document.querySelectorAll('.color-presets').forEach(pop => { pop.hidden = true; });
+    document.querySelectorAll('.color-swatch').forEach(swatch => { swatch.setAttribute('aria-expanded', 'false'); });
+}, true);
 
 document.addEventListener('keydown', event => {
     if (event.key !== 'Escape') return;

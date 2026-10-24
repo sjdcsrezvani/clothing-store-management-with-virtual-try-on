@@ -2,9 +2,15 @@ from datetime import datetime, timedelta, timezone
 from typing import NamedTuple
 
 import jdatetime
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, case, and_, or_
-from models import Customer, Sale, SaleItem, Product, ProductVariant, Referral, Expense, Payment, Purchase, Refund, SupplierPayment
+from models import (Customer, Sale, SaleItem, Product, ProductVariant, Referral,
+                    Expense, Payment, Purchase, Refund, RefundLine,
+                    SupplierPayment)
+from services.sizing import (
+    Band, SYSTEMS, SIZE_TYPES, band_age_group, band_display, band_from_variant,
+    get_sizing_standard, variant_size_display,
+)
 from services._common import (
     parse_jalali_input,
     parse_jalali_input_end,
@@ -18,6 +24,29 @@ DEFAULT_PERIOD = "month"
 KNOWN_PERIODS = ("today", "week", "month", "year", "all", "custom")
 # The shop's first day, used by «همه» and as the lower bound of an open range.
 ALL_TIME_START = datetime(2020, 1, 1, tzinfo=timezone.utc)
+
+GENDER_LABELS = {
+    "girl": "دخترانه", "boy": "پسرانه", "unisex": "یونیسکس",
+    "baby": "نوزاد", "woman": "زنانه", "man": "مردانه",
+}
+SYSTEM_LABELS = {
+    "age": "سن (18m/3T/8)",
+    "height": "قد (120/122)",
+    "kids_letters": "حروف بچگانه (M)",
+    "adult": "بزرگسال (S/38)",
+    "iran": "شماره لباس (45)",
+    "sock": "جوراب (23-26)",
+    "shoe_eu": "کفش (30)",
+    "shoe_uk": "کفش (7)",
+    "shoe_us": "کفش (8C)",
+    "shoe_cm": "طول پا (14)",
+}
+AGE_GROUP_LABELS = {
+    "baby": "نوزاد (0–2)", "child": "کودک (3–7)",
+    "teen": "نوجوان (8–15)", "adult": "بزرگسال (16+)",
+    "none": "نامشخص",
+}
+AGE_GROUP_ORDER = ("baby", "child", "teen", "adult", "none")
 
 
 class UnreadableRange(ValueError):
@@ -180,6 +209,26 @@ def get_new_customers(db: Session, start: datetime, end: datetime) -> int:
     )
     return len([cid for cid in bought_in if cid not in bought_before])
 
+def _line_dimensions(variant_id, raw_size, category, gender, size_type,
+                     product_system, variant_system, band_values) -> dict:
+    """The product/variant dimensions every new reading groups by.
+
+    The band is rebuilt from the stored columns; no raw tag becomes a band.
+    A product's system wins over a legacy variant-level system.
+    """
+    band = Band(*band_values) if any(value is not None for value in band_values) else None
+    return {
+        "variant_id": variant_id,
+        "raw_size": raw_size,
+        "band": band,
+        "category": category,
+        "gender": gender,
+        "size_type": size_type,
+        "size_system": product_system or variant_system,
+        "age_group": band_age_group(band),
+    }
+
+
 def _net_sale_lines(db: Session, start: datetime, end: datetime):
     """Per-item net revenue and cost sharing canonical_report's exact semantics.
 
@@ -213,19 +262,30 @@ def _net_sale_lines(db: Session, start: datetime, end: datetime):
     for refund in refunds:
         refund_by_sale.setdefault(refund.sale_id, []).append(refund)
     rows = db.query(
-        SaleItem.sale_id, SaleItem.total_price,
+        SaleItem.sale_id, SaleItem.variant_id, SaleItem.total_price,
         SaleItem.unit_cost, SaleItem.quantity,
-        Product.category,
+        ProductVariant.size, Product.category, Product.gender,
+        Product.size_type, Product.size_system, ProductVariant.size_system,
+        ProductVariant.band_min_cm, ProductVariant.band_max_cm,
+        ProductVariant.band_min_months, ProductVariant.band_max_months,
+        ProductVariant.band_min_adult, ProductVariant.band_max_adult,
     ).join(Product, Product.id == SaleItem.product_id
+           ).outerjoin(ProductVariant, ProductVariant.id == SaleItem.variant_id
            ).filter(SaleItem.sale_id.in_(sale_ids)).all()
     by_sale: dict[int, list[dict]] = {}
-    for sid, gross, unit_cost, qty, cat in rows:
+    for row in rows:
+        (sid, variant_id, gross, unit_cost, qty, raw_size, category, gender,
+         size_type, product_system, variant_system, *band_values) = row
         by_sale.setdefault(sid, []).append({
             "gross": gross or 0,
             "cost": (unit_cost or 0) * (qty or 0),
             "qty": qty or 0,
-            "category": cat,
+            "dims": _line_dimensions(
+                variant_id, raw_size, category, gender, size_type,
+                product_system, variant_system, band_values),
         })
+    empty_dims = _line_dimensions(None, None, None, None, None, None, None,
+                                  (None,) * 6)
 
     def _split(amount: int, weights: list[int]) -> list[int]:
         total = sum(weights)
@@ -255,7 +315,7 @@ def _net_sale_lines(db: Session, start: datetime, end: datetime):
             for item, net in zip(sale_items, nets):
                 item_lines.append({
                     "sale_id": sale.id, "day": day,
-                    "category": item["category"],
+                    **item["dims"],
                     "net": net,
                     "cost": 0 if cost_off else item["cost"],
                     "qty": 0 if cost_off else item["qty"],
@@ -267,7 +327,7 @@ def _net_sale_lines(db: Session, start: datetime, end: datetime):
             nets = [(sale.total_amount or 0) - discount]
             item_lines.append({
                 "sale_id": sale.id, "day": day,
-                "category": None,
+                **empty_dims,
                 "net": nets[0],
                 "cost": 0,
                 "qty": 0,
@@ -277,11 +337,12 @@ def _net_sale_lines(db: Session, start: datetime, end: datetime):
             amount = refund.total_amount or 0
             refund_day = refund.created_at.date() if refund.created_at else day
             parts = _split(amount, refund_weights) if refund_weights else [amount]
-            cats = ([i["category"] for i in sale_items] if sale_items else [None])
-            for cat, part in zip(cats, parts):
+            items = sale_items if sale_items else [{"dims": empty_dims}]
+            for item, part in zip(items, parts):
                 refund_lines.append({
                     "sale_id": sale.id, "day": refund_day,
-                    "category": cat, "amount": part,
+                    **item["dims"],
+                    "amount": part,
                 })
     return item_lines, refund_lines, sales
 
@@ -565,45 +626,394 @@ def get_price_stats(db, start, end, category=None):
         "avg_profit": round(avg_price - avg_cost),
     }
 
-def get_variant_stats(db, start, end, attr, category=None):
+def get_variant_stats(db, start, end, attr, category=None, standard=None, adult_standard=None):
     """Units sold broken down by variant attribute ('size' or 'color'), sorted.
-    Which colour/size actually sells for a category (or everything)."""
-    col = ProductVariant.color if attr == "color" else ProductVariant.size
+    Sizes are grouped by the band the shop displays, so two tags that mean the
+    same size are one row instead of two neighbouring ones."""
+    standard = standard or get_sizing_standard(db)
+    adult_standard = adult_standard or get_sizing_standard(db, adult=True)
     q = db.query(
-        col.label("label"),
+        ProductVariant,
         func.sum(SaleItem.quantity).label("quantity"),
         func.sum(SaleItem.total_price).label("revenue"),
-    ).join(Sale, Sale.id == SaleItem.sale_id) \
-     .join(ProductVariant, ProductVariant.id == SaleItem.variant_id) \
+    ).join(SaleItem, SaleItem.variant_id == ProductVariant.id) \
+     .join(Sale, Sale.id == SaleItem.sale_id) \
      .join(Product, Product.id == SaleItem.product_id) \
+     .options(joinedload(ProductVariant.product)) \
      .filter(
         Sale.payment_confirmed == True,
         Sale.is_refunded == False,
         Sale.created_at.between(start, end),
-        col != None,
     )
     if category:
         q = q.filter(Product.category == category)
-    rows = q.group_by(col).all()
-    rows = sorted(rows, key=lambda r: r.quantity or 0, reverse=True)
-    return [{"label": r.label or "—", "quantity": r.quantity or 0, "revenue": r.revenue or 0    } for r in rows]
+    rows = q.group_by(ProductVariant.id).all()
+    buckets = {}
+    for variant, quantity, revenue in rows:
+        if attr == "size":
+            if variant.size is None:
+                continue
+            label = variant_size_display(variant, standard, adult_standard=adult_standard)
+        else:
+            if variant.color is None:
+                continue
+            label = variant.color
+        bucket = buckets.setdefault(
+            label or "—", {"label": label or "—", "quantity": 0, "revenue": 0})
+        bucket["quantity"] += quantity or 0
+        bucket["revenue"] += revenue or 0
+    return sorted(buckets.values(), key=lambda r: r["quantity"], reverse=True)
 
 
-def get_color_size_matrix(db, start, end, category=None):
-    """Units sold as a colour×size matrix (heatmap) — the garment restock view."""
+def _matches_filters(filters, values) -> bool:
+    """Apply the new tab's five multi-select dimensions to one line or variant."""
+    if not filters:
+        return True
+    for key, field in (
+        ("categories", "category"), ("types", "size_type"),
+        ("groups", "gender"), ("systems", "size_system"), ("ages", "age_group"),
+    ):
+        selected = filters.get(key)
+        if selected and (values.get(field) or "none") not in selected:
+            return False
+    return True
+
+
+def _category_key(category) -> str:
+    cleaned = _clean_category(category)
+    return "none" if cleaned == "بدون دسته" else cleaned
+
+
+def _group_type_fields(product) -> dict:
+    return {
+        "group": GENDER_LABELS.get(getattr(product, "gender", None), "نامشخص"),
+        "type": SIZE_TYPES.get(getattr(product, "size_type", None), "نامشخص"),
+    }
+
+
+def _line_size_label(line, standard, adult_standard):
+    """The display label and the band's sort key, never the raw tag for no band."""
+    band = line.get("band")
+    if band is None:
+        return "نامشخص", (2, 0, 0, 0)
+    chosen = adult_standard if band.adult_min is not None else standard
+    label = band_display(band, chosen, line.get("gender"))
+    if label == "—":
+        label = line.get("raw_size") or "نامشخص"
+    if band.adult_min is not None:
+        return label, (1, band.adult_min or 0, band.adult_max or 0, 0)
+    return label, (0, band.months_min or 0, band.height_min or 0, band.height_max or 0)
+
+
+def _bucket(store, key, label):
+    return store.setdefault(
+        key, {"key": key, "label": label, "revenue": 0, "units": 0})
+
+
+def get_group_type_sales(db, start, end, filters=None) -> dict:
+    """Net revenue and sold units by group and by garment type."""
+    item_lines, refund_lines, _ = _net_sale_lines(db, start, end)
+    groups, types = {}, {}
+    for line in item_lines:
+        if not _matches_filters(filters, line):
+            continue
+        group = line.get("gender") or "none"
+        _bucket(groups, group, GENDER_LABELS.get(group, "نامشخص"))
+        groups[group]["revenue"] += line["net"]
+        groups[group]["units"] += line["qty"]
+        kind = line.get("size_type") or "none"
+        _bucket(types, kind, SIZE_TYPES.get(kind, "نامشخص"))
+        types[kind]["revenue"] += line["net"]
+        types[kind]["units"] += line["qty"]
+    for line in refund_lines:
+        if not _matches_filters(filters, line):
+            continue
+        group = line.get("gender") or "none"
+        _bucket(groups, group, GENDER_LABELS.get(group, "نامشخص"))
+        groups[group]["revenue"] -= line["amount"]
+        kind = line.get("size_type") or "none"
+        _bucket(types, kind, SIZE_TYPES.get(kind, "نامشخص"))
+        types[kind]["revenue"] -= line["amount"]
+
+    def ranked(rows):
+        return sorted((row for row in rows.values() if row["revenue"] or row["units"]),
+                      key=lambda row: (-row["revenue"], -row["units"], row["label"]))
+
+    return {"group": ranked(groups), "type": ranked(types)}
+
+
+def get_category_age_sales(db, start, end, filters=None) -> dict:
+    """Net revenue and sold units as category × age-group cells."""
+    item_lines, refund_lines, _ = _net_sale_lines(db, start, end)
+    cells, categories = {}, {}
+    for line in item_lines:
+        if not _matches_filters(filters, line):
+            continue
+        category = _category_key(line.get("category"))
+        label = _clean_category(line.get("category"))
+        age = line.get("age_group") or "none"
+        cell = cells.setdefault((category, age), {"revenue": 0, "units": 0})
+        cell["revenue"] += line["net"]
+        cell["units"] += line["qty"]
+        meta = categories.setdefault(
+            category, {"key": category, "label": label, "revenue": 0, "units": 0})
+        meta["revenue"] += line["net"]
+        meta["units"] += line["qty"]
+    for line in refund_lines:
+        if not _matches_filters(filters, line):
+            continue
+        category = _category_key(line.get("category"))
+        label = _clean_category(line.get("category"))
+        age = line.get("age_group") or "none"
+        cell = cells.setdefault((category, age), {"revenue": 0, "units": 0})
+        cell["revenue"] -= line["amount"]
+        meta = categories.setdefault(
+            category, {"key": category, "label": label, "revenue": 0, "units": 0})
+        meta["revenue"] -= line["amount"]
+
+    ordered = sorted(
+        (meta for meta in categories.values() if meta["revenue"] or meta["units"]),
+        key=lambda meta: (-meta["revenue"], -meta["units"], meta["label"]))
+    keys = [meta["key"] for meta in ordered]
+    series = []
+    for age in AGE_GROUP_ORDER:
+        series.append({
+            "key": age,
+            "label": AGE_GROUP_LABELS[age],
+            "revenue": [cells.get((key, age), {}).get("revenue", 0) for key in keys],
+            "units": [cells.get((key, age), {}).get("units", 0) for key in keys],
+        })
+    return {
+        "categories": [meta["label"] for meta in ordered],
+        "series": series,
+        "totals": {
+            "revenue": sum(meta["revenue"] for meta in ordered),
+            "units": sum(meta["units"] for meta in ordered),
+        },
+    }
+
+
+def get_category_size_matrix(db, start, end, filters=None, standard=None,
+                             adult_standard=None) -> dict:
+    """Units and net revenue as category rows × canonical size-band columns."""
+    standard = standard or get_sizing_standard(db)
+    adult_standard = adult_standard or get_sizing_standard(db, adult=True)
+    item_lines, refund_lines, _ = _net_sale_lines(db, start, end)
+    cells, categories, sizes = {}, {}, {}
+    for line in item_lines:
+        if not _matches_filters(filters, line):
+            continue
+        category = _category_key(line.get("category"))
+        label = _clean_category(line.get("category"))
+        size, sort_key = _line_size_label(line, standard, adult_standard)
+        cell = cells.setdefault((category, size), {"qty": 0, "revenue": 0})
+        cell["qty"] += line["qty"]
+        cell["revenue"] += line["net"]
+        meta = categories.setdefault(
+            category, {"key": category, "label": label, "qty": 0, "revenue": 0})
+        meta["qty"] += line["qty"]
+        meta["revenue"] += line["net"]
+        sizes.setdefault(size, sort_key)
+    for line in refund_lines:
+        if not _matches_filters(filters, line):
+            continue
+        category = _category_key(line.get("category"))
+        size, sort_key = _line_size_label(line, standard, adult_standard)
+        cell = cells.setdefault((category, size), {"qty": 0, "revenue": 0})
+        cell["revenue"] -= line["amount"]
+        meta = categories.setdefault(
+            category, {"key": category, "label": _clean_category(line.get("category")),
+                       "qty": 0, "revenue": 0})
+        meta["revenue"] -= line["amount"]
+        sizes.setdefault(size, sort_key)
+
+    ordered_categories = sorted(
+        (meta for meta in categories.values() if meta["qty"] or meta["revenue"]),
+        key=lambda meta: (-meta["qty"], -meta["revenue"], meta["label"]))
+    ordered_sizes = sorted(sizes, key=lambda size: (sizes[size], size))
+    max_qty = max((cell["qty"] for cell in cells.values()), default=0)
+    max_revenue = max((cell["revenue"] for cell in cells.values()), default=0)
+    rows = []
+    for category in ordered_categories:
+        row_cells = []
+        for size in ordered_sizes:
+            cell = cells.get((category["key"], size), {"qty": 0, "revenue": 0})
+            row_cells.append({
+                "qty": cell["qty"], "revenue": cell["revenue"],
+                "pct": round(cell["qty"] / max_qty * 100) if max_qty else 0,
+            })
+        rows.append({"category": category["label"], "cells": row_cells})
+    return {
+        "categories": [{"key": meta["key"], "label": meta["label"]}
+                       for meta in ordered_categories],
+        "sizes": [{"key": size, "label": size} for size in ordered_sizes],
+        "rows": rows,
+        "max": max_qty,
+        "max_revenue": max_revenue,
+    }
+
+
+def _variant_dimensions(variant, product) -> dict:
+    return _line_dimensions(
+        variant.id, variant.size, product.category, product.gender,
+        product.size_type, product.size_system, variant.size_system,
+        (variant.band_min_cm, variant.band_max_cm,
+         variant.band_min_months, variant.band_max_months,
+         variant.band_min_adult, variant.band_max_adult))
+
+
+def get_returns_by_band(db, start, end, filters=None, standard=None,
+                        adult_standard=None) -> list[dict]:
+    """Returned pieces and the return rate, grouped by the canonical size band.
+
+    Returned pieces come from RefundLine, so a partial refund counts exactly the
+    pieces that came back. The denominator is pieces sold in the same range.
+    """
+    standard = standard or get_sizing_standard(db)
+    adult_standard = adult_standard or get_sizing_standard(db, adult=True)
+    returned_rows = db.query(
+        ProductVariant, Product,
+        func.sum(RefundLine.quantity).label("returned"),
+        func.coalesce(func.sum(RefundLine.amount), 0).label("amount"),
+    ).join(SaleItem, SaleItem.id == RefundLine.sale_item_id
+    ).join(Refund, Refund.id == RefundLine.refund_id
+    ).join(Sale, Sale.id == Refund.sale_id
+    ).join(ProductVariant, ProductVariant.id == SaleItem.variant_id
+    ).join(Product, Product.id == ProductVariant.product_id
+    ).options(joinedload(ProductVariant.product)
+    ).filter(
+        Sale.payment_confirmed == True,  # noqa: E712
+        Sale.created_at.between(start, end),
+        Refund.created_at.between(start, end),
+        SaleItem.variant_id.isnot(None),
+    ).group_by(ProductVariant.id).all()
+    sold_rows = db.query(
+        ProductVariant, Product, func.sum(SaleItem.quantity).label("sold"),
+    ).join(SaleItem, SaleItem.variant_id == ProductVariant.id
+    ).join(Sale, Sale.id == SaleItem.sale_id
+    ).join(Product, Product.id == ProductVariant.product_id
+    ).options(joinedload(ProductVariant.product)
+    ).filter(
+        Sale.payment_confirmed == True,  # noqa: E712
+        Sale.created_at.between(start, end),
+    ).group_by(ProductVariant.id).all()
+
+    buckets = {}
+
+    def bucket_for(variant, product):
+        dims = _variant_dimensions(variant, product)
+        if not _matches_filters(filters, dims):
+            return None
+        label, _sort = _line_size_label(dims, standard, adult_standard)
+        return buckets.setdefault(
+            label, {"label": label, "returned_units": 0, "sold_units": 0,
+                    "amount": 0})
+
+    for variant, product, returned, amount in returned_rows:
+        bucket = bucket_for(variant, product)
+        if bucket is not None:
+            bucket["returned_units"] += returned or 0
+            bucket["amount"] += amount or 0
+    for variant, product, sold in sold_rows:
+        bucket = bucket_for(variant, product)
+        if bucket is not None:
+            bucket["sold_units"] += sold or 0
+    rows = []
+    for bucket in buckets.values():
+        if not bucket["returned_units"]:
+            continue
+        bucket["rate"] = share(bucket["returned_units"], bucket["sold_units"], 1)
+        rows.append(bucket)
+    return sorted(rows, key=lambda row: (-row["returned_units"], row["label"]))
+
+
+def get_sales_by_size_system(db, start, end, filters=None) -> list[dict]:
+    """Sold units by the tag language that named the size."""
+    item_lines, refund_lines, _ = _net_sale_lines(db, start, end)
+    buckets = {}
+    for line in item_lines:
+        if not _matches_filters(filters, line):
+            continue
+        key = line.get("size_system") or "none"
+        bucket = _bucket(buckets, key, SYSTEM_LABELS.get(key, "نامشخص"))
+        bucket["units"] += line["qty"]
+        bucket["revenue"] += line["net"]
+    for line in refund_lines:
+        if not _matches_filters(filters, line):
+            continue
+        key = line.get("size_system") or "none"
+        bucket = _bucket(buckets, key, SYSTEM_LABELS.get(key, "نامشخص"))
+        bucket["revenue"] -= line["amount"]
+    return sorted((row for row in buckets.values() if row["units"] or row["revenue"]),
+                  key=lambda row: (-row["units"], -row["revenue"], row["label"]))
+
+
+def get_sizing_coverage(db) -> dict:
+    """How much of the active catalog has a size system and a resolved band."""
+    products = db.query(Product).filter(Product.is_active == True).all()  # noqa: E712
+    variants = db.query(ProductVariant).join(Product).options(
+        joinedload(ProductVariant.product)
+    ).filter(
+        ProductVariant.is_active == True,  # noqa: E712
+        Product.is_active == True,  # noqa: E712
+    ).all()
+    by_product = {}
+    for variant in variants:
+        by_product.setdefault(variant.product_id, []).append(variant)
+
+    products_with_system = sum(1 for product in products if product.size_system in SYSTEMS)
+    variants_with_band = sum(1 for variant in variants if band_from_variant(variant) is not None)
+    missing = []
+    for product in products:
+        product_variants = by_product.get(product.id, [])
+        has_system = product.size_system in SYSTEMS
+        missing_variants = sum(
+            1 for variant in product_variants if band_from_variant(variant) is None)
+        if has_system and not missing_variants:
+            continue
+        missing.append({
+            "product_id": product.id,
+            "name": product.name,
+            "category": _clean_category(product.category),
+            "type": SIZE_TYPES.get(product.size_type, "—"),
+            "group": GENDER_LABELS.get(product.gender, "—"),
+            "size_system": SYSTEM_LABELS.get(product.size_system, "—"),
+            "missing_variants": missing_variants,
+            "stock_units": sum(v.stock_quantity or 0 for v in product_variants),
+            "reason": "بدون سیستم" if not has_system else "تنوع بدون باند",
+        })
+    missing.sort(key=lambda row: (-row["stock_units"], -row["missing_variants"],
+                                  row["name"]))
+    return {
+        "products_total": len(products),
+        "products_with_system": products_with_system,
+        "products_without_system": len(products) - products_with_system,
+        "variants_total": len(variants),
+        "variants_with_band": variants_with_band,
+        "variants_without_band": len(variants) - variants_with_band,
+        "band_pct": share(variants_with_band, len(variants), 1),
+        "system_pct": share(products_with_system, len(products), 1),
+        "missing": missing[:8],
+    }
+
+
+def get_color_size_matrix(db, start, end, category=None, standard=None, adult_standard=None):
+    """Units sold as a colour×size matrix (heatmap) — the garment restock view.
+    The size axis is the band, so a tag's spelling does not split one size."""
+    standard = standard or get_sizing_standard(db)
+    adult_standard = adult_standard or get_sizing_standard(db, adult=True)
     rows = db.query(
-        ProductVariant.color, ProductVariant.size,
+        ProductVariant,
         func.sum(SaleItem.quantity).label("quantity"),
         func.sum(SaleItem.total_price).label("revenue"),
-    ).join(Sale, Sale.id == SaleItem.sale_id) \
-     .join(ProductVariant, ProductVariant.id == SaleItem.variant_id) \
+    ).join(SaleItem, SaleItem.variant_id == ProductVariant.id) \
+     .join(Sale, Sale.id == SaleItem.sale_id) \
      .join(Product, Product.id == SaleItem.product_id) \
+     .options(joinedload(ProductVariant.product)) \
      .filter(
         Sale.payment_confirmed == True,
         Sale.is_refunded == False,
         Sale.created_at.between(start, end),
-        ProductVariant.color != None,
-        ProductVariant.size != None,
     )
     if category:
         rows = rows.filter(Product.category == category)
@@ -612,19 +1022,25 @@ def get_color_size_matrix(db, start, end, category=None):
     # in the table, and the total quantity of everything joined — so the heatmap
     # showed a single cell however much the shop had sold, and on a shop that had
     # sold nothing it showed «None» down the page: a table that renders, looks
-    # deliberate and is wrong twice over. Every other reading in this module
-    # groups; this one did not, because one row still looks like a plausible
-    # matrix.
-    rows = rows.group_by(ProductVariant.color, ProductVariant.size)
+    # deliberate and is wrong twice over. Grouping by variant is what keeps the
+    # rows real; their band labels are then summed below, because the label is
+    # derived rather than stored.
+    rows = rows.group_by(ProductVariant.id)
     cells = {}
     colors, sizes = [], []
-    for color, size, quantity, revenue in rows.all():
+    for variant, quantity, revenue in rows.all():
+        if variant.color is None or variant.size is None:
+            continue
+        color = variant.color
+        size = variant_size_display(variant, standard, adult_standard=adult_standard)
         if color not in cells:
             cells[color] = {}
             colors.append(color)
         if size not in sizes:
             sizes.append(size)
-        cells[color][size] = {"qty": quantity or 0, "revenue": revenue or 0}
+        cell = cells[color].setdefault(size, {"qty": 0, "revenue": 0})
+        cell["qty"] += quantity or 0
+        cell["revenue"] += revenue or 0
     max_qty = max((cell["qty"] for cell in cells.values() for cell in cell.values()), default=0)
     max_revenue = max((cell["revenue"] for cell in cells.values() for cell in cell.values()), default=0)
     matrix_rows = []
@@ -676,6 +1092,29 @@ def get_inventory_value(db):
         "categories": cat_list,
         "low_stock": low_list,
     }
+
+def get_stock_by_band(db, standard=None, adult_standard=None):
+    """Units and tied-up cost per size band — the shelf read by size, in the
+    shop's chosen unit, so two tags for one band count once."""
+    standard = standard or get_sizing_standard(db)
+    adult_standard = adult_standard or get_sizing_standard(db, adult=True)
+    variants = db.query(ProductVariant).join(Product).options(
+        joinedload(ProductVariant.product)
+    ).filter(
+        ProductVariant.is_active == True,
+        Product.is_active == True,
+        ProductVariant.stock_quantity > 0,
+    ).all()
+    buckets = {}
+    for variant in variants:
+        label = variant_size_display(variant, standard, adult_standard=adult_standard) or "—"
+        bucket = buckets.setdefault(
+            label, {"size": label, "units": 0, "cost": 0, "retail": 0})
+        bucket["units"] += variant.stock_quantity or 0
+        bucket["cost"] += (variant.cost_price or 0) * (variant.stock_quantity or 0)
+        bucket["retail"] += (variant.price or 0) * (variant.stock_quantity or 0)
+    return sorted(buckets.values(), key=lambda row: row["units"], reverse=True)
+
 
 # ----- Expert tier — where the money actually is ------------------------------
 #
@@ -915,16 +1354,20 @@ def get_margin_by_category(db, start, end):
     return sorted(result, key=lambda x: -1e9 if x["margin"] is None else x["margin"],
                   reverse=True)
 
-def get_dead_stock(db, start, end, days_threshold=90):
+def get_dead_stock(db, start, end, days_threshold=90, standard=None, adult_standard=None):
     """Variants sitting in stock with zero sales in the period.
     These are tying up capital with zero return."""
+    standard = standard or get_sizing_standard(db)
+    adult_standard = adult_standard or get_sizing_standard(db, adult=True)
     sold_vids = db.query(SaleItem.variant_id).join(Sale).filter(
         Sale.payment_confirmed == True, Sale.is_refunded == False,
         Sale.created_at.between(start, end),
         SaleItem.variant_id != None,
     ).distinct().all()
     sold_set = {vid for (vid,) in sold_vids}
-    variants = db.query(ProductVariant, Product.name, Product.category).join(Product).filter(
+    variants = db.query(ProductVariant, Product.name, Product.category).join(Product).options(
+        joinedload(ProductVariant.product)
+    ).filter(
         ProductVariant.is_active == True,
         Product.is_active == True,
         ProductVariant.stock_quantity > 0,
@@ -937,11 +1380,12 @@ def get_dead_stock(db, start, end, days_threshold=90):
                 "product_id": v.product_id,
             "name": name,
             "category": _clean_category(cat),
-                "size": v.size or "",
+                "size": variant_size_display(v, standard, adult_standard=adult_standard),
                 "color": v.color or "",
                 "stock": v.stock_quantity,
                 "value": v.cost_price * v.stock_quantity,
                 "retail": v.price * v.stock_quantity,
+                **_group_type_fields(v.product),
             })
     dead.sort(key=lambda x: x["value"], reverse=True)
     total_dead_value = sum(d["value"] for d in dead)
@@ -977,30 +1421,31 @@ def get_price_distribution(db, start, end):
         buckets[bucket]["revenue"] += rev or 0
     return sorted(buckets.values(), key=lambda x: x["price"])
 
-def get_top_selling_variants(db, start, end, limit=10):
+def get_top_selling_variants(db, start, end, limit=10, standard=None, adult_standard=None):
     """Top selling specific variants (product + size + color).
-    The actual items flying off the shelves."""
+    The actual items flying off the shelves, sized in the shop's unit."""
+    standard = standard or get_sizing_standard(db)
+    adult_standard = adult_standard or get_sizing_standard(db, adult=True)
     rows = db.query(
-        Product.name,
-        ProductVariant.size,
-        ProductVariant.color,
+        ProductVariant,
         func.sum(SaleItem.quantity).label("qty"),
         func.sum(SaleItem.total_price).label("revenue"),
-    ).join(ProductVariant, ProductVariant.id == SaleItem.variant_id) \
-     .join(Product, Product.id == SaleItem.product_id) \
+    ).join(SaleItem, SaleItem.variant_id == ProductVariant.id) \
      .join(Sale, Sale.id == SaleItem.sale_id) \
+     .options(joinedload(ProductVariant.product)) \
      .filter(
         Sale.payment_confirmed == True, Sale.is_refunded == False,
         Sale.created_at.between(start, end),
     ).group_by(ProductVariant.id).order_by(func.sum(SaleItem.quantity).desc()) \
      .limit(limit).all()
     return [{
-        "name": r.name,
-        "size": r.size or "",
-        "color": r.color or "",
-        "qty": r.qty or 0,
-        "revenue": r.revenue or 0,
-        } for r in rows]
+        "name": variant.product.name if variant.product else "",
+        "size": variant_size_display(variant, standard, adult_standard=adult_standard),
+        "color": variant.color or "",
+        "qty": qty or 0,
+        "revenue": revenue or 0,
+        **_group_type_fields(variant.product),
+        } for variant, qty, revenue in rows]
 
 
 def get_year_heatmap(db) -> dict:
@@ -1071,7 +1516,7 @@ def get_return_rate(db, start, end) -> dict:
 REORDER_DAYS = 14
 
 
-def get_turnover(db, start, end, limit=50) -> dict:
+def get_turnover(db, start, end, limit=50, standard=None, adult_standard=None) -> dict:
     """Days of stock left per selling variant, most urgent first.
 
     Sell rate comes from the viewed range, stock from the shelf: a variant
@@ -1080,6 +1525,8 @@ def get_turnover(db, start, end, limit=50) -> dict:
     and dividing by zero would invent one. Capped so the table stays a
     worklist, with the count of rows left out stated beside it.
     """
+    standard = standard or get_sizing_standard(db)
+    adult_standard = adult_standard or get_sizing_standard(db, adult=True)
     days = max((end - start).days, 1)
     sold = dict(db.query(
         SaleItem.variant_id, func.sum(SaleItem.quantity),
@@ -1089,7 +1536,9 @@ def get_turnover(db, start, end, limit=50) -> dict:
         Sale.created_at.between(start, end),
         SaleItem.variant_id.isnot(None),
     ).group_by(SaleItem.variant_id).all())
-    variants = db.query(ProductVariant, Product.name).join(Product).filter(
+    variants = db.query(ProductVariant, Product.name).join(Product).options(
+        joinedload(ProductVariant.product)
+    ).filter(
         ProductVariant.is_active == True,
         Product.is_active == True,
         ProductVariant.stock_quantity > 0,
@@ -1104,7 +1553,7 @@ def get_turnover(db, start, end, limit=50) -> dict:
             "variant_id": variant.id,
             "product_id": variant.product_id,
             "name": name,
-            "size": variant.size or "",
+            "size": variant_size_display(variant, standard, adult_standard=adult_standard),
             "color": variant.color or "",
             "stock": variant.stock_quantity or 0,
             "sold": qty,
@@ -1155,16 +1604,17 @@ def get_staff_performance(db, start, end) -> dict:
                              "revenue": unattributed[1] or 0}}
 
 
-def get_returns(db, start, end, limit=10) -> dict:
+def get_returns(db, start, end, limit=10, standard=None, adult_standard=None) -> dict:
     """What came back: top variants by returned units, and the reasons given."""
-    from models import Product
+    standard = standard or get_sizing_standard(db)
+    adult_standard = adult_standard or get_sizing_standard(db, adult=True)
     items = db.query(
-        Product.name, ProductVariant.size, ProductVariant.color,
+        ProductVariant,
         func.sum(SaleItem.quantity).label("qty"),
         func.coalesce(func.sum(SaleItem.total_price), 0).label("amount"),
     ).join(SaleItem, SaleItem.variant_id == ProductVariant.id) \
-     .join(Product, Product.id == SaleItem.product_id) \
      .join(Sale, Sale.id == SaleItem.sale_id) \
+     .options(joinedload(ProductVariant.product)) \
      .filter(
         Sale.payment_confirmed == True,
         Sale.is_refunded == True,
@@ -1179,9 +1629,12 @@ def get_returns(db, start, end, limit=10) -> dict:
         Sale.created_at.between(start, end),
     ).group_by(Sale.refund_reason).order_by(func.count(Sale.id).desc()).all()
     return {
-        "variants": [{"name": name or "—", "size": size or "", "color": color or "",
-                      "qty": qty or 0, "amount": amount or 0}
-                     for name, size, color, qty, amount in items],
+        "variants": [{"name": variant.product.name if variant.product else "—",
+                      "size": variant_size_display(variant, standard, adult_standard=adult_standard),
+                      "color": variant.color or "",
+                      "qty": qty or 0, "amount": amount or 0,
+                      **_group_type_fields(variant.product)}
+                     for variant, qty, amount in items],
         "reasons": [{"reason": reason or "بدون دلیل", "count": count}
                     for reason, count in reasons],
     }

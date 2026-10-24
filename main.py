@@ -13,7 +13,7 @@ from database import engine, Base, SessionLocal
 from routers import customers, api, admin, products, sales, analytics, campaigns, accounting, sms
 from routers.clothes_images import admin_router as clothes_admin_router, api_router as clothes_api_router
 from routers.sms_device import gateway_app as _sms_gateway_app  # noqa: F401  (supervised on :8101 by desktop_entry)
-from services.security import CSRFMiddleware, PERMISSION_DENIED_DETAIL
+from services.security import CSRFMiddleware, NoStoreHTMLMiddleware, PERMISSION_DENIED_DETAIL
 from services.store import get_store
 from services.scheduler import scheduler_task
 from services.templating import templates
@@ -153,7 +153,6 @@ def _apply_missing_columns(migration_engine=None):
             ("care_instructions", "TEXT"),
             ("supplier_id", "INTEGER"),
             ("default_reorder_point", "INTEGER DEFAULT 0"),
-            ("default_reorder_quantity", "INTEGER DEFAULT 0"),
             ("tag_template_id", "INTEGER"),
         ],
         "product_variants": [
@@ -161,10 +160,11 @@ def _apply_missing_columns(migration_engine=None):
             ("fake_cost_price", "INTEGER"),
             ("tryon_details", "TEXT"),
             ("reorder_point", "INTEGER DEFAULT 0"),
-            ("reorder_quantity", "INTEGER DEFAULT 0"),
             ("storage_location", "VARCHAR(100)"),
             ("size_system", "VARCHAR(30)"),
             ("color_code", "VARCHAR(30)"),
+            ("band_min_adult", "INTEGER"),
+            ("band_max_adult", "INTEGER"),
         ],
         "sales": [
             ("credit_settled", "BOOLEAN"),
@@ -366,20 +366,44 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
     scheduler = asyncio.create_task(scheduler_task())
+    from services.tryon_worker import tryon_worker_task
+    tryon_worker = asyncio.create_task(tryon_worker_task())
     yield
     scheduler.cancel()
+    tryon_worker.cancel()
     try:
         await scheduler
+    except asyncio.CancelledError:
+        pass
+    try:
+        await tryon_worker
     except asyncio.CancelledError:
         pass
 
 
 app = FastAPI(title="سیستم فروش", lifespan=lifespan)
 
+
+@app.get("/health", include_in_schema=False)
+async def health():
+    """Liveness probe for the process manager; deliberately no database work."""
+    return {"status": "ok"}
+
+
+@app.get("/v1/models", include_in_schema=False)
+async def model_discovery_probe():
+    """Local AI clients probe this as if we were an OpenAI server. We serve no
+    models; an empty list is the truthful answer and stops the 404 noise."""
+    return {"object": "list", "data": []}
+
+
 # Middleware order matters: SessionMiddleware must run OUTSIDE CSRFMiddleware so
 # the session (and its CSRF token) is available when CSRF validates. Starlette
 # wraps in reverse order of add_middleware, so CSRF is added first.
 app.add_middleware(CSRFMiddleware)
+# Documents bypass the browser's heuristic cache (assets already bust via
+# ?v=mtime): a page edit must show on a plain reload, not after cache surgery.
+app.add_middleware(NoStoreHTMLMiddleware)
 app.add_middleware(
     SessionMiddleware,
     secret_key=SESSION_SECRET,

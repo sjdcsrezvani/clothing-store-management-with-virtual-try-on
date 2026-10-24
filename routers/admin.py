@@ -3,7 +3,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse, Response
@@ -116,6 +116,10 @@ from services.security import (
     admin_log_diff,
     admin_log_diff_fields,
 )
+from services.sizing import (
+    DISPLAY_STANDARDS as SIZING_STANDARDS,
+    DISPLAY_STANDARDS_ADULT as SIZING_STANDARDS_ADULT,
+)
 from services.store import invalidate_store_cache, get_store
 from services.sorting import parse_sort
 from services.templating import templates
@@ -192,7 +196,10 @@ async def admin_login(request: Request, username: str = Form("owner"), password:
         log_action(db, "login", "ورود موفق", request=request, target_type="staff_user", target_id=user.id)
         # The till for a cashier, the dashboard for everyone above them. Sending
         # everybody to /admin meant a cashier's first page was a refusal.
-        return RedirectResponse(url=home_for(user.role), status_code=303)
+        target = home_for(user.role)
+        if target == "/admin":
+            target = "/admin/"  # skip the trailing-slash redirect on login
+        return RedirectResponse(url=target, status_code=303)
     login_failure(request)
     log_action(db, "login_failed", "رمز عبور اشتباه", request=request)
     return templates.TemplateResponse(request, "admin/login.html", {"error": "رمز عبور اشتباه است", "username": username, "store_logo": _login_logo(db)})
@@ -319,11 +326,18 @@ async def admin_dashboard(request: Request, db: Session = Depends(get_db)):
     that role may see and never computes the others. That is what keeps the
     template free of role logic — it prints what it is given.
     """
-    guard = require_html_role(request, db, "manager")
+    guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
 
-    view = dashboard_overview(db, role=guard.role)
+    try:
+        day_offset = max(0, min(6, int(request.query_params.get("day", 0) or 0)))
+    except (TypeError, ValueError):
+        day_offset = 0
+    view = dashboard_overview(db, role=guard.role, user_id=guard.id,
+                              user_name=guard.full_name or guard.username,
+                              day_offset=day_offset,
+                              rank_week=request.query_params.get("rank") == "week")
     return templates.TemplateResponse(request, "admin/dashboard.html", {
         **view,
         # The print heading names the day; a staple carries no URL.
@@ -350,7 +364,7 @@ async def admin_customers(
     db: Session = Depends(get_db),
 ):
     """The customer list: who they are, what they bought, and what is due."""
-    guard = require_html_role(request, db, "manager")
+    guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
 
@@ -477,7 +491,7 @@ async def admin_customer_profile(
     customer_id: int, request: Request, page: str = "1", db: Session = Depends(get_db)
 ):
     """One customer's file: purchases, discounts, referrals, debt and details."""
-    guard = require_html_role(request, db, "manager")
+    guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
 
@@ -1099,7 +1113,7 @@ async def admin_staff(request: Request, q: str = "", status: str = "all", page: 
     unpaid_names = [(person.full_name or person.username)
                     for person in unpaid_staff
                     if person.id not in paid_ids
-                    and is_payroll_due(person.hire_date, current)]
+                    and is_payroll_due(person.hire_date, current, person.created_at)]
     base_qs = urlencode({
         **({"q": search} if search else {}),
         **({"status": status_filter} if status_filter != "all" else {}),
@@ -1204,7 +1218,7 @@ async def admin_staff_profile(staff_id: int, request: Request, tab: str = "overv
         CashSession.cashier_user_id == staff_user.id,
         CashSession.status == "open").order_by(CashSession.opened_at.desc()).first()
     unpaid_month = staff_user.is_active and staff_user.salary_amount > 0 \
-        and is_payroll_due(staff_user.hire_date, current) and not db.query(
+        and is_payroll_due(staff_user.hire_date, current, staff_user.created_at) and not db.query(
         SalaryPayment).filter(SalaryPayment.staff_user_id == staff_user.id,
                               SalaryPayment.period_key == current).first()
     # Yearly rollups from live payments: the year is the period prefix.
@@ -1997,6 +2011,13 @@ SETTINGS_NUMERIC_RULES = {
     "check_upcoming_days": (1, 90, "بازه چک‌های نزدیک"),
     "cash_opening_balance": (0, None, "موجودی پیش‌فرض صندوق"),
     "low_stock_threshold": (0, 999, "آستانه کم‌موجودی"),
+    "sales_target_0": (0, None, "هدف فروش دوشنبه"),
+    "sales_target_1": (0, None, "هدف فروش سه‌شنبه"),
+    "sales_target_2": (0, None, "هدف فروش چهارشنبه"),
+    "sales_target_3": (0, None, "هدف فروش پنجشنبه"),
+    "sales_target_4": (0, None, "هدف فروش جمعه"),
+    "sales_target_5": (0, None, "هدف فروش شنبه"),
+    "sales_target_6": (0, None, "هدف فروش یکشنبه"),
 }
 
 
@@ -2028,6 +2049,8 @@ _SETTINGS_FIELD_TABS = {
     "birthday_sms_days_before": "discounts",
     "birthday_target": "discounts", "child_profile_enabled": "discounts",
     "tryon_daily_limit": "messaging",
+    "tryon_api_key": "messaging", "tryon_api_url": "messaging",
+    "tryon_autoclear_kid": "messaging",
     "credit_terms_days": "credit",
     "credit_reminder_min_hours": "credit",
     "default_credit_limit": "credit",
@@ -2054,6 +2077,71 @@ def _settings_tab(request: Request) -> str:
     return wanted if wanted in known else "shop"
 
 
+@router.post("/targets", response_class=HTMLResponse)
+async def admin_update_targets(request: Request, db: Session = Depends(get_db)):
+    """Weekday sales goals, settable by manager and owner alike.
+
+    Only the seven goal keys are accepted — anything else posted here is
+    ignored, so this narrow door can never become a second settings page.
+    """
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    form = await request.form()
+    for weekday in range(7):
+        key = f"sales_target_{weekday}"
+        raw = str(form.get(key, "")).strip()
+        if not raw:
+            continue
+        try:
+            number = int(to_english_digits(raw))
+        except (TypeError, ValueError):
+            continue
+        if number < 0:
+            continue
+        row = db.query(Settings).filter(Settings.key == key).first()
+        if row is None:
+            db.add(Settings(key=key, value=str(number)))
+        else:
+            row.value = str(number)
+    db.commit()
+    log_action(db, "targets_update", "هدف روزانه فروش به‌روز شد",
+               request=request)
+    return RedirectResponse(url="/admin?msg=هدف روزانه فروش ذخیره شد.",
+                            status_code=303)
+
+
+@router.get("/dashboard-poll", response_class=JSONResponse)
+async def admin_dashboard_poll(request: Request, db: Session = Depends(get_db)):
+    """The dashboard's figures as JSON, for the five-minute silent poll.
+
+    Same overview builder as the page, flattened to keyed values — so the
+    polled numbers can never disagree with a reload. History strips and
+    rankings ride a reload; the poll moves values, not structure.
+    """
+    guard = require_html_role(request, db, "cashier")
+    if not hasattr(guard, "role"):
+        return guard
+    view = dashboard_overview(db, role=guard.role, user_id=guard.id,
+                              user_name=guard.full_name or guard.username)
+    cards = {}
+    for section in view.get("sections", []):
+        for card in section.get("cards", []):
+            cards[card["key"]] = {"value": card.get("value", ""),
+                                  "sub": card.get("sub", "")}
+    greeting = view.get("greeting")
+    parts = ({k: greeting[k] for k in
+              ("name", "salutation", "weekday", "date", "time", "summary")}
+             if greeting else None)
+    return {
+        "cards": cards,
+        "greeting": (f"سلام {greeting['name']}، {greeting['salutation']} — "
+                     f"{greeting['weekday']} {greeting['date']}، ساعت {greeting['time']} — "
+                     f"{greeting['summary']}") if greeting else None,
+        "greeting_parts": parts,
+    }
+
+
 @router.get("/settings", response_class=HTMLResponse)
 async def admin_settings(request: Request, db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "owner")
@@ -2067,12 +2155,14 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
     # owner is looking at, instead of surfacing later as a rule the browser
     # showed and the server ignored.
     template_source = (Path("templates") / "admin" / "settings.html").read_text(encoding="utf-8")
-    macro_fields = set(re.findall(r"num\('([a-z_]+)'", template_source))
+    macro_fields = set(re.findall(r"num\('([a-z0-9_]+)'", template_source))
     missing = sorted(macro_fields - set(SETTINGS_NUMERIC_RULES))
     if missing:
         return templates.TemplateResponse(request, "admin/settings.html", {
             "settings": {}, "tier_config": {}, "downgrade_rule": tier_downgrade_rule(db),
             "numeric_rules": {}, "store": get_store(db),
+            "sizing_standards": SIZING_STANDARDS.items(),
+            "sizing_standards_adult": SIZING_STANDARDS_ADULT.items(),
             "settings_tabs": SETTINGS_TABS, "active_tab": active_tab,
             "msg": "",
             "err": "خطای قالب: «" + "، ".join(missing) + "» در جدول قواعد نیست — صفحه از ذخیره‌سازی محافظت می‌کند.",
@@ -2082,6 +2172,8 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
         return templates.TemplateResponse(request, "admin/settings.html", {
             "settings": {}, "tier_config": {}, "downgrade_rule": tier_downgrade_rule(db),
             "numeric_rules": {}, "store": get_store(db),
+            "sizing_standards": SIZING_STANDARDS.items(),
+            "sizing_standards_adult": SIZING_STANDARDS_ADULT.items(),
             "settings_tabs": SETTINGS_TABS, "active_tab": active_tab,
             "msg": "",
             "err": "خطای قالب: «" + "، ".join(orphans) + "» در فرم نیست — یک قاعده بی‌میدان.",
@@ -2098,6 +2190,8 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
         "numeric_rules": SETTINGS_NUMERIC_RULES,
         "settings_tabs": SETTINGS_TABS, "active_tab": active_tab,
         "store": get_store(db), "msg": "", "err": "",
+        "sizing_standards": SIZING_STANDARDS.items(),
+        "sizing_standards_adult": SIZING_STANDARDS_ADULT.items(),
     }
     for processor in templates.context_processors:
         check_context.update(processor(request))
@@ -2107,7 +2201,7 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
         tag = m.group(0)
         if 'type="number"' not in tag:
             continue
-        name_m = re.search(r'name="([a-z_]+)"', tag)
+        name_m = re.search(r'name="([a-z0-9_]+)"', tag)
         rule = SETTINGS_NUMERIC_RULES.get(name_m.group(1)) if name_m else None
         min_m = re.search(r'\bmin="(-?\d+)"', tag)
         max_m = re.search(r'\bmax="(-?\d+)"', tag)
@@ -2122,6 +2216,8 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
         return templates.TemplateResponse(request, "admin/settings.html", {
             "settings": {}, "tier_config": {}, "downgrade_rule": tier_downgrade_rule(db),
             "numeric_rules": {}, "store": get_store(db),
+            "sizing_standards": SIZING_STANDARDS.items(),
+            "sizing_standards_adult": SIZING_STANDARDS_ADULT.items(),
             "settings_tabs": SETTINGS_TABS, "active_tab": active_tab,
             "msg": "",
             "err": "خطای قالب: «" + "، ".join(hard_bounds) + "» مرز خودش را نوشته — از جدول قواعد استفاده کنید.",
@@ -2129,8 +2225,10 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
 
     settings = {s.key: s.value for s in db.query(Settings).all()}
     tier_config = get_tier_config(db)
+    from services.image_gen import mask_tryon_key
+    tryon_key_mask = mask_tryon_key(settings.get("tryon_api_key", ""))
     error_field = (request.query_params.get("field", "") or "").strip()
-    if not re.fullmatch(r"[a-z_]+", error_field):
+    if not re.fullmatch(r"[a-z0-9_]+", error_field):
         error_field = ""
     # The gateway strip is read live but only for its own tab — every other
     # panel skips the device query entirely.
@@ -2148,9 +2246,12 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
         "downgrade_rule": tier_downgrade_rule(db),
         "numeric_rules": SETTINGS_NUMERIC_RULES,
         "store": get_store(db),
+        "sizing_standards": SIZING_STANDARDS.items(),
+        "sizing_standards_adult": SIZING_STANDARDS_ADULT.items(),
         "settings_tabs": SETTINGS_TABS, "active_tab": active_tab,
         "error_field": error_field,
         "gateway": gateway,
+        "tryon_key_mask": tryon_key_mask,
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
     })
@@ -2277,8 +2378,11 @@ async def admin_update_settings(request: Request, db: Session = Depends(get_db))
     for key, value in form.items():
         if key in {"csrf_token", "tab", THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY}:
             continue
+        if key == "tryon_api_key" and not str(value).strip():
+            continue  # empty key field means "keep the stored secret"
         updates[key] = str(value)
-    # A birthday target that names a module the store switched off would
+    if "tryon_api_key" in updates and not updates["tryon_api_key"].strip():
+        del updates["tryon_api_key"]    # A birthday target that names a module the store switched off would
     # contradict itself, so it falls back rather than silently doing nothing.
     child_off = str(updates.get(CHILD_PROFILE_KEY, "1")).strip().lower() in (
         "0", "false", "no", "off",
@@ -2651,7 +2755,7 @@ def _pos_list_conds(search: str, status_filter: str) -> list:
 async def admin_pos_reconciliation(
     request: Request,
     q: str = "",
-    status: str = "all",
+    status: str = "unresolved",
     page: str = "1",
     per_page: str = "25",
     sort: str = "date",
@@ -2665,7 +2769,7 @@ async def admin_pos_reconciliation(
 
     from urllib.parse import urlencode
     search = (q or "").strip()
-    status_filter = status if status in POS_STATUSES else "all"
+    status_filter = status if status in POS_STATUSES else "unresolved"
     page_int = page_arg(page)
     per_page_int = int(per_page) if str(per_page).isdigit() and int(per_page) in (10, 25, 50) else 25
     sort_key, sort_dir = parse_sort(request.query_params, {"date": "desc", "amount": "desc"}, "date")
@@ -2700,7 +2804,7 @@ async def admin_pos_reconciliation(
         "terminal_error": "خطای کارت‌خوان",
         "provider_investigation": "بررسی ارائه‌دهنده",
     }
-    has_filters = bool(search or status_filter != "all")
+    has_filters = bool(search or status_filter not in ("all", "unresolved"))
     from urllib.parse import urlencode
     base_qs = urlencode({
         **({"q": search} if search else {}),
@@ -3141,6 +3245,10 @@ async def admin_logs(request: Request, db: Session = Depends(get_db)):
         fa = to_persian_digits
         position_line = (f"نمایش {fa(str(start))} تا {fa(str(end))}"
                          f" از {fa(str(total))}")
+    first_action_id = next(
+        (item["row_id"] for item in items if item["source"] == "action"), 0)
+    first_event_id = next(
+        (item["row_id"] for item in items if item["source"] == "event"), 0)
 
     return templates.TemplateResponse(request, "admin/logs.html", {
         "groups": groups,
@@ -3172,10 +3280,13 @@ async def admin_logs(request: Request, db: Session = Depends(get_db)):
         "back_url": back_url,
         "poll_url": poll_url,
         "position_line": position_line,
-        "first_action_id": next(
-            (item["row_id"] for item in items if item["source"] == "action"), 0),
-        "first_event_id": next(
-            (item["row_id"] for item in items if item["source"] == "event"), 0),
+        # The fresh-rows pill's own wiring: the fragment it polls keeps the
+        # page's filters (poll_url), and its "نمایش" link is exactly the page
+        # the user is looking at.
+        "fresh": False,
+        "hx_url": poll_url + ("&" if "?" in poll_url else "?")
+                  + f"first_action={first_action_id}&first_event={first_event_id}",
+        "show_url": str(request.url),
         "archivable": _logs_archivable_count(db),
     })
 
@@ -3226,7 +3337,10 @@ async def admin_logs_export(request: Request, db: Session = Depends(get_db)):
 @router.get("/logs/latest")
 async def admin_logs_latest(request: Request, db: Session = Depends(get_db)):
     """The newest row id per stream under the active filters — the poller asks
-    this, not the page, so a quiet check never renders a thing."""
+    this, not the page, so a quiet check never renders a thing. Plain callers
+    get the row ids as JSON; the audit pill's htmx poll (`HX-Request`) gets the
+    pill fragment itself: same comparison the old page script made, rendered
+    server-side, so the answer is visible or absent and never a number."""
     guard = require_html_role(request, db, "owner")
     if not hasattr(guard, "role"):
         return guard
@@ -3235,6 +3349,23 @@ async def admin_logs_latest(request: Request, db: Session = Depends(get_db)):
         AdminLog.id.desc()).limit(1).first()
     latest_event = _events_base_query(db, filters).order_by(
         BusinessEvent.id.desc()).limit(1).first()
+    if request.headers.get("HX-Request") == "true":
+        try:
+            first_action = int(request.query_params.get("first_action") or "0")
+            first_event = int(request.query_params.get("first_event") or "0")
+        except ValueError:
+            first_action = first_event = 0
+        fresh = ((latest_action.id if latest_action else 0) > first_action
+                 or (latest_event.id if latest_event else 0) > first_event)
+        qp = [(k, v) for k, v in request.query_params.multi_items()
+              if k not in ("first_action", "first_event")]
+        return templates.TemplateResponse(request, "partials/logs_fresh_pill.html", {
+            "fresh": fresh,
+            "hx_url": str(request.url.path)
+                      + (("?" + str(request.url.query)) if request.url.query else ""),
+            # The reveal link is the audit page itself, never this endpoint.
+            "show_url": "/admin/logs" + (("?" + urlencode(qp)) if qp else ""),
+        })
     return JSONResponse({
         "actions_max": latest_action.id if latest_action else 0,
         "events_max": latest_event.id if latest_event else 0,
@@ -3312,7 +3443,7 @@ async def admin_birthdays(request: Request, db: Session = Depends(get_db)):
     soon, and who already received this year's wish — nothing sends until the
     owner ticks and confirms.
     """
-    guard = require_html_role(request, db, "owner")
+    guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
@@ -3386,7 +3517,7 @@ async def admin_birthdays_send(request: Request, customer_ids: list[int] = Form(
     occasion, per year) still guards a double-send, so a re-submit of the same
     selection reports skips instead of repeat wishes.
     """
-    guard = require_html_role(request, db, "owner")
+    guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
@@ -3464,7 +3595,7 @@ async def admin_follow_ups(request: Request, db: Session = Depends(get_db)):
     than at the next pass, and whoever the sweep reached first is simply no
     longer on the list.
     """
-    guard = require_html_role(request, db, "owner")
+    guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
@@ -3509,7 +3640,7 @@ async def admin_follow_ups_send(request: Request, template_id: int = Form(0),
     twice. Both paths record the same per-purchase reference, and the second to
     arrive loses politely with a count the page reports.
     """
-    guard = require_html_role(request, db, "owner")
+    guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
@@ -3551,7 +3682,7 @@ async def admin_tier_downgrades(request: Request, db: Session = Depends(get_db))
     when the rule was simply switched off — so this page exists to make the
     decision visible, and to be the only way it is ever made.
     """
-    guard = require_html_role(request, db, "owner")
+    guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
@@ -3592,7 +3723,7 @@ async def admin_tier_downgrades_apply(
     trading, and a purchase in the meantime is exactly what the rule says
     protects the tier.
     """
-    guard = require_html_role(request, db, "owner")
+    guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
@@ -3620,7 +3751,7 @@ TIER_UP_SMS_LIMIT = 10
 
 @router.get("/tier-up", response_class=HTMLResponse)
 async def admin_tier_up(request: Request, db: Session = Depends(get_db)):
-    guard = require_html_role(request, db, "owner")
+    guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 
@@ -3683,7 +3814,7 @@ async def admin_tier_up(request: Request, db: Session = Depends(get_db)):
 @router.post("/tier-up/send", response_class=HTMLResponse)
 async def admin_tier_up_send(request: Request, customer_ids: list[str] = Form([]), db: Session = Depends(get_db)):
     """Send tier-up SMS to selected customers, capped so we never blast >10 at once."""
-    guard = require_html_role(request, db, "owner")
+    guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
 

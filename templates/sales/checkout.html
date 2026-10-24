@@ -1,6 +1,5 @@
 {% extends "base.html" %}
-{# Storefront accent: the till sells, so it wears the full rainbow. #}
-{% set page_accent_full = True %}
+{# Till follows the active theme's own accent — no forced rainbow. #}
 {% block title %}{% if step == 'scan' %} فروش — {{ customer.phone if customer else 'ناشناس' }}{% else %} فروش جدید — {{ store.name }}{% endif %}{% endblock %}
 {% block content %}
 
@@ -26,30 +25,17 @@
         {% if error and step == 'customer' %}<p class="form-error" role="alert">{{ error }}</p>{% endif %}
         <button type="submit" class="btn btn-primary btn-block btn-large">جستجوی مشتری</button>
     </form>
-    <form method="post" action="/sales/skip-customer" style="margin-top: 0.5rem;">
+    <form method="post" action="/sales/skip-customer" class="form-gap-top">
         <button type="submit" class="btn btn-ghost btn-block btn-large">فروش بدون ثبت مشتری</button>
     </form>
     <div class="muted till-brand">
         {{ store.name }} — {{ store.tagline }}
     </div>
 </div>
-{% if drafts %}
-<div class="card">
-    <h3>فروش‌های نیمه‌تمام</h3>
-    <p class="muted">صندوقی که نصفه رها شده — ادامه‌اش از همان‌جا.</p>
-    {% for draft in drafts %}
-    <form method="post" action="/sales/resume-draft" class="draft-row">
-        <input type="hidden" name="nonce" value="{{ draft.nonce }}">
-        <span>{{ draft.who }} · {{ draft.count }} قلم · <strong class="tnum">{{ fmt(draft.total) }}</strong> تومان · <span class="muted">{{ draft.when }}</span></span>
-        <button type="submit" class="btn btn-sm btn-ghost">ادامه</button>
-    </form>
-    {% endfor %}
-</div>
-{% endif %}
 
 {% elif step == "create_customer" %}
 {# ─── STEP 2: New customer form ─── #}
-<div class="card" style="max-width: 560px; margin: 1.5rem auto;">
+<div class="card card-narrow">
     <h3>مشتری جدید — {{ phone }}</h3>
     <p class="muted">این شماره ثبت نشده است. مشخصات را بنویسید تا مشتری ساخته و فروش شروع شود.</p>
     <form method="post" action="/sales/create-customer">
@@ -94,12 +80,6 @@
                         </span>
                     </span>
                 </div>
-                {% if customer.tier != 'silver' %}
-                <div class="info-item">
-                    <span class="label">امتیاز</span>
-                    <span class="value tnum">{{ customer.total_points }}</span>
-                </div>
-                {% endif %}
                 {% if customer.child_name %}
                 <div class="info-item">
                     <span class="label">فرزند</span>
@@ -107,29 +87,6 @@
                 </div>
                 {% endif %}
             </div>
-            {# Hand the live basket to another customer — discounts re-resolve
-               server-side; the basket itself never moves through the swap. #}
-            <details class="customer-swap">
-                <summary>تعویض مشتری</summary>
-                <form method="post" action="/sales/swap-customer" class="form-row">
-                    <input type="hidden" name="customer_id" value="{{ customer_id }}">
-                    <input type="hidden" name="basket_json" value="{{ basket_json }}">
-                    <input type="hidden" name="referrer_code" value="{{ referrer_code|default('') }}">
-                    <input type="hidden" name="referrer_phone" value="{{ referrer_phone|default('') }}">
-                    <input type="hidden" name="campaign_code" value="{{ campaign_code|default('') }}">
-                    <input type="hidden" name="use_referrer_discount" value="{{ '1' if use_referrer_discount == '1' else '0' }}">
-                    <input type="hidden" name="custom_discount_amount" value="{{ custom_discount_amount|default(0) }}">
-                    <input type="hidden" name="custom_discount_percent" value="{{ custom_discount_percent|default(0) }}">
-                    <input type="hidden" name="split_cash" value="{{ split_cash|default('') }}">
-                    <input type="hidden" name="split_card" value="{{ split_card|default('') }}">
-                    <div class="form-group" style="margin-bottom: 0;">
-                        <label class="sr-only" for="swap-phone">شماره مشتری جدید</label>
-                        <input type="tel" id="swap-phone" name="phone" placeholder="09123456789"
-                               maxlength="11" inputmode="tel" dir="ltr" required>
-                    </div>
-                    <button type="submit" class="btn btn-ghost">جابه‌جا کن</button>
-                </form>
-            </details>
         </div>
         {% else %}
         <div class="customer-info-card card">
@@ -143,10 +100,6 @@
                     <span class="label">سطح</span>
                     <span class="value">—</span>
                 </div>
-                <div class="info-item">
-                    <span class="label">امتیاز</span>
-                    <span class="value">—</span>
-                </div>
             </div>
         </div>
         {% endif %}
@@ -154,7 +107,9 @@
         {# ── Barcode scanner ── #}
         <div class="scan-section card">
             <h3>اسکن بارکد</h3>
-            <form method="post" action="/sales/add-to-basket" id="scan-form">
+            <form method="post" action="/sales/add-to-basket" id="scan-form"
+                  hx-post="/sales/add-to-basket" hx-target=".checkout-layout"
+                  hx-swap="outerHTML" hx-select=".checkout-layout">
                 <input type="hidden" name="customer_id" value="{{ customer_id }}">
                 <input type="hidden" name="basket_json" value="{{ basket_json }}">
                 <input type="hidden" name="referrer_code" value="{{ referrer_code|default('') }}">
@@ -165,14 +120,25 @@
                 <input type="hidden" name="custom_discount_percent" value="{{ custom_discount_percent|default(0) }}">
                 <input type="hidden" name="split_cash" value="{{ split_cash|default('') }}">
                 <input type="hidden" name="split_card" value="{{ split_card|default('') }}">
-                <div class="form-group t-input-wrap{% if error and step == 'scan' %} is-error{% endif %}" style="margin-bottom: 0;">
+                <input type="hidden" name="split_credit" value="{{ split_credit|default('') }}">
+                <div class="form-group t-input-wrap{% if error and step == 'scan' %} is-error{% endif %} mb-0">
                     <input type="text" id="barcode-input" name="barcode" class="barcode-input t-input{% if error and step == 'scan' %} is-error{% endif %}"
                            placeholder="بارکد را اسکن کنید..." autofocus autocomplete="off"
                            inputmode="numeric" dir="ltr" aria-label="بارکد محصول"{% if error and step == 'scan' %} aria-invalid="true" data-shake-on-load{% endif %}>
                 </div>
             </form>
+            {# Name search for damaged tags: picking a result fills the
+               barcode box and submits the scan form above. #}
+            <div class="form-group mb-0">
+                <label for="product-search-input">جستجوی نام کالا (برچسب خراب)</label>
+                <input type="text" id="product-search-input" name="q" autocomplete="off"
+                       hx-get="/sales/api/product-search" hx-trigger="input changed delay:300ms"
+                       hx-target="#product-search-results" hx-swap="innerHTML"
+                       placeholder="نام کالا..." aria-label="جستجوی نام کالا">
+            </div>
+            <div id="product-search-results" class="search-results" role="listbox" aria-label="نتایج جستجو"></div>
             {% if error and step == 'scan' %}<p class="form-error" role="alert">{{ error }}</p>{% endif %}
-            {% if just_added %}<p class="scan-last" data-beep>آخرین: {{ just_added }}</p>{% endif %}
+            {% if just_added %}<p class="scan-last" data-beep role="status">آخرین اسکن: {{ just_added }}</p>{% endif %}
         </div>
 
         {% if customer or can_discount %}
@@ -182,26 +148,31 @@
             {% if customer %}
             <h4>معرف (اختیاری)</h4>
             <div class="form-row">
-                <div class="form-group" style="margin-bottom: 0;">
+                <div class="form-group mb-0">
                     <label for="ref-code-input">کد معرفی</label>
                     <input type="text" id="ref-code-input" value="{{ referrer_code|default('') }}"
-                           oninput="setAll('referrer_code', this.value)"
+                           data-sync="referrer_code"
                            placeholder="مثال: 482913">
                 </div>
-                <div class="form-group" style="margin-bottom: 0;">
+                <div class="form-group mb-0">
                     <label for="ref-phone-input">شماره معرف</label>
                     <input type="tel" id="ref-phone-input" value="{{ referrer_phone|default('') }}"
-                           oninput="setAll('referrer_phone', this.value)"
+                           data-sync="referrer_phone"
                            placeholder="09123456789" dir="ltr">
                 </div>
             </div>
-            {% if customer.active_referral_count > 0 %}
-            <p>جمعاً {{ fmt(customer.referrer_discount) }} تومان تخفیف معرفی ({{ customer.active_referral_count }} عدد) — با این خرید استفاده شود؟</p>
-            <label style="display:flex; gap:0.5rem; align-items:center;">
-                <input type="checkbox" id="use-ref-checkbox" {% if use_referrer_discount == '1' %}checked{% endif %}
-                       onchange="setAll('use_referrer_discount', this.checked ? '1' : '0'); var f = document.getElementById('apply-discount-form'); ensureCsrf(f); f.submit();">
-                بله، از تخفیف معرفی در این فاکتور استفاده کن
-            </label>
+            {% if customer.referrer_discount > 0 %}
+            <p>جمعاً {{ fmt(customer.referrer_discount) }} تومان تخفیف معرفی ({{ customer.active_referral_count }} عدد)</p>
+            <div class="payment-options" role="radiogroup" aria-label="تخفیف معرفی">
+                <label class="payment-option">
+                    <input type="radio" data-sync="use_referrer_discount" value="1"{% if use_referrer_discount == '1' %} checked{% endif %}>
+                    <span>همین فاکتور استفاده شود</span>
+                </label>
+                <label class="payment-option">
+                    <input type="radio" data-sync="use_referrer_discount" value="0"{% if use_referrer_discount != '1' %} checked{% endif %}>
+                    <span>ذخیره برای بعد</span>
+                </label>
+            </div>
             {% endif %}
             {# ── Campaign: what this customer holds, and the code field for anyone
                  else. The held campaign is applied by the server without typing. ── #}
@@ -227,11 +198,11 @@
             <div class="alert alert-error" role="alert">{{ campaign_error }}</div>
             {% endif %}
             <div class="form-row">
-                <div class="form-group" style="margin-bottom: 0;">
+                <div class="form-group mb-0">
                     <label for="campaign-code-input">کد کمپین</label>
                     <input type="text" id="campaign-code-input" value="{{ campaign_code|default('') }}"
-                           oninput="setAll('campaign_code', this.value.toUpperCase())"
-                           placeholder="مثال: SUMMER2025" autocomplete="off">
+                           data-sync="campaign_code" data-uppercase
+                            placeholder="کد کمپین" autocomplete="off">
                 </div>
             </div>
             <small>کد را وارد کنید و «اعمال تخفیف» را بزنید. مشتریانی که کمپین به آن‌ها اختصاص یافته، تخفیف را خودکار می‌گیرند.</small>
@@ -247,18 +218,20 @@
                     <input type="text" inputmode="numeric" id="custom-amount-input" name="custom_discount_amount" form="apply-discount-form"
                            min="{{ numeric_rules['custom_discount_amount'][0] }}" value="{{ custom_discount_amount|default(0) }}"
                            placeholder="مثال: 50000"
-                           oninput="setAll('custom_discount_amount', this.value)">
+                           data-sync="custom_discount_amount">
                 </div>
                 <div class="form-group">
                     <label for="custom-percent-input">درصد</label>
                     <input type="text" inputmode="numeric" id="custom-percent-input" name="custom_discount_percent" form="apply-discount-form"
                            min="{{ numeric_rules['custom_discount_percent'][0] }}" max="{{ numeric_rules['custom_discount_percent'][1] }}" value="{{ custom_discount_percent|default(0) }}"
                            placeholder="مثال: 10"
-                           oninput="setAll('custom_discount_percent', this.value)">
+                           data-sync="custom_discount_percent">
                 </div>
             </div>
             {# ── Apply discounts (recompute preview without scanning) ── #}
-            <form method="post" action="/sales/apply-discount" id="apply-discount-form">
+            <form method="post" action="/sales/apply-discount" id="apply-discount-form"
+                  hx-post="/sales/apply-discount" hx-target=".checkout-layout"
+                  hx-swap="outerHTML" hx-select=".checkout-layout">
                 <input type="hidden" name="customer_id" value="{{ customer_id }}">
                 <input type="hidden" name="basket_json" value="{{ basket_json }}">
                 <input type="hidden" name="referrer_code" value="{{ referrer_code|default('') }}">
@@ -273,10 +246,11 @@
         </div>
         {% endif %}
 
+    </div>
     <div class="checkout-right">
         {# ── Basket ── #}
         <div class="basket-section card">
-            <h3><span> سبد خرید</span> <span id="basket-count" style="background: var(--brand-fill); color: var(--brand-label); padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.8rem;"> {{ basket|length }} قلم </span></h3>
+            <h3><span> سبد خرید</span> <span id="basket-count" class="basket-count"> {{ basket|length }} قلم </span></h3>
 
             {% if basket %}
             <div class="basket-list">
@@ -287,7 +261,9 @@
                     </div>
                     <div class="basket-item-qty tnum">{{ item.quantity }} × {{ fmt(item.unit_price) }}</div>
                     <div class="basket-item-total tnum">{{ fmt(item.total_price) }}</div>
-                    <form method="post" action="/sales/set-quantity" class="basket-stepper">
+                    <form method="post" action="/sales/set-quantity" class="basket-stepper"
+                          hx-post="/sales/set-quantity" hx-target=".checkout-layout"
+                          hx-swap="outerHTML" hx-select=".checkout-layout">
                         <input type="hidden" name="customer_id" value="{{ customer_id }}">
                         <input type="hidden" name="variant_id" value="{{ item.variant_id }}">
                         <input type="hidden" name="basket_json" value="{{ basket_json }}">
@@ -299,10 +275,13 @@
                         <input type="hidden" name="custom_discount_percent" value="{{ custom_discount_percent|default(0) }}">
                         <input type="hidden" name="split_cash" value="{{ split_cash|default('') }}">
                         <input type="hidden" name="split_card" value="{{ split_card|default('') }}">
+                        <input type="hidden" name="split_credit" value="{{ split_credit|default('') }}">
                         <button type="submit" name="delta" value="-1" class="btn-step" aria-label="کم کردن {{ item.name }}">−</button>
                         <button type="submit" name="delta" value="1" class="btn-step" aria-label="زیاد کردن {{ item.name }}">+</button>
                     </form>
-                    <form method="post" action="/sales/remove-from-basket">
+                    <form method="post" action="/sales/remove-from-basket"
+                          hx-post="/sales/remove-from-basket" hx-target=".checkout-layout"
+                          hx-swap="outerHTML" hx-select=".checkout-layout">
                         <input type="hidden" name="customer_id" value="{{ customer_id }}">
                         <input type="hidden" name="variant_id" value="{{ item.variant_id }}">
                         <input type="hidden" name="basket_json" value="{{ basket_json }}">
@@ -314,6 +293,7 @@
                         <input type="hidden" name="custom_discount_percent" value="{{ custom_discount_percent|default(0) }}">
                         <input type="hidden" name="split_cash" value="{{ split_cash|default('') }}">
                         <input type="hidden" name="split_card" value="{{ split_card|default('') }}">
+                        <input type="hidden" name="split_credit" value="{{ split_credit|default('') }}">
                         <button type="submit" class="btn-remove" title="حذف">✕</button>
                     </form>
                 </div>
@@ -333,11 +313,12 @@
             </div>
 
             <div class="payment-section" aria-label="پرداخت">
-                <div class="payment-timeline" aria-label="وضعیت پرداخت">
-                    <span class="timeline-step{% if basket %} done{% else %} active{% endif %}" id="timeline-step-1">۱ روش پرداخت</span><span class="timeline-line"></span><span class="timeline-step" id="timeline-step-2">۲ تأیید مبلغ</span><span class="timeline-line"></span><span class="timeline-step">۳ صدور فاکتور</span>
-                </div>
+                <ol class="payment-timeline" aria-label="وضعیت پرداخت">
+                    <li class="timeline-step{% if basket %} done{% else %} active{% endif %}" id="timeline-step-1" aria-current="step">۱ روش پرداخت</li><li class="timeline-line" aria-hidden="true"></li><li class="timeline-step" id="timeline-step-2">۲ تأیید مبلغ</li><li class="timeline-line" aria-hidden="true"></li><li class="timeline-step">۳ صدور فاکتور</li>
+                </ol>
                 {# Step 1 — the method. Everything below follows from it. #}
-                <div class="payment-options" role="radiogroup" aria-label="روش پرداخت">
+                <fieldset class="payment-options">
+                    <legend class="sr-only">روش پرداخت</legend>
                     <label class="payment-option">
                         <input type="radio" name="payment_method" value="card" checked>
                         <span>کارت</span>
@@ -356,26 +337,33 @@
                         <input type="radio" name="payment_method" value="split">
                         <span>ترکیبی</span>
                     </label>
-                </div>
-                {# Split tender: cash plus card on one invoice, no credit leg.
-                   The editor posts through the apply form (mirrors, like the
+                </fieldset>
+                {# Split tender: cash, card and نسیه legs on one invoice. The
+                   editor posts through the apply form (mirrors, like the
                    manual discount); every other form carries hidden twins. #}
                 <div class="split-editor" id="split-editor" hidden>
                     <div class="form-row">
-                        <div class="form-group" style="margin-bottom: 0;">
+                        <div class="form-group mb-0">
                             <label for="split-cash-input">نقدی (تومان)</label>
                             <input type="text" inputmode="numeric" id="split-cash-input" name="split_cash" form="apply-discount-form"
                                    value="{{ split_cash|default('') }}" placeholder="مثال: 200000"
-                                   oninput="setAll('split_cash', this.value)">
+                                   data-sync="split_cash">
                         </div>
-                        <div class="form-group" style="margin-bottom: 0;">
+                        <div class="form-group mb-0">
                             <label for="split-card-input">کارتی (تومان)</label>
                             <input type="text" inputmode="numeric" id="split-card-input" name="split_card" form="apply-discount-form"
                                    value="{{ split_card|default('') }}" placeholder="مثال: 300000"
-                                   oninput="setAll('split_card', this.value)">
+                                   data-sync="split_card">
+                        </div>
+                        <div class="form-group mb-0">
+                            <label for="split-credit-input">نسیه (تومان)</label>
+                            <input type="text" inputmode="numeric" id="split-credit-input" name="split_credit" form="apply-discount-form"
+                                   value="{{ split_credit|default('') }}" placeholder="مثال: 100000"
+                                   data-sync="split_credit">
                         </div>
                     </div>
-                    <p class="muted">جمع دو مبلغ باید برابر مبلغ نهایی باشد؛ سهم کارتی با کارت‌خوان تأیید می‌شود.</p>
+                    <p class="muted">جمع مبلغ‌ها باید برابر مبلغ نهایی باشد؛ سهم کارتی با کارت‌خوان تأیید می‌شود و سهم نسیه به بدهی مشتری اضافه می‌شود.</p>
+                    <p class="form-error" id="split-sum-error" role="alert" hidden></p>
                 </div>
                 {% if customer %}
                 <div id="credit-note" class="credit-note" hidden>
@@ -402,16 +390,16 @@
                 {# Step 2 — approve the amount: terminal for card, cash count for
                    cash, nothing for credit (the note above is its step 2). #}
                 <div class="pay-step" id="pay-step-terminal">
-                    <div id="terminal-indicator" class="terminal-indicator">
-                        <span class="terminal-dot" id="terminal-dot">•</span>
-                        <span id="terminal-indicator-text">کارت‌خوان: در حال بررسی…</span>
-                    </div>
-                    <form method="post" action="/sales/send-to-terminal" id="terminal-form" onsubmit="sendToTerminal(event)">
+                    {% include "partials/terminal_indicator.html" %}
+                    <form method="post" action="/sales/send-to-terminal" id="terminal-form"
+                          hx-post="/sales/send-to-terminal" hx-target="#terminal-status"
+                          hx-swap="outerHTML" hx-disabled-elt="#terminal-submit"
+                          hx-on::before-request="terminalBusy()">
                         <input type="hidden" name="checkout_nonce" value="{{ checkout_nonce }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                         <button type="submit" id="terminal-submit" class="btn btn-primary btn-block">ارسال مبلغ به کارت‌خوان</button>
                     </form>
-                    <div id="terminal-status" class="alert" style="display:none; margin-top:0.6rem;" role="status" aria-live="polite"></div>
+                    <div id="terminal-status" class="alert" hidden role="status" aria-live="polite"></div>
                 </div>
                 <div id="cash-calculator" class="cash-calculator">
                     <label for="cash-received">وجه دریافتی (تومان)</label>
@@ -434,6 +422,7 @@
                     <input type="hidden" name="custom_discount_percent" value="{{ custom_discount_percent|default(0) }}">
                     <input type="hidden" name="split_cash" value="{{ split_cash|default('') }}">
                     <input type="hidden" name="split_card" value="{{ split_card|default('') }}">
+                    <input type="hidden" name="split_credit" value="{{ split_credit|default('') }}">
                     <button type="submit" id="confirm-submit" class="btn btn-success btn-large btn-block btn-confirm">
                         تأیید پرداخت و صدور فاکتور
                     </button>
@@ -447,12 +436,36 @@
             {% endif %}
         </div>
     </div>
+    {# ── Margin meter: manager and owner only, bottom-left, always in view. The
+       figure never reaches a cashier's HTML at all. It lives inside the layout
+       so every silent swap carries the fresh figure along. ── #}
+    {% if net_profit is not none %}
+    <div id="profit-meter" dir="ltr" class="profit-meter">
+        <span class="tnum">{% if net_profit > 0 %}+{% elif net_profit < 0 %}−{% endif %}{{ fmt(net_profit) }}</span>
+        <span class="profit-pct tnum">{{ percent(net_profit_percent) }}</span>
+    </div>
+    {% endif %}
 </div>
 
 <script>
 function setAll(name, value) {
     document.querySelectorAll('input[name="' + name + '"]').forEach(function (el) { el.value = value; });
 }
+// Mirrored inputs sync their hidden twins through one delegated listener —
+// no inline handlers. Uppercase and checkbox variants ride data attributes.
+// Radios also fire change: same sync runs for both events.
+function syncMirror(event) {
+    var input = event.target;
+    if (!input || !input.getAttribute) return;
+    var name = input.getAttribute('data-sync');
+    if (!name) return;
+    var value = input.value;
+    if (input.type === 'checkbox') value = input.checked ? '1' : '0';
+    if (input.hasAttribute('data-uppercase')) value = value.toUpperCase();
+    setAll(name, value);
+}
+document.addEventListener('input', syncMirror);
+document.addEventListener('change', syncMirror);
 var posRequiresApproval = {{ 'true' if pos_requires_approval else 'false' }};
 
 function updatePaymentUi() {
@@ -475,6 +488,9 @@ function updatePaymentUi() {
     if (terminalStep) terminalStep.hidden = !terminalNeeded;
     if (creditNote) creditNote.hidden = !isCredit;
     if (splitEditor) splitEditor.hidden = !isSplit;
+    // The cash box only exists when cash changes hands.
+    var cashBox = document.getElementById('cash-calculator');
+    if (cashBox) cashBox.style.display = (method === 'cash' || isSplit) ? '' : 'none';
     // Step 2 lights when the amount is settled: cash and credit settle by
     // choice, card settles when the terminal approves (its leg in a split).
     var step2 = document.getElementById('timeline-step-2');
@@ -483,6 +499,14 @@ function updatePaymentUi() {
         var settled = !terminalNeeded || approved;
         step2.classList.toggle('done', settled);
         step2.classList.toggle('active', !settled);
+        var step1 = document.getElementById('timeline-step-1');
+        if (settled) {
+            step2.setAttribute('aria-current', 'step');
+            if (step1) step1.removeAttribute('aria-current');
+        } else {
+            if (step1) step1.setAttribute('aria-current', 'step');
+            step2.removeAttribute('aria-current');
+        }
     }
     if (confirmButton) {
         var needsApproval = terminalNeeded && posRequiresApproval && !approved;
@@ -492,151 +516,119 @@ function updatePaymentUi() {
                        : 'ابتدا پرداخت کارت را در کارت‌خوان تأیید کنید')
             : 'تأیید پرداخت و صدور فاکتور';
     }
-    if (terminalNeeded) refreshTerminalStatus();
 }
 
-document.querySelectorAll('input[name="payment_method"]').forEach(function (radio) {
-    radio.addEventListener('change', updatePaymentUi);
+document.addEventListener('change', function (event) {
+    var t = event.target;
+    if (t && t.name === 'payment_method') updatePaymentUi();
 });
-
-function renderTerminalIndicator(data) {
-    var dot = document.getElementById('terminal-dot');
-    var text = document.getElementById('terminal-indicator-text');
-    if (!data.enabled) {
-        dot.textContent = '•';
-        dot.style.color = 'var(--ink-soft)';
-        text.textContent = 'کارت‌خوان غیرفعال است — از تنظیمات پیکربندی کنید';
-        return;
-    }
-    var addr = data.host + ':' + data.port;
-    if (data.online) {
-        dot.textContent = '•';
-        dot.style.color = 'var(--mint-dark)';
-        text.textContent = 'کارت‌خوان: ' + addr + ' — متصل' + (data.latency_ms != null ? ' (' + data.latency_ms + 'ms)' : '');
-    } else {
-        dot.textContent = '•';
-        dot.style.color = 'var(--link-hover)';
-        text.textContent = 'کارت‌خوان: ' + addr + ' — قطع است';
-    }
-}
-
-async function refreshTerminalStatus() {
-    if (!document.getElementById('terminal-dot')) return;  // no basket / indicator not rendered
-    try {
-        var response = await fetch('/sales/terminal-status');
-        if (response.ok) renderTerminalIndicator(await response.json());
-    } catch (e) { /* keep last known state */ }
-}
-
-async function sendToTerminal(event) {
-    event.preventDefault();
-    var form = event.currentTarget;
-    var button = document.getElementById('terminal-submit');
+// The terminal round-trip takes seconds: say so the moment the request leaves,
+// and clear the old approval while it is in flight. The response fragment
+// carries the real outcome — status line, fresh token, refreshed indicator.
+function terminalBusy() {
     var status = document.getElementById('terminal-status');
     var approvalToken = document.getElementById('pos-approval-token');
-    if (button) button.disabled = true;
     if (approvalToken) approvalToken.value = '';
     if (status) {
-        status.style.display = 'block';
+        status.hidden = false;
         status.className = 'alert';
         status.textContent = 'در حال ارسال مبلغ به کارت‌خوان… کارت‌خوان نتیجه نهایی را اعلام می‌کند.';
-    }
-    try {
-        var response = await fetch(form.action, {
-            method: 'POST',
-            body: new FormData(form),
-            headers: { 'X-Requested-With': 'XMLHttpRequest' }
-        });
-        var data = await response.json();
-        if (!response.ok) throw new Error(data.detail || 'ارتباط با کارت‌خوان ناموفق بود');
-        if (data.status === 'approved' && data.approval_token) {
-            if (approvalToken) approvalToken.value = data.approval_token;
-            if (status) {
-                status.className = 'alert alert-success';
-                status.textContent = 'تراکنش در کارت‌خوان تأیید شد. اکنون فاکتور را ثبت کنید.';
-            }
-        } else if (data.status === 'cancelled') {
-            if (status) {
-                status.className = 'alert alert-error';
-                status.textContent = 'تراکنش در کارت‌خوان لغو شد؛ فاکتور ثبت نشد.';
-            }
-        } else {
-            if (status) {
-                status.className = 'alert alert-error';
-                status.textContent = (data.label || 'پرداخت توسط کارت‌خوان تأیید نشد.') + '؛ فاکتور ثبت نشد.';
-            }
-        }
-    } catch (error) {
-        if (status) {
-            status.className = 'alert alert-error';
-            status.textContent = error.message;
-        }
-    } finally {
-        if (button) button.disabled = false;
-        updatePaymentUi();
-        refreshTerminalStatus();
     }
 }
 
 updatePaymentUi();
-refreshTerminalStatus();
+
+// ── Split-sum guard: the legs must add up to the finalized final before
+// the form may leave. Delegated so it survives silent refreshes; registered
+// before the one-button flow so a bad sum stops everything; the server
+// rechecks anyway.
+document.addEventListener('submit', function (event) {
+    var confirmForm = event.target;
+    if (!confirmForm || confirmForm.id !== 'confirm-form') return;
+    function legValue(name) {
+        var input = confirmForm.querySelector('input[name="' + name + '"]');
+        if (!input) return 0;
+        var latin = input.value.replace(/[۰-۹]/g, function (d) { return '۰۱۲۳۴۵۶۷۸۹'.indexOf(d); });
+        return parseInt(latin.replace(/[^0-9]/g, '') || '0', 10);
+    }
+    var selected = document.querySelector('input[name="payment_method"]:checked');
+    if (!selected || selected.value !== 'split') return;
+    var finalNode = document.querySelector('[data-amount]');
+    var final = finalNode ? parseInt(finalNode.getAttribute('data-amount') || '0', 10) : 0;
+    var legs = ['split_cash', 'split_card', 'split_credit'].map(legValue);
+    var filled = legs.filter(function (v) { return v > 0; }).length;
+    var sum = legs[0] + legs[1] + legs[2];
+    var bad = !(filled >= 2 && sum === final);
+    var errorBox = document.getElementById('split-sum-error');
+    if (errorBox) {
+        errorBox.hidden = !bad;
+        if (bad) errorBox.textContent = 'جمع سهم‌ها باید برابر مبلغ نهایی باشد.';
+    }
+    if (bad) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+    }
+});
 
 // One button for card money: confirming without an approval sends to the
 // terminal first and completes when it approves — the gate stays, the extra
-// click goes. Registered before the global double-submit guard so this flow
-// owns the button while it runs.
-(function () {
-    var confirmForm = document.getElementById('confirm-form');
+// click goes. Delegated so it survives silent refreshes; registered before
+// the global double-submit guard so this flow owns the button while it runs.
+// The terminal response fragment re-arms this through htmx:afterSwap.
+var tillSending = false;
+document.addEventListener('submit', function (event) {
+    var confirmForm = event.target;
+    if (!confirmForm || confirmForm.id !== 'confirm-form') return;
     var confirmButton = document.getElementById('confirm-submit');
     var terminalForm = document.getElementById('terminal-form');
-    if (!confirmForm || !confirmButton || !terminalForm) return;
-    var sending = false;
-    confirmForm.addEventListener('submit', function (event) {
-        var selected = document.querySelector('input[name="payment_method"]:checked');
-        var method = selected ? selected.value : 'card';
-        var approvalToken = document.getElementById('pos-approval-token');
-        var approved = !!(approvalToken && approvalToken.value);
-        if (sending || method === 'cash' || method === 'credit' || approved || !posRequiresApproval) return;
-        var terminalVisible = terminalForm.style.display !== 'none';
-        if (!terminalVisible) return;
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        sending = true;
-        confirmButton.disabled = true;
-        confirmButton.classList.add('is-loading');
-        sendToTerminal({ preventDefault: function () {}, currentTarget: terminalForm }).then(function () {
-            sending = false;
-            confirmButton.disabled = false;
-            confirmButton.classList.remove('is-loading');
-            var token = document.getElementById('pos-approval-token');
-            if (token && token.value) confirmForm.submit();
-            else updatePaymentUi();
-        });
-    });
-})();
+    if (!confirmButton || !terminalForm) return;
+    var selected = document.querySelector('input[name="payment_method"]:checked');
+    var method = selected ? selected.value : 'card';
+    var approvalToken = document.getElementById('pos-approval-token');
+    var approved = !!(approvalToken && approvalToken.value);
+    if (tillSending || method === 'cash' || method === 'credit' || approved || !posRequiresApproval) return;
+    var terminalVisible = terminalForm.style.display !== 'none';
+    if (!terminalVisible) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    tillSending = true;
+    confirmButton.disabled = true;
+    confirmButton.classList.add('is-loading');
+    htmx.trigger(terminalForm, 'submit');
+});
 
-// ── Scan beep: one short tone when the just-added strip renders, so the
-// cashier hears the scan land without looking away from the shelf.
-(function () {
-    if (!document.querySelector('[data-beep]')) return;
-    try {
-        var ctx = new (window.AudioContext || window.webkitAudioContext)();
-        var osc = ctx.createOscillator();
-        var gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.frequency.value = 880;
-        gain.gain.value = 0.08;
-        osc.start();
-        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.12);
-        osc.stop(ctx.currentTime + 0.12);
-    } catch (e) { /* silent shop, silent beep */ }
-})();
-
-// ── Final-total pop + server-error shake (Phase D). Both replay from a
-// clean baseline so a re-rendered page always animates exactly once.
-(function () {
+// ── Scan feedback: one short tone plus a glow on the row that landed, so
+// the cashier hears and sees the scan without reading every line. Runs on
+// load and after every silent refresh.
+function announceScan() {
+    if (document.querySelector('[data-beep]')) {
+        try {
+            var ctx = new (window.AudioContext || window.webkitAudioContext)();
+            var osc = ctx.createOscillator();
+            var gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.value = 880;
+            gain.gain.value = 0.08;
+            osc.start();
+            gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.12);
+            osc.stop(ctx.currentTime + 0.12);
+        } catch (e) { /* silent shop, silent beep */ }
+    }
+    var strip = document.querySelector('[data-beep]');
+    if (strip) {
+        var name = strip.textContent.replace(/^آخرین اسکن:\s*/, '').trim();
+        if (name) {
+            document.querySelectorAll('.basket-item').forEach(function (row) {
+                var title = row.querySelector('.basket-item-info strong');
+                if (title && title.textContent.trim() === name) row.classList.add('is-new');
+            });
+        }
+    }
+    // Final-total pop + server-error shake replay from a clean baseline so a
+    // re-rendered page animates exactly once.
     document.querySelectorAll('[data-digit-pop]').forEach(function (node) {
+        if (node.querySelector('.t-digit')) return; // already split: just replay
         var text = node.textContent;
         node.replaceChildren();
         node.classList.add('t-digit-group');
@@ -648,6 +640,9 @@ refreshTerminalStatus();
             else if (i === arr.length - 1) span.setAttribute('data-stagger', '2');
             node.appendChild(span);
         });
+    });
+    document.querySelectorAll('[data-digit-pop]').forEach(function (node) {
+        node.classList.remove('is-animating');
         void node.offsetWidth;
         node.classList.add('is-animating');
     });
@@ -656,17 +651,62 @@ refreshTerminalStatus();
         void node.offsetWidth;
         node.classList.add('is-shaking');
     });
-})();
-</script>
+}
+announceScan();
 
-{# ── Owner-only profit meter — kept tiny/low-contrast in the corner so a passerby won't read it ── #}
-{% if net_profit is defined %}
-<div id="profit-meter" dir="ltr" style="position:fixed; bottom:4px; left:6px; font-size:0.62rem;
-     line-height:1; opacity:0.42; color:var(--ink-soft); letter-spacing:.5px; z-index:50;
-     background:var(--card); padding:1px 3px; border-radius:2px;">
-    <span class="tnum">{% if net_profit > 0 %}+{% elif net_profit < 0 %}−{% endif %}{{ fmt(net_profit) }}</span>
-</div>
-{% endif %}
+// ── htmx landings: the two regions this page swaps. The terminal strip
+// finishes the one-button flow; the layout refresh re-arms the payment UI,
+// replays scan feedback and keeps the scanner hot. Errors never swap (the
+// shell enforces that); a dead wire falls back to a real submit — the same
+// guarantee the hand-rolled transport kept.
+document.addEventListener('htmx:afterSwap', function (event) {
+    // Per-swap event target is the node that just landed (verified against
+    // the vendored dist); detail.target is not on this event.
+    var target = event.target;
+    if (!target) return;
+    if (target.id === 'terminal-status') {
+        updatePaymentUi();
+        if (!tillSending) return;
+        tillSending = false;
+        var confirmButton = document.getElementById('confirm-submit');
+        if (confirmButton) confirmButton.classList.remove('is-loading');
+        var token = document.getElementById('pos-approval-token');
+        if (token && token.value) {
+            var confirmForm = document.getElementById('confirm-form');
+            if (confirmForm) confirmForm.submit();
+        }
+        return;
+    }
+    if (target.classList && target.classList.contains('checkout-layout')) {
+        updatePaymentUi();
+        announceScan();
+        var scan = document.getElementById('barcode-input');
+        if (scan) scan.focus();
+    }
+});
+
+document.addEventListener('htmx:sendError', function (event) {
+    var form = event.detail.elt;
+    if (!form || form.tagName !== 'FORM') return;
+    if (form.id === 'terminal-form') {
+        tillSending = false;
+        var confirmButton = document.getElementById('confirm-submit');
+        if (confirmButton) confirmButton.classList.remove('is-loading');
+        var status = document.getElementById('terminal-status');
+        if (status) {
+            status.hidden = false;
+            status.className = 'alert alert-error';
+            status.textContent = 'ارتباط با سرور برقرار نشد؛ دوباره تلاش کنید.';
+        }
+        updatePaymentUi();
+        return;
+    }
+    // Basket mutations: nothing swapped, so the scan would vanish silently.
+    // Fall back to a real submit so the staffer always lands somewhere.
+    if (form.closest('.checkout-layout')) form.submit();
+});
+
+</script>
 
 {% endif %}
 {% endblock %}

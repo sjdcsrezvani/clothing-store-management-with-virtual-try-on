@@ -43,6 +43,26 @@
             </div>
         </div>
 
+        <h4>سایز‌بندی</h4>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="sizing_standard">واحد نمایش بچگانه و نوجوان {{ tip('هر تنوع بچگانه/نوجوان فقط با همین واحد نمایش داده می‌شود. سال برای بچه‌ها معنا دارد؛ بزرگسال تنظیم جدا دارد.') }}</label>
+                <select id="sizing_standard" name="sizing_standard" data-fancy>
+                    {% for system_id, label in sizing_standards %}
+                    <option value="{{ system_id }}" {% if settings.get('sizing_standard', 'age') == system_id %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="sizing_standard_adult">واحد نمایش بزرگسال {{ tip('سایز عددی بزرگسال قد شخص یا قد لباس معادل ندارد؛ برای همین فقط حروف یا عددی معنا دارد. عددی کد سایز بزرگسال است (مثل 38-40) و برای تگ حرفی، معادل عددی‌اش را نشان می‌دهد.') }}</label>
+                <select id="sizing_standard_adult" name="sizing_standard_adult" data-fancy>
+                    {% for system_id, label in sizing_standards_adult %}
+                    <option value="{{ system_id }}" {% if settings.get('sizing_standard_adult', 'letters') == system_id %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
         <h4>مشخصات فروشگاه</h4>
         <div class="form-row">
             <div class="form-group">
@@ -104,6 +124,37 @@
                 <label for="receipt_footer_note">یادداشت پایین فاکتور {{ tip('یک خط زیر فاکتور چاپی. خالی یعنی بدون خط.') }}</label>
                 <input type="text" id="receipt_footer_note" name="receipt_footer_note" maxlength="200"
                        value="{{ settings.get('receipt_footer_note', '') }}" placeholder="ممنون از خرید شما">
+            </div>
+        </div>
+        <h4>هدف روزانه فروش (تومان)</h4>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="sales_target_5">شنبه</label>
+                <span class="field-unit">{{ num('sales_target_5', settings.get('sales_target_5', '0')) }}<span class="unit">تومان</span></span>
+            </div>
+            <div class="form-group">
+                <label for="sales_target_6">یکشنبه</label>
+                <span class="field-unit">{{ num('sales_target_6', settings.get('sales_target_6', '0')) }}<span class="unit">تومان</span></span>
+            </div>
+            <div class="form-group">
+                <label for="sales_target_0">دوشنبه</label>
+                <span class="field-unit">{{ num('sales_target_0', settings.get('sales_target_0', '0')) }}<span class="unit">تومان</span></span>
+            </div>
+            <div class="form-group">
+                <label for="sales_target_1">سه‌شنبه</label>
+                <span class="field-unit">{{ num('sales_target_1', settings.get('sales_target_1', '0')) }}<span class="unit">تومان</span></span>
+            </div>
+            <div class="form-group">
+                <label for="sales_target_2">چهارشنبه</label>
+                <span class="field-unit">{{ num('sales_target_2', settings.get('sales_target_2', '0')) }}<span class="unit">تومان</span></span>
+            </div>
+            <div class="form-group">
+                <label for="sales_target_3">پنجشنبه</label>
+                <span class="field-unit">{{ num('sales_target_3', settings.get('sales_target_3', '0')) }}<span class="unit">تومان</span></span>
+            </div>
+            <div class="form-group">
+                <label for="sales_target_4">جمعه</label>
+                <span class="field-unit">{{ num('sales_target_4', settings.get('sales_target_4', '0')) }}<span class="unit">تومان</span></span>
             </div>
         </div>
         <div class="settings-savebar"><button type="submit" class="btn btn-primary">ذخیره فروش و صندوق</button></div>
@@ -294,6 +345,27 @@
             <div class="form-group">
                 <label for="tryon_daily_limit">سقف تولید روزانه {{ tip('حداکثر تصویر تولیدشده با هوش مصنوعی در روز (هر تصویر هزینه دارد)') }}</label>
                 <span class="field-unit">{{ num('tryon_daily_limit', settings.get('tryon_daily_limit', '20')) }}<span class="unit">عدد</span></span>
+            </div>
+            <div class="form-group">
+                <label for="tryon_api_url">نشانی درگاه تصویر {{ tip('پیش‌فرض درگاه فعلی؛ فقط وقتی عوضش کنید که ارائه‌دهنده گفته باشد') }}</label>
+                <input type="text" id="tryon_api_url" name="tryon_api_url" dir="ltr"
+                       value="{{ settings.get('tryon_api_url', '') }}"
+                       placeholder="https://api.gapgpt.app/v1/images/edits">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <input type="hidden" name="tryon_autoclear_kid" value="0"><input type="checkbox" id="tryon_autoclear_kid" name="tryon_autoclear_kid" value="1"{% if settings.get('tryon_autoclear_kid', '0') == '1' %} checked{% endif %}>
+                <label for="tryon_autoclear_kid">حذف خودکار عکس شخص پس از ذخیره {{ tip('عکس شخص فقط در حافظه است؛ با این گزینه پس از هر ذخیره پاک می‌شود') }}</label>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="tryon_api_key">کلید پرو مجازی {{ tip('ذخیره‌شده: ' + (tryon_key_mask or 'ندارد') + ' — خالی بگذارید تا همان قبلی بماند') }}</label>
+                <input type="password" id="tryon_api_key" name="tryon_api_key" dir="ltr"
+                       value="" placeholder="کلید جدید (خالی = بدون تغییر)" autocomplete="off">
+                <div class="row"><button type="button" class="btn btn-ghost btn-sm" id="tryon-test-key" hx-post="/admin/tryon/test-key" hx-target="#tryon-test-result" hx-swap="outerHTML">آزمایش اتصال</button>
+                <small class="muted" id="tryon-test-result" role="status"></small></div>
             </div>
         </div>
         <div class="settings-savebar"><button type="submit" class="btn btn-primary">ذخیره پیامک و هوش مصنوعی</button></div>

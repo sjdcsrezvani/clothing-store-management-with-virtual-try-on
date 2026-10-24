@@ -37,7 +37,7 @@ import jdatetime
 from sqlalchemy.orm import Session
 
 from models import CashSession, Settings, to_persian_digits
-from services._common import fmt, jalali_str, percent
+from services._common import fmt, get_setting_int, jalali_str, percent
 from services.accounting import (
     as_utc, debt_totals, get_cashbox, get_opening_balance, open_cash_session,
 )
@@ -390,7 +390,27 @@ def _build_cashbox(numbers: _Numbers, role: str) -> dict:
     cash = numbers.cash
     movement = (f"امروز {_money(cash['cash_in'])} ورود · {_money(cash['cash_out'])} خروج"
                 if cash["cash_in"] or cash["cash_out"] else "امروز ورود و خروجی نداشته")
-    return {"value": "باز نشده", "sub": movement}
+    notes = [movement]
+    # The merged cash card carries what used to be two alert cards: a drawer
+    # short/over from the last closed shift, and a drawer left open overnight.
+    variance = _build_cash_variance(numbers, role)
+    if variance is not None:
+        # The merged note names the shortage and its figure: a numeral the
+        # drawer is short is the fact worth walking over to check.
+        notes.append(f"اختلاف صندوق {variance['value']} · {variance['sub']}")
+    stale = _build_cash_stale(numbers, role)
+    if stale is not None:
+        notes.append(stale["sub"])
+    return {"value": "باز نشده", "sub": " · ".join(notes)}
+
+
+def _build_sms_failed(numbers: _Numbers, role: str) -> dict | None:
+    """Messages that tried the gateway and died — money already spent on sends
+    that never arrived. Quiet when the failure queue is empty."""
+    failed = numbers.sms["failed"]
+    if not failed:
+        return None
+    return {"value": str(failed), "sub": "ارسال ناموفق — بررسی و ارسال دوباره"}
 
 
 def _build_cash_variance(numbers: _Numbers, role: str) -> dict | None:
@@ -489,8 +509,11 @@ def _build_month_expenses(numbers: _Numbers, role: str) -> dict:
 
 def _build_debt(numbers: _Numbers, role: str) -> dict:
     debts = numbers.debts
-    return {"value": _money(debts["total_debt"]),
-            "sub": f"{debts['debtor_count']} مشتری بدهکار"}
+    overdue = debts["overdue_customers"]
+    detail = f"{debts['debtor_count']} مشتری بدهکار"
+    if overdue:
+        detail += f" · {overdue} سررسیدشده"
+    return {"value": _money(debts["total_debt"]), "sub": detail}
 
 
 def _build_inventory_value(numbers: _Numbers, role: str) -> dict:
@@ -503,21 +526,13 @@ def _build_inventory_value(numbers: _Numbers, role: str) -> dict:
 
 def _build_club_total(numbers: _Numbers, role: str) -> dict:
     club = numbers.club
-    archived = club["archived_count"]
-    detail = f"{archived} بایگانی‌شده جدا از این عدد" if archived else "همه اعضای فعال"
-    return {"value": str(club["total"]), "sub": detail}
+    new = club["new_this_month"]
+    return {"value": str(club["total"]),
+            "sub": f"{new} عضو جدید این ماه"}
 
 
 def _build_club_active(numbers: _Numbers, role: str) -> dict:
     return {"value": str(numbers.club["active"]), "sub": "خرید در ۳۰ روز اخیر"}
-
-
-def _build_club_new(numbers: _Numbers, role: str) -> dict:
-    return {"value": str(numbers.club["new_this_month"]), "sub": "عضو جدید در این ماه"}
-
-
-def _build_club_debtors(numbers: _Numbers, role: str) -> dict:
-    return {"value": str(numbers.club["debtor_count"]), "sub": "مشتری با مانده بدهی"}
 
 
 def _card(key: str, section: str, label: str, build, *,
@@ -528,21 +543,22 @@ def _card(key: str, section: str, label: str, build, *,
 
 
 CARDS: tuple[dict, ...] = (
-    # نیازمند توجه
+    # اقدام فوری — money first: figures that lose value while unread.
+    _card("pos", "urgent", "تراکنش کارتخوان", _build_pos_unresolved,
+          min_role="owner", tone="danger", href="/admin/pos-reconciliation"),
+    _card("credit", "urgent", "نسیه سررسیدشده", _build_credit_overdue,
+          tone="info", href="/admin/credit?status=overdue"),
+    _card("checks", "urgent", "چک سررسیدشده", _build_checks,
+          tone="info", href="/admin/checks"),
+    _card("books_disagree", "urgent", "مغایرت دفاتر", _build_books_disagree,
+          tone="danger", href="/admin/accounting"),
+    _card("sms_failed", "urgent", "پیامک ناموفق", _build_sms_failed,
+          tone="danger", href="/admin/sms"),
+    # نیازمند توجه — the chores: ops work that waits without costing.
     _card("stock", "attention", "تنوع کم‌موجود", _build_stock,
           tone="warning", href="/admin/products"),
-    _card("pos", "attention", "تراکنش کارتخوان", _build_pos_unresolved,
-          tone="danger", href="/admin/pos-reconciliation"),
-    _card("credit", "attention", "نسیه سررسیدشده", _build_credit_overdue,
-          tone="info", href="/admin/credit?status=overdue"),
-    _card("checks", "attention", "چک سررسیدشده", _build_checks,
-          tone="info", href="/admin/checks"),
-    _card("cash_variance", "attention", "اختلاف صندوق", _build_cash_variance,
-          tone="danger", href="/admin/cashbox"),
     _card("cash_stale", "attention", "صندوق باز مانده", _build_cash_stale,
           tone="warning", href="/admin/cashbox"),
-    _card("books_disagree", "attention", "مغایرت دفاتر", _build_books_disagree,
-          tone="danger", href="/admin/accounting"),
     _card("backup", "attention", "پشتیبان‌گیری", _build_backup,
           min_role="owner", tone="success", href="/admin/backups"),
     _card("sms", "attention", "پیامک", _build_sms,
@@ -560,41 +576,36 @@ CARDS: tuple[dict, ...] = (
     _card("month_profit", "month", "سود خالص", _build_month_profit,
           min_role="owner", tone="pine"),
     _card("month_expenses", "month", "هزینه‌ها", _build_month_expenses,
-          min_role="owner", tone="saffron", href="/admin/expenses"),
+          min_role="manager", tone="saffron", href="/admin/expenses"),
     # مانده‌ها — balances, which belong to no single day or month
     _card("debt", "balances", "نسیه در گردش", _build_debt,
           tone="persimmon", href="/admin/credit"),
     _card("inventory_value", "balances", "ارزش موجودی انبار", _build_inventory_value,
-          min_role="owner", tone="ink", href="/admin/products"),
-    # کارهای دوره‌ای — all owner-only, because every destination is owner-only
+          min_role="manager", tone="ink", href="/admin/products"),
+    # کارهای دوره‌ای — the sends are manager-operable, so managers see them;
     _card("birthdays_due", "periodic", "پیامک تولد", _build_birthdays_due,
-          min_role="owner", href="/admin/birthdays"),
+          min_role="manager", href="/admin/birthdays"),
     _card("follow_ups_due", "periodic", "پیگیری مشتریان", _build_follow_ups_due,
-          min_role="owner", href="/admin/follow-ups"),
+          min_role="manager", href="/admin/follow-ups"),
     _card("tier_ups_due", "periodic", "ارتقای سطح", _build_tier_ups_due,
-          min_role="owner", href="/admin/tier-up"),
+          min_role="manager", href="/admin/tier-up"),
     _card("downgrades_due", "periodic", "کاهش سطح", _build_downgrades_due,
-          min_role="owner", tone="danger", href="/admin/tier-downgrades"),
+          min_role="manager", tone="danger", href="/admin/tier-downgrades"),
     # باشگاه مشتریان
     _card("club_total", "club", "اعضای باشگاه", _build_club_total,
           href="/admin/customers"),
     _card("club_active", "club", "مشتریان فعال", _build_club_active,
           href="/admin/customers?status=active"),
-    _card("club_new", "club", "عضو جدید این ماه", _build_club_new,
-          href="/admin/customers"),
-    _card("club_debtors", "club", "مشتریان بدهکار", _build_club_debtors,
-          href="/admin/credit"),
-    # There is deliberately no birthday card here. The number is the same one
-    # the owner's «پیامک تولد» card shows, and showing one fact twice on a page
-    # this short trains the reader to stop reading it. The customers page keeps
-    # «تولد نزدیک» as a one-click filter for everybody.
+    # No club_debtors card: the balances debt card already splits current vs
+    # overdue, and one fact twice trains the reader to stop reading it.
 )
 
 # Each section names the span or the kind of number it holds, so a reader never
 # has to work out which of two periods a card belongs to. An eyebrow is only
 # present where it adds a fact the title does not already carry.
 SECTIONS: tuple[tuple[str, str, str, str], ...] = (
-    ("attention", "نیازمند توجه", "اقدام‌های امروز", "attention"),
+    ("urgent", "اقدام فوری", "پول", "attention"),
+    ("attention", "نیازمند توجه", "عملیات", "attention"),
     ("today", "امروز", "", "stats"),
     ("month", "این ماه", "", "stats"),
     # The month in prose, from the same builders the analytics page and the
@@ -608,12 +619,12 @@ SECTIONS: tuple[tuple[str, str, str, str], ...] = (
 
 
 def _month_reading(db: Session) -> list[str] | None:
-    """The month's sentences, the same words the owner's SMS carries.
+    """The month's sentences, from the same reading the analytics page draws.
 
-    Built from the same ``month_reading`` call the digest fires from, so the
-    page and the phone cannot disagree about what the month said. Owner-only
-    by construction: the caller never invokes this for a manager, and the
-    sentences name profit and margins — the owner's figures.
+    Built from ``month_reading``, so the strip and the page cannot disagree
+    about what the month said. Owner-only by construction: the caller never
+    invokes this for a manager, and the sentences name profit and margins —
+    the owner's figures.
     """
     start, end = get_date_range("month")
     reading = month_reading(db, start=start, end=end, span="این ماه")
@@ -622,7 +633,9 @@ def _month_reading(db: Session) -> list[str] | None:
     # them: takings, the day worth naming, what sold, who bought.
     keys = ("dailyChart", "categoryChart", "tierChart", "customerSegChart")
     sentences = [notes[key] for key in keys if notes.get(key)]
-    return sentences or None
+    # The page keeps one line — the day worth naming. The month's own cards
+    # carry the rest, and four sentences restate them.
+    return sentences[:1] or None
 
 
 def _top_rows(numbers: _Numbers, role: str) -> list[dict]:
@@ -652,13 +665,326 @@ def _gateway_status(db: Session) -> dict:
     return gateway_status(db)
 
 
-def dashboard_overview(db: Session, *, role: str = "manager") -> dict:
+# ── Cashier view: my day, nobody else's figures ────────────────────────────
+# A cashier never sees cost, profit, margins, or colleagues' numbers — not
+# hidden, never computed. Every figure below is the viewer's own sales (who
+# rang it, via the checkout's staffer), plus shop-wide totals without money
+# context beyond the day's takings. Refunds are listed, never subtracted.
+
+_FA_WEEKDAYS = ("دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه", "شنبه",
+                "یکشنبه")
+
+
+def _greeting_stamp() -> tuple[str, str, str]:
+    """Time-of-day salutation plus the Jalali date and clock time.
+
+    The hour comes from the shop's own wall clock; the date/time from the
+    same ``jalali_str`` every other stamp on this page reads.
+    """
+    now = datetime.now(timezone.utc)
+    hour = datetime.now().hour
+    if 5 <= hour < 12:
+        salutation = "صبح بخیر"
+    elif 12 <= hour < 14:
+        salutation = "ظهر بخیر"
+    elif 14 <= hour < 19:
+        salutation = "عصر بخیر"
+    else:
+        salutation = "شب بخیر"
+    stamp = jalali_str(now)
+    date_part, _, time_part = stamp.partition(" ")
+    return salutation, date_part, time_part
+
+
+def _midnight_span(days_ago: int = 0):
+    start = (datetime.now(timezone.utc) - timedelta(days=days_ago)).replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    return start, start + timedelta(days=1)
+
+
+def _staff_day_sales(db: Session, user_id, start, end) -> dict:
+    """One staffer's day, gross: sales they rang, refunds listed separately."""
+    from models import CheckoutSession, Sale, SalePaymentPart
+    sales = db.query(Sale).join(
+        CheckoutSession, CheckoutSession.sale_id == Sale.id).filter(
+        CheckoutSession.staff_user_id == user_id,
+        Sale.created_at >= start, Sale.created_at < end,
+        Sale.payment_confirmed == True,  # noqa: E712
+    ).all()
+    live = [s for s in sales if not s.is_refunded]
+    refunded = [s for s in sales if s.is_refunded]
+    legs = {"cash": 0, "card": 0, "credit": 0}
+    manual = 0
+    loyalty = 0
+    for sale in live:
+        parts = db.query(SalePaymentPart).filter(
+            SalePaymentPart.sale_id == sale.id).all()
+        if parts:
+            for part in parts:
+                if part.method in legs:
+                    legs[part.method] += part.amount or 0
+        elif sale.payment_method in legs:
+            legs[sale.payment_method] += sale.final_amount or 0
+        try:
+            import json as _json
+            details = _json.loads(sale.discount_details or "[]") or []
+        except (ValueError, TypeError):
+            details = []
+        for line in details:
+            # The writer side names manual discounts «تخفیف ویژه» — the one
+            # prefix that separates the staffer's hand from loyalty math.
+            if str(line).startswith("تخفیف ویژه"):
+                manual += _line_amount(str(line))
+            else:
+                loyalty += _line_amount(str(line))
+    return {
+        "total": sum(s.final_amount or 0 for s in live),
+        "count": len(live),
+        "legs": legs,
+        "manual": manual,
+        "loyalty": loyalty,
+        "refund_count": len(refunded),
+        "refund_total": sum(s.final_amount or 0 for s in refunded),
+    }
+
+
+def _line_amount(line: str) -> int:
+    """The toman figure inside a discount sentence, or 0 if none parses."""
+    import re
+    match = re.search(r"([\d,٬]+)\s*تومان", line)
+    if not match:
+        return 0
+    try:
+        return int(match.group(1).replace(",", "").replace("٬", ""))
+    except (ValueError, TypeError):
+        return 0
+
+
+def _arrow(current, previous) -> dict | None:
+    """Direction only, no ratio: the cashier's delta names no amounts."""
+    if previous is None or previous <= 0:
+        return None if current <= 0 else {"text": "▲", "good": True}
+    if current == previous:
+        return {"text": "—", "good": None}
+    up = current > previous
+    return {"text": "▲" if up else "▼", "good": up}
+
+
+def _cashier_overview(db: Session, *, user_id, user_name: str | None,
+                      day_offset: int = 0) -> dict:
+    """The counter's own day: greeting, my figures, shop target, history."""
+    from models import Customer
+    from services.security import ROLE_LABELS
+    try:
+        offset = max(0, min(6, int(day_offset or 0)))
+    except (TypeError, ValueError):
+        offset = 0
+    start, end = _midnight_span(offset)
+    mine = _staff_day_sales(db, user_id, start, end)
+    prev_start, prev_end = start - timedelta(days=1), end - timedelta(days=1)
+    prev = _staff_day_sales(db, user_id, prev_start, prev_end)
+    weekday = _FA_WEEKDAYS[start.weekday()]
+    cards = [
+        {"key": "my_sales", "label": "فروش امروز من", "tone": "pine",
+         "href": "/sales/",
+         "value": _money(mine["total"]),
+         "sub": (f"{mine['count']} فاکتور · نقدی {_money(mine['legs']['cash'])} · "
+                 f"کارتی {_money(mine['legs']['card'])} · "
+                 f"نسیه {_money(mine['legs']['credit'])}"),
+         "delta": _arrow(mine["total"], prev["total"]), "clear": False},
+        {"key": "my_discounts", "label": "تخفیف‌های من", "tone": None,
+         "href": "/sales/",
+         "value": _money(mine["manual"] + mine["loyalty"]),
+         "sub": (f"دستی {_money(mine['manual'])} · "
+                 f"باشگاهی {_money(mine['loyalty'])}"),
+         "delta": None, "clear": False},
+        {"key": "my_refunds", "label": "برگشتی‌های من", "tone": None,
+         "href": "/sales/",
+         "value": str(mine["refund_count"]),
+         "sub": (f"{_money(mine['refund_total'])} برگشت خورد — از فروش کم نشده"
+                 if mine["refund_count"] else "برگشتی ثبت نشده"),
+         "delta": None, "clear": mine["refund_count"] == 0},
+    ]
+    signups = 0
+    if user_id:
+        signups = db.query(Customer).filter(
+            Customer.created_by_user_id == user_id,
+            Customer.created_at >= start,
+            Customer.created_at < end,
+        ).count()
+    cards.append(
+        {"key": "my_signups", "label": "مشتری‌های جدید من", "tone": None,
+         "href": "/admin/customers",
+         "value": str(signups),
+         "sub": "ثبت‌شده امروز توسط من",
+         "delta": None, "clear": signups == 0})
+    target = get_setting_int(db, f"sales_target_{start.weekday()}", 0)
+    if target > 0:
+        pct = min(100, int(round(mine["total"] * 100 / target)))
+        cards.append(
+            {"key": "my_target", "label": "هدف امروز فروشگاه", "tone": "sky",
+             "href": None,
+             "value": f"٪{pct}",
+             "sub": f"{_money(mine['total'])} از {_money(target)}",
+             "delta": None, "clear": False,
+             "progress": pct})
+    from services.reporting import canonical_report
+    shop = canonical_report(db, start, end)
+    cards.append(
+        {"key": "shop_today", "label": "فروش امروز فروشگاه", "tone": "sky",
+         "href": "/sales/",
+         "value": _money(shop["net_sales"]),
+         "sub": f"{shop['sale_count']} فاکتور در کل فروشگاه",
+         "delta": None, "clear": False})
+    sections = [{
+        "key": "myday", "title": "امروز من" if offset == 0 else history_day_title(offset),
+        "eyebrow": "", "kind": "stats",
+        "cards": cards, "rows": [],
+    }]
+    history = []
+    for ago in range(7):
+        day_start, day_end = _midnight_span(ago)
+        day_sales = _staff_day_sales(db, user_id, day_start, day_end)
+        label = ("امروز" if ago == 0 else
+                 "دیروز" if ago == 1 else
+                 _FA_WEEKDAYS[day_start.weekday()])
+        history.append({
+            "label": label,
+            "href": f"/admin?day={ago}",
+            "sales": _money(day_sales["total"]),
+            "active": ago == offset,
+        })
+    sections.append({
+        "key": "history", "title": "", "eyebrow": "", "kind": "history",
+        "cards": [], "rows": [], "days": history,
+    })
+    summary = (f"امروز {summary_word(mine, target > 0)}" if offset == 0
+               else f"نمایش {history[offset]['label']}")
+    salutation, date_part, time_part = _greeting_stamp()
+    return {
+        "role": "cashier",
+        "role_label": ROLE_LABELS.get("cashier", "cashier"),
+        "sections": sections,
+        "greeting": {
+            "name": user_name or "",
+            "weekday": weekday,
+            "salutation": salutation,
+            "date": date_part,
+            "time": time_part,
+            "summary": summary,
+        },
+    }
+
+
+def history_day_title(offset: int) -> str:
+    """The section title when the cashier looks back."""
+    start, _ = _midnight_span(offset)
+    label = "دیروز من" if offset == 1 else f"{_FA_WEEKDAYS[start.weekday()]} من"
+    return label
+
+
+def summary_word(mine: dict, has_target: bool = False) -> str:
+    """The greeting's one line, from the day's own figures."""
+    if mine["count"] == 0:
+        return "هنوز فروشی ثبت نشده — اولین فاکتور روز را ببندید."
+    tail = " — پیشرفت هدف پایین صفحه." if has_target else ""
+    return (f"{mine['count']} فاکتور به مبلغ {_money(mine['total'])}"
+            f"{tail}")
+
+
+# ── Staff ranking + live counter (manager and owner) ─────────────────────────
+# One query per staffer per span — the ranking is a handful of rows, and each
+# row reuses the same day-math as the cashier's own cards, so the figures a
+# manager compares are the figures each cashier sees.
+
+def _sellers_in_span(db: Session, start, end) -> list:
+    """Everyone who rang in the span, plus every active staffer on the roster.
+
+    Ex-staff appear only with past sales beside them (history keeps them);
+    active staff appear even at zero so an empty day still reads as a roster.
+    """
+    from models import CheckoutSession, Sale, StaffUser
+    rang = {row[0] for row in db.query(CheckoutSession.staff_user_id).join(
+        Sale, CheckoutSession.sale_id == Sale.id).filter(
+        CheckoutSession.staff_user_id.isnot(None),
+        Sale.created_at >= start, Sale.created_at < end,
+        Sale.payment_confirmed == True,  # noqa: E712
+    ).distinct().all()}
+    roster = {u.id for u in db.query(StaffUser).filter(
+        StaffUser.is_active == True).all()}  # noqa: E712
+    users = db.query(StaffUser).filter(
+        StaffUser.id.in_(rang | roster)).all()
+    return sorted(users, key=lambda u: (u.full_name or u.username))
+
+
+def _staff_ranking(db: Session, *, week: bool = False) -> list[dict]:
+    """Per-seller today (or trailing 7 days): sales, invoices, discounts."""
+    if week:
+        end = _midnight_span(0)[1]
+        start = end - timedelta(days=7)
+    else:
+        start, end = _midnight_span(0)
+    rows = []
+    for user in _sellers_in_span(db, start, end):
+        day = _staff_day_sales(db, user.id, start, end)
+        rows.append({
+            "name": user.full_name or user.username,
+            "invoices": day["count"],
+            "sales": _money(day["total"]),
+            "discounts": _money(day["manual"] + day["loyalty"]),
+            "_total": day["total"],
+        })
+    rows.sort(key=lambda r: r["_total"], reverse=True)
+    for row in rows:
+        del row["_total"]
+    return rows
+
+
+def _live_counter(db: Session) -> dict | None:
+    """Open drawers and live baskets right now, as one compact panel."""
+    from models import CheckoutSession
+    from services.accounting import open_cash_session
+    sessions = db.query(CheckoutSession).filter(
+        CheckoutSession.state.in_(("draft", "reserved", "payment_pending")),
+    ).all()
+    open_session = open_cash_session(db)
+    bits = []
+    if open_session:
+        bits.append("صندوق باز است")
+    if sessions:
+        bits.append(f"{len(sessions)} سبد باز")
+    if not bits:
+        return None
+    return {"value": f"{len(sessions)} سبد" if sessions else "—",
+            "sub": " · ".join(bits)}
+
+
+def _shop_target(db: Session) -> dict | None:
+    """Today's shop takings against the weekday goal — managers see it too."""
+    from services.reporting import canonical_report
+    start, end = _midnight_span(0)
+    target = get_setting_int(db, f"sales_target_{start.weekday()}", 0)
+    if target <= 0:
+        return None
+    shop = canonical_report(db, start, end)
+    pct = min(100, int(round(shop["net_sales"] * 100 / target)))
+    return {"value": f"٪{pct}",
+            "sub": f"{_money(shop['net_sales'])} از {_money(target)}",
+            "progress": pct}
+
+
+def dashboard_overview(db: Session, *, role: str = "manager", user_id=None,
+                       user_name: str | None = None, day_offset: int = 0,
+                       rank_week: bool = False) -> dict:
     """Every card this viewer may see, already formatted, in reading order.
 
     Cards for other roles are not built at all, and a section with nothing left
     in it disappears — so a manager is never handed an empty heading implying
     there is something to do that they cannot reach.
     """
+    if role == "cashier" or (user_id and not role_allows(role, "manager")):
+        return _cashier_overview(db, user_id=user_id, user_name=user_name,
+                                 day_offset=day_offset)
     numbers = _Numbers(db)
     sections = []
     for key, title, eyebrow, kind in SECTIONS:
@@ -680,7 +1006,15 @@ def dashboard_overview(db: Session, *, role: str = "manager") -> dict:
             for spec in CARDS:
                 if spec["section"] != key or not role_allows(role, spec["min_role"]):
                     continue
-                card = spec["build"](numbers, role)
+                try:
+                    card = spec["build"](numbers, role)
+                except Exception:
+                    # A failed query shows as a failed card, never a missing
+                    # one: silence would read as a calm shop.
+                    import logging as _logging
+                    _logging.getLogger(__name__).exception(
+                        "dashboard card %s failed", spec["key"])
+                    card = {"value": "—", "sub": "خطا در محاسبه — بعداً ببینید"}
                 if card is None:
                     continue
                 section["cards"].append({
@@ -690,11 +1024,72 @@ def dashboard_overview(db: Session, *, role: str = "manager") -> dict:
                 })
         if section["cards"] or section["rows"] or section.get("sentences") or kind == "top":
             sections.append(section)
+    if role_allows(role, "manager"):
+        # The counter, watched: who rang what, what is live, whether the day
+        # meets its goal. Names are a manager's working material here.
+        staff_rows = _staff_ranking(db, week=rank_week)
+        sections.append({
+            "key": "staff", "title": "فروشندگان", "eyebrow": "امروز" if not rank_week else "۷ روز گذشته",
+            "kind": "staff", "cards": [], "rows": staff_rows,
+            "rank_week": rank_week,
+            "targets_editable": True,
+            "targets": {str(w): get_setting_int(db, f"sales_target_{w}", 0)
+                        for w in range(7)},
+            "weekdays": ["دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه",
+                         "شنبه", "یکشنبه"],
+        })
+        live = _live_counter(db)
+        if live is not None:
+            sections.append({
+                "key": "live", "title": "الان صندوق", "eyebrow": "", "kind": "stats",
+                "cards": [{"key": "live_counter", "label": "صندوق و سبدهای باز",
+                           "tone": None, "href": "/admin/cashbox",
+                           "delta": None, "clear": False, **live}],
+                "rows": [],
+            })
+        target = _shop_target(db)
+        if target is not None:
+            sections.append({
+                "key": "target", "title": "هدف امروز", "eyebrow": "", "kind": "stats",
+                "cards": [{"key": "shop_target", "label": "هدف امروز فروشگاه",
+                           "tone": "sky", "href": None,
+                           "delta": None, "clear": False, **target}],
+                "rows": [],
+            })
+    # Every card speaks the same keys: goal cards carry a progress, the rest
+    # carry none — so the template never reads a name a builder left out.
+    for section in sections:
+        for card in section.get("cards", []):
+            card.setdefault("progress", None)
     return {
         "role": role,
         "role_label": ROLE_LABELS.get(role, role),
         "sections": sections,
+        "greeting": _manager_greeting(db, role, user_name, sections),
         # The gateway strip reads this, not a card: two light queries, no
         # money figures, safe for every role that reaches the dashboard.
         "gateway": _gateway_status(db),
+    }
+
+
+def _manager_greeting(db: Session, role: str, user_name: str | None,
+                      sections: list) -> dict | None:
+    """Name, weekday, and the day in one line — for managers and owners too."""
+    if not user_name:
+        return None
+    from services.reporting import canonical_report
+    start, _ = _midnight_span(0)
+    shop = canonical_report(db, start, start + timedelta(days=1))
+    urgent = sum(len(s.get("cards", [])) for s in sections
+                 if s["key"] == "urgent")
+    salutation, date_part, time_part = _greeting_stamp()
+    return {
+        "name": user_name,
+        "weekday": _FA_WEEKDAYS[start.weekday()],
+        "salutation": salutation,
+        "date": date_part,
+        "time": time_part,
+        "summary": (f"فروش امروز {_money(shop['net_sales'])} — "
+                    f"{urgent} اقدام فوری" if urgent else
+                    f"فروش امروز {_money(shop['net_sales'])} — روز آرام است."),
     }

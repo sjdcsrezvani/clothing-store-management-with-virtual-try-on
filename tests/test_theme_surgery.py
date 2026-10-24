@@ -68,9 +68,11 @@ def test_retired_shop_sees_the_notice(client, db_session):
 def test_accent_full_lives_on_storefronts_only():
     base = (ROOT / "templates" / "base.html").read_text()
     assert "page_accent_full" in base and "accent-full" in base
-    for name in ("sales/checkout.html", "admin/products.html",
+    for name in ("admin/products.html",
                  "admin/customers.html", "admin/customer_detail.html"):
         assert "page_accent_full" in (ROOT / "templates" / name).read_text(), name
+    # The till follows its theme instead: density beat decoration there.
+    assert "page_accent_full" not in (ROOT / "templates" / "sales/checkout.html").read_text()
     style = (ROOT / "static" / "css" / "style.css").read_text()
     assert ".accent-full .card::before" in style
     assert "var(--card-accent-full)" in style

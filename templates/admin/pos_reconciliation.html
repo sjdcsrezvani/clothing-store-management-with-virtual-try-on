@@ -19,36 +19,17 @@
     <div class="stat-card accent-ink">
         <div class="stat-label">کارت‌خوان</div>
         <div class="stat-value tnum" dir="ltr">{{ terminal.host }}:{{ terminal.port }}</div>
-        <div class="stat-sub"><span data-terminal-pill>در حال بررسی اتصال…</span>
+        <div class="stat-sub"><span id="pos-terminal-pill" data-terminal-pill hx-get="/sales/terminal-status" hx-trigger="load" hx-swap="outerHTML">در حال بررسی اتصال…</span>
             {% if is_owner %} · <a href="/admin/settings?tab=devices">تنظیمات کارت‌خوان</a>{% endif %}
         </div>
     </div>
 </div>
-<script>
-// Reachability is read live, never baked into the page: a probe at render
-// time would hold every visit up to its timeout on the days the terminal is
-// dark — exactly when this page is needed most.
-(function () {
-    var pill = document.querySelector('[data-terminal-pill]');
-    if (!pill) return;
-    fetch('/sales/terminal-status', { headers: { 'Accept': 'application/json' } })
-        .then(function (response) { return response.json(); })
-        .then(function (status) {
-            if (!status || !status.configured) {
-                pill.textContent = 'پیکربندی نشده';
-                return;
-            }
-            pill.textContent = status.online ? 'متصل است' : 'پاسخ نمی‌دهد';
-        })
-        .catch(function () { pill.textContent = 'نامشخص'; });
-})();
-</script>
 
 {# The count is the shop's real outstanding total; the numbered pages below
    list whatever the filters ask for, so the two can never silently disagree
    the way a fixed window once did. #}
 
-<div class="card" data-list-region="pos">
+<div class="card" data-list-region="pos" hx-boost="true" hx-target="closest [data-list-region]" hx-swap="outerHTML" hx-select="[data-list-region=pos]">
     <div class="section-heading-row">
         <div>
             <h3 data-list-heading tabindex="-1">تراکنش‌ها</h3>
@@ -112,6 +93,7 @@
             {# Approved with no invoice is money taken with no bill: the one
                row on this page that must shout instead of sitting quietly. #}
             {% set alarming = transaction.status == 'approved' and not transaction.sale_id and not transaction.reconciled %}
+            {% set reviewable = transaction.status in ('created', 'sent', 'uncertain', 'approved') and not transaction.sale_id and not transaction.reconciled %}
             <tr{% if alarming %} class="check-overdue"{% endif %}>
                 <td class="tnum" data-label="شناسه"><strong>#{{ transaction.id }}</strong>
                     {# The references the search reads have nowhere else to be
@@ -149,43 +131,50 @@
                         {% if transaction.reconciliation_note %}<br><small class="muted">{{ transaction.reconciliation_note|highlight(search) }}</small>{% endif %}
                         {% if operator_names.get(transaction.operator_user_id) %}<br><small class="muted">ثبت: {{ operator_names.get(transaction.operator_user_id) }}{% if transaction.reconciled_at %} · {{ jalali_str(transaction.reconciled_at, false) }}{% endif %}</small>{% endif %}
                     {% else %}
-                        {% if can_reconcile %}
-                        <form method="post" action="/admin/pos-reconciliation/{{ transaction.id }}/review"
-                              data-pos-form data-amount="{{ transaction.amount }}">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                            <label class="filter-field">
-                                <span>نتیجه بررسی</span>
-                                <select name="resolution_type" required>
-                                    <option value="">انتخاب کنید</option>
-                                    {% for value, label in resolutions.items() %}
-                                    <option value="{{ value }}">{{ label }}</option>
-                                    {% endfor %}
-                                </select>
-                            </label>
-                            <label class="filter-field">
-                                <span>دلیل و مدرک</span>
-                                <input type="text" name="evidence" required maxlength="2000" placeholder="مثلاً رسید بانکی 1234" dir="auto" autocomplete="off">
-                            </label>
-                            <label class="filter-field">
-                                <span>مرجع ارائه‌دهنده (اختیاری)</span>
-                                <input type="text" name="provider_reference" maxlength="100" dir="ltr" placeholder="REF-4829" autocomplete="off">
-                            </label>
-                            <label class="filter-field">
-                                <span>شماره تراکنش (اختیاری)</span>
-                                <input type="text" name="terminal_transaction_number" maxlength="100" dir="ltr" placeholder="009123" autocomplete="off">
-                            </label>
-                            <label class="filter-field">
-                                <span>شماره پیگیری (اختیاری)</span>
-                                <input type="text" name="retrieval_reference_number" maxlength="100" dir="ltr" placeholder="140501" autocomplete="off">
-                            </label>
-                            <label class="filter-field">
-                                <span>کارت (اختیاری، فقط ****)</span>
-                                <input type="text" name="masked_card" maxlength="32" dir="ltr" placeholder="****1234" autocomplete="off">
-                            </label>
-                            <button type="submit" class="btn btn-sm btn-primary">ثبت نتیجه</button>
-                        </form>
+                        {% if reviewable %}
+                            {% if can_reconcile %}
+                            <details class="pos-review">
+                                <summary class="btn btn-sm btn-ghost">بررسی</summary>
+                                <form method="post" action="/admin/pos-reconciliation/{{ transaction.id }}/review"
+                                      data-pos-form data-amount="{{ transaction.amount }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <label class="filter-field">
+                                        <span>نتیجه بررسی</span>
+                                        <select name="resolution_type" required>
+                                            <option value="">انتخاب کنید</option>
+                                            {% for value, label in resolutions.items() %}
+                                            <option value="{{ value }}">{{ label }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </label>
+                                    <label class="filter-field">
+                                        <span>دلیل و مدرک</span>
+                                        <input type="text" name="evidence" required maxlength="2000" placeholder="مثلاً رسید بانکی 1234" dir="auto" autocomplete="off">
+                                    </label>
+                                    <label class="filter-field">
+                                        <span>مرجع ارائه‌دهنده (اختیاری)</span>
+                                        <input type="text" name="provider_reference" maxlength="100" dir="ltr" placeholder="REF-4829" autocomplete="off">
+                                    </label>
+                                    <label class="filter-field">
+                                        <span>شماره تراکنش (اختیاری)</span>
+                                        <input type="text" name="terminal_transaction_number" maxlength="100" dir="ltr" placeholder="009123" autocomplete="off">
+                                    </label>
+                                    <label class="filter-field">
+                                        <span>شماره پیگیری (اختیاری)</span>
+                                        <input type="text" name="retrieval_reference_number" maxlength="100" dir="ltr" placeholder="140501" autocomplete="off">
+                                    </label>
+                                    <label class="filter-field">
+                                        <span>کارت (اختیاری، فقط ****)</span>
+                                        <input type="text" name="masked_card" maxlength="32" dir="ltr" placeholder="****1234" autocomplete="off">
+                                    </label>
+                                    <button type="submit" class="btn btn-sm btn-primary">ثبت نتیجه</button>
+                                </form>
+                            </details>
+                            {% else %}
+                            <small class="muted">تطبیق برای حساب شما فعال نیست.</small>
+                            {% endif %}
                         {% else %}
-                        <small class="muted">تطبیق برای حساب شما فعال نیست.</small>
+                        <small class="muted">—</small>
                         {% endif %}
                     {% endif %}
                 </td>

@@ -1,0 +1,5 @@
+{# The capture dialog's send-status line: the upload endpoint's answer for a
+   phone. data-status tells the page hook what the imperative rest of the
+   flow should do (close and toast on success, re-enable and toast on
+   failure) — the server decides the copy, the page does the sleep. #}
+<div class="send-status{% if ok %} is-ok{% else %} is-err{% endif %}" id="send-status" data-status="{{ 'ok' if ok else 'err' }}">{{ msg }}</div>

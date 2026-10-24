@@ -3,13 +3,24 @@
 
 {% set page_badge = role_label %}
 {% set page_actions %}
-<a href="/sales/new" class="btn btn-success">🛒 ثبت فروش</a>
+<a href="/sales/new" class="btn btn-success">ثبت فروش</a>
 {% endset %}
 {# The paper heading names the day and the reader's role — a printed dashboard
    travels without a URL or a badge, and a manager's printout shows fewer
    figures than the owner's. #}
 {% set print_heading = 'داشبورد فروشگاه — ' ~ today ~ ((' (' ~ role_label ~ ')') if role_label else '') %}
 {% include 'partials/page_header.html' %}
+
+{# The live region: greeting, gateway strip and every figure section, polled
+    in place every five minutes. The server re-renders the whole page and htmx
+    selects this wrapper out of it — the polled numbers can never disagree
+    with a reload, because they are the reload. #}
+<div id="dash-live" hx-get="/admin" hx-trigger="every 5m [ !document.activeElement || !(document.activeElement.closest && document.activeElement.closest('input, textarea, select, details')) ]" hx-select="#dash-live" hx-swap="outerHTML">
+{# The counter's own greeting: who is looking, which day, and the day in one
+   line. Managers and owners never receive it — their header stays titled. #}
+{% if greeting %}
+<p class="dash-greeting" role="status">سلام {{ greeting.name }}، {{ greeting.salutation }} — {{ greeting.weekday }} {{ greeting.date }}، ساعت <span class="tnum" data-clock>{{ greeting.time }}</span> — {{ greeting.summary }}</p>
+{% endif %}
 
 {# The gateway cannot text anyone about itself, so its outage lives here:
    one strip while the paired phone is silent, gone the moment it polls.
@@ -29,7 +40,21 @@
    Nothing below changes data either — this page reports and links. #}
 {% for section in sections %}
 
-{% if section.kind == 'attention' %}
+{% if section.kind == 'history' %}
+{# The cashier's own week: full-card days behind, one tap each. #}
+<section class="card screen-only" aria-label="روزهای گذشته">
+    <div class="history-strip">
+        {% for day in section.days %}
+        {% if day.active %}
+        <span class="history-day is-active" aria-current="true"><strong>{{ day.label }}</strong><span class="tnum">{{ day.sales }}</span></span>
+        {% else %}
+        <a class="history-day" href="{{ day.href }}"><strong>{{ day.label }}</strong><span class="tnum">{{ day.sales }}</span></a>
+        {% endif %}
+        {% endfor %}
+    </div>
+</section>
+
+{% elif section.kind == 'attention' %}
 {# The action row is the page's navigation: on paper it is a list of links to
    screens the printout cannot open, so it lives on the screen only. #}
 <section class="card screen-only" aria-labelledby="dash-{{ section.key }}">
@@ -83,6 +108,52 @@
     {% endif %}
 </section>
 
+{% elif section.kind == 'staff' %}
+<section class="card" aria-labelledby="dash-{{ section.key }}">
+    <div class="section-heading">
+        <div>
+            <span class="eyebrow">{{ section.eyebrow }}</span>
+            <h3 id="dash-{{ section.key }}">{{ section.title }}</h3>
+        </div>
+        <div class="rank-toggle">
+            <a href="/admin"{% if not section.rank_week %} aria-current="true"{% endif %}>امروز</a>
+            <a href="/admin?rank=week"{% if section.rank_week %} aria-current="true"{% endif %}>۷ روز</a>
+        </div>
+    </div>
+    {% if section.rows %}
+    <ol class="ranked-list">
+        {% for row in section.rows %}
+        <li class="ranked-row">
+            <span class="ranked-rank tnum">{{ loop.index }}</span>
+            <span class="ranked-name"><strong>{{ row.name }}</strong></span>
+            <span class="ranked-figures">
+                <span class="ranked-units tnum">{{ row.invoices }} فاکتور</span>
+                <span class="ranked-money tnum">{{ row.sales }} ت</span>
+                <span class="ranked-discount tnum">تخفیف {{ row.discounts }} ت</span>
+            </span>
+        </li>
+        {% endfor %}
+    </ol>
+    {% else %}
+    <p class="empty-state">هنوز فروشی ثبت نشده است.</p>
+    {% endif %}
+    {% if section.targets_editable %}
+    <details class="targets-editor">
+        <summary>تعیین هدف روزانه</summary>
+        <form method="post" action="/admin/targets" class="form-row">
+            {% for w in range(7) %}
+            <div class="form-group">
+                <label for="tgt-{{ w }}">{{ section.weekdays[w] }}</label>
+                <input type="text" inputmode="numeric" id="tgt-{{ w }}" name="sales_target_{{ w }}"
+                       value="{{ section.targets[w|string] }}" dir="ltr">
+            </div>
+            {% endfor %}
+            <button type="submit" class="btn btn-primary btn-sm">ذخیره هدف‌ها</button>
+        </form>
+    </details>
+    {% endif %}
+</section>
+
 {% elif section.kind == 'reading' %}
 <section class="card" aria-labelledby="dash-{{ section.key }}">
     <div class="section-heading">
@@ -123,6 +194,9 @@
                 {% endif %}
             </div>
             <div class="stat-sub">{{ card.sub }}</div>
+            {% if card.progress is not none %}
+            <div class="progress-track" role="progressbar" aria-valuenow="{{ card.progress }}" aria-valuemin="0" aria-valuemax="100" aria-label="{{ card.label }}"><div class="progress-fill" data-progress="{{ card.progress }}"></div></div>
+            {% endif %}
         {% if card.href %}</a>{% else %}</div>{% endif %}
         {% endfor %}
     </div>
@@ -130,5 +204,33 @@
 {% endif %}
 
 {% endfor %}
+</div>
+
+<script>
+// Progress fills read their width from data, never from a style attribute.
+// Every poll re-lands the live region, so the painter rides htmx:load too —
+// idempotent by design.
+function paintProgress() {
+    document.querySelectorAll('.progress-fill[data-progress]').forEach(function (el) {
+        var pct = Math.max(0, Math.min(100, parseInt(el.getAttribute('data-progress') || '0', 10)));
+        el.style.width = pct + '%';
+    });
+}
+paintProgress();
+document.body.addEventListener('htmx:load', paintProgress);
+
+// Live clock: the greeting's minutes tick from the shop's own clock, every
+// twenty seconds — no reload, no five-minute wait for the poll.
+function tickClock() {
+    try {
+        var t = new Intl.DateTimeFormat('fa-IR', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
+        document.querySelectorAll('[data-clock]').forEach(function (el) {
+            el.textContent = t;
+        });
+    } catch (e) {}
+}
+tickClock();
+setInterval(tickClock, 20 * 1000);
+</script>
 
 {% endblock %}

@@ -178,9 +178,10 @@ def test_a_role_is_offered_exactly_the_doors_it_may_open():
 
 def test_a_section_with_nothing_left_in_it_is_not_printed():
     """Nobody is shown a heading with no items under it, or a blank one."""
-    # «مالی» survives for a cashier because the till is theirs: the section is
-    # drawn with one item («صندوق») rather than disappearing with the rest.
-    assert [section["label"] for section in navigation_for("cashier")] == ["فروش", "مالی"]
+    # «مالی» survives for a cashier because the till is theirs, and so does
+    # «مشتریان و باشگاه» with its one cashier door («مشتریان»): each drawn
+    # with its items rather than disappearing with the rest.
+    assert [section["label"] for section in navigation_for("cashier")] == ["فروش", "مشتریان و باشگاه", "مالی"]
     for role in ROLES:
         for section in navigation_for(role):
             assert section["items"], section["label"]
@@ -322,10 +323,12 @@ def test_a_cashier_is_not_offered_a_manager_or_owner_door(client, db_session):
     sidebar = _sidebar(client.get("/sales/new").text)
 
     assert "تاریخچه فروش" in sidebar
-    for label in ("تنظیمات", "تحلیل فروش", "پشتیبان‌گیری و بازیابی", "گزارش عملیات", "مشتریان",
-                  "محصولات و موجودی", "داشبورد", "کارکنان و حقوق", "تطبیق کارت‌خوان",
-                  "حساب نسیه", "پرو مجازی", "تأمین‌کنندگان"):
+    for label in ("تنظیمات", "تحلیل فروش", "پشتیبان‌گیری و بازیابی", "گزارش عملیات",
+                  "محصولات و موجودی", "کارکنان و حقوق", "تطبیق کارت‌خوان",
+                  "حساب نسیه", "تأمین‌کنندگان"):
         assert label not in sidebar, label
+    for label in ("مشتریان", "پرو مجازی"):
+        assert label in sidebar, label  # Phase 9: the counter's doors
 
 
 def test_a_manager_keeps_their_doors_and_loses_the_owners(client, db_session):
@@ -457,10 +460,10 @@ def test_the_topbar_is_where_the_till_and_the_dashboard_live(client, db_session)
     assert _current_in_topbar(client.get("/admin").text)
 
 
-def test_a_cashier_gets_no_topbar_dashboard_button(client, db_session):
+def test_a_cashier_gets_a_topbar_dashboard_button(client, db_session):
     user, password = _staff(db_session, "nav-top-cashier", "cashier")
     _session_as(client, user, password)
-    assert "topbar-admin" not in client.get("/sales/new").text
+    assert "topbar-admin" in client.get("/sales/new").text  # Phase 9: dashboard first
 
 
 def test_no_page_a_cashier_can_open_offers_an_admin_door(client, db_session):
@@ -497,7 +500,7 @@ def test_no_page_a_cashier_can_open_offers_an_admin_door(client, db_session):
 # ── where a login lands ──────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("role,expected", [
-    ("cashier", "/sales/new"), ("manager", "/admin"), ("owner", "/admin"),
+    ("cashier", "/admin"), ("manager", "/admin"), ("owner", "/admin"),
 ])
 def test_a_login_lands_on_a_page_that_role_can_open(client, db_session, role, expected):
     user, password = _staff(db_session, f"nav-home-{role}", role)
@@ -507,7 +510,7 @@ def test_a_login_lands_on_a_page_that_role_can_open(client, db_session, role, ex
     }, follow_redirects=False)
 
     assert response.status_code == 303
-    assert response.headers["location"] == expected
+    assert response.headers["location"].rstrip("/") == expected
     assert home_for(role) == expected
     assert client.get(expected).status_code == 200
 

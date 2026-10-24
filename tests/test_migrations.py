@@ -293,3 +293,46 @@ def test_revision_27_collapses_junk_category_spellings_to_null(tmp_path):
         assert conn.execute(text("SELECT category FROM products WHERE name = 'c'")).scalar() == "پیراهن"
         assert conn.execute(text(
             "SELECT amount FROM expenses WHERE category IS NULL")).scalars().all() == [1000]
+
+
+def test_no_version_bump_without_a_revision_body():
+    """Silence must not read as success: a version whose body has not landed
+    still advances schema_version and leaves the columns missing (a reload
+    window once did exactly that to the live shop database). Revisions 1-7, 9,
+    12 and 14 were table-creation no-ops covered by create_all; every revision
+    after them must carry a body."""
+    import re
+    from pathlib import Path
+
+    source = Path("migrations.py").read_text(encoding="utf-8")
+    body = source[source.index("def _apply_revision"):source.index("\ndef upgrade")]
+    bodies = {int(version) for version in re.findall(r"if version == (\d+):", body)}
+    legacy_noops = {1, 2, 3, 4, 5, 6, 7, 9, 12, 14}
+    missing = sorted(set(range(1, MIGRATION_VERSION + 1)) - bodies - legacy_noops)
+    assert not missing, f"revisions bumped without a body: {missing}"
+
+
+def test_revision_36_and_37_add_the_sizing_columns(tmp_path):
+    """Sizing is purely additive: a shop that ran revision 35 gets the
+    product's tag system/type, every variant's child band and the adult
+    numeric band as empty columns — legacy rows read exactly as before,
+    nothing is backfilled by guessing."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'v35.db'}")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE schema_version (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)"))
+        conn.execute(text("INSERT INTO schema_version (id, version) VALUES (1, 35)"))
+        conn.execute(text("CREATE TABLE products (id INTEGER PRIMARY KEY, name VARCHAR(200), category VARCHAR(100))"))
+        conn.execute(text("CREATE TABLE product_variants (id INTEGER PRIMARY KEY, product_id INTEGER, size VARCHAR(20))"))
+        conn.execute(text("INSERT INTO products (name) VALUES ('پیراهن')"))
+        conn.execute(text("INSERT INTO product_variants (product_id, size) VALUES (1, '110')"))
+
+    assert upgrade(engine) == MIGRATION_VERSION == 37
+
+    with engine.connect() as conn:
+        products = {row[1] for row in conn.execute(text("PRAGMA table_info(products)"))}
+        variants = {row[1] for row in conn.execute(text("PRAGMA table_info(product_variants)"))}
+        assert {"size_type", "size_system"} <= products
+        assert {"band_min_cm", "band_max_cm", "band_min_months", "band_max_months",
+                "band_min_adult", "band_max_adult"} <= variants
+        row = conn.execute(text("SELECT size, band_min_cm FROM product_variants WHERE id=1")).one()
+        assert row == ("110", None)

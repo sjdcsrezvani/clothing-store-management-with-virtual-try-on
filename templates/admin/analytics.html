@@ -16,17 +16,18 @@
     {% if range_notice %}<p class="filter-problem" role="status">⚠️ {{ range_notice }}</p>{% endif %}
     <form method="get" action="/admin/analytics" class="filter-bar">
         <div class="search-form">
-            <a href="/admin/analytics?period=today" class="btn {% if period == 'today' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">امروز</a>
-            <a href="/admin/analytics?period=week" class="btn {% if period == 'week' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">هفته</a>
-            <a href="/admin/analytics?period=month" class="btn {% if period == 'month' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">ماه</a>
-            <a href="/admin/analytics?period=year" class="btn {% if period == 'year' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">سال</a>
-            <a href="/admin/analytics?period=all" class="btn {% if period == 'all' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">همه</a>
+            <a href="/admin/analytics?period=today&tab={{ tab }}&category={{ category|urlencode }}" class="btn {% if period == 'today' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">امروز</a>
+            <a href="/admin/analytics?period=week&tab={{ tab }}&category={{ category|urlencode }}" class="btn {% if period == 'week' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">هفته</a>
+            <a href="/admin/analytics?period=month&tab={{ tab }}&category={{ category|urlencode }}" class="btn {% if period == 'month' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">ماه</a>
+            <a href="/admin/analytics?period=year&tab={{ tab }}&category={{ category|urlencode }}" class="btn {% if period == 'year' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">سال</a>
+            <a href="/admin/analytics?period=all&tab={{ tab }}&category={{ category|urlencode }}" class="btn {% if period == 'all' %}btn-primary{% else %}btn-ghost{% endif %} btn-sm">همه</a>
         </div>
         <div class="search-form filter-custom-row">
             <input type="text" id="analytics-start" name="start_date" value="{{ start_date }}" placeholder="۱۴۰۵/۰۱/۰۱" class="persian-date-input" data-pdp-pair="#analytics-end">
             <span>تا</span>
             <input type="text" id="analytics-end" name="end_date" value="{{ end_date }}" placeholder="۱۴۰۵/۰۶/۳۱" class="persian-date-input">
             <input type="hidden" name="period" value="custom">
+            <input type="hidden" name="tab" value="{{ tab }}">
             <input type="hidden" name="category" value="{{ category }}">
             <button type="submit" class="btn btn-primary btn-sm">اعمال</button>
         </div>
@@ -34,6 +35,11 @@
     <form method="post" action="/admin/analytics/digits" class="filter-bar is-inline flush-bottom">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="mode" value="{% if chart_digits == 'latin' %}fa{% else %}latin{% endif %}">
+        <input type="hidden" name="tab" value="{{ tab }}">
+        <input type="hidden" name="period" value="{{ period }}">
+        <input type="hidden" name="start_date" value="{{ start_date }}">
+        <input type="hidden" name="end_date" value="{{ end_date }}">
+        <input type="hidden" name="category" value="{{ category }}">
         <button type="submit" class="btn btn-sm btn-ghost">ارقام {% if chart_digits == 'latin' %}فارسی{% else %}لاتین{% endif %} در نمودارها</button>
     </form>
 </div>
@@ -148,14 +154,16 @@
     <div class="card">
         <h3>مرجوعی‌ها <span class="tip-icon" tabindex="0" role="button" data-tip="کدام تنوع‌ها برمی‌گردند و با چه دلیلی. تکرار یک دلیل یعنی مشکلی در خرید یا معرفی کالا.">?</span></h3>
         {% if returns.variants %}
+        <div class="table-scroll">
         <table class="data-table">
-            <thead><tr><th>کالا</th><th>تعداد</th><th>مبلغ</th></tr></thead>
+            <thead><tr><th>کالا</th><th>گروه / نوع</th><th>تعداد</th><th>مبلغ</th></tr></thead>
             <tbody>
             {% for v in returns.variants %}
-                <tr><td>{{ v.name }}{% if v.size or v.color %} <small class="muted">{{ v.size }} {{ v.color }}</small>{% endif %}</td><td class="tnum">{{ v.qty }}</td><td class="tnum">{{ fmt(v.amount) }} تومان</td></tr>
+                <tr><td>{{ v.name }}{% if v.size or v.color %} <small class="muted">{{ v.size }} {{ v.color }}</small>{% endif %}</td><td>{{ v.group }} / {{ v.type }}</td><td class="tnum">{{ v.qty }}</td><td class="tnum">{{ fmt(v.amount) }} تومان</td></tr>
             {% endfor %}
             </tbody>
         </table>
+        </div>
         {% else %}<p class="muted">در این بازه مرجوعی ثبت نشده.</p>{% endif %}
         {% if returns.reasons %}
         <div class="kv-divider">
@@ -224,27 +232,6 @@
             {% else %}<p class="muted">رنگ/سایز برای این محدوده ثبت نشده.</p>{% endif %}
         </div>
     </div>
-<script>
-// Quantity or money: the same cells, re-read. Grouped Persian digits either
-// way; the heat stays quantity-scaled so the two modes stay comparable.
-(function () {
-    document.querySelectorAll('[data-matrix-mode]').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            var table = btn.closest('.chart-card').querySelector('table.matrix');
-            if (!table) return;
-            var mode = btn.getAttribute('data-matrix-mode');
-            btn.parentElement.querySelectorAll('[data-matrix-mode]').forEach(function (other) {
-                other.setAttribute('aria-pressed', other === btn ? 'true' : 'false');
-            });
-            table.querySelectorAll('td[data-qty]').forEach(function (cell) {
-                var raw = parseInt(mode === 'revenue' ? cell.getAttribute('data-revenue') : cell.getAttribute('data-qty'), 10) || 0;
-                cell.textContent = raw.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-                    .replace(/[0-9]/g, function (d) { return '۰۱۲۳۴۵۶۷۸۹'[+d]; }) + (mode === 'revenue' ? ' تومان' : '');
-            });
-        });
-    });
-})();
-</script>
     <div class="charts-grid">
         <div class="card">
             <h3>ارزش انبار <span class="tip-icon" tabindex="0" role="button" data-tip="ارزش کل موجودی انبار: سرمایه‌ای که در کالا بلوکه شده (به قیمت خرید) و ارزش فروش بالقوه آن (به قیمت فروش). تفاوت این دو سود ناخالص بالقوه شماست.">?</span></h3>
@@ -259,6 +246,21 @@
                 {% endfor %}
             </div>
         </div>
+        <div class="card">
+            <h3>موجودی به تفکیک سایز <span class="tip-icon" tabindex="0" role="button" data-tip="تعداد و سرمایه انبار به تفکیک سایز. سایزهایی که تگ‌هایشان یکی است یک ردیف‌اند؛ ردیف بالاتر یعنی سرمایه بیشتری روی آن سایز خوابیده.">?</span></h3>
+            {% if stock_by_band %}
+            <div class="table-scroll">
+                <table class="data-table">
+                    <thead><tr><th>سایز</th><th>تعداد</th><th>سرمایه</th></tr></thead>
+                    <tbody>
+                    {% for row in stock_by_band %}
+                        <tr><td>{{ row.size }}</td><td class="tnum">{{ fmt(row.units) }}</td><td class="tnum">{{ fmt(row.cost) }} تومان</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}<p class="muted">موجودی‌ای ثبت نشده.</p>{% endif %}
+        </div>
     </div>
 </div>
 
@@ -272,14 +274,158 @@
 <div class="tables-grid">
     <div class="card">
         <h3>پرفروش‌ترین واریانت‌ها <span class="tip-icon" tabindex="0" role="button" data-tip="پرفروش‌ترین ترکیب‌های مشخص محصول + سایز + رنگ. این‌ها اقلامی هستند که واقعاً از قفسه پرواز می‌کنند — سفارش مجدد آن‌ها اولویت اول است.">?</span></h3>
+        <div class="table-scroll">
         <table class="data-table">
-            <thead><tr><th>نام</th><th>سایز</th><th>رنگ</th><th>تعداد</th><th>فروش</th></tr></thead>
+            <thead><tr><th>نام</th><th>گروه / نوع</th><th>سایز</th><th>رنگ</th><th>تعداد</th><th>فروش</th></tr></thead>
             <tbody>
             {% for v in top_variants %}
-                <tr><td>{{ v.name }}</td><td>{{ v.size }}</td><td>{{ v.color }}</td><td class="tnum">{{ v.qty }}</td><td class="tnum">{{ fmt(v.revenue) }}</td></tr>
+                <tr><td>{{ v.name }}</td><td>{{ v.group }} / {{ v.type }}</td><td>{{ v.size }}</td><td>{{ v.color }}</td><td class="tnum">{{ v.qty }}</td><td class="tnum">{{ fmt(v.revenue) }}</td></tr>
             {% endfor %}
             </tbody>
         </table>
+        </div>
+    </div>
+</div>
+</section>
+
+<!-- Categories and sizes tab -->
+<section class="analytics-tab" data-tab="sizes" aria-label="دسته‌ها و سایز"{% if tab != 'sizes' %} hidden{% endif %}>
+{% set active_filters = selected_filters.categories|length + selected_filters.types|length + selected_filters.groups|length + selected_filters.systems|length + selected_filters.ages|length %}
+{% macro filter_panel(name, label, options, selected) %}
+<details class="filter-panel"{% if selected %} open{% endif %}>
+    <summary>{{ label }}{% if selected %} <span class="filter-count">{{ selected|length }}</span>{% endif %}</summary>
+    <div class="filter-panel-body">
+        {% for value, option_label in options %}
+        <label class="filter-check">
+            <input type="checkbox" name="{{ name }}" value="{{ value }}"{% if value in selected %} checked{% endif %}>
+            <span>{{ option_label }}</span>
+        </label>
+        {% endfor %}
+    </div>
+</details>
+{% endmacro %}
+
+<div class="card screen-only">
+    <form method="get" action="/admin/analytics" class="size-filter-form">
+        <input type="hidden" name="tab" value="sizes">
+        <input type="hidden" name="period" value="{{ period }}">
+        <input type="hidden" name="start_date" value="{{ start_date }}">
+        <input type="hidden" name="end_date" value="{{ end_date }}">
+        <div class="filter-panels">
+            {{ filter_panel('category', 'دسته‌بندی', filter_options.categories, selected_filters.categories) }}
+            {{ filter_panel('type', 'نوع لباس', filter_options.types, selected_filters.types) }}
+            {{ filter_panel('group', 'گروه', filter_options.groups, selected_filters.groups) }}
+            {{ filter_panel('system', 'سیستم سایز', filter_options.systems, selected_filters.systems) }}
+            {{ filter_panel('age', 'گروه سنی', filter_options.ages, selected_filters.ages) }}
+        </div>
+        <div class="filter-actions">
+            <button type="submit" class="btn btn-primary btn-sm">اعمال فیلتر</button>
+            <a class="btn btn-ghost btn-sm" href="/admin/analytics?tab=sizes&period={{ period }}&start_date={{ start_date }}&end_date={{ end_date }}">پاک کردن فیلترها</a>
+            <span class="muted">{% if active_filters %}{{ active_filters }} فیلتر فعال{% else %}همه محصولات{% endif %}</span>
+        </div>
+    </form>
+</div>
+
+<div class="card section-gap coverage-card">
+    <div class="section-heading-row">
+        <div>
+            <h3>پوشش سایز <span class="tip-icon" tabindex="0" role="button" data-tip="چند محصول فعال سیستم سایز دارند و چند تنوع به یک باند مشخص تبدیل شده‌اند. این کارت مستقل از فیلترهاست تا محصولات جامانده پنهان نشوند.">?</span></h3>
+            <p class="muted">محصولات و تنوع‌هایی که هنوز سیستم یا باند ندارند، با موجودی‌شان.</p>
+        </div>
+        <span class="badge {% if coverage.band_pct and coverage.band_pct >= 80 %}badge-available{% else %}badge-danger{% endif %}">{{ percent(coverage.band_pct, 0) }} تنوع بانددار</span>
+    </div>
+    <div class="coverage-grid">
+        <div class="coverage-stat"><span>محصولات با سیستم</span><b class="tnum">{{ coverage.products_with_system }} از {{ coverage.products_total }}</b></div>
+        <div class="coverage-stat"><span>بدون سیستم</span><b class="tnum">{{ coverage.products_without_system }}</b></div>
+        <div class="coverage-stat"><span>تنوع با باند</span><b class="tnum">{{ coverage.variants_with_band }} از {{ coverage.variants_total }}</b></div>
+        <div class="coverage-stat"><span>تنوع بدون باند</span><b class="tnum">{{ coverage.variants_without_band }}</b></div>
+    </div>
+    <div class="share-meter" role="img" aria-label="پوشش باند: {{ percent(coverage.band_pct, 0) }}">
+        <div class="share-meter-fill" style="width: {{ (coverage.band_pct if coverage.band_pct is not none else 0) if (coverage.band_pct or 0) <= 100 else 100 }}%;"></div>
+    </div>
+    {% if coverage.missing %}
+    <div class="table-scroll">
+        <table class="data-table">
+            <thead><tr><th>محصول</th><th>دسته</th><th>گروه / نوع</th><th>سیستم</th><th>تنوع بی‌باند</th><th>موجودی</th></tr></thead>
+            <tbody>
+            {% for row in coverage.missing %}
+                <tr>
+                    <td><a href="/admin/products/{{ row.product_id }}">{{ row.name }}</a></td>
+                    <td>{{ row.category }}</td>
+                    <td>{{ row.group }} · {{ row.type }}</td>
+                    <td>{{ row.size_system }}</td>
+                    <td class="tnum">{% if row.missing_variants %}{{ row.missing_variants }}{% else %}—{% endif %}</td>
+                    <td class="tnum">{{ row.stock_units }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}<p class="muted">همه محصولات فعال سیستم سایز و باند دارند.</p>{% endif %}
+</div>
+
+<div class="charts-grid section-gap">
+    <div class="card chart-card">
+        <div class="section-heading-row">
+            <h3>فروش گروه / نوع <span class="tip-icon" tabindex="0" role="button" data-tip="فروش خالص و تعداد فروخته‌شده به تفکیک گروه دخترانه/پسرانه/زنانه/مردانه یا نوع بالاتنه/پایین‌تنه/ست/کفش. با دکمه‌ها بعد نمودار را عوض کنید.">?</span></h3>
+            <span class="picked-tools" role="group" aria-label="بعد نمودار">
+                <button type="button" class="btn btn-sm btn-ghost" data-group-type-dimension="group" aria-pressed="true">گروه</button>
+                <button type="button" class="btn btn-sm btn-ghost" data-group-type-dimension="type" aria-pressed="false">نوع</button>
+            </span>
+        </div>
+        <div class="picked-tools compact-tools" role="group" aria-label="معیار نمودار">
+            <button type="button" class="btn btn-sm btn-ghost" data-group-type-metric="revenue" aria-pressed="true">فروش</button>
+            <button type="button" class="btn btn-sm btn-ghost" data-group-type-metric="units" aria-pressed="false">تعداد</button>
+        </div>
+        <p class="chart-note" data-chart="groupTypeChart">{{ notes.groupTypeChart }}</p><div class="chart-host" id="groupTypeChart" role="img" aria-label="{{ notes.groupTypeChart }}"></div>
+    </div>
+    <div class="card chart-card">
+        <div class="section-heading-row">
+            <h3>دسته‌بندی × گروه سنی <span class="tip-icon" tabindex="0" role="button" data-tip="هر دسته به نوزاد/کودک/نوجوان/بزرگسال/نامشخص شکسته می‌شود. با دکمه‌ها معیار فروش یا تعداد را عوض کنید.">?</span></h3>
+            <span class="picked-tools" role="group" aria-label="معیار نمودار">
+                <button type="button" class="btn btn-sm btn-ghost" data-age-metric="revenue" aria-pressed="true">فروش</button>
+                <button type="button" class="btn btn-sm btn-ghost" data-age-metric="units" aria-pressed="false">تعداد</button>
+            </span>
+        </div>
+        <p class="chart-note" data-chart="categoryAgeChart">{{ notes.categoryAgeChart }}</p><div class="chart-host" id="categoryAgeChart" role="img" aria-label="{{ notes.categoryAgeChart }}"></div>
+    </div>
+</div>
+
+<div class="card section-gap chart-card">
+    <div class="section-heading-row">
+        <div>
+            <h3>دسته‌بندی × سایز <span class="tip-icon" tabindex="0" role="button" data-tip="هر خانه تعداد یا مبلغ فروش یک دسته در یک باند سایز است. رنگ بر اساس تعداد است تا حالت تعداد و مبلغ قابل مقایسه بمانند.">?</span></h3>
+            <p class="muted">باندهای یکسان با هر شکل تگ، یک ستون‌اند؛ تنوع بدون باند در ستون نامشخص می‌آید.</p>
+        </div>
+        <span class="picked-tools" role="group" aria-label="حالت ماتریس">
+            <button type="button" class="btn btn-sm btn-ghost" data-matrix-mode="qty" aria-pressed="true">تعداد</button>
+            <button type="button" class="btn btn-sm btn-ghost" data-matrix-mode="revenue" aria-pressed="false">مبلغ</button>
+        </span>
+    </div>
+    {% if category_size.rows %}
+    <div class="table-scroll">
+        <table class="matrix" data-max-revenue="{{ category_size.max_revenue }}">
+            <thead><tr><th>دسته</th>{% for size in category_size.sizes %}<th>{{ size.label }}</th>{% endfor %}</tr></thead>
+            <tbody>
+            {% for row in category_size.rows %}
+            <tr><td><b>{{ row.category }}</b></td>
+                {% for cell in row.cells %}<td data-qty="{{ cell.qty }}" data-revenue="{{ cell.revenue }}" style="background: color-mix(in srgb, var(--candy) {{ (cell.pct * 0.4) | round(1) }}%, transparent); text-align:center;{% if cell.qty and category_size.max and cell.qty == category_size.max %} font-weight: 800;{% endif %}" class="tnum">{{ cell.qty }}</td>{% endfor %}
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}<p class="muted">در این بازه فروشی برای این فیلترها ثبت نشده.</p>{% endif %}
+</div>
+
+<div class="charts-grid section-gap">
+    <div class="card chart-card">
+        <h3>مرجوعی بر اساس سایز <span class="tip-icon" tabindex="0" role="button" data-tip="ستون‌ها تعداد واحد مرجوعی و خط، نرخ مرجوعی همان سایز است. یک نرخ بالا با تعداد کم را با حجم کنارش بخوانید.">?</span></h3>
+        <p class="chart-note" data-chart="returnsBandChart">{{ notes.returnsBandChart }}</p><div class="chart-host" id="returnsBandChart" role="img" aria-label="{{ notes.returnsBandChart }}"></div>
+    </div>
+    <div class="card chart-card">
+        <h3>ترکیب سیستم سایز <span class="tip-icon" tabindex="0" role="button" data-tip="تعداد واحدهای فروخته‌شده به تفکیک زبانی که سایز را روی تگ نوشته است. تنوع بدون سیستم در نامشخص می‌آید.">?</span></h3>
+        <p class="chart-note" data-chart="systemMixChart">{{ notes.systemMixChart }}</p><div class="chart-host" id="systemMixChart" role="img" aria-label="{{ notes.systemMixChart }}"></div>
     </div>
 </div>
 </section>
@@ -340,14 +486,16 @@
         <h3>کالای مرده (بدون فروش در این دوره) <span class="tip-icon" tabindex="0" role="button" data-tip="اقلامی که در این بازه هیچ فروشی نداشته‌اند ولی هنوز در انبار هستند. سرمایه شما را بی‌استفاده نگه داشته‌اند. راه‌حل: تخفیف ویژه، بسته‌بندی مجدد، یا حذف از مجموعه.">?</span></h3>
         <p class="fine-print">ارزش کل: <b>{{ fmt(dead_stock.total_value) }} تومان</b> — {{ dead_stock.count }} قلم</p>
         {% if dead_stock.variants %}
+        <div class="table-scroll">
         <table class="data-table">
-            <thead><tr><th>نام</th><th>سایز</th><th>رنگ</th><th>موجودی</th><th>ارزش</th></tr></thead>
+            <thead><tr><th>نام</th><th>گروه / نوع</th><th>سایز</th><th>رنگ</th><th>موجودی</th><th>ارزش</th></tr></thead>
             <tbody>
             {% for d in dead_stock.variants[:10] %}
-                <tr><td><a href="/admin/products/{{ d.product_id }}">{{ d.name }}</a></td><td>{{ d.size }}</td><td>{{ d.color }}</td><td class="tnum">{{ d.stock }}</td><td class="tnum">{{ fmt(d.value) }} تومان</td></tr>
+                <tr><td><a href="/admin/products/{{ d.product_id }}">{{ d.name }}</a></td><td>{{ d.group }} / {{ d.type }}</td><td>{{ d.size }}</td><td>{{ d.color }}</td><td class="tnum">{{ d.stock }}</td><td class="tnum">{{ fmt(d.value) }} تومان</td></tr>
             {% endfor %}
             </tbody>
         </table>
+        </div>
         {% else %}<p class="muted">همه اقلام فروش داشته‌اند.</p>{% endif %}
     </div>
 </div>
@@ -465,9 +613,7 @@
 <script src="/static/vendor/echarts.min.js?v={{ static_version }}"></script>
 <script src="/static/js/analytics-charts.js?v={{ static_version }}"></script>
 <script>
-if (typeof Chart === 'undefined') {
-    if (typeof window.renderOfflineCharts === 'function') window.renderOfflineCharts();
-} else {
+(function () {
 const dailyData = {{ daily|tojson }};
 const categoryData = {{ categories|tojson }};
 const tierData = {{ tier_revenue|tojson }};
@@ -488,11 +634,16 @@ const heatMax = {{ heatmap.max }};
 const heatWeeks = {{ heatmap.weeks }};
 const discountsData = {{ discounts|tojson }};
 window.CHART_DIGITS = '{{ chart_digits }}';
+window.ANALYTICS_SIZES = {
+    groupType: {{ group_type|tojson }},
+    categoryAge: {{ category_age|tojson }},
+    returnsBand: {{ returns_band|tojson }},
+    systemMix: {{ system_mix|tojson }}
+};
+window.CHART_TOGGLE_NOTES = {{ toggle_notes|tojson }};
 
-// `window.chartValueText` is the formatter the page uses for a label it
-// writes itself (price histogram ticks) — one source, so an axis tick and a
-// bar's value can never say different things. Theme tones now flow through
-// the AnalyticsCharts bridge instead of these locals.
+// Every formatter is the bridge's own: one source, so an axis tick and a
+// bar's value can never say different things.
 var AC = window.AnalyticsCharts;
 if (window.echarts && AC) {
     var dailyRevenues = dailyData.map(function (d) { return d.revenue; });
@@ -557,7 +708,7 @@ if (window.echarts && AC) {
         opt.tooltip.trigger = 'item';
         opt.tooltip.formatter = doughnutTip('money');
         opt.series = [{
-            type: 'pie', radius: ['45%', '70%'],
+            type: 'pie', radius: ['45%', '70%'], showEmptyCircle: false,
             data: categoryData.map(function (c) { return { name: c.category, value: c.revenue }; }),
             itemStyle: { color: function (p) { return PALETTE6(T)[p.dataIndex % 6]; } },
             label: { formatter: doughnutLabel },
@@ -663,7 +814,7 @@ if (window.echarts && AC) {
         var opt = AC.base(paper);
         opt.legend = { show: false };
         opt.tooltip.valueFormatter = function (v) { return AC.grouped(v); };
-        opt.xAxis = AC.categoryAxis(priceDist.map(function (p) { return window.chartValueText(p.price, 'count') + ' تومان'; }), paper);
+        opt.xAxis = AC.categoryAxis(priceDist.map(function (p) { return AC.money(p.price); }), paper);
         opt.yAxis = AC.valueAxis(paper, false);
         opt.series = [{
             name: 'تعداد', type: 'bar',
@@ -694,7 +845,7 @@ if (window.echarts && AC) {
         opt.tooltip.trigger = 'item';
         opt.tooltip.formatter = doughnutTip('count');
         opt.series = [{
-            type: 'pie', radius: ['45%', '70%'],
+            type: 'pie', radius: ['45%', '70%'], showEmptyCircle: false,
             data: customerHealth.segments.map(function (s) { return { name: s.label, value: s.count }; }),
             itemStyle: { color: function (p) { return [T.lavender, T.sunshine, T.sky, T.candy][p.dataIndex % 4]; } },
             label: { formatter: doughnutLabel },
@@ -711,7 +862,7 @@ if (window.echarts && AC) {
         opt.tooltip.trigger = 'item';
         opt.tooltip.formatter = doughnutTip('money');
         opt.series = [{
-            type: 'pie', radius: ['45%', '70%'],
+            type: 'pie', radius: ['45%', '70%'], showEmptyCircle: false,
             data: paymentMix.map(function (m) { return { name: m.label, value: m.revenue }; }),
             itemStyle: { color: function (p) { return [T.mint, T.sky, T.sunshine][p.dataIndex % 3]; } },
             label: { formatter: doughnutLabel },
@@ -723,12 +874,18 @@ if (window.echarts && AC) {
         var opt = AC.base(paper);
         opt.legend = { show: false };
         opt.tooltip.valueFormatter = function (v) { return AC.money(v); };
-        var names = staffData.rows.map(function (r) { return r.name; });
+        var staffRows = staffData.rows.slice();
+        // Shift-less sales are parked in the table's «نامشخص» row; the chart
+        // above it would otherwise show nothing while the caption names money.
+        if (staffData.unattributed && staffData.unattributed.revenue) {
+            staffRows.push({ name: 'نامشخص', revenue: staffData.unattributed.revenue });
+        }
+        var names = staffRows.map(function (r) { return r.name; });
         opt.xAxis = AC.categoryAxis(names.length ? names : ['—'], paper);
         opt.yAxis = AC.valueAxis(paper, true);
         opt.series = [{
             name: 'فروش', type: 'bar',
-            data: names.length ? staffData.rows.map(function (r) { return r.revenue; }) : [0],
+            data: names.length ? staffRows.map(function (r) { return r.revenue; }) : [0],
             itemStyle: { color: T.sky, borderRadius: [3, 3, 0] },
         }];
         return opt;
@@ -739,7 +896,7 @@ if (window.echarts && AC) {
         opt.tooltip.trigger = 'item';
         opt.tooltip.formatter = doughnutTip('money');
         opt.series = [{
-            type: 'pie', radius: ['45%', '70%'],
+            type: 'pie', radius: ['45%', '70%'], showEmptyCircle: false,
             data: discountsData.map(function (d) { return { name: d.type, value: d.total_amount }; }),
             itemStyle: { color: function (p) { return PALETTE6(T)[p.dataIndex % 6]; } },
             label: { formatter: doughnutLabel },
@@ -750,12 +907,18 @@ if (window.echarts && AC) {
         var T = AC.tones(paper);
         var opt = AC.base(paper);
         opt.legend = { show: false };
+        // A heatmap point is one cell; axis trigger hands the formatter the
+        // whole row and `p.value[2]` throws.
+        opt.tooltip.trigger = 'item';
         opt.tooltip.formatter = function (p) {
             var cell = heatCells[p.dataIndex];
             return (cell ? cell.date + ' (' + cell.day_name + ')' : '') + ': ' + AC.money(p.value[2]);
         };
         opt.grid = { left: 8, right: 12, top: 8, bottom: 8, containLabel: true };
-        opt.xAxis = { type: 'value', min: 0, max: Math.max(heatWeeks, 1),
+        // ECharts 6 only lays heatmap cells out on a category axis; a value
+        // x-axis gives every cell a null width, so the calendar paints nothing.
+        opt.xAxis = { type: 'category',
+            data: Array.from({ length: Math.max(heatWeeks, 1) }, function (_, i) { return String(i); }),
             axisLine: { show: false }, axisTick: { show: false },
             axisLabel: { show: false }, splitLine: { show: false } };
         opt.yAxis = { type: 'category', inverse: true,
@@ -778,8 +941,9 @@ if (window.echarts && AC) {
 // under every card still read aloud when the engine is blocked, so no
 // card ever goes silent.
 }
-}
+})();
 </script>
+<script src="/static/js/analytics-categories.js?v={{ static_version }}"></script>
 
 <!-- The one bubble every «?» writes into. It was deleted once by a template
      edit while 48 triggers kept pointing at it — every tip died silently,

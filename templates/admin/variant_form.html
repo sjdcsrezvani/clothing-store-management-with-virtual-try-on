@@ -14,11 +14,15 @@
 <section class="card">
     <form method="post" action="/admin/variants/{{ variant.id }}" enctype="multipart/form-data">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <input type="hidden" name="next" value="{{ return_to or '' }}">
         <div class="section-heading-row"><div><h3>مشخصات فروش</h3><p class="muted">قیمت‌ها و شناسه‌ها را دقیق و قابل جست‌وجو نگه دارید.</p></div><span class="section-step">۱</span></div>
         <div class="form-row product-form-grid-wide">
-            <div class="form-group"><label for="size">سایز</label><input id="size" name="size" data-unify-digits value="{{ variant.size or '' }}" placeholder="۳ تا ۴ سال"></div>
-            <div class="form-group"><label for="size_system">سیستم سایز</label><input id="size_system" name="size_system" value="{{ variant.size_system or '' }}" placeholder="ایران / EU"></div>
+            <div class="form-group"><label for="size">سایز</label>
+                <div class="size-field" data-size-field data-size-system="{{ product.size_system or '' }}" data-size-type="{{ product.size_type or '' }}" data-size-gender="{{ product.gender or '' }}" data-size-value="{{ variant.size or '' }}">
+                    <select id="size" name="size" data-size-select aria-label="سایز"></select>
+                    <input type="text" data-size-other placeholder="سایز روی تگ" hidden>
+                    <small class="field-help size-preview" data-size-preview hidden></small>
+                </div>
+            </div>
             <div class="form-group"><label for="color">رنگ</label><input id="color" name="color" value="{{ variant.color or '' }}" placeholder="آبی"></div>
             <div class="form-group"><label for="color_code">کد رنگ</label><input id="color_code" name="color_code" value="{{ variant.color_code or '' }}" dir="ltr" placeholder="#4AA3DF" data-color-picker></div>
             <div class="form-group"><label for="price">قیمت فروش <span class="required-mark">*</span></label><input type="text" inputmode="numeric" id="price" name="price" required min="0" value="{{ variant.price }}" placeholder="مثال: 350000"></div>
@@ -27,17 +31,13 @@
             <div class="form-group"><span class="field-label">بارکد</span><span class="barcode-record tnum" dir="ltr">{{ variant.barcode }}</span><small class="field-help">بعد از ساخت قفل است؛ برای لیبل آسیب‌دیده «تولید مجدد» بزنید.</small></div>
         </div>
         <div class="form-actions-row">
-            <form method="post" action="/admin/variants/{{ variant.id }}/regenerate-barcode" onsubmit="return confirm('بارکد تازه ساخته می‌شود و بارکد فعلی روی تگ‌های چاپ‌شده بی‌اعتبار می‌گردد. ادامه؟')">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <button type="submit" class="btn btn-sm btn-ghost">تولید مجدد بارکد</button>
-            </form>
+            <button type="submit" form="regenerate-barcode-form" class="btn btn-sm btn-ghost">تولید مجدد بارکد</button>
         </div>
 
         <div class="section-heading-row section-heading-spaced"><div><h3>موجودی و سفارش</h3><p class="muted">رزرو فعلی: <strong>{{ variant.reserved_quantity or 0 }}</strong> عدد · قابل فروش: <strong>{{ variant.available_quantity }}</strong> عدد</p></div><span class="section-step">۲</span></div>
         <div class="form-row product-form-grid-wide">
             <div class="form-group"><label for="stock_quantity">موجودی کل</label><input type="text" inputmode="numeric" id="stock_quantity" name="stock_quantity" min="{{ variant.reserved_quantity or 0 }}" value="{{ variant.stock_quantity or 0 }}" placeholder="مثال: 12"><small class="field-help">کل کالای انبار. «رزرو» کالاهایی است که مشتری در صندوق نگه داشته؛ پس کمتر از آن را نمی‌توان ثبت کرد.</small></div>
             <div class="form-group"><label for="reorder_point">نقطه سفارش</label><input type="text" inputmode="numeric" id="reorder_point" name="reorder_point" min="0" value="{{ variant.reorder_point or 0 }}" placeholder="مثال: 3"><small class="field-help">وقتی موجودی به این عدد برسد، در داشبورد هشدار «کم‌موجودی» می‌گیرید.</small></div>
-            <div class="form-group"><label for="reorder_quantity">مقدار سفارش</label><input type="text" inputmode="numeric" id="reorder_quantity" name="reorder_quantity" min="0" value="{{ variant.reorder_quantity or 0 }}" placeholder="مثال: 12"><small class="field-help">تعداد پیشنهادی که هنگام سفارش به تأمین‌کننده می‌خرید (راهنما برای سفارش).</small></div>
             <div class="form-group"><label for="weight_grams">وزن تنوع (گرم)</label><input type="text" inputmode="numeric" id="weight_grams" name="weight_grams" min="0" value="{{ variant.weight_grams if variant.weight_grams is not none else '' }}" placeholder="مثال: 350"></div>
             <div class="form-group"><label for="storage_location">محل انبار</label><input id="storage_location" name="storage_location" value="{{ variant.storage_location or '' }}" placeholder="قفسه A-2"></div>
         </div>
@@ -64,15 +64,9 @@
                 {% if loop.first %}<span class="badge badge-info">اصلی</span>{% endif %}
                 <span class="variant-gallery-actions">
                     {% if not loop.first %}
-                    <form method="post" action="/admin/variant-images/{{ frame.id }}/primary">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                        <button type="submit" class="btn btn-sm btn-ghost">اصلی شود</button>
-                    </form>
+                    <button type="submit" form="variant-image-primary-{{ frame.id }}" class="btn btn-sm btn-ghost">اصلی شود</button>
                     {% endif %}
-                    <form method="post" action="/admin/variant-images/{{ frame.id }}/delete" onsubmit="return confirm('این قاب حذف شود؟')">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                        <button type="submit" class="btn btn-sm btn-danger-quiet">حذف</button>
-                    </form>
+                    <button type="submit" form="variant-image-delete-{{ frame.id }}" class="btn btn-sm btn-danger-quiet">حذف</button>
                 </span>
             </li>
             {% endfor %}
@@ -84,6 +78,24 @@
         </div>
     </form>
 </section>
+
+{# Row actions live outside the main form: a form nested inside a form is not
+   a form — the parser drops the inner tag and the first inner `</form>`
+   closes the outer one, leaving «ذخیره تغییرات» outside with nothing to
+   submit. Each button points at its own form by id. #}
+<div hidden>
+    <form id="regenerate-barcode-form" method="post" action="/admin/variants/{{ variant.id }}/regenerate-barcode" onsubmit="return confirm('بارکد تازه ساخته می‌شود و بارکد فعلی روی تگ‌های چاپ‌شده بی‌اعتبار می‌گردد. ادامه؟')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    </form>
+    {% for frame in variant.images|sort(attribute='sort_order') %}
+    <form id="variant-image-primary-{{ frame.id }}" method="post" action="/admin/variant-images/{{ frame.id }}/primary">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    </form>
+    <form id="variant-image-delete-{{ frame.id }}" method="post" action="/admin/variant-images/{{ frame.id }}/delete" onsubmit="return confirm('این قاب حذف شود؟')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    </form>
+    {% endfor %}
+</div>
 
 <aside class="variant-edit-side">
     <section class="card variant-summary-card">
@@ -162,4 +174,6 @@
     second.addEventListener('input', sync);
 })();
 </script>
+<script type="application/json" id="sizing-ladders">{{ sizing_ladders_json|safe }}</script>
+<script src="/static/js/sizing.js?v={{ static_version }}"></script>
 {% endblock %}

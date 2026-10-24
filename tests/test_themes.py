@@ -224,20 +224,8 @@ NOT_A_COLOUR: dict[str, tuple[tuple[str, str], ...]] = {
         "#abc",
         "a comment explaining how a short colour code expands",
     ), (
-        "['سفید', '#FFFFFF']",
-        "product colour presets: garment data a shop picks from, not page paint",
-    ), (
-        "['مشکی', '#000000']",
-        "the same preset list",
-    ), (
-        "['سرمه‌ای', '#1E3A8A']",
-        "the same preset list",
-    ), (
-        "['قرمز', '#DC2626']",
-        "the same preset list",
-    ), (
-        "['کرم', '#E7D8B7']",
-        "the same preset list",
+        "', '#",
+        "the preset row and the custom-palette name table: garment colours a shop picks and sells, not page paint",
     ),),
 }
 
@@ -693,6 +681,7 @@ NOT_A_PAGE: dict[str, str] = {
     "/admin/backups/download-all": "the whole-shelf download is a zip of the backup files",
     "/admin/events": "retired: old bookmarks redirect to the merged audit timeline",
     "/admin/logs/latest": "the audit poller answers with JSON row ids, not a page",
+    "/admin/sizing/preview": "the product form's live sizing line, a one-line fragment",
     "/admin/payroll/export": "the payroll export is a CSV of the salary ledger",
     "/admin/backups/download": "the download is the backup file itself",
     "/admin/try-on/download": "the try-on engine answers with its own response",
@@ -700,6 +689,7 @@ NOT_A_PAGE: dict[str, str] = {
     "/admin/sales": "a shortcut that redirects to the sales history it counts",
     "/admin/setup": "the demo build's first-run wizard, and this is the owner's private build",
     "/sales/api/barcode/{barcode}": "the scanner's lookup, which answers in JSON",
+    "/sales/api/product-search": "the name search for damaged tags, which answers in JSON",
     "/admin/try-on/saved/{img_id}/download": "the saved photo itself, not a page",
 }
 
@@ -710,6 +700,7 @@ NOT_A_PAGE: dict[str, str] = {
 # it, so a renamed route cannot leave a stale excuse behind.
 UNPOLLED: dict[str, str] = {
     "/sales/terminal-status": "the till's long poll: two seconds of waiting, and JSON when it answers",
+    "/admin/dashboard-poll": "the dashboard's silent poll: keyed figures as JSON, not a page",
 }
 
 # The one thing a document loads from the shell. `:root` is a rule inside this

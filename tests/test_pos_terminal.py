@@ -4,7 +4,7 @@ import re
 import socket
 import threading
 
-from models import POSTransaction, Product, ProductVariant, Sale, Settings, StaffUser
+from models import Customer, POSTransaction, Product, ProductVariant, Sale, Settings, StaffUser
 from services import pos_terminal
 from services.checkout import create_checkout
 from tests.conftest import csrf_token
@@ -82,6 +82,14 @@ def _configure_pos(db_session):
     db_session.commit()
 
 
+def test_terminal_config_reads_the_receipt_setting(db_session):
+    _configure_pos(db_session)
+    db_session.add(Settings(key="pos_receipt_2item", value="1"))
+    db_session.commit()
+
+    assert pos_terminal.get_terminal_config(db_session)["receipt_2item"] is True
+
+
 def _make_pos_variant(db_session, price=100_000, stock=2):
     product = Product(name="کالای کارت‌خوان")
     db_session.add(product)
@@ -140,7 +148,8 @@ def test_send_to_terminal_persists_approval_and_reuses_nonce(client, db_session,
     assert first.json()["status"] == "approved"
     assert second.json()["status"] == "approved"
     assert first.json()["transaction_id"] == second.json()["transaction_id"]
-    assert len(calls) == 1
+    # 100,000 toman on the shelf is 1,000,000 rial on the Parsian wire.
+    assert calls == [("127.0.0.1", 8500, 1_000_000)]
 
     transaction = db_session.query(POSTransaction).one()
     assert transaction.status == "approved"
@@ -173,7 +182,7 @@ def test_terminal_error_is_persisted_as_uncertain_and_not_retried(client, db_ses
     assert first.json()["status"] == "uncertain"
     assert second.status_code == 409
     assert second.json()["status"] == "uncertain"
-    assert calls == [100_000]
+    assert calls == [1_000_000]  # toman price, rial on the wire
     transaction = db_session.query(POSTransaction).one()
     assert transaction.status == "uncertain"
     assert transaction.error_message == "terminal did not answer"
@@ -218,7 +227,7 @@ def test_approved_pos_transaction_links_to_one_sale(client, db_session, monkeypa
         },
     )
 
-    assert confirm_response.status_code == 200
+    assert confirm_response.history and confirm_response.history[0].status_code == 303  # straight to a new sale
     sale = db_session.query(Sale).one()
     transaction = db_session.query(POSTransaction).one()
     assert transaction.status == "linked_to_sale"
@@ -241,6 +250,67 @@ def test_approved_pos_transaction_links_to_one_sale(client, db_session, monkeypa
     )
     assert replay.status_code == 409
     assert db_session.query(Sale).count() == 1
+
+
+def test_approved_pos_transaction_links_for_known_customer(client, db_session, monkeypatch):
+    """A card sale to a registered customer must link and invoice like an
+    anonymous one — the terminal has already taken the money by then."""
+    _configure_pos(db_session)
+    variant = _make_pos_variant(db_session)
+    customer = Customer(phone="09120000077", first_name="مشتری", referral_code="POSCUST")
+    db_session.add(customer)
+    db_session.commit()
+    monkeypatch.setattr(
+        "routers.sales.send_terminal_sale",
+        lambda host, port, amount, r4=None, r8=None: {
+            "status": "approved", "response_code": "00200",
+            "label": "Approved", "response": "RS003RS00200",
+        },
+    )
+    login_token = csrf_token(client)
+    login = client.post("/admin/login", data={"username": "owner", "password": "test-admin-pass", "csrf_token": login_token}, follow_redirects=False)
+    assert login.status_code == 303
+    checkout_page = csrf_token(client, "/sales/new")
+    nonce = "checkout-idempotency-known-customer"
+    owner = db_session.query(StaffUser).filter(StaffUser.username == "owner").one()
+    create_checkout(
+        db_session,
+        staff_user_id=owner.id,
+        customer_id=customer.id,
+        basket_json=json.dumps([{"variant_id": variant.id, "quantity": 1}]),
+        payment_method="card",
+        checkout_nonce=nonce,
+    )
+    send_response = client.post(
+        "/sales/send-to-terminal",
+        data={**_send_data(nonce), "csrf_token": checkout_page},
+    )
+    assert send_response.status_code == 200
+    approval_token = send_response.json()["approval_token"]
+
+    confirm_response = client.post(
+        "/sales/confirm-sale",
+        data={
+            "customer_id": str(customer.id),
+            "basket_json": json.dumps([{"variant_id": variant.id, "quantity": 1}]),
+            "payment_method": "card",
+            "pos_approval_token": approval_token,
+            "checkout_nonce": nonce,
+            "use_referrer_discount": "0",
+            "custom_discount_amount": "",
+            "custom_discount_percent": "",
+            "csrf_token": checkout_page,
+        },
+        follow_redirects=False,
+    )
+
+    assert confirm_response.status_code == 303, confirm_response.text[:1000]
+    sale = db_session.query(Sale).one()
+    transaction = db_session.query(POSTransaction).one()
+    assert transaction.status == "linked_to_sale"
+    assert transaction.sale_id == sale.id
+    assert sale.customer_id == customer.id
+    assert sale.final_amount == variant.price
 
 
 def test_admin_can_review_orphaned_approved_pos_transaction(client, db_session, authed):

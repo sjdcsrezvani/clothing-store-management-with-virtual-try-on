@@ -44,7 +44,7 @@
         <input type="hidden" name="stock" value="{{ stock_filter }}">
         <input type="hidden" name="state" value="{{ state }}">
         <label class="sr-only" for="barcode-scanner">بارکد یا نام محصول</label>
-        <input type="text" id="barcode-scanner" name="search" value="{{ search }}" placeholder="بارکد، SKU، نام یا دسته‌بندی" autofocus autocomplete="off">
+        <input type="text" id="barcode-scanner" name="search" value="{{ search }}" placeholder="بارکد، SKU، نام، دسته یا سایز" autofocus autocomplete="off">
         <label class="sr-only" for="product-category">دسته‌بندی</label>
         <select name="category" id="product-category">
             <option value="">همه دسته‌ها</option>
@@ -62,7 +62,7 @@
     </nav>
 </section>
 
-<section class="card product-list-card" data-list-region="products">
+<section class="card product-list-card" data-list-region="products" hx-boost="true" hx-target="closest [data-list-region]" hx-swap="outerHTML" hx-select="[data-list-region=products]">
     <div class="section-heading-row product-list-heading">
         <div>
             <h3 data-list-heading tabindex="-1">{% if state == 'archived' %}بایگانی محصولات{% else %}فهرست محصولات{% endif %}</h3>
@@ -145,7 +145,7 @@
                         {% if active_variants %}
                             <div class="variant-summary">
                                 <button type="button" class="badge badge-info variant-toggle" aria-expanded="false" aria-controls="variants-{{ product.id }}">{{ active_variants|length }} تنوع · جزئیات</button>
-                                {% set sizes = active_variants|map(attribute='size')|unique|reject('none')|list %}
+                                {% set sizes = product_bands.get(product.id, []) %}
                                 {% set colors = active_variants|map(attribute='color')|unique|reject('none')|list %}
                                 {% if sizes %}<small>سایز: {{ sizes|join('، ') }}</small>{% endif %}
                                 {% if colors %}<small>رنگ: {{ colors|join('، ') }}</small>{% endif %}
@@ -189,6 +189,8 @@
                             {% for variant in active_variants %}
                             <li>
                                 <strong>{{ variant.size or '—' }}{% if variant.color %} · {{ variant.color }}{% endif %}</strong>
+                                {% set band_label = variant_bands.get(variant.id) %}
+                                {% if band_label and band_label != (variant.size or '') %}<small class="muted">{{ band_label }}</small>{% endif %}
                                 <span class="tnum" dir="ltr">{{ variant.sku or variant.barcode }}</span>
                                 <span class="tnum">{{ variant.price }} تومان</span>
                                 {% if variant.available_quantity > 0 %}
@@ -265,7 +267,12 @@ function initProductsRegion(root) {
 }
 function initProductsPage() {
     initProductsRegion(document);
-    if (window.RaykidListNav) window.RaykidListNav.register('products', initProductsRegion);
+    // The region swaps itself whole via htmx: rebind its widgets on arrival.
+    document.body.addEventListener('htmx:load', function (event) {
+        var region = event.target.closest
+            ? event.target.closest('[data-list-region="products"]') : null;
+        if (region) initProductsRegion(region);
+    });
 }
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initProductsPage);

@@ -113,11 +113,35 @@ def test_bulk_payday_pays_skips_and_repeats_cleanly(client, db_session):
     assert "0 نفر ثبت شد" in unquote(repeat.headers["location"])  # idempotent
 
 
+def test_payroll_posts_the_wage_as_a_monthly_expense(client, db_session):
+    """A wage is a monthly cost like rent: the payroll row posts an expense of
+    type «ماهانه», so the expenses page's monthly card and its «ماهانه» filter
+    both carry it — never the one-off bucket."""
+    _owner_client(client, db_session, name="phasec-owner-monthly")
+    worker, _ = _staff(db_session, "phasec-monthly", "cashier")
+    worker.salary_amount = 7_000_000
+    db_session.commit()
+
+    assert _pay(client, db_session, worker, "1405-06").status_code == 303
+    payment = db_session.query(SalaryPayment).filter(
+        SalaryPayment.staff_user_id == worker.id).one()
+    expense = db_session.query(Expense).filter(
+        Expense.id == payment.expense_id).one()
+    assert expense.expense_type == "monthly"
+    assert expense.category == "حقوق کارکنان"
+
+    page = client.get("/admin/expenses?type=monthly").text
+    assert "حقوق کارکنان" in page
+    assert "7,000,000" in page
+
+
 def test_nudges_name_the_unpaid(client, db_session):
+    from datetime import datetime, timedelta, timezone
     _owner_client(client, db_session, name="phasec-owner-nudge")
     worker, _ = _staff(db_session, "phasec-nudge", "cashier")
     worker.full_name = "منتظر حقوق"
     worker.salary_amount = 7_000_000
+    worker.hire_date = datetime.now(timezone.utc) - timedelta(days=60)
     db_session.commit()
 
     page = client.get("/admin/staff").text
@@ -214,30 +238,42 @@ def test_revision_29_rebuilds_payments_with_items_and_live_unique(tmp_path):
 
 
 def test_brand_new_hire_is_not_dunned_or_bulk_paid(client, db_session):
-    from datetime import datetime, timezone
+    from datetime import datetime, timedelta, timezone
     from services.payroll import current_period_key, is_payroll_due
     _owner_client(client, db_session, name="phasec-owner-due")
     rookie, _ = _staff(db_session, "phasec-rookie", "cashier")
     rookie.full_name = "تازه‌وارد"
     rookie.salary_amount = 10_000_000
     rookie.hire_date = datetime.now(timezone.utc)
+    # The hire form leaves the start date optional: with no date the row's
+    # creation is the start, so this month's pay is not due yet.
+    undated, _ = _staff(db_session, "phasec-undated", "cashier")
+    undated.full_name = "بدون‌تاریخ"
+    undated.salary_amount = 10_000_000
     veteran, _ = _staff(db_session, "phasec-vet", "cashier")
     veteran.full_name = "باسابقه"
     veteran.salary_amount = 10_000_000
+    veteran.hire_date = datetime.now(timezone.utc) - timedelta(days=60)
     db_session.commit()
 
     assert is_payroll_due(None, "1405-07") is True
     assert is_payroll_due(rookie.hire_date, current_period_key()) is False
+    assert is_payroll_due(None, current_period_key(), undated.created_at) is False
+    assert is_payroll_due(None, "1405-07", undated.created_at) is True
 
     page = client.get("/admin/staff").text
     assert "هنوز حقوق نگرفته‌اند" in page
     import re
     banner_names = re.search(
-        r"هنوز حقوق نگرفته‌اند</h3></div></div>\s*<p class=\"muted\">(.*?)</p>",
+        r"هنوز حقوق نگرفته‌اند</h3>\s*<p class=\"muted\">(.*?)</p>",
         page, re.S)
     assert banner_names is not None
     assert "باسابقه" in banner_names.group(1)
     assert "تازه‌وارد" not in banner_names.group(1)
+    assert "بدون‌تاریخ" not in banner_names.group(1)
+    # The pay button must wait for its own dialog instead of htmx posting the
+    # boosted body form the moment it is clicked.
+    assert 'hx-boost="false"' in page.split('action="/admin/payroll/bulk"')[1][:300]
 
     token = csrf_token(client, "/admin/staff")
     response = client.post("/admin/payroll/bulk", data={
@@ -247,6 +283,8 @@ def test_brand_new_hire_is_not_dunned_or_bulk_paid(client, db_session):
     assert "ماه اولشان تمام نشده" in location
     assert db_session.query(SalaryPayment).filter(
         SalaryPayment.staff_user_id == rookie.id).count() == 0
+    assert db_session.query(SalaryPayment).filter(
+        SalaryPayment.staff_user_id == undated.id).count() == 0
     assert db_session.query(SalaryPayment).filter(
         SalaryPayment.staff_user_id == veteran.id).count() == 1
 

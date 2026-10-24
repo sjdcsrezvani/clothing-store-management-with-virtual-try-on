@@ -3,54 +3,67 @@
 
 {% include 'partials/page_header.html' %}
 
+{% if msg %}<div class="alert alert-success" role="status">{{ msg }}</div>{% endif %}
+{% if err %}<div class="alert alert-error" role="alert">{{ err }}</div>{% endif %}
+
+<form method="get" action="/admin/try-on/saved" class="tryon-filters">
+    <label for="filter-q">جست‌وجو
+        <input type="text" id="filter-q" name="q" value="{{ filter_q }}" placeholder="نام محصول یا بارکد">
+    </label>
+    <label for="filter-day">روز
+        <input type="date" id="filter-day" name="day" value="{{ filter_day }}" dir="ltr">
+    </label>
+    <button type="submit" class="btn btn-sm btn-ghost">اعمال</button>
+    {% if filter_q or filter_day %}<a href="/admin/try-on/saved" class="btn btn-sm btn-ghost">پاک کردن</a>{% endif %}
+</form>
+
 {% if saved_images %}
 <div class="card">
-    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:0.8rem;">
+    <div class="tryon-gallery">
         {% for img in saved_images %}
-        <div style="border-radius:8px; overflow:hidden; box-shadow:var(--shadow); background:var(--card);">
-            <button type="button" class="lightbox-open" style="position:relative;"
-                    onclick="openLightbox('{{ img.image_path }}')"
+        <div class="tryon-gallery-item">
+            <button type="button" class="lightbox-open" data-lightbox-src="{{ img.image_path }}"
                     aria-label="نمایش تصویر در اندازه کامل">
-                <img src="{{ img.image_path }}" alt="saved"
-                     style="width:100%; height:160px; object-fit:cover; display:block;">
-                <img src="/static/logo.png" alt="logo"
-                     style="position:absolute; top:0; left:0; width:80px; height:80px; pointer-events:none; filter:drop-shadow(0 1px 3px color-mix(in srgb, var(--scrim) 40%, transparent));">
+                <img src="{{ img.image_path }}" alt="تصویر پرو مجازی ذخیره‌شده"
+                     class="tryon-gallery-thumb">
+                <img src="/static/logo.png" alt="" aria-hidden="true"
+                     class="tryon-gallery-logo">
             </button>
-            <div style="padding:0.5rem; font-size:0.7rem; color:var(--ink-soft); text-align:center;">
-                🗓️ {{ jalali_str(img.created_at) }}
+            <div class="muted tryon-gallery-date">
+                {{ jalali_str(img.created_at) }}
             </div>
             {% if img.variants %}
-            <div style="padding:0 0.4rem 0.4rem; display:flex; gap:0.3rem; flex-wrap:wrap; justify-content:center;">
+            <div class="tryon-gallery-variants">
                 {% for v in img.variants %}
-                <div style="text-align:center; max-width:70px;" title="{{ v.name }}{% if v.color %} — {{ v.color }}{% endif %}">
+                <div class="tryon-gallery-variant" title="{{ v.name }}{% if v.color %} — {{ v.color }}{% endif %}">
                     {% if v.image_path %}
-                        <img src="{{ v.image_path }}" alt="{{ v.name }}"
-                             style="width:44px; height:44px; object-fit:cover; border-radius:6px; border:1px solid var(--rule);">
+                        <img src="{{ v.image_path }}" alt="{{ v.name }}">
                     {% else %}
-                        <div style="width:44px; height:44px; display:flex; align-items:center; justify-content:center; border-radius:6px; background:var(--surface-soft); border:1px solid var(--rule);">📦</div>
+                        <div class="tryon-thumb tryon-thumb-empty" aria-hidden="true">—</div>
                     {% endif %}
-                    <div style="font-size:0.6rem; margin-top:2px; line-height:1.1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                    <div class="tryon-gallery-variant-label">
                         {{ v.color or v.barcode }}
                     </div>
                 </div>
                 {% endfor %}
             </div>
             {% endif %}
-            <div style="display:flex; gap:0.3rem; padding:0 0.4rem 0.5rem; justify-content:center;">
+            <div class="tryon-gallery-actions">
                 <a href="/admin/try-on/saved/{{ img.id }}/download?logo=yes"
-                   class="btn btn-sm btn-success">⬇️ با لوگو</a>
-                <a href="/admin/try-on/saved/{{ img.id }}/download?logo=no"
-                   class="btn btn-sm btn-primary">⬇️ بدون لوگو</a>
+                   class="btn btn-sm btn-success">دانلود</a>
+                <form method="post" action="/admin/try-on/saved/{{ img.id }}/delete"
+                      data-confirm="این تصویر ذخیره‌شده حذف شود؟ فایل هم پاک می‌شود.">
+                    <button type="submit" class="btn btn-sm btn-ghost">حذف</button>
+                </form>
             </div>
         </div>
         {% endfor %}
     </div>
 </div>
 {% else %}
-<div class="card" style="text-align:center; padding:3rem 1rem;">
-    <div style="font-size:3rem;">📭</div>
-    <p style="color:var(--ink-soft);">هنوز تصویری ذخیره نشده است.</p>
-    <a href="/admin/try-on" class="btn btn-primary" style="margin-top:1rem;">👗 رفتن به پرو مجازی</a>
+<div class="card tryon-empty-large">
+    <p class="muted">هنوز تصویری ذخیره نشده است.</p>
+    <a href="/admin/try-on" class="btn btn-primary">رفتن به پرو مجازی</a>
 </div>
 {% endif %}
 
@@ -59,16 +72,25 @@
    [data-dialog] fade in motion.css, focus back to the opener on close.
    The scrim dismisses on a click as a convenience for the mouse; the
    keyboard's own ways out are the ✕ button below and Escape. #}
-<div id="lightbox" data-dialog role="dialog" aria-modal="true" aria-label="نمایش تصویر در اندازه کامل" tabindex="-1" class="lightbox-scrim" style="display:flex;position:fixed;top:0;left:0;width:100%;height:100%;background:var(--scrim);z-index:9999;align-items:center;justify-content:center;"
-     onclick="closeLightbox(event)">
-    <div id="lightbox-stage" class="lightbox-stage t-modal-card" style="position:relative;display:inline-block;line-height:0;">
-        <img id="lightbox-img" src="" alt="full"
-             style="max-width:95vw;max-height:95vh;object-fit:contain;border-radius:8px;display:block;">
-        <img src="/static/logo.png" alt="logo"
-             style="position:absolute;top:0;left:0;width:200px;height:200px;pointer-events:none;filter:drop-shadow(0 2px 6px color-mix(in srgb, var(--scrim) 40%, transparent));">
+<div id="lightbox" data-dialog role="dialog" aria-modal="true" aria-label="نمایش تصویر در اندازه کامل" tabindex="-1" class="lightbox-scrim"
+     data-close-lightbox>
+     <div id="lightbox-stage" class="lightbox-stage t-modal-card">
+        <img id="lightbox-img" src="" alt="تصویر پرو مجازی در اندازه کامل">
+        <img src="/static/logo.png" alt="" aria-hidden="true" class="lightbox-logo">
     </div>
     <button type="button" id="lightbox-close" class="lightbox-close" aria-label="بستن تصویر"
-            onclick="closeLightbox()">✕</button>
+            data-close-lightbox>✕</button>
+</div>
+<div id="gallery-confirm" data-dialog role="alertdialog" aria-modal="true"
+     aria-labelledby="gallery-confirm-title" aria-describedby="gallery-confirm-text" class="confirm-scrim" tabindex="-1">
+    <div class="t-modal-card confirm-card" role="document">
+        <h3 id="gallery-confirm-title">مطمئن هستید؟</h3>
+        <p class="muted" id="gallery-confirm-text"></p>
+        <div class="confirm-actions">
+            <button type="button" class="btn btn-danger" id="gallery-confirm-yes">تأیید</button>
+            <button type="button" class="btn btn-ghost" data-dialog-close>انصراف</button>
+        </div>
+    </div>
 </div>
 <script>
 var lightboxOpener = null;
@@ -87,5 +109,35 @@ function closeLightbox(e) {
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') closeLightbox();
 });
+document.addEventListener('click', function(e) {
+    var opener = e.target.closest ? e.target.closest('[data-lightbox-src]') : null;
+    if (opener) { openLightbox(opener.getAttribute('data-lightbox-src')); return; }
+    if (e.target.closest && e.target.closest('[data-close-lightbox]')) closeLightbox(e);
+});
+(function () {
+    var pendingForm = null;
+    document.addEventListener('submit', function (event) {
+        var form = event.target.closest ? event.target.closest('form[data-confirm]') : null;
+        if (!form || form === pendingForm) return;
+        if (!window.RaykidDialog) return;
+        event.preventDefault();
+        pendingForm = form;
+        document.getElementById('gallery-confirm-text').textContent =
+            form.getAttribute('data-confirm');
+        window.RaykidDialog.open('gallery-confirm', document.activeElement);
+    });
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest || !event.target.closest('#gallery-confirm-yes')) return;
+        var form = pendingForm;
+        pendingForm = null;
+        window.RaykidDialog.close('gallery-confirm');
+        if (form) form.submit();
+    });
+    document.addEventListener('keydown', function (event) {
+        if (event.key !== 'Escape' || !pendingForm) return;
+        pendingForm = null;
+        if (window.RaykidDialog) { try { window.RaykidDialog.close('gallery-confirm'); } catch (e) {} }
+    });
+})();
 </script>
 {% endblock %}

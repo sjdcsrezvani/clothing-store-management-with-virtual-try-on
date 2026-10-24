@@ -18,3 +18,16 @@
 # server exactly like the app's CSS: zero downloads after this commit.
 # To upgrade: repeat the build with the new version, replace the file,
 # update the hash above.
+
+# Vendored htmx — the transport for every in-place update.
+#
+# File: htmx.min.js (52,182 bytes minified, ~16 KB gzipped)
+# Upstream: htmx 2.0.11 (0BSD), https://htmx.org
+# SHA-256: d6fdc75f204e6bdefa99b69bf1e6d4ac69b8a364f77929f45c13476b4000f717
+# Why vendored: same rule as the chart engine — the shop's LAN may have no
+# internet; a copy on the shop's own server keeps boosted navigation and
+# partial updates working during outages. Loaded in base.html with the same
+# static_version cache-buster as the app's own scripts.
+# The migration guard test reads this file's version string, so a silent
+# swap of the vendored copy cannot pass unnoticed.
+# To upgrade: replace the file, update the hash above.

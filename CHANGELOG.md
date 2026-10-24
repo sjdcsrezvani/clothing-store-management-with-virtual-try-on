@@ -1,3 +1,270 @@
+## 2.9.4 — 1405/07/25 (2026-10-17)
+
+### بارگذاری در جا: the shop moves without a reload
+
+- **htmx drives the whole shell.** Every link and form
+  accelerates by default, so a click swaps the page in
+  place — with htmx 2.0.11 vendored beside the chart
+  engine, the shop's LAN never needs the internet, and a
+  boosted arrival re-runs its inline boots exactly once.
+
+- **The till went first.** Terminal status, the name and
+  barcode search, and add-to-basket answer the counter
+  with fragments, while every other caller keeps its
+  exact JSON contract — the two-character silence
+  included.
+
+- **Lists stop jumping.** Sort headers, page links and
+  filter forms each swap only their own region; the
+  server still draws the whole page, so a no-JS browser
+  reads the same list through plain navigation and a
+  scrolled page stays scrolled.
+
+- **The live islands poll as regions.** The dashboard's
+  five-minute refresh and the log page's fresh-rows pill
+  swap a fragment instead of patching keys, and the
+  terminal and try-on reachability pills answer the same
+  way.
+
+- **The phone app speaks fragments too.** Pairing, the
+  connection strip and the photo upload moved over behind
+  the capture key, with the header read live from a
+  getter so a rotated key never goes stale on the wire.
+
+- **The last fetches went quiet.** The product form's
+  demand button, the try-on upload and job strip, and the
+  print tray's preview read now move through htmx — the
+  transport allowlist holds only the shell bridge itself.
+
+- **The shell answers for one copy.** A re-entry dedupe
+  keeps boosted boots from piling, confirm gates moved to
+  delegation across the twelve pages they gate, flash
+  rows land on arrival, and a reply that is not the
+  fragment it claims to be never lands in the page — a
+  failed boosted load falls back to real navigation.
+
+### پشت صحنه: the guard that keeps the transport honest
+
+- **The transport inventory only shrinks.** A guard reads
+  every template and script for hand-rolled fetch or XHR:
+  a new speaker fails, and an allowlist entry whose file
+  was converted fails until it is removed — the list can
+  never rot into a lie.
+
+- **Every call carries the shop's marks.** CSRF and the
+  request marker ride each htmx call from the one
+  sanctioned bridge; an expired session answers as a
+  navigation to the login page instead of becoming a row
+  inside a table.
+
+- **The vendored copy is pinned.** The guard reads the
+  version out of the shipped file and the README carries
+  its hash, so a silent swap of the transport cannot pass
+  unnoticed.
+
+## 2.9.3 — 1405/07/25 (2026-10-17)
+
+### پیشخوان: the dashboard answers to whoever is standing at it
+
+- **The cashier gets their own board.** Their day alone —
+  sales, refunds, discounts, and the signups they
+  registered — under a greeting that names them, with a
+  seven-day strip to look back through, the shop's total
+  with no cost or colleague behind it, and a target bar
+  that appears only when a target exists.
+- **The manager gets a staff board and shop goals.** Who
+  rang what today, a live counter for open drawers and
+  baskets, today's target against the day's real number,
+  and seven weekday goals set from the sales tab by
+  manager or owner alike.
+- **Attention splits money first.** The urgent row leads,
+  the two drawer alerts fold into the cash card, a failed
+  SMS queue raises its own card, and margins stay off a
+  manager's view where they are not theirs to read.
+- **The page greets every role.** A live clock, the time
+  of day, today's Persian date, and one readable line of
+  context — for cashiers and owners alike.
+- **The dashboard polls silently.** A five-minute fetch
+  hands back the same builder's figures keyed per card,
+  so a page left open stays current without a reload and
+  can never disagree with one you open fresh.
+
+### پشت صحنه: attribution, gates, and the seams they left
+
+- **Each signup keeps its author.** Migration 35 stores
+  who registered the customer; legacy rows stay NULL and
+  count for nobody, so the signups card counts only rows
+  that name someone.
+- **The gates follow the counter.** The dashboard, the
+  customer list and file, and the try-on open to a
+  cashier; birthdays, follow-ups, and the tier tools move
+  from owner to manager — each page answering to the role
+  that works it.
+- **The settings page stopped erroring on itself.** The
+  numeric-form check could not read a digit-bearing field
+  name, so the seven weekday goals read as rules with no
+  field and the page painted its protection shell; both
+  checks now spell names the way the form does, the key
+  mask and all.
+- **The shortage is named with its figure again.** The
+  folded cash card carries «اختلاف صندوق» and the exact
+  amount with the shift it belongs to, where the first
+  fold had left only a reference.
+- **Every card speaks the same keys.** Goal cards still
+  paint their bar; the rest carry no progress — the key
+  exists either way, so the shell never reads a name
+  nothing supplied.
+
+## 2.9.2 — 1405/07/22 (2026-10-14)
+
+### صندوق فروش: four more phases on the counter screen
+
+- **The meter now shows its margin.** Manager and owner
+  both watch the profit meter live, now with a margin
+  percent beside the toman figure; a cashier's page
+  carries neither number — not hidden, omitted — and an
+  empty basket shows nothing at all.
+- **The referral discount becomes a choice.** A balance
+  offers a pair — spend it on this invoice or save it
+  for later — with save as the default, the pair shown
+  only when there is something to choose, and a record
+  still required before a code grants anything.
+- **The scan step fits the screen.** Tighter rhythm and
+  one step smaller type carry the whole scan screen on a
+  short desktop display, the list scrolls inside its
+  card, the customer card is name, phone, and tier only,
+  and the till wears its theme's own accent instead of
+  the forced rainbow.
+- **A broken tag no longer stops a sale.** A name search
+  under the scan box answers after two characters with
+  the shop's active variants; picking one fills the
+  barcode box and scans it, and a Persian-digit barcode
+  scans as happily as an English one.
+- **The counter stops reloading.** Add, quantity, remove,
+  and discount post by fetch and the server's own fresh
+  layout swaps in place — the beep, the just-added glow,
+  and the scan focus land after every swap — while the
+  terminal and the confirm keep their real submits and a
+  plain-submit fallback.
+
+### پشت صحنه: the gates follow the till
+
+- **Held to all of it.** New gates keep the meter off a
+  cashier's page, the choice pair honest, the search
+  endpoint answering in JSON only, and the final total
+  the only figure that pops.
+
+## 2.9.1 — 1405/07/21 (2026-10-13)
+
+### گوشی عکاسی: the capture page speaks Persian and answers the thumb
+
+- **The whole shell is Persian.** Right-to-left, Vazirmatn,
+  the shop's own words for every button and state — the English
+  log and its emoji are gone, and one status line speaks for
+  the server.
+- **A page view carries no session.** The capture page renders
+  without a login at all: the pairing key alone gates every
+  capture call, and the UI stays locked until that key's own
+  ping answers 200.
+- **It feels like a phone app.** Viewport-fit and safe-area
+  insets keep controls clear of the notch and the home bar, the
+  layout tracks the collapsing toolbar, and pinch-zoom is no
+  longer locked out.
+
+### صندوق فروش: the money path earns its guarantees
+
+- **A replay rings once.** The checkout's nonce is stamped into
+  the sale row behind a unique index (migration 34), so a double
+  submit or a retried POST hands back the invoice already made
+  instead of ringing a second sale — and the stock moves once.
+- **A shrunken basket stops the sale.** When stock moved under
+  the till's feet, the confirm stops and names every line that
+  shrank or vanished, then sells nothing until the corrected
+  basket is confirmed again.
+- **نسیه is a leg, not a loophole.** The credit leg of a split
+  sale needs a customer, fits that customer's ceiling, and books
+  only itself as debt; the payment-parts table is rebuilt
+  (migration 34) to admit the method without losing a row.
+- **A declined card hands the basket back.** Cancelled or
+  declined terminal payments reopen the checkout for cash
+  instead of stranding the sale mid-way.
+- **The drafts are cut.** Customer swap and draft resume are
+  gone: an abandoned till starts fresh, and a basket belongs to
+  the customer it was opened with.
+
+### پیشخوان صندوق: fewer taps from scan to invoice
+
+- **Confirm lands on the next sale.** A finished sale redirects
+  to a fresh till instead of re-rendering the spent page, with
+  the invoice still one link away in the ledger.
+- **The discount applies when you say so.** Ticking the box no
+  longer submits the form; a separate Apply does, and the split
+  editor counts its own sum before anything posts.
+- **The cash box appears only when cash is due.** The calculator
+  shows for cash and split, a new row flashes once so the eye
+  finds it, and every stepper, remove disc and payment radio
+  clears 44 pixels.
+- **The till reads itself out loud.** Landmarks and labelled
+  steps for a screen reader, no inline styles or handlers on
+  any sales page, an invoice that names its credit leg, and no
+  emoji left on the counter.
+
+## 2.9.0 — 1405/07/20 (2026-10-12)
+
+### پرو مجازی: the queue gets its own worker and a quota that burns on success
+
+- **The queue stops waiting its turn.** Generations leave the
+  scheduler's five-minute sweep for a dedicated worker that polls
+  every ten seconds with two jobs in flight, so a picture starts in
+  seconds rather than minutes.
+- **A billed failure fails once.** When the provider takes the money
+  and the picture still does not come, the job completes as failed
+  and is never requeued; an ordinary local fault retries with
+  backoff, so no job strands half-done.
+- **The quota burns only on success.** Daily and hourly budgets are
+  spent when — and only when — a generation returns whole; a broken
+  picture no longer eats the owner's allowance.
+- **The key is stored, masked, testable.** It migrates from the
+  environment once, shows its masked tail everywhere, survives an
+  empty field untouched, and a test button proves the connection
+  without spending a picture; the provider's address sits in
+  settings beside it.
+- **Cancel respects the work in flight.** A queued job can be
+  cancelled, one already producing cannot, and the upload refuses
+  non-images and files over 15 MB before anything is queued.
+- **The page tells the wait honestly.** A live estimate and the
+  running job's state sit on the try-on page while the queue works.
+
+### استودیوی پرو: four numbered steps and a studio that speaks plainly
+
+- **Four steps, in order.** The person's photo, the barcode scan of
+  the products, the generation settings, and the final image wearing
+  the shop's logo — each its own numbered section; the old inline
+  ribbon between them is gone.
+- **One picker, grouped.** Backgrounds arrive as a single grouped
+  select with a fixed default, seasons beside the studio sets, and a
+  custom line capped at 500 characters.
+- **The wording says person, not child.** Every surface speaks of the
+  person in the photo, the emoji are gone, and one setting drops that
+  photo from memory the moment a picture is saved.
+- **The controls actually work.** Swap a product's variant, remove
+  one, retry a failed job, filter and delete the saved gallery, open
+  any result full screen — each move has its gate.
+- **Progress that names its step.** The overlay says which step it is
+  on and what the wait really is: one to two minutes, up to four
+  when the queue runs long.
+- **The phone joins by QR.** The camera connects to the shop by
+  scanning a code instead of typing an address and a token.
+
+### پشت صحنه: pages stop lying about their age
+
+- **A reload shows today's page.** HTML documents now carry
+  `Cache-Control: no-store` while versioned assets keep their
+  busting, so a plain reload cannot serve yesterday's markup.
+- **Held to all of it.** New gates keep the key masked, the quota
+  honest, the cancel rules intact, the steps rendered, the script
+  tags closed, and the emoji off every try-on surface.
+
 ## 2.8.8 — 1405/07/18 (2026-10-10)
 
 ### درِ ورود: the login card belongs to the shop again

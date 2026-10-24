@@ -102,7 +102,7 @@ def test_scan_shows_last_added_strip_and_live_step(client, db_session):
         "customer_id": "0", "barcode": variant.barcode, "basket_json": "[]",
         "csrf_token": csrf_token(client, "/sales/new"),
     }).text
-    assert "data-beep" in page and "آخرین:" in page
+    assert "data-beep" in page and "آخرین اسکن:" in page
     assert 'id="timeline-step-2"' in page
     assert "timeline-step done" in page  # step 1 done with a basket
 
@@ -175,7 +175,7 @@ def test_invoice_phase1_paper_contract(client, db_session):
     assert "صندوقدار" in page and "سارا" in page
     assert "data-paper" in page and "paper-toggle" in page  # size toggle
     assert "<svg" in page and "بارکد فاکتور" in page  # scannable strip
-    assert 'class="em"' in page  # emoji wrapped for paper purge
+    assert 'class="em"' not in page  # purge finished: no emoji wrappers left
     assert "data-confirm" in page  # dialog refund…
     assert "return confirm(" not in page  # …not native
     assert "beforeprint" in page  # Persian-digit print swap

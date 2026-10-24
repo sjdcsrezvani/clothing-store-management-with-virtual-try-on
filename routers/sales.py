@@ -21,6 +21,7 @@ from services._common import (
     get_setting_int as get_discount_setting,
     jalali_str,
     page_arg,
+    share,
 )
 from services.customers import signup_birthday_fields
 from services.accounting import (
@@ -35,7 +36,7 @@ from services.campaigns import (
     resolve_campaign_code,
     restore_campaign_after_refund,
 )
-from services.security import log_action, require_html_role, effective_cap, require_cap, current_staff_user, discount_allowed
+from services.security import log_action, require_html_role, effective_cap, require_cap, current_staff_user, discount_allowed, role_allows
 from services.tier import (
     update_customer_after_purchase, get_tier_config, check_tier_upgrade,
     tier_up_marker_key, TIER_RANK,
@@ -56,7 +57,7 @@ from services.pos_terminal import (
 from services.inventory import record_stock_movement
 from services.checkout import (
     create_checkout, get_checkout, update_checkout_options, reserve_basket, finalize_basket,
-    set_payment_pending, set_payment_outcome, complete_checkout,
+    set_payment_pending, set_payment_outcome, complete_checkout, reopen_checkout,
     atomic_decrement_stock, InsufficientStockError,
 )
 
@@ -115,6 +116,18 @@ def _transaction_response(transaction: POSTransaction, approval_token: str | Non
     if transaction.sale_id:
         result["sale_id"] = transaction.sale_id
     return result
+
+
+def _terminal_result_fragment(request: Request, status_class: str, status_text: str,
+                              approval_token: str = ""):
+    """What the till swaps back after a terminal send: the status line, the
+    approval token (an empty value clears any earlier one) and an out-of-band
+    copy of the indicator, whose own poll re-answers reachability."""
+    return templates.TemplateResponse(request, "partials/terminal_send_result.html", {
+        "status_class": status_class,
+        "status_text": status_text,
+        "approval_token": approval_token,
+    })
 
 
 def _append_pos_outcome_event(
@@ -191,7 +204,7 @@ def _discount_int(v: str) -> int:
         return 0
 
 
-def _parse_split_legs(cash_raw: str = "", card_raw: str = "") -> list:
+def _parse_split_legs(cash_raw: str = "", card_raw: str = "", credit_raw: str = "") -> list:
     """Split-tender legs from till inputs: [{"method", "amount"}].
 
     [] means single-method — blanks and zeros are not legs, so an untouched
@@ -201,10 +214,13 @@ def _parse_split_legs(cash_raw: str = "", card_raw: str = "") -> list:
     legs = []
     cash = _discount_int(cash_raw)
     card = _discount_int(card_raw)
+    credit = _discount_int(credit_raw)
     if cash > 0:
         legs.append({"method": "cash", "amount": cash})
     if card > 0:
         legs.append({"method": "card", "amount": card})
+    if credit > 0:
+        legs.append({"method": "credit", "amount": credit})
     return legs
 
 
@@ -245,9 +261,9 @@ def _resolve_customer(customer_id: int, db) -> Customer | None:
 
 def _render_scan(request, customer, basket, total_amount, db,
                  referrer_code="", referrer_phone="",
-                 use_referrer_discount="1", custom_discount_amount=0,
+                 use_referrer_discount="0", custom_discount_amount=0,
                  custom_discount_percent=0, campaign_code="",
-                 split_cash="", split_card="",
+                 split_cash="", split_card="", split_credit="",
                  error=None, success=None, just_added=None):
     staff_id = request.session.get("staff_user_id")
     active_nonce = request.session.get("checkout_nonce")
@@ -309,12 +325,21 @@ def _render_scan(request, customer, basket, total_amount, db,
         custom_percent=custom_discount_percent,
         campaign=campaign,
     )
-    # Owner-only profit meter: gross margin minus everything already discounted.
+    # Profit meter, manager and owner only: gross margin minus everything
+    # already discounted, plus its share of the total. A cashier's page
+    # carries neither figure — not hidden, omitted.
+    staff_viewer = current_staff_user(db, request)
+    sees_margin = bool(staff_viewer) and role_allows(
+        getattr(staff_viewer, "role", ""), "manager")
     gross_profit = sum(
         (it.get("unit_price", 0) - it.get("unit_cost", 0)) * it.get("quantity", 0)
         for it in basket
     )
     net_profit = gross_profit - discounts["total_discount"]
+    net_percent = share(net_profit, total_amount)
+    if not sees_margin or not basket:
+        net_profit = None
+        net_percent = None
     # Credit-limit hint for the نسیه radio: would this basket exceed the cap?
     # Uses the surcharge-inclusive amount, since that's what the customer owes.
     pos_config = get_terminal_config(db)
@@ -359,6 +384,7 @@ def _render_scan(request, customer, basket, total_amount, db,
             "custom_discount_percent": (CUSTOM_DISCOUNT_RULES["percent_min"], CUSTOM_DISCOUNT_RULES["percent_max"], "درصد تخفیف"),
         },
         "net_profit": net_profit,
+        "net_profit_percent": net_percent,
         "credit_limit_info": credit_limit_info,
         # A saved POS configuration enables the strict approval gate. Before
         # setup, card remains available as the app's existing manual-card
@@ -373,6 +399,7 @@ def _render_scan(request, customer, basket, total_amount, db,
         "just_added": just_added,
         "split_cash": split_cash,
         "split_card": split_card,
+        "split_credit": split_credit,
         "split_legs": split_legs,
     })
 
@@ -450,30 +477,7 @@ async def sales_new(request: Request, db: Session = Depends(get_db)):
     if pos_amount > 0:
         pos_hint = {"amount": pos_amount,
                     "reference": (request.query_params.get("pos_reference") or "").strip()[:100] or None}
-    # Abandoned drafts of this cashier, newest first — a till left mid-sale
-    # resumes instead of restarting. Expired and finished rows never list.
-    now = datetime.now(timezone.utc)
-    drafts = db.query(CheckoutSession).filter(
-        CheckoutSession.staff_user_id == guard.id,
-        CheckoutSession.state.in_(("draft", "reserved")),
-        CheckoutSession.expires_at > now,
-    ).order_by(CheckoutSession.id.desc()).limit(10).all()
-    draft_rows = []
-    for draft in drafts:
-        try:
-            items = json.loads(draft.basket_json or "[]")
-        except (TypeError, ValueError):
-            items = []
-        if not items:
-            continue
-        owner = db.query(Customer).filter(Customer.id == draft.customer_id).first() if draft.customer_id else None
-        draft_rows.append({
-            "nonce": draft.checkout_nonce,
-            "count": len(items),
-            "total": sum(int(it.get("total_price") or 0) for it in items),
-            "who": owner.phone if owner else "ناشناس",
-            "when": jalali_str(draft.created_at, False),
-        })
+    # Abandoned drafts expire on their own — the till always starts fresh.
     return templates.TemplateResponse(request, "sales/checkout.html", {
         "step": "customer",
         "basket": [],
@@ -481,7 +485,6 @@ async def sales_new(request: Request, db: Session = Depends(get_db)):
         "total_amount": 0,
         "customer": None,
         "pos_hint": pos_hint,
-        "drafts": draft_rows,
         "fmt": fmt,
     })
 
@@ -493,99 +496,6 @@ async def sales_skip_customer(request: Request, db: Session = Depends(get_db)):
     if not hasattr(guard, "role"):
         return guard
     return _render_scan(request, None, [], 0, db)
-
-
-@router.post("/swap-customer", response_class=HTMLResponse)
-async def sales_swap_customer(
-    request: Request,
-    phone: str = Form(""),
-    customer_id: int = Form(0),
-    basket_json: str = Form("[]"),
-    referrer_code: str = Form(""),
-    referrer_phone: str = Form(""),
-    use_referrer_discount: str = Form("1"),
-    custom_discount_amount: str = Form(""),
-    custom_discount_percent: str = Form(""),
-    campaign_code: str = Form(""),
-    split_cash: str = Form(""),
-    split_card: str = Form(""),
-    db: Session = Depends(get_db),
-):
-    """Hand the live basket to another customer — discounts re-resolve.
-
-    The basket never moves through the swap itself; only the person does.
-    An unknown number keeps the old customer and says so on the same page.
-    """
-    guard = require_html_role(request, db, "cashier")
-    if not hasattr(guard, "role"):
-        return guard
-    customer = _resolve_customer(customer_id, db)
-    basket = json.loads(basket_json or "[]")
-    total_amount = sum(int(item.get("total_price") or 0) for item in basket)
-    phone = to_english_digits(phone.strip())
-
-    def _scan(error: str | None = None):
-        return _render_scan(
-            request, customer, basket, total_amount, db,
-            referrer_code=referrer_code,
-            referrer_phone=referrer_phone,
-            use_referrer_discount=use_referrer_discount,
-            custom_discount_amount=_discount_int(custom_discount_amount),
-            custom_discount_percent=_discount_int(custom_discount_percent),
-            campaign_code=campaign_code,
-            split_cash=split_cash,
-            split_card=split_card,
-            error=error,
-        )
-
-    if not phone or not phone.startswith("09") or len(phone) != 11:
-        return _scan(error="شماره موبایل نامعتبر است.")
-    new_customer = db.query(Customer).filter(Customer.phone == phone).first()
-    if new_customer is None:
-        return _scan(error="این شماره ثبت نیست — مشتری دیگر را وارد کنید یا فروش را از اول با شماره جدید شروع کنید.")
-    customer = new_customer
-    return _scan()
-
-
-@router.post("/resume-draft", response_class=HTMLResponse)
-async def sales_resume_draft(
-    request: Request,
-    nonce: str = Form(""),
-    db: Session = Depends(get_db),
-):
-    """Reopen an abandoned draft of this cashier — basket, customer, codes."""
-    guard = require_html_role(request, db, "cashier")
-    if not hasattr(guard, "role"):
-        return guard
-    draft = get_checkout(db, nonce) if nonce else None
-    if (draft is None or draft.staff_user_id != guard.id
-            or draft.state not in ("draft", "reserved")):
-        return RedirectResponse(url="/sales/new", status_code=303)
-    request.session["checkout_nonce"] = draft.checkout_nonce
-    customer = _resolve_customer(draft.customer_id or 0, db)
-    try:
-        basket = json.loads(draft.basket_json or "[]")
-    except (TypeError, ValueError):
-        basket = []
-    total_amount = sum(int(item.get("total_price") or 0) for item in basket)
-    legs = []
-    try:
-        for leg in json.loads(draft.split_json or "[]"):
-            legs.append({"method": leg.get("method"),
-                         "amount": int(leg.get("amount") or 0)})
-    except (TypeError, ValueError):
-        legs = []
-    return _render_scan(
-        request, customer, basket, total_amount, db,
-        referrer_code=draft.referrer_code or "",
-        referrer_phone=draft.referrer_phone or "",
-        use_referrer_discount="1" if draft.use_referrer_discount else "0",
-        custom_discount_amount=draft.custom_discount_amount or 0,
-        custom_discount_percent=draft.custom_discount_percent or 0,
-        campaign_code=draft.campaign_code or "",
-        split_cash=str(_split_leg(legs, "cash") or ""),
-        split_card=str(_split_leg(legs, "card") or ""),
-    )
 
 
 @router.post("/lookup-customer", response_class=HTMLResponse)
@@ -659,6 +569,7 @@ async def sales_create_customer(
         first_name=first_name or None,
         last_name=last_name or None,
         referral_code=code,
+        created_by_user_id=guard.id,
         **signup_birthday_fields(
             db, buys_for=buys_for, birth_value=birth_date,
             child_name=child_name, child_birth_value=child_birthday,
@@ -681,12 +592,13 @@ async def sales_apply_discount(
     basket_json: str = Form("[]"),
     referrer_code: str = Form(""),
     referrer_phone: str = Form(""),
-    use_referrer_discount: str = Form("1"),
+    use_referrer_discount: str = Form("0"),
     custom_discount_amount: str = Form(""),
     custom_discount_percent: str = Form(""),
     campaign_code: str = Form(""),
     split_cash: str = Form(""),
     split_card: str = Form(""),
+    split_credit: str = Form(""),
     db: Session = Depends(get_db),
 ):
     guard = require_html_role(request, db, "cashier")
@@ -710,6 +622,7 @@ async def sales_apply_discount(
             campaign_code=campaign_code,
             split_cash=split_cash,
             split_card=split_card,
+            split_credit=split_credit,
             error=limit_error,
         )
 
@@ -734,12 +647,13 @@ async def sales_add_to_basket(
     basket_json: str = Form("[]"),
     referrer_code: str = Form(""),
     referrer_phone: str = Form(""),
-    use_referrer_discount: str = Form("1"),
+    use_referrer_discount: str = Form("0"),
     custom_discount_amount: str = Form(""),
     custom_discount_percent: str = Form(""),
     campaign_code: str = Form(""),
     split_cash: str = Form(""),
     split_card: str = Form(""),
+    split_credit: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """Add a product to the basket by barcode - looks up variant."""
@@ -761,6 +675,7 @@ async def sales_add_to_basket(
             campaign_code=campaign_code,
             split_cash=split_cash,
             split_card=split_card,
+            split_credit=split_credit,
             error=error,
             success=success,
             just_added=just_added,
@@ -811,12 +726,13 @@ async def sales_remove_from_basket(
     basket_json: str = Form("[]"),
     referrer_code: str = Form(""),
     referrer_phone: str = Form(""),
-    use_referrer_discount: str = Form("1"),
+    use_referrer_discount: str = Form("0"),
     custom_discount_amount: str = Form(""),
     custom_discount_percent: str = Form(""),
     campaign_code: str = Form(""),
     split_cash: str = Form(""),
     split_card: str = Form(""),
+    split_credit: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """Remove a variant from the basket."""
@@ -847,12 +763,13 @@ async def sales_set_quantity(
     basket_json: str = Form("[]"),
     referrer_code: str = Form(""),
     referrer_phone: str = Form(""),
-    use_referrer_discount: str = Form("1"),
+    use_referrer_discount: str = Form("0"),
     custom_discount_amount: str = Form(""),
     custom_discount_percent: str = Form(""),
     campaign_code: str = Form(""),
     split_cash: str = Form(""),
     split_card: str = Form(""),
+    split_credit: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """Step a basket row's quantity up or down, clamped to stock on hand.
@@ -876,6 +793,7 @@ async def sales_set_quantity(
             campaign_code=campaign_code,
             split_cash=split_cash,
             split_card=split_card,
+            split_credit=split_credit,
             error=error,
         )
 
@@ -903,14 +821,26 @@ async def sales_set_quantity(
 
 
 @router.get("/terminal-status", response_class=JSONResponse)
-async def sales_terminal_status(db: Session = Depends(get_db)):
+async def sales_terminal_status(request: Request, db: Session = Depends(get_db)):
     """Live terminal reachability for the checkout indicator. Read-only TCP
-    probe — never sends a payment amount, safe to poll."""
+    probe — never sends a payment amount, safe to poll. The till swaps the
+    answer as a fragment; every other caller keeps JSON."""
     cfg = get_terminal_config(db)
     if not cfg["enabled"]:
-        return {**cfg, "online": False, "latency_ms": None}
-    conn = await asyncio.to_thread(check_terminal_connection, cfg["host"], cfg["port"])
-    return {**cfg, **conn}
+        state = {**cfg, "online": False, "latency_ms": None}
+    else:
+        state = {**cfg, **await asyncio.to_thread(
+            check_terminal_connection, cfg["host"], cfg["port"])}
+    if request.headers.get("HX-Request"):
+        # Checkout swaps the full indicator (whose own poll re-arms on every
+        # landing); the POS page's pill is a one-shot line — its fragment
+        # carries no polling wiring, so it settles after one answer.
+        if request.headers.get("HX-Target") == "pos-terminal-pill":
+            return templates.TemplateResponse(
+                request, "partials/terminal_pill.html", {"terminal": state})
+        return templates.TemplateResponse(
+            request, "partials/terminal_indicator.html", {"terminal": state})
+    return state
 
 
 @router.post("/send-to-terminal", response_class=JSONResponse)
@@ -921,9 +851,49 @@ async def sales_send_to_terminal(
 ):
     """Start one durable, idempotent Parsian sale attempt.
 
-    The row is committed before network I/O. A retry with the same checkout
-    nonce returns the stored result and never sends a second terminal charge.
-    Only an approved row receives a session capability for ``confirm-sale``.
+    The till gets an htmx fragment it swaps into the terminal strip; every
+    other caller keeps the JSON contract unchanged.
+    """
+    if not request.headers.get("HX-Request"):
+        return await _send_to_terminal(request, checkout_nonce=checkout_nonce, db=db)
+    try:
+        result = await _send_to_terminal(request, checkout_nonce=checkout_nonce, db=db)
+    except HTTPException as error:
+        return _terminal_result_fragment(request, "alert alert-error", str(error.detail))
+    if isinstance(result, dict):
+        if result.get("approval_token"):
+            return _terminal_result_fragment(
+                request, "alert alert-success",
+                "تراکنش در کارت‌خوان تأیید شد. اکنون فاکتور را ثبت کنید.",
+                approval_token=result["approval_token"],
+            )
+        if result.get("status") == "cancelled":
+            return _terminal_result_fragment(
+                request, "alert alert-error",
+                "تراکنش در کارت‌خوان لغو شد؛ فاکتور ثبت نشد.",
+            )
+        return _terminal_result_fragment(
+            request, "alert alert-error",
+            f"{result.get('label') or 'پرداخت توسط کارت‌خوان تأیید نشد.'}؛ فاکتور ثبت نشد.",
+        )
+    if isinstance(result, JSONResponse):
+        # A refusal the app has already explained (terminal not configured,
+        # amount reused, state uncertain): the strip carries the detail.
+        try:
+            detail = json.loads(bytes(result.body)).get("detail")
+        except (TypeError, ValueError):
+            detail = None
+        return _terminal_result_fragment(
+            request, "alert alert-error", detail or "ارتباط با کارت‌خوان ناموفق بود.",
+        )
+    return result  # the login redirect for an expired session; the shell lands it
+
+
+async def _send_to_terminal(request: Request, checkout_nonce: str, db: Session):
+    """One durable, idempotent Parsian sale attempt — committed before network
+    I/O. A retry with the same checkout nonce returns the stored result and
+    never sends a second terminal charge. Only an approved row receives a
+    session capability for ``confirm-sale``.
     """
     require_role = require_html_role(request, db, "cashier")
     if not hasattr(require_role, "role"):
@@ -1055,8 +1025,9 @@ async def sales_send_to_terminal(
                 r4, r8 = build_footer_payload(shop, ref), None
         except Exception:
             r4, r8 = None, None
+        # Every price in the app is toman; the Parsian terminal reads rial.
         result = await asyncio.to_thread(
-            send_terminal_sale, cfg["host"], cfg["port"], amount, r4=r4, r8=r8,
+            send_terminal_sale, cfg["host"], cfg["port"], amount * 10, r4=r4, r8=r8,
         )
     except Exception as error:
         transaction.request_finished_at = datetime.now(timezone.utc)
@@ -1157,6 +1128,19 @@ def _sale_receipt_extras(db, sale):
     }
 
 
+def _adjustment_message(adjustments: list) -> str:
+    """What the till asked for versus what is still there, in the staffer's
+    own words — shown instead of silently selling a shrunk basket."""
+    bits = []
+    for adj in adjustments:
+        name = adj.get("name") or "کالا"
+        if int(adj.get("granted") or 0) <= 0:
+            bits.append(f"«{name}» موجود نیست و حذف شد")
+        else:
+            bits.append(f"«{name}» از {adj.get('requested')} به {adj.get('granted')} رسید")
+    return "موجودی تغییر کرد: " + "؛ ".join(bits) + ". سبد اصلاح شد — بازبینی و دوباره تأیید کنید."
+
+
 @router.post("/confirm-sale", response_class=HTMLResponse)
 async def sales_confirm(
     request: Request,
@@ -1173,6 +1157,7 @@ async def sales_confirm(
     campaign_code: str = Form(""),
     split_cash: str = Form(""),
     split_card: str = Form(""),
+    split_credit: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """Confirm and complete the sale.
@@ -1194,6 +1179,7 @@ async def sales_confirm(
         return _render_scan(request, None, [], 0, db, campaign_code=campaign_code,
             split_cash=split_cash,
             split_card=split_card,
+            split_credit=split_credit,
                             error=limit_error)
 
     checkout = get_checkout(db, checkout_nonce) if checkout_nonce else None
@@ -1209,11 +1195,27 @@ async def sales_confirm(
         request.session["checkout_nonce"] = checkout_nonce
     if checkout.staff_user_id != request.session.get("staff_user_id"):
         raise HTTPException(status_code=404, detail="سبد خرید یافت نشد.")
-    if checkout.state in {"completed", "expired", "payment_cancelled", "payment_declined", "refunded"}:
+    if checkout.state in {"completed", "expired", "refunded"}:
         raise HTTPException(status_code=409, detail="این سبد دیگر قابل تکمیل نیست.")
     if checkout.customer_id != (customer_id or None):
         raise HTTPException(status_code=409, detail="مشتری سبد تغییر کرده است؛ لطفاً سبد جدیدی بسازید.")
     customer = _resolve_customer(checkout.customer_id or 0, db)
+    if checkout.state in {"payment_cancelled", "payment_declined"}:
+        # Abort to basket: the terminal said no, the basket is intact, and the
+        # holds were already released — reopen for another method instead of
+        # stranding the staffer on a dead checkout.
+        reopen_checkout(db, checkout, request_id=request.headers.get("X-Request-ID"))
+        _clear_pos_approval(request)
+        basket = json.loads(checkout.basket_json or "[]")
+        return _render_scan(
+            request, customer, basket,
+            sum(int(i.get("total_price") or 0) for i in basket), db,
+            campaign_code=campaign_code,
+            split_cash=split_cash,
+            split_card=split_card,
+            split_credit=split_credit,
+            error="پرداخت ناموفق بود — سبد برگشت؛ روش پرداخت را عوض کنید و دوباره تأیید کنید.",
+        )
 
     if checkout.state in {"payment_pending", "payment_approved", "payment_uncertain"}:
         if payment_method != checkout.payment_method:
@@ -1240,21 +1242,60 @@ async def sales_confirm(
         )
     try:
         if checkout.state in {"payment_pending", "payment_approved"}:
+            # The terminal approved a stored total, so the basket and money
+            # stay frozen — but the breakdown is rebuilt from the draft's own
+            # pinned inputs. A partial dict used to reach the sale with no
+            # 'referred_discount' key and every card sale to a known customer
+            # died after the terminal had already charged the card.
+            campaign = db.query(Campaign).filter(
+                Campaign.id == checkout.campaign_id).first() if checkout.campaign_id else None
+            discounts = calculate_discounts(
+                customer,
+                checkout.total_amount,
+                db,
+                use_referrer_discount=checkout.use_referrer_discount,
+                custom_amount=checkout.custom_discount_amount,
+                custom_percent=checkout.custom_discount_percent,
+                campaign=campaign,
+            )
+            # The approved figure is the money; the recomputed lines only say
+            # which discounts it was made of.
+            discounts["total_discount"] = checkout.discount_amount
             checkout_data = {
                 "basket": json.loads(checkout.basket_json or "[]"),
                 "total_amount": checkout.total_amount,
-                "discounts": {"total_discount": checkout.discount_amount, "details": []},
+                "discounts": discounts,
                 "credit_surcharge": checkout.credit_surcharge,
                 "final_amount": checkout.final_amount,
             }
         else:
             checkout_data = finalize_basket(db, checkout)
+            if checkout_data.get("adjustments"):
+                # Show the diff instead of selling a shrunk basket: finalize
+                # already rewrote the draft with the verified quantities, so
+                # the re-render below displays the corrected basket. Reserve
+                # runs only once the staffer confirms what is actually there.
+                basket = checkout_data["basket"]
+                return _render_scan(
+                    request, customer, basket, checkout_data["total_amount"], db,
+                    referrer_code=referrer_code,
+                    referrer_phone=referrer_phone,
+                    use_referrer_discount=use_referrer_discount,
+                    custom_discount_amount=_discount_int(custom_discount_amount),
+                    custom_discount_percent=_discount_int(custom_discount_percent),
+                    campaign_code=campaign_code,
+                    split_cash=split_cash,
+                    split_card=split_card,
+                    split_credit=split_credit,
+                    error=_adjustment_message(checkout_data["adjustments"]),
+                )
             reserve_basket(db, checkout, checkout_data["basket"])
     except InsufficientStockError as error:
         db.rollback()
         return _render_scan(request, customer, [], 0, db, campaign_code=campaign_code,
             split_cash=split_cash,
             split_card=split_card,
+            split_credit=split_credit,
                             error="موجودی تغییر کرده است؛ لطفاً دوباره تلاش کنید.")
     basket = checkout_data["basket"]
     total_amount = checkout_data["total_amount"]
@@ -1268,6 +1309,7 @@ async def sales_confirm(
         return _render_scan(request, customer, [], 0, db, campaign_code=campaign_code,
             split_cash=split_cash,
             split_card=split_card,
+            split_credit=split_credit,
                             error="فروش نسیه فقط برای مشتری ثبت‌شده ممکن است — ابتدا شماره مشتری را جستجو کنید.")
 
     # Referral rewards are applied only after the sale commits.
@@ -1278,15 +1320,19 @@ async def sales_confirm(
     credit_surcharge = checkout_data["credit_surcharge"]
     final_amount = checkout_data["final_amount"]
 
-    # Split tender: cash X plus card Y on one invoice, no credit leg — debt
-    # and due dates do not divide. Both legs are re-derived here from the
-    # posted inputs and must add up to the finalized total exactly.
+    # Split tender: two or more legs from cash, card and نسیه on one invoice.
+    # Legs are re-derived here from the posted inputs and must add up to the
+    # finalized total exactly. A credit leg needs a registered customer and
+    # must fit the credit limit, like a full نسیه sale — but a partial credit
+    # carries no surcharge: the surcharge belongs to whole-invoice نسیه only.
     split_legs = []
+    cash_leg = card_leg = credit_leg = 0
     if payment_method == "split":
-        split_legs = _parse_split_legs(split_cash, split_card)
+        split_legs = _parse_split_legs(split_cash, split_card, split_credit)
         cash_leg = _split_leg(split_legs, "cash")
         card_leg = _split_leg(split_legs, "card")
-        if not cash_leg or not card_leg:
+        credit_leg = _split_leg(split_legs, "credit")
+        if sum(1 for leg in (cash_leg, card_leg, credit_leg) if leg) < 2:
             return _render_scan(
                 request, customer, basket, total_amount, db,
                 referrer_code=referrer_code,
@@ -1297,9 +1343,10 @@ async def sales_confirm(
                 campaign_code=campaign_code,
                 split_cash=split_cash,
                 split_card=split_card,
-                error="تقسیم پرداخت باید دو مبلغ داشته باشد: نقدی و کارتی.",
+                split_credit=split_credit,
+                error="تقسیم پرداخت باید دست‌کم دو مبلغ داشته باشد: نقدی، کارتی یا نسیه.",
             )
-        if cash_leg + card_leg != final_amount:
+        if cash_leg + card_leg + credit_leg != final_amount:
             return _render_scan(
                 request, customer, basket, total_amount, db,
                 referrer_code=referrer_code,
@@ -1310,8 +1357,40 @@ async def sales_confirm(
                 campaign_code=campaign_code,
                 split_cash=split_cash,
                 split_card=split_card,
-                error=f"جمع تقسیم ({fmt(cash_leg + card_leg)} تومان) با مبلغ نهایی ({fmt(final_amount)} تومان) نمی‌خواند.",
+                split_credit=split_credit,
+                error=f"جمع تقسیم ({fmt(cash_leg + card_leg + credit_leg)} تومان) با مبلغ نهایی ({fmt(final_amount)} تومان) نمی‌خواند.",
             )
+        if credit_leg and customer is None:
+            return _render_scan(
+                request, customer, basket, total_amount, db,
+                referrer_code=referrer_code,
+                referrer_phone=referrer_phone,
+                use_referrer_discount=use_referrer_discount,
+                custom_discount_amount=_discount_int(custom_discount_amount),
+                custom_discount_percent=_discount_int(custom_discount_percent),
+                campaign_code=campaign_code,
+                split_cash=split_cash,
+                split_card=split_card,
+                split_credit=split_credit,
+                error="سهم نسیه فقط برای مشتری ثبت‌شده ممکن است — ابتدا شماره مشتری را جستجو کنید.",
+            )
+        if credit_leg and customer:
+            allowed, limit = credit_sale_allowed(db, customer, credit_leg)
+            if not allowed:
+                return _render_scan(
+                    request, customer, basket, total_amount, db,
+                    referrer_code=referrer_code,
+                    referrer_phone=referrer_phone,
+                    use_referrer_discount=use_referrer_discount,
+                    custom_discount_amount=_discount_int(custom_discount_amount),
+                    custom_discount_percent=_discount_int(custom_discount_percent),
+                    campaign_code=campaign_code,
+                    split_cash=split_cash,
+                    split_card=split_card,
+                    split_credit=split_credit,
+                    error=(f"سقف اعتبار این مشتری {fmt(limit)} تومان است و بدهی فعلی {fmt(customer.total_debt or 0)} تومان — "
+                           f"سهم نسیه ({fmt(credit_leg)} تومان) از سقف رد می‌شود. مبلغ‌ها را عوض کنید یا سقف را بالا ببرید."),
+                )
     else:
         cash_leg = final_amount if payment_method == "cash" else 0
         card_leg = final_amount if payment_method == "card" else 0
@@ -1335,6 +1414,7 @@ async def sales_confirm(
                 campaign_code=campaign_code,
                 split_cash=split_cash,
                 split_card=split_card,
+                split_credit=split_credit,
                 error="پرداخت کارت تأیید نشده است — ابتدا مبلغ را به کارت‌خوان ارسال کنید و نتیجه «تأیید شد» بگیرید.",
             )
 
@@ -1352,6 +1432,7 @@ async def sales_confirm(
                 campaign_code=campaign_code,
             split_cash=split_cash,
             split_card=split_card,
+            split_credit=split_credit,
                 error=(f"سقف اعتبار این مشتری {fmt(limit)} تومان است و بدهی فعلی {fmt(customer.total_debt or 0)} تومان — "
                        f"این خرید ({fmt(final_amount)} تومان) از سقف رد می‌شود. روش پرداخت را عوض کنید یا سقف را بالا ببرید."),
             )
@@ -1366,6 +1447,7 @@ async def sales_confirm(
     sale = Sale(
         customer_id=customer.id if customer else None,
         cash_session_id=drawer.id if drawer else None,
+        sale_nonce=checkout_nonce or None,
         total_amount=total_amount,
         discount_amount=discounts["total_discount"],
         discount_details=json.dumps(discounts["details"], ensure_ascii=False),
@@ -1381,10 +1463,24 @@ async def sales_confirm(
     # the invoice date for anything recorded before terms existed.
     if credit_surcharge:
         sale.credit_surcharge = credit_surcharge
-    if payment_method == "credit":
+    if payment_method == "credit" or credit_leg:
         sale.credit_due_date = credit_due_date_for(db)
     db.add(sale)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        # A parallel confirm won the race on this nonce: there is exactly one
+        # sale per checkout, so replay the first invoice instead of a second
+        # sale. The winner already sent the SMS and consumed the approval.
+        db.rollback()
+        existing = db.query(Sale).filter(
+            Sale.sale_nonce == checkout_nonce).first() if checkout_nonce else None
+        if existing is None:
+            raise
+        request.session.pop("checkout_nonce", None)
+        _clear_pos_approval(request)
+        return RedirectResponse(
+            url=f"/sales/new?msg=فاکتور #{existing.id} ثبت شد", status_code=303)
 
     # Split legs persist beside their invoice: the drawer counts exactly the
     # cash leg and the terminal owns the card leg's approval.
@@ -1398,9 +1494,11 @@ async def sales_confirm(
             ))
         db.flush()
 
-    # نسیه: the customer now owes final_amount.
-    if payment_method == "credit" and customer:
-        customer.total_debt = (customer.total_debt or 0) + sale.final_amount
+    # نسیه: the customer now owes the credit share — the whole final on a
+    # full-credit sale, only the credit leg on a split.
+    credit_owed = sale.final_amount if payment_method == "credit" else credit_leg
+    if credit_owed and customer:
+        customer.total_debt = (customer.total_debt or 0) + credit_owed
 
     for item in basket:
         variant = db.query(ProductVariant).filter(ProductVariant.id == item["variant_id"]).first()
@@ -1423,6 +1521,7 @@ async def sales_confirm(
             return _render_scan(request, customer, [], 0, db, campaign_code=campaign_code,
             split_cash=split_cash,
             split_card=split_card,
+            split_credit=split_credit,
                                 error="موجودی تغییر کرده است؛ لطفاً دوباره تلاش کنید.")
 
         db.add(SaleItem(
@@ -1508,31 +1607,20 @@ async def sales_confirm(
     for item in sale_items:
         item.variant = db.query(ProductVariant).filter(ProductVariant.id == item.variant_id).first()
         item.product = db.query(Product).filter(Product.id == item.product_id).first()
-
     footer_note = db.query(Settings).filter(
         Settings.key == "receipt_footer_note").first()
     footer_text = (footer_note.value or "") if footer_note else ""
     receipt = _sale_receipt_extras(db, sale)
-    invoice_path = generate_invoice_pdf(
+    generate_invoice_pdf(
         sale, customer, sale_items, store=get_store(db),
         cashier_name=receipt["cashier_name"],
         credit_remaining=sale_remaining(sale),
         footer_note=footer_text, payment_parts=sale.payment_parts)
 
-    return templates.TemplateResponse(request, "sales/invoice.html", {
-        "sale": sale,
-        "customer": customer,
-        "items": sale_items,
-        "discounts": discounts,
-        "invoice_path": invoice_path,
-        "credit_remaining": sale_remaining(sale),
-        "receipt_footer_note": footer_text,
-        "fmt": fmt,
-        "jalali_str": jalali_str,
-        "points_earned": points_earned,
-        "can_refund": effective_cap(guard, "can_refund"),
-        **receipt,
-    })
+    # Straight to a new sale: the invoice stays reachable from the ledger,
+    # and the toast names the finished invoice number.
+    return RedirectResponse(
+        url=f"/sales/new?msg=فاکتور #{sale.id} ثبت شد", status_code=303)
 
 
 @router.get("/invoice/{sale_id}", response_class=HTMLResponse)
@@ -1583,6 +1671,28 @@ async def sales_invoice_view(sale_id: int, request: Request, db: Session = Depen
         "can_refund": effective_cap(guard, "can_refund"),
         **receipt,
     })
+
+
+@router.get("/api/product-search", response_class=JSONResponse)
+async def api_search_products(request: Request, q: str = "", db: Session = Depends(get_db)):
+    """Name search for damaged tags: up to 8 active variants. The till swaps
+    the matches as option rows; every other caller keeps JSON."""
+    needle = (q or "").strip()[:50]
+    items = []
+    if len(needle) >= 2:
+        like = f"%{needle}%"
+        rows = db.query(ProductVariant).join(Product).filter(
+            ProductVariant.is_active == True,
+            (Product.name.like(like)) | (ProductVariant.barcode.like(like)),
+        ).order_by(ProductVariant.id.desc()).limit(8).all()
+        items = [
+            {"variant_id": v.id, "barcode": v.barcode or "",
+             "name": v.display_name, "price": v.price,
+             "stock": v.stock_quantity or 0} for v in rows]
+    if request.headers.get("HX-Request"):
+        return templates.TemplateResponse(
+            request, "partials/product_search_results.html", {"items": items})
+    return {"items": items}
 
 
 @router.get("/api/barcode/{barcode}", response_class=JSONResponse)

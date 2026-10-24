@@ -10,18 +10,26 @@
 {% endset %}
 {% include 'partials/page_header.html' %}
 {% if unpaid_names %}
-<div class="card">
-  <div class="section-heading"><div><span class="eyebrow">حقوق ماه {{ current_period }}</span><h3>{{ unpaid_names|length }} نفر هنوز حقوق نگرفته‌اند</h3></div></div>
-  <p class="muted">{{ unpaid_names[:5]|join('، ') }}{% if unpaid_names|length > 5 %} و {{ unpaid_names|length - 5 }} نفر دیگر{% endif %}</p>
-  <form method="post" action="/admin/payroll/bulk" class="form-row" data-confirm="حقوق پایه همه کارکنان پرداخت‌نشده برای ماه {{ current_period }} ثبت می‌شود. ادامه؟" data-confirm-title="پرداخت گروهی؟" data-confirm-ok="پرداخت گروهی">
+{# hx-boost="false": body-level htmx boosting would post this form before the
+   confirm dialog could be answered, paying the whole staff unasked. #}
+<section class="card payroll-due" aria-labelledby="payroll-due-title">
+  <div class="payroll-due-main">
+    <span class="payroll-due-badge" aria-hidden="true"><svg class="ui-icon" focusable="false"><use href="#icon-staff"/></svg></span>
+    <div class="payroll-due-copy">
+      <span class="eyebrow">حقوق ماه {{ current_period }}</span>
+      <h3 id="payroll-due-title">{{ unpaid_names|length }} نفر هنوز حقوق نگرفته‌اند</h3>
+      <p class="muted">{{ unpaid_names[:5]|join('، ') }}{% if unpaid_names|length > 5 %} و {{ unpaid_names|length - 5 }} نفر دیگر{% endif %}</p>
+    </div>
+  </div>
+  <form method="post" action="/admin/payroll/bulk" class="payroll-due-form" hx-boost="false" data-confirm="حقوق پایه همه کارکنان پرداخت‌نشده برای ماه {{ current_period }} ثبت می‌شود. ادامه؟" data-confirm-title="پرداخت گروهی؟" data-confirm-ok="پرداخت گروهی">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="period_key" value="{{ current_period }}">
-    <label>روش پرداخت<select name="payment_method"><option value="cash">نقدی</option><option value="card">کارت</option></select></label>
+    <label class="payroll-due-method"><span>روش پرداخت</span><select name="payment_method"><option value="cash">نقدی</option><option value="card">کارت</option></select></label>
     <button class="btn btn-success" type="submit">پرداخت گروهی حقوق {{ current_period }}</button>
   </form>
-</div>
+</section>
 {% endif %}
-<div class="card" id="staff-list" data-list-region="staff">
+<div class="card" id="staff-list" data-list-region="staff" hx-boost="true" hx-target="closest [data-list-region]" hx-swap="outerHTML" hx-select="[data-list-region=staff]">
   <div class="section-heading"><div><span class="eyebrow">کارکنان</span><h3 data-list-heading tabindex="-1">فهرست کارکنان</h3></div>{% if total_count %}<span class="appearance-active">{{ total_count }} نفر</span>{% endif %}</div>
   <div class="list-heading-actions">
     <a class="btn btn-sm btn-ghost" href="/admin/staff/export"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-backup"/></svg>خروجی کارکنان</a>
@@ -134,14 +142,16 @@
         document.getElementById('staff-list-confirm-yes').textContent =
             form.getAttribute('data-confirm-ok') || 'تأیید';
         window.RaykidDialog.open('staff-list-confirm', document.activeElement);
-    });
-    document.getElementById('staff-list-confirm-yes').addEventListener('click', function () {
+    }, true); // capture: lock the submit button only after the gate refused
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest || !event.target.closest('#staff-list-confirm-yes')) return;
         var form = pendingForm;
         pendingForm = null;
         window.RaykidDialog.close('staff-list-confirm');
         if (form) form.submit();
     });
-    document.getElementById('staff-list-confirm').addEventListener('click', function (event) {
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest || !event.target.closest('#staff-list-confirm')) return;
         if (event.target.closest('[data-dialog-close]')) pendingForm = null;
     });
     document.addEventListener('keydown', function (event) {

@@ -147,6 +147,10 @@ class Customer(Base):
     credit_limit = Column(Integer, nullable=True)
     last_purchase_date = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    # Who registered this customer, when known (counter signup by staff).
+    # NULL for legacy rows and public signups — attribution counts only rows
+    # that name someone.
+    created_by_user_id = Column(Integer, ForeignKey("staff_users.id"), nullable=True)
 
     referrer = relationship("Customer", remote_side=[id], backref="referrals_made")
     sales = relationship("Sale", back_populates="customer")
@@ -269,6 +273,11 @@ class Product(Base):
     description = Column(Text, nullable=True)
     category = Column(String(100), nullable=True)
     brand = Column(String(100), nullable=True)
+    # Sizing phase 1: what the tag speaks (size_system) and which per-garment
+    # ladder resolves it (size_type) — see services.sizing. Nullable: legacy
+    # products keep working with no conversion.
+    size_type = Column(String(30), nullable=True)
+    size_system = Column(String(30), nullable=True)
     base_sku = Column(String(50), nullable=True)
     base_barcode = Column(String(50), nullable=True)
     weight_grams = Column(Integer, nullable=True)
@@ -280,7 +289,6 @@ class Product(Base):
     care_instructions = Column(Text, nullable=True)
     supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True, index=True)
     default_reorder_point = Column(Integer, nullable=False, default=0)
-    default_reorder_quantity = Column(Integer, nullable=False, default=0)
     # Optional product-level tag layout; variants inherit this template.
     tag_template_id = Column(Integer, ForeignKey("tag_templates.id"), nullable=True, index=True)
     is_active = Column(Boolean, default=True)
@@ -351,7 +359,6 @@ class ProductVariant(Base):
     # while it was out of stock. +1 by owner; reset by owner after restocking.
     demand_count = Column(Integer, default=0)
     reorder_point = Column(Integer, nullable=False, default=0)
-    reorder_quantity = Column(Integer, nullable=False, default=0)
     # Arrival checklist: the purchase receipt that took this variant in.
     # Set once at finalize, cleared on reversal — a flagged variant never
     # shows in another receipt's picker, so one arrival cannot be bought twice.
@@ -362,6 +369,16 @@ class ProductVariant(Base):
     storage_location = Column(String(100), nullable=True)
     size_system = Column(String(30), nullable=True)
     color_code = Column(String(30), nullable=True)
+    # The unified band (services.sizing): resolved person height (cm) and age
+    # (months) beside the raw tag size. Nullable — unresolved sizes simply
+    # carry no band, and legacy rows stay untouched.
+    band_min_cm = Column(Integer, nullable=True)
+    band_max_cm = Column(Integer, nullable=True)
+    band_min_months = Column(Integer, nullable=True)
+    band_max_months = Column(Integer, nullable=True)
+    # Adult bands are numeric size codes (European convention), not heights.
+    band_min_adult = Column(Integer, nullable=True)
+    band_max_adult = Column(Integer, nullable=True)
 
     # Variant-specific SKU (optional)
     sku = Column(String(50), nullable=True)
@@ -380,7 +397,6 @@ class ProductVariant(Base):
         CheckConstraint("reserved_quantity >= 0", name="ck_variants_reserved_nonnegative"),
         CheckConstraint("demand_count >= 0", name="ck_variants_demand_nonnegative"),
         CheckConstraint("reorder_point >= 0", name="ck_variants_reorder_point_nonnegative"),
-        CheckConstraint("reorder_quantity >= 0", name="ck_variants_reorder_quantity_nonnegative"),
     )
 
     product = relationship("Product", back_populates="variants")
@@ -420,6 +436,10 @@ class Sale(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
+    # Idempotency key: one checkout nonce creates at most one sale. A double
+    # click or a retried POST replays the first invoice instead of a second
+    # sale. NULL for rows recorded before the key existed.
+    sale_nonce = Column(String(100), nullable=True, unique=True, index=True)
     total_amount = Column(Integer, nullable=False)
     discount_amount = Column(Integer, default=0)
     discount_details = Column(Text, nullable=True)
@@ -450,12 +470,13 @@ class Sale(Base):
 
 
 class SalePaymentPart(Base):
-    """One leg of a split-tender sale: cash X plus card Y on a single invoice.
+    """One leg of a split-tender sale: cash, card and نسیه legs share one invoice.
 
     Single-method sales carry no rows — the Sale's own method and final are
     the whole story. A split sale wears method 'split' and its legs here,
-    so the drawer counts exactly the cash leg and the terminal owns the card
-    leg, instead of either side guessing from the final.
+    so the drawer counts exactly the cash leg, the terminal owns the card
+    leg, and the credit leg ages like any نسیه debt instead of either side
+    guessing from the final.
     """
     __tablename__ = "sale_payment_parts"
 
@@ -467,7 +488,7 @@ class SalePaymentPart(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
-        CheckConstraint("method IN ('cash', 'card')", name="ck_sale_part_method"),
+        CheckConstraint("method IN ('cash', 'card', 'credit')", name="ck_sale_part_method"),
         CheckConstraint("amount > 0", name="ck_sale_part_amount_positive"),
     )
 
@@ -842,19 +863,19 @@ class Expense(Base):
     )
     note = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    # The monthly rule that posted this row, if it was posted by one rather
-    # than typed by a human: the list badges it «خودکار» and the rule stays
-    # traceable after the fact. Purely additive — hand-typed rows have none.
+    # The retired monthly-rule feature stamped this on the rows it posted; the
+    # list still badges them «خودکار». No new row carries one — a monthly amount
+    # changes month to month, so those expenses are typed and tagged by hand.
     recurring_rule_id = Column(Integer, ForeignKey("recurring_expenses.id"), nullable=True)
 
 
 class RecurringExpense(Base):
-    """A monthly expense rule: defined once, posted every month until stopped.
+    """A retired monthly-expense rule.
 
-    Generation is lazy — the expenses page posts whatever is due when a
-    manager opens it — so there is no scheduler to watch, and each posting
-    carries its own idempotency key (rule + month) so a second visit in the
-    same hour can never post the same month twice.
+    The shop stopped using it: a monthly amount changes month to month, so a
+    «ماهانه» expense is typed by hand when it is known. The table stays so the
+    rows the feature posted keep their ``recurring_rule_id`` and «خودکار»
+    badge; nothing reads or writes rules any more.
     """
     __tablename__ = "recurring_expenses"
 

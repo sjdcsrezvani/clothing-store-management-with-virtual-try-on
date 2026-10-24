@@ -14,7 +14,7 @@
 
 {% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
 
-<form id="product-form" method="post" action="{% if edit_mode %}/admin/products/{{ product.id }}{% else %}/admin/products/add{% endif %}" enctype="multipart/form-data">
+<form id="product-form" method="post" action="{% if edit_mode %}/admin/products/{{ product.id }}{% else %}/admin/products/add{% endif %}" enctype="multipart/form-data" novalidate>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     {% if edit_mode %}<input type="hidden" name="next" value="{{ return_to or '' }}">{% endif %}
     <section class="card catalog-section">
@@ -66,6 +66,28 @@
         <datalist id="brand-list">
             {% for brand in brands or [] %}<option value="{{ brand }}">{% endfor %}
         </datalist>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="size_type">نوع لباس</label>
+                <select id="size_type" name="size_type" data-fancy>
+                    <option value="">بدون تبدیل سایز</option>
+                    {% for type_id, type_label in sizing_types %}
+                    <option value="{{ type_id }}" {% if product and product.size_type == type_id %}selected{% endif %}>{{ type_label }}</option>
+                    {% endfor %}
+                </select>
+                <small class="field-help">برای دسته‌بندی محصول (بالاتنه/پایین‌تنه/ست)؛ روی تبدیل سایز اثر ندارد و با انتخاب دسته‌بندی خودکار پر می‌شود.</small>
+            </div>
+            <div class="form-group">
+                <label for="size_system">سایز روی تگ چه شکلی است؟</label>
+                <select id="size_system" name="size_system" data-fancy>
+                    <option value="">نامشخص — بدون تبدیل</option>
+                    {% for system_id, system_label in sizing_systems %}
+                    <option value="{{ system_id }}" {% if product and product.size_system == system_id %}selected{% endif %}>{{ system_label }}</option>
+                    {% endfor %}
+                </select>
+                <small class="field-help">همان چیزی که روی برچسب چاپ شده؛ برای سایز دوگانه مثل 122/128 فقط عدد کوچک‌تر (122) را وارد کنید. تنوع‌ها از همین فهرست انتخاب می‌شوند و معادلشان کنارشان نوشته می‌شود.</small>
+            </div>
+        </div>
         <details class="advanced-fields">
             <summary>جزئیات بیشتر <small>اختیاری — کدها، مشخصات پارچه و پیش‌فرض‌های سفارش</small></summary>
             <div class="form-row product-form-grid product-form-grid-wide">
@@ -98,12 +120,6 @@
                     <span class="hint"><button type="button" class="hint-btn" aria-label="راهنمای نقطه سفارش پیش‌فرض">ⓘ</button><span class="hint-pop" role="tooltip" id="hint-drp">مقدار شروع «نقطه سفارش» برای تنوع‌های تازه. هر تنوع که موجودی قابل‌فروشش به نقطه‌اش برسد کم‌موجود حساب می‌شود. تغییر بعدی این عدد، تنوع‌های ساخته‌شده را عوض نمی‌کند.</span></span>
                 </label>
                 <input type="text" inputmode="numeric" id="default_reorder_point" name="default_reorder_point" min="0" aria-describedby="hint-drp" value="{{ (product.default_reorder_point or 0) if product else 0 }}" placeholder="مثال: 5">
-            </div>
-            <div class="form-group">
-                <label for="default_reorder_quantity">مقدار سفارش پیش‌فرض
-                    <span class="hint"><button type="button" class="hint-btn" aria-label="راهنمای مقدار سفارش پیش‌فرض">ⓘ</button><span class="hint-pop" role="tooltip" id="hint-drq">مقدار شروع «مقدار سفارش» برای تنوع‌های تازه؛ فقط یک یادداشت راهنماست و هیچ سفارشی را خودکار ثبت نمی‌کند.</span></span>
-                </label>
-                <input type="text" inputmode="numeric" id="default_reorder_quantity" name="default_reorder_quantity" min="0" aria-describedby="hint-drq" value="{{ (product.default_reorder_quantity or 0) if product else 0 }}" placeholder="مثال: 12">
             </div>
             <div class="form-group form-span-2">
                 <label for="tag_template_id">قالب تگ محصول</label>
@@ -147,10 +163,10 @@
                     <td><span class="badge {% if variant.available_quantity > 0 %}badge-available{% else %}badge-none{% endif %}">{{ variant.available_quantity }} قابل فروش</span></td>
                     <td>{{ variant.reserved_quantity or 0 }}</td>
                     <td>{{ variant.reorder_point or 0 }}</td>
-                    <td data-demand-cell="{{ variant.id }}">{% if variant.demand_count %}<a href="/admin/variants/{{ variant.id }}/edit" class="badge badge-info">{{ variant.demand_count }} تقاضا</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+                    {% include 'partials/demand_cell.html' %}
                     <td>
                         <div class="table-actions">
-                        <button type="submit" form="demand-form-{{ variant.id }}" data-demand-btn="{{ variant.id }}" class="btn btn-sm btn-ghost" title="ثبت تقاضای مشتری برای این تنوع">+ ثبت تقاضا</button>
+                        <button type="submit" form="demand-form-{{ variant.id }}" class="btn btn-sm btn-ghost" title="ثبت تقاضای مشتری برای این تنوع">+ ثبت تقاضا</button>
                         <a href="/admin/variants/{{ variant.id }}/edit{% if return_to %}?next={{ return_to|urlencode }}{% endif %}" class="btn btn-sm btn-ghost">ویرایش تنوع</a>
                         </div>
                     </td>
@@ -182,7 +198,45 @@
             <span class="section-step">{% if edit_mode %}۳{% else %}۲{% endif %}</span>
         </div>
         <div id="variants-container"></div>
-        <button type="button" class="btn btn-ghost" onclick="addVariant()">افزودن تنوع</button>
+        <details class="size-run" id="size-run">
+            <summary>ساخت گروهی تنوع‌ها <small>سایزهای یک رنگ را یکجا بساز</small></summary>
+            <div class="size-run-body">
+                <div class="form-row size-run-grid">
+                    <div class="form-group">
+                        <label for="size_run_price">قیمت فروش</label>
+                        <input type="text" inputmode="numeric" id="size_run_price" name="size_run_price" placeholder="مثال: 350000">
+                    </div>
+                    <div class="form-group">
+                        <label for="size_run_cost">قیمت خرید</label>
+                        <input type="text" inputmode="numeric" id="size_run_cost" name="size_run_cost" placeholder="مثال: 220000">
+                    </div>
+                    <div class="form-group">
+                        <label for="size_run_color">رنگ</label>
+                        <input type="text" id="size_run_color" name="size_run_color" placeholder="مثلاً آبی" autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label for="size_run_color_code">کد رنگ</label>
+                        <input type="text" id="size_run_color_code" name="size_run_color_code" dir="ltr" placeholder="#4AA3DF" data-color-picker>
+                    </div>
+                    <div class="form-group">
+                        <label for="size_run_location">محل انبار</label>
+                        <input type="text" id="size_run_location" name="size_run_location" placeholder="قفسه A-2">
+                    </div>
+                    <div class="form-group">
+                        <label for="size_run_photo">تصویر این رنگ</label>
+                        <input type="file" id="size_run_photo" name="size_run_photo" accept="image/png,image/jpeg,image/webp">
+                        <small class="field-help">یک عکس برای همه سایزهای این رنگ.</small>
+                    </div>
+                </div>
+                <div class="size-run-sizes" id="size-run-sizes"></div>
+                <div class="size-run-actions">
+                    <button type="button" class="btn btn-primary" id="size-run-create" onclick="createSizeRun()">ساخت تنوع‌ها</button>
+                    <span class="size-run-note" id="size-run-note" role="status"></span>
+                </div>
+            </div>
+        </details>
+        <button type="button" class="btn btn-ghost" id="add-variant-btn" onclick="addVariant()">افزودن تنوع</button>
+        <p class="form-error product-form-error" id="product-form-error" role="alert" hidden></p>
         <div class="form-actions-row product-form-actions">
             <button type="submit" class="btn btn-primary btn-large">{% if edit_mode %}ذخیره تغییرات{% else %}ثبت محصول{% endif %}</button>
             <a href="{{ return_to or '/admin/products' }}" class="btn btn-ghost">لغو</a>
@@ -198,9 +252,11 @@
 <div hidden>
     {% for variant in product.variants %}
     {% if variant.is_active %}
-    <form id="demand-form-{{ variant.id }}" method="post" action="/admin/variants/{{ variant.id }}/demand?next={{ (return_to or '/admin/products/' ~ product.id)|urlencode }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    </form>
+    <form id="demand-form-{{ variant.id }}" method="post" action="/admin/variants/{{ variant.id }}/demand?next={{ (return_to or '/admin/products/' ~ product.id)|urlencode }}"
+      hx-post="/admin/variants/{{ variant.id }}/demand?next={{ (return_to or '/admin/products/' ~ product.id)|urlencode }}"
+      hx-target="[data-demand-cell='{{ variant.id }}']" hx-swap="outerHTML">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+</form>
     {% else %}
     <form id="restore-form-{{ variant.id }}" method="post" action="/admin/variants/{{ variant.id }}/restore">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -211,17 +267,269 @@
 {% endif %}
 
 <script>
-let variantIndex = 0;
-const container = document.getElementById('variants-container');
+/* Variant rows: re-entry safe for boosted arrivals. The shell re-runs this
+   script in place: `var` re-declares quietly where `let` would throw, and
+   binding re-attaches to the fresh container each run (htmx swaps the body,
+   so a window-once flag would point listeners at a dead node). The index
+   counter is re-derived from the DOM — the row total marks every used
+   index, so the next one is always fresh. */
+var container = document.getElementById('variants-container');
 
 function variantNum(raw) {
-    const n = parseInt(String(toEnglishDigits(raw)).replace(/[^0-9]/g, ''), 10);
+    const digits = window.toEnglishDigits ? window.toEnglishDigits(raw) : String(raw || '');
+    const n = parseInt(String(digits).replace(/[^0-9]/g, ''), 10);
     return Number.isFinite(n) ? n : 0;
 }
 function fmtMoney(n) { return n.toLocaleString('fa-IR') + ' تومان'; }
 function fieldVal(entry, prefix) {
     const el = entry.querySelector(`[name^="variant_${prefix}_"]`);
     return el ? el.value.trim() : '';
+}
+
+/* A new row inherits the run from the row above: the colour, the price, the
+   shelf — what every size of one garment shares. The fields that must not
+   ride along never do: the size (a forgotten size becomes a silent twin
+   row), the stock (it would invent units), the barcode (unique in the
+   database — a copy fails the whole save), the SKU (derived from the size)
+   and the weight (sizes of one product rarely share one). */
+var SHARED_FIELDS = ['color', 'color_code', 'price', 'cost_price', 'storage_location'];
+
+function sharedField(entry, key) {
+    return entry ? entry.querySelector(`[name^="variant_${key}_"]`) : null;
+}
+
+function copySharedFields(from, to) {
+    if (!from || !to) return;
+    SHARED_FIELDS.forEach(key => {
+        const source = sharedField(from, key);
+        const target = sharedField(to, key);
+        if (source && target) target.value = source.value;
+    });
+    // The colour code paints a swatch and the row's own dot: both read the
+    // field's value, so the field has to say it changed.
+    const code = sharedField(to, 'color_code');
+    if (code) code.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/* The photo belongs to the colour, and the browser will not let script fill
+   a file input — but it will hand the very same file over. A browser that
+   refuses leaves the field empty; the row still saves. */
+function copyPhoto(from, to) {
+    try {
+        const file = from && from.files && from.files[0];
+        if (!file || !to) return;
+        const transfer = new DataTransfer();
+        transfer.items.add(file);
+        to.files = transfer.files;
+    } catch (error) {
+        // An empty photo field is still a valid row.
+    }
+}
+
+/* ---- The size run: a colour's sizes, built in one go ----------------- */
+
+function sizeRunValue(id) {
+    const field = document.getElementById(id);
+    return field ? String(field.value || '').trim() : '';
+}
+
+/* The shop's own ladder — the very one the rows' size pickers use, so the
+   panel and the rows can never disagree about what a size is. */
+function sizeRunOptions() {
+    const system = sizeRunValue('size_system');
+    if (!system || !window.RaykidSizing || !window.RaykidSizing.optionsFor) return [];
+    return window.RaykidSizing.optionsFor(system, null) || [];
+}
+
+/* A size already on the shelf in the same colour is the same variant twice:
+   the panel marks it and leaves it alone. The shelf is the rows of this form
+   and, on an existing product, the variants it already has. */
+function sizeRunExistingPairs() {
+    const node = document.getElementById('size-run-existing');
+    if (!node) return [];
+    try { return JSON.parse(node.textContent || '[]'); } catch (error) { return []; }
+}
+
+function sizeRunUsedSizes(color) {
+    const used = [];
+    if (!color) return used;
+    const remember = size => {
+        if (size && used.indexOf(size) === -1) used.push(size);
+    };
+    container.querySelectorAll('.variant-entry').forEach(entry => {
+        const sizeField = entry.querySelector('[name^="variant_size_"]');
+        const colorField = entry.querySelector('[name^="variant_color_"]');
+        const size = sizeField ? String(sizeField.value || '').trim() : '';
+        const rowColor = colorField ? String(colorField.value || '').trim() : '';
+        if (rowColor === color) remember(size);
+    });
+    sizeRunExistingPairs().forEach(pair => {
+        if (pair && pair.color === color) remember(String(pair.size || '').trim());
+    });
+    return used;
+}
+
+function renderSizeRun() {
+    const box = document.getElementById('size-run-sizes');
+    if (!box) return;
+    const options = sizeRunOptions();
+    box.innerHTML = '';
+    if (!options.length) {
+        const hint = document.createElement('p');
+        hint.className = 'muted size-run-hint';
+        hint.textContent = 'اول «سایز روی تگ چه شکلی است؟» را انتخاب کنید تا سایزهای فروشگاه اینجا بیاید.';
+        box.appendChild(hint);
+        return;
+    }
+    const table = document.createElement('table');
+    table.className = 'size-run-table';
+    const head = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    ['سایز', 'موجودی'].forEach(text => {
+        const cell = document.createElement('th');
+        cell.scope = 'col';
+        cell.textContent = text;
+        headRow.appendChild(cell);
+    });
+    head.appendChild(headRow);
+    table.appendChild(head);
+    const body = document.createElement('tbody');
+    options.forEach(option => {
+        const row = document.createElement('tr');
+        const name = document.createElement('th');
+        name.scope = 'row';
+        name.textContent = option.label;
+        row.appendChild(name);
+        const cell = document.createElement('td');
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.inputMode = 'numeric';
+        input.className = 'size-run-stock';
+        input.dataset.sizeValue = option.value;
+        input.setAttribute('aria-label', 'موجودی ' + option.label);
+        cell.appendChild(input);
+        const mark = document.createElement('span');
+        mark.className = 'size-run-used';
+        mark.textContent = 'هست';
+        mark.hidden = true;
+        cell.appendChild(mark);
+        row.appendChild(cell);
+        body.appendChild(row);
+    });
+    table.appendChild(body);
+    box.appendChild(table);
+    updateSizeRunMarks();
+}
+
+/* The colour decides what counts as the same variant, so the marks follow
+   the colour as it is typed — without rebuilding the table under the hand. */
+function updateSizeRunMarks() {
+    const box = document.getElementById('size-run-sizes');
+    if (!box) return;
+    const used = sizeRunUsedSizes(sizeRunValue('size_run_color'));
+    box.querySelectorAll('.size-run-stock').forEach(input => {
+        const mark = input.parentElement.querySelector('.size-run-used');
+        if (mark) mark.hidden = used.indexOf(input.dataset.sizeValue) === -1;
+    });
+}
+
+/* A row nobody has touched yet is the form's starter, not a variant: when a
+   run fills the shelf, it goes — otherwise it blocks the save with a price
+   it never had. */
+function removeEmptyVariantRows() {
+    container.querySelectorAll('.variant-entry').forEach(entry => {
+        const typed = ['size', 'color', 'price', 'cost_price', 'weight', 'barcode', 'sku', 'storage_location']
+            .some(key => {
+                const field = sharedField(entry, key);
+                return field && String(field.value || '').trim() !== '';
+            });
+        const photo = sharedField(entry, 'image');
+        const hasPhoto = photo && photo.files && photo.files.length > 0;
+        if (!typed && !hasPhoto && variantNum(fieldVal(entry, 'stock')) <= 0) entry.remove();
+    });
+    refreshFormTotal();
+}
+
+function createSizeRun() {
+    const box = document.getElementById('size-run-sizes');
+    const note = document.getElementById('size-run-note');
+    if (!box) return;
+    const inputs = Array.from(box.querySelectorAll('.size-run-stock'));
+    if (!inputs.length) {
+        if (note) note.textContent = 'اول سیستم سایز را انتخاب کنید.';
+        return;
+    }
+    const included = inputs.filter(input => String(input.value || '').trim() !== '');
+    if (!included.length) {
+        if (note) note.textContent = 'برای ساختن تنوع، موجودی حداقل یک سایز را بنویس.';
+        return;
+    }
+    const color = sizeRunValue('size_run_color');
+    const used = sizeRunUsedSizes(color);
+    const shared = {
+        color: color,
+        color_code: sizeRunValue('size_run_color_code'),
+        price: sizeRunValue('size_run_price'),
+        cost: sizeRunValue('size_run_cost'),
+        location: sizeRunValue('size_run_location')
+    };
+    const photo = document.getElementById('size_run_photo');
+    let made = 0;
+    let skipped = 0;
+    removeEmptyVariantRows();
+    included.forEach(input => {
+        const stock = String(input.value || '').trim();
+        const size = input.dataset.sizeValue;
+        if (used.indexOf(size) !== -1) { skipped += 1; return; }
+        addVariant({ size: size, stock: stock, shared: shared, photo: photo });
+        made += 1;
+    });
+    // The run has used the photo: a colour change from here owns a new one.
+    const panel = document.getElementById('size-run');
+    if (panel) delete panel.dataset.photoPicked;
+    if (note) {
+        const parts = [];
+        if (made) parts.push(made + ' تنوع ساخته شد.');
+        if (skipped) parts.push(skipped + ' تنوع تکراری ساخته نشد.');
+        if (!parts.length) parts.push('برای ساختن تنوع، موجودی حداقل یک سایز را بنویس.');
+        note.textContent = parts.join(' ');
+    }
+    updateSizeRunMarks();
+}
+
+/* A run's row: the shared values of the colour, the size of the run, the
+   stock of that size, and the colour's own photo. */
+function applySizeRun(entry, spec) {
+    const shared = spec.shared || {};
+    const values = {
+        color: shared.color,
+        color_code: shared.color_code,
+        price: shared.price,
+        cost_price: shared.cost,
+        storage_location: shared.location,
+        stock: spec.stock
+    };
+    Object.keys(values).forEach(key => {
+        const field = sharedField(entry, key);
+        const value = values[key];
+        if (field && value !== undefined && value !== null && String(value) !== '') field.value = value;
+    });
+    setEntrySize(entry, spec.size);
+    if (spec.photo) copyPhoto(spec.photo, sharedField(entry, 'image'));
+    // The colour code paints a swatch and the row's dot: both read the
+    // field's value, so the field has to say it changed.
+    const code = sharedField(entry, 'color_code');
+    if (code) code.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/* The size lands in the row's own picker — a ladder size in the select,
+   free text in the «سایر» box. */
+function setEntrySize(entry, size) {
+    if (!size) return;
+    const field = entry.querySelector('[name^="variant_size_"]');
+    if (!field) return;
+    field.value = size;
+    field.dispatchEvent(new Event(field.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }));
 }
 
 function refreshEntry(entry) {
@@ -233,6 +541,23 @@ function refreshEntry(entry) {
     if (summary) summary.textContent = `${size}${color ? ' · ' + color : ''} · ${price ? fmtMoney(price) : 'قیمت؟'}`;
     const total = entry.querySelector('[data-row-total]');
     if (total) total.textContent = (price && stock) ? fmtMoney(price * stock) : '—';
+    // The row reads sellable once a price is set: the status edge settles.
+    entry.classList.toggle('is-complete', price > 0);
+    paintEntryDot(entry);
+}
+
+// The garment dot mirrors the row's own colour-code field, so the shut
+// capsule still shows its garment. Plain hex only — never a theme token.
+function paintEntryDot(entry) {
+    const dot = entry.querySelector('[data-dot]');
+    if (!dot) return;
+    const code = entry.querySelector('[name^="variant_color_code_"]');
+    const raw = code ? String(code.value || '').trim() : '';
+    const m = /^#?(?:([0-9a-f]{6})|([0-9a-f])([0-9a-f])([0-9a-f]))$/i.exec(raw);
+    if (!m) { dot.style.background = 'transparent'; dot.classList.remove('has-color'); return; }
+    const full = (m[1] || (m[2] + m[2] + m[3] + m[3] + m[4] + m[4])).toLowerCase();
+    dot.style.background = '#' + full;
+    dot.classList.add('has-color');
 }
 
 function refreshFormTotal() {
@@ -261,24 +586,39 @@ function syncSkuRow(entry) {
     sku.value = size ? `${clean}-${size}` : clean;
 }
 
-function addVariant() {
-    const index = variantIndex++;
+function addVariant(spec) {
+    // Next free index: the hidden marker stamps every used one, so a return
+    // never reuses a name already in the DOM.
+    let index = 0;
+    container.querySelectorAll('input[name^="variant_index_"]').forEach(marker => {
+        const n = parseInt(marker.name.split('_').pop(), 10);
+        if (Number.isFinite(n) && n >= index) index = n + 1;
+    });
     const entryNo = container.querySelectorAll('.variant-entry').length + 1;
     // The row being built becomes the open one; finished rows fold away.
     container.querySelectorAll('.variant-entry').forEach(entry => setEntryOpen(entry, false));
+    // The row this one inherits from: the run above it.
+    const previous = container.lastElementChild;
     container.insertAdjacentHTML('beforeend', `
         <article class="variant-entry" data-open="true">
             <button type="button" class="variant-remove" onclick="this.closest('.variant-entry').remove(); refreshFormTotal();" aria-label="حذف تنوع">×</button>
             <button type="button" class="variant-entry-heading" data-collapse aria-expanded="true">
-                <strong>تنوع ${entryNo}</strong>
+                <span class="variant-entry-index" aria-hidden="true">${entryNo}</span>
+                <strong>تنوع</strong>
+                <span class="variant-entry-dot" data-dot aria-hidden="true"></span>
                 <span class="variant-entry-summary" data-summary></span>
-                <span class="variant-entry-caret" aria-hidden="true">▾</span>
+                <span class="variant-entry-chevron" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5 8 11l4.5-4.5"/></svg></span>
             </button>
-            <div class="variant-entry-body">
+            <div class="variant-entry-body"><div class="variant-entry-body-inner"><div class="variant-entry-body-pad">
             <div class="form-row variant-entry-grid">
-                <div class="form-group"><label>سایز</label><input type="text" name="variant_size_${index}" data-unify-digits placeholder="مثلاً ۳ تا ۴ سال"></div>
+                <div class="form-group"><label>سایز</label>
+                    <div class="size-field" data-size-field>
+                        <select name="variant_size_${index}" data-size-select aria-label="سایز"></select>
+                        <input type="text" data-size-other placeholder="سایز روی تگ" hidden>
+                        <small class="field-help size-preview" data-size-preview hidden></small>
+                    </div>
+                </div>
                 <div class="form-group"><label>رنگ</label><input type="text" name="variant_color_${index}" placeholder="مثلاً آبی"></div>
-                <div class="form-group"><label>سیستم سایز</label><input type="text" name="variant_size_system_${index}" placeholder="ایران / EU"></div>
                 <div class="form-group"><label>کد رنگ</label><input type="text" name="variant_color_code_${index}" dir="ltr" placeholder="#4AA3DF" data-color-picker></div>
                 <div class="form-group"><label>قیمت فروش <span class="required-mark">*</span></label><input type="text" inputmode="numeric" name="variant_price_${index}" required min="0" placeholder="مثال: 350000"></div>
                 <div class="form-group"><label>قیمت خرید</label><input type="text" inputmode="numeric" name="variant_cost_price_${index}" min="0" placeholder="مثال: 220000"></div>
@@ -291,26 +631,39 @@ function addVariant() {
                 <div class="form-group"><label>نقطه سفارش
                     <span class="hint"><button type="button" class="hint-btn" aria-label="راهنمای نقطه سفارش">ⓘ</button><span class="hint-pop" role="tooltip" id="hint-vrp-${index}">اگر موجودی قابل‌فروش این تنوع به این عدد برسد یا کمتر شود، تنوع نیازمند سفارش می‌شود.</span></span>
                 </label><input type="text" inputmode="numeric" name="variant_reorder_point_${index}" min="0" data-sync-default="point" aria-describedby="hint-vrp-${index}" value="{{ (product.default_reorder_point or 0) if product else 0 }}" placeholder="مثال: 5"></div>
-                <div class="form-group"><label>مقدار سفارش
-                    <span class="hint"><button type="button" class="hint-btn" aria-label="راهنمای مقدار سفارش">ⓘ</button><span class="hint-pop" role="tooltip" id="hint-vrq-${index}">چند عدد از این تنوع سفارش بدهید؛ فقط راهنماست و سفارش خودکار ثبت نمی‌شود.</span></span>
-                </label><input type="text" inputmode="numeric" name="variant_reorder_quantity_${index}" min="0" data-sync-default="quantity" aria-describedby="hint-vrq-${index}" value="{{ (product.default_reorder_quantity or 0) if product else 0 }}" placeholder="مثال: 12"></div>
                 <div class="form-group"><label>محل انبار</label><input type="text" name="variant_storage_location_${index}" placeholder="قفسه A-2"></div>
             </div>
             <div class="form-group"><label>تصویر تنوع</label><input type="file" name="variant_image_${index}" accept="image/png,image/jpeg,image/webp"></div>
             <div class="variant-entry-total">ارزش موجودی: <strong class="tnum" data-row-total>—</strong></div>
-            </div>
+            </div></div></div>
             <input type="hidden" name="variant_index_${index}" value="${index}">
         </article>`);
     initColorPickers(container);
+    if (window.RaykidSizing) window.RaykidSizing.setup(container);
     const fresh = container.lastElementChild;
+    if (spec) {
+        // A row out of a size run: the colour's values, the run's size.
+        applySizeRun(fresh, spec);
+    } else if (previous && previous.classList.contains('variant-entry')) {
+        copySharedFields(previous, fresh);
+        copyPhoto(sharedField(previous, 'image'), sharedField(fresh, 'image'));
+    }
     syncSkuRow(fresh);
     refreshEntry(fresh);
     refreshFormTotal();
 }
 
+/* Variant capsule toggle + row inputs: bound to the live container every run.
+   htmx swaps the body on a boosted return, so a window-once flag would pin
+   these listeners to a node no longer in the document. The shell's re-entry
+   dedupe (htmx-shell.js) swallows the duplicate document-level binds; the
+   container itself is fresh each arrival, so binding it again is correct. */
 container.addEventListener('click', event => {
     const head = event.target.closest('[data-collapse]');
     if (!head) return;
+    // Sidebar sections carry a key in data-collapse; variant headings carry
+    // the bare marker — only the bare one is ours.
+    if (head.getAttribute('data-collapse') !== '') return;
     const entry = head.closest('.variant-entry');
     setEntryOpen(entry, entry.dataset.open !== 'true');
 });
@@ -330,26 +683,66 @@ container.addEventListener('input', event => {
 // Product-level defaults feed untouched variant rows while they are typed.
 function bindDefaultSync(sourceId, kind) {
     const source = document.getElementById(sourceId);
-    if (!source) return;
-    let prev = toEnglishDigits(source.value);
+    if (!source || source.dataset.syncBound) return;
+    source.dataset.syncBound = 'true';
+    function currentDigits(value) {
+        return window.toEnglishDigits ? window.toEnglishDigits(value) : String(value || '');
+    }
+    let prev = currentDigits(source.value);
     source.addEventListener('input', () => {
-        const next = toEnglishDigits(source.value);
+        const next = currentDigits(source.value);
         container.querySelectorAll(`[data-sync-default="${kind}"]`).forEach(field => {
-            if (!field.dataset.touched && toEnglishDigits(field.value) === prev) field.value = next;
+            if (!field.dataset.touched && currentDigits(field.value) === prev) field.value = next;
         });
         prev = next;
     });
 }
 // Deferred scripts (app.js) land after parsing, so everything that touches
-// their globals waits for DOMContentLoaded; the container listeners above
-// only call them on user input, long after load.
+// their globals guards with window.* — the helpers above already do.
+/* The run panel follows the shop's ladder: a change of tag system or gender
+   redraws the sizes it offers, and the colour it carries decides which of
+   them are already on the shelf. */
+function bootSizeRun() {
+    const panel = document.getElementById('size-run');
+    if (!panel || panel.dataset.booted) return;
+    panel.dataset.booted = 'true';
+    if (typeof initColorPickers === 'function') initColorPickers(panel);
+    ['size_system', 'gender'].forEach(id => {
+        const field = document.getElementById(id);
+        if (!field || field.dataset.sizeRunBound) return;
+        field.dataset.sizeRunBound = 'true';
+        field.addEventListener('change', renderSizeRun);
+    });
+    const color = document.getElementById('size_run_color');
+    if (color && !color.dataset.sizeRunBound) {
+        color.dataset.sizeRunBound = 'true';
+        color.addEventListener('input', updateSizeRunMarks);
+        // A different colour needs a different photo: the one still in the
+        // panel belongs to the previous colour and must not ride along.
+        // A photo picked since the last run is a hand's choice — kept.
+        color.addEventListener('change', () => {
+            if (panel.dataset.photoPicked === '1') return;
+            const photo = document.getElementById('size_run_photo');
+            if (photo) photo.value = '';
+        });
+    }
+    const photo = document.getElementById('size_run_photo');
+    if (photo && !photo.dataset.sizeRunBound) {
+        photo.dataset.sizeRunBound = 'true';
+        photo.addEventListener('change', () => { panel.dataset.photoPicked = '1'; });
+    }
+    renderSizeRun();
+}
+
 function bootVariantForm() {
+    if (!container || container.dataset.booted) return;
+    container.dataset.booted = 'true';
     bindDefaultSync('default_reorder_point', 'point');
-    bindDefaultSync('default_reorder_quantity', 'quantity');
     const baseSkuField = document.getElementById('base_sku');
     if (baseSkuField) baseSkuField.addEventListener('input', () => {
         container.querySelectorAll('.variant-entry').forEach(syncSkuRow);
     });
+    bootSizeRun();
     {% if not edit_mode or not product.variants %}addVariant();{% endif %}
 }
 if (document.readyState === 'loading') {
@@ -358,38 +751,179 @@ if (document.readyState === 'loading') {
     bootVariantForm();
 }
 
-// Silent demand +1: the count ticks in place, the page never reloads. A
-// failed fetch falls back to the plain form submit, never a dead click.
-document.querySelectorAll('[data-demand-btn]').forEach(function (btn) {
-    btn.addEventListener('click', async function (event) {
-        event.preventDefault();
-        if (btn.disabled) return;
-        const form = btn.form;
-        if (!form || typeof fetch !== 'function') { form.submit(); return; }
-        btn.disabled = true;
-        try {
-            const response = await fetch(form.action, {
-                method: 'POST',
-                body: new FormData(form),
-                headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            });
-            if (!response.ok) throw new Error('bad status');
-            const data = await response.json();
-            const cell = document.querySelector(`[data-demand-cell="${btn.dataset.demandBtn}"]`);
-            if (cell) {
-                cell.innerHTML = '';
-                const badge = document.createElement('a');
-                badge.href = `/admin/variants/${btn.dataset.demandBtn}/edit`;
-                badge.className = 'badge badge-info demand-updated';
-                badge.textContent = `${data.demand_count} تقاضا`;
-                cell.appendChild(badge);
-            }
-        } catch (err) {
-            form.submit();
-            return;
+// Choosing a category suggests the garment ladder; a hand-set type wins.
+(function () {
+    var category = document.getElementById('category');
+    var typeSelect = document.getElementById('size_type');
+    if (!category || !typeSelect) return;
+    function suggest() {
+        if (typeSelect.value) return;
+        var text = category.value || '';
+        if (/شلوار|شورت|دامن|لگ|ساپورت|پایین/.test(text)) typeSelect.value = 'lower';
+        else if (/سرهمی|سرهم|ست|بادی|دستک/.test(text)) typeSelect.value = 'set';
+        else if (/تیشرت|پیراهن|بلوز|شومیز|هودی|کاپشن|بالاتنه/.test(text)) typeSelect.value = 'upper';
+        typeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    category.addEventListener('change', suggest);
+    category.addEventListener('blur', suggest);
+})();
+
+// Required fields: answer in the page, not with the browser's English bubble.
+// The row is opened when its price is the missing field; the first problem is
+// focused after the summary appears beside the submit button.
+(function () {
+    var form = document.getElementById('product-form');
+    if (!form || form.dataset.validationBound) return;
+    form.dataset.validationBound = 'true';
+    var summary = document.getElementById('product-form-error');
+    var addButton = document.getElementById('add-variant-btn');
+    var errorSeq = 0;
+
+    function hasVariants() {
+        return !!(container && container.querySelector('.variant-entry'));
+    }
+
+    function errorId(field) {
+        if (!field.dataset.errorId) {
+            errorSeq += 1;
+            field.dataset.errorId = 'product-field-error-' + errorSeq;
         }
-        btn.disabled = false;
+        return field.dataset.errorId;
+    }
+
+    function fieldName(field) {
+        var group = field.closest('.form-group');
+        var label = group ? group.querySelector('label') : null;
+        if (!label) return '';
+        return label.textContent.replace(/\*/g, '').replace(/\s+/g, ' ').trim();
+    }
+
+    function showFieldError(field) {
+        var group = field.closest('.form-group');
+        if (!group) return;
+        var id = errorId(field);
+        var message = document.getElementById(id);
+        if (!message) {
+            message = document.createElement('small');
+            message.className = 'field-error';
+            message.id = id;
+            message.setAttribute('data-for', field.name || '');
+            field.insertAdjacentElement('afterend', message);
+        }
+        var name = fieldName(field);
+        message.textContent = name ? name + ' را وارد کنید.' : 'این فیلد الزامی است.';
+        field.classList.add('is-invalid');
+        field.setAttribute('aria-invalid', 'true');
+        var described = (field.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+        if (described.indexOf(id) === -1) described.push(id);
+        field.setAttribute('aria-describedby', described.join(' '));
+    }
+
+    function clearFieldError(field) {
+        field.classList.remove('is-invalid');
+        field.removeAttribute('aria-invalid');
+        var id = field.dataset.errorId;
+        if (!id) return;
+        var message = document.getElementById(id);
+        if (message) message.remove();
+        var described = (field.getAttribute('aria-describedby') || '').split(/\s+/)
+            .filter(Boolean).filter(function (value) { return value !== id; });
+        if (described.length) field.setAttribute('aria-describedby', described.join(' '));
+        else field.removeAttribute('aria-describedby');
+    }
+
+    function validateFields() {
+        var invalid = [];
+        var fields = form.querySelectorAll('input[required], select[required], textarea[required]');
+        Array.prototype.forEach.call(fields, function (field) {
+            if (field.disabled || field.type === 'hidden') return;
+            if (field.closest('[hidden]')) return;
+            if (!String(field.value || '').trim()) {
+                showFieldError(field);
+                invalid.push(field);
+            } else {
+                clearFieldError(field);
+            }
+        });
+        return invalid;
+    }
+
+    function showSummary(text) {
+        if (!summary) return;
+        summary.textContent = text;
+        summary.hidden = false;
+    }
+
+    function hideSummary() {
+        if (summary) summary.hidden = true;
+    }
+
+    function focusField(field) {
+        var entry = field.closest('.variant-entry');
+        if (entry) setEntryOpen(entry, true);
+        window.requestAnimationFrame(function () {
+            try { field.focus({ preventScroll: true }); } catch (error) { field.focus(); }
+            if (field.scrollIntoView) field.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        });
+    }
+
+    function reportProblems(invalid) {
+        var missingVariant = !hasVariants();
+        if (!invalid.length && !missingVariant) {
+            hideSummary();
+            return false;
+        }
+        var parts = [];
+        if (missingVariant) parts.push('حداقل یک تنوع اضافه کنید.');
+        if (invalid.length === 1) parts.push('یک فیلد الزامی را کامل کنید.');
+        else if (invalid.length > 1) parts.push(invalid.length + ' فیلد الزامی را کامل کنید.');
+        showSummary(parts.join(' '));
+        if (invalid.length) {
+            focusField(invalid[0]);
+        } else if (addButton) {
+            addButton.focus();
+            if (addButton.scrollIntoView) addButton.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+        return true;
+    }
+
+    form.addEventListener('submit', function (event) {
+        if (reportProblems(validateFields())) event.preventDefault();
     });
-});
+
+    // The shell boosts every form, and a boosted submit sends its own
+    // request: cancelling the submit event is not enough, the flight itself
+    // has to be stopped before it leaves the shop.
+    form.addEventListener('htmx:beforeRequest', function (event) {
+        if (!event.detail || event.detail.elt !== form) return;
+        if (reportProblems(validateFields())) event.preventDefault();
+    });
+
+    function clearOnEdit(event) {
+        var field = event.target;
+        if (!field.matches || !field.matches('input, select, textarea')) return;
+        if (field.classList.contains('is-invalid')) clearFieldError(field);
+        if (summary && !summary.hidden && !form.querySelector('.is-invalid')) hideSummary();
+    }
+    form.addEventListener('input', clearOnEdit);
+    form.addEventListener('change', clearOnEdit);
+    if (addButton) addButton.addEventListener('click', hideSummary);
+    if (container) {
+        container.addEventListener('click', function (event) {
+            if (event.target.closest && event.target.closest('.variant-remove')) hideSummary();
+        });
+    }
+})();
+
+// The demand button is htmx: the hidden form posts itself, htmx swaps the
+// tally cell. A failed request swaps nothing — the shell keeps yesterday's
+// count until a reload, never a silent second POST.
 </script>
+<script type="application/json" id="sizing-ladders">{{ sizing_ladders_json|safe }}</script>
+{% if edit_mode and product.variants %}
+{# The variants this product already has: a size already in this colour is
+   the same variant twice, so the run panel leaves it alone. #}
+<script type="application/json" id="size-run-existing">[{% for variant in product.variants if variant.is_active %}{"size": {{ variant.size|tojson }}, "color": {{ variant.color|tojson }}}{% if not loop.last %},{% endif %}{% endfor %}]</script>
+{% endif %}
+<script src="/static/js/sizing.js?v={{ static_version }}"></script>
 {% endblock %}

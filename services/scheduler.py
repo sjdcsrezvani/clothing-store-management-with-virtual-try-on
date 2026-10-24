@@ -53,13 +53,6 @@ async def scheduler_task():
                 summary = await fire_follow_up_sms(db)
                 if summary["sent"]:
                     logger.info("Queued %s follow-up SMS", summary["sent"])
-                # The owner's monthly reading, once the Persian month has turned
-                # far enough (default: the 3rd). With no phone in the settings
-                # this is a cheap query that finds nothing to do.
-                from services.month_reading import fire_monthly_digest
-                digest = await fire_monthly_digest(db)
-                if digest.get("sent"):
-                    logger.info("Queued %s monthly digest SMS", digest["sent"])
                 expire_stale(db)
                 reclaim_stale(db)
                 # Gateway self-healing: a claim whose phone died mid-send goes
@@ -86,6 +79,14 @@ async def scheduler_task():
                 for _ in range(10):
                     job = claim_next(db)
                     if not job:
+                        break
+                    if job.job_type == "tryon":
+                        # Try-on has its own dedicated worker (10s loop,
+                        # fail-fast, quota-on-success). The generic path
+                        # would requeue billable failures — release it.
+                        job.status = "pending"
+                        job.locked_at = None
+                        db.commit()
                         break
                     try:
                         await process_one(db, job)

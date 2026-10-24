@@ -510,11 +510,13 @@
                 'ارسال آزمایشی به ' + digits + ' (' + metrics.count + ' پیامک)؟ متنِ ذخیره‌شده فرستاده می‌شود.';
             window.RaykidDialog.open('sms-test-confirm', document.activeElement);
         });
-        document.getElementById('sms-test-confirm-yes').addEventListener('click', function () {
+        document.addEventListener('click', function (event) {
+            if (!event.target.closest || !event.target.closest('#sms-test-confirm-yes')) return;
             window.RaykidDialog.close('sms-test-confirm');
             if (pendingTest) { pendingTest = false; testForm.submit(); }
         });
-        document.getElementById('sms-test-confirm').addEventListener('click', function (event) {
+        document.addEventListener('click', function (event) {
+            if (!event.target.closest || !event.target.closest('#sms-test-confirm')) return;
             if (event.target.closest('[data-dialog-close]')) pendingTest = false;
         });
         document.addEventListener('keydown', function (event) {

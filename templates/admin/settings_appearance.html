@@ -107,6 +107,7 @@
     </form>
 </div>
 
+{% if show_charts %}<script src="/static/js/charts.js"></script>{% endif %}
 <script>
 (function () {
     var options = document.querySelectorAll('.theme-option');
@@ -228,5 +229,4 @@
     paintSamples();
 })();
 </script>
-{% if show_charts %}<script src="/static/js/charts.js"></script>{% endif %}
 {% endblock %}

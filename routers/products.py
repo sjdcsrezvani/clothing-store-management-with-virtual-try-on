@@ -7,10 +7,10 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode, quote_plus
-from fastapi import APIRouter, Depends, HTTPException, Request, Form, File, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Form, File, UploadFile, Query
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from sqlalchemy import and_, func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from database import get_db
 from models import (
     Product,
@@ -26,6 +26,20 @@ from models import (
     to_english_digits,
 )
 from services.security import log_action, require_html_role
+from services.sizing import (SIZE_TYPES as SIZING_TYPES, SYSTEMS as SIZING_SYSTEMS,
+                             resolve_band, size_options, band_display,
+                             get_sizing_standards, variant_size_display)
+
+
+def _apply_band(variant, band) -> None:
+    """Write a resolved sizing band onto a variant; None clears it — an
+    unrecognized size keeps its raw text and simply carries no band."""
+    variant.band_min_cm = band.height_min if band else None
+    variant.band_max_cm = band.height_max if band else None
+    variant.band_min_months = band.months_min if band else None
+    variant.band_max_months = band.months_max if band else None
+    variant.band_min_adult = band.adult_min if band else None
+    variant.band_max_adult = band.adult_max if band else None
 from services._common import fmt, check_admin, jalali_str, page_arg
 from services.barcode import BARCODE_DENSITIES, generate_barcode_image, generate_barcode_number
 from services.templating import templates
@@ -129,6 +143,7 @@ def _product_form_error(request, db, product, edit_mode: bool, message: str):
         "error": message,
     }
     context.update(_catalog_datalists(db))
+    context.update(_sizing_context())
     if edit_mode:
         context.update({"fmt": fmt, "jalali_str": jalali_str})
     return templates.TemplateResponse(request, "admin/product_form.html", context)
@@ -141,6 +156,22 @@ def _catalog_datalists(db) -> dict:
     categories = [row[0] for row in db.query(Product.category).distinct().all() if row[0]]
     brands = [row[0] for row in db.query(Product.brand).distinct().all() if row[0]]
     return {"categories": sorted(categories), "brands": sorted(brands)}
+
+
+def _sizing_context() -> dict:
+    """The engine's ladders, embedded once per form render so the size pickers
+    and the preview line never guess. Adult letters depend on gender, so both
+    ladders ship and the script picks by the product's gender."""
+    ladders = {system: size_options(system) for system in SIZING_SYSTEMS}
+    ladders["adult"] = {
+        "woman": size_options("adult", "woman"),
+        "man": size_options("adult", "man"),
+    }
+    return {
+        "sizing_types": list(SIZING_TYPES.items()),
+        "sizing_systems": [(sid, spec["label"]) for sid, spec in SIZING_SYSTEMS.items()],
+        "sizing_ladders_json": json.dumps(ladders, ensure_ascii=False),
+    }
 
 
 def _selected_quantities(form) -> dict[int, int]:
@@ -195,7 +226,8 @@ PRODUCT_STOCK_FILTERS = ("all", "low", "out")
 
 
 def _product_list_query(db, search: str = "", category: str = "", stock: str = "all",
-                        active_only: bool = True):
+                        active_only: bool = True, standard: str | None = None,
+                        adult_standard: str | None = None):
     """The filtered products query the list, the CSV and the bulk bar share.
 
     Price and stock are variant aggregates, so the query carries them as
@@ -228,14 +260,33 @@ def _product_list_query(db, search: str = "", category: str = "", stock: str = "
     )
 
     if search:
-        # Search product name or variant barcode
-        query = query.filter(
+        # Band labels are derived, so a size search also finds the products
+        # whose band label holds the typed number («116» finds a «122» tag).
+        # shortcut: this scans the active variants; a stored label column is
+        # the upgrade if the catalogue outgrows a few thousand pieces.
+        needle = to_english_digits(search).strip().lower()
+        band_product_ids = set()
+        if standard and needle:
+            for variant in (
+                db.query(ProductVariant).join(Product).options(joinedload(ProductVariant.product))
+                .filter(Product.is_active == active_only, ProductVariant.is_active == True)  # noqa: E712
+                .all()
+            ):
+                if needle in variant_size_display(
+                        variant, standard, adult_standard=adult_standard).lower():
+                    band_product_ids.add(variant.product_id)
+
+        conditions = (
             Product.name.contains(search) |
             Product.base_sku.contains(search) |
             Product.category.contains(search) |
             Product.variants.any(ProductVariant.barcode.contains(search)) |
-            Product.variants.any(ProductVariant.sku.contains(search))
+            Product.variants.any(ProductVariant.sku.contains(search)) |
+            Product.variants.any(ProductVariant.size.contains(search))
         )
+        if band_product_ids:
+            conditions = conditions | Product.id.in_(band_product_ids)
+        query = query.filter(conditions)
 
     if category:
         query = query.filter(Product.category == category)
@@ -331,9 +382,11 @@ async def admin_products(
     # Ledger sorting, same convention as the sales list: an unknown key or
     # direction answers the default newest-first list, never an error.
     sort_key, sort_dir = parse_sort(request.query_params, PRODUCT_SORTS, "newest")
+    sizing_standard, sizing_standard_adult = get_sizing_standards(db)
 
     query, price_sq, avail_sq = _product_list_query(
-        db, search, category, stock, active_only=not archived_view)
+        db, search, category, stock, active_only=not archived_view,
+        standard=sizing_standard, adult_standard=sizing_standard_adult)
     total = query.count()
     total_pages = max(1, (total + per_page - 1) // per_page)
     page = min(max(page, 1), total_pages)
@@ -345,6 +398,22 @@ async def admin_products(
     # Shared with the dashboard's «موجودی کم» alert, so the two can never quote
     # different numbers for the same shelf.
     alerts = stock_alerts(db)
+
+    # The list speaks the shop's one display unit: each variant's stored band
+    # is rendered once here, and the product summary keeps the distinct labels.
+    variant_bands = {}
+    product_bands = {}
+    for product in products:
+        labels = []
+        for variant in product.variants:
+            if not variant.is_active:
+                continue
+            label = variant_size_display(
+                variant, sizing_standard, adult_standard=sizing_standard_adult)
+            variant_bands[variant.id] = label
+            if label and label not in labels:
+                labels.append(label)
+        product_bands[product.id] = labels
 
     return templates.TemplateResponse(request, "admin/products.html", {
         "products": products,
@@ -370,6 +439,9 @@ async def admin_products(
         }),
         "fmt": fmt,
         "jalali_str": jalali_str,
+        "sizing_standard": sizing_standard,
+        "variant_bands": variant_bands,
+        "product_bands": product_bands,
     })
 
 
@@ -388,7 +460,10 @@ async def admin_products_export(
     if stock not in PRODUCT_STOCK_FILTERS:
         stock = "all"
     sort_key, sort_dir = parse_sort(request.query_params, PRODUCT_SORTS, "newest")
-    query, price_sq, avail_sq = _product_list_query(db, search, category, stock)
+    kids_standard, adult_standard = get_sizing_standards(db)
+    query, price_sq, avail_sq = _product_list_query(
+        db, search, category, stock, standard=kids_standard,
+        adult_standard=adult_standard)
     order, tiebreak = _product_order(sort_key, sort_dir, price_sq, avail_sq)
 
     rows = [["نام", "برند", "دسته‌بندی", "SKU پایه", "تنوع فعال",
@@ -468,7 +543,9 @@ async def admin_tag_settings(request: Request, db: Session = Depends(get_db)):
         .order_by(Product.name, ProductVariant.id)
         .first()
     )
-    sample_item = item_from_variant(sample_variant, fmt) if sample_variant else {
+    sample_kids, sample_adult = get_sizing_standards(db)
+    sample_item = item_from_variant(
+        sample_variant, fmt, sample_kids, sample_adult) if sample_variant else {
         "variant_id": None, "barcode": "12345", "product_name": "نمونه محصول",
         "name": "نمونه محصول", "price": 250000, "price_display": fmt(250000),
         "size": "۴ سال", "color": "آبی", "sku": "SKU-001", "brand": "رای کیدز",
@@ -664,7 +741,32 @@ async def admin_product_add_form(request: Request, db: Session = Depends(get_db)
         "suppliers": db.query(Supplier).order_by(Supplier.name.asc()).all(),
         "tag_templates": list_tag_templates(db),
         **_catalog_datalists(db),
+        **_sizing_context(),
     })
+
+
+@router.get("/sizing/preview", response_class=HTMLResponse)
+async def admin_sizing_preview(request: Request, system: str = "", size: str = "",
+                               size_type: str = Query("", alias="type"),
+                               gender: str = Query(""),
+                               db: Session = Depends(get_db)):
+    """The one converter, answering the form's live preview: the resolved band
+    in the shop's single display unit, «تبدیل ندارد» for a size the engine
+    cannot name."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    band = resolve_band(system, size, size_type, gender) if system in SIZING_SYSTEMS else None
+    text = size.strip()
+    if band is not None:
+        kids_standard, adult_standard = get_sizing_standards(db)
+        standard = adult_standard if band.adult_min is not None else kids_standard
+        text = band_display(band, standard, gender)
+    elif not text:
+        text = ""
+    else:
+        text = "تبدیل ندارد"
+    return PlainTextResponse(text)
 
 
 @router.post("/products/add", response_class=HTMLResponse)
@@ -685,6 +787,15 @@ async def admin_product_add(
 
     # Parse dynamic variant fields
     form = await request.form()
+    # Sizing phase 1: the product names the tag system and garment ladder —
+    # only labels the engine knows survive the boundary.
+    size_type = _form_text(form, "size_type") or None
+    size_system = _form_text(form, "size_system") or None
+    gender = _form_text(form, "gender") or None
+    if size_type not in SIZING_TYPES:
+        size_type = None
+    if size_system not in SIZING_SYSTEMS:
+        size_system = None
     variant_indices = set()
     for key in form.keys():
         if key.startswith("variant_index_"):
@@ -700,6 +811,7 @@ async def admin_product_add(
             "suppliers": db.query(Supplier).order_by(Supplier.name.asc()).all(),
             "tag_templates": list_tag_templates(db),
             "error": "حداقل یک تنوع اضافه کنید.",
+            **_sizing_context(),
         })
 
     upload_dir = Path("static/uploads/products")
@@ -714,15 +826,16 @@ async def admin_product_add(
         base_sku=_form_text(form, "base_sku") or None,
         base_barcode=to_english_digits(_form_text(form, "base_barcode")) or None,
         garment_type=_form_text(form, "garment_type") or None,
-        gender=_form_text(form, "gender") or None,
+        gender=gender,
         material=_form_text(form, "material") or None,
         season=_form_text(form, "season") or None,
         collection=_form_text(form, "collection") or None,
         care_instructions=_form_text(form, "care_instructions") or None,
         supplier_id=_form_optional_int(form, "supplier_id"),
         default_reorder_point=_form_nonnegative_int(form, "default_reorder_point"),
-        default_reorder_quantity=_form_nonnegative_int(form, "default_reorder_quantity"),
         tag_template_id=_form_tag_template_id(form, db),
+        size_type=size_type,
+        size_system=size_system,
     )
     db.add(product)
     db.flush()
@@ -742,11 +855,10 @@ async def admin_product_add(
         barcode = form.get(f"variant_barcode_{idx}", "")
         sku = form.get(f"variant_sku_{idx}", "")
         reorder_point = _form_nonnegative_int(form, f"variant_reorder_point_{idx}", product.default_reorder_point)
-        reorder_quantity = _form_nonnegative_int(form, f"variant_reorder_quantity_{idx}", product.default_reorder_quantity)
         storage_location = _form_text(form, f"variant_storage_location_{idx}") or None
-        size_system = _form_text(form, f"variant_size_system_{idx}") or None
         color_code = _form_text(form, f"variant_color_code_{idx}") or None
         variant_weight = _form_optional_int(form, f"variant_weight_{idx}")
+        band = resolve_band(size_system, size, size_type, gender) if size_system else None
         try:
             color_code = _normalize_hex_color(form.get(f"variant_color_code_{idx}", ""))
         except ValueError as problem:
@@ -819,11 +931,16 @@ async def admin_product_add(
             sku=sku if sku else None,
             image_path=variant_image_path,
             reorder_point=reorder_point,
-            reorder_quantity=reorder_quantity,
             storage_location=storage_location,
             size_system=size_system,
             color_code=color_code,
             weight_grams=variant_weight,
+            band_min_cm=band.height_min if band else None,
+            band_max_cm=band.height_max if band else None,
+            band_min_months=band.months_min if band else None,
+            band_max_months=band.months_max if band else None,
+            band_min_adult=band.adult_min if band else None,
+            band_max_adult=band.adult_max if band else None,
         )
         db.add(variant)
         created_variants.append((variant, stock_int))
@@ -864,6 +981,7 @@ async def admin_product_edit_form(product_id: int, request: Request, next: str =
         "suppliers": db.query(Supplier).order_by(Supplier.name.asc()).all(),
         "tag_templates": list_tag_templates(db),
         **_catalog_datalists(db),
+        **_sizing_context(),
         "return_to": _safe_next(next, "/admin/products"),
         "fmt": fmt,
         "jalali_str": jalali_str,
@@ -892,6 +1010,15 @@ async def admin_product_update(
 
     # Update base product
     form = await request.form()
+    old_size_system, old_size_type, old_gender = product.size_system, product.size_type, product.gender
+    size_type = _form_text(form, "size_type") or None
+    if size_type not in SIZING_TYPES:
+        size_type = None
+    size_system = _form_text(form, "size_system") or None
+    if size_system not in SIZING_SYSTEMS:
+        size_system = None
+    product.size_type = size_type
+    product.size_system = size_system
     product.name = name.strip()
     product.category = category.strip() or None
     product.brand = brand.strip() or None
@@ -906,7 +1033,6 @@ async def admin_product_update(
     product.care_instructions = _form_text(form, "care_instructions") or None
     product.supplier_id = _form_optional_int(form, "supplier_id")
     product.default_reorder_point = _form_nonnegative_int(form, "default_reorder_point")
-    product.default_reorder_quantity = _form_nonnegative_int(form, "default_reorder_quantity")
     product.tag_template_id = _form_tag_template_id(form, db)
     product.updated_at = datetime.now(timezone.utc)
 
@@ -936,11 +1062,10 @@ async def admin_product_update(
         barcode = form.get(f"variant_barcode_{idx}", "")
         sku = form.get(f"variant_sku_{idx}", "")
         reorder_point = _form_nonnegative_int(form, f"variant_reorder_point_{idx}", product.default_reorder_point)
-        reorder_quantity = _form_nonnegative_int(form, f"variant_reorder_quantity_{idx}", product.default_reorder_quantity)
         storage_location = _form_text(form, f"variant_storage_location_{idx}") or None
-        size_system = _form_text(form, f"variant_size_system_{idx}") or None
         color_code = _form_text(form, f"variant_color_code_{idx}") or None
         variant_weight = _form_optional_int(form, f"variant_weight_{idx}")
+        band = resolve_band(size_system, size, size_type, product.gender) if size_system else None
         try:
             color_code = _normalize_hex_color(form.get(f"variant_color_code_{idx}", ""))
         except ValueError as problem:
@@ -1013,11 +1138,16 @@ async def admin_product_update(
             sku=sku if sku else None,
             image_path=variant_image_path,
             reorder_point=reorder_point,
-            reorder_quantity=reorder_quantity,
             storage_location=storage_location,
             size_system=size_system,
             color_code=color_code,
             weight_grams=variant_weight,
+            band_min_cm=band.height_min if band else None,
+            band_max_cm=band.height_max if band else None,
+            band_min_months=band.months_min if band else None,
+            band_max_months=band.months_max if band else None,
+            band_min_adult=band.adult_min if band else None,
+            band_max_adult=band.adult_max if band else None,
         )
         db.add(variant)
         created_variants.append((variant, stock_int))
@@ -1027,6 +1157,12 @@ async def admin_product_update(
         return _product_form_error(request, db, product, True, "حداقل یک تنوع با قیمت فروش معتبر اضافه کنید.")
 
     db.flush()
+    # A changed system or ladder re-resolves every variant's band: derived
+    # data must never trail the table that produced it.
+    if (product.size_system, product.size_type, product.gender) != (old_size_system, old_size_type, old_gender) and product.size_system:
+        for existing in product.variants:
+            _apply_band(existing, resolve_band(product.size_system, existing.size, product.size_type, product.gender))
+            existing.size_system = product.size_system
     for variant, initial_stock in created_variants:
         record_opening_stock(
             db,
@@ -1076,6 +1212,7 @@ async def admin_variant_edit_form(variant_id: int, request: Request, next: str =
         "variant": variant,
         "product": variant.product,
         "return_to": _safe_next(next, f"/admin/products/{variant.product_id}"),
+        **_sizing_context(),
     })
 
 
@@ -1092,7 +1229,6 @@ async def admin_variant_update(
     sku: str = Form(""),
     tryon_details: str = Form(""),
     reorder_point: str = Form("0"),
-    reorder_quantity: str = Form("0"),
     weight_grams: str = Form(""),
     storage_location: str = Form(""),
     size_system: str = Form(""),
@@ -1163,7 +1299,6 @@ async def admin_variant_update(
         })
     try:
         reorder_point_int = max(0, int(to_english_digits(reorder_point or "0")))
-        reorder_quantity_int = max(0, int(to_english_digits(reorder_quantity or "0")))
     except ValueError:
         return templates.TemplateResponse(request, "admin/variant_form.html", {
             "variant": variant,
@@ -1252,10 +1387,15 @@ async def admin_variant_update(
     variant.sku = sku.strip() if sku else None
     variant.tryon_details = tryon_details.strip() if tryon_details.strip() else None
     variant.reorder_point = reorder_point_int
-    variant.reorder_quantity = reorder_quantity_int
     variant.weight_grams = weight_int
     variant.storage_location = storage_location.strip() if storage_location else None
-    variant.size_system = size_system.strip() if size_system else None
+    if variant.product and variant.product.size_system:
+        # The product owns the tag system now; the variant holds its size and
+        # the band resolved beside it.
+        variant.size_system = variant.product.size_system
+        _apply_band(variant, resolve_band(variant.product.size_system, variant.size, variant.product.size_type, variant.product.gender))
+    else:
+        variant.size_system = size_system.strip() if size_system else None
     # Lenient where the add flow refuses: a legacy free-text colour already on
     # the row must not lock the whole edit. Valid codes still normalise.
     try:
@@ -1268,8 +1408,10 @@ async def admin_variant_update(
     from services.security import log_action
     log_action(db, "variant_update", f"ویرایش تنوع #{variant.id}", request=request, target_type="variant", target_id=variant.id)
 
+    # A variant has one parent: a save lands on that product's page, whatever
+    # list state the link that opened the row carried.
     return RedirectResponse(
-        url=_safe_next(form.get("next", ""), "/admin/products/" + str(variant.product_id)),
+        url=f"/admin/products/{variant.product_id}",
         status_code=303,
     )
 
@@ -1437,6 +1579,13 @@ async def admin_variant_demand_up(variant_id: int, request: Request, next: str =
     db.commit()
     from services.security import log_action
     log_action(db, "variant_demand_up", f"ثبت تقاضا برای تنوع #{variant.id}", request=request, target_type="variant", target_id=variant.id)
+    if request.headers.get("HX-Request"):
+        # The product form's button swaps its own tally cell — the answer is
+        # the cell as the row will draw it from now on, badge flagged updated.
+        return templates.TemplateResponse(request, "partials/demand_cell.html", {
+            "variant": variant,
+            "updated": True,
+        })
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         return JSONResponse({"ok": True, "demand_count": variant.demand_count})
     return RedirectResponse(
@@ -1513,11 +1662,12 @@ async def admin_barcodes_print(
     # instead of being forced to select one checkbox per unit in stock.
     barcode_items = []
     template_configs = {"default": config}
+    tag_standard, tag_adult = get_sizing_standards(db)
     for product in products:
         for variant in product.variants:
             if not variant.is_active:
                 continue
-            item = item_from_variant(variant, fmt)
+            item = item_from_variant(variant, fmt, tag_standard, tag_adult)
             template_key = str(product.tag_template.id) if product.tag_template and product.tag_template.is_active else "default"
             item["tag_template_key"] = template_key
             item["tag_config"] = tag_template_config(product.tag_template, config)
