@@ -149,7 +149,9 @@ def test_page_names_risk_witnesses_alarm_and_terminal(client, db_session, authed
         f"/admin/pos-reconciliation/{alarm.id}/review",
         data={"resolution_type": "terminal_error", "evidence": "bank slip 7",
               "csrf_token": _token(client)}, follow_redirects=False).status_code == 303
-    witnessed = client.get("/admin/pos-reconciliation").text
+    # Resolving retires the row out of the default (unresolved) queue, so
+    # the witness is read from the view that still holds it.
+    witnessed = client.get("/admin/pos-reconciliation?status=resolved").text
     assert "ثبت:" in witnessed
     assert "bank slip 7" in witnessed
 
