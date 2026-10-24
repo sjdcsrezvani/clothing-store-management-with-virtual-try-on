@@ -3811,7 +3811,7 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
 @media print {
   .page-heading .admin-nav, .filter-card { display: none !important; }
   #cashbox-confirm, #cashbox-reverse-confirm,
-  #expense-add-confirm, #expense-void-confirm, #recurring-stop-confirm { display: none !important; }
+  #expense-add-confirm, #expense-void-confirm { display: none !important; }
 }
 /* Nine columns never fit a phone: narrow screens stack rows into labelled
    cards instead of scrolling sideways, like every other admin list. */

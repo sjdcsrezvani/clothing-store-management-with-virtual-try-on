@@ -863,19 +863,19 @@ class Expense(Base):
     )
     note = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    # The monthly rule that posted this row, if it was posted by one rather
-    # than typed by a human: the list badges it «خودکار» and the rule stays
-    # traceable after the fact. Purely additive — hand-typed rows have none.
+    # The retired monthly-rule feature stamped this on the rows it posted; the
+    # list still badges them «خودکار». No new row carries one — a monthly amount
+    # changes month to month, so those expenses are typed and tagged by hand.
     recurring_rule_id = Column(Integer, ForeignKey("recurring_expenses.id"), nullable=True)
 
 
 class RecurringExpense(Base):
-    """A monthly expense rule: defined once, posted every month until stopped.
+    """A retired monthly-expense rule.
 
-    Generation is lazy — the expenses page posts whatever is due when a
-    manager opens it — so there is no scheduler to watch, and each posting
-    carries its own idempotency key (rule + month) so a second visit in the
-    same hour can never post the same month twice.
+    The shop stopped using it: a monthly amount changes month to month, so a
+    «ماهانه» expense is typed by hand when it is known. The table stays so the
+    rows the feature posted keep their ``recurring_rule_id`` and «خودکار»
+    badge; nothing reads or writes rules any more.
     """
     __tablename__ = "recurring_expenses"
 
