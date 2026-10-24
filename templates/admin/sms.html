@@ -171,30 +171,12 @@
                     </small>
                 </div>
                 <div class="form-group">
-                    <label for="monthly_digest_phone">خلاصه ماهانه برای مدیر — شماره‌ها</label>
-                    <input type="text" id="monthly_digest_phone" name="monthly_digest_phone"
-                           value="{{ digest_phones }}" placeholder="مثال: 09123456789">
-                    <small>
-                        وقتی ماه فارسی تمام شود، همان روایتی که داشبورد زیر کارت‌های «این ماه»
-                        می‌نویسد به این شماره پیامک می‌شود: فروش و سود ماه، شلوغ‌ترین روز، پرفروش‌ترین
-                        دسته و سطح مشتری. خالی بماند ارسال نمی‌شود — خودِ این شماره روشن‌کردن خلاصه است.
-                    </small>
-                </div>
-                <div class="form-group">
-                    <label for="monthly_digest_day">روز ارسال خلاصه از ماه جدید</label>
-                    {{ num('monthly_digest_day', digest_day) }}
-                    <small>
-                        مثلاً با عدد ۳، سومِ هر ماه، گزارش ماه قبلی فرستاده می‌شود — همیشه یک ماه کامل،
-                        نه نیمه‌کاره. {% if digest_next_month %}خلاصه بعدی درباره‌ «{{ digest_next_month }}» است.{% endif %}
-                    </small>
-                </div>
-                <div class="form-group">
                     <label for="sms_allowed_phones">حالت آزمایشی — فقط این شماره‌ها</label>
                     <input type="text" id="sms_allowed_phones" name="sms_allowed_phones"
                            value="{{ allowed_phones }}" dir="ltr" placeholder="09123456789">
                     <small>
                         تا وقتی اینجا شماره‌ای هست، هیچ پیامکی به شماره دیگری — مشتری،
-                        کمپین، پیگیری، خلاصه — در صف نمی‌رود. خالی بگذارید تا ارسال
+                        کمپین، پیگیری — در صف نمی‌رود. خالی بگذارید تا ارسال
                         برای همه باز شود.
                     </small>
                 </div>
@@ -204,29 +186,6 @@
             </form>
             {% else %}
             <p class="muted">سقف ارسال فقط توسط مالک فروشگاه قابل تغییر است.</p>
-            {% endif %}
-            {% if digest_preview is defined %}
-            {# Outside both forms on purpose: the preview bubble is read-only
-               for managers, and the send-now button posts to its own route —
-               a form inside a form would be folded into the settings save by
-               the HTML parser. The numbers above and the send stay gated on
-               can_configure. #}
-            <div class="digest-preview">
-                <span class="digest-preview-label">پیش‌نمایش خلاصه بعدی — از فروش واقعی «{{ digest_next_month }}»</span>
-                {% if digest_preview.state == 'ready' %}
-                <div class="sms-bubble digest-preview-bubble" dir="auto">{{ digest_preview.body }}</div>
-                {% else %}
-                <p class="muted">پیش‌نمایش اکنون ساخته نشد؛ بعداً دوباره این صفحه را باز کنید.</p>
-                {% endif %}
-                {% if can_configure %}
-                <form method="post" action="/admin/sms/digest/send-now" class="digest-preview-actions"
-                      data-confirm="خلاصه «{{ digest_next_month }}» برای {{ digest_phones.split()|length }} شماره در صف قرار می‌گیرد؟ اگر ارسال خودکار این ماه انجام شده باشد، دوباره فرستاده نمی‌شود.">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                    <button type="submit" class="btn btn-sm btn-ghost">ارسال همین حالا</button>
-                    <small>همین متن برای شماره‌های بالا در صف قرار می‌گیرد؛ اگر ارسال خودکار این ماه انجام شده باشد، دوباره فرستاده نمی‌شود.</small>
-                </form>
-                {% endif %}
-            </div>
             {% endif %}
         </div>
     </div>
@@ -401,9 +360,9 @@
     </ul>
     {% endif %}
 </section>
-{# One confirm surface for the manager page: toggle, delete, unpair and the
-   digest send-now carry their sentence in data-confirm; without JS every
-   form posts directly. Same surface shape as the campaign detail page. #}
+{# One confirm surface for the manager page: toggle, delete and unpair carry
+   their sentence in data-confirm; without JS every form posts directly. Same
+   surface shape as the campaign detail page. #}
 <div id="sms-confirm" data-dialog role="alertdialog" aria-modal="true"
      aria-labelledby="sms-confirm-title" class="confirm-scrim" tabindex="-1">
     <div class="t-modal-card confirm-card" role="document">

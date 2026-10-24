@@ -619,12 +619,12 @@ SECTIONS: tuple[tuple[str, str, str, str], ...] = (
 
 
 def _month_reading(db: Session) -> list[str] | None:
-    """The month's sentences, the same words the owner's SMS carries.
+    """The month's sentences, from the same reading the analytics page draws.
 
-    Built from the same ``month_reading`` call the digest fires from, so the
-    page and the phone cannot disagree about what the month said. Owner-only
-    by construction: the caller never invokes this for a manager, and the
-    sentences name profit and margins — the owner's figures.
+    Built from ``month_reading``, so the strip and the page cannot disagree
+    about what the month said. Owner-only by construction: the caller never
+    invokes this for a manager, and the sentences name profit and margins —
+    the owner's figures.
     """
     start, end = get_date_range("month")
     reading = month_reading(db, start=start, end=end, span="این ماه")

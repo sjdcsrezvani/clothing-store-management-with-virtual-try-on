@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import Customer, Settings, SmsMessage, SmsTemplate, to_english_digits
-from services._common import fmt, get_setting_int, jalali_str, page_arg, int_arg
+from services._common import fmt, jalali_str, page_arg, int_arg
 from services.security import log_action, require_html_role
 from services.sms import (
     SETTING_ALLOWED_PHONES as SETTING_ALLOWLIST,
@@ -59,18 +59,7 @@ from services.sms_send import (
     send_bulk,
 )
 from services.sms_triggers import SETTING_AUTO_SEND_LIMIT
-from services.month_reading import (
-    DEFAULT_DIGEST_DAY,
-    SETTING_DIGEST_DAY,
-    SETTING_DIGEST_PHONE,
-    SOURCE as DIGEST_SOURCE,
-    digest_month_label,
-    digest_month_of_ref,
-    digest_phones,
-    digest_preview,
-    digest_ref,
-    send_digest_now,
-)
+from services.month_reading import digest_month_of_ref
 from services.sms_templates import (
     CUSTOMER_SOURCES,
     CUSTOM_TRIGGER,
@@ -110,7 +99,7 @@ from services.templating import templates
 router = APIRouter(prefix="/admin")
 
 GATEWAY_KEYS = ("sms_api_key", "sms_device_id", "campaign_sms_limit", SETTING_AUTO_SEND_LIMIT,
-                SETTING_DIGEST_PHONE, SETTING_DIGEST_DAY, SETTING_ALLOWLIST)
+                SETTING_ALLOWLIST)
 
 # A just-issued device key lives only for this long in the request cycle — long
 # enough to render the pairing QR, never persisted anywhere it could be read back.
@@ -123,7 +112,6 @@ _PAIRING_FLASH_LIMIT_SECONDS = 60
 SMS_NUMERIC_RULES = {
     "campaign_sms_limit": (1, None, "سقف هر ارسال"),
     "trigger_sms_limit": (1, None, "سقف ارسال خودکار در هر بررسی"),
-    "monthly_digest_day": (1, 28, "روز ارسال خلاصه"),
     # The upper bound *is* MAX_TRIGGER_DAYS — the editor's field and the
     # trigger_days() clamp read the same constant.
     "trigger_days": (1, MAX_TRIGGER_DAYS, "روزهای پیگیری"),
@@ -184,8 +172,6 @@ async def admin_sms_config(
     request: Request,
     campaign_sms_limit: str = Form(""),
     trigger_sms_limit: str = Form(""),
-    monthly_digest_phone: str = Form(""),
-    monthly_digest_day: str = Form(""),
     sms_allowed_phones: str = Form(""),
     db: Session = Depends(get_db),
 ):
@@ -212,35 +198,6 @@ async def admin_sms_config(
             return RedirectResponse(url=f"/admin/sms?err={label} باید عددی بزرگ‌تر از صفر باشد.",
                                     status_code=303)
         _save_setting(db, key, str(value))
-
-    # The digest's phone **is** the opt-in: clearing the field switches the
-    # summary off, so an empty save is honoured rather than skipped. The phone
-    # must be real — a summary that never arrives is a setting pretending.
-    phone_field = monthly_digest_phone.strip()
-    if phone_field:
-        phones = parse_phone_list(phone_field)
-        if not phones:
-            return RedirectResponse(
-                url="/admin/sms?err=شماره خلاصه ماهانه خوانده نشد؛ شماره‌ای معتبر بنویسید یا خالی بگذارید.",
-                status_code=303)
-        _save_setting(db, SETTING_DIGEST_PHONE, " ".join(phones))
-    else:
-        row = db.query(Settings).filter(Settings.key == SETTING_DIGEST_PHONE).first()
-        if row and row.value:
-            row.value = ""
-
-    day_field = monthly_digest_day.strip()
-    if day_field:
-        try:
-            day = int(to_english_digits(day_field))
-        except (TypeError, ValueError):
-            day = 0
-        day_rule = SMS_NUMERIC_RULES["monthly_digest_day"]
-        if not day_rule[0] <= day <= day_rule[1]:
-            return RedirectResponse(
-                url=f"/admin/sms?err={day_rule[2]} باید عددی از ۱ تا ۲۸ باشد.",
-                status_code=303)
-        _save_setting(db, SETTING_DIGEST_DAY, str(day))
 
     # The test-mode allowlist: only these numbers may ever be queued. Clearing
     # the field re-opens sending to everyone, so an empty save is honoured.
@@ -315,17 +272,6 @@ def _manager_context(request, db, guard, *, usage="all", sort="default",
         # The config form paints its bounds from the same table the POST
         # validates against.
         "numeric_rules": SMS_NUMERIC_RULES,
-        # The digest form reads its current values and the month it would next
-        # describe; both are computed here so the template stays declarative.
-        "digest_phones": " ".join(digest_phones(db)),
-        "digest_day": get_setting_int(db, "monthly_digest_day", DEFAULT_DIGEST_DAY),
-        "digest_next_ref": digest_ref(db),
-        "digest_next_month": digest_month_label(db),
-        # What opting in puts on the phone: last month's own text, composed by
-        # the same composer the send uses. Managers read it too (a blind
-        # phone/day form invites a wrong opt-in) but only the owner may change
-        # the numbers or send — the template gates both on can_configure.
-        "digest_preview": digest_preview(db),
         "pairing_flash_seconds": _PAIRING_FLASH_LIMIT_SECONDS,
         # Test mode is visible, never silent: when the allowlist holds any
         # number, both pages say so and name the count.
@@ -1000,10 +946,11 @@ async def admin_sms_history(
     listing = message_filtered(db, search=search, status=status, source=source,
                                order=order, page=page, per_page=per_page_int,
                                date_preset=date_preset)
-    # Every digest row carries its month's name, in every filter — «مرداد ۱۴۰۵»
-    # stays findable even from a phone-number search.
+    # Every historical digest row carries its month's name, in every filter —
+    # «مرداد ۱۴۰۵» stays findable even from a phone-number search. The monthly
+    # send is gone; this only labels what it left behind.
     for row in listing["rows"]:
-        if row["message"].source == DIGEST_SOURCE:
+        if row["message"].source == "monthly_digest":
             row["digest_month"] = digest_month_of_ref(row["message"].ref or "")
     return templates.TemplateResponse(request, "admin/sms_history.html", {
         **listing,
@@ -1013,126 +960,11 @@ async def admin_sms_history(
         "source_filters": (("all", "همه مبدأها"),) + tuple(SOURCE_LABELS.items()),
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
-        # The resend form posts to an owner-only route, so it renders only for
-        # one — a manager whose form 403s would be a trap, not a control.
-        "can_resend_digest": guard.role == "owner",
-        "digest_phone_count": len(digest_phones(db)),
         "per_page_options": (10, 25, 50),
         "fmt": fmt,
     })
 
 
-@router.post("/sms/digest/send-now")
-async def admin_sms_digest_send_now(
-    request: Request,
-    db: Session = Depends(get_db),
-):
-    """Queue last month's digest by hand — the button beside the preview.
-
-    It goes through ``send_digest_now``, so it faces the same once-per-month
-    ref the scheduler faces: if the automatic send already spoke for this
-    month, the hand send is refused rather than doubling the message, and the
-    owner reads which month is covered. The calendar gate stays the
-    scheduler's; the ref guard is shared, or it would guard nothing.
-    """
-    guard = _owner_guard(request, db)
-    if not hasattr(guard, "role"):
-        return guard
-
-    result = await send_digest_now(db)
-    month = result.get("ref", "")
-    if result["state"] == "no_phone":
-        return RedirectResponse(
-            url="/admin/sms?err=شماره‌ای برای خلاصه ماهانه ذخیره نشده؛ اول آن را در همین صفحه بنویسید.",
-            status_code=303)
-    if result["state"] == "already_sent":
-        return RedirectResponse(
-            url=f"/admin/sms?err=خلاصه این ماه پیش‌تر ارسال شده است؛ دوباره فرستاده نشد.",
-            status_code=303)
-    if result["state"] == "empty":
-        return RedirectResponse(
-            url=f"/admin/sms?err=متن خلاصه ساخته نشد؛ دوباره امتحان کنید.",
-            status_code=303)
-    if result["state"] == "error":
-        return RedirectResponse(
-            url=f"/admin/sms?err=ساخت خلاصه با خطا مواجه شد؛ بعداً دوباره امتحان کنید.",
-            status_code=303)
-    if result["state"] == "failed":
-        return RedirectResponse(
-            url=f"/admin/sms?err=هیچ پیامکی در صف قرار نگرفت.",
-            status_code=303)
-    month_label = digest_month_of_ref(month) if month else ""
-    log_action(db, "sms_digest_send_now",
-               f"ارسال دستی خلاصه ماهانه{f' «{month_label}»' if month_label else ''} برای {result['queued']} شماره",
-               request=request, target_type="settings",
-               after={"ref": month, "queued": result["queued"]})
-    return RedirectResponse(
-        url=f"/admin/sms?msg=خلاصه{f' «{month_label}»' if month_label else ''} برای {result['queued']} شماره در صف قرار گرفت.",
-        status_code=303)
-
-
-@router.post("/sms/history/digest/resend")
-async def admin_sms_history_digest_resend(
-    request: Request,
-    ref: str = Form(...),
-    db: Session = Depends(get_db),
-):
-    """Send a past month's summary again — by hand, owner only.
-
-    The scheduler's once-per-month ref keeps the automatic send honest; a hand
-    send is the owner's own decision and must not be blocked by it. But a text
-    cannot be rewritten after the fact: the resend carries the body exactly as
-    the month's row recorded it, so what went out before is what goes out
-    again — auditable, never re-interpreted.
-    """
-    guard = _owner_guard(request, db)
-    if not hasattr(guard, "role"):
-        return guard
-
-    digest_rows = db.query(SmsMessage).filter(
-        SmsMessage.ref == ref.strip(),
-        SmsMessage.source == DIGEST_SOURCE,
-    ).order_by(SmsMessage.id.desc()).all()
-    if not digest_rows:
-        return RedirectResponse(
-            url=f"/admin/sms/history?source=monthly_digest&err=این ماه در گزارش ارسال‌ها پیدا نشد.",
-            status_code=303)
-    body = (digest_rows[0].body or "").strip()
-    if not body:
-        return RedirectResponse(
-            url=f"/admin/sms/history?source=monthly_digest&err=متن این خلاصه خالی است و فرستاده نشد.",
-            status_code=303)
-    phones = digest_phones(db)
-    if not phones:
-        return RedirectResponse(
-            url=f"/admin/sms/history?source=monthly_digest&err=شماره‌ای برای خلاصه ماهانه ذخیره نشده؛ اول آن را در تنظیمات پیامک بنویسید.",
-            status_code=303)
-
-    month = digest_month_of_ref(ref.strip()) or ref.strip()
-    queued = 0
-    for phone in phones:
-        row = await queue_sms("", phone, {}, db, source=DIGEST_SOURCE,
-                              body=body, ref=ref.strip())
-        if row is not None:
-            queued += 1
-    if queued:
-        db.commit()
-        log_action(db, "sms_digest_resend",
-                   f"ارسال دوباره خلاصه ماهانه «{month}» برای {queued} شماره",
-                   request=request, target_type="settings",
-                   after={"ref": ref.strip(), "queued": queued})
-        return RedirectResponse(
-            url=f"/admin/sms/history?source=monthly_digest&msg=خلاصه «{month}» برای {queued} شماره دوباره در صف قرار گرفت.",
-            status_code=303)
-    db.rollback()
-    return RedirectResponse(
-        url=f"/admin/sms/history?source=monthly_digest&err=هیچ پیامکی در صف قرار نگرفت.",
-        status_code=303)
-
-
-# Declared after ``/sms/history/digest/resend`` on purpose: a static path has
-# to be matched first or ``digest`` would be read as a message id — the same
-# rule the campaigns router keeps for ``/assign``.
 @router.post("/sms/history/{message_id}/resend", response_class=HTMLResponse)
 async def admin_sms_history_resend(
     message_id: int, request: Request, db: Session = Depends(get_db),

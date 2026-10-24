@@ -14,9 +14,9 @@
 {% endset %}
 {% include 'partials/page_header.html' %}
 
-{# The send, the digest resend and the digest send-now routes all land back here
-   with their answer in the query — a redirect that said nothing anywhere would
-   leave the owner guessing whether the queue took the message. #}
+{# The send and the retry routes both land back here with their answer in the
+   query — a redirect that said nothing anywhere would leave the owner guessing
+   whether the queue took the message. #}
 {% if err %}<div class="toaster-flash" data-toast data-toast-type="error" role="alert">⚠️ {{ err }}</div>{% endif %}
 {% if msg %}<div class="toaster-flash" data-toast data-toast-type="info" role="status">{{ msg }}</div>{% endif %}
 
@@ -259,29 +259,6 @@
     </nav>
     {% endif %}
 
-    {# The digests, gathered: when the filter is on them, the owner gets one
-       month-named form to send any month's summary again by hand. #}
-    {% if source == 'monthly_digest' and can_resend_digest %}
-    {% set digest_refs = rows|map(attribute='message.ref')|select|list %}
-    {% if digest_refs %}
-    <form method="post" action="/admin/sms/history/digest/resend" class="digest-resend"
-          data-confirm="خلاصه ماهانه برای {{ digest_phone_count }} شماره در صف قرار می‌گیرد. مطمئن هستید؟">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <label for="digest-resend-ref">ارسال دوباره خلاصه یک ماه ({{ digest_phone_count }} شماره)</label>
-        <div class="digest-resend-row">
-            <select id="digest-resend-ref" name="ref">
-                {% for ref in digest_refs|unique %}
-                <option value="{{ ref }}">
-                    {%- set month = rows|selectattr('message.ref', 'equalto', ref)|first -%}
-                    {{ month.digest_month or ref }}
-                {%- endfor %}
-            </select>
-            <button type="submit" class="btn btn-sm btn-primary">ارسال دوباره</button>
-        </div>
-    </form>
-    {% endif %}
-    {% endif %}
-
     {% elif has_filters %}
     <div class="empty-state">
         <h3>پیامکی با این فیلترها پیدا نشد</h3>
@@ -299,8 +276,8 @@
     </div>
     {% endif %}
 </section>
-{# One confirm surface for the retry and digest-resend forms: same shape as
-   the manager and send pages, no native dialogs on this log. #}
+{# One confirm surface for the retry form: same shape as the manager and send
+   pages, no native dialogs on this log. #}
 <div id="history-confirm" data-dialog role="alertdialog" aria-modal="true"
      aria-labelledby="history-confirm-title" class="confirm-scrim" tabindex="-1">
     <div class="t-modal-card confirm-card" role="document">

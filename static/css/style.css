@@ -3861,19 +3861,8 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
     content: attr(data-label); color: var(--ink-soft); font-size: 0.72rem; flex-shrink: 0; }
 }
 
-/* The digest preview: what opting in puts on the owner's phone, rendered from
-   last month's own figures before any phone is saved. */
-.digest-preview { display: grid; gap: 0.4rem; margin-top: 0.6rem; }
-.digest-preview-label {
-  font-size: 0.78rem; color: var(--ink-soft); font-weight: 600;
-}
-.digest-preview-bubble { max-width: 100%; }
-/* The hand-send action under the preview: its own form, so it never posts the
-   settings form's fields along with it. */
-.digest-preview-actions { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.2rem; }
-.digest-preview-actions small { color: var(--ink-soft); }
-
-/* A digest row's month, named where the owner scans senders and dates. */
+/* A historical digest row's month, named where the owner scans senders and
+   dates. The monthly send is gone; the log keeps its rows. */
 .digest-month-chip {
   display: inline-block; margin-inline-start: 0.35rem;
   padding: 0.05rem 0.45rem;
@@ -3882,14 +3871,6 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
   background: color-mix(in srgb, var(--lavender) 14%, var(--card));
   color: var(--ink); font-weight: 600;
 }
-/* One form to send a past month's summary again, on the digests' own view. */
-.digest-resend {
-  display: grid; gap: 0.4rem; margin-top: 0.9rem;
-  padding-top: 0.9rem; border-top: 1px solid var(--rule);
-}
-.digest-resend label { font-weight: 600; font-size: 0.85rem; }
-.digest-resend-row { display: flex; gap: 0.5rem; align-items: center; }
-.digest-resend-row select { min-width: 12rem; }
 
 /* The profile's drift banner: a warning the width of the page, so a counter
    that disagrees with the invoices is read before the KPIs under it. */
