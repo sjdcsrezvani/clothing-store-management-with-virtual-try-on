@@ -113,6 +113,28 @@ def test_bulk_payday_pays_skips_and_repeats_cleanly(client, db_session):
     assert "0 نفر ثبت شد" in unquote(repeat.headers["location"])  # idempotent
 
 
+def test_payroll_posts_the_wage_as_a_monthly_expense(client, db_session):
+    """A wage is a monthly cost like rent: the payroll row posts an expense of
+    type «ماهانه», so the expenses page's monthly card and its «ماهانه» filter
+    both carry it — never the one-off bucket."""
+    _owner_client(client, db_session, name="phasec-owner-monthly")
+    worker, _ = _staff(db_session, "phasec-monthly", "cashier")
+    worker.salary_amount = 7_000_000
+    db_session.commit()
+
+    assert _pay(client, db_session, worker, "1405-06").status_code == 303
+    payment = db_session.query(SalaryPayment).filter(
+        SalaryPayment.staff_user_id == worker.id).one()
+    expense = db_session.query(Expense).filter(
+        Expense.id == payment.expense_id).one()
+    assert expense.expense_type == "monthly"
+    assert expense.category == "حقوق کارکنان"
+
+    page = client.get("/admin/expenses?type=monthly").text
+    assert "حقوق کارکنان" in page
+    assert "7,000,000" in page
+
+
 def test_nudges_name_the_unpaid(client, db_session):
     _owner_client(client, db_session, name="phasec-owner-nudge")
     worker, _ = _staff(db_session, "phasec-nudge", "cashier")
