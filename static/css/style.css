@@ -2503,6 +2503,9 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .form-error[hidden] { display: none; }
 .product-form-error { margin: 0 0 1rem; }
 .form-group .field-error { display: block; margin-top: 0.3rem; color: var(--link-hover); font-size: 0.78rem; font-weight: 700; }
+/* Hire wizard: the same in-page answer, sized for its stacked labels. */
+.hire-field .field-error { display: block; margin-top: 0.15rem; color: var(--link-hover); font-size: 0.78rem; font-weight: 700; }
+.hire-form-error { margin: 0 0 0.85rem; border-inline-start: 3px solid var(--danger); }
 input.is-invalid, select.is-invalid, textarea.is-invalid { border-color: var(--danger); }
 input.is-invalid:focus, select.is-invalid:focus, textarea.is-invalid:focus {
   border-color: var(--danger);

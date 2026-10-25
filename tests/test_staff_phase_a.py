@@ -78,6 +78,10 @@ def test_new_page_renders_full_hire_form(client, db_session):
     assert page.count("data-hire-goto=") == 4
     assert page.count('action="/admin/staff"') == 1
     assert "<noscript>" in page
+    # Validation answers in-page instead of the browser's native bubble.
+    assert 'id="hire-form-error"' in page
+    assert "reportValidity" not in page
+    assert 'hx-boost="false"' in page
 
 
 def test_create_lands_on_the_new_profile(client, db_session):

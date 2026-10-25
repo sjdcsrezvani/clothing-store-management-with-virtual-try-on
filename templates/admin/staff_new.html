@@ -15,8 +15,9 @@
   <div class="wizard-timeline" aria-label="مراحل استخدام" id="hire-timeline">
     <button type="button" class="timeline-step active" data-hire-goto="0" aria-current="step">۱ حساب ورود</button><span class="timeline-line" aria-hidden="true"></span><button type="button" class="timeline-step" data-hire-goto="1" disabled>۲ مشخصات فردی</button><span class="timeline-line" aria-hidden="true"></span><button type="button" class="timeline-step" data-hire-goto="2" disabled>۳ همکاری و حقوق</button><span class="timeline-line" aria-hidden="true"></span><button type="button" class="timeline-step" data-hire-goto="3" disabled>۴ بانکی و تماس</button>
   </div>
-  <form method="post" action="/admin/staff" id="hire-form" novalidate>
+  <form method="post" action="/admin/staff" id="hire-form" novalidate hx-boost="false">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p class="form-error hire-form-error" id="hire-form-error" role="alert" hidden></p>
     <section data-hire-step="0" aria-labelledby="hire-step-title-0">
       <h4 id="hire-step-title-0" tabindex="-1">مرحله ۱ — حساب ورود</h4>
       <div class="hire-grid">
@@ -117,19 +118,124 @@
         if (index < 0 || index >= sections.length) return;
         if (index > reached) return; // forward only through validation
         current = index;
+        hideSummary();
         paint();
         var heading = sections[index].querySelector('h4');
         if (heading) heading.focus();
     }
 
-    function valid(section) {
+    // Validation answers in the page: the browser's native bubble is English
+    // and unstyleable, so a missing field gets a red edge, a line under it and
+    // a summary beside the step's buttons instead.
+    var summary = document.getElementById('hire-form-error');
+    var errorSeq = 0;
+
+    function faNum(n) {
+        return String(n).replace(/\d/g, function (d) { return '۰۱۲۳۴۵۶۷۸۹'[+d]; });
+    }
+
+    function fieldLabel(field) {
+        var label = field.closest ? field.closest('label') : null;
+        var text = label && label.firstChild && label.firstChild.nodeType === 3
+            ? label.firstChild.nodeValue : '';
+        return text.replace(/\s+/g, ' ').trim();
+    }
+
+    function problem(field) {
+        var validity = field.validity;
+        var name = fieldLabel(field);
+        var quoted = name ? '«' + name + '»' : 'این فیلد';
+        if (validity.valueMissing) return quoted + ' را وارد کنید.';
+        if (validity.tooShort) return quoted + ' باید حداقل ' + faNum(field.minLength) + ' کاراکتر باشد.';
+        if (validity.tooLong) return quoted + ' نباید بیشتر از ' + faNum(field.maxLength) + ' کاراکتر باشد.';
+        if (validity.typeMismatch && field.type === 'email') return 'ایمیل واردشده معتبر نیست.';
+        if (validity.rangeUnderflow || validity.rangeOverflow) return quoted + ' خارج از بازه مجاز است.';
+        return quoted + ' را بررسی کنید.';
+    }
+
+    function errorId(field) {
+        if (!field.dataset.errorId) {
+            errorSeq += 1;
+            field.dataset.errorId = 'hire-field-error-' + errorSeq;
+        }
+        return field.dataset.errorId;
+    }
+
+    function showFieldError(field) {
+        var id = errorId(field);
+        var message = document.getElementById(id);
+        if (!message) {
+            message = document.createElement('small');
+            message.className = 'field-error';
+            message.id = id;
+            field.insertAdjacentElement('afterend', message);
+        }
+        message.textContent = problem(field);
+        field.classList.add('is-invalid');
+        field.setAttribute('aria-invalid', 'true');
+        var described = (field.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+        if (described.indexOf(id) === -1) described.push(id);
+        field.setAttribute('aria-describedby', described.join(' '));
+    }
+
+    function clearFieldError(field) {
+        field.classList.remove('is-invalid');
+        field.removeAttribute('aria-invalid');
+        var id = field.dataset.errorId;
+        if (!id) return;
+        var message = document.getElementById(id);
+        if (message) message.remove();
+        var described = (field.getAttribute('aria-describedby') || '').split(/\s+/)
+            .filter(Boolean).filter(function (value) { return value !== id; });
+        if (described.length) field.setAttribute('aria-describedby', described.join(' '));
+        else field.removeAttribute('aria-describedby');
+    }
+
+    function validateSection(section) {
+        var invalid = [];
         var fields = section.querySelectorAll('input, select, textarea');
         for (var i = 0; i < fields.length; i++) {
-            if (!fields[i].checkValidity()) {
-                fields[i].reportValidity();
-                return false;
+            var field = fields[i];
+            if (field.disabled || field.type === 'hidden') continue;
+            if (field.checkValidity()) {
+                clearFieldError(field);
+            } else {
+                showFieldError(field);
+                invalid.push(field);
             }
         }
+        return invalid;
+    }
+
+    function hideSummary() {
+        if (summary) summary.hidden = true;
+    }
+
+    function showSummary(section, count) {
+        if (!summary) return;
+        var actions = section.querySelector('.staff-actions');
+        if (actions) section.insertBefore(summary, actions);
+        summary.textContent = count === 1
+            ? 'برای ادامه، فیلد مشخص‌شده را کامل کنید.'
+            : 'برای ادامه، ' + faNum(count) + ' فیلد مشخص‌شده را کامل کنید.';
+        summary.hidden = false;
+    }
+
+    function focusField(field) {
+        window.requestAnimationFrame(function () {
+            try { field.focus({ preventScroll: true }); } catch (error) { field.focus(); }
+            if (field.scrollIntoView) field.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        });
+    }
+
+    function report(section) {
+        var invalid = validateSection(section);
+        if (!invalid.length) {
+            hideSummary();
+            return false;
+        }
+        showSummary(section, invalid.length);
+        focusField(invalid[0]);
         return true;
     }
 
@@ -145,7 +251,7 @@
         }
     });
     function advance() {
-        if (!valid(sections[current])) return;
+        if (report(sections[current])) return;
         reached = Math.max(reached, current + 1);
         go(current + 1);
     }
@@ -169,26 +275,28 @@
     });
     // The final submit carries its own validity: browsers check the whole
     // form, including sections hidden with [hidden] skipped — so re-validate
-    // every section here rather than trusting the stepper path.
+    // every section here, jump to the first bad one and mark its fields.
     form.addEventListener('submit', function (event) {
         for (var i = 0; i < sections.length; i++) {
-            var fields = sections[i].querySelectorAll('input, select, textarea');
-            var bad = null;
-            for (var j = 0; j < fields.length; j++) {
-                if (!fields[j].checkValidity()) {
-                    bad = fields[j];
-                    break;
-                }
-            }
-            if (bad) {
-                event.preventDefault();
-                reached = Math.max(reached, i);
-                go(i);
-                bad.reportValidity();
-                return;
-            }
+            if (!validateSection(sections[i]).length) continue;
+            event.preventDefault();
+            reached = Math.max(reached, i);
+            go(i);
+            report(sections[i]);
+            return;
         }
+        hideSummary();
     });
+    // A corrected field drops its message as soon as it becomes valid; the
+    // summary leaves when the step has nothing left to fix.
+    function refresh(field) {
+        if (!field || !field.dataset || !field.dataset.errorId) return;
+        if (!field.checkValidity()) return;
+        clearFieldError(field);
+        if (!sections[current].querySelector('.is-invalid')) hideSummary();
+    }
+    form.addEventListener('input', function (event) { refresh(event.target); });
+    form.addEventListener('change', function (event) { refresh(event.target); });
     // Live contract-end preview: Jalali start + term months. Display-only —
     // the server derives the stored date from the same inputs, so the one
     // deliberate simplification here (Esfand always clamps to the 29th, even
