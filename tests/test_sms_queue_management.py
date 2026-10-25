@@ -142,3 +142,44 @@ def test_restore_brings_a_trashed_row_back(db_session):
     db_session.refresh(row)
     assert result == {"restored": 1, "skipped": 0}
     assert row.deleted_at is None and row.deleted_by_user_id is None
+
+
+def test_retry_links_new_row_to_original(db_session):
+    import asyncio
+    from services.sms_send import retry_message
+
+    original = _row(db_session, status="failed", body="دوباره", source="manual",
+                    kind="marketing")
+    row, error = asyncio.run(retry_message(db_session, original.id))
+    assert error == "" and row is not None
+    assert row.status == "queued" and row.body == "دوباره"
+    assert row.retried_from_id == original.id
+    assert original.status == "failed"
+
+
+def test_trashed_failed_row_does_not_retry_until_restored(db_session):
+    import asyncio
+    from services.sms_send import retry_message, restore_messages
+
+    original = _row(db_session, status="failed",
+                    deleted_at=datetime.now(timezone.utc))
+    row, error = asyncio.run(retry_message(db_session, original.id))
+    assert row is None and "سطل زباله" in error
+
+    restore_messages(db_session, [original.id])
+    row, error = asyncio.run(retry_message(db_session, original.id))
+    assert error == "" and row is not None and row.retried_from_id == original.id
+
+
+def test_message_detail_returns_retry_chain(db_session):
+    import asyncio
+    from services.sms_send import message_detail, retry_message
+
+    original = _row(db_session, status="failed", body="اصل")
+    retry, _ = asyncio.run(retry_message(db_session, original.id))
+    detail = message_detail(db_session, original.id)
+    assert detail["message"].id == original.id
+    assert [row.id for row in detail["retries"]] == [retry.id]
+
+    child = message_detail(db_session, retry.id)
+    assert child["original"].id == original.id

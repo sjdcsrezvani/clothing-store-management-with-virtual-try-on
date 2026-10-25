@@ -23,7 +23,7 @@ import jdatetime
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from models import Customer, SmsMessage, SmsTemplate, to_english_digits
+from models import Customer, SmsDevice, SmsMessage, SmsTemplate, to_english_digits
 from services._common import (get_setting_int, is_archived_customer, jalali_str,
                                marketing_opt_in)
 from services.customers import TAG_LABELS, TAG_PALETTE, parse_tags
@@ -815,6 +815,8 @@ async def retry_message(db: Session, message_id: int) -> tuple[SmsMessage | None
     message = db.query(SmsMessage).filter(SmsMessage.id == message_id).first()
     if message is None:
         return None, "این پیامک در گزارش پیدا نشد."
+    if message.deleted_at is not None:
+        return None, "این پیامک در سطل زباله است؛ اول آن را بازگردانید."
     if message.status != "failed":
         return None, "فقط پیامک ناموفق دوباره فرستاده می‌شود."
     if not (message.body or "").strip():
@@ -837,7 +839,73 @@ async def retry_message(db: Session, message_id: int) -> tuple[SmsMessage | None
         # No template row to relabel through: the original record travels
         # verbatim, since the body it explains travels verbatim too.
         new_row.values_json = message.values_json
+    new_row.retried_from_id = message.id
+    db.commit()
     return new_row, ""
+
+
+async def retry_messages(db: Session, ids: list[int]) -> dict:
+    """Retry each failed row that is still live; trashed and non-failed skip."""
+    unique_ids = list(dict.fromkeys(int(i) for i in ids if str(i).isdigit()))
+    resent = skipped = 0
+    for message_id in unique_ids:
+        row, _ = await retry_message(db, message_id)
+        if row is not None:
+            resent += 1
+        else:
+            skipped += 1
+    return {"resent": resent, "skipped": skipped}
+
+
+def _row_view(row: SmsMessage, customer, template) -> dict:
+    """The one row shape the history list and the detail page both read."""
+    return {
+        "message": row,
+        "customer": customer,
+        "template": template,
+        "status_key": display_status(row),
+        "status_label": STATUS_LABELS.get(display_status(row), display_status(row)),
+        # A phone that reported after the row was trashed still tells the
+        # truth: it went out, but the owner has hidden it.
+        "late_sent": bool(row.deleted_at and row.status == "sent"),
+        "journey_label": journey_label(row),
+        "source_label": SOURCE_LABELS.get(row.source, row.source),
+        "segments": sms_metrics(row.body or "")["segments"],
+        # Not called ``values``: on a dict, Jinja resolves ``row.values`` to
+        # the built-in method before it ever looks for the key, so the page
+        # would render a bound method instead of the record.
+        "audit": message_values(row, template),
+    }
+
+
+def message_detail(db: Session, message_id: int) -> dict | None:
+    """One message, its retry family, and the device that tried to send it."""
+    message = db.query(SmsMessage).filter(SmsMessage.id == message_id).first()
+    if message is None:
+        return None
+    customer = None
+    if message.customer_id:
+        customer = db.query(Customer).filter(Customer.id == message.customer_id).first()
+    template = None
+    if message.template_id:
+        template = db.query(SmsTemplate).filter(SmsTemplate.id == message.template_id).first()
+    device = None
+    if message.sent_by_device_id:
+        device = db.query(SmsDevice).filter(SmsDevice.id == message.sent_by_device_id).first()
+    original = None
+    if message.retried_from_id:
+        original = db.query(SmsMessage).filter(
+            SmsMessage.id == message.retried_from_id,
+        ).first()
+    retries = db.query(SmsMessage).filter(
+        SmsMessage.retried_from_id == message.id,
+    ).order_by(SmsMessage.id.asc()).all()
+    return {
+        **_row_view(message, customer, template),
+        "device": device,
+        "original": original,
+        "retries": retries,
+    }
 
 
 def delete_messages(db: Session, ids: list[int], *, user_id: int) -> dict:
@@ -1020,22 +1088,8 @@ def message_filtered(
         ).all()}
 
     return {
-        "rows": [{
-            "message": row,
-            "customer": names.get(row.customer_id),
-            "status_key": display_status(row),
-            "status_label": STATUS_LABELS.get(display_status(row), display_status(row)),
-            # A phone that reported after the row was trashed still tells the
-            # truth: it went out, but the owner has hidden it.
-            "late_sent": bool(row.deleted_at and row.status == "sent"),
-            "journey_label": journey_label(row),
-            "source_label": SOURCE_LABELS.get(row.source, row.source),
-            "segments": sms_metrics(row.body or "")["segments"],
-            # Not called ``values``: on a dict, Jinja resolves ``row.values`` to
-            # the built-in method before it ever looks for the key, so the page
-            # would render a bound method instead of the record.
-            "audit": message_values(row, templates.get(row.template_id)),
-        } for row in rows],
+        "rows": [_row_view(row, names.get(row.customer_id),
+                           templates.get(row.template_id)) for row in rows],
         "total": total,
         "page": page,
         "total_pages": total_pages,
