@@ -22,6 +22,8 @@ def test_list_is_thin_directory_with_profile_links(client, db_session):
     assert "هر نقش چه کارهایی می‌تواند بکند" in page       # permission matrix
     assert "/admin/staff/new" in page                        # hire moved off-list
     assert f"/admin/staff/{worker.id}" in page               # row links to profile
+    # A visible edit action, not just the name link.
+    assert f"/admin/staff/{worker.id}?tab=overview#staff-overview-form" in page
     assert "staff-record" not in page                        # no expanding edit rows
     assert "ثبت پرداخت حقوق" not in page                     # no inline salary boxes
 
@@ -115,6 +117,37 @@ def test_profile_tabs_and_guards(client, db_session):
     assert client.get(f"/admin/staff/{worker.id}").status_code == 403
     assert client.get("/admin/staff/new").status_code == 403
     _session_as(client, owner, owner_password)
+
+
+def test_owner_edits_username_and_password(client, db_session):
+    from services.security import verify_password
+    _owner_client(client, db_session, name="phasea-owner-rename")
+    worker, _ = _staff(db_session, "phasea-rename", "cashier")
+    token = csrf_token(client, f"/admin/staff/{worker.id}")
+
+    profile = client.get(f"/admin/staff/{worker.id}").text
+    import re
+    username_input = re.search(r'<input[^>]*name="username"[^>]*>', profile).group(0)
+    assert "disabled" not in username_input
+
+    response = client.post(f"/admin/staff/{worker.id}", data={
+        "csrf_token": token, "role": "cashier",
+        "username": "Phasea-Renamed", "password": "brand-new-pass",
+    }, follow_redirects=False)
+    assert response.status_code == 303
+    db_session.refresh(worker)
+    assert worker.username == "phasea-renamed"
+    assert verify_password("brand-new-pass", worker.password_hash)
+
+    # A name another person already holds is refused, not silently shadowed.
+    _staff(db_session, "phasea-other", "cashier")
+    duplicate = client.post(f"/admin/staff/{worker.id}", data={
+        "csrf_token": csrf_token(client, f"/admin/staff/{worker.id}"),
+        "role": "cashier", "username": "phasea-other",
+    }, follow_redirects=False)
+    assert "تکراری" in unquote(duplicate.headers["location"])
+    db_session.refresh(worker)
+    assert worker.username == "phasea-renamed"
 
 
 def test_update_and_disable_land_back_on_profile(client, db_session):

@@ -73,6 +73,7 @@
       <th scope="col">وضعیت</th>
       <th scope="col" class="num" aria-sort="{{ 'descending' if sort_key == 'salary' and sort_dir == 'desc' else 'ascending' if sort_key == 'salary' else 'none' }}"><a class="sort-link" href="/admin/staff?page=1&{{ base_qs }}&sort=salary&dir={{ 'asc' if sort_key == 'salary' and sort_dir == 'desc' else 'desc' }}">حقوق ماهانه (تومان)</a></th>
       <th scope="col">آخرین ورود</th>
+      <th scope="col"><span class="sr-only">عملیات</span></th>
     </tr></thead>
     <tbody>
       {% for user in staff_users %}
@@ -81,6 +82,7 @@
         <td>{% if user.is_active %}<span class="badge badge-available">فعال</span>{% else %}<span class="badge badge-none">غیرفعال</span>{% endif %}{% set cflag = contract_flags.get(user.id) %}{% if cflag %}<br><small class="muted">قرارداد: {{ cflag }}{% if user.contract_end_date %} تا {{ jalali_str(user.contract_end_date, false) }}{% endif %}</small>{% endif %}</td>
         <td class="num">{{ fmt(user.salary_amount) }}</td>
         <td>{% if user.last_login_at %}{{ jalali_str(user.last_login_at) }}{% else %}—{% endif %}</td>
+        <td><a class="btn btn-sm btn-ghost" href="/admin/staff/{{ user.id }}?tab=overview#staff-overview-form" aria-label="ویرایش {{ user.full_name or user.username }}">ویرایش</a></td>
       </tr>
       {% endfor %}
     </tbody>

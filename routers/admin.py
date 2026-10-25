@@ -1410,7 +1410,7 @@ async def admin_staff_update(staff_id: int, request: Request, db: Session = Depe
         profile = _staff_profile_data(form, db)
     except ValueError as error:
         return RedirectResponse(url=f"/admin/staff/{user.id}?tab=overview&err={error}", status_code=303)
-    before = {"role": user.role, "full_name": user.full_name,
+    before = {"username": user.username, "role": user.role, "full_name": user.full_name,
               "salary_amount": user.salary_amount, "is_active": user.is_active,
               "job_title": user.job_title, "employment_type": user.employment_type,
               "hire_date": user.hire_date.isoformat() if user.hire_date else None,
@@ -1418,6 +1418,16 @@ async def admin_staff_update(staff_id: int, request: Request, db: Session = Depe
               "contract_end_date": user.contract_end_date.isoformat() if user.contract_end_date else None,
               "gender": user.gender, "insured": user.insured,
               "position_id": user.position_id}
+    # The login name is editable with the rest of the file — but only when the
+    # form carried it: the permissions tab posts the role alone.
+    if "username" in form:
+        username = str(form.get("username", "")).strip().lower()
+        if not username or len(username) > 100:
+            return RedirectResponse(url=f"/admin/staff/{user.id}?tab=overview&err=نام کاربری نامعتبر است.", status_code=303)
+        if db.query(StaffUser).filter(
+                StaffUser.username == username, StaffUser.id != user.id).first():
+            return RedirectResponse(url=f"/admin/staff/{user.id}?tab=overview&err=نام کاربری تکراری است.", status_code=303)
+        user.username = username
     user.role = role
     # A partial form (the permissions tab posts only the role) must not wipe
     # the fields it omits: merge what arrived, leave the rest standing.
@@ -1435,7 +1445,7 @@ async def admin_staff_update(staff_id: int, request: Request, db: Session = Depe
             return RedirectResponse(url=f"/admin/staff/{user.id}?tab=overview&err=رمز عبور باید حداقل ۶ کاراکتر باشد.", status_code=303)
         user.password_hash = hash_password(password)
     db.commit()
-    log_action(db, "staff_update", f"ویرایش کاربر {user.username}", request=request, target_type="staff_user", target_id=user.id, before=before, after={"role": user.role, "full_name": user.full_name, "salary_amount": user.salary_amount, "is_active": user.is_active, "job_title": user.job_title, "employment_type": user.employment_type, "hire_date": user.hire_date.isoformat() if user.hire_date else None, "contract_term_months": user.contract_term_months, "contract_end_date": user.contract_end_date.isoformat() if user.contract_end_date else None, "gender": user.gender, "insured": user.insured, "position_id": user.position_id})
+    log_action(db, "staff_update", f"ویرایش کاربر {user.username}", request=request, target_type="staff_user", target_id=user.id, before=before, after={"username": user.username, "role": user.role, "full_name": user.full_name, "salary_amount": user.salary_amount, "is_active": user.is_active, "job_title": user.job_title, "employment_type": user.employment_type, "hire_date": user.hire_date.isoformat() if user.hire_date else None, "contract_term_months": user.contract_term_months, "contract_end_date": user.contract_end_date.isoformat() if user.contract_end_date else None, "gender": user.gender, "insured": user.insured, "position_id": user.position_id})
     return RedirectResponse(url=f"/admin/staff/{user.id}?msg=اطلاعات کارمند ذخیره شد.", status_code=303)
 
 

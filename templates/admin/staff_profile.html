@@ -36,13 +36,13 @@
   <p class="muted">عملکرد صندوق ایشان در همین ماه؛ فروش کارتی و بدون شیفت در تحلیل فروش می‌ماند.</p>
 </div>
 <div class="card hire-narrow">
-  <div class="section-heading"><div><span class="eyebrow">مشخصات</span><h3>اطلاعات پرسنلی</h3></div></div>
+  <div class="section-heading"><div><span class="eyebrow">مشخصات</span><h3>ویرایش اطلاعات پرسنلی</h3></div></div>
   <form method="post" action="/admin/staff/{{ staff_user.id }}" id="staff-overview-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="role" value="{{ staff_user.role }}">
     <div class="hire-grid">
     <h4 class="form-span-2 muted">حساب ورود</h4>
-    <label class="hire-field">نام کاربری<input value="{{ staff_user.username }}" disabled></label>
+    <label class="hire-field">نام کاربری<input name="username" value="{{ staff_user.username }}" dir="ltr" required maxlength="100" autocomplete="off"><small class="field-help">نام ورود؛ تغییرش از ورود بعدی اعمال می‌شود.</small></label>
     <label class="hire-field">رمز جدید<input name="password" type="password" minlength="6" autocomplete="new-password" placeholder="بدون تغییر"></label>
     <h4 class="form-span-2 muted">مشخصات فردی</h4>
     <label class="hire-field">نام کامل<input name="full_name" value="{{ staff_user.full_name or '' }}"></label>
