@@ -21,6 +21,17 @@ def test_dashboard_css_covers_new_pieces():
         assert cls in style, cls
 
 
+def test_dashboard_poll_attributes_do_not_leak_into_links():
+    """The live region's select/swap belong to its own poll. Inherited by a
+    boosted link — whose target stays the body — they replaced the whole page
+    with this fragment, sidebar and all."""
+    text = open("templates/admin/dashboard.html", encoding="utf-8").read()
+    live = re.search(r'<div id="dash-live"[^>]*>', text).group(0)
+    assert 'hx-select="#dash-live"' in live
+    assert 'hx-swap="outerHTML"' in live
+    assert 'hx-disinherit="hx-select hx-swap"' in live
+
+
 def test_dashboard_scripts_balance():
     text = open("templates/admin/dashboard.html", encoding="utf-8").read()
     opens = len(re.findall(r"<script(?![a-zA-Z])", text))

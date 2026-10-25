@@ -14,8 +14,10 @@
 {# The live region: greeting, gateway strip and every figure section, polled
     in place every five minutes. The server re-renders the whole page and htmx
     selects this wrapper out of it — the polled numbers can never disagree
-    with a reload, because they are the reload. #}
-<div id="dash-live" hx-get="/admin" hx-trigger="every 5m [ !document.activeElement || !(document.activeElement.closest && document.activeElement.closest('input, textarea, select, details')) ]" hx-select="#dash-live" hx-swap="outerHTML">
+    with a reload, because they are the reload. The poll's own select/swap are
+    disinherited below: a boosted link keeps its body target, and inheriting
+    them swapped the whole page — sidebar included — for this fragment alone. #}
+<div id="dash-live" hx-get="/admin" hx-trigger="every 5m [ !document.activeElement || !(document.activeElement.closest && document.activeElement.closest('input, textarea, select, details')) ]" hx-select="#dash-live" hx-swap="outerHTML" hx-disinherit="hx-select hx-swap">
 {# The counter's own greeting: who is looking, which day, and the day in one
    line. Managers and owners never receive it — their header stays titled. #}
 {% if greeting %}
