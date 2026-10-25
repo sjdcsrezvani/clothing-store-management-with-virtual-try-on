@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 37
+MIGRATION_VERSION = 38
 
 
 def migration_status(engine) -> int:
@@ -453,6 +453,14 @@ def _rebuild_sms_messages(conn) -> None:
 
 
 def _apply_revision(conn, version: int) -> None:
+    if version == 38:
+        # SMS queue management: soft-delete marker/actor and retry chain.
+        # Additive; legacy rows keep NULL and read exactly as before.
+        _add_column_if_missing(conn, "sms_messages", "deleted_at", "DATETIME")
+        _add_column_if_missing(conn, "sms_messages", "deleted_by_user_id", "INTEGER")
+        _add_column_if_missing(conn, "sms_messages", "retried_from_id", "INTEGER")
+        return
+
     if version == 37:
         # Sizing phase 1.5: adult numeric bands sit beside the child
         # height/age band. Nullable — child rows keep NULL.

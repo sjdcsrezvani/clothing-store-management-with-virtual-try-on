@@ -1256,6 +1256,12 @@ class SmsMessage(Base):
     attempts = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
     sent_at = Column(DateTime, nullable=True)
+    # Trash: a non-null deleted_at hides the row from the active queue/history.
+    deleted_at = Column(DateTime, nullable=True)
+    deleted_by_user_id = Column(Integer, ForeignKey("staff_users.id"), nullable=True)
+    # Retry chain: the new queued row points at the failed row it was born from.
+    retried_from_id = Column(Integer, ForeignKey("sms_messages.id", ondelete="SET NULL"),
+                             nullable=True)
 
     __table_args__ = (
         CheckConstraint("status IN ('queued', 'sent', 'failed')", name="ck_sms_message_status"),

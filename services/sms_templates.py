@@ -61,7 +61,8 @@ SOURCE_LABELS = {
     "monthly_digest": "خلاصه ماهانه",
     "test": "آزمایشی",
 }
-STATUS_LABELS = {"queued": "در صف", "sent": "ارسال‌شده", "failed": "ناموفق"}
+STATUS_LABELS = {"queued": "در صف", "sent": "ارسال‌شده", "failed": "ناموفق",
+                 "deleted": "حذف‌شده"}
 
 
 def kind_for_source(source: str) -> str:

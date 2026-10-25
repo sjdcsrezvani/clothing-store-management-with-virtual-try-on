@@ -326,7 +326,7 @@ def test_revision_36_and_37_add_the_sizing_columns(tmp_path):
         conn.execute(text("INSERT INTO products (name) VALUES ('پیراهن')"))
         conn.execute(text("INSERT INTO product_variants (product_id, size) VALUES (1, '110')"))
 
-    assert upgrade(engine) == MIGRATION_VERSION == 37
+    assert upgrade(engine) == MIGRATION_VERSION == 38
 
     with engine.connect() as conn:
         products = {row[1] for row in conn.execute(text("PRAGMA table_info(products)"))}
@@ -336,3 +336,30 @@ def test_revision_36_and_37_add_the_sizing_columns(tmp_path):
                 "band_min_adult", "band_max_adult"} <= variants
         row = conn.execute(text("SELECT size, band_min_cm FROM product_variants WHERE id=1")).one()
         assert row == ("110", None)
+
+
+def test_revision_38_adds_sms_queue_management_columns(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'v37-sms.db'}")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE schema_version (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)"))
+        conn.execute(text("INSERT INTO schema_version (id, version) VALUES (1, 37)"))
+        conn.execute(text("""
+            CREATE TABLE sms_messages (
+                id INTEGER PRIMARY KEY, phone VARCHAR(20) NOT NULL, body TEXT NOT NULL,
+                status VARCHAR(20) NOT NULL, kind VARCHAR(20) NOT NULL,
+                source VARCHAR(30) NOT NULL, created_at DATETIME NOT NULL
+            )
+        """))
+        conn.execute(text("INSERT INTO sms_messages (phone, body, status, kind, source, created_at) "
+                          "VALUES ('09120000000', 'سلام', 'queued', 'marketing', 'manual', "
+                          "'2026-01-01 00:00:00')"))
+
+    assert upgrade(engine) == MIGRATION_VERSION == 38
+
+    with engine.connect() as conn:
+        columns = {row[1] for row in conn.execute(text("PRAGMA table_info(sms_messages)"))}
+        assert {"deleted_at", "deleted_by_user_id", "retried_from_id"} <= columns
+        row = conn.execute(text(
+            "SELECT deleted_at, deleted_by_user_id, retried_from_id FROM sms_messages WHERE id=1"
+        )).one()
+        assert row == (None, None, None)
