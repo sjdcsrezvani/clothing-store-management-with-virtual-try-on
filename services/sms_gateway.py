@@ -351,10 +351,12 @@ def poll(db: Session, device: SmsDevice) -> list[dict]:
     stale_cutoff = now - timedelta(minutes=STALE_CLAIM_MINUTES)
     fresh = db.query(SmsMessage).filter(
         SmsMessage.status == "queued",
+        SmsMessage.deleted_at.is_(None),
         SmsMessage.delivery_state == "",
     ).order_by(SmsMessage.id.asc()).limit(CLAIM_LIMIT).all()
     stale = [row for row in db.query(SmsMessage).filter(
         SmsMessage.status == "queued",
+        SmsMessage.deleted_at.is_(None),
         SmsMessage.delivery_state == "claimed",
         SmsMessage.claimed_at.is_not(None),
     ).order_by(SmsMessage.id.asc()).limit(CLAIM_LIMIT).all()
@@ -362,10 +364,29 @@ def poll(db: Session, device: SmsDevice) -> list[dict]:
 
     claimed: list[dict] = []
     for row in (*fresh, *stale):
-        row.delivery_state = "claimed"
-        row.claimed_at = now
-        row.attempts = (row.attempts or 0) + 1
-        claimed.append({"id": row.id, "to_number": row.phone, "message": row.body})
+        # Claim with a conditional UPDATE so a delete that lands between the
+        # SELECT above and this loop cannot be overwritten, and vice versa.
+        conditions = [
+            SmsMessage.id == row.id,
+            SmsMessage.status == "queued",
+            SmsMessage.deleted_at.is_(None),
+        ]
+        if row.delivery_state == "":
+            conditions.append(SmsMessage.delivery_state == "")
+        else:
+            conditions.extend([
+                SmsMessage.delivery_state == "claimed",
+                SmsMessage.claimed_at.is_not(None),
+                SmsMessage.claimed_at < stale_cutoff.replace(tzinfo=None),
+            ])
+        changed = db.query(SmsMessage).filter(*conditions).update(
+            {"delivery_state": "claimed", "claimed_at": now,
+             "attempts": SmsMessage.attempts + 1},
+            synchronize_session=False,
+        )
+        if changed:
+            claimed.append({"id": row.id, "to_number": row.phone,
+                            "message": row.body})
     # Flushed (not just dirty) so a second poll — even in this same session,
     # before the caller commits — cannot hand the same rows out twice.
     db.flush()
@@ -436,6 +457,7 @@ def release_stale_claims(db: Session) -> int:
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=STALE_CLAIM_MINUTES)
     rows = [row for row in db.query(SmsMessage).filter(
         SmsMessage.status == "queued",
+        SmsMessage.deleted_at.is_(None),
         SmsMessage.delivery_state == "claimed",
         SmsMessage.claimed_at.is_not(None),
     ).all() if _as_utc(row.claimed_at) < cutoff]

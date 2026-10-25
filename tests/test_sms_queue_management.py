@@ -93,3 +93,52 @@ def test_already_fired_still_sees_a_trashed_queued_message(db_session):
          ref="sale:1", deleted_at=datetime.now(timezone.utc))
 
     assert already_fired(db_session, template, customer, "sale:1") is True
+
+
+def test_delete_moves_queued_and_failed_rows_to_trash(db_session):
+    from services.sms_send import delete_messages
+    from tests.test_roles import _staff
+
+    owner, _ = _staff(db_session, "sms-delete-owner", "owner")
+    queued = _row(db_session, status="queued")
+    failed = _row(db_session, status="failed", body="failed")
+    sent = _row(db_session, status="sent", body="sent")
+
+    result = delete_messages(db_session, [queued.id, failed.id, sent.id], user_id=owner.id)
+    assert result == {"deleted": 2, "skipped_busy": 0,
+                      "skipped_sent": 1, "already_deleted": 0}
+    db_session.refresh(queued)
+    db_session.refresh(failed)
+    db_session.refresh(sent)
+    assert queued.deleted_at is not None and queued.deleted_by_user_id == owner.id
+    assert failed.deleted_at is not None
+    assert sent.deleted_at is None
+
+
+def test_delete_refuses_a_fresh_claim_and_allows_a_stale_one(db_session):
+    from datetime import datetime, timedelta, timezone
+    from services.sms_send import delete_messages
+    from tests.test_roles import _staff
+
+    owner, _ = _staff(db_session, "sms-claim-owner", "owner")
+    fresh = _row(db_session, status="queued", delivery_state="claimed",
+                 claimed_at=datetime.now(timezone.utc))
+    stale = _row(db_session, status="queued", delivery_state="claimed",
+                 claimed_at=datetime.now(timezone.utc) - timedelta(minutes=10))
+
+    result = delete_messages(db_session, [fresh.id, stale.id], user_id=owner.id)
+    assert result["deleted"] == 1 and result["skipped_busy"] == 1
+    db_session.refresh(fresh)
+    db_session.refresh(stale)
+    assert fresh.deleted_at is None
+    assert stale.deleted_at is not None
+
+
+def test_restore_brings_a_trashed_row_back(db_session):
+    from services.sms_send import restore_messages
+
+    row = _row(db_session, deleted_at=datetime.now(timezone.utc))
+    result = restore_messages(db_session, [row.id])
+    db_session.refresh(row)
+    assert result == {"restored": 1, "skipped": 0}
+    assert row.deleted_at is None and row.deleted_by_user_id is None

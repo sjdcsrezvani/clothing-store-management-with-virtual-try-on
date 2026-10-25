@@ -840,6 +840,70 @@ async def retry_message(db: Session, message_id: int) -> tuple[SmsMessage | None
     return new_row, ""
 
 
+def delete_messages(db: Session, ids: list[int], *, user_id: int) -> dict:
+    """Move queued/failed rows to trash. Fresh claims and sent rows are refused."""
+    from services.sms_gateway import STALE_CLAIM_MINUTES
+
+    unique_ids = list(dict.fromkeys(int(i) for i in ids if str(i).isdigit()))
+    result = {"deleted": 0, "skipped_busy": 0, "skipped_sent": 0,
+              "already_deleted": 0}
+    if not unique_ids:
+        return result
+
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(minutes=STALE_CLAIM_MINUTES)).replace(tzinfo=None)
+    for row in db.query(SmsMessage).filter(SmsMessage.id.in_(unique_ids)).all():
+        if row.deleted_at is not None:
+            result["already_deleted"] += 1
+            continue
+        if row.status == "sent":
+            result["skipped_sent"] += 1
+            continue
+        if row.status not in ("queued", "failed"):
+            continue
+        # A conditional UPDATE, not read-then-write: the gateway may claim the
+        # row between the check above and this statement.
+        conditions = [SmsMessage.id == row.id, SmsMessage.deleted_at.is_(None),
+                      SmsMessage.status.in_(("queued", "failed"))]
+        if row.status == "queued":
+            conditions.append(or_(
+                SmsMessage.delivery_state != "claimed",
+                SmsMessage.claimed_at.is_(None),
+                SmsMessage.claimed_at < cutoff,
+            ))
+        changed = db.query(SmsMessage).filter(*conditions).update(
+            {"deleted_at": now, "deleted_by_user_id": user_id},
+            synchronize_session=False,
+        )
+        if changed:
+            result["deleted"] += 1
+            continue
+        db.refresh(row)
+        if row.deleted_at is not None:
+            result["already_deleted"] += 1
+        elif row.status == "sent":
+            result["skipped_sent"] += 1
+        elif row.status == "queued" and row.delivery_state == "claimed":
+            result["skipped_busy"] += 1
+    db.commit()
+    return result
+
+
+def restore_messages(db: Session, ids: list[int]) -> dict:
+    """Bring trashed rows back; a claimed row returns to «sent», never the queue."""
+    unique_ids = list(dict.fromkeys(int(i) for i in ids if str(i).isdigit()))
+    if not unique_ids:
+        return {"restored": 0, "skipped": 0}
+    rows = db.query(SmsMessage).filter(
+        SmsMessage.id.in_(unique_ids), SmsMessage.deleted_at.is_not(None),
+    ).all()
+    for row in rows:
+        row.deleted_at = None
+        row.deleted_by_user_id = None
+    db.commit()
+    return {"restored": len(rows), "skipped": len(unique_ids) - len(rows)}
+
+
 def display_status(message: SmsMessage) -> str:
     """The status the history shows: trash wins over the delivery state."""
     return "deleted" if message.deleted_at is not None else message.status

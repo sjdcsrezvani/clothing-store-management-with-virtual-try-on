@@ -407,3 +407,41 @@ def test_direct_sends_land_in_the_queue_too(db_session):
     assert row.source == "welcome"
     # `sent` is truthy (the queue accepted it), not a delivery claim.
     assert sent
+
+
+def test_poll_never_claims_a_trashed_row(db_session):
+    from services.sms_gateway import poll
+    from datetime import datetime, timezone
+    from models import SmsMessage
+
+    device, _ = make_device(db_session)
+    db_session.add(SmsMessage(phone="09120000077", body="trash", status="queued",
+                              source="manual", kind="marketing",
+                              deleted_at=datetime.now(timezone.utc)))
+    db_session.commit()
+
+    assert poll(db_session, device) == []
+
+
+def test_late_result_on_a_trashed_claim_is_recorded(db_session):
+    from services.sms_gateway import report_result
+    from services.sms_send import restore_messages
+    from datetime import datetime, timezone
+    from models import SmsMessage
+
+    device, _ = make_device(db_session)
+    row = SmsMessage(phone="09120000078", body="late", status="queued",
+                     source="manual", kind="marketing", delivery_state="claimed",
+                     claimed_at=datetime.now(timezone.utc),
+                     deleted_at=datetime.now(timezone.utc))
+    db_session.add(row)
+    db_session.commit()
+
+    assert report_result(db_session, device, row.id, success=True) is True
+    db_session.refresh(row)
+    assert row.status == "sent" and row.sent_at is not None
+    assert row.deleted_at is not None
+
+    assert restore_messages(db_session, [row.id]) == {"restored": 1, "skipped": 0}
+    db_session.refresh(row)
+    assert row.deleted_at is None and row.status == "sent"
