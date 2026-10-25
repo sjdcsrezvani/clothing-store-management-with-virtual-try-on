@@ -17,6 +17,7 @@ Everything substantive lives in :mod:`services.sms_templates` and
 :mod:`services.sms_send`; this file is only HTTP.
 """
 import json
+from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -46,15 +47,19 @@ from services.sms_send import (
     TEMPLATE_SORTS,
     USAGE_FILTERS,
     audience_choices,
+    delete_messages,
     manager_view,
     message_filtered,
+    message_ids_matching,
     message_overview,
     normalise_phone,
     parse_phone_list,
     plan_from_form,
     preview_body,
     render_preview_rows,
+    restore_messages,
     retry_message,
+    retry_messages,
     saved_audiences,
     send_bulk,
 )
@@ -961,6 +966,8 @@ async def admin_sms_history(
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
         "per_page_options": (10, 25, 50),
+        "can_delete": guard.role == "owner",
+        "can_retry": True,
         "fmt": fmt,
     })
 
@@ -987,3 +994,70 @@ async def admin_sms_history_resend(
     return RedirectResponse(
         url=f"/admin/sms/history?msg=پیامک دوباره در صف قرار گرفت.",
         status_code=303)
+
+
+def _bulk_ids(form, db: Session) -> list[int]:
+    """The rows the form meant: the checked ids, or every row the filter matches."""
+    if str(form.get("all", "0")) == "1":
+        return message_ids_matching(
+            db, search=str(form.get("search", "")),
+            status=str(form.get("status", "all")),
+            source=str(form.get("source", "all")),
+            date_preset=str(form.get("date_preset", "all")),
+        )
+    return [int(raw) for raw in form.getlist("ids") if str(raw).isdigit()]
+
+
+@router.post("/sms/history/bulk-delete", response_class=HTMLResponse)
+async def admin_sms_history_bulk_delete(request: Request, db: Session = Depends(get_db)):
+    """Move every selected queued/failed row to the trash — owner only."""
+    guard = _owner_guard(request, db)
+    if not hasattr(guard, "role"):
+        return guard
+
+    result = delete_messages(db, _bulk_ids(await request.form(), db), user_id=guard.id)
+    log_action(db, "sms_bulk_delete",
+               f"{result['deleted']} پیامک به سطل زباله رفت"
+               + (f"؛ {result['skipped_busy']} در حال ارسال بود" if result["skipped_busy"] else ""),
+               request=request, target_type="sms_message")
+    message = f"{result['deleted']} پیامک حذف شد."
+    if result["skipped_busy"]:
+        message += f" {result['skipped_busy']} پیامک در حال ارسال بود و حذف نشد."
+    if result["skipped_sent"]:
+        message += f" {result['skipped_sent']} پیامک ارسال‌شده کنار گذاشته شد."
+    if result["already_deleted"]:
+        message += f" {result['already_deleted']} پیامک از قبل حذف شده بود."
+    return RedirectResponse(url=f"/admin/sms/history?msg={quote_plus(message)}", status_code=303)
+
+
+@router.post("/sms/history/bulk-restore", response_class=HTMLResponse)
+async def admin_sms_history_bulk_restore(request: Request, db: Session = Depends(get_db)):
+    """Bring selected trashed rows back — owner only."""
+    guard = _owner_guard(request, db)
+    if not hasattr(guard, "role"):
+        return guard
+
+    result = restore_messages(db, _bulk_ids(await request.form(), db))
+    log_action(db, "sms_bulk_restore",
+               f"{result['restored']} پیامک از سطل زباله بازگردانده شد",
+               request=request, target_type="sms_message")
+    message = f"{result['restored']} پیامک بازگردانده شد."
+    return RedirectResponse(
+        url=f"/admin/sms/history?msg={quote_plus(message)}", status_code=303)
+
+
+@router.post("/sms/history/bulk-resend", response_class=HTMLResponse)
+async def admin_sms_history_bulk_resend(request: Request, db: Session = Depends(get_db)):
+    """Retry every selected failed row — manager and above."""
+    guard = _guard(request, db)
+    if not hasattr(guard, "role"):
+        return guard
+
+    result = await retry_messages(db, _bulk_ids(await request.form(), db))
+    log_action(db, "sms_bulk_retry",
+               f"{result['resent']} پیامک دوباره در صف قرار گرفت",
+               request=request, target_type="sms_message")
+    message = f"{result['resent']} پیامک دوباره در صف قرار گرفت."
+    if result["skipped"]:
+        message += f" {result['skipped']} پیامک قابل ارسال دوباره نبود."
+    return RedirectResponse(url=f"/admin/sms/history?msg={quote_plus(message)}", status_code=303)

@@ -183,3 +183,71 @@ def test_message_detail_returns_retry_chain(db_session):
 
     child = message_detail(db_session, retry.id)
     assert child["original"].id == original.id
+
+
+def test_owner_can_delete_and_restore_via_bulk_routes(client, authed, db_session):
+    from tests.conftest import csrf_token
+    row = _row(db_session, status="queued")
+    token = csrf_token(client, "/admin/sms/history")
+
+    deleted = authed.post("/admin/sms/history/bulk-delete",
+                          data={"csrf_token": token, "ids": str(row.id)},
+                          follow_redirects=False)
+    assert deleted.status_code == 303
+    db_session.refresh(row)
+    assert row.deleted_at is not None
+
+    restored = authed.post("/admin/sms/history/bulk-restore",
+                           data={"csrf_token": token, "ids": str(row.id)},
+                           follow_redirects=False)
+    assert restored.status_code == 303
+    db_session.refresh(row)
+    assert row.deleted_at is None
+
+
+def test_manager_cannot_delete_or_restore(client, db_session):
+    from tests.conftest import csrf_token
+    from tests.test_roles import _session_as, _staff
+
+    manager, password = _staff(db_session, "sms-mgr-delete", "manager")
+    _session_as(client, manager, password)
+    row = _row(db_session, status="queued")
+    token = csrf_token(client, "/admin/sms/history")
+
+    assert client.post("/admin/sms/history/bulk-delete",
+                       data={"csrf_token": token, "ids": str(row.id)},
+                       follow_redirects=False).status_code == 403
+    assert client.post("/admin/sms/history/bulk-restore",
+                       data={"csrf_token": token, "ids": str(row.id)},
+                       follow_redirects=False).status_code == 403
+    assert row.deleted_at is None
+
+
+def test_manager_can_bulk_resend_failed(client, db_session):
+    from tests.conftest import csrf_token
+    from tests.test_roles import _session_as, _staff
+
+    manager, password = _staff(db_session, "sms-mgr-retry", "manager")
+    _session_as(client, manager, password)
+    failed = [_row(db_session, status="failed", body=f"f{i}") for i in range(2)]
+    token = csrf_token(client, "/admin/sms/history")
+
+    response = client.post("/admin/sms/history/bulk-resend",
+                           data={"csrf_token": token,
+                                 "ids": [str(row.id) for row in failed]},
+                           follow_redirects=False)
+    assert response.status_code == 303
+    assert db_session.query(SmsMessage).filter(SmsMessage.status == "queued").count() == 2
+
+
+def test_bulk_delete_all_filtered_goes_beyond_the_page(client, authed, db_session):
+    from tests.conftest import csrf_token
+    rows = [_row(db_session, status="failed", body=f"bulk{i}") for i in range(30)]
+    token = csrf_token(client, "/admin/sms/history")
+
+    response = authed.post("/admin/sms/history/bulk-delete", data={
+        "csrf_token": token, "all": "1", "status": "failed",
+        "search": "", "source": "all", "date_preset": "all",
+    }, follow_redirects=False)
+    assert response.status_code == 303
+    assert db_session.query(SmsMessage).filter(SmsMessage.deleted_at.isnot(None)).count() == 30
