@@ -44,7 +44,16 @@
 
 {% if section.kind == 'history' %}
 {# The cashier's own week: full-card days behind, one tap each. #}
-<section class="card screen-only" aria-label="روزهای گذشته">
+<section class="card screen-only" aria-labelledby="dash-history-title">
+    <div class="section-heading">
+        <div>
+            <span class="eyebrow">فروش روزانه</span>
+            <h3 id="dash-history-title">۷ روز گذشته</h3>
+        </div>
+        {% if not section.days[0].active %}
+        <a class="text-link" href="/admin">بازگشت به امروز</a>
+        {% endif %}
+    </div>
     <div class="history-strip">
         {% for day in section.days %}
         {% if day.active %}
