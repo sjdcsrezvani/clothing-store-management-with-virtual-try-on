@@ -466,15 +466,18 @@ def template_card(db: Session, template: SmsTemplate) -> dict:
     """
     metrics = sms_metrics(template.body or "")
     mine = SmsMessage.template_id == template.id
+    live = SmsMessage.deleted_at.is_(None)
 
     def count(*conditions) -> int:
         return int(db.query(func.count(SmsMessage.id)).filter(mine, *conditions).scalar() or 0)
 
     # The four states kept apart, so «ارسال‌شده» can no longer flatter a message
-    # that is still in the queue or that the gateway refused.
+    # that is still in the queue or that the gateway refused. Total is the whole
+    # history; the queue figures are the live queue, so trash never inflates them.
     total = count()
     sent = count(SmsMessage.status == "sent")
-    failed = count(SmsMessage.status == "failed")
+    failed = count(live, SmsMessage.status == "failed")
+    queued = count(live, SmsMessage.status == "queued")
     # When a message was sent, but its `sent_at` predates that column, the row's
     # own creation time is the honest answer — never the epoch.
     last_sent_at = db.query(
@@ -488,7 +491,7 @@ def template_card(db: Session, template: SmsTemplate) -> dict:
         "total": total,
         "sent": sent,
         "failed": failed,
-        "queued": total - sent - failed,
+        "queued": queued,
         "last_sent_at": last_sent_at,
         "last_activity_at": last_activity_at,
         "preview": preview_body(template),
@@ -631,9 +634,11 @@ def sms_queue_snapshot(db: Session) -> dict:
     """
     return {
         "queued": int(db.query(func.count(SmsMessage.id))
-                      .filter(SmsMessage.status == "queued").scalar() or 0),
+                      .filter(SmsMessage.status == "queued",
+                              SmsMessage.deleted_at.is_(None)).scalar() or 0),
         "failed": int(db.query(func.count(SmsMessage.id))
-                      .filter(SmsMessage.status == "failed").scalar() or 0),
+                      .filter(SmsMessage.status == "failed",
+                              SmsMessage.deleted_at.is_(None)).scalar() or 0),
     }
 
 
@@ -642,15 +647,21 @@ def message_overview(db: Session) -> dict:
     from services.sms_templates import ensure_seeded
 
     ensure_seeded(db)
-    total = db.query(func.count(SmsMessage.id)).scalar() or 0
-    sent = db.query(func.count(SmsMessage.id)).filter(SmsMessage.status == "sent").scalar() or 0
+    active = SmsMessage.deleted_at.is_(None)
+    total = db.query(func.count(SmsMessage.id)).filter(active).scalar() or 0
+    sent = db.query(func.count(SmsMessage.id)).filter(
+        active, SmsMessage.status == "sent",
+    ).scalar() or 0
     queue = sms_queue_snapshot(db)
     queued, failed = queue["queued"], queue["failed"]
     today = db.query(func.count(SmsMessage.id)).filter(
-        SmsMessage.created_at >= _today_start(),
+        active, SmsMessage.created_at >= _today_start(),
     ).scalar() or 0
     marketing = db.query(func.count(SmsMessage.id)).filter(
-        SmsMessage.kind == "marketing",
+        active, SmsMessage.kind == "marketing",
+    ).scalar() or 0
+    deleted = db.query(func.count(SmsMessage.id)).filter(
+        SmsMessage.deleted_at.is_not(None),
     ).scalar() or 0
     active_templates = db.query(func.count(SmsTemplate.id)).filter(
         SmsTemplate.is_active == True,  # noqa: E712
@@ -663,6 +674,7 @@ def message_overview(db: Session) -> dict:
         "failed": int(failed),
         "today": int(today),
         "marketing": int(marketing),
+        "deleted": int(deleted),
         "active_templates": int(active_templates),
         "all_templates": int(all_templates),
     }
@@ -828,33 +840,32 @@ async def retry_message(db: Session, message_id: int) -> tuple[SmsMessage | None
     return new_row, ""
 
 
-def message_filtered(
-    db: Session,
-    *,
-    search: str = "",
-    status: str = "all",
-    source: str = "all",
-    order: str = "newest",
-    page: int = 1,
-    per_page: int = 25,
-    date_preset: str = "all",
-) -> dict:
-    """One page of the log: what went out, to whom, and what the queue said."""
-    page = max(1, int(page or 1))
-    try:
-        per_page = int(per_page or 25)
-    except (TypeError, ValueError):
-        per_page = 25
-    if not 1 <= per_page <= 100:
-        per_page = 25
+def display_status(message: SmsMessage) -> str:
+    """The status the history shows: trash wins over the delivery state."""
+    return "deleted" if message.deleted_at is not None else message.status
+
+
+def _message_query(db: Session, *, search: str = "", status: str = "all",
+                   source: str = "all", date_preset: str = "all"):
+    """The one filter every list, bulk action and count reads.
+
+    «deleted» is a view of the trash, not a stored status, so it selects on
+    ``deleted_at`` instead; every other view hides the trash.
+    """
     query = db.query(SmsMessage)
-    if status in STATUS_LABELS:
-        query = query.filter(SmsMessage.status == status)
+    if status == "deleted":
+        query = query.filter(SmsMessage.deleted_at.is_not(None))
+    elif status in ("queued", "sent", "failed"):
+        query = query.filter(SmsMessage.status == status,
+                             SmsMessage.deleted_at.is_(None))
+    else:
+        query = query.filter(SmsMessage.deleted_at.is_(None))
     if source in SOURCE_LABELS:
         query = query.filter(SmsMessage.source == source)
     cutoff = _preset_cutoff(date_preset if date_preset in DATE_PRESETS else "all")
+    date_column = SmsMessage.deleted_at if status == "deleted" else SmsMessage.created_at
     if cutoff is not None:
-        query = query.filter(SmsMessage.created_at >= cutoff)
+        query = query.filter(date_column >= cutoff)
     if search.strip():
         raw = search.strip()
         needle = f"%{_like_escape(raw)}%"
@@ -878,8 +889,46 @@ def message_filtered(
         if matching_ids:
             conditions.append(SmsMessage.customer_id.in_(matching_ids))
         query = query.filter(or_(*conditions))
+    return query
 
-    if order == "oldest":
+
+def message_ids_matching(db: Session, *, search: str = "", status: str = "all",
+                         source: str = "all", date_preset: str = "all") -> list[int]:
+    """Every id the current filter matches, not only the page on screen."""
+    query = _message_query(db, search=search, status=status, source=source,
+                           date_preset=date_preset).with_entities(SmsMessage.id)
+    return [row[0] for row in query.all()]
+
+
+def message_filtered(
+    db: Session,
+    *,
+    search: str = "",
+    status: str = "all",
+    source: str = "all",
+    order: str = "newest",
+    page: int = 1,
+    per_page: int = 25,
+    date_preset: str = "all",
+) -> dict:
+    """One page of the log: what went out, to whom, and what the queue said."""
+    page = max(1, int(page or 1))
+    try:
+        per_page = int(per_page or 25)
+    except (TypeError, ValueError):
+        per_page = 25
+    if not 1 <= per_page <= 100:
+        per_page = 25
+    query = _message_query(db, search=search, status=status, source=source,
+                           date_preset=date_preset)
+
+    if status == "deleted":
+        # The trash is ordered by when it was thrown away, not when it was born.
+        if order == "oldest":
+            query = query.order_by(SmsMessage.deleted_at.asc(), SmsMessage.id.asc())
+        else:
+            query = query.order_by(SmsMessage.deleted_at.desc(), SmsMessage.id.desc())
+    elif order == "oldest":
         query = query.order_by(SmsMessage.id.asc())
     else:
         query = query.order_by(SmsMessage.id.desc())
@@ -910,7 +959,11 @@ def message_filtered(
         "rows": [{
             "message": row,
             "customer": names.get(row.customer_id),
-            "status_label": STATUS_LABELS.get(row.status, row.status),
+            "status_key": display_status(row),
+            "status_label": STATUS_LABELS.get(display_status(row), display_status(row)),
+            # A phone that reported after the row was trashed still tells the
+            # truth: it went out, but the owner has hidden it.
+            "late_sent": bool(row.deleted_at and row.status == "sent"),
             "journey_label": journey_label(row),
             "source_label": SOURCE_LABELS.get(row.source, row.source),
             "segments": sms_metrics(row.body or "")["segments"],

@@ -232,7 +232,9 @@ def gateway_status(db: Session) -> dict:
     if device is None or device.status == "never_connected":
         return {"paired": False, "online": False, "offline": False,
                 "queued": 0, "device_name": "", "last_seen_at": None}
-    queued = db.query(SmsMessage).filter(SmsMessage.status == "queued").count()
+    queued = db.query(SmsMessage).filter(
+        SmsMessage.status == "queued", SmsMessage.deleted_at.is_(None),
+    ).count()
     online = device.status == "online"
     return {"paired": True, "online": online, "offline": not online,
             "queued": int(queued), "device_name": device.name or "",
@@ -447,11 +449,15 @@ def release_stale_claims(db: Session) -> int:
 
 def queue_snapshot(db: Session) -> dict:
     """The درگاه tab's numbers: nothing here reads a second database."""
-    queued = db.query(SmsMessage).filter(SmsMessage.status == "queued").count()
+    queued = db.query(SmsMessage).filter(
+        SmsMessage.status == "queued", SmsMessage.deleted_at.is_(None),
+    ).count()
     claimed = db.query(SmsMessage).filter(
         SmsMessage.status == "queued", SmsMessage.delivery_state == "claimed",
+        SmsMessage.deleted_at.is_(None),
     ).count()
     delivered = db.query(SmsMessage).filter(
         SmsMessage.delivery_state == "delivered",
+        SmsMessage.deleted_at.is_(None),
     ).count()
     return {"queued": queued, "claimed": claimed, "delivered": delivered}
