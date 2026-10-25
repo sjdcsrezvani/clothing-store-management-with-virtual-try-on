@@ -44,6 +44,11 @@
         <div class="stat-value tnum">{{ overview.failed }}</div>
         <div class="stat-sub">پس از چند تلاش رد شده</div>
     </a>
+    <a class="stat-card accent-ink" href="/admin/sms/history?status=deleted">
+        <div class="stat-label">سطل زباله</div>
+        <div class="stat-value tnum">{{ overview.deleted }}</div>
+        <div class="stat-sub">قابل بازگردانی</div>
+    </a>
 </div>
 
 <form method="get" action="/admin/sms" class="search-form sms-filter-form">

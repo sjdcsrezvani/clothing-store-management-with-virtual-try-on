@@ -251,3 +251,28 @@ def test_bulk_delete_all_filtered_goes_beyond_the_page(client, authed, db_sessio
     }, follow_redirects=False)
     assert response.status_code == 303
     assert db_session.query(SmsMessage).filter(SmsMessage.deleted_at.isnot(None)).count() == 30
+
+
+def test_history_page_offers_owner_delete_and_trash_controls(client, authed, db_session):
+    row = _row(db_session, status="queued")
+    page = authed.get("/admin/sms/history").text
+    assert "سطل زباله" in page
+    assert "/admin/sms/history/bulk-delete" in page
+    assert "sms-bulk-check" in page
+    assert f"/admin/sms/history/{row.id}" in page
+
+
+def test_history_page_hides_delete_from_a_manager(client, db_session):
+    from tests.test_roles import _session_as, _staff
+
+    manager, password = _staff(db_session, "sms-mgr-page", "manager")
+    _session_as(client, manager, password)
+    _row(db_session, status="queued")
+    page = client.get("/admin/sms/history").text
+    assert "/admin/sms/history/bulk-delete" not in page
+    assert "sms-bulk-check" not in page
+
+
+def test_trash_kpi_links_to_the_deleted_filter(client, authed):
+    page = authed.get("/admin/sms/history").text
+    assert "/admin/sms/history?status=deleted" in page

@@ -42,7 +42,21 @@
         <div class="stat-value tnum">{{ overview.failed }}</div>
         <div class="stat-sub">بعد از چند تلاش رد شده</div>
     </a>
+    <a class="stat-card accent-ink" href="/admin/sms/history?status=deleted{{ kpi_qs }}">
+        <div class="stat-label">سطل زباله</div>
+        <div class="stat-value tnum">{{ overview.deleted }}</div>
+        <div class="stat-sub">قابل بازگردانی</div>
+    </a>
 </div>
+
+{% if rows %}
+{% set ns = namespace(selectable=false) %}
+{% for row in rows %}
+{% if (can_delete and row.status_key in ('queued', 'failed', 'deleted')) or row.status_key == 'failed' %}
+{% set ns.selectable = true %}
+{% endif %}
+{% endfor %}
+{% endif %}
 
 <section class="card sms-history-card" data-list-region="sms-history" hx-boost="true" hx-target="closest [data-list-region]" hx-swap="outerHTML" hx-select="[data-list-region=sms-history]">
     <div class="section-heading-row">
@@ -130,22 +144,79 @@
         {%- if total_pages > 1 %} · صفحه {{ page }} از {{ total_pages }}{% endif %}
     </p>
 
+    {% if rows and ns.selectable %}
+    <form id="sms-bulk-form" method="post" action="/admin/sms/history/bulk-delete"
+          class="bulk-bar sms-bulk-bar" hidden data-sms-bulk-form>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="search" value="{{ search }}">
+        <input type="hidden" name="status" value="{{ status }}">
+        <input type="hidden" name="source" value="{{ source }}">
+        <input type="hidden" name="date_preset" value="{{ date_preset }}">
+        <strong><span id="sms-bulk-count" class="tnum">۰</span> انتخاب شده</strong>
+        <label class="sms-bulk-all">
+            <input type="checkbox" name="all" value="1">
+            همه نتایج این فیلتر
+        </label>
+        <div class="bulk-actions">
+            {% if can_delete and status != 'deleted' %}
+            <button type="submit" class="btn btn-sm btn-danger"
+                    formaction="/admin/sms/history/bulk-delete"
+                    data-confirm="پیامک‌های انتخاب‌شده به سطل زباله بروند؟ می‌توانید بعداً بازگردانید.">
+                حذف
+            </button>
+            {% endif %}
+            {% if status != 'deleted' %}
+            <button type="submit" class="btn btn-sm btn-ghost"
+                    formaction="/admin/sms/history/bulk-resend"
+                    data-confirm="پیامک‌های ناموفق انتخاب‌شده با همان متن دوباره در صف قرار بگیرند؟">
+                ارسال دوباره
+            </button>
+            {% endif %}
+            {% if can_delete and status == 'deleted' %}
+            <button type="submit" class="btn btn-sm btn-ghost"
+                    formaction="/admin/sms/history/bulk-restore"
+                    data-confirm="پیامک‌های انتخاب‌شده از سطل زباله بازگردانده شوند؟">
+                بازگردانی
+            </button>
+            {% endif %}
+        </div>
+    </form>
+    {% endif %}
+
     {% if rows %}
     <div class="table-scroll">
         <table class="data-table sms-table sms-history-table">
             <thead>
                 <tr>
+                    {% if ns.selectable %}<th scope="col" class="bulk-cell"><label class="sr-only" for="sms-bulk-select-all">انتخاب همه</label><input type="checkbox" id="sms-bulk-select-all"></th>{% endif %}
                     <th scope="col">زمان</th>
                     <th scope="col">مخاطب</th>
                     <th scope="col">متن</th>
                     <th scope="col">وضعیت</th>
+                    <th scope="col">عملیات</th>
                 </tr>
             </thead>
             <tbody>
                 {% for row in rows %}
                 {% set message = row.message %}
+                {% set selectable = (can_delete and row.status_key in ('queued', 'failed', 'deleted')) or row.status_key == 'failed' %}
                 <tr>
-                    <td class="tnum sms-time" data-label="زمان">{{ jalali_str(message.created_at) }}</td>
+                    {% if ns.selectable %}
+                    <td class="bulk-cell">
+                        {% if selectable %}
+                        <label class="sr-only" for="sms-bulk-{{ message.id }}">انتخاب پیامک {{ message.id }}</label>
+                        <input type="checkbox" class="bulk-check sms-bulk-check" id="sms-bulk-{{ message.id }}"
+                               name="ids" value="{{ message.id }}" form="sms-bulk-form">
+                        {% endif %}
+                    </td>
+                    {% endif %}
+                    <td class="tnum sms-time" data-label="زمان">
+                        {% if row.status_key == 'deleted' and message.deleted_at %}
+                        {{ jalali_str(message.deleted_at) }}
+                        {% else %}
+                        {{ jalali_str(message.created_at) }}
+                        {% endif %}
+                    </td>
                     <td class="sms-name" data-label="مخاطب">
                         {% if row.customer %}
                         <a href="/admin/customers/{{ row.customer.id }}"><strong>{{ row.customer.full_name }}</strong></a>
@@ -223,8 +294,9 @@
                         {% endif %}
                     </td>
                     <td data-label="وضعیت">
-                        <span class="status-badge is-{{ message.status }}">{{ row.status_label }}</span>
+                        <span class="status-badge is-{{ row.status_key }}">{{ row.status_label }}</span>
                         {% if row.journey_label %}<small class="sms-journey">{{ row.journey_label }}</small>{% endif %}
+                        {% if row.late_sent %}<small class="sms-journey">پس از حذف، ارسال گزارش شد</small>{% endif %}
                         {% if message.error %}
                         <details class="sms-expand">
                             <summary class="sms-error">{{ message.error|truncate(30, true) }}</summary>
@@ -232,11 +304,29 @@
                             <button type="button" class="btn btn-sm btn-ghost" data-copy="{{ message.error|e }}">رونوشت خطا</button>
                         </details>
                         {% endif %}
-                        {% if message.status == 'failed' %}
+                    </td>
+                    <td data-label="عملیات" class="sms-actions">
+                        <a href="/admin/sms/history/{{ message.id }}" class="btn btn-sm btn-ghost">جزئیات</a>
+                        {% if row.status_key == 'failed' %}
                         <form method="post" action="/admin/sms/history/{{ message.id }}/resend" class="inline-form"
                               data-confirm="پیامک #{{ message.id }} با همان متن به {{ message.phone }} دوباره در صف قرار می‌گیرد. مطمئن هستید؟">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                             <button type="submit" class="btn btn-sm btn-ghost">ارسال دوباره</button>
+                        </form>
+                        {% endif %}
+                        {% if can_delete and row.status_key in ('queued', 'failed') %}
+                        <form method="post" action="/admin/sms/history/bulk-delete" class="inline-form"
+                              data-confirm="پیامک #{{ message.id }} به سطل زباله برود؟ می‌توانید بعداً بازگردانید.">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <input type="hidden" name="ids" value="{{ message.id }}">
+                            <button type="submit" class="btn btn-sm btn-ghost">حذف</button>
+                        </form>
+                        {% elif can_delete and row.status_key == 'deleted' %}
+                        <form method="post" action="/admin/sms/history/bulk-restore" class="inline-form"
+                              data-confirm="پیامک #{{ message.id }} از سطل زباله بازگردانده شود؟">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <input type="hidden" name="ids" value="{{ message.id }}">
+                            <button type="submit" class="btn btn-sm btn-ghost">بازگردانی</button>
                         </form>
                         {% endif %}
                     </td>
@@ -276,8 +366,14 @@
     </div>
     {% endif %}
 </section>
-{# One confirm surface for the retry form: same shape as the manager and send
-   pages, no native dialogs on this log. #}
+{# One confirm surface for every action on the log: same shape as the manager
+   and send pages, no native dialogs here. #}
+<style>
+.status-badge.is-deleted { background: color-mix(in srgb, var(--ink-soft) 18%, var(--card)); color: var(--ink-soft); }
+.sms-actions { white-space: nowrap; }
+.sms-actions .inline-form { display: inline; }
+.sms-bulk-all { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; }
+</style>
 <div id="history-confirm" data-dialog role="alertdialog" aria-modal="true"
      aria-labelledby="history-confirm-title" class="confirm-scrim" tabindex="-1">
     <div class="t-modal-card confirm-card" role="document">
@@ -290,33 +386,98 @@
     </div>
 </div>
 <script>
-// Confirm gate for the retry/resend forms + tap-to-copy for full texts and
-// errors. form.submit() skips the submit listener, so confirming never loops.
+// Confirm gate for the retry/resend/bulk forms + tap-to-copy for full texts
+// and errors. requestSubmit keeps the submitter's formaction; the pendingForm
+// bypass keeps the confirm event from looping.
 (function () {
     var pendingForm = null;
+    var pendingSubmitter = null;
     document.addEventListener('submit', function (event) {
-        var form = event.target.closest ? event.target.closest('form[data-confirm]') : null;
+        var form = event.target.closest
+            ? event.target.closest('form[data-confirm], form[data-sms-bulk-form]') : null;
         if (!form || form === pendingForm || !window.RaykidDialog) return;
+        var submitter = event.submitter || null;
+        var text = (submitter && submitter.getAttribute('data-confirm'))
+            || form.getAttribute('data-confirm');
+        if (!text) return;
         event.preventDefault();
         pendingForm = form;
-        document.getElementById('history-confirm-text').textContent =
-            form.getAttribute('data-confirm');
+        pendingSubmitter = submitter;
+        document.getElementById('history-confirm-text').textContent = text;
         window.RaykidDialog.open('history-confirm', document.activeElement);
     });
     document.addEventListener('click', function (event) {
         if (!event.target.closest || !event.target.closest('#history-confirm-yes')) return;
         var form = pendingForm;
-        pendingForm = null;
+        var submitter = pendingSubmitter;
         window.RaykidDialog.close('history-confirm');
-        if (form) form.submit();
+        if (form && submitter && form.requestSubmit) {
+            form.requestSubmit(submitter);   // pendingForm still set: bypasses this handler
+        } else if (form) {
+            pendingForm = null;
+            form.submit();
+        }
+        pendingForm = null;
+        pendingSubmitter = null;
     });
     document.addEventListener('click', function (event) {
         if (!event.target.closest || !event.target.closest('#history-confirm')) return;
-        if (event.target.closest('[data-dialog-close]')) pendingForm = null;
+        if (event.target.closest('[data-dialog-close]')) {
+            pendingForm = null;
+            pendingSubmitter = null;
+        }
     });
     document.addEventListener('keydown', function (event) {
-        if (event.key === 'Escape') pendingForm = null;
+        if (event.key === 'Escape') {
+            pendingForm = null;
+            pendingSubmitter = null;
+        }
     });
+    // The bulk bar is bound per element, so it is one function the shell re-runs
+    // after every in-place swap (and once on load). dataset flags keep a second
+    // run over the same nodes a no-op — the products list's rule.
+    function initSmsHistoryRegion(root) {
+        var form = root.querySelector('[data-sms-bulk-form]');
+        var count = root.querySelector('#sms-bulk-count');
+        if (!form || !count || form.dataset.bound) return;
+        form.dataset.bound = 'true';
+        var boxes = Array.prototype.slice.call(root.querySelectorAll('.bulk-check'));
+        var selectAll = root.querySelector('#sms-bulk-select-all');
+        var allFiltered = form.querySelector('input[name="all"]');
+        if (!boxes.length) return;
+        function sync() {
+            var checked = boxes.filter(function (box) { return box.checked; });
+            count.textContent = checked.length.toLocaleString('fa-IR');
+            form.toggleAttribute('hidden',
+                checked.length === 0 && !(allFiltered && allFiltered.checked));
+            if (selectAll) {
+                selectAll.checked = boxes.length > 0 && checked.length === boxes.length;
+                selectAll.indeterminate = checked.length > 0 && checked.length < boxes.length;
+            }
+        }
+        if (selectAll) {
+            selectAll.addEventListener('change', function () {
+                boxes.forEach(function (box) { box.checked = selectAll.checked; });
+                sync();
+            });
+        }
+        boxes.forEach(function (box) { box.addEventListener('change', sync); });
+        if (allFiltered) allFiltered.addEventListener('change', sync);
+        sync();
+    }
+    function initSmsHistoryPage() {
+        initSmsHistoryRegion(document);
+        document.body.addEventListener('htmx:load', function (event) {
+            var region = event.target.closest
+                ? event.target.closest('[data-list-region="sms-history"]') : null;
+            if (region) initSmsHistoryRegion(region);
+        });
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initSmsHistoryPage);
+    } else {
+        initSmsHistoryPage();
+    }
     // Copy buttons read their own payload: no selection fiddling, and a label
     // flip so the tap visibly lands.
     document.addEventListener('click', function (event) {

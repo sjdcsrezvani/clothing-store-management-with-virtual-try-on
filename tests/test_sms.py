@@ -1488,7 +1488,7 @@ def test_the_sms_tables_never_hide_their_state_behind_a_sideways_scroll():
     assert 'قالب، متن و نحوه ارسال' in SMS_HTML and "عملیات" in SMS_HTML
     assert '<th scope="col">مخاطب</th>' in HISTORY_HTML
     assert '<th scope="col">متن</th>' in HISTORY_HTML
-    assert "status-badge is-{{ message.status }}" in HISTORY_HTML
+    assert "status-badge is-{{ row.status_key }}" in HISTORY_HTML
 
 
 def test_settings_hands_sms_over_to_the_new_page():
