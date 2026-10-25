@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+{% block content %}
+{% set page_title = 'جزئیات پیامک #' ~ message.id %}
+{% set page_description %}
+هر چیزی که این پیامک از سر گذرانده: متنی که در لحظه صف‌شدن ثبت شده، مقادیری که از آن ساخته شده، و زنجیره تلاش‌های دوباره.
+{% endset %}
+{% set heading_class = 'page-heading product-page-heading' %}
+{% set page_actions %}
+<a href="/admin/sms/history" class="btn btn-ghost">بازگشت به گزارش</a>
+{% endset %}
+{% include 'partials/page_header.html' %}
+
+<style>
+.status-badge.is-deleted { background: color-mix(in srgb, var(--ink-soft) 18%, var(--card)); color: var(--ink-soft); }
+.sms-detail-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.8rem 1rem; margin: 1rem 0; }
+.sms-detail-list dt { font-size: 0.75rem; color: var(--ink-soft); }
+.sms-detail-list dd { margin: 0; }
+.sms-detail-block { margin-top: 1.1rem; }
+.sms-retry-chain { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+</style>
+
+<section class="card sms-history-card">
+    <div class="section-heading-row">
+        <div>
+            <h3>جزئیات پیامک #{{ message.id }}</h3>
+            <span class="status-badge is-{{ status_key }}">{{ status_label }}</span>
+            {% if journey_label %}<small class="sms-journey">{{ journey_label }}</small>{% endif %}
+            {% if late_sent %}<small class="sms-journey">پس از حذف، گوشی ارسال موفق را گزارش کرد</small>{% endif %}
+        </div>
+        <div class="list-heading-actions">
+            {% if status_key == 'failed' and can_retry %}
+            <form method="post" action="/admin/sms/history/{{ message.id }}/resend" class="inline-form"
+                  data-confirm="پیامک #{{ message.id }} با همان متن به {{ message.phone }} دوباره در صف قرار می‌گیرد. مطمئن هستید؟">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-primary">ارسال دوباره</button>
+            </form>
+            {% endif %}
+            {% if can_delete and status_key in ('queued', 'failed') %}
+            <form method="post" action="/admin/sms/history/bulk-delete" class="inline-form"
+                  data-confirm="پیامک #{{ message.id }} به سطل زباله برود؟ می‌توانید بعداً بازگردانید.">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="ids" value="{{ message.id }}">
+                <button type="submit" class="btn btn-danger">حذف</button>
+            </form>
+            {% elif can_delete and status_key == 'deleted' %}
+            <form method="post" action="/admin/sms/history/bulk-restore" class="inline-form"
+                  data-confirm="پیامک #{{ message.id }} از سطل زباله بازگردانده شود؟">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="ids" value="{{ message.id }}">
+                <button type="submit" class="btn btn-primary">بازگردانی</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+
+    <dl class="sms-detail-list">
+        <div><dt>شماره</dt><dd class="tnum" dir="ltr">{{ message.phone }}</dd></div>
+        <div><dt>مخاطب</dt><dd>
+            {% if customer %}<a href="/admin/customers/{{ customer.id }}">{{ customer.full_name }}</a>
+            {% else %}بدون پرونده مشتری{% endif %}
+        </dd></div>
+        <div><dt>مبدأ</dt><dd>{{ source_label }}</dd></div>
+        <div><dt>قالب</dt><dd>
+            {% if template %}<a href="/admin/sms/templates/{{ template.id }}/edit">{{ message.template_name or template.name }}</a>
+            {% elif message.template_name %}{{ message.template_name }}{% else %}—{% endif %}
+        </dd></div>
+        <div><dt>ثبت</dt><dd class="tnum">{{ jalali_str(message.created_at) }}</dd></div>
+        <div><dt>دست گوشی</dt><dd class="tnum">{{ jalali_str(message.claimed_at) if message.claimed_at else '—' }}</dd></div>
+        <div><dt>ارسال</dt><dd class="tnum">{{ jalali_str(message.sent_at) if message.sent_at else '—' }}</dd></div>
+        {% if message.deleted_at %}
+        <div><dt>حذف</dt><dd class="tnum">{{ jalali_str(message.deleted_at) }}</dd></div>
+        {% endif %}
+        <div><dt>تلاش‌ها</dt><dd class="tnum">{{ message.attempts or 0 }}</dd></div>
+        <div><dt>دستگاه</dt><dd>{{ device.name if device else '—' }}</dd></div>
+        <div><dt>متن پیامک</dt><dd>{{ segments }} پیامک</dd></div>
+    </dl>
+
+    {% if message.error %}
+    <div class="sms-detail-block is-error">
+        <h4>خطا</h4>
+        <p dir="auto">{{ message.error }}</p>
+    </div>
+    {% endif %}
+
+    <div class="sms-detail-block">
+        <h4>متن ارسال‌شده</h4>
+        <p class="sms-detail-body" dir="auto">{{ message.body }}</p>
+    </div>
+
+    {% if audit.state == 'unrecorded' %}
+    <p class="muted sms-values-none">مقادیر این پیامک ثبت نشده — پیش از آن فرستاده شده که این سابقه نگه داشته شود.</p>
+    {% elif audit.state == 'none' %}
+    <p class="muted sms-values-none">این متن جای خالی نداشت؛ چیزی از مشتری در آن پر نشده است.</p>
+    {% elif audit.state == 'unreadable' %}
+    <p class="muted sms-values-none">سابقه مقادیر این پیامک خوانده نشد؛ فقط متن بالا قابل اتکاست.</p>
+    {% else %}
+    <div class="sms-detail-block">
+        <h4>مقادیری که این متن از آن‌ها ساخته شده <span class="tnum">({{ audit.recorded|length }})</span></h4>
+        <ul class="sms-values-list">
+            {% for item in audit.recorded %}
+            <li>
+                <span class="sms-values-label">{{ item.label }}</span>
+                <span class="sms-values-name tnum" dir="ltr">%{{ item.token }}%</span>
+                <span class="sms-values-value" dir="auto">{% if item.value %}{{ item.value }}{% else %}<em>خالی</em>{% endif %}</span>
+            </li>
+            {% endfor %}
+        </ul>
+        {% if audit.state == 'match' %}
+        <p class="sms-replay is-match">بازپخش: همین مقادیر با قالب فعلی دقیقاً همین متن را می‌سازند.</p>
+        {% elif audit.state == 'differs' %}
+        <p class="sms-replay is-differs">قالب از آن زمان ویرایش شده؛ بازپخش همین مقادیر متن زیر را می‌سازد، نه متن بالا.</p>
+        <p class="sms-replay-body" dir="auto">{{ audit.replay_body }}</p>
+        {% elif audit.state == 'template_gone' %}
+        <p class="sms-replay is-gone">قالب این پیامک حذف شده؛ فقط مقادیر ثبت‌شده و متن بالا باقی مانده است.</p>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% if original or retries %}
+    <div class="sms-detail-block">
+        <h4>زنجیره ارسال دوباره</h4>
+        <ul class="sms-retry-chain">
+            {% if original %}
+            <li><a href="/admin/sms/history/{{ original.id }}">پیامک اصلی #{{ original.id }}</a>
+                <span class="status-badge is-{{ 'deleted' if original.deleted_at else original.status }}">
+                    {{ 'حذف‌شده' if original.deleted_at else original.status }}
+                </span>
+            </li>
+            {% endif %}
+            {% for retry in retries %}
+            <li><a href="/admin/sms/history/{{ retry.id }}">تلاش دوباره #{{ retry.id }}</a>
+                <span class="status-badge is-{{ 'deleted' if retry.deleted_at else retry.status }}">
+                    {{ 'حذف‌شده' if retry.deleted_at else retry.status }}
+                </span>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+</section>
+
+<div id="message-confirm" data-dialog role="alertdialog" aria-modal="true"
+     aria-labelledby="message-confirm-title" class="confirm-scrim" tabindex="-1">
+    <div class="t-modal-card confirm-card" role="document">
+        <h3 id="message-confirm-title">مطمئن هستید؟</h3>
+        <p class="muted" id="message-confirm-text"></p>
+        <div class="confirm-actions">
+            <button type="button" class="btn btn-danger" id="message-confirm-yes">تأیید</button>
+            <button type="button" class="btn btn-ghost" data-dialog-close>انصراف</button>
+        </div>
+    </div>
+</div>
+<script>
+(function () {
+    var pendingForm = null;
+    document.addEventListener('submit', function (event) {
+        var form = event.target.closest ? event.target.closest('form[data-confirm]') : null;
+        if (!form || form === pendingForm || !window.RaykidDialog) return;
+        event.preventDefault();
+        pendingForm = form;
+        document.getElementById('message-confirm-text').textContent =
+            form.getAttribute('data-confirm');
+        window.RaykidDialog.open('message-confirm', document.activeElement);
+    });
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest || !event.target.closest('#message-confirm-yes')) return;
+        var form = pendingForm;
+        pendingForm = null;
+        window.RaykidDialog.close('message-confirm');
+        if (form) form.submit();
+    });
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest || !event.target.closest('#message-confirm')) return;
+        if (event.target.closest('[data-dialog-close]')) pendingForm = null;
+    });
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') pendingForm = null;
+    });
+})();
+</script>
+{% endblock %}

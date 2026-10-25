@@ -276,3 +276,25 @@ def test_history_page_hides_delete_from_a_manager(client, db_session):
 def test_trash_kpi_links_to_the_deleted_filter(client, authed):
     page = authed.get("/admin/sms/history").text
     assert "/admin/sms/history?status=deleted" in page
+
+
+def test_detail_page_shows_timeline_body_and_retry_chain(client, authed, db_session):
+    import asyncio
+    from services.sms_send import retry_message
+    original = _row(db_session, status="failed", body="متن اصلی")
+    retry, _ = asyncio.run(retry_message(db_session, original.id))
+
+    page = authed.get(f"/admin/sms/history/{original.id}").text
+    assert "متن اصلی" in page
+    assert "جزئیات" in page
+    assert f"/admin/sms/history/{retry.id}" in page
+
+
+def test_detail_page_hides_delete_from_manager(client, db_session):
+    from tests.test_roles import _session_as, _staff
+    manager, password = _staff(db_session, "sms-mgr-detail", "manager")
+    _session_as(client, manager, password)
+    row = _row(db_session, status="failed")
+    page = client.get(f"/admin/sms/history/{row.id}").text
+    assert "/admin/sms/history/bulk-delete" not in page
+    assert "ارسال دوباره" in page

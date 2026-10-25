@@ -52,6 +52,7 @@ from services.sms_send import (
     message_filtered,
     message_ids_matching,
     message_overview,
+    message_detail,
     normalise_phone,
     parse_phone_list,
     plan_from_form,
@@ -969,6 +970,27 @@ async def admin_sms_history(
         "can_delete": guard.role == "owner",
         "can_retry": True,
         "fmt": fmt,
+    })
+
+
+@router.get("/sms/history/{message_id}", response_class=HTMLResponse)
+async def admin_sms_message(
+    message_id: int, request: Request, db: Session = Depends(get_db),
+):
+    """One message, its frozen body, and its retry family."""
+    guard = _guard(request, db)
+    if not hasattr(guard, "role"):
+        return guard
+
+    detail = message_detail(db, message_id)
+    if detail is None:
+        raise HTTPException(404, "پیامک پیدا نشد.")
+    return templates.TemplateResponse(request, "admin/sms_message.html", {
+        **detail,
+        "can_delete": guard.role == "owner",
+        "can_retry": True,
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
     })
 
 
