@@ -31,6 +31,7 @@ from services._common import (
     birthday_subjects,
     child_profile_enabled,
     customer_birthday_subjects,
+    day_span,
     days_until_jalali_birthday,
     default_buys_for,
     get_birthday_target,
@@ -389,7 +390,9 @@ def _sorted(query, sort: str):
 
 
 def _customer_query(db: Session, *, search: str = "", tier: str = "", status: str = "all",
-                    tag: str = "", drifted: bool = False):
+                    tag: str = "", drifted: bool = False,
+                    created_by_user_id: int | None = None,
+                    day_offset: int | None = None):
     """The filtered customer query both the list and the export read.
 
     One chain, two callers: the export used to be a second spelling of these
@@ -406,15 +409,23 @@ def _customer_query(db: Session, *, search: str = "", tier: str = "", status: st
                     Customer.last_name.contains(search)))
     else:
         query = _filtered_query(db, search=search, tier=tier, status=status, tag=tag)
+    if created_by_user_id is not None:
+        query = query.filter(Customer.created_by_user_id == created_by_user_id)
+    if day_offset is not None:
+        start, end = day_span(day_offset)
+        query = query.filter(Customer.created_at >= start, Customer.created_at < end)
     return query
 
 
 def export_customers(db: Session, *, search: str = "", tier: str = "", status: str = "all",
-                     tag: str = "", sort: str = "date", drifted: bool = False) -> list:
+                     tag: str = "", sort: str = "date", drifted: bool = False,
+                     created_by_user_id: int | None = None,
+                     day_offset: int | None = None) -> list:
     """Every customer the filtered view would show, unsliced for the file."""
     sort = sort if sort in SORTS else "date"
     return _sorted(_customer_query(
-        db, search=search, tier=tier, status=status, tag=tag, drifted=drifted), sort).all()
+        db, search=search, tier=tier, status=status, tag=tag, drifted=drifted,
+        created_by_user_id=created_by_user_id, day_offset=day_offset), sort).all()
 
 
 def bulk_tag_customers(db: Session, ids: list[int], tag: str, *, remove: bool = False) -> int:
@@ -443,7 +454,9 @@ def bulk_tag_customers(db: Session, ids: list[int], tag: str, *, remove: bool = 
 
 def list_customers(db: Session, *, search: str = "", tier: str = "", status: str = "all",
                    tag: str = "", sort: str = "date", page: int = 1,
-                   per_page: int = PER_PAGE, drifted: bool = False) -> dict:
+                   per_page: int = PER_PAGE, drifted: bool = False,
+                   created_by_user_id: int | None = None,
+                   day_offset: int | None = None) -> dict:
     """One page of customers plus the totals the page needs to describe itself.
 
     ``drifted`` swaps the whole query for the drift worklist: only customers
@@ -457,7 +470,9 @@ def list_customers(db: Session, *, search: str = "", tier: str = "", status: str
     sort = sort if sort in SORTS else "date"
     page = max(1, int(page or 1))
 
-    query = _customer_query(db, search=search, tier=tier, status=status, tag=tag, drifted=drifted)
+    query = _customer_query(db, search=search, tier=tier, status=status, tag=tag,
+                            drifted=drifted, created_by_user_id=created_by_user_id,
+                            day_offset=day_offset)
     total = query.count()
     per_page = per_page if per_page in (10, 25, 50) else PER_PAGE
     total_pages = max(1, (total + per_page - 1) // per_page)
@@ -476,7 +491,11 @@ def list_customers(db: Session, *, search: str = "", tier: str = "", status: str
         "tag": tag,
         "sort": sort,
         "drifted": drifted,
-        "has_filters": bool(search or tier or tag or status != "all" or sort != "date" or drifted),
+        "created_by_user_id": created_by_user_id,
+        "day": day_offset,
+        "has_filters": bool(search or tier or tag or status != "all" or sort != "date"
+                            or drifted or created_by_user_id is not None
+                            or day_offset is not None),
     }
 
 

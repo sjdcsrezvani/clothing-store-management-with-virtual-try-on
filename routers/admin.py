@@ -361,6 +361,8 @@ async def admin_customers(
     page: str = "1",
     per_page: str = "25",
     drifted: str = "0",
+    mine: str = "0",
+    day: str = "",
     db: Session = Depends(get_db),
 ):
     """The customer list: who they are, what they bought, and what is due."""
@@ -371,13 +373,23 @@ async def admin_customers(
     page = page_arg(page)
     per_page_int = int(per_page) if str(per_page).isdigit() and int(per_page) in (10, 25, 50) else 25
     drifted_on = bool(int_arg(drifted, default=0))
+    mine_on = bool(int_arg(mine, default=0))
+    day_offset = int_arg(day, default=-1)
+    if day_offset >= 0:
+        day_offset = min(day_offset, 6)
+    else:
+        day_offset = None
     listing = list_customers(
         db, search=search, tier=tier, status=status, tag=tag, sort=sort, page=page,
         per_page=per_page_int, drifted=drifted_on,
+        created_by_user_id=guard.id if mine_on else None, day_offset=day_offset,
     )
     # Query strings are urlencoded once in the route (the purchases page's
     # rule): the template only drops this inside quoted hrefs.
     from urllib.parse import urlencode
+    scope_qs = {"mine": "1"} if mine_on else {}
+    if day_offset is not None:
+        scope_qs["day"] = str(day_offset)
     sort_base_qs = "&" + urlencode({
         "tier": listing["tier"],
         "status": listing["status"],
@@ -385,11 +397,13 @@ async def admin_customers(
         "search": listing["search"],
         "per_page": listing["per_page"],
         **({"drifted": "1"} if drifted_on else {}),
+        **scope_qs,
     })
     filter_qs = f"{sort_base_qs}&sort={listing['sort']}"
 
     return templates.TemplateResponse(request, "admin/customers.html", {
         **listing,
+        "mine": mine_on,
         "filter_qs": filter_qs,
         "export_qs": sort_base_qs.lstrip("&"),
         "per_page_options": (10, 25, 50),
@@ -422,6 +436,8 @@ async def admin_customers_export(
     status: str = "all",
     tag: str = "",
     drifted: str = "0",
+    mine: str = "0",
+    day: str = "",
     db: Session = Depends(get_db),
 ):
     """The filtered list as a file: the same query the page reads, unsliced."""
@@ -430,9 +446,16 @@ async def admin_customers_export(
         return guard
     import csv
     import io
+    day_offset = int_arg(day, default=-1)
+    if day_offset >= 0:
+        day_offset = min(day_offset, 6)
+    else:
+        day_offset = None
     customers = export_customers(
         db, search=search, tier=tier, status=status, tag=tag, sort=sort,
         drifted=bool(int_arg(drifted, default=0)),
+        created_by_user_id=guard.id if bool(int_arg(mine, default=0)) else None,
+        day_offset=day_offset,
     )
     rows = build_customer_rows(db, customers)
     out = [["تلفن", "نام", "سطح", "مجموع خرید", "تعداد خرید", "امتیاز",

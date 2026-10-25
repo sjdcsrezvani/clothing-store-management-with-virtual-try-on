@@ -1,6 +1,6 @@
 """Shared helpers — single source of truth for cross-router utilities."""
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from fastapi import Request
 from markupsafe import Markup, escape
 from sqlalchemy.orm import Session
@@ -45,6 +45,13 @@ def jalali_str(value: datetime | None, with_time: bool = True) -> str:
     jd = jdatetime.datetime.fromtimestamp(value.timestamp())
     pattern = "%Y/%m/%d %H:%M" if with_time else "%Y/%m/%d"
     return _to_persian_digits(jd.strftime(pattern))
+
+
+def day_span(days_ago: int = 0):
+    """UTC midnight-to-midnight span for a relative day (0 = today)."""
+    start = (datetime.now(timezone.utc) - timedelta(days=days_ago)).replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    return start, start + timedelta(days=1)
 
 
 def parse_jalali_input(value: str) -> datetime | None:

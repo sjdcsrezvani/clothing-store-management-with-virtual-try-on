@@ -37,7 +37,7 @@ import jdatetime
 from sqlalchemy.orm import Session
 
 from models import CashSession, Settings, to_persian_digits
-from services._common import fmt, get_setting_int, jalali_str, percent
+from services._common import day_span, fmt, get_setting_int, jalali_str, percent
 from services.accounting import (
     as_utc, debt_totals, get_cashbox, get_opening_balance, open_cash_session,
 )
@@ -696,12 +696,6 @@ def _greeting_stamp() -> tuple[str, str, str]:
     return salutation, date_part, time_part
 
 
-def _midnight_span(days_ago: int = 0):
-    start = (datetime.now(timezone.utc) - timedelta(days=days_ago)).replace(
-        hour=0, minute=0, second=0, microsecond=0)
-    return start, start + timedelta(days=1)
-
-
 def _staff_day_sales(db: Session, user_id, start, end) -> dict:
     """One staffer's day, gross: sales they rang, refunds listed separately."""
     from models import CheckoutSession, Sale, SalePaymentPart
@@ -779,27 +773,27 @@ def _cashier_overview(db: Session, *, user_id, user_name: str | None,
         offset = max(0, min(6, int(day_offset or 0)))
     except (TypeError, ValueError):
         offset = 0
-    start, end = _midnight_span(offset)
+    start, end = day_span(offset)
     mine = _staff_day_sales(db, user_id, start, end)
     prev_start, prev_end = start - timedelta(days=1), end - timedelta(days=1)
     prev = _staff_day_sales(db, user_id, prev_start, prev_end)
     weekday = _FA_WEEKDAYS[start.weekday()]
     cards = [
         {"key": "my_sales", "label": "فروش امروز من", "tone": "pine",
-         "href": "/sales/",
+         "href": f"/sales/?mine=1&day={offset}&refunded=no",
          "value": _money(mine["total"]),
          "sub": (f"{mine['count']} فاکتور · نقدی {_money(mine['legs']['cash'])} · "
                  f"کارتی {_money(mine['legs']['card'])} · "
                  f"نسیه {_money(mine['legs']['credit'])}"),
          "delta": _arrow(mine["total"], prev["total"]), "clear": False},
         {"key": "my_discounts", "label": "تخفیف‌های من", "tone": None,
-         "href": "/sales/",
+         "href": f"/sales/?mine=1&day={offset}&discounted=1&refunded=no",
          "value": _money(mine["manual"] + mine["loyalty"]),
          "sub": (f"دستی {_money(mine['manual'])} · "
                  f"باشگاهی {_money(mine['loyalty'])}"),
          "delta": None, "clear": False},
         {"key": "my_refunds", "label": "برگشتی‌های من", "tone": None,
-         "href": "/sales/",
+         "href": f"/sales/?mine=1&day={offset}&refunded=yes",
          "value": str(mine["refund_count"]),
          "sub": (f"{_money(mine['refund_total'])} برگشت خورد — از فروش کم نشده"
                  if mine["refund_count"] else "برگشتی ثبت نشده"),
@@ -814,7 +808,7 @@ def _cashier_overview(db: Session, *, user_id, user_name: str | None,
         ).count()
     cards.append(
         {"key": "my_signups", "label": "مشتری‌های جدید من", "tone": None,
-         "href": "/admin/customers",
+         "href": f"/admin/customers?mine=1&day={offset}",
          "value": str(signups),
          "sub": "ثبت‌شده امروز توسط من",
          "delta": None, "clear": signups == 0})
@@ -832,7 +826,7 @@ def _cashier_overview(db: Session, *, user_id, user_name: str | None,
     shop = canonical_report(db, start, end)
     cards.append(
         {"key": "shop_today", "label": "فروش امروز فروشگاه", "tone": "sky",
-         "href": "/sales/",
+         "href": f"/sales/?day={offset}",
          "value": _money(shop["net_sales"]),
          "sub": f"{shop['sale_count']} فاکتور در کل فروشگاه",
          "delta": None, "clear": False})
@@ -843,7 +837,7 @@ def _cashier_overview(db: Session, *, user_id, user_name: str | None,
     }]
     history = []
     for ago in range(7):
-        day_start, day_end = _midnight_span(ago)
+        day_start, day_end = day_span(ago)
         day_sales = _staff_day_sales(db, user_id, day_start, day_end)
         label = ("امروز" if ago == 0 else
                  "دیروز" if ago == 1 else
@@ -878,7 +872,7 @@ def _cashier_overview(db: Session, *, user_id, user_name: str | None,
 
 def history_day_title(offset: int) -> str:
     """The section title when the cashier looks back."""
-    start, _ = _midnight_span(offset)
+    start, _ = day_span(offset)
     label = "دیروز من" if offset == 1 else f"{_FA_WEEKDAYS[start.weekday()]} من"
     return label
 
@@ -920,10 +914,10 @@ def _sellers_in_span(db: Session, start, end) -> list:
 def _staff_ranking(db: Session, *, week: bool = False) -> list[dict]:
     """Per-seller today (or trailing 7 days): sales, invoices, discounts."""
     if week:
-        end = _midnight_span(0)[1]
+        end = day_span(0)[1]
         start = end - timedelta(days=7)
     else:
-        start, end = _midnight_span(0)
+        start, end = day_span(0)
     rows = []
     for user in _sellers_in_span(db, start, end):
         day = _staff_day_sales(db, user.id, start, end)
@@ -962,7 +956,7 @@ def _live_counter(db: Session) -> dict | None:
 def _shop_target(db: Session) -> dict | None:
     """Today's shop takings against the weekday goal — managers see it too."""
     from services.reporting import canonical_report
-    start, end = _midnight_span(0)
+    start, end = day_span(0)
     target = get_setting_int(db, f"sales_target_{start.weekday()}", 0)
     if target <= 0:
         return None
@@ -1078,7 +1072,7 @@ def _manager_greeting(db: Session, role: str, user_name: str | None,
     if not user_name:
         return None
     from services.reporting import canonical_report
-    start, _ = _midnight_span(0)
+    start, _ = day_span(0)
     shop = canonical_report(db, start, start + timedelta(days=1))
     urgent = sum(len(s.get("cards", [])) for s in sections
                  if s["key"] == "urgent")

@@ -17,8 +17,10 @@ from models import (
 )
 from services._common import (
     child_profile_enabled,
+    day_span,
     fmt,
     get_setting_int as get_discount_setting,
+    int_arg,
     jalali_str,
     page_arg,
     share,
@@ -407,7 +409,9 @@ def _render_scan(request, customer, basket, total_amount, db,
 @router.get("/", response_class=HTMLResponse)
 async def sales_list(request: Request, search: str = "", page: str = "1",
                      method: str = "all", refunded: str = "all",
-                     per_page: str = "25", db: Session = Depends(get_db)):
+                     per_page: str = "25", mine: str = "0",
+                     discounted: str = "0", day: str = "",
+                     db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
@@ -418,6 +422,23 @@ async def sales_list(request: Request, search: str = "", page: str = "1",
         refunded = "all"
     per_page_int = int(per_page) if str(per_page).isdigit() and int(per_page) in (10, 25, 50) else 25
     query = db.query(Sale).filter(Sale.payment_confirmed == True)
+
+    # Dashboard cards land here with their own scope: the cashier's own till,
+    # one relative day, and/or the discounted subset of it.
+    mine_on = bool(int_arg(mine, default=0))
+    discounted_on = bool(int_arg(discounted, default=0))
+    day_offset = int_arg(day, default=-1)
+    if day_offset >= 0:
+        day_offset = min(day_offset, 6)
+        start, end = day_span(day_offset)
+        query = query.filter(Sale.created_at >= start, Sale.created_at < end)
+    else:
+        day_offset = None
+    if mine_on:
+        query = query.join(CheckoutSession, CheckoutSession.sale_id == Sale.id).filter(
+            CheckoutSession.staff_user_id == guard.id)
+    if discounted_on:
+        query = query.filter(Sale.discount_amount > 0)
 
     if search:
         query = query.join(Customer, Sale.customer_id == Customer.id, isouter=True).filter(
@@ -443,6 +464,17 @@ async def sales_list(request: Request, search: str = "", page: str = "1",
     total_pages = max(1, (total + per_page_int - 1) // per_page_int)
     page = min(max(page, 1), total_pages)
 
+    from urllib.parse import urlencode
+    scope_qs = {"mine": "1"} if mine_on else {}
+    if discounted_on:
+        scope_qs["discounted"] = "1"
+    if day_offset is not None:
+        scope_qs["day"] = str(day_offset)
+    filter_qs = "&" + urlencode({
+        "search": search, "method": method, "refunded": refunded,
+        "per_page": per_page_int, **scope_qs,
+    })
+
     return templates.TemplateResponse(request, "admin/sales.html", {
         "sales": sales,
         "search": search,
@@ -450,7 +482,12 @@ async def sales_list(request: Request, search: str = "", page: str = "1",
         "refunded": refunded,
         "per_page": per_page_int,
         "per_page_options": (10, 25, 50),
-        "filters_active": bool(search or method != "all" or refunded != "all"),
+        "filters_active": bool(search or method != "all" or refunded != "all"
+                               or mine_on or discounted_on or day_offset is not None),
+        "mine": mine_on,
+        "discounted": discounted_on,
+        "day": day_offset if day_offset is not None else "",
+        "filter_qs": filter_qs,
         "page": page,
         "total_pages": total_pages,
         "sort_key": sort_key,

@@ -10,6 +10,9 @@
 
 <div class="card">
     <form method="get" action="/sales" class="search-form">
+        {% if mine %}<input type="hidden" name="mine" value="1">{% endif %}
+        {% if discounted %}<input type="hidden" name="discounted" value="1">{% endif %}
+        {% if day != '' %}<input type="hidden" name="day" value="{{ day }}">{% endif %}
         <div class="form-group">
             <label class="sr-only" for="sales-search">جست‌وجو</label>
             <input type="text" id="sales-search" name="search" placeholder="نام یا 09123456789" value="{{ search }}">
@@ -53,10 +56,10 @@
             <tr>
                 <th scope="col">شماره</th>
                 <th scope="col">مشتری</th>
-                <th scope="col" aria-sort="{{ 'descending' if sort_key == 'date' and sort_dir == 'desc' else 'ascending' if sort_key == 'date' else 'none' }}"><a class="sort-link" href="/sales?search={{ search }}&method={{ method }}&refunded={{ refunded }}&per_page={{ per_page }}&sort=date&dir={{ 'asc' if sort_key == 'date' and sort_dir == 'desc' else 'desc' }}">تاریخ</a></th>
+                <th scope="col" aria-sort="{{ 'descending' if sort_key == 'date' and sort_dir == 'desc' else 'ascending' if sort_key == 'date' else 'none' }}"><a class="sort-link" href="/sales?sort=date&dir={{ 'asc' if sort_key == 'date' and sort_dir == 'desc' else 'desc' }}{{ filter_qs }}">تاریخ</a></th>
                 <th scope="col" class="num">جمع کل</th>
                 <th scope="col" class="num">تخفیف</th>
-                <th scope="col" class="num" aria-sort="{{ 'descending' if sort_key == 'amount' and sort_dir == 'desc' else 'ascending' if sort_key == 'amount' else 'none' }}"><a class="sort-link" href="/sales?search={{ search }}&method={{ method }}&refunded={{ refunded }}&per_page={{ per_page }}&sort=amount&dir={{ 'asc' if sort_key == 'amount' and sort_dir == 'desc' else 'desc' }}">مبلغ نهایی</a></th>
+                <th scope="col" class="num" aria-sort="{{ 'descending' if sort_key == 'amount' and sort_dir == 'desc' else 'ascending' if sort_key == 'amount' else 'none' }}"><a class="sort-link" href="/sales?sort=amount&dir={{ 'asc' if sort_key == 'amount' and sort_dir == 'desc' else 'desc' }}{{ filter_qs }}">مبلغ نهایی</a></th>
                 <th scope="col" class="num">امتیاز</th>
                 <th scope="col">پرداخت</th>
                 <th scope="col">وضعیت</th>
@@ -109,11 +112,11 @@
     {% if total_pages > 1 %}
     <nav class="product-pagination" aria-label="صفحه‌بندی فروش‌ها">
         {% if page > 1 %}
-        <a class="btn btn-sm btn-ghost" href="/sales?page={{ page - 1 }}&search={{ search }}&method={{ method }}&refunded={{ refunded }}&per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}">→ صفحه قبل</a>
+        <a class="btn btn-sm btn-ghost" href="/sales?page={{ page - 1 }}{{ filter_qs }}&sort={{ sort_key }}&dir={{ sort_dir }}">→ صفحه قبل</a>
         {% endif %}
         <span class="muted">صفحه {{ page }} از {{ total_pages }}</span>
         {% if page < total_pages %}
-        <a class="btn btn-sm btn-ghost" href="/sales?page={{ page + 1 }}&search={{ search }}&method={{ method }}&refunded={{ refunded }}&per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}">صفحه بعد ←</a>
+        <a class="btn btn-sm btn-ghost" href="/sales?page={{ page + 1 }}{{ filter_qs }}&sort={{ sort_key }}&dir={{ sort_dir }}">صفحه بعد ←</a>
         {% endif %}
     </nav>
     {% endif %}
