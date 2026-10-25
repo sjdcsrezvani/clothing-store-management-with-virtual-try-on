@@ -19,6 +19,4 @@ pytest-xdist==3.8.0
 pytest-rerunfailures==16.7
 
 # Desktop packaging (not needed for web-only deployment)
-# Install these separately before running build_mac.sh / build_windows.bat
-# pywebview==5.4
-# pyinstaller==6.11
+# Installed automatically by build_mac.sh / build_windows.bat

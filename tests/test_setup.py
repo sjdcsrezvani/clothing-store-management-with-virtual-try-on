@@ -124,7 +124,8 @@ def test_frozen_setup_creates_a_fresh_data_dir(monkeypatch, tmp_path):
     (fake_bundle / "static" / "css" / "style.css").write_text("body{}", encoding="utf-8")
     (fake_bundle / "static" / "uploads" / "products").mkdir(parents=True)
     (fake_bundle / "static" / "uploads" / "products" / "x.png").write_bytes(b"png")
-    (fake_bundle / "templates").mkdir(parents=True)
+    (fake_bundle / "templates" / "admin").mkdir(parents=True)
+    (fake_bundle / "templates" / "admin" / "base.html").write_text("ok", encoding="utf-8")
 
     data_dir = tmp_path / "data"
     data_dir.mkdir()
@@ -139,9 +140,12 @@ def test_frozen_setup_creates_a_fresh_data_dir(monkeypatch, tmp_path):
 
     assert result == str(data_dir)
     assert (data_dir / ".env").is_file()
-    # Bundled assets are copied fresh; templates likewise.
+    # Bundled assets are copied fresh; templates likewise. A copy, not a symlink:
+    # Windows cannot create symlinks without a developer privilege.
     assert (data_dir / "static" / "css" / "style.css").is_file()
-    assert (data_dir / "templates").is_symlink()
+    assert (data_dir / "templates").is_dir()
+    assert not (data_dir / "templates").is_symlink()
+    assert (data_dir / "templates" / "admin" / "base.html").read_text(encoding="utf-8") == "ok"
     # Uploads become a persistent real copy in the data dir, not a link.
     assert not (data_dir / "static" / "uploads").is_symlink()
     assert (
@@ -171,6 +175,17 @@ def test_data_dir_uses_the_app_name_and_accepts_an_override(monkeypatch, tmp_pat
     custom = tmp_path / "custom-data"
     monkeypatch.setenv("STORE_DATA_DIR", str(custom))
     assert desktop_entry._user_data_dir() == str(custom)
+
+
+def test_windows_data_dir_uses_local_appdata(monkeypatch, tmp_path):
+    """A SQLite database belongs in Local, not in a roaming profile."""
+    import desktop_entry
+    monkeypatch.setattr(desktop_entry.sys, "platform", "win32")
+    monkeypatch.delenv("STORE_DATA_DIR", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "Local"))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
+
+    assert desktop_entry._user_data_dir() == str(tmp_path / "Local" / "StoreManagement")
 
 
 def test_empty_admin_password_is_allowed_before_setup(monkeypatch, tmp_path):

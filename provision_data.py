@@ -107,7 +107,7 @@ def main() -> None:
 
     if args.target is None:
         if os.name == "nt":
-            base = Path(os.environ.get("APPDATA", Path.home()))
+            base = Path(os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or Path.home())
         elif os.uname().sysname == "Darwin":
             base = Path.home() / "Library" / "Application Support"
         else:

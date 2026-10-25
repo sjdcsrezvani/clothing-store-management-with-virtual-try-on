@@ -807,17 +807,57 @@ pip install pywebview pyinstaller
 build_windows.bat       # Windows → dist\StoreManagement\StoreManagement.exe
 ```
 
+### Windows: one script
+
+On a 64-bit Windows 10/11 machine:
+
+1. Install **Python 3.12** from
+   [python.org](https://www.python.org/downloads/windows/). During setup, tick
+   **Add python.exe to PATH** and install the **py launcher**.
+2. Copy the whole project folder to the Windows machine — it can live anywhere.
+3. Double-click **`build_windows.bat`**.
+
+The script creates `.venv-build`, installs the pinned requirements plus
+pywebview and PyInstaller, builds the app, and creates a distribution zip.
+The first run needs internet.
+
+Output:
+
+- `dist\StoreManagement\StoreManagement.exe`
+- `dist\StoreManagement-windows.zip`
+
+Keep the whole `StoreManagement` folder together, or ship the zip. The `.exe`
+alone will not run. The build must run on Windows; macOS cannot produce the
+`.exe`.
+
+Windows 10/11 normally includes the **Microsoft Edge WebView2 Runtime**. If
+the app window is blank or closes immediately, install the Evergreen runtime
+from Microsoft and check `%LOCALAPPDATA%\StoreManagement\startup-error.log`.
+If Windows Firewall asks on first launch, allow **private networks** so the
+phone page on ports 8100/8101 works.
+
 ### Data location
 
 In the desktop app, all writable data lives in the user data dir:
 
 - **macOS:** `~/Library/Application Support/StoreManagement/`
-- **Windows:** `%APPDATA%\StoreManagement\`
+- **Windows:** `%LOCALAPPDATA%\StoreManagement\`
 
 This includes the database (`referral.db`), uploads, backups, and a `.env`
 file. A `.env` there overrides the bundled defaults (API keys). The app bundle
 is read-only; moving it never moves the data.
 The phone URL is stable: `http://COMPUTER_IP:8100/admin/mobile` by default.
+
+The SQLite database also uses `referral.db-wal` and `referral.db-shm` while
+the app is open. For a manual backup, close the app first, then copy the whole
+`StoreManagement` data folder. Copying only `referral.db` while the app is
+running can miss transactions still in the WAL file. The in-app backup page
+creates a consistent snapshot without closing the app.
+
+Deleting or replacing the app folder does **not** delete the data folder, so
+updates and reinstalls keep the shop's database. To reset a test install,
+close the app and rename or delete `%LOCALAPPDATA%\StoreManagement\` (or the
+macOS equivalent).
 
 ### First launch
 

@@ -88,11 +88,8 @@ hiddenimports = [
     "arabic_reshaper",
     "bidi",
     "bidi.algorithm",
-    # pywebview platform backends
+    # pywebview platform backends (the per-OS list is added below)
     "webview",
-    "webview.platforms.edgechromium",
-    "webview.platforms.cocoa",
-    "webview.platforms.gtk",
     # Pillow / reportlab / barcode
     "PIL._tkinter_finder",
     "reportlab",
@@ -104,6 +101,17 @@ hiddenimports = [
     # dotenv
     "dotenv",
 ]
+
+if sys.platform == "win32":
+    hiddenimports += [
+        "webview.platforms.winforms",
+        "webview.platforms.edgechromium",
+        "clr",
+    ]
+elif sys.platform == "darwin":
+    hiddenimports += ["webview.platforms.cocoa"]
+else:
+    hiddenimports += ["webview.platforms.gtk", "webview.platforms.qt"]
 
 # Collect all data files from packages that ship non-Python assets.
 datas = []

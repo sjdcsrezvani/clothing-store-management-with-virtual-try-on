@@ -22,7 +22,11 @@ def _user_data_dir() -> str:
     if sys.platform == "darwin":
         base = os.path.expanduser("~/Library/Application Support")
     elif sys.platform == "win32":
-        base = os.environ.get("APPDATA", os.path.expanduser("~"))
+        # Local, not Roaming: a SQLite database and uploads must stay on the
+        # machine and must not be copied by a roaming profile.
+        base = (os.environ.get("LOCALAPPDATA")
+                or os.environ.get("APPDATA")
+                or os.path.expanduser("~"))
     else:
         base = os.path.expanduser("~/.local/share")
     path = os.path.join(base, APP_SLUG)
@@ -89,10 +93,13 @@ def _prepare_assets(data_dir: str) -> None:
     templates_dst = os.path.join(data_dir, "templates")
     templates_src = os.path.join(_bundle_dir(), "templates")
     if os.path.isdir(templates_src):
-        if os.path.islink(templates_dst):
+        # Copy, never symlink: Windows needs a developer privilege for symlinks,
+        # and a copy keeps working when the app folder is moved.
+        if os.path.islink(templates_dst) or os.path.isfile(templates_dst):
             os.remove(templates_dst)
-        if not os.path.exists(templates_dst):
-            os.symlink(templates_src, templates_dst)
+        elif os.path.isdir(templates_dst):
+            shutil.rmtree(templates_dst)
+        shutil.copytree(templates_src, templates_dst)
 
 
 def _setup_frozen_env() -> str:
@@ -244,5 +251,34 @@ def main() -> None:
             gateway_thread.join(timeout=5)
 
 
+def _startup_error_path() -> str:
+    try:
+        return os.path.join(_user_data_dir(), "startup-error.log")
+    except OSError:
+        return os.path.join(os.path.expanduser("~"), "StoreManagement-startup-error.log")
+
+
+def _report_startup_error(exc: BaseException) -> None:
+    """A windowed build has no console: leave a log and tell the user on Windows."""
+    import traceback
+    path = _startup_error_path()
+    try:
+        with open(path, "w", encoding="utf-8") as log:
+            log.write("".join(traceback.format_exception(exc)))
+    except OSError:
+        path = ""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            detail = f"\n\n{exc}\n\nLog: {path}" if path else f"\n\n{exc}"
+            ctypes.windll.user32.MessageBoxW(0, detail, APP_TITLE, 0x10)
+        except Exception:
+            pass
+
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        _report_startup_error(exc)
+        raise
