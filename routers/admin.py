@@ -17,7 +17,6 @@ from models import (
     BusinessEvent, StaffUser, SalaryPayment, CashSession, AttendanceRecord, JobPosition,
 )
 from config import ADMIN_PASSWORD, API_TOKEN
-from deployment import OWNER_MODE
 from migrations import MIGRATION_VERSION
 from services.sms import (
     send_tier_up_gold_sms,
@@ -222,11 +221,31 @@ def _setup_completed(db) -> bool:
     return bool(row and row.value)
 
 
+def _setup_local_request(request: Request) -> bool:
+    """Setup is a local act: the desktop window runs on loopback.
+
+    The server also listens on the LAN for the phone page, so without this a
+    device on the same network could claim a fresh install before its owner.
+    """
+    host = request.client.host if request.client else ""
+    return host in {"127.0.0.1", "::1", "localhost", "testclient"}
+
+
+def _setup_marker_path() -> str:
+    """The marker sits beside the database, inside this install's data dir."""
+    import os
+    from config import DATABASE_URL
+    if DATABASE_URL.startswith("sqlite:///"):
+        db_path = DATABASE_URL[10:]
+        if db_path:
+            return os.path.join(os.path.dirname(os.path.abspath(db_path)), ".setup_done")
+    return os.path.join(os.getcwd(), ".setup_done")
+
+
 @router.get("/setup", response_class=HTMLResponse)
 async def admin_setup_page(request: Request, db: Session = Depends(get_db)):
-    """First-run setup wizard for an explicitly developer-enabled demo build.
-    It is never available in the owner's private build."""
-    if OWNER_MODE:
+    """First-run setup wizard: the customer's first screen on a new install."""
+    if not _setup_local_request(request):
         raise HTTPException(status_code=404, detail="Not found")
     if _setup_completed(db):
         return RedirectResponse(url="/admin/login", status_code=303)
@@ -248,9 +267,8 @@ async def admin_setup(
     tryon_api_key: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    """Complete first-run setup in a developer-enabled sales/demo build.
-    Owner mode rejects provisioning entirely."""
-    if OWNER_MODE:
+    """Complete first-run setup and hand the install to its owner."""
+    if not _setup_local_request(request):
         raise HTTPException(status_code=404, detail="Not found")
     if _setup_completed(db):
         return RedirectResponse(url="/admin/login", status_code=303)
@@ -305,8 +323,7 @@ async def admin_setup(
             db.add(Settings(key="tryon_api_key", value=tryon_api_key.strip()))
 
     # 4. Write a marker file so desktop_entry knows setup is done.
-    import os
-    marker = os.path.join(os.getcwd(), ".setup_done")
+    marker = _setup_marker_path()
     with open(marker, "w") as f:
         f.write("1")
 

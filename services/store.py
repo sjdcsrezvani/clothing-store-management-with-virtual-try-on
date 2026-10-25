@@ -14,8 +14,8 @@ _CACHE_TTL_SECONDS = 60
 _cache = {"at": 0.0, "data": None}
 
 DEFAULT_STORE = {
-    "name": "رای کیدز",
-    "tagline": "فروشگاه پوشاک کودک",
+    "name": "فروشگاه من",
+    "tagline": "سیستم مدیریت فروشگاه",
     "instagram": "",
     "footer": "",
     "address": "",

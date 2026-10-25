@@ -5,8 +5,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from config import ADMIN_PASSWORD, API_TOKEN, DATABASE_URL, SESSION_SECRET
-from deployment import OWNER_MODE
+from config import API_TOKEN, DATABASE_URL, SESSION_SECRET
 
 
 def redact_identifier(value: str | None) -> str:
@@ -18,8 +17,8 @@ def redact_identifier(value: str | None) -> str:
 
 def validate_production_config(static_root: str | Path = "static") -> list[str]:
     errors = []
-    if not ADMIN_PASSWORD:
-        errors.append("ADMIN_PASSWORD is missing")
+    # ADMIN_PASSWORD is optional: a fresh install has none until the local
+    # setup wizard writes the hash into the settings table.
     if not API_TOKEN or API_TOKEN in {"change-me", "change-me-please"}:
         errors.append("API_TOKEN is missing or uses a default value")
     if not SESSION_SECRET or SESSION_SECRET in {"change-me", "change-me-please"}:

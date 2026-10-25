@@ -687,7 +687,7 @@ NOT_A_PAGE: dict[str, str] = {
     "/admin/try-on/download": "the try-on engine answers with its own response",
     "/admin/collections": "a shortcut that redirects to the invoices it collects",
     "/admin/sales": "a shortcut that redirects to the sales history it counts",
-    "/admin/setup": "the demo build's first-run wizard, and this is the owner's private build",
+    "/admin/setup": "the first-run wizard: a page before setup, a login redirect after",
     "/sales/api/barcode/{barcode}": "the scanner's lookup, which answers in JSON",
     "/sales/api/product-search": "the name search for damaged tags, which answers in JSON",
     "/admin/try-on/saved/{img_id}/download": "the saved photo itself, not a page",
@@ -1091,7 +1091,10 @@ def test_every_page_the_shell_serves_reads_only_colours_its_theme_defines(client
                    if role == "owner" and status == 200 and drawn}
     unexplained = sorted(served - owner_pages - set(NOT_A_PAGE))
     assert not unexplained, f"these addresses are not pages and nothing says why: {unexplained}"
-    stale = sorted(set(NOT_A_PAGE) - (served - owner_pages))
+    # /admin/setup is state-dependent: a page on an empty shop, a redirect once
+    # the shop exists. It is excused in the empty-shop walk below, but it must
+    # not be called a stale excuse when the fresh-shop walk does draw it.
+    stale = sorted(set(NOT_A_PAGE) - (served - owner_pages) - {"/admin/setup"})
     assert not stale, f"these addresses are excused from being pages and no longer need it: {stale}"
 
     assert not offenders, "\n".join(offenders[:40])

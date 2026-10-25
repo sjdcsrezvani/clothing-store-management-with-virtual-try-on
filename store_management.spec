@@ -1,14 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for the Raykid Store desktop app.
+"""PyInstaller spec for the store management desktop app.
 
 Builds a standalone desktop app that bundles the FastAPI server, all static
 assets, templates, and fonts, plus pywebview for the native window.
 
 Usage:
-    pyinstaller raykid_store.spec
+    pyinstaller store_management.spec
 
-On macOS this produces a .app bundle in dist/RaykidStore.app.
-On Windows this produces dist/RaykidStore/RaykidStore.exe (onedir).
+On macOS this produces a .app bundle in dist/Store Management.app.
+On Windows this produces dist/StoreManagement/StoreManagement.exe (onedir).
 
 The app's writable data (DB, uploads, backups) lives in the user data dir,
 not inside the bundle — see desktop_entry.py for the path logic.
@@ -22,6 +22,8 @@ from PyInstaller.utils.hooks import (
 
 # PyInstaller runs the spec with the project root as CWD.
 PROJECT_ROOT = os.getcwd()
+sys.path.insert(0, PROJECT_ROOT)
+from deployment import APP_BUNDLE_ID, APP_NAME, APP_SLUG
 
 block_cipher = None
 
@@ -110,17 +112,9 @@ datas += collect_data_files("jinja2")
 # Static files (CSS, JS, fonts, images) — our own directory. uploads are
 # bundled too so a fresh install can seed its persistent data-dir copy.
 datas += [(os.path.join(PROJECT_ROOT, "static"), "static")]
-# Templates directory — own templates. The setup wizard template ships only
-# for sales/demo builds; in owner builds the routes are disabled (404).
+# Templates directory — own templates.
 datas += [(os.path.join(PROJECT_ROOT, "templates"), "templates")]
 
-# Developer-provisioned owner store (DB + .env), staged with:
-#   python provision_owner.py --source-db referral.db --source-env .env --stage
-# When present, the packaged app self-seeds a fresh data dir from it and
-# starts straight into the store — no setup wizard, nothing to configure.
-_owner_bundle = os.path.join(PROJECT_ROOT, "owner_bundle")
-if os.path.isdir(_owner_bundle):
-    datas += [(_owner_bundle, "owner_bundle")]
 # Package metadata (needed by some packages at runtime)
 datas += copy_metadata("fastapi")
 datas += copy_metadata("uvicorn")
@@ -148,8 +142,8 @@ a = Analysis(
         "pytest",
         "tests",
         "test_image_gen",
-        # Developer-only provisioning tool; never include it in a customer app.
-        "provision_owner",
+        # Developer-only data migration tool; never include it in a customer app.
+        "provision_data",
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -166,7 +160,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="RaykidStore",
+    name=APP_SLUG,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -188,18 +182,18 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name="RaykidStore",
+    name=APP_SLUG,
 )
 
 # On macOS, build a proper .app bundle
 if sys.platform == "darwin":
     app = BUNDLE(
         coll,
-        name="Raykid Store.app",
+        name=f"{APP_NAME}.app",
         # icon="logo.icns",  # Uncomment when you have an .icns icon
-        bundle_identifier="com.raykid.store",
+        bundle_identifier=APP_BUNDLE_ID,
         info_plist={
-            "CFBundleDisplayName": "Raykid Store",
+            "CFBundleDisplayName": APP_NAME,
             "CFBundleShortVersionString": "1.0.0",
             "CFBundleVersion": "1",
             "LSMinimumSystemVersion": "10.13",

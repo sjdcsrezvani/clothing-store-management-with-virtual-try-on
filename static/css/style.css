@@ -264,6 +264,12 @@ button.sidebar-collapse:focus-visible { outline: 3px solid var(--ring-brand); ou
 .sidebar-logout:hover { background: var(--sidebar-hover); }
 .sidebar-overlay { display: none; }
 .app-main { margin-right: var(--sidebar-width); min-height: calc(100vh - 72px); scroll-margin-top: 5.5rem; }
+/* Login and first-run setup have no sidebar yet: a bare shell. */
+body.auth-shell .app-sidebar,
+body.auth-shell .sidebar-overlay,
+body.auth-shell .menu-toggle,
+body.auth-shell .topbar-actions { display: none; }
+body.auth-shell .app-main { margin-right: 0; }
 html[data-theme-mode="dark"] body, html[data-theme-mode="dark-shell"] body, html[data-theme-mode="high-contrast"] body { background: var(--bg); color: var(--ink); }
 html[data-theme-mode="dark"] th, html[data-theme-mode="dark-shell"] th { background: var(--surface-soft); color: var(--ink-soft); }
 html[data-theme-mode="dark"] input, html[data-theme-mode="dark"] select, html[data-theme-mode="dark"] textarea, html[data-theme-mode="dark-shell"] input, html[data-theme-mode="dark-shell"] select, html[data-theme-mode="dark-shell"] textarea { background: var(--surface-soft); color: var(--ink); border-color: var(--rule); }

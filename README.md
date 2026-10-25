@@ -491,63 +491,30 @@ Or use the launcher scripts:
 - **Linux/macOS:** `./start.sh`
 - **Windows:** `start.bat`
 
-## Deployment modes
+## First-run setup
 
-This project has two intentionally separate modes, controlled only by the
-source file `deployment.py`:
+Every packaged copy is a customer install. It starts empty and opens
+`/admin/setup`, where the new shop enters its name, an admin password, and
+optional SMS/try-on keys. That wizard creates the store owner account and the
+install's local `.env` secrets; later launches open the normal app.
 
-### Owner mode (default: `OWNER_MODE = True`)
+The setup route is local-only: it answers on loopback (the desktop window) and
+returns 404 to other devices on the LAN. There is no build-mode switch that
+turns a customer install into a pre-provisioned one.
 
-This is the private RaiKids installation. The desktop app:
+### Loading an existing database
 
-- opens directly to the POS checkout;
-- never shows the setup wizard;
-- returns 404 for `/admin/setup`;
-- refuses to create a new empty owner database when packaged without data;
-- preserves the existing owner database and `.env`.
-
-A customer cannot switch this mode from the UI. Changing it requires modifying
-source code and rebuilding the application.
-
-### Sales/demo mode (`OWNER_MODE = False`)
-
-Use this only when you, the developer, intentionally prepare a build for a
-new shop. In that build the first-run wizard is available and can collect that
-shop's name, password, and optional integration keys. Build it separately and
-do not distribute your private owner `.env` or database with it.
-
-### Provisioning the private owner build
-
-The developer can pre-load the packaged app with the existing owner's data:
+For a migration or a developer machine that already has a store database:
 
 ```bash
-python provision_owner.py --source-db referral.db --source-env .env --with-uploads
+python provision_data.py --source-db referral.db --source-env .env --with-uploads
 ```
 
-This copies the private DB and secrets (and with `--with-uploads`, the product
-and invoice images) to the platform data directory and marks it as
-owner-provisioned. It uses SQLite's online backup API so recent WAL
-transactions are preserved. The target directory contains real secrets and
-must never be committed or sent to another shop.
-
-To make the packaged app fully self-contained — double-click on any machine
-and the store is simply there, with no setup page at all — stage an embeddable
-bundle before building:
-
-```bash
-python provision_owner.py --source-db referral.db --source-env .env --stage
-./build_mac.sh   # or the Windows equivalent
-```
-
-`owner_bundle/` (DB + `.env`) is embedded into the build; a fresh data dir is
-seeded from it automatically on first launch. The bundle is gitignored and
-contains real secrets — never share it or commit it.
-
-### First-run setup (sales/demo builds only)
-
-When `OWNER_MODE = False`, the demo build opens `/admin/setup` on first launch.
-The wizard collects store branding, an admin password, and optional SMS/try-on
-keys. It is deliberately disabled in the default owner build.
+This copies the DB and secrets (and with `--with-uploads`, the product and
+invoice images) to the platform data directory and marks setup as done. It uses
+SQLite's online backup API so recent WAL transactions are preserved. The target
+contains real secrets and must never be committed or sent to another shop. The
+script is developer-only and is not included in the packaged app.
 
 ## Configuration
 
@@ -836,36 +803,35 @@ The app can be packaged as a native desktop app using **pywebview** +
 pip install pywebview pyinstaller
 
 # 2. Build (on the target platform — you can't cross-compile)
-./build_mac.sh          # macOS → dist/Raykid Store.app
-build_windows.bat       # Windows → dist\RaykidStore\RaykidStore.exe
+./build_mac.sh          # macOS → dist/Store Management.app
+build_windows.bat       # Windows → dist\StoreManagement\StoreManagement.exe
 ```
 
 ### Data location
 
 In the desktop app, all writable data lives in the user data dir:
 
-- **macOS:** `~/Library/Application Support/RaykidStore/`
-- **Windows:** `%APPDATA%\RaykidStore\`
+- **macOS:** `~/Library/Application Support/StoreManagement/`
+- **Windows:** `%APPDATA%\StoreManagement\`
 
 This includes the database (`referral.db`), uploads, backups, and a `.env`
-file. A `.env` there overrides the bundled defaults (API keys, admin password).
+file. A `.env` there overrides the bundled defaults (API keys). The app bundle
+is read-only; moving it never moves the data.
 The phone URL is stable: `http://COMPUTER_IP:8100/admin/mobile` by default.
 
 ### First launch
 
-- **Owner build (default):** provision the private database and `.env` first
-  with `provision_owner.py`; then double-click the app. It opens directly to
-  the POS. The setup wizard is disabled and `/admin/setup` returns 404.
+- **Fresh install:** the app opens the setup wizard. Enter the store name, an
+  admin password, and (optionally) integration keys; it then redirects to the
+  login page. The owner account is the one the wizard created.
 - **macOS (unsigned):** right-click the .app → **Open** → confirm. This
   bypasses Gatekeeper for a local shop install. For distribution, sign and
   notarize with an Apple Developer ID.
 - **Windows:** the `.exe` may trigger SmartScreen — click **More info** →
   **Run anyway**. For distribution, sign with a code-signing certificate.
 
-For a customer/demo build, change `OWNER_MODE = False` in `deployment.py`
-*before building*. This is a developer/source-code decision; it cannot be
-changed from the application UI. Never ship your owner `.env` or database in
-that build.
+To pre-load an existing store instead of using the wizard, run
+`provision_data.py` before launching (see First-run setup above).
 
 ### Desktop vs. web-only
 

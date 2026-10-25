@@ -9,18 +9,23 @@ import threading
 import time
 import webbrowser
 
-from deployment import DESKTOP_PORT, OWNER_MODE, REQUIRE_EXISTING_OWNER_DATA
+from deployment import APP_SLUG, APP_TITLE, DESKTOP_PORT
 
 
 def _user_data_dir() -> str:
-    app_name = "RaykidStore"
+    """The writable per-user directory: database, .env, uploads and backups."""
+    override = os.environ.get("STORE_DATA_DIR")
+    if override:
+        path = os.path.abspath(os.path.expanduser(override))
+        os.makedirs(path, exist_ok=True)
+        return path
     if sys.platform == "darwin":
         base = os.path.expanduser("~/Library/Application Support")
     elif sys.platform == "win32":
         base = os.environ.get("APPDATA", os.path.expanduser("~"))
     else:
         base = os.path.expanduser("~/.local/share")
-    path = os.path.join(base, app_name)
+    path = os.path.join(base, APP_SLUG)
     os.makedirs(path, exist_ok=True)
     return path
 
@@ -34,34 +39,12 @@ def _bundle_dir() -> str:
 
 
 def _generate_first_run_env(env_path: str) -> None:
-    """Only used by sales/demo builds (OWNER_MODE=False). Owner builds are
-    provisioned by the developer and never generate a blank store."""
+    """Create the local secrets a fresh install needs before setup runs."""
     import secrets
     with open(env_path, "w", encoding="utf-8") as f:
-        f.write("# Auto-generated; configure integrations in the admin panel.\n")
+        f.write("# Generated on first launch; edit integrations in the admin panel.\n")
         f.write(f"SESSION_SECRET={secrets.token_hex(32)}\n")
         f.write(f"API_TOKEN={secrets.token_hex(16)}\nADMIN_PASSWORD=\n")
-
-
-def _seed_from_owner_bundle(data_dir: str) -> bool:
-    """Seed a fresh data dir from the owner bundle embedded at build time.
-
-    The bundle is staged by the developer with `python provision_owner.py
-    ... --stage` and baked into the packaged app, so it starts with the
-    intended store immediately — no setup wizard, nothing for a customer to
-    configure. Only fills files that are missing; never overwrites data.
-    """
-    bundle = os.path.join(_bundle_dir(), "owner_bundle")
-    if not os.path.isdir(bundle):
-        return False
-    seeded = False
-    for name in ("referral.db", ".env"):
-        src = os.path.join(bundle, name)
-        dst = os.path.join(data_dir, name)
-        if os.path.isfile(src) and not os.path.exists(dst):
-            shutil.copy2(src, dst)
-            seeded = True
-    return seeded
 
 
 def _prepare_assets(data_dir: str) -> None:
@@ -113,38 +96,17 @@ def _prepare_assets(data_dir: str) -> None:
 
 
 def _setup_frozen_env() -> str:
+    """Point the app at its own data directory and load that install's env."""
     data_dir = _user_data_dir()
     env_file = os.path.join(data_dir, ".env")
     db_path = os.path.join(data_dir, "referral.db")
 
-    # Owner builds self-seed from the developer-embedded store bundle.
-    if _is_frozen() and OWNER_MODE and (
-        not os.path.exists(env_file) or not os.path.exists(db_path)
-    ):
-        _seed_from_owner_bundle(data_dir)
-
     from dotenv import load_dotenv
-    if os.path.exists(env_file):
-        load_dotenv(env_file, override=False)
-    elif OWNER_MODE and REQUIRE_EXISTING_OWNER_DATA and _is_frozen():
-        raise RuntimeError(
-            "Owner build is not provisioned (no .env in " + data_dir + "). "
-            "Run: python provision_owner.py --source-db referral.db --source-env .env"
-        )
-    else:
-        project_env = os.path.join(_bundle_dir(), ".env")
-        if OWNER_MODE and not _is_frozen() and os.path.exists(project_env):
-            load_dotenv(project_env, override=False)
-        else:
-            _generate_first_run_env(env_file)
-            load_dotenv(env_file, override=False)
+    if not os.path.exists(env_file):
+        _generate_first_run_env(env_file)
+    load_dotenv(env_file, override=False)
 
     if not os.environ.get("DATABASE_URL"):
-        if OWNER_MODE and REQUIRE_EXISTING_OWNER_DATA and _is_frozen() and not os.path.exists(db_path):
-            raise RuntimeError(
-                "Owner build is not provisioned (no database in " + data_dir + "). "
-                "Run: python provision_owner.py --source-db referral.db --source-env .env"
-            )
         os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
 
     os.chdir(data_dir)
@@ -153,12 +115,12 @@ def _setup_frozen_env() -> str:
     return data_dir
 
 
-def _find_free_port(host: str = "127.0.0.1") -> int:
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind((host, 0))
-    port = sock.getsockname()[1]
-    sock.close()
-    return port
+def _initial_url(host_url: str, data_dir: str) -> str:
+    """A fresh install opens on the wizard until setup writes its marker."""
+    marker = os.path.join(data_dir, ".setup_done")
+    if not os.path.exists(marker):
+        return f"{host_url}/admin/setup"
+    return f"{host_url}/sales/new"
 
 
 def _lan_ip() -> str:
@@ -220,10 +182,10 @@ def _open_browser_fallback(url: str) -> None:
 
 def main() -> None:
     data_dir = _setup_frozen_env()
-    port = int(os.environ.get("RAYKID_DESKTOP_PORT", DESKTOP_PORT))
+    port = int(os.environ.get("STORE_DESKTOP_PORT", DESKTOP_PORT))
     host_url = f"http://127.0.0.1:{port}"
     lan_url = f"http://{_lan_ip()}:{port}"
-    url = f"{host_url}/sales/new"
+    url = _initial_url(host_url, data_dir)
     print(f"App: {url}")
     print(f"Phone try-on: {lan_url}/admin/mobile")
     try:
@@ -231,7 +193,7 @@ def main() -> None:
     except OSError as exc:
         raise RuntimeError(
             f"Port {port} is unavailable. Change DESKTOP_PORT in deployment.py "
-            "or set RAYKID_DESKTOP_PORT before starting the app."
+            "or set STORE_DESKTOP_PORT before starting the app."
         ) from exc
 
     from services.sms_gateway import gateway_port as _gateway_port
@@ -250,7 +212,7 @@ def main() -> None:
 
             def open_new_sale(self):
                 webview.create_window(
-                    "فروش جدید — رای کیدز",
+                    "فروش جدید",
                     url=f"{host_url}/sales/new",
                     width=1200, height=780, min_size=(900, 600), text_select=False,
                 )
@@ -258,7 +220,7 @@ def main() -> None:
 
         api = DesktopApi()
         window = webview.create_window(
-            "فروشگاه رای کیدز", url=url, width=1280, height=800,
+            APP_TITLE, url=url, width=1280, height=800,
             min_size=(1024, 600), text_select=False, js_api=api,
         )
 

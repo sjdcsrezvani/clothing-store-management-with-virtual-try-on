@@ -109,7 +109,7 @@ def test_store_branding_renders(client, db_session):
     from services.store import invalidate_store_cache
 
     resp = client.get("/admin/login")
-    assert "رای کیدز" in resp.text  # default store name
+    assert "فروشگاه من" in resp.text  # default store name before setup
 
     row = db_session.query(Settings).filter(Settings.key == "store_name").first()
     if row:

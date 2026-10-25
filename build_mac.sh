@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Build the Raykid Store desktop app for macOS.
-# Produces dist/Raykid Store.app
+# Build the store management desktop app for macOS.
+# Produces dist/Store Management.app
 #
 # Prerequisites:
 #   - Python 3.10+ (this project uses 3.12)
@@ -19,7 +19,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-echo "📦 Building Raykid Store desktop app for macOS..."
+echo "📦 Building the store management desktop app for macOS..."
 
 # Ensure build deps are installed
 python3 -c "import PyInstaller" 2>/dev/null || {
@@ -35,14 +35,14 @@ python3 -c "import webview" 2>/dev/null || {
 rm -rf build/ dist/ *.spec.bak
 
 # Run PyInstaller with our spec
-python3 -m PyInstaller raykid_store.spec --noconfirm --clean
+python3 -m PyInstaller store_management.spec --noconfirm --clean
 
 echo ""
 echo "✅ Build complete!"
-echo "   App: dist/Raykid Store.app"
+echo "   App: dist/Store Management.app"
 echo ""
-echo "   To run: open 'dist/Raykid Store.app'"
+echo "   To run: open 'dist/Store Management.app'"
 echo "   (On first launch, right-click → Open to bypass Gatekeeper)"
 echo ""
 echo "   The app stores its data in:"
-echo "   ~/Library/Application Support/RaykidStore/"
+echo "   ~/Library/Application Support/StoreManagement/"
