@@ -71,7 +71,7 @@
         <div><dt>حذف</dt><dd class="tnum">{{ jalali_str(message.deleted_at) }}</dd></div>
         {% endif %}
         <div><dt>تلاش‌ها</dt><dd class="tnum">{{ message.attempts or 0 }}</dd></div>
-        <div><dt>دستگاه</dt><dd>{{ device.name if device else '—' }}</dd></div>
+        <div><dt>دستگاه</dt><dd>{{ (device.name or '') if device else '—' }}</dd></div>
         <div><dt>متن پیامک</dt><dd>{{ segments }} پیامک</dd></div>
     </dl>
 

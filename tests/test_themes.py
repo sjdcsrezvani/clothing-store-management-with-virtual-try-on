@@ -1027,6 +1027,7 @@ def _one_of_everything(db_session, staff: dict) -> dict[str, object]:
                            prompt_used="پرو تست", created_at=now - timedelta(hours=3))
     db_session.add(image)
     db_session.commit()
+    message_id = db_session.query(SmsMessage.id).order_by(SmsMessage.id).first()[0]
 
     return {
         "customer_id": customer.id, "product_id": product.id, "variant_id": variant.id,
@@ -1035,6 +1036,7 @@ def _one_of_everything(db_session, staff: dict) -> dict[str, object]:
         "supplier_payment_id": supplier_payment.id,
         "template_id": template.id, "session_id": closed_shift.id, "img_id": image.id,
         "sale_id": credit_sale.id, "barcode": variant.barcode,
+        "message_id": message_id,
     }
 
 
