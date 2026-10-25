@@ -262,9 +262,6 @@ async def admin_setup(
     admin_password_confirm: str = Form(...),
     store_tagline: str = Form(""),
     store_instagram: str = Form(""),
-    sms_api_key: str = Form(""),
-    sms_device_id: str = Form(""),
-    tryon_api_key: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """Complete first-run setup and hand the install to its owner."""
@@ -301,28 +298,7 @@ async def admin_setup(
         else:
             db.add(Settings(key=key, value=value))
 
-    # 3. Save SMS/try-on settings to the settings table (these override .env
-    #    at runtime; .env is the fallback for first boot).
-    if sms_api_key.strip():
-        row = db.query(Settings).filter(Settings.key == "sms_api_key").first()
-        if row:
-            row.value = sms_api_key.strip()
-        else:
-            db.add(Settings(key="sms_api_key", value=sms_api_key.strip()))
-    if sms_device_id.strip():
-        row = db.query(Settings).filter(Settings.key == "sms_device_id").first()
-        if row:
-            row.value = sms_device_id.strip()
-        else:
-            db.add(Settings(key="sms_device_id", value=sms_device_id.strip()))
-    if tryon_api_key.strip():
-        row = db.query(Settings).filter(Settings.key == "tryon_api_key").first()
-        if row:
-            row.value = tryon_api_key.strip()
-        else:
-            db.add(Settings(key="tryon_api_key", value=tryon_api_key.strip()))
-
-    # 4. Write a marker file so desktop_entry knows setup is done.
+    # 3. Write a marker file so desktop_entry knows setup is done.
     marker = _setup_marker_path()
     with open(marker, "w") as f:
         f.write("1")

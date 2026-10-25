@@ -11,6 +11,10 @@ def test_setup_wizard_is_available_on_a_fresh_install(client):
     response = client.get("/admin/setup")
     assert response.status_code == 200
     assert "خوش آمدید" in response.text
+    # Integration keys are configured after login, never during setup.
+    assert "تنظیمات اختیاری" not in response.text
+    assert 'name="sms_api_key"' not in response.text
+    assert 'name="tryon_api_key"' not in response.text
 
 
 def test_setup_is_local_only():
@@ -60,6 +64,8 @@ def test_setup_creates_the_owner_and_writes_the_marker(client, db_session, monke
         "store_tagline": "پوشاک",
         "store_instagram": "@fresh_store",
     }
+    assert db_session.query(Settings).filter(Settings.key.in_(
+        ["sms_api_key", "sms_device_id", "tryon_api_key"])).count() == 0
 
     # Once provisioned the wizard closes and sends the visitor to login.
     again = client.get("/admin/setup", follow_redirects=False)
