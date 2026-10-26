@@ -40,8 +40,15 @@
                 </div>
             </div>
 
-            {# ── Admin password ── #}
-            <h3 style="margin-top: 1.5rem;">رمز مدیریت</h3>
+            {# ── Owner account ── #}
+            <h3 style="margin-top: 1.5rem;">حساب مالک</h3>
+            <div class="form-group">
+                <label for="admin_username">👤 نام کاربری مالک <span style="color: var(--persimmon);">*</span></label>
+                <input type="text" id="admin_username" name="admin_username" required maxlength="100"
+                       autocomplete="username" dir="ltr" value="{{ admin_username|default('') }}"
+                       placeholder="مثلاً: owner">
+                <small>با این نام وارد می‌شوید؛ بعداً از صفحه کارکنان قابل تغییر است.</small>
+            </div>
             <div class="form-row">
                 <div class="form-group">
                     <label for="admin_password">🔑 رمز عبور <span style="color: var(--persimmon);">*</span></label>

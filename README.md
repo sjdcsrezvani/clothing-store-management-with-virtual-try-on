@@ -494,11 +494,11 @@ Or use the launcher scripts:
 ## First-run setup
 
 Every packaged copy is a customer install. It starts empty and opens
-`/admin/setup`, where the new shop enters its name and an admin password.
-That wizard creates the store owner account and the install's local `.env`
-secrets; later launches open the normal app. The try-on key is set later in
-Settings, and the SMS gateway is paired to the shop's phone — there is no SMS
-API key to enter.
+`/admin/setup`, where the new shop enters its name, the owner's login name,
+and a password. That wizard creates the store owner account and the install's
+local `.env` secrets; later launches open the normal app. The try-on key is set
+later in Settings, and the SMS gateway is paired to the shop's phone — there is
+no SMS API key to enter.
 
 The setup route is local-only: it answers on loopback (the desktop window) and
 returns 404 to other devices on the LAN. There is no build-mode switch that
@@ -863,10 +863,10 @@ macOS equivalent).
 
 ### First launch
 
-- **Fresh install:** the app opens the setup wizard. Enter the store name and
-  an admin password; it then redirects to the login page. The owner account is
-  the one the wizard created. Set the try-on key later in Settings and pair
-  the SMS gateway from the SMS page.
+- **Fresh install:** the app opens the setup wizard. Enter the store name, the
+  owner's login name, and a password; it then redirects to the login page. The
+  owner account is the one the wizard created. Set the try-on key later in
+  Settings and pair the SMS gateway from the SMS page.
 - **macOS (unsigned):** right-click the .app → **Open** → confirm. This
   bypasses Gatekeeper for a local shop install. For distribution, sign and
   notarize with an Apple Developer ID.

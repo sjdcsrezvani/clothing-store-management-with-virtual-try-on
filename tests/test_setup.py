@@ -11,6 +11,7 @@ def test_setup_wizard_is_available_on_a_fresh_install(client):
     response = client.get("/admin/setup")
     assert response.status_code == 200
     assert "خوش آمدید" in response.text
+    assert 'name="admin_username"' in response.text
     # Integration keys are configured after login, never during setup.
     assert "تنظیمات اختیاری" not in response.text
     assert 'name="sms_api_key"' not in response.text
@@ -33,6 +34,7 @@ def test_remote_client_cannot_open_setup(client, monkeypatch):
 
 
 def test_setup_creates_the_owner_and_writes_the_marker(client, db_session, monkeypatch, tmp_path):
+    from models import StaffUser
     from services.security import verify_password
 
     marker = tmp_path / ".setup_done"
@@ -45,6 +47,7 @@ def test_setup_creates_the_owner_and_writes_the_marker(client, db_session, monke
         "store_name": "فروشگاه تازه",
         "store_tagline": "پوشاک",
         "store_instagram": "@fresh_store",
+        "admin_username": "ShopOwner",
         "admin_password": "freshpass123",
         "admin_password_confirm": "freshpass123",
     }, follow_redirects=False)
@@ -53,6 +56,9 @@ def test_setup_creates_the_owner_and_writes_the_marker(client, db_session, monke
     assert "/admin/login" in response.headers["location"]
     row = db_session.query(Settings).filter(Settings.key == "admin_password_hash").first()
     assert row and verify_password("freshpass123", row.value)
+    owner = db_session.query(StaffUser).filter(StaffUser.username == "shopowner").first()
+    assert owner is not None and owner.role == "owner"
+    assert verify_password("freshpass123", owner.password_hash)
     assert marker.read_text(encoding="utf-8") == "1"
     branding = {
         setting.key: setting.value
@@ -67,6 +73,15 @@ def test_setup_creates_the_owner_and_writes_the_marker(client, db_session, monke
     assert db_session.query(Settings).filter(Settings.key.in_(
         ["sms_api_key", "sms_device_id", "tryon_api_key"])).count() == 0
 
+    # The chosen username is the login — not the old baked-in "owner".
+    login_page = client.get("/admin/login")
+    assert 'value="shopowner"' in login_page.text
+    login_token = csrf_token(client, "/admin/login")
+    logged_in = client.post("/admin/login", data={
+        "username": "shopowner", "password": "freshpass123", "csrf_token": login_token,
+    }, follow_redirects=False)
+    assert logged_in.status_code == 303
+
     # Once provisioned the wizard closes and sends the visitor to login.
     again = client.get("/admin/setup", follow_redirects=False)
     assert again.status_code == 303
@@ -78,12 +93,26 @@ def test_setup_rejects_a_short_or_mismatched_password(client):
     response = client.post("/admin/setup", data={
         "csrf_token": token,
         "store_name": "فروشگاه",
+        "admin_username": "owner",
         "admin_password": "short",
         "admin_password_confirm": "different",
     })
     assert response.status_code == 200
     assert "حداقل ۶ کاراکتر" in response.text
     assert "یکسان نیستند" in response.text
+
+
+def test_setup_requires_an_owner_username(client):
+    token = csrf_token(client, "/admin/setup")
+    response = client.post("/admin/setup", data={
+        "csrf_token": token,
+        "store_name": "فروشگاه",
+        "admin_username": "   ",
+        "admin_password": "freshpass123",
+        "admin_password_confirm": "freshpass123",
+    })
+    assert response.status_code == 200
+    assert "نام کاربری مالک الزامی است" in response.text
 
 
 def test_first_run_env_generates_random_secrets(tmp_path):

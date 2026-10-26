@@ -97,6 +97,7 @@ from services.security import (
     login_failure,
     login_success,
     log_action,
+    get_admin_password_hash,
     set_admin_password,
     authenticate_staff,
     ensure_owner_account,
@@ -148,8 +149,12 @@ router = APIRouter(prefix="/admin")
 
 @router.get("/login", response_class=HTMLResponse)
 async def admin_login_page(request: Request, db: Session = Depends(get_db)):
+    owner = (db.query(StaffUser)
+             .filter(StaffUser.role == "owner", StaffUser.is_active == True)
+             .order_by(StaffUser.id).first())
     return templates.TemplateResponse(request, "admin/login.html", {
         "msg": request.query_params.get("msg", ""),
+        "username": owner.username if owner else "owner",
         "store_logo": _login_logo(db),
     })
 
@@ -258,6 +263,7 @@ async def admin_setup_page(request: Request, db: Session = Depends(get_db)):
 async def admin_setup(
     request: Request,
     store_name: str = Form(...),
+    admin_username: str = Form(...),
     admin_password: str = Form(...),
     admin_password_confirm: str = Form(...),
     store_tagline: str = Form(""),
@@ -270,9 +276,16 @@ async def admin_setup(
     if _setup_completed(db):
         return RedirectResponse(url="/admin/login", status_code=303)
 
+    username = admin_username.strip().lower()
     errors = []
     if not store_name.strip():
         errors.append("نام فروشگاه الزامی است.")
+    if not username:
+        errors.append("نام کاربری مالک الزامی است.")
+    elif len(username) > 100:
+        errors.append("نام کاربری مالک حداکثر ۱۰۰ کاراکتر است.")
+    elif db.query(StaffUser).filter(StaffUser.username == username).first():
+        errors.append("این نام کاربری قبلاً استفاده شده است.")
     if len(admin_password) < 6:
         errors.append("رمز عبور باید حداقل ۶ کاراکتر باشد.")
     if admin_password != admin_password_confirm:
@@ -281,6 +294,7 @@ async def admin_setup(
         return templates.TemplateResponse(request, "admin/setup.html", {
             "error": " • ".join(errors),
             "store_name": store_name,
+            "admin_username": admin_username,
             "store_tagline": store_tagline,
             "store_instagram": store_instagram,
         })
@@ -288,7 +302,15 @@ async def admin_setup(
     # 1. Hash and seed the admin password.
     set_admin_password(db, admin_password)
 
-    # 2. Save store branding to the settings table.
+    # 2. Create the owner login the wizard just named.
+    db.add(StaffUser(
+        username=username,
+        password_hash=get_admin_password_hash(db),
+        role="owner",
+        is_active=True,
+    ))
+
+    # 3. Save store branding to the settings table.
     for key, value in [("store_name", store_name.strip()),
                        ("store_tagline", store_tagline.strip()),
                        ("store_instagram", store_instagram.strip())]:
@@ -298,14 +320,15 @@ async def admin_setup(
         else:
             db.add(Settings(key=key, value=value))
 
-    # 3. Write a marker file so desktop_entry knows setup is done.
+    # 4. Commit the shop, then write the marker desktop_entry reads at launch.
+    #    Marker last: if it cannot be written, the owner can still log in.
+    db.commit()
     marker = _setup_marker_path()
     with open(marker, "w") as f:
         f.write("1")
 
-    db.commit()
     invalidate_store_cache()
-    log_action(db, "setup_complete", f"راه‌اندازی اولیه: {store_name.strip()}", request=request, target_type="settings", after={"store_name": store_name.strip()})
+    log_action(db, "setup_complete", f"راه‌اندازی اولیه: {store_name.strip()}", request=request, target_type="settings", after={"store_name": store_name.strip(), "owner_username": username})
 
     return RedirectResponse(url="/admin/login?msg=راه‌اندازی تکمیل شد. اکنون وارد شوید.", status_code=303)
 

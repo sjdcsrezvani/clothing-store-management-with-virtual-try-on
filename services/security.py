@@ -283,30 +283,38 @@ def require_html_role(request: Request, db, minimum_role: str = "cashier"):
 
 
 def ensure_owner_account(db):
-    """Migrate the existing single admin password into the owner staff account."""
+    """Find the owner account, creating it once from the admin password.
+
+    An existing owner is never duplicated or overwritten: the owner can rename
+    the login and change the password from the staff page."""
     from models import StaffUser
+    user = (db.query(StaffUser)
+            .filter(StaffUser.role == "owner")
+            .order_by(StaffUser.id).first())
+    if user:
+        return user
     user = db.query(StaffUser).filter(StaffUser.username == "owner").first()
+    if user:
+        return user
     password_hash = get_admin_password_hash(db)
     if not password_hash:
         return None
-    if not user:
-        user = StaffUser(username="owner", password_hash=password_hash, role="owner", is_active=True)
-        db.add(user)
-        db.commit()
-    elif user.password_hash != password_hash:
-        user.password_hash = password_hash
-        db.commit()
+    user = StaffUser(username="owner", password_hash=password_hash, role="owner", is_active=True)
+    db.add(user)
+    db.commit()
     return user
 
 
 def authenticate_staff(db, username: str, password: str):
     from models import StaffUser
-    user = db.query(StaffUser).filter(StaffUser.username == username.strip(), StaffUser.is_active == True).first()
+    login = (username or "").strip().lower()
+    user = db.query(StaffUser).filter(StaffUser.username == login, StaffUser.is_active == True).first()
     if user and verify_password(password, user.password_hash):
         return user
-    # Existing installations have only the old password; owner is the migrated identity.
+    # Legacy installs have only the admin password hash; it becomes the owner.
     owner = ensure_owner_account(db)
-    if username.strip() == "owner" and owner and verify_password(password, owner.password_hash):
+    if (owner and owner.is_active and login == owner.username
+            and verify_password(password, owner.password_hash)):
         return owner
     return None
 
