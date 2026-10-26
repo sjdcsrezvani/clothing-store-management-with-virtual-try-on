@@ -1,3 +1,47 @@
+## 3.0.1 — 1405/08/04 (2026-10-26)
+
+### نصب تازه: every build is the shop's own
+
+- **No demo switch, no owner build.** The packaged app starts empty and
+  opens the first-run wizard, which now asks for the store name, the
+  owner's login name, and a password. The wizard is loopback-only, so a
+  device on the shop's Wi-Fi cannot claim the install first.
+- **The build carries no shop's data.** Branding is generic («Store
+  Management» / «مدیریت فروشگاه»), the bundle is self-contained, and the
+  database, uploads, backups, and `.env` live in the user data directory:
+  `~/Library/Application Support/StoreManagement/` on macOS and
+  `%LOCALAPPDATA%\StoreManagement\` on Windows.
+- **Windows builds in one script.** `build_windows.bat` checks for Python
+  3.12, builds an onedir `StoreManagement.exe`, and writes a distribution
+  zip. Templates are copied, not linked, so no developer privilege is
+  needed. A startup failure leaves `startup-error.log` beside the data.
+
+### پیامک: the queue can be cleaned up
+
+- **Trash, restore, and bulk actions.** History marks messages deleted,
+  filters to them, restores in bulk, and retries a failed batch; every
+  retry links back to the message it repeats.
+- **A detail page tells the whole story.** The message, its placeholders,
+  queue verdict, and gateway journey each show on their own page.
+- **The claim race stays closed.** A phone that dies mid-send releases its
+  claim after five minutes, so nothing wedges the queue.
+
+### پیشخوان و کارکنان
+
+- **Each cashier card opens its own list.** Sales, discounts, refunds, and
+  new customers are separate filtered views, and the live poll no longer
+  follows a filtered link.
+- **The week strip is easier to scan.** The cashier's seven-day numbers
+  line up with the rest of the board.
+- **Owner logins can be renamed.** The staff page accepts a new username,
+  and the hire wizard validates its fields inside the page.
+
+### کلیدها: setup asks only for what exists
+
+- **The dead SMS credentials are gone.** There is no SMS API key or device
+  ID to paste: pairing the gateway phone issues its own key. The try-on
+  key is set later in Settings, where «آزمایش اتصال» proves it works.
+
 ## 2.9.4 — 1405/07/25 (2026-10-17)
 
 ### بارگذاری در جا: the shop moves without a reload
