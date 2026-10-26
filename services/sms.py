@@ -42,12 +42,6 @@ def is_allowed_recipient(db: Session, phone: str) -> bool:
     return normalise_phone(phone) in allowed
 
 
-def get_sms_setting(db: Session, key: str) -> str:
-    """Get SMS setting from database."""
-    setting = db.query(Settings).filter(Settings.key == key).first()
-    return setting.value if setting and setting.value else ""
-
-
 # The built-in patterns live in ``sms_templates`` now and mirror their old
 # settings rows, so a template switched off reads as an empty pattern — which is
 # exactly how the sending code has always spelled «off».
@@ -62,13 +56,9 @@ PATTERN_KEYS = {
 
 
 def get_sms_config(db: Session) -> dict:
-    """The pattern keys every sender reads. The gateway itself no longer needs
-    credentials — it *is* this app — but the keys stay so the settings mirror
-    and any shop fallback keep their meaning."""
-    config = {
-        "api_key": get_sms_setting(db, "sms_api_key"),
-        "device_id": get_sms_setting(db, "sms_device_id"),
-    }
+    """The pattern keys every sender reads. The gateway needs no credentials —
+    it is this app, paired to a phone."""
+    config = {}
     for field, key in PATTERN_KEYS.items():
         config[field] = active_pattern(db, key)
     return config

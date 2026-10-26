@@ -104,7 +104,7 @@ from services.templating import templates
 
 router = APIRouter(prefix="/admin")
 
-GATEWAY_KEYS = ("sms_api_key", "sms_device_id", "campaign_sms_limit", SETTING_AUTO_SEND_LIMIT,
+GATEWAY_KEYS = ("campaign_sms_limit", SETTING_AUTO_SEND_LIMIT,
                 SETTING_ALLOWLIST)
 
 # A just-issued device key lives only for this long in the request cycle — long
