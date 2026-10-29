@@ -2692,6 +2692,7 @@ input.is-invalid:focus, select.is-invalid:focus, textarea.is-invalid:focus {
 .movement-filter-form .form-group:first-child { flex: 1 1 330px; }
 
 .movement-table { min-width: 1080px; }
+.movement-table th, .movement-table td { padding: 0.55rem 0.5rem; }
 .movement-table td small,
 .movement-table td strong { display: block; }
 .movement-id { color: var(--ink-soft); }
@@ -2702,7 +2703,7 @@ input.is-invalid:focus, select.is-invalid:focus, textarea.is-invalid:focus {
 .movement-table .movement-note {
   color: var(--ink-soft);
   font-size: 0.72rem;
-  max-width: 230px;
+  max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
