@@ -3168,7 +3168,8 @@ html[data-theme-mode="high-contrast"] .pdp-day.is-today { outline: 2px dashed va
 .campaign-filter-form .form-group:first-child { flex: 1 1 300px; }
 .campaign-results { margin: 0 0 0.7rem; font-size: 0.78rem; color: var(--ink-soft); }
 
-.campaign-table { min-width: 1120px; }
+.campaign-table { min-width: 1080px; }
+.campaign-table th, .campaign-table td { padding: 0.55rem 0.5rem; }
 .campaign-table td small, .campaign-table td strong { display: block; }
 .campaign-name a { font-weight: 700; text-decoration: none; color: inherit; }
 .campaign-name a:hover { color: var(--link-hover); text-decoration: underline; }
@@ -3176,7 +3177,7 @@ html[data-theme-mode="high-contrast"] .pdp-day.is-today { outline: 2px dashed va
 .campaign-meta { color: var(--ink-soft); font-size: 0.72rem; }
 .campaign-window { font-size: 0.78rem; color: var(--ink-soft); white-space: nowrap; }
 .campaign-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; white-space: nowrap; }
-.campaign-actions .btn { min-height: 2.5rem; padding: 0.45rem 0.9rem; font-size: 0.85rem; }
+.campaign-actions .btn { min-height: 2.5rem; padding: 0.45rem 0.7rem; font-size: 0.85rem; }
 
 /* Status badges: live / scheduled / expired / inactive, plus assignment states. */
 .status-badge.is-live { background: color-mix(in srgb, var(--mint) 18%, var(--card)); color: var(--success-ink); }
