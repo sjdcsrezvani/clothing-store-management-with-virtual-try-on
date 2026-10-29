@@ -2167,7 +2167,11 @@ body.is-soft-busy::before {
 .section-heading-spaced { margin-top: 1.5rem; padding-top: 1.2rem; border-top: 1px solid var(--rule); }
 .product-form-grid-wide { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .product-form-grid { align-items: start; }
-.catalog-variants-table { min-width: 760px; }
+/* The variants table shares its card with the summary sidebar; let it fit the
+   card at desktop and fall back to .table-scroll's horizontal scroll only when
+   the columns genuinely cannot shrink. */
+.catalog-variants-table { min-width: 0; }
+.catalog-variants-table th, .catalog-variants-table td { padding: 0.6rem 0.5rem; }
 .catalog-variants-table td strong, .catalog-variants-table td small { display: block; }
 .catalog-variants-table td small { color: var(--ink-soft); font-size: 0.72rem; margin-top: 0.15rem; }
 /* Archived rows sit quieter: readable, but unmistakably shelved. */
