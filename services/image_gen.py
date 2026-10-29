@@ -1,64 +1,53 @@
-"""Virtual try-on image generation through the configured image gateway.
+"""Virtual try-on image generation through the configured provider.
 
-Kid photo and garment photos are sent as separate multipart files. Prompt
-assembly and input-image preparation are kept here so the router stays focused
-on request handling.
+Kid photo and garment photos are sent as reference images. The provider and
+model come from Settings; the catalog decides the exact body each model gets
+(multipart edits, Seedream JSON, or Muse JSON) and the cheapest options it
+accepts. Every attempt lands in the in-memory debug log for the try-on page.
 """
 import base64
 import io
+import json
 import logging
+import time
 from pathlib import Path
 from typing import Optional
-
 
 import httpx
 from PIL import Image, ImageOps
 
-from config import TRYON_API_KEY as ENV_TRYON_API_KEY, TRYON_API_URL as ENV_TRYON_API_URL
+from services.image_models import (
+    DEFAULT_MODEL,
+    DEFAULT_PROVIDER,
+    MUSE_JSON,
+    SEEDREAM_JSON,
+    api_base,
+    key_setting,
+    resolve_selection,
+)
 
 logger = logging.getLogger(__name__)
 
-TRYON_KEY_SETTING = "tryon_api_key"
-TRYON_URL_SETTING = "tryon_api_url"
+TRYON_PROVIDER_SETTING = "tryon_provider"
+TRYON_MODEL_SETTING = "tryon_model"
+TRYON_KEY_SETTINGS = ("tryon_api_key", "tryon_api_key_avalai")
 
 
-def get_tryon_credentials(db=None):
-    """Resolve (key, url): Settings first, one-time auto-migrate from env.
+def get_tryon_selection(db) -> tuple[str, str, str]:
+    """(provider, model, key) from Settings, resolved at execution time.
 
-    The setup-time write was a dead store for years — generation read only
-    the import-time env constant. Now the Settings row is the source of
-    truth; a present env value migrates itself in once and the env becomes
-    the fallback. Values never hit logs — callers keep them in locals.
+    No environment or built-in fallback: a key is owner-managed. An unknown
+    provider/model falls back to the catalog default instead of breaking the
+    page after a rename.
     """
-    key = ""
-    url = ""
-    migrated = False
-    if db is not None:
-        try:
-            from models import Settings
-            rows = {r.key: (r.value or "") for r in db.query(Settings).filter(
-                Settings.key.in_([TRYON_KEY_SETTING, TRYON_URL_SETTING])).all()}
-            key = rows.get(TRYON_KEY_SETTING, "").strip()
-            url = rows.get(TRYON_URL_SETTING, "").strip()
-            if not key and (ENV_TRYON_API_KEY or "").strip():
-                key = ENV_TRYON_API_KEY.strip()
-                db.add(Settings(key=TRYON_KEY_SETTING, value=key))
-                db.commit()
-                migrated = True
-            if not url:
-                url = (ENV_TRYON_API_URL or "").strip()
-                if url:
-                    db.add(Settings(key=TRYON_URL_SETTING, value=url))
-                    db.commit()
-        except Exception:
-            logger.warning("tryon credential read failed; using env fallback")
-    if not key:
-        key = (ENV_TRYON_API_KEY or "").strip()
-    if not url:
-        url = (ENV_TRYON_API_URL or "").strip()
-    if migrated:
-        logger.info("tryon api key auto-migrated from environment to Settings")
-    return key, url
+    from models import Settings
+    rows = {r.key: (r.value or "") for r in db.query(Settings).filter(
+        Settings.key.in_((TRYON_PROVIDER_SETTING, TRYON_MODEL_SETTING) + TRYON_KEY_SETTINGS)
+    ).all()}
+    provider, entry = resolve_selection(
+        rows.get(TRYON_PROVIDER_SETTING, ""), rows.get(TRYON_MODEL_SETTING, ""))
+    key = rows.get(key_setting(provider), "").strip()
+    return provider, entry["id"], key
 
 
 def mask_tryon_key(key: str) -> str:
@@ -185,50 +174,165 @@ MAIN_PROMPT = (
 
 
 class ImageGenerationError(Exception):
-    pass
+    """Provider or transport failure, with the fields the debug panel needs."""
+
+    def __init__(self, message: str, *, category: str = "unknown", code: str = "",
+                 status: int | None = None, body: str = ""):
+        super().__init__(message)
+        self.category = category
+        self.code = code
+        self.status = status
+        self.body = body
 
 
-class ImageProvider:
-    """Pluggable image backend. Gapgpt is wired; the next provider
-    implements these two methods and the factory below picks it."""
-
-    name = "gapgpt"
-
-    def generate(self, prompt: str, reference_image_paths=None, width: int = 1024,
-                 height: int = 1024, prompt_mid: str = "", prompt_suffix: str = "") -> bytes:
-        raise NotImplementedError
-
-    def test_connection(self, timeout: float = 15.0) -> dict:
-        """Cheap non-billable probe. Never generates."""
-        raise NotImplementedError
+# Content-policy refusals are provider-specific; the raw code is kept for the
+# panel, this list only decides the one label the shop sees.
+_POLICY_MARKERS = (
+    "moderation_blocked", "moderation", "sensitivecontentdetected",
+    "data_inspection_failed", "datainspectionfailed", "ipinfringement",
+    "customroleblocked", "content_filter", "prohibited_content",
+    "image_safety", "safety_violation", "request moderated",
+    "content moderated", "policy_violation", "policy violation",
+)
 
 
-def get_provider(api_key: str = "", api_url: str = "") -> ImageProvider:
-    return ImageGenService(api_key=api_key or None, api_url=api_url or None)
+def _error_parts(text: str) -> tuple[str, str]:
+    """(provider code, human message) from an OpenAI-ish error envelope."""
+    try:
+        data = json.loads(text)
+    except (TypeError, ValueError):
+        return "", text or ""
+    if not isinstance(data, dict):
+        return "", text or ""
+    error = data.get("error")
+    if isinstance(error, dict):
+        return str(error.get("code") or error.get("type") or ""), str(error.get("message") or "")
+    if isinstance(error, str):
+        return "", error
+    return str(data.get("code") or data.get("error_code") or ""), str(data.get("message") or "")
 
 
-class ImageGenService(ImageProvider):
-    """Generate images of kids wearing clothes via the gapgpt gateway."""
+def classify_response(status: int, text: str) -> tuple[str, str]:
+    """Normalize a provider failure into (category, provider code)."""
+    code, message = _error_parts(text)
+    blob = f"{code} {message} {text}".lower()
+    if status in (401, 403):
+        return "auth", code
+    if any(marker in blob for marker in _POLICY_MARKERS):
+        return "content_policy", code
+    if status == 429 or "rate_limit" in blob or "rate limit" in blob:
+        return "rate_limit", code
+    if status >= 500:
+        return "server", code
+    return "bad_request", code
 
-    # Don't retry on billable failures. gpt-image-2 charges at generation time
-    # regardless of whether the response reaches us, so retrying on a read timeout
-    # or 5xx means paying 2–3× for the same result. Only retry on connect/write
-    # errors where the model definitely never received the request.
-    MAX_ATTEMPTS = 1
 
-    def __init__(self, api_key: str | None = None, api_url: str | None = None):
-        # Credentials resolve here (not at import) so a rotated Settings key
-        # takes effect without a restart; env remains the fallback.
-        self.api_key = api_key if api_key else (ENV_TRYON_API_KEY or "").strip()
-        self.api_url = api_url if api_url else (ENV_TRYON_API_URL or "").strip()
-        # 300s read timeout. gpt-image-2 normally finishes in 30–90s, but when
-        # gapgpt's queue is busy a generation can take 2–4 minutes. Cutting the
-        # socket earlier (we tried 120s) caused the worst outcome: the provider
-        # still finishes, bills, and produces the image — but the response has
-        # nowhere to go, so the user pays and gets nothing. The image/generation
-        # is billed the moment it starts, so we must keep the connection open
-        # long enough for the result to actually arrive; only give up past the
-        # slowest realistic queue time.
+def _describe(provider: str, category: str, code: str, status: int, message: str) -> str:
+    code_txt = f" (کد: {code})" if code else ""
+    detail = (message or "").strip()[:220]
+    if category == "content_policy":
+        return (f"ارائه‌دهنده این تصویر را به دلیل خط‌مشی محتوا رد کرد{code_txt} "
+                f"— HTTP {status}. {detail}")
+    if category == "auth":
+        return f"کلید {provider} معتبر نیست یا دسترسی ندارد (HTTP {status}){code_txt}."
+    if category == "rate_limit":
+        return f"محدودیت نرخ {provider} (HTTP 429){code_txt}. کمی بعد دوباره امتحان کنید."
+    if category == "server":
+        return f"{provider} خطای سرور داد (HTTP {status}){code_txt}: {detail}"
+    return f"درخواست {provider} رد شد (HTTP {status}){code_txt}: {detail}"
+
+
+def _data_uri(jpeg: bytes) -> str:
+    return "data:image/jpeg;base64," + base64.b64encode(jpeg).decode("ascii")
+
+
+def _refusal_text(body: dict) -> str:
+    """Text a provider returned instead of an image (Gemini does this)."""
+    texts: list[str] = []
+    for choice in body.get("choices") or []:
+        content = (choice.get("message") or {}).get("content")
+        if isinstance(content, str):
+            texts.append(content)
+        elif isinstance(content, list):
+            texts.extend(part.get("text") for part in content
+                         if isinstance(part, dict) and part.get("text"))
+    for candidate in body.get("candidates") or []:
+        for part in (candidate.get("content") or {}).get("parts") or []:
+            if isinstance(part, dict) and part.get("text"):
+                texts.append(part["text"])
+    for key in ("message", "detail", "error_description"):
+        if isinstance(body.get(key), str):
+            texts.append(body[key])
+    return next((text.strip() for text in texts if text and text.strip()), "")
+
+
+def _safety_reason(body: dict) -> str:
+    """Gemini/Qwen sometimes answer 200 with an empty candidate and a finish
+    reason instead of an error envelope."""
+    reasons: list[str] = []
+    for candidate in body.get("candidates") or []:
+        reasons.append(str(candidate.get("finishReason") or candidate.get("finish_reason") or ""))
+    for choice in body.get("choices") or []:
+        reasons.append(str(choice.get("finish_reason") or choice.get("finishReason") or ""))
+    markers = ("safety", "prohibited", "content_filter", "image_safety")
+    return next((reason for reason in reasons
+                 if reason and any(marker in reason.lower() for marker in markers)), "")
+
+
+def _policy_code(body: dict) -> str:
+    """Some gateways wrap a policy refusal in a 200 body instead of HTTP 400."""
+    code, message = _error_parts(json.dumps(body, ensure_ascii=False))
+    blob = f"{code} {message}".lower()
+    return code if any(marker in blob for marker in _POLICY_MARKERS) else ""
+
+
+def _first_image(body: dict) -> str:
+    """The first b64/url image anywhere in the known response shapes."""
+    for key in ("data", "images"):
+        for item in body.get(key) or []:
+            if isinstance(item, dict):
+                raw = item.get("b64_json") or item.get("url")
+                if raw:
+                    return raw
+    for choice in body.get("choices") or []:
+        message = choice.get("message") or {}
+        for item in message.get("images") or []:
+            url = (item.get("image_url") or {}).get("url") if isinstance(item, dict) else None
+            if url:
+                return url
+        content = message.get("content")
+        if isinstance(content, str) and content.startswith("data:"):
+            return content
+        if isinstance(content, list):
+            for part in content:
+                inline = (part.get("inline_data") or part.get("inlineData") or {}) \
+                    if isinstance(part, dict) else {}
+                if inline.get("data"):
+                    return "data:image/jpeg;base64," + inline["data"]
+    return ""
+
+
+def get_provider(api_key: str = "", provider: str = DEFAULT_PROVIDER,
+                 model: str = DEFAULT_MODEL) -> "ImageGenService":
+    return ImageGenService(api_key=api_key, provider=provider, model=model)
+
+
+class ImageGenService:
+    """Send one try-on attempt to the selected provider and model."""
+
+    def __init__(self, api_key: str | None = None, provider: str = DEFAULT_PROVIDER,
+                 model: str = DEFAULT_MODEL):
+        # Callers pass values resolved from Settings, so a rotated key takes
+        # effect without a restart. A missing value stays missing and is
+        # rejected below rather than falling back to a default.
+        self.provider, self.model = resolve_selection(provider, model)
+        self.model_id = self.model["id"]
+        self.api_base = api_base(self.provider)
+        self.api_url = self.api_base + "/images/edits"
+        self.api_key = (api_key or "").strip()
+        # 300s read timeout. A queued generation can take 2–4 minutes; cutting
+        # the socket earlier charges the owner and loses the image, so keep it
+        # open past the slowest realistic queue time.
         self.client = httpx.Client(timeout=httpx.Timeout(connect=30.0, read=300.0, write=60.0, pool=30.0))
 
     # ── Public entry point ──
@@ -237,115 +341,173 @@ class ImageGenService(ImageProvider):
         self,
         prompt: str,
         reference_image_paths: Optional[list[str]] = None,
-        width: int = 1024,
-        height: int = 1024,
         prompt_mid: str = "",
         prompt_suffix: str = "",
+        job_id: int | None = None,
     ) -> bytes:
-        """Return raw result-image bytes. reference_image_paths: person photo first, then garments.
-        Only retries on connect/write errors where the model definitely never received
-        the request (avoiding double-billing on a paid generation API).
-        Assembly order: `prompt` + MAIN_PROMPT + `prompt_mid` (background/pose/details,
-        which must override MAIN_PROMPT's generic defaults) + `prompt_suffix` (the
-        outfit rule, which must land at the very end for recency bias)."""
+        """Return raw result-image bytes. reference_image_paths: person first,
+        then garments. `job_id` only tags the debug entry.
+
+        Assembly order: `prompt` + MAIN_PROMPT + `prompt_mid` (background/pose/
+        details, which override MAIN_PROMPT's generic defaults) + `prompt_suffix`
+        (the outfit rule, last for recency bias)."""
+        if not self.api_key:
+            raise ImageGenerationError(f"کلید {self.provider} ذخیره نشده است.",
+                                       category="auth", code="missing_key")
         paths = [p for p in (reference_image_paths or []) if p and Path(p).exists()]
         if len(paths) < 2:
             raise ImageGenerationError("Need at least a person photo and one garment photo.")
 
+        started = time.perf_counter()
+        timings: dict[str, int] = {"prep": 0, "request": 0, "download": 0}
+
+        prep_started = time.perf_counter()
         kid = self._prep(paths[0])
-        files = [("image[]", ("person.jpg", kid, "image/jpeg"))]
+        prepped: dict[str, bytes] = {}
         # Garment prep is independent PIL work — parallel, memoized by
         # (path, mtime, size), so a 3-garment run pays ~1× instead of 3×.
-        # _prep itself skips re-encoding already-small JPEGs (fast path).
         import concurrent.futures
-        prepped = {}
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
             futures = {pool.submit(self._prep_memo, p): p for p in paths[1:]}
             for future in concurrent.futures.as_completed(futures):
                 prepped[futures[future]] = future.result()
-        for i, garment in enumerate(paths[1:], 1):
-            files.append(("image[]", (f"garment{i}.jpg", prepped[garment], "image/jpeg")))
+        images = [("person.jpg", kid)] + [
+            (f"garment{i}.jpg", prepped[path]) for i, path in enumerate(paths[1:], 1)
+        ]
+        timings["prep"] = int((time.perf_counter() - prep_started) * 1000)
 
-        # Matches the working virtual-tryon.html example request.
-        data = {
-            "model": "gpt-image-2",
-            "quality": "low",
-            "output_format": "jpeg",
-            "prompt": self._build_prompt(prompt, prompt_mid, prompt_suffix),
-            "size": f"{width}x{height}",
-        }
+        prompt_text = self._build_prompt(prompt, prompt_mid, prompt_suffix)
+        kwargs, fields = self._build_body(prompt_text, images)
         headers = {"Authorization": f"Bearer {self.api_key}"}
+        logger.info("%s/%s try-on: kid + %d garment(s), body=%s",
+                    self.provider, self.model_id, len(paths) - 1, self.model["body"])
 
-        logger.info("gapgpt try-on: kid + %d garment(s)", len(paths) - 1)
+        request_started = time.perf_counter()
+        try:
+            # No retry: the model may already be billed on a timeout or 5xx.
+            resp = self.client.post(self.api_url, headers=headers, **kwargs)
+        except httpx.ReadTimeout as e:
+            timings["request"] = int((time.perf_counter() - request_started) * 1000)
+            message = (f"مهلت پاسخ {self.provider} تمام شد — ممکن است هزینه گرفته شده باشد. "
+                       f"({e.__class__.__name__})")
+            raise self._failure(job_id=job_id, started=started, timings=timings, fields=fields,
+                                status=None, category="network", code="read_timeout",
+                                message=message) from e
+        except httpx.HTTPError as e:
+            timings["request"] = int((time.perf_counter() - request_started) * 1000)
+            message = f"دسترسی به {self.provider} برقرار نشد: {e.__class__.__name__}"
+            raise self._failure(job_id=job_id, started=started, timings=timings, fields=fields,
+                                status=None, category="network", code=e.__class__.__name__,
+                                message=message) from e
+        timings["request"] = int((time.perf_counter() - request_started) * 1000)
 
-        last_err: Optional[Exception] = None
-        for attempt in range(1, self.MAX_ATTEMPTS + 1):
-            try:
-                resp = self.client.post(self.api_url, headers=headers, data=data, files=files)
-            except httpx.ConnectTimeout as e:
-                # TCP connect timed out — gapgpt never received the request.
-                # Safe to retry once.
-                last_err = e
-                logger.warning("gapgpt attempt %d/%d connect timeout: %s", attempt, self.MAX_ATTEMPTS, e)
-                if attempt < self.MAX_ATTEMPTS:
-                    self._sleep_backoff(attempt)
-                continue
-            except httpx.ConnectError as e:
-                # DNS failure, connection refused — request never reached gapgpt.
-                # Safe to retry once.
-                last_err = e
-                logger.warning("gapgpt attempt %d/%d connect error: %s", attempt, self.MAX_ATTEMPTS, e)
-                if attempt < self.MAX_ATTEMPTS:
-                    self._sleep_backoff(attempt)
-                continue
-            except httpx.WriteTimeout as e:
-                # Request body upload timed out — gapgpt may have received partial
-                # data but the model didn't start. Retry once.
-                last_err = e
-                logger.warning("gapgpt attempt %d/%d write timeout: %s", attempt, self.MAX_ATTEMPTS, e)
-                if attempt < self.MAX_ATTEMPTS:
-                    self._sleep_backoff(attempt)
-                continue
-            except httpx.ReadTimeout as e:
-                # Response didn't arrive in time, but the model may have already
-                # generated and billed the image. Do NOT retry — just fail.
-                raise ImageGenerationError(
-                    f"gapgpt read timeout — generation may have been billed: {e}"
-                ) from e
-            except httpx.HTTPError as e:
-                # Unexpected transport error — assume gapgpt received the request.
-                # Do NOT retry to avoid double-billing.
-                raise ImageGenerationError(f"gapgpt transport error: {e}") from e
+        if resp.status_code != 200:
+            category, code = classify_response(resp.status_code, resp.text)
+            message = _describe(self.provider, category, code, resp.status_code, resp.text)
+            raise self._failure(job_id=job_id, started=started, timings=timings, fields=fields,
+                                status=resp.status_code, category=category, code=code,
+                                message=message, body=resp.text[:500])
 
-            if resp.status_code == 200:
-                body = resp.json()
-                usage = body.get("usage")
-                if usage:
-                    logger.info("gapgpt usage: %s", usage)
-                else:
-                    logger.info("gapgpt response keys: %s", list(body.keys()))
-                return self._extract_image(body)
+        try:
+            body = resp.json()
+        except ValueError as e:
+            raise self._failure(job_id=job_id, started=started, timings=timings, fields=fields,
+                                status=200, category="bad_response", code="not_json",
+                                message=f"پاسخ {self.provider} JSON نبود.",
+                                body=resp.text[:500]) from e
+        if not isinstance(body, dict):
+            raise self._failure(job_id=job_id, started=started, timings=timings, fields=fields,
+                                status=200, category="bad_response", code="not_object",
+                                message=f"پاسخ {self.provider} ساختار مورد انتظار را نداشت.",
+                                body=json.dumps(body, ensure_ascii=False)[:500])
 
-            # 4xx means we sent something invalid — fail fast.
-            if 400 <= resp.status_code < 500 and resp.status_code != 429:
-                raise ImageGenerationError(f"gapgpt HTTP {resp.status_code}: {resp.text[:300]}")
+        usage = body.get("usage")
+        if usage:
+            logger.info("%s/%s usage: %s", self.provider, self.model_id, usage)
 
-            # 5xx and 429 — gapgpt received the request but couldn't serve it.
-            # The model may have already generated and billed. Do NOT retry.
-            raise ImageGenerationError(
-                f"gapgpt HTTP {resp.status_code} — request received, not retrying (avoids double-billing): {resp.text[:300]}"
-            )
+        download_started = time.perf_counter()
+        try:
+            image_bytes = self._extract_image(body)
+        except ImageGenerationError as error:
+            raise self._failure(job_id=job_id, started=started, timings=timings, fields=fields,
+                                status=200, category=error.category, code=error.code,
+                                message=str(error), body=error.body) from error
+        timings["download"] = int((time.perf_counter() - download_started) * 1000)
 
-        raise ImageGenerationError(
-            f"gapgpt failed after {self.MAX_ATTEMPTS} attempts: {last_err}"
-        )
+        self._record(job_id=job_id, started=started, timings=timings, fields=fields,
+                     ok=True, status=200, category="", code="", error="",
+                     result_bytes=len(image_bytes))
+        return image_bytes
+
+    # ── Request bodies ──
+
+    def _build_body(self, prompt: str, images: list[tuple[str, bytes]]) -> tuple[dict, str]:
+        options = self.model.get("options") or {}
+        body_type = self.model["body"]
+        if body_type == SEEDREAM_JSON:
+            # Seedream edits are JSON only; 1K is its name for the 1024 tier.
+            payload = {
+                "model": self.model_id,
+                "prompt": prompt,
+                "image": [_data_uri(blob) for _name, blob in images],
+                "size": "1K",
+                "response_format": "b64_json",
+                "sequential_image_generation": "disabled",
+                "watermark": False,
+            }
+            fields = self._fields_label(
+                {k: v for k, v in payload.items() if k not in ("model", "prompt", "image")},
+                len(images))
+            return {"json": payload}, fields
+        if body_type == MUSE_JSON:
+            # Muse documents no size/quality knob; its default square is used.
+            payload = {
+                "model": self.model_id,
+                "prompt": prompt,
+                "images": [{"image_url": _data_uri(blob)} for _name, blob in images],
+                "n": 1,
+            }
+            fields = self._fields_label({"n": 1}, len(images))
+            return {"json": payload}, fields
+
+        data = {"model": self.model_id, "prompt": prompt, **options}
+        files = [("image[]", (name, blob, "image/jpeg")) for name, blob in images]
+        return {"data": data, "files": files}, self._fields_label(options, len(images))
 
     @staticmethod
-    def _sleep_backoff(attempt: int) -> None:
-        """Exponential backoff: 1s, 2s, 4s, 8s … capped at 10s."""
-        import time
-        delay = min(2 ** (attempt - 1), 10)
-        time.sleep(delay)
+    def _fields_label(options: dict, image_count: int) -> str:
+        bits = [f"{key}={value}" for key, value in options.items()]
+        bits.append(f"images={image_count}")
+        return ", ".join(bits)
+
+    # ── Debug log ──
+
+    def _record(self, *, job_id, started, timings, fields, ok, status,
+                category, code, error, body="", result_bytes=0) -> None:
+        from services import tryon_debug
+        total_ms = int((time.perf_counter() - started) * 1000)
+        tryon_debug.record(
+            job_id=job_id, provider=self.provider, model=self.model_id, ok=ok,
+            status=status, category=category, code=code, error=(error or "")[:400],
+            raw=(body or "")[:500], fields=fields, result_bytes=result_bytes,
+            prep_ms=timings.get("prep", 0), request_ms=timings.get("request", 0),
+            download_ms=timings.get("download", 0), total_ms=total_ms,
+        )
+        logger.info(
+            "try-on %s/%s job=%s ok=%s http=%s total=%dms prep=%dms request=%dms download=%dms%s",
+            self.provider, self.model_id, job_id, ok, status, total_ms,
+            timings.get("prep", 0), timings.get("request", 0), timings.get("download", 0),
+            f" error={error[:200]}" if error else "",
+        )
+
+    def _failure(self, *, job_id, started, timings, fields, status, category, code,
+                 message, body="") -> ImageGenerationError:
+        self._record(job_id=job_id, started=started, timings=timings, fields=fields,
+                     ok=False, status=status, category=category, code=code,
+                     error=message, body=body)
+        logger.warning("try-on %s/%s failed: %s", self.provider, self.model_id, message)
+        return ImageGenerationError(message, category=category, code=code,
+                                    status=status, body=body)
 
     # ── Prompt ──
 
@@ -365,23 +527,30 @@ class ImageGenService(ImageProvider):
         return out
 
     def test_connection(self, timeout: float = 15.0) -> dict:
-        """Cheap non-billable probe: the gateway models endpoint, short leash."""
+        """Cheap non-billable probe: the gateway models endpoint, short leash.
+        A listed model wins; an absent list still counts as a reachable key."""
         if not self.api_key:
-            return {"ok": False, "error": "کلید ذخیره نشده است."}
+            return {"ok": False, "error": f"کلید {self.provider} ذخیره نشده است."}
         try:
-            base = self.api_url.split("/v1/")[0] if "/v1/" in self.api_url else self.api_url.rstrip("/")
             resp = self.client.get(
-                base + "/v1/models",
+                self.api_base + "/models",
                 headers={"Authorization": f"Bearer {self.api_key}"},
                 timeout=httpx.Timeout(connect=10.0, read=timeout, write=10.0, pool=10.0),
             )
         except httpx.HTTPError as e:
-            return {"ok": False, "error": f"دسترسی به درگاه ناموفق بود: {e.__class__.__name__}"}
+            return {"ok": False, "error": f"دسترسی به {self.provider} ناموفق بود: {e.__class__.__name__}"}
         if resp.status_code == 200:
+            try:
+                listed = [str(item.get("id") or "") for item in resp.json().get("data") or []]
+            except (ValueError, AttributeError):
+                listed = []
+            if listed and self.model_id not in listed:
+                return {"ok": False,
+                        "error": f"کلید معتبر است، ولی مدل «{self.model_id}» در فهرست {self.provider} نیست."}
             return {"ok": True}
         if resp.status_code in (401, 403):
-            return {"ok": False, "error": "کلید معتبر نیست (401/403)."}
-        return {"ok": False, "error": f"درگاه پاسخ {resp.status_code} داد."}
+            return {"ok": False, "error": f"کلید {self.provider} معتبر نیست (401/403)."}
+        return {"ok": False, "error": f"{self.provider} پاسخ {resp.status_code} داد."}
 
     # ── Image preprocessing ──
 
@@ -442,32 +611,55 @@ class ImageGenService(ImageProvider):
                 break
         return buf.getvalue()
 
-    def _extract_image(self, data: dict) -> bytes:
-        """Pull the first result image (b64 or url) out of the gateway JSON response.
-        Fetches the URL variant via the same httpx client so we don't lose an image
-        that gapgpt returned as a CDN URL instead of inline base64."""
-        for key in ("data", "images"):
-            for item in data.get(key) or []:
-                raw = item.get("b64_json") or item.get("url")
-                if not raw:
-                    continue
-                if raw.startswith("http"):
-                    return self._fetch_url(raw)
-                if raw.startswith("data:"):
-                    raw = raw.split(",", 1)[1]
-                return base64.b64decode(raw)
-        raise ImageGenerationError("No image in provider response")
+    def _extract_image(self, body: dict) -> bytes:
+        """Pull the first result image (b64 or url) out of the provider JSON.
+        A text-only 200 is a refusal, not a missing image, and says so."""
+        raw = _first_image(body)
+        if not raw:
+            policy = _policy_code(body)
+            if policy:
+                raise ImageGenerationError(
+                    f"ارائه‌دهنده این تصویر را به دلیل خط‌مشی محتوا رد کرد (کد: {policy}).",
+                    category="content_policy", code=policy,
+                    body=json.dumps(body, ensure_ascii=False)[:500])
+            reason = _safety_reason(body)
+            if reason:
+                raise ImageGenerationError(
+                    f"ارائه‌دهنده این تصویر را به دلیل خط‌مشی محتوا رد کرد (کد: {reason}).",
+                    category="content_policy", code=reason,
+                    body=json.dumps(body, ensure_ascii=False)[:500])
+            refusal = _refusal_text(body)
+            if refusal:
+                raise ImageGenerationError(
+                    f"ارائه‌دهنده تصویری برنگرداند و متنی فرستاد: {refusal[:300]}",
+                    category="refusal", code="text_response",
+                    body=json.dumps(body, ensure_ascii=False)[:500])
+            raise ImageGenerationError(
+                "ارائه‌دهنده هیچ تصویری برنگرداند.",
+                category="no_image", code="no_image",
+                body=json.dumps(body, ensure_ascii=False)[:500])
+        if raw.startswith("http"):
+            return self._fetch_url(raw)
+        if raw.startswith("data:"):
+            raw = raw.split(",", 1)[1]
+        try:
+            return base64.b64decode(raw)
+        except Exception as error:
+            raise ImageGenerationError("تصویر بازگشتی base64 معتبر نبود.",
+                                       category="bad_response", code="bad_base64") from error
 
     def _fetch_url(self, url: str) -> bytes:
-        """Download the image at `url` (returned by gapgpt when it stores the
-        result on its CDN instead of inlining base64). 60s ceiling — these are
-        small CDN objects, anything longer means the host is dead."""
+        """Download the image at `url` when the provider stores the result on
+        its CDN instead of inlining base64. 60s ceiling — these are small CDN
+        objects, anything longer means the host is dead."""
         try:
             resp = self.client.get(url, timeout=httpx.Timeout(connect=15.0, read=60.0, write=15.0, pool=15.0))
         except httpx.HTTPError as e:
-            raise ImageGenerationError(f"Failed to fetch result URL: {url} ({e})") from e
+            raise ImageGenerationError(f"Failed to fetch result URL: {url} ({e})",
+                                       category="network", code="download_failed") from e
         if resp.status_code != 200:
-            raise ImageGenerationError(f"Result URL returned HTTP {resp.status_code}: {url}")
+            raise ImageGenerationError(f"Result URL returned HTTP {resp.status_code}: {url}",
+                                       category="network", code="download_failed")
         return resp.content
 
     def cleanup(self):

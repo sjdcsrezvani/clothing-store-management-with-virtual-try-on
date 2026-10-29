@@ -94,6 +94,8 @@ def test_single_delete_now_reads_archive(client, authed, db_session):
     assert "غیرفعال‌کردن" not in html
     assert ">بایگانی</button>" in html
     assert "بایگانی شود؟" in html
+    assert 'data-confirm-title="بایگانی محصول"' in html
+    assert "return confirm(" not in html
 
 
 def test_csv_export_matches_the_filtered_view(client, authed, db_session):
@@ -149,10 +151,9 @@ def test_pagination_preserves_every_param(client, authed, db_session):
     assert "stock=all" in html and "sort=name" in html and "per_page=10" in html
 
 
-def test_variant_save_lands_on_its_product(client, authed, db_session):
-    """The variant edit page can be opened from the list, which passes the list
-    as `next`; a save still lands on the product the variant belongs to — the
-    record you were editing, never the manager page."""
+def test_variant_save_stays_on_the_variant(client, authed, db_session):
+    """The record you were editing is the one you return to; the list's `next`
+    must not drag a save back to the product or manager page."""
     product = _product(db_session, "پیراهن بازگشت", barcode="RET-1")
     variant = db_session.query(ProductVariant).filter_by(barcode="RET-1").one()
     response = client.post(f"/admin/variants/{variant.id}", data={
@@ -162,4 +163,4 @@ def test_variant_save_lands_on_its_product(client, authed, db_session):
         "next": "/admin/products",
     }, follow_redirects=False)
     assert response.status_code == 303
-    assert response.headers["location"] == f"/admin/products/{product.id}"
+    assert response.headers["location"] == f"/admin/variants/{variant.id}/edit"

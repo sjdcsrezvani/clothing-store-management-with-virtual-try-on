@@ -233,7 +233,8 @@
                             <td data-label="برگشت">
                                 {% if not p.reversed_at %}
                                 <form method="post" action="/admin/payments/{{ p.id }}/reverse" class="reversal-form"
-                                      onsubmit="return confirm('این دریافت برگشت شود؟ بدهی مشتری به‌روز می‌شود.');">
+                                      data-confirm="این دریافت برگشت شود؟ بدهی مشتری به‌روز می‌شود."
+                                      data-confirm-title="برگشت دریافت" data-confirm-ok="برگشت" hx-boost="false">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                     <label class="sr-only" for="reason-{{ p.id }}">علت برگشت</label>
                                     <input type="text" id="reason-{{ p.id }}" name="reason" required

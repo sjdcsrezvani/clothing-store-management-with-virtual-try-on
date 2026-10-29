@@ -410,7 +410,9 @@
             <p class="muted">بایگانی، مشتری را از فهرست و شمارش‌ها بیرون می‌آورد اما سابقه خریدش دست‌نخورده می‌ماند.</p>
             {% endif %}
             <form method="post" action="/admin/customers/{{ customer.id }}/archive"
-                  onsubmit="return confirm('{{ customer.full_name }} بایگانی شود؟ از فهرست بیرون می‌آید ولی سابقه خریدش می‌ماند.')">
+                  data-confirm="{% if customer.is_archived %}«{{ customer.full_name }}» به فهرست برگردد؟{% else %}{{ customer.full_name }} بایگانی شود؟ از فهرست بیرون می‌آید ولی سابقه خریدش می‌ماند.{% endif %}"
+                  data-confirm-title="{% if customer.is_archived %}بازگردانی مشتری{% else %}بایگانی مشتری{% endif %}"
+                  data-confirm-ok="{% if customer.is_archived %}بازگردانی{% else %}بایگانی کن{% endif %}" hx-boost="false">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn btn-ghost">
                     {% if customer.is_archived %}بازگردانی از بایگانی{% else %}بایگانی مشتری{% endif %}
@@ -419,7 +421,8 @@
 
             {% if may_delete %}
             <form method="post" action="/admin/customers/{{ customer.id }}/delete"
-                  onsubmit="return confirm('این مشتری هیچ خریدی ندارد و برای همیشه حذف می‌شود. مطمئن هستید؟')">
+                  data-confirm="این مشتری هیچ خریدی ندارد و برای همیشه حذف می‌شود. مطمئن هستید؟"
+                  data-confirm-title="حذف کامل مشتری" data-confirm-ok="حذف کامل" hx-boost="false">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn btn-sm btn-danger">حذف کامل مشتری</button>
             </form>

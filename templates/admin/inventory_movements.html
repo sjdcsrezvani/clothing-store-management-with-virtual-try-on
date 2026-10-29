@@ -42,7 +42,8 @@
             {% if reconciliation.missing_count %}
             <a class="text-link" href="/admin/inventory-movements?reconcile=missing">مشاهده فهرست</a>
             <form method="post" action="/admin/inventory-movements/reconcile" class="reconcile-action"
-                  onsubmit="return confirm('برای {{ reconciliation.missing_count }} تنوع یک ردیف «موجودی اولیه» ثبت می‌شود تا دفتر با موجودی فعلی بخواند. موجودی هیچ تنوعی تغییر نمی‌کند. ادامه؟')">
+                  data-confirm="برای {{ reconciliation.missing_count }} تنوع یک ردیف «موجودی اولیه» ثبت می‌شود تا دفتر با موجودی فعلی بخواند. موجودی هیچ تنوعی تغییر نمی‌کند. ادامه؟"
+                  data-confirm-title="سابقه‌دار کردن موجودی‌ها" data-confirm-ok="ثبت" hx-boost="false">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn btn-sm btn-primary">سابقه‌دار کردن موجودی‌ها</button>
             </form>
@@ -137,7 +138,8 @@
                                appends an explanatory adjustment row — the shelf
                                figure stays untouched, the books come to read it. #}
                             <form method="post" action="/admin/inventory-movements/true-up" class="inline-form"
-                                  onsubmit="return confirm('اختلاف {{ row.difference }} عددی «{{ row.variant.display_name }}» در دفتر ثبت می‌شود؛ موجودی دست نمی‌خورد. ادامه؟')">
+                                  data-confirm="اختلاف {{ row.difference }} عددی «{{ row.variant.display_name }}» در دفتر ثبت می‌شود؛ موجودی دست نمی‌خورد. ادامه؟"
+                                  data-confirm-title="ثبت اختلاف در دفتر" data-confirm-ok="ثبت" hx-boost="false">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <input type="hidden" name="variant_id" value="{{ row.variant.id }}">
                                 <button type="submit" class="btn btn-sm btn-primary">ثبت اختلاف در دفتر</button>

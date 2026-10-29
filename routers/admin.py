@@ -2098,7 +2098,8 @@ _SETTINGS_FIELD_TABS = {
     "birthday_sms_days_before": "discounts",
     "birthday_target": "discounts", "child_profile_enabled": "discounts",
     "tryon_daily_limit": "messaging",
-    "tryon_api_key": "messaging", "tryon_api_url": "messaging",
+    "tryon_api_key": "messaging", "tryon_api_key_avalai": "messaging",
+    "tryon_provider": "messaging", "tryon_model": "messaging",
     "tryon_autoclear_kid": "messaging",
     "credit_terms_days": "credit",
     "credit_reminder_min_hours": "credit",
@@ -2275,7 +2276,11 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
     settings = {s.key: s.value for s in db.query(Settings).all()}
     tier_config = get_tier_config(db)
     from services.image_gen import mask_tryon_key
+    from services.image_models import PROVIDERS, resolve_selection
     tryon_key_mask = mask_tryon_key(settings.get("tryon_api_key", ""))
+    tryon_key_mask_avalai = mask_tryon_key(settings.get("tryon_api_key_avalai", ""))
+    tryon_provider, tryon_model_entry = resolve_selection(
+        settings.get("tryon_provider", ""), settings.get("tryon_model", ""))
     error_field = (request.query_params.get("field", "") or "").strip()
     if not re.fullmatch(r"[a-z0-9_]+", error_field):
         error_field = ""
@@ -2301,6 +2306,10 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
         "error_field": error_field,
         "gateway": gateway,
         "tryon_key_mask": tryon_key_mask,
+        "tryon_key_mask_avalai": tryon_key_mask_avalai,
+        "tryon_providers": PROVIDERS,
+        "tryon_selected_provider": tryon_provider,
+        "tryon_selected_model": tryon_model_entry["id"],
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
     })
@@ -2425,13 +2434,35 @@ async def admin_update_settings(request: Request, db: Session = Depends(get_db))
     # Later values win, which is what makes an unchecked checkbox work: the form
     # posts a hidden companion (0) before the box itself (1).
     for key, value in form.items():
-        if key in {"csrf_token", "tab", THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY}:
+        if key in {"csrf_token", "tab", THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY,
+                   "tryon_api_url"}:  # retired: provider base URLs live in the catalog
             continue
-        if key == "tryon_api_key" and not str(value).strip():
+        if key in {"tryon_api_key", "tryon_api_key_avalai"} and not str(value).strip():
             continue  # empty key field means "keep the stored secret"
         updates[key] = str(value)
-    if "tryon_api_key" in updates and not updates["tryon_api_key"].strip():
-        del updates["tryon_api_key"]    # A birthday target that names a module the store switched off would
+    # Provider and model are one pair: a model from the other catalog would
+    # silently fall back at generation time, so refuse it here where it shows.
+    posted_provider = str(form.get("tryon_provider") or "").strip()
+    posted_model = str(form.get("tryon_model") or "").strip()
+    if posted_provider or posted_model:
+        from services.image_models import PROVIDERS, model_ids, resolve_selection
+        now = {s.key: (s.value or "") for s in db.query(Settings).filter(
+            Settings.key.in_(["tryon_provider", "tryon_model"])).all()}
+        provider = posted_provider or now.get("tryon_provider", "")
+        if provider not in PROVIDERS:
+            return RedirectResponse(
+                url="/admin/settings?tab=messaging&err=ارائه‌دهنده تصویر نامعتبر است — ذخیره نشد.",
+                status_code=303)
+        model = posted_model or now.get("tryon_model", "")
+        if model and model not in model_ids(provider):
+            return RedirectResponse(
+                url=(f"/admin/settings?tab=messaging&err=مدل «{model}» در فهرست "
+                     f"{PROVIDERS[provider]['label']} نیست — ذخیره نشد."),
+                status_code=303)
+        provider, entry = resolve_selection(provider, model)
+        updates["tryon_provider"] = provider
+        updates["tryon_model"] = entry["id"]
+    # A birthday target that names a module the store switched off would
     # contradict itself, so it falls back rather than silently doing nothing.
     child_off = str(updates.get(CHILD_PROFILE_KEY, "1")).strip().lower() in (
         "0", "false", "no", "off",
@@ -2500,7 +2531,13 @@ async def admin_update_settings(request: Request, db: Session = Depends(get_db))
     invalidate_customer_cache()
     log_action(db, "settings_update", "به‌روزرسانی تنظیمات", request=request, target_type="settings")
 
-    return RedirectResponse(url=f"/admin/settings?tab={posted_tab}&msg=تنظیمات ذخیره شد.", status_code=303)
+    saved_keys = [label for key, label in (
+        ("tryon_api_key", "gapgpt"), ("tryon_api_key_avalai", "AvalAI"),
+    ) if key in updates]
+    key_note = f" کلید {'، '.join(saved_keys)} ذخیره شد." if saved_keys else ""
+    return RedirectResponse(
+        url=f"/admin/settings?tab={posted_tab}&msg=تنظیمات ذخیره شد.{key_note}",
+        status_code=303)
 
 
 @router.post("/change-password", response_class=HTMLResponse)

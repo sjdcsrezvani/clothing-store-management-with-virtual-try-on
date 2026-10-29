@@ -720,7 +720,7 @@ def require_api_token(request: Request, db: Session = Depends(get_db)) -> None:
 _generation_day: dict[str, int] = {}   # date(UTC) → count
 _generation_ip: dict[str, list[float]] = {}  # ip → recent timestamps
 
-_TRYON_IP_LIMIT = 8        # generations per hour per client
+_TRYON_IP_LIMIT = 40       # generations per hour per client (model sweep)
 _TRYON_IP_WINDOW = 3600
 
 
@@ -731,7 +731,7 @@ def _today_key() -> str:
 def tryon_daily_remaining(db) -> int:
     """How many generations are left today under the configured daily cap."""
     from services._common import get_setting_int
-    limit = get_setting_int(db, "tryon_daily_limit", 20)
+    limit = get_setting_int(db, "tryon_daily_limit", 50)
     used = _generation_day.get(_today_key(), 0)
     return max(0, limit - used)
 
@@ -741,9 +741,9 @@ def tryon_can_generate(request: Request, db) -> bool:
     today = _today_key()
     try:
         from services._common import get_setting_int
-        limit = get_setting_int(db, "tryon_daily_limit", 20)
+        limit = get_setting_int(db, "tryon_daily_limit", 50)
     except Exception:
-        limit = 20
+        limit = 50
     if _generation_day.get(today, 0) >= limit:
         return False
     ip = _client_ip(request)

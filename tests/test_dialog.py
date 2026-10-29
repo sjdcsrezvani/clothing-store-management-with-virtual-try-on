@@ -15,6 +15,32 @@ def test_the_shell_mounts_the_dialog_helper_once():
     assert base.count("/static/js/dialog.js") == 1
 
 
+def test_the_shell_mounts_one_shared_confirm_surface():
+    base = (ROOT / "templates" / "base.html").read_text()
+    assert base.count('id="app-confirm"') == 1
+    assert base.count("/static/js/confirm.js") == 1
+
+
+def test_confirm_module_served_with_the_full_contract(client):
+    resp = client.get("/static/js/confirm.js")
+    assert resp.status_code == 200
+    for snippet in ("RaykidConfirm", "data-confirm", "app-confirm",
+                    "defaultPrevented", "submit", "Escape"):
+        assert snippet in resp.text, snippet
+
+
+def test_no_native_browser_confirm_remains():
+    offenders = []
+    for path in (ROOT / "templates").rglob("*.html"):
+        text = path.read_text(encoding="utf-8")
+        if "return confirm(" in text or "window.confirm(" in text:
+            offenders.append(str(path.relative_to(ROOT)))
+    for path in (ROOT / "static" / "js").glob("*.js"):
+        if "window.confirm(" in path.read_text(encoding="utf-8"):
+            offenders.append(str(path.relative_to(ROOT)))
+    assert not offenders
+
+
 def test_dialog_helper_served_with_the_full_contract(client):
     resp = client.get("/static/js/dialog.js")
     assert resp.status_code == 200

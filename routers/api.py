@@ -1,10 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from config import DEFAULT_REFERRER_DISCOUNT, DEFAULT_REFERRED_DISCOUNT
 from database import get_db
 from models import Customer, Referral, generate_referral_code, to_english_digits
-from services._common import gregorian_to_jalali
+from services._common import get_setting_int, gregorian_to_jalali
 from services.security import require_api_token
 from services.sms import queue_welcome_sms
 
@@ -53,24 +52,27 @@ async def api_create_customer(body: CustomerCreate, db: Session = Depends(get_db
     while db.query(Customer).filter(Customer.referral_code == code).first():
         code = generate_referral_code()
 
+    referrer_discount = get_setting_int(db, "default_referrer_discount", 50000)
+    referred_discount = get_setting_int(db, "default_referred_discount", 30000)
+
     customer = Customer(
         phone=phone,
         first_name=body.first_name if body.first_name else None,
         last_name=body.last_name if body.last_name else None,
         referral_code=code,
         referred_by=referrer.id if referrer else None,
-        referred_discount=DEFAULT_REFERRED_DISCOUNT if referrer else 0,
+        referred_discount=referred_discount if referrer else 0,
     )
     db.add(customer)
     db.flush()
 
     if referrer:
-        referrer.referrer_discount += DEFAULT_REFERRER_DISCOUNT
+        referrer.referrer_discount += referrer_discount
         referral = Referral(
             referrer_id=referrer.id,
             referred_id=customer.id,
-            referrer_discount=DEFAULT_REFERRER_DISCOUNT,
-            referred_discount=DEFAULT_REFERRED_DISCOUNT,
+            referrer_discount=referrer_discount,
+            referred_discount=referred_discount,
         )
         db.add(referral)
 

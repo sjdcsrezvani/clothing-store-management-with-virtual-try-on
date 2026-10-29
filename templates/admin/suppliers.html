@@ -149,7 +149,8 @@
                             aria-expanded="false" aria-controls="supplier-edit-{{ s.id }}"
                             aria-label="ویرایش {{ s.name }}">ویرایش</button>
                     <form method="post" action="/admin/suppliers/{{ s.id }}/delete" class="inline-form"
-                          onsubmit="return confirm('⚠️ حذف {{ s.name }}؟ اگر پرداختی ثبت شده باشد، حذف ممکن نخواهد بود.')">
+                          data-confirm="حذف {{ s.name }}؟ اگر پرداختی ثبت شده باشد، حذف ممکن نخواهد بود."
+                          data-confirm-title="حذف تأمین‌کننده" data-confirm-ok="حذف" hx-boost="false">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                         <button type="submit" class="btn btn-sm btn-danger" aria-label="حذف {{ s.name }}">حذف</button>
                     </form>

@@ -344,13 +344,42 @@
         <div class="form-row">
             <div class="form-group">
                 <label for="tryon_daily_limit">سقف تولید روزانه {{ tip('حداکثر تصویر تولیدشده با هوش مصنوعی در روز (هر تصویر هزینه دارد)') }}</label>
-                <span class="field-unit">{{ num('tryon_daily_limit', settings.get('tryon_daily_limit', '20')) }}<span class="unit">عدد</span></span>
+                <span class="field-unit">{{ num('tryon_daily_limit', settings.get('tryon_daily_limit', '50')) }}<span class="unit">عدد</span></span>
             </div>
             <div class="form-group">
-                <label for="tryon_api_url">نشانی درگاه تصویر {{ tip('پیش‌فرض درگاه فعلی؛ فقط وقتی عوضش کنید که ارائه‌دهنده گفته باشد') }}</label>
-                <input type="text" id="tryon_api_url" name="tryon_api_url" dir="ltr"
-                       value="{{ settings.get('tryon_api_url', '') }}"
-                       placeholder="https://api.gapgpt.app/v1/images/edits">
+                <label for="tryon_provider">ارائه‌دهنده تصویر {{ tip('کلید هر ارائه‌دهنده جدا ذخیره می‌شود؛ با عوض کردن این گزینه، فهرست مدل‌ها هم عوض می‌شود') }}</label>
+                <select id="tryon_provider" name="tryon_provider">
+                    {% for key, p in (tryon_providers or {}).items() %}
+                    <option value="{{ key }}"{% if key == tryon_selected_provider %} selected{% endif %}>{{ p.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="tryon_model">مدل پرو مجازی {{ tip('هر مدل با ارزان‌ترین تنظیمات معتبر خودش اجرا می‌شود (۱۰۲۴×۱۰۲۴؛ Seedream با 1K)') }}</label>
+                <select id="tryon_model" name="tryon_model">
+                    {% for key, p in (tryon_providers or {}).items() %}
+                    {% for m in p.models %}
+                    <option value="{{ m.id }}" data-provider="{{ key }}"{% if key == tryon_selected_provider and m.id == tryon_selected_model %} selected{% endif %} dir="ltr">{{ m.id }} — {{ m.cost }}</option>
+                    {% endfor %}
+                    {% endfor %}
+                </select>
+                <small>شماره مدل و هزینه تقریبی هر تصویر. مقایسه زمان و خطاها در صفحه پرو مجازی، بخش «گزارش درخواست‌ها».</small>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="tryon_api_key">کلید gapgpt {% if tryon_key_mask %}<span class="badge badge-success">ذخیره شده {{ tryon_key_mask }}</span>{% else %}<span class="badge badge-none">ذخیره نشده</span>{% endif %} {{ tip('یک‌بار ذخیره می‌شود و برای همه مدل‌های gapgpt استفاده می‌شود؛ خالی بگذارید تا همان قبلی بماند') }}</label>
+                <input type="password" id="tryon_api_key" name="tryon_api_key" dir="ltr"
+                       value="" placeholder="{% if tryon_key_mask %}ذخیره شده {{ tryon_key_mask }} — برای تغییر، کلید جدید بچسبانید{% else %}کلید را بچسبانید{% endif %}" autocomplete="off">
+                <small class="muted">{% if tryon_key_mask %}ذخیره شده ({{ tryon_key_mask }}) — برای همه مدل‌های این ارائه‌دهنده استفاده می‌شود.{% else %}هنوز کلیدی ذخیره نشده است.{% endif %}</small>
+            </div>
+            <div class="form-group">
+                <label for="tryon_api_key_avalai">کلید AvalAI {% if tryon_key_mask_avalai %}<span class="badge badge-success">ذخیره شده {{ tryon_key_mask_avalai }}</span>{% else %}<span class="badge badge-none">ذخیره نشده</span>{% endif %} {{ tip('یک‌بار ذخیره می‌شود و برای همه مدل‌های AvalAI استفاده می‌شود؛ خالی بگذارید تا همان قبلی بماند') }}</label>
+                <input type="password" id="tryon_api_key_avalai" name="tryon_api_key_avalai" dir="ltr"
+                       value="" placeholder="{% if tryon_key_mask_avalai %}ذخیره شده {{ tryon_key_mask_avalai }} — برای تغییر، کلید جدید بچسبانید{% else %}کلید را بچسبانید{% endif %}" autocomplete="off">
+                <small class="muted">{% if tryon_key_mask_avalai %}ذخیره شده ({{ tryon_key_mask_avalai }}) — برای همه مدل‌های این ارائه‌دهنده استفاده می‌شود.{% else %}هنوز کلیدی ذخیره نشده است.{% endif %}</small>
             </div>
         </div>
         <div class="form-row">
@@ -359,15 +388,13 @@
                 <label for="tryon_autoclear_kid">حذف خودکار عکس شخص پس از ذخیره {{ tip('عکس شخص فقط در حافظه است؛ با این گزینه پس از هر ذخیره پاک می‌شود') }}</label>
             </div>
         </div>
-        <div class="form-row">
-            <div class="form-group">
-                <label for="tryon_api_key">کلید پرو مجازی {{ tip('ذخیره‌شده: ' + (tryon_key_mask or 'ندارد') + ' — خالی بگذارید تا همان قبلی بماند') }}</label>
-                <input type="password" id="tryon_api_key" name="tryon_api_key" dir="ltr"
-                       value="" placeholder="کلید جدید (خالی = بدون تغییر)" autocomplete="off">
-                <div class="row"><button type="button" class="btn btn-ghost btn-sm" id="tryon-test-key" hx-post="/admin/tryon/test-key" hx-target="#tryon-test-result" hx-swap="outerHTML">آزمایش اتصال</button>
-                <small class="muted" id="tryon-test-result" role="status"></small></div>
-            </div>
+        <div class="row">
+            <button type="button" class="btn btn-ghost btn-sm" id="tryon-test-key"
+                    hx-post="/admin/tryon/test-key" hx-include="closest form"
+                    hx-target="#tryon-test-result" hx-swap="outerHTML">آزمایش اتصال مدل انتخاب‌شده</button>
+            <small class="muted" id="tryon-test-result" role="status"></small>
         </div>
+        <small class="muted">آزمایش اتصال چیزی ذخیره نمی‌کند؛ برای نگه‌داشتن کلیدها دکمه ذخیره را بزنید.</small>
         <div class="settings-savebar"><button type="submit" class="btn btn-primary">ذخیره پیامک و هوش مصنوعی</button></div>
     </form>
 {% elif active_tab == 'advanced' %}

@@ -12,7 +12,7 @@
 
 <div class="variant-edit-layout">
 <section class="card">
-    <form method="post" action="/admin/variants/{{ variant.id }}" enctype="multipart/form-data">
+    <form method="post" action="/admin/variants/{{ variant.id }}" enctype="multipart/form-data" hx-boost="true" hx-encoding="multipart/form-data">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="section-heading-row"><div><h3>مشخصات فروش</h3><p class="muted">قیمت‌ها و شناسه‌ها را دقیق و قابل جست‌وجو نگه دارید.</p></div><span class="section-step">۱</span></div>
         <div class="form-row product-form-grid-wide">
@@ -28,7 +28,7 @@
             <div class="form-group"><label for="price">قیمت فروش <span class="required-mark">*</span></label><input type="text" inputmode="numeric" id="price" name="price" required min="0" value="{{ variant.price }}" placeholder="مثال: 350000"></div>
             <div class="form-group"><label for="cost_price">قیمت خرید<span id="cost-key" class="cost-key" aria-hidden="true"></span></label><input type="text" inputmode="numeric" id="cost_price" name="cost_price" min="0" value="{{ variant.fake_cost_price if variant.fake_cost_price is not none else (variant.cost_price if variant.cost_price is not none else '') }}" placeholder="مثال: 220000" data-real="{{ variant.cost_price if variant.cost_price is not none else '' }}"{% if variant.fake_cost_price is not none %} readonly{% endif %}><div id="second-cost-row" class="cost-note-editor" hidden><input type="text" inputmode="numeric" id="fake_cost_price" name="fake_cost_price" min="0" value="{{ variant.fake_cost_price if variant.fake_cost_price is not none else '' }}" placeholder="مثال: 230000"></div></div>
             <div class="form-group"><label for="sku">SKU</label><input id="sku" name="sku" value="{{ variant.sku or '' }}" dir="ltr"></div>
-            <div class="form-group"><span class="field-label">بارکد</span><span class="barcode-record tnum" dir="ltr">{{ variant.barcode }}</span><small class="field-help">بعد از ساخت قفل است؛ برای لیبل آسیب‌دیده «تولید مجدد» بزنید.</small></div>
+            <div class="form-group"><span class="field-label">بارکد</span><span class="barcode-record tnum" dir="ltr">{{ variant.barcode }}</span><small class="field-help">برای چاپ روی برچسب است. اگر برچسب پاره یا ناخوانا شده، «تولید مجدد» بزنید.</small></div>
         </div>
         <div class="form-actions-row">
             <button type="submit" form="regenerate-barcode-form" class="btn btn-sm btn-ghost">تولید مجدد بارکد</button>
@@ -48,23 +48,46 @@
 
         <div class="section-heading-row section-heading-spaced"><div><h3>تصویر و توضیحات</h3><p class="muted">اطلاعات تکمیلی فقط برای تیم فروش و پرو مجازی استفاده می‌شود.</p></div><span class="section-step">۳</span></div>
         <div class="form-group"><label for="tryon_details">جزئیات تکمیلی</label><textarea id="tryon_details" name="tryon_details" rows="3" placeholder="مثلاً دو تکه است؛ آستین کوتاه">{{ variant.tryon_details or '' }}</textarea></div>
-        <div class="form-group"><label for="variant_image">تصویر تنوع</label><input type="file" id="variant_image" name="variant_image" accept="image/png,image/jpeg,image/webp">
-            {% if variant.image_path and '/uploads/barcodes/' not in variant.image_path %}<img class="variant-current-image" src="{{ variant.image_path }}" alt="تصویر فعلی تنوع">{% endif %}
+        <div class="form-group">
+            <span class="field-label">تصویر اصلی تنوع</span>
+            <div class="image-field" data-image-field>
+                <label class="image-drop" for="variant_image">
+                    <span class="image-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></span>
+                    <span class="image-drop-copy"><strong>انتخاب تصویر اصلی</strong><small>کلیک کنید یا عکس را اینجا رها کنید · JPG، PNG، WebP</small></span>
+                    <input class="image-input" type="file" id="variant_image" name="variant_image" accept="image/png,image/jpeg,image/webp">
+                </label>
+                <div class="image-picked" data-image-picked hidden>
+                    <div class="image-picked-grid" data-image-picked-grid></div>
+                    <button type="button" class="image-clear" data-image-clear>حذف انتخاب</button>
+                </div>
+            </div>
+            <small class="field-help">همین عکس مرجع پرو مجازی است.</small>
+            {% if variant.image_path and '/uploads/barcodes/' not in variant.image_path %}<figure class="image-current"><img src="{{ variant.image_path }}" alt="تصویر اصلی فعلی تنوع"><figcaption>تصویر اصلی فعلی</figcaption></figure>{% endif %}
         </div>
         <div class="form-group">
-            <label for="variant_images">گالری تنوع</label>
-            <input type="file" id="variant_images" name="variant_images" accept="image/png,image/jpeg,image/webp" multiple>
-            <small class="field-help">چند عکس هم‌زمان انتخاب کنید؛ اولین قاب، تصویر اصلی است.</small>
+            <span class="field-label">گالری تنوع</span>
+            <div class="image-field" data-image-field>
+                <label class="image-drop" for="variant_images">
+                    <span class="image-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></span>
+                    <span class="image-drop-copy"><strong>افزودن عکس به گالری</strong><small>کلیک کنید یا چند عکس را اینجا رها کنید · JPG، PNG، WebP</small></span>
+                    <input class="image-input" type="file" id="variant_images" name="variant_images" accept="image/png,image/jpeg,image/webp" multiple>
+                </label>
+                <div class="image-picked" data-image-picked hidden>
+                    <div class="image-picked-grid" data-image-picked-grid></div>
+                    <button type="button" class="image-clear" data-image-clear>حذف انتخاب</button>
+                </div>
+            </div>
+            <small class="field-help">عکس‌های تکمیلی برای نمایش؛ فقط اگر تصویر اصلی خالی باشد، اولین قاب گالری تصویر اصلی می‌شود.</small>
         </div>
         {% if variant.images %}
         <ul class="variant-gallery">
             {% for frame in variant.images|sort(attribute='sort_order') %}
-            <li class="{% if loop.first %}is-primary{% endif %}">
+            <li class="{% if frame.image_path == variant.image_path %}is-primary{% endif %}">
                 <img src="{{ frame.image_path }}" alt="قاب {{ loop.index }} تنوع" loading="lazy">
-                {% if loop.first %}<span class="badge badge-info">اصلی</span>{% endif %}
+                {% if frame.image_path == variant.image_path %}<span class="badge badge-info">تصویر اصلی</span>{% endif %}
                 <span class="variant-gallery-actions">
-                    {% if not loop.first %}
-                    <button type="submit" form="variant-image-primary-{{ frame.id }}" class="btn btn-sm btn-ghost">اصلی شود</button>
+                    {% if frame.image_path != variant.image_path %}
+                    <button type="submit" form="variant-image-primary-{{ frame.id }}" class="btn btn-sm btn-ghost">تصویر اصلی شود</button>
                     {% endif %}
                     <button type="submit" form="variant-image-delete-{{ frame.id }}" class="btn btn-sm btn-danger-quiet">حذف</button>
                 </span>
@@ -84,18 +107,68 @@
    closes the outer one, leaving «ذخیره تغییرات» outside with nothing to
    submit. Each button points at its own form by id. #}
 <div hidden>
-    <form id="regenerate-barcode-form" method="post" action="/admin/variants/{{ variant.id }}/regenerate-barcode" onsubmit="return confirm('بارکد تازه ساخته می‌شود و بارکد فعلی روی تگ‌های چاپ‌شده بی‌اعتبار می‌گردد. ادامه؟')">
+    <form id="regenerate-barcode-form" method="post" action="/admin/variants/{{ variant.id }}/regenerate-barcode" hx-boost="false"
+          data-confirm="بارکد فعلی {{ variant.barcode }} است. اگر برچسب پاره، محو یا ناخوانا شده، بارکد تازه بسازید. بعد از ساخت، بارکد قبلی روی برچسب‌های چاپ‌شده از کار می‌افتد؛ برچسب تازه را چاپ کنید."
+          data-confirm-title="بارکد تازه بسازیم؟" data-confirm-ok="ساخت بارکد تازه">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     </form>
     {% for frame in variant.images|sort(attribute='sort_order') %}
     <form id="variant-image-primary-{{ frame.id }}" method="post" action="/admin/variant-images/{{ frame.id }}/primary">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     </form>
-    <form id="variant-image-delete-{{ frame.id }}" method="post" action="/admin/variant-images/{{ frame.id }}/delete" onsubmit="return confirm('این قاب حذف شود؟')">
+    <form id="variant-image-delete-{{ frame.id }}" method="post" action="/admin/variant-images/{{ frame.id }}/delete" hx-boost="false"
+          data-confirm="این قاب از گالری حذف شود؟" data-confirm-title="حذف قاب" data-confirm-ok="حذف">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     </form>
     {% endfor %}
 </div>
+
+<div id="variant-confirm" data-dialog role="alertdialog" aria-modal="true"
+     aria-labelledby="variant-confirm-title" aria-describedby="variant-confirm-text"
+     class="confirm-scrim" tabindex="-1">
+    <div class="t-modal-card confirm-card" role="document">
+        <h3 id="variant-confirm-title">مطمئن هستید؟</h3>
+        <p class="muted" id="variant-confirm-text"></p>
+        <div class="confirm-actions">
+            <button type="button" class="btn btn-danger" id="variant-confirm-yes">تأیید</button>
+            <button type="button" class="btn btn-ghost" data-dialog-close>انصراف</button>
+        </div>
+    </div>
+</div>
+<script>
+(function () {
+    // One confirm surface for every variant action: each form carries its own
+    // words in data-confirm, data-confirm-title and data-confirm-ok. Without
+    // JS the form posts directly.
+    var pendingForm = null;
+    document.addEventListener('submit', function (event) {
+        var form = event.target.closest ? event.target.closest('form[data-confirm]') : null;
+        if (!form || form === pendingForm) return;
+        if (!window.RaykidDialog) return;
+        event.preventDefault();
+        pendingForm = form;
+        document.getElementById('variant-confirm-title').textContent =
+            form.getAttribute('data-confirm-title') || 'مطمئن هستید؟';
+        document.getElementById('variant-confirm-text').textContent =
+            form.getAttribute('data-confirm') || '';
+        document.getElementById('variant-confirm-yes').textContent =
+            form.getAttribute('data-confirm-ok') || 'تأیید';
+        window.RaykidDialog.open('variant-confirm', document.activeElement);
+    }, true);
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest) return;
+        if (event.target.closest('[data-dialog-close]')) { pendingForm = null; return; }
+        if (!event.target.closest('#variant-confirm-yes')) return;
+        var form = pendingForm;
+        pendingForm = null;
+        window.RaykidDialog.close('variant-confirm');
+        if (form) form.submit();
+    });
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') pendingForm = null;
+    });
+})();
+</script>
 
 <aside class="variant-edit-side">
     <section class="card variant-summary-card">
@@ -104,12 +177,14 @@
         <div class="demand-counter-group">
             <div class="demand-counter-heading"><span>تقاضای ثبت‌شده</span><strong class="demand-counter-value" aria-live="polite">{{ variant.demand_count or 0 }}</strong></div>
             <div class="demand-counter-row">
-                <form method="post" action="/admin/variants/{{ variant.id }}/demand" class="demand-counter-form">
+                <form method="post" action="/admin/variants/{{ variant.id }}/demand" class="demand-counter-form" hx-boost="false">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <button type="submit" class="btn btn-sm btn-primary">+ ثبت تقاضا</button>
                 </form>
                 {% if variant.demand_count %}
-                <form method="post" action="/admin/variants/{{ variant.id }}/demand/reset" class="demand-counter-form" onsubmit="return confirm('تقاضای ثبت‌شده صفر شود؟')">
+                <form method="post" action="/admin/variants/{{ variant.id }}/demand/reset" class="demand-counter-form" hx-boost="false"
+                      data-confirm="تقاضای ثبت‌شده این تنوع صفر می‌شود. این کار قابل برگشت نیست."
+                      data-confirm-title="تقاضا صفر شود؟" data-confirm-ok="صفر کردن تقاضا">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <button type="submit" class="btn btn-sm btn-ghost">صفر کردن</button>
                 </form>
@@ -121,10 +196,14 @@
     <section class="card danger-zone">
         {% if variant.is_active %}
         <h3>بایگانی</h3><p class="muted">برای حفظ تاریخچه فروش، تنوع حذف نمی‌شود و فقط بایگانی خواهد شد.</p>
-        <form method="post" action="/admin/variants/{{ variant.id }}/delete" onsubmit="return confirm('این تنوع بایگانی شود؟ از فهرست فروش پنهان می‌شود ولی تاریخچه‌اش می‌ماند.')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit" class="btn btn-danger-quiet">بایگانی تنوع</button></form>
+        <form method="post" action="/admin/variants/{{ variant.id }}/delete" hx-boost="false"
+              data-confirm="این تنوع بایگانی شود؟ از فهرست فروش پنهان می‌شود ولی تاریخچه‌اش می‌ماند."
+              data-confirm-title="بایگانی تنوع" data-confirm-ok="بایگانی کن"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit" class="btn btn-danger-quiet">بایگانی تنوع</button></form>
         {% else %}
         <h3>بایگانی‌شده</h3><p class="muted">این تنوع در فهرست فروش نیست ولی تاریخچه‌اش مانده است.</p>
-        <form method="post" action="/admin/variants/{{ variant.id }}/restore" onsubmit="return confirm('این تنوع به فهرست برگردد؟')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit" class="btn btn-ghost">بازگردانی تنوع</button></form>
+        <form method="post" action="/admin/variants/{{ variant.id }}/restore" hx-boost="false"
+              data-confirm="این تنوع به فهرست فروش برگردد؟"
+              data-confirm-title="بازگردانی تنوع" data-confirm-ok="بازگردانی"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit" class="btn btn-ghost">بازگردانی تنوع</button></form>
         {% endif %}
     </section>
 </aside>
@@ -154,7 +233,7 @@
     const visible = document.getElementById('cost_price');
     const second = document.getElementById('fake_cost_price');
     const editor = document.getElementById('second-cost-row');
-    const realCost = visible.dataset.real;
+    let realCost = visible.dataset.real;
 
     function sync() {
         // The visible field mirrors the second cost while one is set, and falls
@@ -163,6 +242,12 @@
         visible.value = hasSecond ? second.value : realCost;
         visible.readOnly = hasSecond;
     }
+
+    // A hand editing the real cost while no second cost is showing owns that
+    // value: reopening the second-cost box must not forget the unsaved edit.
+    visible.addEventListener('input', function () {
+        if (!visible.readOnly) realCost = visible.value;
+    });
 
     document.getElementById('cost-key').addEventListener('click', function (e) {
         e.preventDefault();

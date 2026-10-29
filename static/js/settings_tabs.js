@@ -60,3 +60,38 @@
         if (event.key === 'Escape') pendingHref = null;
     });
 })();
+
+/* Provider → model pair: one catalog's models at a time. Without JS every
+   model stays listed and the server rejects a mismatched save. */
+(function () {
+    'use strict';
+    var provider = document.getElementById('tryon_provider');
+    var model = document.getElementById('tryon_model');
+    if (!provider || !model) return;
+    var options = Array.prototype.slice.call(model.options);
+
+    function sync() {
+        var current = model.value;
+        var first = null;
+        options.forEach(function (option) {
+            var match = option.getAttribute('data-provider') === provider.value;
+            option.hidden = !match;
+            option.disabled = !match;
+            if (match && !first) first = option.value;
+        });
+        var keep = options.filter(function (option) {
+            return !option.disabled && option.value === current;
+        });
+        if (!keep.length && first) model.value = first;
+    }
+
+    provider.addEventListener('change', function () {
+        sync();
+        // The form's dirty dot listens for input; a programmatic model change
+        // must count as unsaved work too.
+        if (provider.form) {
+            provider.form.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    });
+    sync();
+})();

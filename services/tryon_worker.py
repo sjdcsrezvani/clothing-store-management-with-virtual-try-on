@@ -37,21 +37,21 @@ async def tryon_worker_task() -> None:
                         job = claim_next(session, "tryon")
                         if not job:
                             return
-                            try:
-                                await process_one(session, job)
-                            except ImageGenerationError as error:
-                                # Billable failure: fail fast, never requeue.
-                                job.status = "failed"
-                                job.error_message = str(error)[:1000]
-                                job.locked_at = None
-                                session.commit()
-                                return
-                            except Exception as error:
-                                # Local failure (payload, disk, db): requeue
-                                # with backoff like the scheduler; no job
-                                # strands as processing, no pass ever dies.
-                                fail(session, job, error)
-                                return
+                        try:
+                            await process_one(session, job)
+                        except ImageGenerationError as error:
+                            # Billable failure: fail fast, never requeue.
+                            job.status = "failed"
+                            job.error_message = str(error)[:1000]
+                            job.locked_at = None
+                            session.commit()
+                            return
+                        except Exception as error:
+                            # Local failure (payload, disk, db): requeue
+                            # with backoff like the scheduler; no job
+                            # strands as processing, no pass ever dies.
+                            fail(session, job, error)
+                            return
                         complete(session, job)
                         try:
                             import json

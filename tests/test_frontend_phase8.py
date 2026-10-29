@@ -45,6 +45,19 @@ def test_print_layout_is_light_and_readable_for_all_themes():
     assert ".invoice, .invoice .invoice-header" in css
 
 
+def test_chart_pages_wait_for_scripts_a_boosted_swap_loads_async():
+    """A boosted swap inserts a page's <script src> tags async, so the inline
+    script after them can run first and find its library still missing. The
+    chart pages wait through the shell helper instead of returning silently."""
+    shell = (ROOT / "static/js/htmx-shell.js").read_text()
+    assert "window.RaykidWhen" in shell
+    analytics = (ROOT / "templates/admin/analytics.html").read_text()
+    assert "window.echarts && window.AnalyticsCharts" in analytics
+    assert "window.RaykidWhen(function () {" in analytics
+    appearance = (ROOT / "templates/admin/settings_appearance.html").read_text()
+    assert "typeof window.renderThemeChartSample === 'function'" in appearance
+
+
 def test_theme_shell_has_distinct_tokens_and_unclipped_topbar_actions(client, authed):
     base = (ROOT / "templates/base.html").read_text()
     css = (ROOT / "static/css/style.css").read_text()
@@ -129,6 +142,16 @@ def test_color_code_fields_open_a_native_colour_palette():
     assert "initColorPickers(container)" in product_form
     assert "function initColorPickers" in js
     assert "picker.type = 'color'" in js
+    # A boosted arrival can run the page's inline script before deferred app.js
+    # lands, leaving the first row's field uninitialised until a hard refresh.
+    # app.js initialises what is already in the DOM when it arrives, and every
+    # later htmx swap.
+    assert "document.readyState !== 'loading'" in js
+    assert "initColorPickers(event.target)" in js
+    # The panel lives on <body>; a boosted body swap removes it while the field
+    # survives. It is reattached instead of leaving a dead swatch.
+    assert "document.contains(field._colorPop)" in js
+    assert "document.body.appendChild(field._colorPop)" in js
     # The picker's chosen colour reaches the field in upper-case hex.
     assert "field.value = hex.toUpperCase()" in js
 
@@ -443,3 +466,20 @@ def test_the_palette_picker_offers_every_named_colour():
     css = (ROOT / "static/css/style.css").read_text()
     assert ".color-family-label" in css and ".color-pick-name" in css
     assert ".color-presets" in css and "overflow-y: auto" in css and "position: fixed" in css
+
+
+def test_boosted_navigation_can_rerun_app_js():
+    """htmx re-runs the body's scripts on a boosted arrival. A top-level
+    const would throw on the second run and leave the colour palette dead
+    until a hard refresh."""
+    js = (ROOT / "static/js/app.js").read_text()
+    for name in ("COLOR_PRESETS", "COLOR_NAMES", "COLOR_FAMILIES", "COLOR_NAME_HEX", "hexCode"):
+        assert f"\nconst {name}" not in js
+
+
+def test_variant_archive_forms_do_not_race_htmx():
+    """The confirm dialog must get the submit event before htmx posts it."""
+    page = (ROOT / "templates/admin/variant_form.html").read_text()
+    assert 'action="/admin/variants/{{ variant.id }}/delete" hx-boost="false"' in page
+    assert 'action="/admin/variants/{{ variant.id }}/restore" hx-boost="false"' in page
+    assert "document.addEventListener('submit'" in page and "}, true);" in page

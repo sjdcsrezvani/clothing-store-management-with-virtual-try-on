@@ -25,9 +25,11 @@
         });
     });
 
-    var AC = window.AnalyticsCharts;
-    var data = window.ANALYTICS_SIZES;
-    if (!AC || !window.echarts || !data) return;
+    window.RaykidWhen(function () {
+        return window.echarts && window.AnalyticsCharts && window.ANALYTICS_SIZES;
+    }, function () {
+        var AC = window.AnalyticsCharts;
+        var data = window.ANALYTICS_SIZES;
 
     function ranked(rows, metric) {
         return (rows || []).slice().sort(function (a, b) {
@@ -201,4 +203,5 @@
             return opt;
         });
     })();
+    });
 })();

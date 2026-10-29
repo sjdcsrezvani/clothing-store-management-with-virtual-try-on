@@ -226,7 +226,10 @@
             window.renderThemeChartSample(canvas, style);
         });
     }
-    paintSamples();
+    // charts.js arrives async on a boosted swap: wait for its renderer.
+    window.RaykidWhen(function () {
+        return typeof window.renderThemeChartSample === 'function';
+    }, paintSamples);
 })();
 </script>
 {% endblock %}

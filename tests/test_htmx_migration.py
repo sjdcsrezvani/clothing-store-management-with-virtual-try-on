@@ -56,11 +56,13 @@ def test_htmx_foundation_in_place():
     assert "htmx:beforeSwap" in shell
 
 
-def test_body_boost_is_installed_with_reentry_dedupe():
+def test_boost_is_narrowed_to_list_regions():
     base = (ROOT / "templates" / "base.html").read_text(encoding="utf-8")
-    assert 'hx-boost="true"' in base          # the whole shell navigates in place
-    # htmx and the shell load blocking, ahead of every body script: boosted
-    # body re-runs need the dedupe installed before the first boot binds.
+    # The whole shell is not an SPA: body-level boost hijacked every form,
+    # download link and page script. Only list regions opt in.
+    assert 'hx-boost="false"' in base.split("<body", 1)[1].split(">", 1)[0]
+    # htmx and the shell load blocking, ahead of every body script: region
+    # swaps need the dedupe installed before the first boot binds.
     head = base[: base.index("<body")]
     for pair in ("/static/vendor/htmx.min.js", "/static/js/htmx-shell.js"):
         line = [l for l in head.splitlines() if pair in l][0]

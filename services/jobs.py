@@ -58,14 +58,14 @@ async def process_one(db, job: BackgroundJob) -> bool:
         # worker to deliver, and completing the job keeps it out of the way.
         return True
     if job.job_type == "tryon":
-        from services.image_gen import get_provider, get_tryon_credentials
+        from services.image_gen import get_provider, get_tryon_selection
         from routers.clothes_images import _remove_temp_file
         paths = payload["reference_paths"]
-        # Credentials resolve at execution time (not enqueue) so a rotated
-        # Settings key applies to already-queued jobs; env stays fallback.
-        # Never stored in the payload — job rows must not hold secrets.
-        api_key, api_url = get_tryon_credentials(db)
-        provider = get_provider(api_key, api_url)
+        # Provider, model and key resolve at execution time (not enqueue) so a
+        # rotated Settings key applies to already-queued jobs. Never stored in
+        # the payload — job rows must not hold secrets.
+        provider_name, model_name, api_key = get_tryon_selection(db)
+        provider = get_provider(api_key, provider_name, model_name)
         try:
             image_bytes = await __import__("asyncio").to_thread(
                 provider.generate,
@@ -73,6 +73,7 @@ async def process_one(db, job: BackgroundJob) -> bool:
                 reference_image_paths=paths,
                 prompt_mid=payload.get("prompt_mid", ""),
                 prompt_suffix=payload.get("prompt_suffix", ""),
+                job_id=job.id,
             )
         finally:
             try:

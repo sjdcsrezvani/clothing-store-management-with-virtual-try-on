@@ -644,8 +644,10 @@ window.CHART_TOGGLE_NOTES = {{ toggle_notes|tojson }};
 
 // Every formatter is the bridge's own: one source, so an axis tick and a
 // bar's value can never say different things.
-var AC = window.AnalyticsCharts;
-if (window.echarts && AC) {
+window.RaykidWhen(function () {
+    return window.echarts && window.AnalyticsCharts;
+}, function () {
+    var AC = window.AnalyticsCharts;
     var dailyRevenues = dailyData.map(function (d) { return d.revenue; });
     var dailyAvg = dailyRevenues.length
         ? Math.round(dailyRevenues.reduce(function (a, b) { return a + b; }, 0) / dailyRevenues.length)
@@ -935,12 +937,7 @@ if (window.echarts && AC) {
         }];
         return opt;
     });
-} else {
-// The custom-renderer fallback was retired once ECharts proved itself in
-// production: sixteen builders, zero fallbacks. The one-line sentences
-// under every card still read aloud when the engine is blocked, so no
-// card ever goes silent.
-}
+});
 })();
 </script>
 <script src="/static/js/analytics-categories.js?v={{ static_version }}"></script>

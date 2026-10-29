@@ -15,7 +15,7 @@
     {% if error %}<div class="alert alert-error">⚠️ {{ error }}</div>{% endif %}
 
     <div class="card">
-        <form method="post" action="/admin/setup">
+        <form method="post" action="/admin/setup" hx-boost="false">
             {# ── Store branding ── #}
             <h3>مشخصات فروشگاه</h3>
             <div class="form-group">

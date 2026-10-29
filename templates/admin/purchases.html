@@ -287,13 +287,15 @@
                             <a href="/admin/purchases/{{ p.id }}/print" class="btn btn-sm btn-ghost" target="_blank">چاپ</a>
                             {% if p.is_draft %}
                             <form method="post" action="/admin/purchases/{{ p.id }}/delete"
-                                  onsubmit="return confirm('این پیش‌نویس حذف می‌شود. ادامه؟')">
+                                  data-confirm="این پیش‌نویس حذف می‌شود. ادامه؟"
+                                  data-confirm-title="حذف پیش‌نویس" data-confirm-ok="حذف" hx-boost="false">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="btn btn-sm btn-danger">حذف</button>
                             </form>
                             {% elif not p.is_reversed %}
                             <form method="post" action="/admin/purchases/{{ p.id }}/delete"
-                                  onsubmit="return confirm('این خرید برگشت داده می‌شود و تنوع‌هایش برای رسید دوباره آزاد می‌شوند. ادامه؟')">
+                                  data-confirm="این خرید برگشت داده می‌شود و تنوع‌هایش برای رسید دوباره آزاد می‌شوند. ادامه؟"
+                                  data-confirm-title="برگشت خرید" data-confirm-ok="برگشت" hx-boost="false">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="btn btn-sm btn-danger">برگشت</button>
                             </form>
@@ -868,13 +870,15 @@
         supplierSelect.addEventListener('focus', function () {
             prevSupplier = supplierSelect.value;
         });
-        supplierSelect.addEventListener('change', function () {
+        supplierSelect.addEventListener('change', async function () {
             var stocked = false;
             rowsHost.querySelectorAll('.purchase-item-row').forEach(function (row) {
                 if (rowVariant(row)) stocked = true;
             });
             if (stocked && supplierSelect.value !== prevSupplier
-                    && !window.confirm('تغییر تأمین‌کننده ردیف‌های انتخاب‌شده را حذف می‌کند. ادامه می‌دهید؟')) {
+                    && !(await window.RaykidConfirm.ask(
+                        'تغییر تأمین‌کننده ردیف‌های انتخاب‌شده را حذف می‌کند. ادامه می‌دهید؟',
+                        {title: 'تغییر تأمین‌کننده؟', ok: 'ادامه'}))) {
                 supplierSelect.value = prevSupplier;
                 paintScopeNote();
                 return;

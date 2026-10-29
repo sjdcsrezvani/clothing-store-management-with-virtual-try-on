@@ -342,7 +342,7 @@
                 </div>
 
                 <div class="muted gen-engine">
-                    موتور تولید: <strong>gpt-image-2</strong> (gapgpt)
+                    موتور تولید: <strong dir="ltr">{{ tryon_engine }}</strong>
                 </div>
 
                 <button type="submit" class="btn btn-primary btn-large btn-block btn-generate">
@@ -371,6 +371,9 @@
                          id="generated-img">
                 </button>
             </div>
+            {% if tryon_last_seconds %}
+            <p class="muted tryon-duration">زمان تولید: {{ tryon_last_seconds }} ثانیه</p>
+            {% endif %}
             <div class="row tryon-result-actions">
                 <a href="/admin/try-on/download?logo=yes" class="btn btn-success">دانلود</a>
                 <form method="post" action="/admin/try-on/save">
@@ -400,6 +403,10 @@
                 مشاهده گالری ({{ saved_count }} تصویر)
             </div>
         </a>
+
+        {% if show_tryon_debug %}
+        {% include 'partials/tryon_debug.html' %}
+        {% endif %}
     </div>
 </div>
 

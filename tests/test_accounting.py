@@ -336,7 +336,7 @@ def test_clearing_second_cost_price_falls_back_to_real_cost(client, db_session, 
     db_session.commit()
 
     _post(client, f"/admin/variants/{variant.id}", {
-        "size": "", "color": "", "price": "100000", "cost_price": "9000",
+        "size": "", "color": "", "price": "100000", "cost_price": "50000",
         "fake_cost_price": "", "stock_quantity": "5", "barcode": variant.barcode,
         "sku": "", "tryon_details": "",
     }, authed)
@@ -344,7 +344,25 @@ def test_clearing_second_cost_price_falls_back_to_real_cost(client, db_session, 
     db_session.refresh(variant)
     assert variant.fake_cost_price is None
     assert variant.cost_price == 50_000
-    assert _visible_cost_on_edit_page(client, variant) == "50000"
+
+
+def test_clearing_second_cost_price_lets_the_real_cost_be_edited(client, db_session, authed):
+    """Once the second cost is empty, the visible real cost is editable again:
+    that save must write the new real cost, not the old one."""
+    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=5, name="ویرایش قیمت واقعی")
+    variant.fake_cost_price = 9_000
+    db_session.commit()
+
+    _post(client, f"/admin/variants/{variant.id}", {
+        "size": "", "color": "", "price": "100000", "cost_price": "60000",
+        "fake_cost_price": "", "stock_quantity": "5", "barcode": variant.barcode,
+        "sku": "", "tryon_details": "",
+    }, authed)
+
+    db_session.refresh(variant)
+    assert variant.fake_cost_price is None
+    assert variant.cost_price == 60_000
+    assert _visible_cost_on_edit_page(client, variant) == "60000"
 
 
 def test_second_cost_price_survives_app_restart(client, db_session, authed):

@@ -20,6 +20,20 @@
 (function () {
     'use strict';
 
+    /* A boosted swap inserts the page's <script src> tags async, so the inline
+       script after them can run first and find its library still missing.
+       Its own DOMContentLoaded listener would never fire either — that event
+       is long gone. Wait for the dependency, then run once.
+       shortcut: gives up after 5s if the script never arrives; switch to
+       script load events if a slow network makes that visible. */
+    window.RaykidWhen = function (ready, run) {
+        var tries = 100;
+        (function wait() {
+            if (ready()) return run();
+            if (--tries) setTimeout(wait, 50);
+        })();
+    };
+
     // A boosted page-load swaps the whole body in place, and htmx re-runs
     // every inline script it swaps in. A re-run must produce no second
     // document-level listener (the QR countdown restarts, that is fine —
@@ -51,6 +65,20 @@
         } catch (error) {
             return false;
         }
+    }
+
+    /* Boost belongs to list regions, not the whole shell: a boosted link that
+       leaves the page (CSV, download, new tab) must keep the browser's own
+       behaviour instead of swapping a file into the body. */
+    function unboostNativeLinks(root) {
+        var scope = root || document;
+        if (!scope.querySelectorAll) scope = document.body;
+        if (!scope || !scope.querySelectorAll) return;
+        scope.querySelectorAll(
+            'a[target], a[download], a[href*="/export"], a[href*="/download"]'
+        ).forEach(function (link) {
+            link.setAttribute('hx-boost', 'false');
+        });
     }
 
     document.addEventListener('htmx:configRequest', function (event) {
@@ -102,6 +130,7 @@
        never swaps, the region wears its veil while its rows fly, focus lands
        on the marked heading after the swap, and the scroll never moves. */
     function bindBody() {
+        unboostNativeLinks(document);
         document.body.addEventListener('htmx:configRequest', function (event) {
             var elt = event.detail.elt;
             if (!elt || !elt.closest || !elt.closest('[data-list-region]')) return;
@@ -114,8 +143,19 @@
             }
             if (isGet && target.pathname === window.location.pathname) return;
             event.preventDefault();
-            if (isGet) window.location.assign(target.href);
-            else elt.submit(); // a POST inside a region acts like it always did
+            if (isGet) {
+                window.location.assign(target.href);
+            } else {
+                // A POST inside a region is a real form: run its own submit
+                // handlers (confirm dialogs, validation) instead of bypassing
+                // them with form.submit().
+                var boost = elt.getAttribute('hx-boost');
+                elt.setAttribute('hx-boost', 'false');
+                if (typeof elt.requestSubmit === 'function') elt.requestSubmit();
+                else elt.submit();
+                if (boost === null) elt.removeAttribute('hx-boost');
+                else elt.setAttribute('hx-boost', boost);
+            }
         });
 
         document.body.addEventListener('htmx:beforeRequest', function (event) {
@@ -144,6 +184,7 @@
         document.body.addEventListener('htmx:sendError', liftVeil);
 
         document.body.addEventListener('htmx:load', function (event) {
+            unboostNativeLinks(event.target);
             // A boosted nav answers with the server's flash row inside the new
             // body; the toaster already adopts those on a real load — adopt here.
             if (window.RaykidToast && window.RaykidToast.adopt) window.RaykidToast.adopt();

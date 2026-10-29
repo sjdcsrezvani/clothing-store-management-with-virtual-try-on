@@ -81,7 +81,8 @@ def test_pos_pill_probes_once_and_settles(client, db_session):
 def test_settings_test_key_swaps_the_status_line(client, db_session):
     _owner_client(client, db_session, name="htmx4-testkey")
     page = client.get("/admin/settings?tab=messaging").text
-    assert 'id="tryon-test-key" hx-post="/admin/tryon/test-key"' in page
+    assert 'id="tryon-test-key"' in page
+    assert 'hx-post="/admin/tryon/test-key"' in page
     assert '<script>' not in page.split("tryon-test-key")[0].split("{% if active_tab")[0]
 
     from tests.conftest import csrf_token
@@ -90,6 +91,20 @@ def test_settings_test_key_swaps_the_status_line(client, db_session):
     body = resp.text.lstrip()
     assert 'id="tryon-test-result" role="status"' in body
     assert "<html" not in body  # a status line, not a page
+
+
+def test_auth_forms_opt_out_of_boosted_body_swaps():
+    """A boosted login POST would swap the dashboard into the login body,
+    which still wears class="auth-shell" — and that class hides the sidebar.
+    The auth forms must always do a real navigation."""
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    for name in ("login.html", "setup.html"):
+        markup = (root / "templates" / "admin" / name).read_text(encoding="utf-8")
+        form = re.search(r"<form\b[^>]*>", markup)
+        assert form, name
+        assert 'hx-boost="false"' in form.group(0), name
 
 
 def test_every_poll_trigger_uses_a_unit_htmx_knows():

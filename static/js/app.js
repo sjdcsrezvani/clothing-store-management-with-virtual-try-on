@@ -86,7 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
    shows the field's own value, so the colour is never invisible; presets are
    product colours (garment data), not theme tokens, so literal hex is
    correct here. Late-added rows (variant editor) initialise the same way. */
-const COLOR_PRESETS = [
+var COLOR_PRESETS = [
     ['سفید', '#FFFFFF'], ['مشکی', '#000000'],
     ['سرمه‌ای', '#1E3A8A'], ['آبی', '#2563EB'],
     ['قرمز', '#DC2626'], ['صورتی', '#EC4899'],
@@ -97,7 +97,7 @@ const COLOR_PRESETS = [
    hands back is named by its closest neighbour here, so a زرشکی pick reads
    «زرشکی», not the nearest of the eight presets. Garment data again, not
    theme tokens — literal hex is correct. */
-const COLOR_NAMES = [
+var COLOR_NAMES = [
     ['سفید', '#FFFFFF'], ['شیری', '#FBF5E8'],
     ['صدفی', '#F4EDE4'], ['استخوانی', '#EFE5D2'],
     ['کرم', '#E7D8B7'], ['بژ', '#DCC9A8'],
@@ -137,7 +137,7 @@ const COLOR_NAMES = [
 // Display families for the picker's grid: every table colour sits in exactly
 // one row, in the words a shop groups colours by. The suite holds this list
 // level with the table.
-const COLOR_FAMILIES = [
+var COLOR_FAMILIES = [
     ['خنثی', ['سفید', 'شیری', 'صدفی', 'استخوانی', 'کرم', 'بژ', 'نود', 'نخودی']],
     ['خاکستری و مشکی', ['طوسی روشن', 'نقره‌ای', 'طوسی', 'طوسی تیره', 'دودی', 'ذغالی', 'مشکی']],
     ['قرمز', ['قرمز', 'قرمز تیره', 'جگری', 'آلبالویی', 'زرشکی', 'شرابی', 'عنابی', 'آجری', 'گلبهی', 'سرخابی']],
@@ -148,10 +148,10 @@ const COLOR_FAMILIES = [
     ['آبی', ['فیروزه‌ای', 'آبی آسمانی', 'آبی', 'آبی طوسی', 'نفتی', 'نیلی', 'آبی تیره', 'سرمه‌ای']],
     ['بنفش', ['یاسی', 'بنفش', 'بنفش تیره', 'ارغوانی', 'بادمجانی']],
 ];
-const COLOR_NAME_HEX = new Map(COLOR_NAMES);
+var COLOR_NAME_HEX = new Map(COLOR_NAMES);
 
 // Short #abc codes expand to aabbcc, the only form a colour input accepts.
-const hexCode = /^#?(?:([0-9a-f]{6})|([0-9a-f])([0-9a-f])([0-9a-f]))$/i;
+var hexCode = /^#?(?:([0-9a-f]{6})|([0-9a-f])([0-9a-f])([0-9a-f]))$/i;
 
 function nearestColorName(hex) {
     const m = hexCode.exec((hex || '').trim());
@@ -206,7 +206,15 @@ function initColorPickers(scope) {
         return null;
     }
     (scope || document).querySelectorAll('input[data-color-picker]').forEach(field => {
-        if (field.dataset.colorPickerReady) return;
+        if (field.dataset.colorPickerReady) {
+            // A boosted body swap can remove the panel (it lives on <body> so
+            // the variant row's overflow cannot clip it) while the field
+            // survives in the new body. Put it back on the next htmx pass.
+            if (field._colorPop && !document.contains(field._colorPop)) {
+                document.body.appendChild(field._colorPop);
+            }
+            return;
+        }
         field.dataset.colorPickerReady = 'true';
 
         const host = field.parentElement || document.body;
@@ -308,6 +316,7 @@ function initColorPickers(scope) {
         // row clips its children (`overflow: clip` for the accordion), so the
         // palette must live on the body and be placed by script.
         document.body.appendChild(pop);
+        field._colorPop = pop;
 
         const picker = document.createElement('input');
         picker.type = 'color';
@@ -378,6 +387,9 @@ function initColorPickers(scope) {
 
         swatch.addEventListener('click', event => {
             event.stopPropagation();
+            // Last line of defence: a swap that removed the panel but did not
+            // run the htmx pass yet. Reattach before opening.
+            if (!document.contains(pop)) document.body.appendChild(pop);
             const open = pop.hidden;
             document.querySelectorAll('.color-presets').forEach(other => { other.hidden = true; });
             document.querySelectorAll('.color-swatch').forEach(other => { other.setAttribute('aria-expanded', 'false'); });
@@ -401,6 +413,16 @@ document.addEventListener('click', event => {
     document.querySelectorAll('.color-presets').forEach(pop => { pop.hidden = true; });
     document.querySelectorAll('.color-swatch').forEach(swatch => { swatch.setAttribute('aria-expanded', 'false'); });
 });
+
+/* A boosted body swap runs the page's scripts before this deferred file is
+   back, and the swap can remove the palette panels (they live on <body> so
+   the variant row's overflow cannot clip them) while their fields survive in
+   the new body. Initialise what is already in the DOM when this file arrives,
+   and again after every htmx swap. */
+if (document.readyState !== 'loading') initColorPickers();
+if (window.htmx) {
+    document.addEventListener('htmx:load', event => initColorPickers(event.target));
+}
 
 // The palette is fixed to the viewport while the field scrolls away with the
 // page: close it rather than let it hang over whatever scrolled under it. Its

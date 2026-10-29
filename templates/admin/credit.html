@@ -69,7 +69,8 @@
     </div>
     {% if overview.no_due_date_count and terms_days > 0 %}
     <form method="post" action="/admin/credit/assign-due-dates" class="credit-maintenance"
-          onsubmit="return confirm('برای {{ overview.no_due_date_count }} فاکتور باز سررسید {{ terms_days }} روزه ثبت می‌شود. سن بدهی‌شان عوض می‌شود. ادامه؟')">
+          data-confirm="برای {{ overview.no_due_date_count }} فاکتور باز سررسید {{ terms_days }} روزه ثبت می‌شود. سن بدهی‌شان عوض می‌شود. ادامه؟"
+          data-confirm-title="ثبت سررسید" data-confirm-ok="ثبت سررسید" hx-boost="false">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <p>
             {{ overview.no_due_date_count }} فاکتور باز سررسید ندارند و تا امروز از تاریخ خودشان سن می‌خورند.
@@ -362,7 +363,8 @@
     </div>
     {% if has_reminder_pattern %}
     <form method="post" action="/admin/credit/remind-overdue"
-          onsubmit="return confirm('یادآوری برای {{ overview.overdue_customers }} مشتری سررسیدگذشته در صف ارسال قرار می‌گیرد. ادامه؟')">
+          data-confirm="یادآوری برای {{ overview.overdue_customers }} مشتری سررسیدگذشته در صف ارسال قرار می‌گیرد. ادامه؟"
+          data-confirm-title="ارسال یادآوری" data-confirm-ok="ارسال" hx-boost="false">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button type="submit" class="btn btn-ghost">ارسال یادآوری برای سررسیدگذشته‌ها</button>
     </form>

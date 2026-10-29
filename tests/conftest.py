@@ -18,7 +18,6 @@ os.environ["ADMIN_PASSWORD"] = "test-admin-pass"
 os.environ["API_TOKEN"] = "test-api-token"
 os.environ["SESSION_SECRET"] = "test-session-secret"
 os.environ["SMS_API_KEY"] = ""  # never attempt a real SMS in tests
-os.environ["TRYON_API_KEY"] = ""
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 

@@ -93,7 +93,9 @@
     </div>
     {% if products %}
     {% if state == 'active' %}
-    <form id="bulk-archive-form" method="post" action="/admin/products/bulk-archive" class="bulk-bar" hidden onsubmit="return confirm('محصولات انتخاب‌شده و تنوع‌هایشان بایگانی شود؟')">
+    <form id="bulk-archive-form" method="post" action="/admin/products/bulk-archive" class="bulk-bar" hidden
+          data-confirm="محصولات انتخاب‌شده و تنوع‌هایشان بایگانی شود؟"
+          data-confirm-title="بایگانی محصولات" data-confirm-ok="بایگانی کن" hx-boost="false">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <strong><span id="bulk-count">۰</span> انتخاب شده</strong>
         <button type="submit" class="btn btn-sm btn-danger">بایگانی انتخاب‌شده‌ها</button>
@@ -168,12 +170,16 @@
                         <div class="table-actions">
                             <a href="/admin/products/{{ product.id }}?next={{ list_qs|urlencode }}" class="btn btn-sm btn-ghost">ویرایش</a>
                             {% if state == 'archived' %}
-                            <form method="post" action="/admin/products/{{ product.id }}/restore" onsubmit="return confirm('«{{ product.name }}» و تنوع‌هایش به فهرست برگردد؟')">
+                            <form method="post" action="/admin/products/{{ product.id }}/restore"
+                                  data-confirm="«{{ product.name }}» و تنوع‌هایش به فهرست برگردد؟"
+                                  data-confirm-title="بازگردانی محصول" data-confirm-ok="بازگردانی" hx-boost="false">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="btn btn-sm btn-ghost">بازگردانی</button>
                             </form>
                             {% else %}
-                            <form method="post" action="/admin/products/{{ product.id }}/delete" onsubmit="return confirm('این محصول و تنوع‌هایش بایگانی شود؟')">
+                            <form method="post" action="/admin/products/{{ product.id }}/delete"
+                                  data-confirm="این محصول و تنوع‌هایش بایگانی شود؟"
+                                  data-confirm-title="بایگانی محصول" data-confirm-ok="بایگانی کن" hx-boost="false">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="btn btn-sm btn-danger-quiet">بایگانی</button>
                             </form>

@@ -1267,11 +1267,13 @@ async def admin_variant_update(
         except ValueError:
             fake_cost_price_int = variant.fake_cost_price
 
-    if fake_cost_price_int is not None or variant.fake_cost_price is not None:
-        # A second (display-only) cost is in play, so the visible cost field is
-        # only a mirror of it: never let it rewrite the real cost basis.
+    if fake_cost_price_int is not None:
+        # The second (display-only) cost is showing: the visible field is only
+        # its mirror, so never let it rewrite the real cost basis.
         cost_price_int = variant.cost_price
     else:
+        # The second cost is empty: the visible field is showing the real cost
+        # again and is editable, so this save owns the real cost basis.
         try:
             cost_price_int = int(to_english_digits(cost_price))
         except ValueError:
@@ -1408,10 +1410,10 @@ async def admin_variant_update(
     from services.security import log_action
     log_action(db, "variant_update", f"ویرایش تنوع #{variant.id}", request=request, target_type="variant", target_id=variant.id)
 
-    # A variant has one parent: a save lands on that product's page, whatever
-    # list state the link that opened the row carried.
+    # A save stays on the variant it edited: the row is the subject, and a
+    # return to the product page made the fake-cost field look unsaved.
     return RedirectResponse(
-        url=f"/admin/products/{variant.product_id}",
+        url=f"/admin/variants/{variant.id}/edit",
         status_code=303,
     )
 

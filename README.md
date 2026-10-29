@@ -530,7 +530,10 @@ values editable in the admin panel). See `.env.example` for every variable.
 | `SESSION_SECRET` | Signs login sessions; set once, keep it secret |
 | `API_TOKEN` | Unlocks `/api/*` for the phone app (photo upload / try-on) |
 | `RAYKID_GATEWAY_PORT` | Port for the SMS device gateway (default 8101) |
-| `TRYON_API_URL` / `TRYON_API_KEY` | Virtual try-on image API |
+
+Virtual try-on credentials are configured in the admin panel, not `.env`.
+Older installs that kept `TRYON_API_KEY` / `TRYON_API_URL` in `.env` must copy
+them into the panel once; those variables are no longer read.
 
 > **Never commit `.env`** — it contains secrets. It is already in `.gitignore`.
 

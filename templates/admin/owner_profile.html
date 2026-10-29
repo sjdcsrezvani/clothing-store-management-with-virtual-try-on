@@ -40,7 +40,20 @@
   {% if owner_settings.get('owner_logo_path') %}
   <p class="form-span-2"><img src="{{ owner_settings.get('owner_logo_path') }}" alt="لوگوی فروشگاه" style="max-height: 72px;"><br><label class="check-row"><input type="checkbox" name="remove_logo" value="1"> حذف لوگو</label></p>
   {% endif %}
-  <label class="hire-field">لوگوی فروشگاه<input type="file" name="logo" accept="image/png,image/jpeg,image/webp"><small class="field-help">در سربرگ قرارداد و رسید چاپ می‌شود؛ اختیاری</small></label>
+  <div class="hire-field"><span>لوگوی فروشگاه</span>
+    <div class="image-field" data-image-field>
+      <label class="image-drop" for="owner-logo">
+        <span class="image-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></span>
+        <span class="image-drop-copy"><strong>انتخاب لوگو</strong><small>کلیک کنید یا عکس را اینجا رها کنید · JPG، PNG، WebP</small></span>
+        <input class="image-input" type="file" id="owner-logo" name="logo" accept="image/png,image/jpeg,image/webp">
+      </label>
+      <div class="image-picked" data-image-picked hidden>
+        <div class="image-picked-grid" data-image-picked-grid></div>
+        <button type="button" class="image-clear" data-image-clear>حذف انتخاب</button>
+      </div>
+    </div>
+    <small class="field-help">در سربرگ قرارداد و رسید چاپ می‌شود؛ اختیاری</small>
+  </div>
   <label class="hire-field">نام کسب‌وکار <span class="muted">(الزامی برای قرارداد)</span><input name="owner_business_name" value="{{ owner_settings.get('owner_business_name', store.name) }}"></label>
   <label class="hire-field">شماره ثبت کسب‌وکار<input name="owner_business_registration" value="{{ owner_settings.get('owner_business_registration', '') }}" dir="ltr"></label>
   <label class="hire-field">حساب بانکی کسب‌وکار<input name="owner_bank_account" value="{{ owner_settings.get('owner_bank_account', '') }}" dir="ltr" inputmode="numeric"></label>

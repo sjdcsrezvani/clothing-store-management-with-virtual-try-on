@@ -1,0 +1,36 @@
+{# Owner-only diagnostic panel: the last provider attempts with the exact body
+   fields, HTTP status, normalized category and per-stage timings. It is how a
+   model sweep is read; it never includes the API key. #}
+<details class="card tryon-debug">
+    <summary>گزارش درخواست‌ها — {{ tryon_attempts|length }} مورد آخر (فقط مالک)</summary>
+    {% if tryon_attempts %}
+    <div class="tryon-debug-list">
+        {% for a in tryon_attempts %}
+        <div class="tryon-debug-row{% if not a.ok %} is-fail{% endif %}">
+            <div class="tryon-debug-head">
+                <strong dir="ltr">{{ a.model }}</strong>
+                <span class="muted" dir="ltr">{{ a.provider }}{% if a.job_id %} · #{{ a.job_id }}{% endif %}</span>
+                <span class="muted" dir="ltr">{{ a.at.strftime('%H:%M:%S') }}</span>
+                <span class="tryon-debug-badge">{% if a.ok %}موفق{% else %}{{ a.category }}{% endif %}</span>
+            </div>
+            <div class="muted" dir="ltr">
+                total {{ a.total_ms }}ms · prep {{ a.prep_ms }}ms · request {{ a.request_ms }}ms · download {{ a.download_ms }}ms
+                {% if a.status %}· HTTP {{ a.status }}{% endif %}
+                {% if a.result_bytes %}· {{ a.result_bytes }} bytes{% endif %}
+            </div>
+            <div class="muted" dir="ltr">{{ a.fields }}</div>
+            {% if a.code %}<div class="muted" dir="ltr">code: {{ a.code }}</div>{% endif %}
+            {% if a.error %}<div class="tryon-debug-error">{{ a.error }}</div>{% endif %}
+            {% if a.raw and not a.ok %}
+            <details class="tryon-debug-raw">
+                <summary class="muted">پاسخ خام ارائه‌دهنده</summary>
+                <pre dir="ltr">{{ a.raw }}</pre>
+            </details>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">هنوز درخواستی ثبت نشده است.</p>
+    {% endif %}
+</details>

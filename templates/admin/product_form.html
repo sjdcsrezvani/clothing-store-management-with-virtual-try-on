@@ -182,7 +182,7 @@
                     <td>{{ variant.reorder_point or 0 }}</td>
                     <td>{% if variant.demand_count %}<span class="badge badge-info">{{ variant.demand_count }} تقاضا</span>{% else %}<span class="muted">—</span>{% endif %}</td>
                     <td>
-                        <button type="submit" form="restore-form-{{ variant.id }}" class="btn btn-sm btn-ghost" onclick="return confirm('این تنوع به فهرست برگردد؟')">بازگردانی</button>
+                        <button type="submit" form="restore-form-{{ variant.id }}" class="btn btn-sm btn-ghost">بازگردانی</button>
                     </td>
                 </tr>
                 {% endfor %}
@@ -222,9 +222,19 @@
                         <label for="size_run_location">محل انبار</label>
                         <input type="text" id="size_run_location" name="size_run_location" placeholder="قفسه A-2">
                     </div>
-                    <div class="form-group">
-                        <label for="size_run_photo">تصویر این رنگ</label>
-                        <input type="file" id="size_run_photo" name="size_run_photo" accept="image/png,image/jpeg,image/webp">
+                    <div class="form-group form-span-2">
+                        <span class="field-label">تصویر این رنگ</span>
+                        <div class="image-field" data-image-field>
+                            <label class="image-drop" for="size_run_photo">
+                                <span class="image-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></span>
+                                <span class="image-drop-copy"><strong>انتخاب عکس</strong><small>کلیک کنید یا عکس را اینجا رها کنید · JPG، PNG، WebP</small></span>
+                                <input class="image-input" type="file" id="size_run_photo" name="size_run_photo" accept="image/png,image/jpeg,image/webp">
+                            </label>
+                            <div class="image-picked" data-image-picked hidden>
+                                <div class="image-picked-grid" data-image-picked-grid></div>
+                                <button type="button" class="image-clear" data-image-clear>حذف انتخاب</button>
+                            </div>
+                        </div>
                         <small class="field-help">یک عکس برای همه سایزهای این رنگ.</small>
                     </div>
                 </div>
@@ -258,13 +268,59 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 </form>
     {% else %}
-    <form id="restore-form-{{ variant.id }}" method="post" action="/admin/variants/{{ variant.id }}/restore">
+    <form id="restore-form-{{ variant.id }}" method="post" action="/admin/variants/{{ variant.id }}/restore" hx-boost="false"
+          data-confirm="این تنوع به فهرست فروش برگردد؟" data-confirm-title="بازگردانی تنوع" data-confirm-ok="بازگردانی">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     </form>
     {% endif %}
     {% endfor %}
 </div>
 {% endif %}
+
+<div id="product-confirm" data-dialog role="alertdialog" aria-modal="true"
+     aria-labelledby="product-confirm-title" aria-describedby="product-confirm-text"
+     class="confirm-scrim" tabindex="-1">
+    <div class="t-modal-card confirm-card" role="document">
+        <h3 id="product-confirm-title">مطمئن هستید؟</h3>
+        <p class="muted" id="product-confirm-text"></p>
+        <div class="confirm-actions">
+            <button type="button" class="btn btn-danger" id="product-confirm-yes">تأیید</button>
+            <button type="button" class="btn btn-ghost" data-dialog-close>انصراف</button>
+        </div>
+    </div>
+</div>
+<script>
+(function () {
+    // Row actions carry their sentence in data-confirm; the dialog reads it
+    // back and only the explicit confirm submits.
+    var pendingForm = null;
+    document.addEventListener('submit', function (event) {
+        var form = event.target.closest ? event.target.closest('form[data-confirm]') : null;
+        if (!form || form === pendingForm || !window.RaykidDialog) return;
+        event.preventDefault();
+        pendingForm = form;
+        document.getElementById('product-confirm-title').textContent =
+            form.getAttribute('data-confirm-title') || 'مطمئن هستید؟';
+        document.getElementById('product-confirm-text').textContent =
+            form.getAttribute('data-confirm') || '';
+        document.getElementById('product-confirm-yes').textContent =
+            form.getAttribute('data-confirm-ok') || 'تأیید';
+        window.RaykidDialog.open('product-confirm', document.activeElement);
+    }, true);
+    document.addEventListener('click', function (event) {
+        if (!event.target.closest) return;
+        if (event.target.closest('[data-dialog-close]')) { pendingForm = null; return; }
+        if (!event.target.closest('#product-confirm-yes')) return;
+        var form = pendingForm;
+        pendingForm = null;
+        window.RaykidDialog.close('product-confirm');
+        if (form) form.submit();
+    });
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') pendingForm = null;
+    });
+})();
+</script>
 
 <script>
 /* Variant rows: re-entry safe for boosted arrivals. The shell re-runs this
@@ -321,6 +377,7 @@ function copyPhoto(from, to) {
         const transfer = new DataTransfer();
         transfer.items.add(file);
         to.files = transfer.files;
+        to.dispatchEvent(new Event('change', { bubbles: true }));
     } catch (error) {
         // An empty photo field is still a valid row.
     }
@@ -633,7 +690,20 @@ function addVariant(spec) {
                 </label><input type="text" inputmode="numeric" name="variant_reorder_point_${index}" min="0" data-sync-default="point" aria-describedby="hint-vrp-${index}" value="{{ (product.default_reorder_point or 0) if product else 0 }}" placeholder="مثال: 5"></div>
                 <div class="form-group"><label>محل انبار</label><input type="text" name="variant_storage_location_${index}" placeholder="قفسه A-2"></div>
             </div>
-            <div class="form-group"><label>تصویر تنوع</label><input type="file" name="variant_image_${index}" accept="image/png,image/jpeg,image/webp"></div>
+            <div class="form-group">
+                <span class="field-label">تصویر اصلی تنوع</span>
+                <div class="image-field" data-image-field>
+                    <label class="image-drop">
+                        <span class="image-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></span>
+                        <span class="image-drop-copy"><strong>انتخاب تصویر اصلی</strong><small>کلیک کنید یا عکس را اینجا رها کنید · JPG، PNG، WebP</small></span>
+                        <input class="image-input" type="file" name="variant_image_${index}" accept="image/png,image/jpeg,image/webp">
+                    </label>
+                    <div class="image-picked" data-image-picked hidden>
+                        <div class="image-picked-grid" data-image-picked-grid></div>
+                        <button type="button" class="image-clear" data-image-clear>حذف انتخاب</button>
+                    </div>
+                </div>
+            </div>
             <div class="variant-entry-total">ارزش موجودی: <strong class="tnum" data-row-total>—</strong></div>
             </div></div></div>
             <input type="hidden" name="variant_index_${index}" value="${index}">
@@ -641,6 +711,7 @@ function addVariant(spec) {
     initColorPickers(container);
     if (window.RaykidSizing) window.RaykidSizing.setup(container);
     const fresh = container.lastElementChild;
+    if (window.initImageFields) window.initImageFields(fresh);
     if (spec) {
         // A row out of a size run: the colour's values, the run's size.
         applySizeRun(fresh, spec);
@@ -723,13 +794,18 @@ function bootSizeRun() {
         color.addEventListener('change', () => {
             if (panel.dataset.photoPicked === '1') return;
             const photo = document.getElementById('size_run_photo');
-            if (photo) photo.value = '';
+            if (photo) {
+                photo.value = '';
+                photo.dispatchEvent(new Event('change', { bubbles: true }));
+            }
         });
     }
     const photo = document.getElementById('size_run_photo');
     if (photo && !photo.dataset.sizeRunBound) {
         photo.dataset.sizeRunBound = 'true';
-        photo.addEventListener('change', () => { panel.dataset.photoPicked = '1'; });
+        photo.addEventListener('change', () => {
+            panel.dataset.photoPicked = photo.files && photo.files.length ? '1' : '0';
+        });
     }
     renderSizeRun();
 }

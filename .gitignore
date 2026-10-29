@@ -52,6 +52,9 @@ owner_bundle/
 
 # ── Local workspace artifacts ──
 .freebuff/
+.opencode/
+.clinerules/
+transactions.log
 
 # ── Internal notes / editor artifacts ──
 local-config/

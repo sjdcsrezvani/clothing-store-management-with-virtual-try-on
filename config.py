@@ -9,11 +9,6 @@ load_dotenv()
 # publicly-known default.
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./referral.db")
-DEFAULT_REFERRER_DISCOUNT = int(os.getenv("DEFAULT_REFERRER_DISCOUNT", "50000"))
-DEFAULT_REFERRED_DISCOUNT = int(os.getenv("DEFAULT_REFERRED_DISCOUNT", "30000"))
-TRYON_API_URL = os.getenv("TRYON_API_URL") or "https://api.gapgpt.app/v1/images/edits"
-TRYON_API_KEY = os.getenv("TRYON_API_KEY", "")
-PUTER_TOKEN = os.getenv("PUTER_TOKEN", "")
 
 # Session-signing secret. Random per start when unset (logs everyone out on
 # restart); set it in .env to keep sessions across restarts.

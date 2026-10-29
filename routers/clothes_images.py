@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import Product, ProductVariant, GeneratedImage, BackgroundJob, Settings, to_english_digits
 from services._common import check_admin, fmt, jalali_str
-from services.image_gen import ImageGenService, ImageGenerationError, composite_logo, MAIN_PROMPT
+from services.image_gen import composite_logo, get_tryon_selection
 from services.security import require_api_token, tryon_can_generate, tryon_daily_remaining, log_action, require_html_role
 from services.capture_device import (
     AUTH_HEADER, authenticate_device, is_paired, pair_device,
@@ -34,7 +34,6 @@ logger = logging.getLogger(__name__)
 
 admin_router = APIRouter(prefix="/admin")
 api_router = APIRouter(prefix="/api", dependencies=[Depends(require_api_token)])
-image_gen = ImageGenService()
 
 UPLOAD_DIR = Path("static/uploads")
 GENERATED_DIR = UPLOAD_DIR / "generated"
@@ -283,11 +282,21 @@ _capture_inbox: dict = {"scanned": [], "kid_photo_bytes": None,
                         "kid_photo_content_type": "image/jpeg"}
 
 
+def _upsert_scanned(scanned: list[dict], item: dict) -> None:
+    """Put the newly scanned variant on its product's existing card, in place.
+    The code just entered must win; keeping the old card would generate the
+    previous color while the screen shows the new code."""
+    for index, existing in enumerate(scanned):
+        if existing["id"] == item["id"]:
+            scanned[index] = item
+            return
+    scanned.append(item)
+
+
 def _drain_capture_inbox(state: dict) -> None:
     """Move phone-captured scans/photo into this browser's session state."""
     for item in _capture_inbox["scanned"]:
-        if not any(s["id"] == item["id"] for s in state["scanned"]):
-            state["scanned"].append(item)
+        _upsert_scanned(state["scanned"], item)
     _capture_inbox["scanned"] = []
     if _capture_inbox["kid_photo_bytes"] and not state["kid_photo_bytes"]:
         try:
@@ -378,43 +387,96 @@ def _custom_prompt_clause(raw: str) -> str:
     return text[:500]
 
 
-def _variant_image_path(variant: ProductVariant) -> Optional[str]:
-    """Real garment photo of a specific variant as a disk path (skips barcode images).
-    Returns None if the variant has no usable product photo."""
-    if variant.image_path and "/uploads/barcodes/" not in variant.image_path:
-        return variant.image_path.lstrip("/")
+def _usable_image_path(path: Optional[str]) -> Optional[str]:
+    """A garment photo usable as a try-on reference, as a disk-relative path.
+    Barcode label images are not product photos."""
+    if not path or "/uploads/barcodes/" in path:
+        return None
+    return path.lstrip("/")
+
+
+def _product_image_path(product: Product) -> Optional[str]:
+    """The product-level photo, or its first gallery frame."""
+    candidates = [product.image_path] + [frame.image_path for frame in product.images]
+    for path in candidates:
+        usable = _usable_image_path(path)
+        if usable:
+            return usable
     return None
 
 
+def _variant_image_path(variant: ProductVariant) -> Optional[str]:
+    """Real garment photo of a specific variant as a disk path (skips barcode
+    images). The legacy single image wins; a gallery-only variant falls back to
+    its first frame, so a photo uploaded through the gallery is never missed."""
+    candidates = [variant.image_path] + [frame.image_path for frame in variant.images]
+    for path in candidates:
+        usable = _usable_image_path(path)
+        if usable:
+            return usable
+    return None
+
+
+def _same_color_variant_path(product: Product, scanned: ProductVariant) -> Optional[str]:
+    """A photo of another size in the same color — size does not matter for
+    try-on, color does. Returns None when no such photo exists."""
+    color = (scanned.color or "").strip()
+    if not color:
+        return None
+    for variant in product.variants:
+        if variant.id == scanned.id:
+            continue
+        if (variant.color or "").strip() != color:
+            continue
+        path = _variant_image_path(variant)
+        if path:
+            return path
+    return None
+
+
+def _product_photo_matches_color(product: Product, scanned: ProductVariant) -> bool:
+    """True when the product-level photo cannot be showing a different color:
+    every variant records the scanned color (or no color is recorded). Inactive
+    variants count too — a legacy product photo can show a retired color."""
+    colors = {(variant.color or "").strip() for variant in product.variants}
+    colors.discard("")
+    return not colors or colors == {(scanned.color or "").strip()}
+
+
 def _product_image_paths(product: Product, barcode: Optional[str] = None) -> list[str]:
-    """Get real garment photos of a product as disk paths (skips barcode images).
-    When `barcode` is given, the scanned variant's own photo is preferred first
-    (e.g. the red variant's photo when red was scanned). Other variants' photos
-    are not included so the AI isn't confused by a different color. Falls back to
-    the product-level image, then to one variant image only, if no specific
-    variant photo is available."""
-    paths = []
-    # 1) Prefer the scanned variant's own photo.
+    """Get the garment photos of a product as disk paths (skips barcode images).
+
+    When `barcode` is given, exactly the scanned variant's own photo is used.
+    If that variant has no photo, a photo of another size in the **same color**
+    is used — never another color, and never an ambiguous product photo. The
+    route blocks the generation when this returns empty, because a wrong-color
+    reference produces a wrong, paid image."""
+    scanned = None
     if barcode:
-        for variant in product.variants:
-            if variant.barcode == barcode:
-                p = _variant_image_path(variant)
-                if p and p not in paths:
-                    paths.append(p)
-                break
-    # 2) Fall back to the product-level photo if no variant photo matched.
-    if not paths and product.image_path and "/uploads/barcodes/" not in product.image_path:
-        paths.append(product.image_path.lstrip("/"))
-    # 3) Last resort: one real variant photo only. Never send every color as
-    # fallback: that recreates the old cost/confusion problem. The caller still
-    # gets a usable reference when possible, but the request stays bounded.
-    if not paths:
-        for variant in product.variants:
-            p = _variant_image_path(variant)
-            if p:
-                paths.append(p)
-                break
-    return paths
+        scanned = next((v for v in product.variants if v.barcode == barcode), None)
+        if not scanned:
+            return []  # stale state: never guess another variant's color
+    if scanned:
+        path = _variant_image_path(scanned)
+        if path:
+            return [path]
+        path = _same_color_variant_path(product, scanned)
+        if path:
+            return [path]
+        if _product_photo_matches_color(product, scanned):
+            path = _product_image_path(product)
+            if path:
+                return [path]
+        return []
+    # No barcode (legacy callers): product photo, then one real variant photo.
+    path = _product_image_path(product)
+    if path:
+        return [path]
+    for variant in product.variants:
+        path = _variant_image_path(variant)
+        if path:
+            return [path]
+    return []
 
 
 def _background_prompt(key: str) -> str:
@@ -538,19 +600,15 @@ def _build_tryon_prompt(product_names: str,
 
 def _scanned_product_dict(product: Product, barcode: str) -> dict:
     """Build the try-on card dict for a scanned variant.
-    `image_path` is the scanned variant's own photo (matched by barcode), so
-    scanning the red variant shows the red photo — not whichever variant sorts
-    first. Falls back to the product-level image only if the variant has no
-    real product photo."""
-    image_path = None
+    `image_path` is the exact photo the provider will receive (same variant,
+    else another size in the same color), so the preview cannot show one color
+    while the AI is sent another."""
     details = ""
     for v in product.variants:
         if v.barcode == barcode:
             details = v.tryon_details or ""
-            if v.image_path and "/uploads/barcodes/" not in v.image_path:
-                image_path = v.image_path
-    if not image_path:
-        image_path = product.image_path
+    paths = _product_image_paths(product, barcode)
+    image_path = f"/{paths[0]}" if paths else None
     variants = [
         {"barcode": v.barcode, "label": (v.tryon_details or v.barcode or "")[:60]}
         for v in (product.variants or []) if v.is_active and v.barcode
@@ -622,11 +680,21 @@ def _tryon_context(db: Session, request: Request, *, msg: str = "", err: str = "
     job = _latest_tryon_job(request, db)
     last_gen_url = job.result_url if job and job.status == "completed" else None
     from services.security import tryon_daily_remaining as _tryon_remaining
+    from services import tryon_debug
+    provider, model, _key = get_tryon_selection(db)
+    is_owner = request.session.get("staff_role") == "owner"
+    attempt = tryon_debug.latest_for_job(job.id) if job else None
+    last_seconds = (f"{attempt['total_ms'] / 1000:.1f}"
+                    if attempt and attempt.get("ok") else None)
     return {
         "kid_photo_preview": state["kid_photo_preview"],
         "scanned": state["scanned"],
         "last_gen_url": last_gen_url,
-        "last_gen_engine": None,
+        "last_gen_engine": f"{model} ({provider})",
+        "tryon_engine": f"{model} ({provider})",
+        "tryon_last_seconds": last_seconds,
+        "show_tryon_debug": is_owner,
+        "tryon_attempts": tryon_debug.recent() if is_owner else [],
         "tryon_job_id": job.id if job else None,
         "tryon_job_status": job.status if job else None,
         "tryon_job_error": job.error_message if job and job.status == "failed" else None,
@@ -733,10 +801,11 @@ async def admin_tryon_add_product(
         return RedirectResponse(url="/admin/try-on?err=بارکد یافت نشد.", status_code=303)
     product = variant.product
     state = _state(request)
-    if not any(s["id"] == product.id for s in state["scanned"]):
-        state["scanned"].append(_scanned_product_dict(product, variant.barcode))
-        return RedirectResponse(url="/admin/try-on?msg=محصول اضافه شد.", status_code=303)
-    return RedirectResponse(url="/admin/try-on?msg=محصول از قبل اضافه شده است.", status_code=303)
+    had_product = any(s["id"] == product.id for s in state["scanned"])
+    _upsert_scanned(state["scanned"], _scanned_product_dict(product, variant.barcode))
+    if had_product:
+        return RedirectResponse(url="/admin/try-on?msg=تنوع محصول به‌روز شد.", status_code=303)
+    return RedirectResponse(url="/admin/try-on?msg=محصول اضافه شد.", status_code=303)
 
 
 @admin_router.post("/try-on/remove-product", response_class=HTMLResponse)
@@ -849,10 +918,23 @@ async def admin_tryon_generate(
     # not whichever variant image sorts first. The kid photo is materialized only
     # for this request and is deleted immediately afterward.
     reference_paths = []
+    missing_images = []
     for s in state["scanned"]:
         product = next((p for p in products if p.id == s["id"]), None)
-        if product:
-            reference_paths.extend(_product_image_paths(product, s["barcode"]))
+        if not product:
+            continue
+        paths = _product_image_paths(product, s["barcode"])
+        if not paths:
+            missing_images.append(f"{s['name']} ({s['barcode']})")
+        reference_paths.extend(paths)
+    # A scanned row with no usable photo must stop the request: generating from
+    # the other products would print a prompt naming a garment the AI never saw.
+    if missing_images:
+        return RedirectResponse(
+            url=("/admin/try-on?err=برای این تنوع عکس محصول ثبت نشده است: "
+                 + "، ".join(missing_images)
+                 + " — تصویر اصلی تنوع را در محصولات ثبت کنید یا محصول را بردارید."),
+            status_code=303)
     # Do not upload the same file twice if products share a fallback image.
     reference_paths = list(dict.fromkeys(reference_paths))
 
@@ -998,27 +1080,44 @@ async def admin_tryon_cancel_job(job_id: int, request: Request, db: Session = De
 
 
 @admin_router.post("/tryon/test-key", response_class=JSONResponse)
-async def admin_tryon_test_key(request: Request, db: Session = Depends(get_db)):
-    """Cheap non-billable credential probe for the settings page. The
-    settings button swaps the answer as the status line; other callers keep
+async def admin_tryon_test_key(
+    request: Request,
+    provider: str = Form(""),
+    model: str = Form(""),
+    tryon_api_key: str = Form(""),
+    tryon_api_key_avalai: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Cheap non-billable probe for the settings page. The form fields let the
+    owner test a key/model before saving; blank fields fall back to Settings.
+    The settings button swaps the answer as the status line, other callers keep
     the JSON contract."""
-    from services.image_gen import get_provider, get_tryon_credentials
+    from services.image_gen import get_provider, get_tryon_selection
+    from services.image_models import resolve_selection
     guard = require_html_role(request, db, "owner")
     if not hasattr(guard, "role"):
         return guard
-    api_key, api_url = get_tryon_credentials(db)
-    provider = get_provider(api_key, api_url)
+    saved_provider, saved_model, saved_key = get_tryon_selection(db)
+    chosen_provider, entry = resolve_selection(provider or saved_provider,
+                                               model or saved_model)
+    typed = (tryon_api_key if chosen_provider == "gapgpt" else tryon_api_key_avalai).strip()
+    key = typed or (saved_key if chosen_provider == saved_provider else "")
+    probe = get_provider(key, chosen_provider, entry["id"])
     try:
-        result = provider.test_connection()
+        result = probe.test_connection()
     finally:
         try:
-            provider.cleanup()
+            probe.cleanup()
         except Exception:
             pass
+    result["provider"] = chosen_provider
+    result["model"] = entry["id"]
     if request.headers.get("HX-Request"):
         return templates.TemplateResponse(request, "partials/tryon_key_test.html", {
             "ok": bool(result.get("ok")),
             "error": result.get("error") or "",
+            "provider": chosen_provider,
+            "model": entry["id"],
         })
     return result
 
@@ -1205,8 +1304,7 @@ async def scan_barcode(data: ScanBarcodeRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="محصول با این بارکد یافت نشد.")
     product = variant.product
     item = _scanned_product_dict(product, variant.barcode)
-    if not any(s["id"] == item["id"] for s in _capture_inbox["scanned"]):
-        _capture_inbox["scanned"].append(item)
+    _upsert_scanned(_capture_inbox["scanned"], item)
     return {"status": "ok", "product": {"id": product.id, "name": product.name, "barcode": variant.barcode}, "scanned_count": len(_capture_inbox["scanned"])}
 
 
@@ -1331,9 +1429,19 @@ async def api_generate(
         ).all()
         for v in variants_with_products:
             barcode_by_product_id.setdefault(v.product_id, v.barcode)
+    missing_images = []
     for product in products:
         barcode = barcode_by_product_id.get(product.id)
-        reference_paths.extend(_product_image_paths(product, barcode))
+        paths = _product_image_paths(product, barcode)
+        if not paths:
+            missing_images.append(f"{product.name} ({barcode or '—'})")
+        reference_paths.extend(paths)
+    if missing_images:
+        raise HTTPException(
+            status_code=400,
+            detail=("برای این تنوع عکس محصول ثبت نشده است: "
+                    + "، ".join(missing_images)
+                    + " — تصویر اصلی تنوع را در محصولات ثبت کنید."))
     # Do not upload the same file twice if products share a fallback image.
     reference_paths = list(dict.fromkeys(reference_paths))
 

@@ -245,7 +245,8 @@
             <h3>حذف پیش‌نویس</h3>
             <p class="muted">این فاکتور هنوز هیچ اثر مالی ندارد؛ حذف آن فقط همین پیش‌نویس را پاک می‌کند.</p>
             <form method="post" action="/admin/purchases/{{ purchase.id }}/delete"
-                  onsubmit="return confirm('این پیش‌نویس حذف شود؟')">
+                  data-confirm="این پیش‌نویس حذف شود؟"
+                  data-confirm-title="حذف پیش‌نویس" data-confirm-ok="حذف" hx-boost="false">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn btn-danger">حذف پیش‌نویس</button>
             </form>
@@ -255,7 +256,8 @@
             <h3>برگشت خرید</h3>
             <p class="muted">برای حفظ تاریخچه، خرید حذف نمی‌شود: تنوع‌ها برای رسید دوباره آزاد می‌شوند و اگر پرداختی ثبت شده باشد، آزاد می‌شود و به عنوان بدهی تأمین‌کننده باقی می‌ماند. موجودی انبار و بهای تمام‌شده دست‌نخورده می‌ماند.</p>
             <form method="post" action="/admin/purchases/{{ purchase.id }}/delete"
-                  onsubmit="return confirm('این خرید برگشت داده شود؟')">
+                  data-confirm="این خرید برگشت داده شود؟"
+                  data-confirm-title="برگشت خرید" data-confirm-ok="برگشت" hx-boost="false">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit" class="btn btn-danger">برگشت خرید</button>
             </form>
