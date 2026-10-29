@@ -2222,10 +2222,32 @@ body.is-soft-busy::before {
   .variant-remove:hover { color: var(--link-hover); border-color: var(--rule); }
 }
 .variant-entry-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.variant-edit-layout { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(250px, 0.65fr); gap: 1.2rem; align-items: start; }
+.variant-edit-layout, .product-edit-layout { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(250px, 0.65fr); gap: 1.2rem; align-items: start; }
+/* The main column owns the wide variants table; without this a grid item's
+   auto min-width lets the table push the card past the viewport instead of
+   scrolling inside .table-scroll. */
+.product-edit-main { min-width: 0; }
 /* The whole side column sticks, not just the summary card: a single sticky
    card would slide down over the danger card below it. */
-.variant-edit-side { position: sticky; top: 92px; align-self: start; min-width: 0; }
+.variant-edit-side, .product-edit-side { position: sticky; top: 92px; align-self: start; min-width: 0; }
+/* Product edit tabs: one form, two panels; the count says what waits inside. */
+.product-tabs { display: flex; flex-wrap: wrap; gap: 0.35rem; width: fit-content; max-width: 100%; margin-bottom: 0.9rem; padding: 0.28rem; background: var(--surface-soft); border: 1px solid var(--rule); border-radius: var(--radius); }
+.product-tab { border: 1px solid transparent; background: transparent; color: var(--ink-soft); font: inherit; font-size: 0.85rem; font-weight: 800; min-height: 2.4rem; padding: 0.4rem 0.85rem; border-radius: calc(var(--radius) - 6px); cursor: pointer; }
+.product-tab:hover { color: var(--ink); }
+.product-tab.is-active { background: var(--card); color: var(--ink); border-color: var(--rule); }
+.product-tab-count { display: inline-grid; place-items: center; min-width: 1.5rem; height: 1.5rem; margin-inline-start: 0.3rem; padding: 0 0.35rem; border-radius: 999px; background: color-mix(in srgb, var(--candy) 14%, var(--card)); color: var(--link-hover); font-size: 0.75rem; }
+.product-tab-panel[hidden] { display: none; }
+.product-summary-card { display: flex; flex-direction: column; }
+.product-summary-card .detail-list dd { max-width: 62%; overflow-wrap: anywhere; }
+.product-summary-actions { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.9rem; }
+.product-checklist { margin: 0; padding-inline-start: 1.2rem; display: flex; flex-direction: column; gap: 0.45rem; color: var(--ink-soft); }
+/* The save row left the card; it owns its own frame now. The sticky bar is a
+   phone affordance — on desktop the summary sidebar already keeps save in
+   sight, and a pinned row would cover the fields. */
+.product-edit-main .product-form-actions { position: static; margin: 1.2rem 0 0; padding: 0.75rem 1rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); }
+@media (max-width: 900px) {
+  .product-edit-main .product-form-actions { position: sticky; bottom: 0; z-index: 30; background: var(--card); }
+}
 .detail-list { display: grid; gap: 0.6rem; margin: 0; }
 .detail-list > div { display: flex; justify-content: space-between; gap: 0.75rem; padding-bottom: 0.45rem; border-bottom: 1px solid var(--rule); }
 .detail-list dt { color: var(--ink-soft); font-size: 0.8rem; }
@@ -2320,8 +2342,8 @@ body.is-soft-busy::before {
 
 @media (max-width: 900px) {
   .product-form-grid-wide, .variant-entry-grid, .size-run-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .variant-edit-layout { grid-template-columns: 1fr; }
-  .variant-edit-side { position: static; }
+  .variant-edit-layout, .product-edit-layout { grid-template-columns: 1fr; }
+  .variant-edit-side, .product-edit-side { position: static; }
   .tag-settings-layout { grid-template-columns: 1fr; }
   .tag-editor-workspace { grid-template-columns: 1fr; }
   .tag-settings-side { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }

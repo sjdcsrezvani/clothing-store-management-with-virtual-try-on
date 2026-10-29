@@ -14,13 +14,24 @@
 
 {% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
 
+<div class="product-edit-layout" data-active-tab="{{ form_tab|default('') }}">
+<div class="product-edit-main">
 <form id="product-form" method="post" action="{% if edit_mode %}/admin/products/{{ product.id }}{% else %}/admin/products/add{% endif %}" enctype="multipart/form-data" novalidate>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     {% if edit_mode %}<input type="hidden" name="next" value="{{ return_to or '' }}">{% endif %}
+    <input type="hidden" name="ui_tab" id="product-ui-tab" value="{{ form_tab|default('product') }}">
+
+    <nav class="product-tabs" role="tablist" aria-label="بخش‌های محصول">
+        <button type="button" class="product-tab" role="tab" id="product-tab-product"
+                aria-controls="product-panel-product" aria-selected="true" data-product-tab="product">مشخصات محصول</button>
+        <button type="button" class="product-tab" role="tab" id="product-tab-variants"
+                aria-controls="product-panel-variants" aria-selected="false" tabindex="-1" data-product-tab="variants">تنوع‌ها <span class="product-tab-count">{{ product.variants|selectattr('is_active')|list|length if product else 0 }}</span></button>
+    </nav>
+
+    <div class="product-tab-panel" id="product-panel-product" role="tabpanel" aria-labelledby="product-tab-product" data-product-panel="product">
     <section class="card catalog-section">
         <div class="section-heading-row">
             <div><h3>اطلاعات پایه</h3><p class="muted">این اطلاعات بین همه تنوع‌های محصول مشترک است.</p></div>
-            <span class="section-step">۱</span>
         </div>
         <div class="form-row product-form-grid product-form-grid-wide">
             <div class="form-group form-span-2">
@@ -30,7 +41,7 @@
                    value, reads as a filled-in field, and is written back to the
                    database by the next save. The `if product` guard covered the
                    new-product case and missed this one. #}
-                <input type="text" id="name" name="name" required autofocus value="{{ product.name or '' if product else '' }}" placeholder="مثال: پیراهن نخی دخترانه">
+                <input type="text" id="name" name="name" required value="{{ product.name or '' if product else '' }}" placeholder="مثال: پیراهن نخی دخترانه">
             </div>
             <div class="form-group">
                 <label for="category">دسته‌بندی</label>
@@ -144,12 +155,13 @@
             </div>
         </div>
     </section>
+    </div>
 
+    <div class="product-tab-panel" id="product-panel-variants" role="tabpanel" aria-labelledby="product-tab-variants" data-product-panel="variants">
     {% if edit_mode and product.variants %}
     <section class="card catalog-section">
         <div class="section-heading-row">
             <div><h3>تنوع‌های موجود</h3><p class="muted">موجودی قابل فروش، رزروشده و نقطه سفارش را جداگانه ببینید.</p></div>
-            <span class="section-step">۲</span>
         </div>
         <div class="table-scroll">
             <table class="catalog-variants-table">
@@ -195,9 +207,8 @@
     <section class="card catalog-section">
         <div class="section-heading-row">
             <div><h3>{% if edit_mode %}افزودن تنوع جدید{% else %}تنوع‌های قابل فروش{% endif %}</h3><p class="muted">هر تنوع می‌تواند بارکد، SKU، قیمت، محل انبار و آستانه سفارش مستقل داشته باشد.</p></div>
-            <span class="section-step">{% if edit_mode %}۳{% else %}۲{% endif %}</span>
         </div>
-        <div id="variants-container"></div>
+        <div id="variants-container" data-existing-variants="{% if edit_mode and product.variants %}1{% else %}0{% endif %}"></div>
         <details class="size-run" id="size-run">
             <summary>ساخت گروهی تنوع‌ها <small>سایزهای یک رنگ را یکجا بساز</small></summary>
             <div class="size-run-body">
@@ -246,14 +257,92 @@
             </div>
         </details>
         <button type="button" class="btn btn-ghost" id="add-variant-btn" onclick="addVariant()">افزودن تنوع</button>
-        <p class="form-error product-form-error" id="product-form-error" role="alert" hidden></p>
-        <div class="form-actions-row product-form-actions">
-            <button type="submit" class="btn btn-primary btn-large">{% if edit_mode %}ذخیره تغییرات{% else %}ثبت محصول{% endif %}</button>
+    </section>
+    </div>
+
+    <p class="form-error product-form-error" id="product-form-error" role="alert" hidden></p>
+    <div class="form-actions-row product-form-actions">
+        <button type="submit" class="btn btn-primary btn-large">{% if edit_mode %}ذخیره تغییرات{% else %}ثبت محصول{% endif %}</button>
+        <a href="{{ return_to or '/admin/products' }}" class="btn btn-ghost">لغو</a>
+        <span class="form-stock-total">جمع ارزش موجودی: <strong class="tnum" id="form-stock-total">—</strong></span>
+    </div>
+</form>
+</div>
+
+{% if edit_mode and product %}
+{% set active_variants = product.variants|selectattr('is_active')|list %}
+{% set archived_count = product.variants|length - active_variants|length %}
+{% set low_stock = active_variants|selectattr('needs_reorder')|list|length %}
+{% set prices = active_variants|map(attribute='price')|list %}
+{% set price_low = prices|min if prices else 0 %}
+{% set price_high = prices|max if prices else 0 %}
+{% set gender_labels = {'girl': 'دخترانه', 'boy': 'پسرانه', 'unisex': 'یونیسکس', 'baby': 'نوزاد', 'woman': 'زنانه', 'man': 'مردانه'} %}
+{% set totals = namespace(sellable=0, reserved=0, demand=0, value=0) %}
+{% for variant in active_variants %}
+{% set totals.sellable = totals.sellable + (variant.available_quantity or 0) %}
+{% set totals.reserved = totals.reserved + (variant.reserved_quantity or 0) %}
+{% set totals.demand = totals.demand + (variant.demand_count or 0) %}
+{% set totals.value = totals.value + (variant.price or 0) * (variant.stock_quantity or 0) %}
+{% endfor %}
+<aside class="product-edit-side">
+    <section class="card product-summary-card">
+        <h3>خلاصه محصول</h3>
+        <dl class="detail-list">
+            <div><dt>نام</dt><dd>{{ product.name }}</dd></div>
+            <div><dt>دسته / برند</dt><dd>{{ product.category or '—' }}{% if product.brand %} · {{ product.brand }}{% endif %}</dd></div>
+            <div><dt>گروه</dt><dd>{{ gender_labels.get(product.gender, '—') }}</dd></div>
+            <div><dt>تنوع‌ها</dt><dd>{{ active_variants|length }} فعال{% if archived_count %} · {{ archived_count }} بایگانی{% endif %}</dd></div>
+            <div><dt>قابل فروش</dt><dd class="tnum">{{ totals.sellable }}</dd></div>
+            <div><dt>رزرو</dt><dd class="tnum">{{ totals.reserved }}</dd></div>
+            <div><dt>کم‌موجود</dt><dd>{% if low_stock %}<span class="badge badge-warning">{{ low_stock }}</span>{% else %}—{% endif %}</dd></div>
+            <div><dt>تقاضا</dt><dd class="tnum">{{ totals.demand }}</dd></div>
+            <div><dt>ارزش موجودی</dt><dd class="tnum">{% if active_variants %}{{ fmt(totals.value) }} ت{% else %}—{% endif %}</dd></div>
+            <div><dt>بازه قیمت</dt><dd class="tnum">{% if not active_variants %}—{% elif price_low == price_high %}{{ fmt(price_low) }} ت{% else %}{{ fmt(price_low) }}–{{ fmt(price_high) }} ت{% endif %}</dd></div>
+        </dl>
+        <div class="product-summary-actions">
+            <button type="submit" form="product-form" class="btn btn-primary btn-large">ذخیره تغییرات</button>
             <a href="{{ return_to or '/admin/products' }}" class="btn btn-ghost">لغو</a>
-            <span class="form-stock-total">جمع ارزش موجودی: <strong class="tnum" id="form-stock-total">—</strong></span>
         </div>
     </section>
-</form>
+    <section class="card danger-zone">
+        {% if product.is_active %}
+        <h3>بایگانی محصول</h3>
+        <p class="muted">محصول و همه تنوع‌هایش از فهرست فروش پنهان می‌شوند؛ تاریخچه می‌ماند.</p>
+        <form method="post" action="/admin/products/{{ product.id }}/delete"
+              data-confirm="«{{ product.name }}» و همه تنوع‌هایش بایگانی شوند؟ از فهرست فروش پنهان می‌شوند ولی تاریخچه‌شان می‌ماند."
+              data-confirm-title="بایگانی محصول" data-confirm-ok="بایگانی کن">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-danger-quiet">بایگانی محصول</button>
+        </form>
+        {% else %}
+        <h3>محصول بایگانی‌شده</h3>
+        <p class="muted">این محصول در فهرست فروش نیست؛ تاریخچه‌اش مانده است.</p>
+        <form method="post" action="/admin/products/{{ product.id }}/restore"
+              data-confirm="«{{ product.name }}» و تنوع‌هایش به فهرست برگردند؟"
+              data-confirm-title="بازگردانی محصول" data-confirm-ok="بازگردانی">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-ghost">بازگردانی محصول</button>
+        </form>
+        {% endif %}
+    </section>
+</aside>
+{% else %}
+<aside class="product-edit-side">
+    <section class="card product-summary-card">
+        <h3>ثبت محصول</h3>
+        <ol class="product-checklist">
+            <li>اطلاعات پایه را کامل کنید.</li>
+            <li>در «تنوع‌ها» حداقل یک تنوع با قیمت بسازید.</li>
+            <li>ذخیره کنید.</li>
+        </ol>
+        <div class="product-summary-actions">
+            <button type="submit" form="product-form" class="btn btn-primary btn-large">ثبت محصول</button>
+            <a href="/admin/products" class="btn btn-ghost">لغو</a>
+        </div>
+    </section>
+</aside>
+{% endif %}
+</div>
 
 {# Row actions live here, outside the product form: a form nested inside a
    form is not a form — the browser would submit the outer one instead, so
@@ -319,6 +408,74 @@
     document.addEventListener('keydown', function (event) {
         if (event.key === 'Escape') pendingForm = null;
     });
+})();
+</script>
+
+<script>
+/* Two tabs, one form: switching never loses an answer. The server names the
+   tab after a refused save; otherwise the hash keeps the view across a soft
+   swap. Without this script both panels stay stacked. */
+(function () {
+    var root = document.querySelector('.product-edit-layout');
+    if (!root) return;
+    var buttons = Array.prototype.slice.call(root.querySelectorAll('[data-product-tab]'));
+    var panels = Array.prototype.slice.call(root.querySelectorAll('[data-product-panel]'));
+    var field = document.getElementById('product-ui-tab');
+    var active = 'product';
+    if (!buttons.length || !panels.length) return;
+
+    function apply(name, remember) {
+        active = name === 'variants' ? 'variants' : 'product';
+        buttons.forEach(function (button) {
+            var on = button.getAttribute('data-product-tab') === active;
+            button.setAttribute('aria-selected', on ? 'true' : 'false');
+            button.tabIndex = on ? 0 : -1;
+            button.classList.toggle('is-active', on);
+        });
+        panels.forEach(function (panel) {
+            panel.hidden = panel.getAttribute('data-product-panel') !== active;
+        });
+        if (field) field.value = active;
+        if (remember) history.replaceState(null, '', '#' + active);
+    }
+
+    var serverTab = root.getAttribute('data-active-tab') || '';
+    if (serverTab !== 'product' && serverTab !== 'variants') serverTab = '';
+    apply(serverTab || (location.hash === '#variants' ? 'variants' : 'product'), false);
+
+    buttons.forEach(function (button, index) {
+        button.addEventListener('click', function () {
+            apply(button.getAttribute('data-product-tab'), true);
+        });
+        button.addEventListener('keydown', function (event) {
+            var next = null;
+            if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+                next = buttons[(index + 1) % buttons.length];
+            } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+                next = buttons[(index - 1 + buttons.length) % buttons.length];
+            } else if (event.key === 'Home') {
+                next = buttons[0];
+            } else if (event.key === 'End') {
+                next = buttons[buttons.length - 1];
+            }
+            if (!next) return;
+            event.preventDefault();
+            next.focus();
+            apply(next.getAttribute('data-product-tab'), true);
+        });
+    });
+
+    window.addEventListener('hashchange', function () {
+        apply(location.hash === '#variants' ? 'variants' : 'product', false);
+    });
+
+    window.RaykidProductTabs = {
+        activate: apply,
+        forField: function (target) {
+            var panel = target && target.closest ? target.closest('[data-product-panel]') : null;
+            if (panel && panel.getAttribute('data-product-panel') === 'variants') apply('variants', false);
+        }
+    };
 })();
 </script>
 
@@ -856,7 +1013,9 @@ if (document.readyState === 'loading') {
     var errorSeq = 0;
 
     function hasVariants() {
-        return !!(container && container.querySelector('.variant-entry'));
+        // An existing product already has its shelf; only a new one needs a row.
+        return !!(container && (container.dataset.existingVariants === '1'
+            || container.querySelector('.variant-entry')));
     }
 
     function errorId(field) {
@@ -913,7 +1072,8 @@ if (document.readyState === 'loading') {
         var fields = form.querySelectorAll('input[required], select[required], textarea[required]');
         Array.prototype.forEach.call(fields, function (field) {
             if (field.disabled || field.type === 'hidden') return;
-            if (field.closest('[hidden]')) return;
+            var hiddenBox = field.closest('[hidden]');
+            if (hiddenBox && !hiddenBox.matches('[data-product-panel]')) return;
             if (!String(field.value || '').trim()) {
                 showFieldError(field);
                 invalid.push(field);
@@ -935,6 +1095,7 @@ if (document.readyState === 'loading') {
     }
 
     function focusField(field) {
+        if (window.RaykidProductTabs) window.RaykidProductTabs.forField(field);
         var entry = field.closest('.variant-entry');
         if (entry) setEntryOpen(entry, true);
         window.requestAnimationFrame(function () {
@@ -957,6 +1118,7 @@ if (document.readyState === 'loading') {
         if (invalid.length) {
             focusField(invalid[0]);
         } else if (addButton) {
+            if (window.RaykidProductTabs) window.RaykidProductTabs.forField(addButton);
             addButton.focus();
             if (addButton.scrollIntoView) addButton.scrollIntoView({ block: 'center', behavior: 'smooth' });
         }

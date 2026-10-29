@@ -134,13 +134,15 @@ def _normalize_hex_color(value) -> str | None:
     raise ValueError(f"کد رنگ «{text}» معتبر نیست (مثال: #4AA3DF).")
 
 
-def _product_form_error(request, db, product, edit_mode: bool, message: str):
+def _product_form_error(request, db, product, edit_mode: bool, message: str, tab: str | None = None):
     context = {
         "product": product,
         "edit_mode": edit_mode,
         "suppliers": db.query(Supplier).order_by(Supplier.name.asc()).all(),
         "tag_templates": list_tag_templates(db),
         "error": message,
+        "form_tab": tab or getattr(request.state, "ui_tab", "product"),
+        "return_to": getattr(request.state, "return_to", ""),
     }
     context.update(_catalog_datalists(db))
     context.update(_sizing_context())
@@ -782,11 +784,14 @@ async def admin_product_add(
     if not hasattr(guard, "role"):
         return guard
 
+    form = await request.form()
+    request.state.ui_tab = "variants" if form.get("ui_tab") == "variants" else "product"
+    request.state.return_to = _safe_next(form.get("next", ""), "")
+
     if not name.strip():
         return _product_form_error(request, db, None, False, "نام محصول الزامی است.")
 
     # Parse dynamic variant fields
-    form = await request.form()
     # Sizing phase 1: the product names the tag system and garment ladder —
     # only labels the engine knows survive the boundary.
     size_type = _form_text(form, "size_type") or None
@@ -863,7 +868,7 @@ async def admin_product_add(
             color_code = _normalize_hex_color(form.get(f"variant_color_code_{idx}", ""))
         except ValueError as problem:
             db.rollback()
-            return _product_form_error(request, db, error_product, error_edit_mode, str(problem))
+            return _product_form_error(request, db, error_product, error_edit_mode, str(problem), tab="variants")
 
         if not price_str:
             continue
@@ -872,10 +877,10 @@ async def admin_product_add(
             price_int = int(to_english_digits(price_str))
         except ValueError:
             db.rollback()
-            return _product_form_error(request, db, error_product, error_edit_mode, "قیمت فروش معتبر نیست.")
+            return _product_form_error(request, db, error_product, error_edit_mode, "قیمت فروش معتبر نیست.", tab="variants")
         if price_int < 0:
             db.rollback()
-            return _product_form_error(request, db, error_product, error_edit_mode, "قیمت فروش نمی‌تواند منفی باشد.")
+            return _product_form_error(request, db, error_product, error_edit_mode, "قیمت فروش نمی‌تواند منفی باشد.", tab="variants")
 
         try:
             cost_price_int = int(to_english_digits(cost_price_str))
@@ -883,7 +888,7 @@ async def admin_product_add(
             cost_price_int = 0
         if cost_price_int < 0:
             db.rollback()
-            return _product_form_error(request, db, error_product, error_edit_mode, "قیمت خرید نمی‌تواند منفی باشد.")
+            return _product_form_error(request, db, error_product, error_edit_mode, "قیمت خرید نمی‌تواند منفی باشد.", tab="variants")
 
         try:
             stock_int = int(to_english_digits(stock_str))
@@ -891,7 +896,7 @@ async def admin_product_add(
             stock_int = 0
         if stock_int < 0:
             db.rollback()
-            return _product_form_error(request, db, error_product, error_edit_mode, "موجودی اولیه نمی‌تواند منفی باشد.")
+            return _product_form_error(request, db, error_product, error_edit_mode, "موجودی اولیه نمی‌تواند منفی باشد.", tab="variants")
 
         # Generate or validate barcode
         barcode = to_english_digits(str(barcode or "").strip())
@@ -904,7 +909,7 @@ async def admin_product_add(
             existing = db.query(ProductVariant).filter(ProductVariant.barcode == barcode).first()
             if existing or barcode in seen_barcodes:
                 db.rollback()
-                return _product_form_error(request, db, None, False, f"بارکد {barcode} تکراری است.")
+                return _product_form_error(request, db, None, False, f"بارکد {barcode} تکراری است.", tab="variants")
         seen_barcodes.add(barcode)
 
         # Handle variant image upload
@@ -947,7 +952,7 @@ async def admin_product_add(
 
     if not created_variants and not product.variants:
         db.rollback()
-        return _product_form_error(request, db, None, False, "حداقل یک تنوع با قیمت فروش معتبر اضافه کنید.")
+        return _product_form_error(request, db, None, False, "حداقل یک تنوع با قیمت فروش معتبر اضافه کنید.", tab="variants")
 
     db.flush()
     for variant, initial_stock in created_variants:
@@ -982,7 +987,9 @@ async def admin_product_edit_form(product_id: int, request: Request, next: str =
         "tag_templates": list_tag_templates(db),
         **_catalog_datalists(db),
         **_sizing_context(),
-        "return_to": _safe_next(next, "/admin/products"),
+        "return_to": _safe_next(next, ""),
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
         "fmt": fmt,
         "jalali_str": jalali_str,
     })
@@ -1005,11 +1012,14 @@ async def admin_product_update(
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="محصول یافت نشد")
+
+    form = await request.form()
+    request.state.ui_tab = "variants" if form.get("ui_tab") == "variants" else "product"
+    request.state.return_to = _safe_next(form.get("next", ""), "")
     if not name.strip():
         return _product_form_error(request, db, product, True, "نام محصول الزامی است.")
 
     # Update base product
-    form = await request.form()
     old_size_system, old_size_type, old_gender = product.size_system, product.size_type, product.gender
     size_type = _form_text(form, "size_type") or None
     if size_type not in SIZING_TYPES:
@@ -1070,7 +1080,7 @@ async def admin_product_update(
             color_code = _normalize_hex_color(form.get(f"variant_color_code_{idx}", ""))
         except ValueError as problem:
             db.rollback()
-            return _product_form_error(request, db, error_product, error_edit_mode, str(problem))
+            return _product_form_error(request, db, error_product, error_edit_mode, str(problem), tab="variants")
 
         if not price_str:
             continue
@@ -1079,10 +1089,10 @@ async def admin_product_update(
             price_int = int(to_english_digits(price_str))
         except ValueError:
             db.rollback()
-            return _product_form_error(request, db, error_product, error_edit_mode, "قیمت فروش معتبر نیست.")
+            return _product_form_error(request, db, error_product, error_edit_mode, "قیمت فروش معتبر نیست.", tab="variants")
         if price_int < 0:
             db.rollback()
-            return _product_form_error(request, db, error_product, error_edit_mode, "قیمت فروش نمی‌تواند منفی باشد.")
+            return _product_form_error(request, db, error_product, error_edit_mode, "قیمت فروش نمی‌تواند منفی باشد.", tab="variants")
 
         try:
             cost_price_int = int(to_english_digits(cost_price_str))
@@ -1090,7 +1100,7 @@ async def admin_product_update(
             cost_price_int = 0
         if cost_price_int < 0:
             db.rollback()
-            return _product_form_error(request, db, error_product, error_edit_mode, "قیمت خرید نمی‌تواند منفی باشد.")
+            return _product_form_error(request, db, error_product, error_edit_mode, "قیمت خرید نمی‌تواند منفی باشد.", tab="variants")
 
         try:
             stock_int = int(to_english_digits(stock_str))
@@ -1098,7 +1108,7 @@ async def admin_product_update(
             stock_int = 0
         if stock_int < 0:
             db.rollback()
-            return _product_form_error(request, db, error_product, error_edit_mode, "موجودی اولیه نمی‌تواند منفی باشد.")
+            return _product_form_error(request, db, error_product, error_edit_mode, "موجودی اولیه نمی‌تواند منفی باشد.", tab="variants")
 
         # Generate or validate barcode
         barcode = to_english_digits(str(barcode or "").strip())
@@ -1111,7 +1121,7 @@ async def admin_product_update(
             existing = db.query(ProductVariant).filter(ProductVariant.barcode == barcode).first()
             if existing or barcode in seen_barcodes:
                 db.rollback()
-                return _product_form_error(request, db, product, True, f"بارکد {barcode} تکراری است.")
+                return _product_form_error(request, db, product, True, f"بارکد {barcode} تکراری است.", tab="variants")
         seen_barcodes.add(barcode)
 
         # Handle variant image upload
@@ -1154,7 +1164,7 @@ async def admin_product_update(
 
     if not created_variants and not product.variants:
         db.rollback()
-        return _product_form_error(request, db, product, True, "حداقل یک تنوع با قیمت فروش معتبر اضافه کنید.")
+        return _product_form_error(request, db, product, True, "حداقل یک تنوع با قیمت فروش معتبر اضافه کنید.", tab="variants")
 
     db.flush()
     # A changed system or ladder re-resolves every variant's band: derived
@@ -1174,10 +1184,12 @@ async def admin_product_update(
         )
     db.commit()
 
-    return RedirectResponse(
-        url=_safe_next(form.get("next", ""), "/admin/products"),
-        status_code=303,
-    )
+    next_url = form.get("next", "")
+    fallback = f"/admin/products/{product.id}?msg=" + quote_plus("تغییرات محصول ذخیره شد.")
+    target = _safe_next(next_url, fallback)
+    if not next_url and request.state.ui_tab == "variants":
+        target += "#variants"
+    return RedirectResponse(url=target, status_code=303)
 
 
 @router.post("/products/{product_id}/delete", response_class=HTMLResponse)

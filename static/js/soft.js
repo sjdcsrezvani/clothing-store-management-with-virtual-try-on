@@ -16,14 +16,28 @@
     var busy = false;
     var preSubmit = new WeakMap();
 
+    // A submit control can live outside its form (`form="product-form"`, the
+    // product page's sticky summary). The busy lock must reach both kinds.
+    function submitControls(form) {
+        var controls = Array.prototype.slice.call(
+            form.querySelectorAll('button[type="submit"], input[type="submit"]')
+        );
+        if (form.id) {
+            controls = controls.concat(Array.prototype.filter.call(
+                document.querySelectorAll('[form="' + form.id + '"]'),
+                function (control) { return control.type === 'submit'; }
+            ));
+        }
+        return controls;
+    }
+
     // Snapshot the buttons before the app's own submit listener (app.js)
     // disables them, so a failed soft request can put the form back exactly
     // as it was. Capture runs ahead of every bubble handler.
     document.addEventListener('submit', function (event) {
         var form = event.target;
         if (!form || form.tagName !== 'FORM') return;
-        preSubmit.set(form, Array.prototype.map.call(
-            form.querySelectorAll('button[type="submit"], input[type="submit"]'),
+        preSubmit.set(form, submitControls(form).map(
             function (control) { return control.disabled; }
         ));
     }, true);
@@ -95,6 +109,14 @@
         return bare(a) === bare(b);
     }
 
+    // A redirect cannot carry the page's tab in XHR's responseURL; a same-page
+    // swap keeps the hash the owner was already reading.
+    function keepHash(url) {
+        var u = new URL(url, location.href);
+        if (!u.hash && location.hash) u.hash = location.hash;
+        return u.href;
+    }
+
     // Keep the search/filter/page the owner was looking at; the redirect's own
     // params (e.g. settings tab) win over the old ones.
     function keepView(finalUrl) {
@@ -137,9 +159,7 @@
             values = {};
             values[submitter.name] = submitter.value;
         }
-        var locks = Array.prototype.slice.call(
-            form.querySelectorAll('button[type="submit"], input[type="submit"]')
-        );
+        var locks = submitControls(form);
         var disabled = preSubmit.get(form) || locks.map(function (control) { return control.disabled; });
 
         busy = true;
@@ -179,7 +199,7 @@
             var reuse = direct || sameView(landed.href, location.href);
             if (reuse && xhr.responseText && swap(xhr.responseText, selector)) {
                 if (!isMain) toast(parse(xhr.responseText), landed.href);
-                if (!direct) history.replaceState(null, '', landed.href);
+                if (!direct) history.replaceState(null, '', keepHash(landed.href));
                 finish();
                 restore(scroll);
                 return;
@@ -189,7 +209,7 @@
             // had, with the server's intended params merged in.
             var url = direct ? location.href : keepView(landed.href);
             toast(null, landed.href);
-            history.replaceState(null, '', url);
+            history.replaceState(null, '', keepHash(url));
             var pending = htmx.ajax('GET', url, {
                 target: selector, select: selector, swap: 'outerHTML'
             });
@@ -226,13 +246,10 @@
     function reset(form) {
         if (!form || busy) return;
         var was = preSubmit.get(form);
-        Array.prototype.forEach.call(
-            form.querySelectorAll('button[type="submit"], input[type="submit"]'),
-            function (control, index) {
-                control.disabled = was ? !!was[index] : false;
-                control.removeAttribute('aria-busy');
-            }
-        );
+        submitControls(form).forEach(function (control, index) {
+            control.disabled = was ? !!was[index] : false;
+            control.removeAttribute('aria-busy');
+        });
     }
 
     window.RaykidSoft = { submit: send, reset: reset };
