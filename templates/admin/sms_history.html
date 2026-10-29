@@ -387,8 +387,8 @@
 </div>
 <script>
 // Confirm gate for the retry/resend/bulk forms + tap-to-copy for full texts
-// and errors. requestSubmit keeps the submitter's formaction; the pendingForm
-// bypass keeps the confirm event from looping.
+// and errors. RaykidSoft.submit keeps the submitter's formaction; clearing
+// pendingForm first keeps the confirm event from looping.
 (function () {
     var pendingForm = null;
     var pendingSubmitter = null;
@@ -411,11 +411,9 @@
         var form = pendingForm;
         var submitter = pendingSubmitter;
         window.RaykidDialog.close('history-confirm');
-        if (form && submitter && form.requestSubmit) {
-            form.requestSubmit(submitter);   // pendingForm still set: bypasses this handler
-        } else if (form) {
+        if (form) {
             pendingForm = null;
-            form.submit();
+            window.RaykidSoft.submit(form, submitter); // keeps the submitter's formaction
         }
         pendingForm = null;
         pendingSubmitter = null;

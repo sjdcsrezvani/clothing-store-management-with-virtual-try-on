@@ -48,7 +48,7 @@
     document.getElementById('settings-switch-save').addEventListener('click', function () {
         pendingHref = null;
         window.RaykidDialog.close('settings-switch');
-        form.submit();
+        window.RaykidSoft.submit(form);
     });
     document.getElementById('settings-switch-go').addEventListener('click', function () {
         var href = pendingHref;

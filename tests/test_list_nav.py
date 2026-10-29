@@ -71,10 +71,15 @@ def test_the_transport_served_by_htmx_not_list_nav():
 
 def test_the_bridge_keeps_the_loose_ends():
     shell = (ROOT / "static/js/htmx-shell.js").read_text()
+    soft = (ROOT / "static/js/soft.js").read_text()
     # A control that leaves the page never swaps into the region.
     assert "target.pathname === window.location.pathname" in shell
-    # A POST inside a region stays a plain POST, dialogs and all.
-    assert "elt.submit()" in shell
+    # Plain POST forms are unboosted so soft.js owns them; htmx keeps only its
+    # explicit hx verbs.
+    assert "htmx:beforeProcessNode" in shell
+    assert "elt.requestSubmit()" not in shell
+    assert "window.RaykidSoft" in soft
+    assert "[data-list-region=" in soft
     # One flight per region, and the veil prints busy to assistive tech.
     assert "'aria-busy'" in shell
     assert "preventDefault()" in shell

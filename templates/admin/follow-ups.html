@@ -243,7 +243,7 @@
         var form = pendingForm;
         pendingForm = null;
         window.RaykidDialog.close('followup-confirm');
-        if (form) form.submit();
+        if (form) window.RaykidSoft.submit(form);
     });
     document.addEventListener('click', function (event) {
         if (!event.target.closest || !event.target.closest('#followup-confirm')) return;

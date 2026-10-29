@@ -1959,6 +1959,20 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
    flashing away — a veil, not a spinner, for a fetch that takes milliseconds. */
 [data-list-region] { transition: opacity 150ms ease; }
 [data-list-region].is-loading { opacity: 0.55; }
+/* A soft action posts and swaps in place; this thin bar is the only sign the
+   page did not merely blink. It never blocks a click — the form owns that. */
+body.is-soft-busy::before {
+  content: ""; position: fixed; inset: 0 auto auto 0; height: 3px; width: 35%;
+  background: var(--candy); z-index: 1000; pointer-events: none;
+  animation: soft-progress 900ms ease-in-out infinite;
+}
+@keyframes soft-progress {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(340%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.is-soft-busy::before { width: 100%; animation: none; opacity: 0.7; }
+}
 @media (prefers-reduced-motion: reduce) {
   [data-list-region] { transition: none; }
 }

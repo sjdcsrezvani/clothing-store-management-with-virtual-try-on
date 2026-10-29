@@ -325,7 +325,7 @@
         var form = pendingForm;
         pendingForm = null;
         window.RaykidDialog.close('campaign-confirm');
-        if (form) form.submit();
+        if (form) window.RaykidSoft.submit(form);
     });
     document.addEventListener('click', function (event) {
         if (!event.target.closest || !event.target.closest('#campaign-confirm')) return;

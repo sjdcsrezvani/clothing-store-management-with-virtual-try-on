@@ -25,7 +25,14 @@
         if (window.RaykidDialog) window.RaykidDialog.close('app-confirm');
         if (!record) return;
         if (record.form) {
-            if (accepted) record.form.submit();
+            if (accepted) {
+                // Soft layer keeps the page in place; a page without it still
+                // gets the old native post.
+                if (window.RaykidSoft) window.RaykidSoft.submit(record.form, record.submitter);
+                else record.form.submit();
+            } else if (window.RaykidSoft) {
+                window.RaykidSoft.reset(record.form); // a refused submit keeps its buttons alive
+            }
         } else if (record.resolve) {
             record.resolve(accepted);
         }
@@ -47,7 +54,7 @@
         var form = event.target.closest ? event.target.closest('form[data-confirm]') : null;
         if (!form || pending) return;
         var opened = open(
-            {form: form},
+            {form: form, submitter: event.submitter},
             form.getAttribute('data-confirm-title'),
             form.getAttribute('data-confirm'),
             form.getAttribute('data-confirm-ok')

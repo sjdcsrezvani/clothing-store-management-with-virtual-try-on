@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {# Till follows the active theme's own accent — no forced rainbow. #}
 {% block title %}{% if step == 'scan' %} فروش — {{ customer.phone if customer else 'ناشناس' }}{% else %} فروش جدید — {{ store.name }}{% endif %}{% endblock %}
+{# The till is a live workflow (basket, terminal, focused inputs), not a list
+   action: every step keeps the browser's own navigation. #}
+{% block body_class %}native-actions{% endblock %}
 {% block content %}
 
 {% if pos_hint %}

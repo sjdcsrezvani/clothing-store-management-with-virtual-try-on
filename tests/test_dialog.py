@@ -27,6 +27,9 @@ def test_confirm_module_served_with_the_full_contract(client):
     for snippet in ("RaykidConfirm", "data-confirm", "app-confirm",
                     "defaultPrevented", "submit", "Escape"):
         assert snippet in resp.text, snippet
+    # An accepted dialog hands the form to the soft layer, not form.submit().
+    assert "RaykidSoft.submit" in resp.text
+    assert "record.submitter" in resp.text
 
 
 def test_no_native_browser_confirm_remains():

@@ -1,4 +1,7 @@
 {% extends "base.html" %}
+{# The theme button rewrites <html>'s class, which only a real document load
+   can adopt: this page's saves stay native. #}
+{% block body_class %}native-actions{% endblock %}
 {% block content %}
 
 {% set page_description %}

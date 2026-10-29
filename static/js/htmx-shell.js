@@ -59,6 +59,18 @@
         return addEventListener.call(this, type, handler, options);
     };
 
+    /* Plain POST forms belong to soft.js: htmx must not turn one into a boosted
+       swap before its own validation or confirm dialog has spoken. Forms with
+       an explicit hx verb keep htmx; everything else is unboosted right before
+       htmx reads its attributes (initial visit and every region swap). */
+    document.addEventListener('htmx:beforeProcessNode', function (event) {
+        var node = event.target;
+        if (!node || node.tagName !== 'FORM') return;
+        if (node.hasAttribute('hx-post') || node.hasAttribute('hx-put') ||
+            node.hasAttribute('hx-patch') || node.hasAttribute('hx-delete')) return;
+        node.setAttribute('hx-boost', 'false');
+    });
+
     function loginPath(url) {
         try {
             return new URL(url, window.location.href).pathname === '/admin/login';
@@ -126,9 +138,10 @@
 
     /* List regions (the old list_nav, kept as one bridge): the region itself
        carries hx-boost + hx-select. What htmx cannot say in attributes lives
-       here — a control that leaves the page keeps navigating fully, a POST
-       never swaps, the region wears its veil while its rows fly, focus lands
-       on the marked heading after the swap, and the scroll never moves. */
+       here — a control that leaves the page keeps navigating fully, the region
+       wears its veil while its rows fly, focus lands on the marked heading
+       after the swap, and the scroll never moves. Plain POSTs were unboosted
+       above and are soft.js's business. */
     function bindBody() {
         unboostNativeLinks(document);
         document.body.addEventListener('htmx:configRequest', function (event) {
@@ -142,19 +155,9 @@
                 return;
             }
             if (isGet && target.pathname === window.location.pathname) return;
-            event.preventDefault();
             if (isGet) {
+                event.preventDefault();
                 window.location.assign(target.href);
-            } else {
-                // A POST inside a region is a real form: run its own submit
-                // handlers (confirm dialogs, validation) instead of bypassing
-                // them with form.submit().
-                var boost = elt.getAttribute('hx-boost');
-                elt.setAttribute('hx-boost', 'false');
-                if (typeof elt.requestSubmit === 'function') elt.requestSubmit();
-                else elt.submit();
-                if (boost === null) elt.removeAttribute('hx-boost');
-                else elt.setAttribute('hx-boost', boost);
             }
         });
 
@@ -162,6 +165,11 @@
             var elt = event.detail && event.detail.elt;
             var region = elt && elt.closest ? elt.closest('[data-list-region]') : null;
             if (!region) return;
+            // The one-flight rule is the list's GET controls; a soft POST owns
+            // its own busy gate and must never be refused here.
+            var verb = (event.detail.requestConfig && event.detail.requestConfig.verb) ||
+                       event.detail.verb || 'get';
+            if (verb.toLowerCase() !== 'get') return;
             if (region.getAttribute('aria-busy') === 'true') {
                 event.preventDefault(); // one flight per region, as before
                 return;

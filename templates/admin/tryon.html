@@ -164,7 +164,7 @@
         var form = pendingForm;
         pendingForm = null;
         window.RaykidDialog.close('tryon-confirm');
-        if (form) form.submit();
+        if (form) window.RaykidSoft.submit(form);
     });
     document.addEventListener('keydown', function (event) {
         if (event.key !== 'Escape' || !pendingForm) return;
@@ -463,7 +463,7 @@ document.addEventListener('change', function(e) {
     var sel = e.target.closest ? e.target.closest('select[data-autosubmit]') : null;
     if (!sel || !sel.form) return;
     if (window.ensureCsrf) window.ensureCsrf(sel.form);
-    sel.form.submit();
+    window.RaykidSoft.submit(sel.form);
 });
 // Category dropdown always visible — it applies to both outfit modes.
 

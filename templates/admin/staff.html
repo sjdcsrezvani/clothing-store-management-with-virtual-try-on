@@ -150,7 +150,7 @@
         var form = pendingForm;
         pendingForm = null;
         window.RaykidDialog.close('staff-list-confirm');
-        if (form) form.submit();
+        if (form) window.RaykidSoft.submit(form);
     });
     document.addEventListener('click', function (event) {
         if (!event.target.closest || !event.target.closest('#staff-list-confirm')) return;

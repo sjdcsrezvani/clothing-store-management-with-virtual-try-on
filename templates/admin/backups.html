@@ -65,7 +65,7 @@
                     </td>
                     <td data-label="عملیات">
                         <a href="/admin/backups/download?name={{ b.name }}" class="btn btn-sm btn-ghost">دانلود</a>
-                        <form method="post" action="/admin/backups/restore" class="inline-form" data-confirm="بازیابی از «{{ b.name }}»؟ کل اطلاعات فعلی جایگزین می‌شود.{% if b.schema_newer %} توجه: ساختار این نسخه جدیدتر از برنامه است.{% endif %}" data-confirm-title="بازیابی فروشگاه؟" data-confirm-ok="بازیابی">
+                        <form method="post" action="/admin/backups/restore" class="inline-form" data-native data-confirm="بازیابی از «{{ b.name }}»؟ کل اطلاعات فعلی جایگزین می‌شود.{% if b.schema_newer %} توجه: ساختار این نسخه جدیدتر از برنامه است.{% endif %}" data-confirm-title="بازیابی فروشگاه؟" data-confirm-ok="بازیابی">
                             <input type="hidden" name="name" value="{{ b.name }}">
                             <button type="submit" class="btn btn-sm btn-danger-quiet">بازیابی</button>
                         </form>
@@ -134,7 +134,7 @@
         var form = pendingForm;
         pendingForm = null;
         window.RaykidDialog.close('backup-confirm');
-        if (form) form.submit();
+        if (form) window.RaykidSoft.submit(form);
     });
     document.addEventListener('keydown', function (event) {
         if (event.key === 'Escape') pendingForm = null;

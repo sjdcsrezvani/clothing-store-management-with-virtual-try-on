@@ -104,7 +104,7 @@
                 {% endfor %}
             </nav>
             <div class="sidebar-footer">
-                <form method="post" action="/admin/logout">
+                <form method="post" action="/admin/logout" data-native>
                     <button type="submit" class="sidebar-logout"><span class="icon-logout" aria-hidden="true"><svg class="ui-icon" focusable="false"><use href="#icon-logout"></use></svg></span> خروج از حساب</button>
                 </form>
             </div>
@@ -146,6 +146,7 @@
     <script src="/static/js/toast.js?v={{ static_version }}" defer></script>
     <script src="/static/js/dialog.js?v={{ static_version }}" defer></script>
     <script src="/static/js/confirm.js?v={{ static_version }}" defer></script>
+    <script src="/static/js/soft.js?v={{ static_version }}" defer></script>
     <script src="/static/js/datepicker.js?v={{ static_version }}" defer></script>
     <script src="/static/js/dropdown.js?v={{ static_version }}" defer></script>
     <script>

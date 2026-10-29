@@ -1021,7 +1021,7 @@ def test_pilot_charts_mount_through_the_bridge_with_a_fallback(client, db_sessio
     assert "AC.create(document.getElementById('trendChart')" in page
     assert "valueFormatter" in page  # hover values, the pilot's whole point
     assert "hostCanvas" not in page
-    assert "fallback was retired" in page
+    assert "RaykidWhen" in page  # charts mount once ECharts arrives
 
 
 @needs_node

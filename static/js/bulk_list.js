@@ -109,12 +109,18 @@
         submitting = true;
         var send = form.querySelector('.bulk-send') || form.querySelector('[type="submit"]');
         if (send) send.setAttribute('disabled', '');
-        form.submit();
+        window.RaykidSoft.submit(form);
     });
 
     var surface = document.getElementById('bulk-confirm');
     if (surface) surface.addEventListener('click', function (event) {
         if (event.target.closest('[data-dialog-close]')) pendingForm = null;
+    });
+    // A soft swap replaces the rows without re-running this script, so clear
+    // the in-flight guard or the next bulk action would be ignored.
+    document.body.addEventListener('htmx:load', function () {
+        pendingForm = null;
+        submitting = false;
     });
     document.addEventListener('keydown', function (event) {
         if (event.key === 'Escape') pendingForm = null;

@@ -115,7 +115,7 @@
             form.querySelectorAll('input[inputmode="numeric"]').forEach(function (field) {
                 field.value = rawDigits(field.value);
             });
-            form.submit();
+            window.RaykidSoft.submit(form);
         });
     }
 
@@ -123,6 +123,12 @@
     confirmYes('cashbox-reverse-confirm', 'cashbox-reverse-confirm-yes');
 
     // A dismissal is a change of mind: the form stays exactly as typed.
+    // A soft swap replaces the rows without re-running this script, so clear
+    // the in-flight guard or the next row's dialog would be ignored.
+    document.body.addEventListener('htmx:load', function () {
+        pendingForm = null;
+        submitting = false;
+    });
     document.addEventListener('click', function (event) {
         if (event.target.closest && event.target.closest('[data-dialog-close]')) pendingForm = null;
     });
