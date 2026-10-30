@@ -22,6 +22,7 @@ from database import get_db
 from models import Product, ProductVariant, GeneratedImage, BackgroundJob, Settings, to_english_digits
 from services._common import check_admin, fmt, jalali_str
 from services.image_gen import composite_logo, get_tryon_selection
+from services.image_storage import compress_for_storage
 from services.security import require_api_token, tryon_can_generate, tryon_daily_remaining, log_action, require_html_role
 from services.capture_device import (
     AUTH_HEADER, authenticate_device, is_paired, pair_device,
@@ -244,7 +245,8 @@ _TRYON_SID_TTL_SECONDS = 24 * 3600
 KID_PHOTO_MAX_BYTES = 15_000_000
 KID_PREVIEW_MAX_DIM = 640
 # Phone photos are the only ones kept on disk; a 30-day inbox keeps the folder
-# from growing forever. The full bytes go to generation — never a re-encode.
+# from growing forever. Generation gets the original bytes; the disk copy is
+# compressed by _store_kid_photo.
 KID_PHOTO_RETENTION_DAYS = 30
 KID_PHOTO_DIR = Path(os.environ.get("TRYON_PHOTO_DIR", str(UPLOAD_DIR / "tryon" / "people")))
 
@@ -343,8 +345,11 @@ def _store_kid_photo(raw: bytes, mime: str) -> str:
         "image/heic": ".heic",
         "image/heif": ".heif",
     }.get(mime, ".jpg")
+    # The disk copy is compressed; the session keeps the original bytes for
+    # generation, so face detail sent to the model is unchanged.
+    data, ext = compress_for_storage(raw, ext)
     path = KID_PHOTO_DIR / f"{digest}{ext}"
-    path.write_bytes(raw)
+    path.write_bytes(data)
     return "/" + path.as_posix()
 
 

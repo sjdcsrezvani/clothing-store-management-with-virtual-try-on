@@ -3,7 +3,6 @@ import io
 import json
 import os
 import re
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode, quote_plus
@@ -26,6 +25,7 @@ from models import (
     to_english_digits,
 )
 from services.security import log_action, require_html_role
+from services.image_storage import save_upload_image
 from services.sizing import (SIZE_TYPES as SIZING_TYPES, SYSTEMS as SIZING_SYSTEMS,
                              resolve_band, size_options, band_display,
                              get_sizing_standards, variant_size_display)
@@ -916,13 +916,9 @@ async def admin_product_add(
         variant_image_path = None
         variant_image = form.get(f"variant_image_{idx}")
         if hasattr(variant_image, 'filename') and variant_image.filename:
-            ext = Path(variant_image.filename).suffix or ".jpg"
-            filename = f"{uuid.uuid4().hex}{ext}"
-            filepath = upload_dir / filename
-            with open(filepath, "wb") as f:
-                content = await variant_image.read()
-                f.write(content)
-            variant_image_path = f"/static/uploads/products/{filename}"
+            variant_image_path = save_upload_image(
+                await variant_image.read(), variant_image.filename, upload_dir,
+                "/static/uploads/products")
 
         # Create variant
         variant = ProductVariant(
@@ -1128,13 +1124,9 @@ async def admin_product_update(
         variant_image_path = None
         variant_image = form.get(f"variant_image_{idx}")
         if hasattr(variant_image, 'filename') and variant_image.filename:
-            ext = Path(variant_image.filename).suffix or ".jpg"
-            filename = f"{uuid.uuid4().hex}{ext}"
-            filepath = upload_dir / filename
-            with open(filepath, "wb") as f:
-                content = await variant_image.read()
-                f.write(content)
-            variant_image_path = f"/static/uploads/products/{filename}"
+            variant_image_path = save_upload_image(
+                await variant_image.read(), variant_image.filename, upload_dir,
+                "/static/uploads/products")
 
         # Create new variant
         variant = ProductVariant(
@@ -1343,13 +1335,9 @@ async def admin_variant_update(
     if hasattr(variant_image, 'filename') and variant_image.filename:
         upload_dir = Path("static/uploads/products")
         upload_dir.mkdir(parents=True, exist_ok=True)
-        ext = Path(variant_image.filename).suffix or ".jpg"
-        filename = f"{uuid.uuid4().hex}{ext}"
-        filepath = upload_dir / filename
-        with open(filepath, "wb") as f:
-            content = await variant_image.read()
-            f.write(content)
-        variant.image_path = f"/static/uploads/products/{filename}"
+        variant.image_path = save_upload_image(
+            await variant_image.read(), variant_image.filename, upload_dir,
+            "/static/uploads/products")
 
     # Gallery frames: every picked file joins the end of the row. The first
     # frame doubles as the legacy single image while none is set, so every
@@ -1363,11 +1351,9 @@ async def admin_variant_update(
         upload_dir.mkdir(parents=True, exist_ok=True)
         order = max([frame.sort_order for frame in variant.images] + [-1]) + 1
         for upload in gallery_files:
-            ext = Path(upload.filename).suffix or ".jpg"
-            filename = f"{uuid.uuid4().hex}{ext}"
-            with open(upload_dir / filename, "wb") as f:
-                f.write(await upload.read())
-            path = f"/static/uploads/products/{filename}"
+            path = save_upload_image(
+                await upload.read(), upload.filename, upload_dir,
+                "/static/uploads/products")
             db.add(VariantImage(variant_id=variant.id, image_path=path, sort_order=order))
             order += 1
             if not variant.image_path:
