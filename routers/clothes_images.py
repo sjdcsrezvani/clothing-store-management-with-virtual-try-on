@@ -242,6 +242,12 @@ _tryon_sessions: dict[str, dict] = {}
 _TRYON_SID_TTL_SECONDS = 24 * 3600
 KID_PHOTO_MAX_BYTES = 15_000_000
 KID_PREVIEW_MAX_DIM = 640
+# Phone photos arrive at 5–10 MB. Anything over 4 MB is downscaled before it
+# is kept; the folder itself is a 30-day inbox, pruned on the next upload.
+KID_PHOTO_COMPRESS_BYTES = 4_000_000
+KID_PHOTO_MAX_DIM = 1600
+KID_PHOTO_RETENTION_DAYS = 30
+KID_PHOTO_DIR = Path(os.environ.get("TRYON_PHOTO_DIR", str(UPLOAD_DIR / "tryon" / "people")))
 
 
 def _new_tryon_state() -> dict:
@@ -269,6 +275,7 @@ def _state(request: Request) -> dict:
         entry = _new_tryon_state()
         _tryon_sessions[sid] = entry
     entry["_at"] = now
+    _prune_kid_photos()
     _drain_capture_inbox(entry)
     return entry
 
@@ -307,28 +314,78 @@ def _drain_capture_inbox(state: dict) -> None:
         _capture_inbox["kid_photo_bytes"] = None
 
 
+def _prune_kid_photos() -> None:
+    """Drop person photos older than the retention window."""
+    cutoff = time.time() - KID_PHOTO_RETENTION_DAYS * 86400
+    if not KID_PHOTO_DIR.exists():
+        return
+    for path in KID_PHOTO_DIR.iterdir():
+        try:
+            if path.is_file() and path.stat().st_mtime < cutoff:
+                path.unlink()
+        except OSError:
+            continue
+
+
+def _compress_kid_photo(raw: bytes, mime: str) -> tuple[bytes, str]:
+    """Shrink phone-sized photos once, before both saving and generation."""
+    if len(raw) <= KID_PHOTO_COMPRESS_BYTES:
+        return raw, mime
+    try:
+        import io as _io
+
+        from PIL import Image, ImageOps
+
+        image = ImageOps.exif_transpose(Image.open(_io.BytesIO(raw)))
+        image.thumbnail((KID_PHOTO_MAX_DIM, KID_PHOTO_MAX_DIM))
+        buffer = _io.BytesIO()
+        image.convert("RGB").save(buffer, "JPEG", quality=85, optimize=True)
+        return buffer.getvalue(), "image/jpeg"
+    except Exception:
+        # An unreadable file still goes through the old byte-for-byte path.
+        return raw, mime
+
+
+def _store_kid_photo(raw: bytes, mime: str) -> str:
+    KID_PHOTO_DIR.mkdir(parents=True, exist_ok=True)
+    _prune_kid_photos()
+    ext = {
+        "image/png": ".png",
+        "image/webp": ".webp",
+        "image/heic": ".heic",
+        "image/heif": ".heif",
+    }.get(mime, ".jpg")
+    path = KID_PHOTO_DIR / f"{uuid.uuid4().hex}{ext}"
+    path.write_bytes(raw)
+    return "/" + path.as_posix()
+
+
 def _set_kid_photo(state: dict, raw: bytes, content_type: str = "image/jpeg") -> None:
-    """Keep the uploaded kid photo in memory, not in static/uploads."""
+    """Keep the kid photo in session memory and one copy on disk."""
     if not raw:
         raise ValueError("Empty kid photo")
     if len(raw) > KID_PHOTO_MAX_BYTES:
         raise ValueError("عکس شخص بیشتر از ۱۵ مگابایت است.")
     mime = content_type if content_type and content_type.startswith("image/") else "image/jpeg"
+    raw, mime = _compress_kid_photo(raw, mime)
     state["kid_photo_bytes"] = raw
     state["kid_photo_content_type"] = mime
-    # The page preview is a downscaled standalone copy — the full bytes stay
-    # for generation, but the base64 data URL never carries 25 MB of RAM.
     try:
-        from PIL import Image
-        import io as _io
-        img = Image.open(_io.BytesIO(raw))
-        img.thumbnail((KID_PREVIEW_MAX_DIM, KID_PREVIEW_MAX_DIM))
-        buf = _io.BytesIO()
-        img.convert("RGB").save(buf, "JPEG", quality=80)
-        preview = base64.b64encode(buf.getvalue()).decode("ascii")
-        state["kid_photo_preview"] = f"data:image/jpeg;base64,{preview}"
+        state["kid_photo_preview"] = _store_kid_photo(raw, mime)
     except Exception:
+        # Disk trouble must not lose the photo the session already holds.
         state["kid_photo_preview"] = None
+        try:
+            from PIL import Image
+            import io as _io
+            img = Image.open(_io.BytesIO(raw))
+            img.thumbnail((KID_PREVIEW_MAX_DIM, KID_PREVIEW_MAX_DIM))
+            buf = _io.BytesIO()
+            img.convert("RGB").save(buf, "JPEG", quality=80)
+            preview = base64.b64encode(buf.getvalue()).decode("ascii")
+            state["kid_photo_preview"] = f"data:image/jpeg;base64,{preview}"
+        except Exception:
+            pass
 
 
 def _kid_photo_temp_path(raw: Optional[bytes], content_type: str = "image/jpeg") -> Optional[str]:

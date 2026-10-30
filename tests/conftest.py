@@ -5,6 +5,7 @@ the network or real customer data.
 """
 import os
 import re
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -18,6 +19,7 @@ os.environ["ADMIN_PASSWORD"] = "test-admin-pass"
 os.environ["API_TOKEN"] = "test-api-token"
 os.environ["SESSION_SECRET"] = "test-session-secret"
 os.environ["SMS_API_KEY"] = ""  # never attempt a real SMS in tests
+os.environ["TRYON_PHOTO_DIR"] = str(_TEST_DIR / "tryon_photos")
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -102,4 +104,4 @@ def session_cleanup():
     yield
     for suffix in ("", "-wal", "-shm"):
         Path(str(_TEST_DB) + suffix).unlink(missing_ok=True)
-    _TEST_DIR.rmdir()
+    shutil.rmtree(_TEST_DIR, ignore_errors=True)
