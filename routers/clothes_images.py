@@ -1,6 +1,7 @@
 """Virtual Try-On — standalone, no customer required. Phone-friendly APIs."""
 import asyncio
 import base64
+import hashlib
 import logging
 import os
 import tempfile
@@ -242,10 +243,8 @@ _tryon_sessions: dict[str, dict] = {}
 _TRYON_SID_TTL_SECONDS = 24 * 3600
 KID_PHOTO_MAX_BYTES = 15_000_000
 KID_PREVIEW_MAX_DIM = 640
-# Phone photos arrive at 5–10 MB. Anything over 4 MB is downscaled before it
-# is kept; the folder itself is a 30-day inbox, pruned on the next upload.
-KID_PHOTO_COMPRESS_BYTES = 4_000_000
-KID_PHOTO_MAX_DIM = 1600
+# Phone photos are the only ones kept on disk; a 30-day inbox keeps the folder
+# from growing forever. The full bytes go to generation — never a re-encode.
 KID_PHOTO_RETENTION_DAYS = 30
 KID_PHOTO_DIR = Path(os.environ.get("TRYON_PHOTO_DIR", str(UPLOAD_DIR / "tryon" / "people")))
 
@@ -286,7 +285,8 @@ def _state(request: Request) -> dict:
 # the inbox into its own session state on the next page view. Phone
 # routes never touch session state — token callers may not keep cookies.
 _capture_inbox: dict = {"scanned": [], "kid_photo_bytes": None,
-                        "kid_photo_content_type": "image/jpeg"}
+                        "kid_photo_content_type": "image/jpeg",
+                        "kid_photo_save": False}
 
 
 def _upsert_scanned(scanned: list[dict], item: dict) -> None:
@@ -308,10 +308,12 @@ def _drain_capture_inbox(state: dict) -> None:
     if _capture_inbox["kid_photo_bytes"] and not state["kid_photo_bytes"]:
         try:
             _set_kid_photo(state, _capture_inbox["kid_photo_bytes"],
-                           _capture_inbox["kid_photo_content_type"])
+                           _capture_inbox["kid_photo_content_type"],
+                           save=_capture_inbox.get("kid_photo_save", False))
         except ValueError:
             pass
         _capture_inbox["kid_photo_bytes"] = None
+        _capture_inbox["kid_photo_save"] = False
 
 
 def _prune_kid_photos() -> None:
@@ -327,65 +329,53 @@ def _prune_kid_photos() -> None:
             continue
 
 
-def _compress_kid_photo(raw: bytes, mime: str) -> tuple[bytes, str]:
-    """Shrink phone-sized photos once, before both saving and generation."""
-    if len(raw) <= KID_PHOTO_COMPRESS_BYTES:
-        return raw, mime
-    try:
-        import io as _io
-
-        from PIL import Image, ImageOps
-
-        image = ImageOps.exif_transpose(Image.open(_io.BytesIO(raw)))
-        image.thumbnail((KID_PHOTO_MAX_DIM, KID_PHOTO_MAX_DIM))
-        buffer = _io.BytesIO()
-        image.convert("RGB").save(buffer, "JPEG", quality=85, optimize=True)
-        return buffer.getvalue(), "image/jpeg"
-    except Exception:
-        # An unreadable file still goes through the old byte-for-byte path.
-        return raw, mime
-
-
 def _store_kid_photo(raw: bytes, mime: str) -> str:
+    """Save a phone photo once; identical bytes reuse the same file."""
     KID_PHOTO_DIR.mkdir(parents=True, exist_ok=True)
     _prune_kid_photos()
+    digest = hashlib.sha256(raw).hexdigest()
+    existing = next(KID_PHOTO_DIR.glob(f"{digest}.*"), None)
+    if existing:
+        return "/" + existing.as_posix()
     ext = {
         "image/png": ".png",
         "image/webp": ".webp",
         "image/heic": ".heic",
         "image/heif": ".heif",
     }.get(mime, ".jpg")
-    path = KID_PHOTO_DIR / f"{uuid.uuid4().hex}{ext}"
+    path = KID_PHOTO_DIR / f"{digest}{ext}"
     path.write_bytes(raw)
     return "/" + path.as_posix()
 
 
-def _set_kid_photo(state: dict, raw: bytes, content_type: str = "image/jpeg") -> None:
-    """Keep the kid photo in session memory and one copy on disk."""
+def _set_kid_photo(state: dict, raw: bytes, content_type: str = "image/jpeg",
+                   save: bool = False) -> None:
+    """Keep the photo in session memory; only phone captures go to disk."""
     if not raw:
         raise ValueError("Empty kid photo")
     if len(raw) > KID_PHOTO_MAX_BYTES:
         raise ValueError("عکس شخص بیشتر از ۱۵ مگابایت است.")
     mime = content_type if content_type and content_type.startswith("image/") else "image/jpeg"
-    raw, mime = _compress_kid_photo(raw, mime)
     state["kid_photo_bytes"] = raw
     state["kid_photo_content_type"] = mime
-    try:
-        state["kid_photo_preview"] = _store_kid_photo(raw, mime)
-    except Exception:
-        # Disk trouble must not lose the photo the session already holds.
-        state["kid_photo_preview"] = None
+    if save:
         try:
-            from PIL import Image
-            import io as _io
-            img = Image.open(_io.BytesIO(raw))
-            img.thumbnail((KID_PREVIEW_MAX_DIM, KID_PREVIEW_MAX_DIM))
-            buf = _io.BytesIO()
-            img.convert("RGB").save(buf, "JPEG", quality=80)
-            preview = base64.b64encode(buf.getvalue()).decode("ascii")
-            state["kid_photo_preview"] = f"data:image/jpeg;base64,{preview}"
+            _store_kid_photo(raw, mime)
         except Exception:
-            pass
+            logger.warning("Could not save kid photo to disk", exc_info=True)
+    # The page preview is a downscaled standalone copy — the full bytes stay
+    # for generation, so no face detail is lost.
+    try:
+        from PIL import Image
+        import io as _io
+        img = Image.open(_io.BytesIO(raw))
+        img.thumbnail((KID_PREVIEW_MAX_DIM, KID_PREVIEW_MAX_DIM))
+        buf = _io.BytesIO()
+        img.convert("RGB").save(buf, "JPEG", quality=80)
+        preview = base64.b64encode(buf.getvalue()).decode("ascii")
+        state["kid_photo_preview"] = f"data:image/jpeg;base64,{preview}"
+    except Exception:
+        state["kid_photo_preview"] = None
 
 
 def _kid_photo_temp_path(raw: Optional[bytes], content_type: str = "image/jpeg") -> Optional[str]:
@@ -1372,10 +1362,11 @@ async def upload_kid_photo(request: Request, file: UploadFile = File(...)):
     """The phone's photo drop. The capture page uploads as htmx multipart and
     swaps the send-status line; every other caller keeps the JSON contract —
     including the exact 400 details — unchanged."""
+    from_phone = bool(request.headers.get(AUTH_HEADER))
     if not request.headers.get("HX-Request"):
-        return await _upload_kid_photo(file)
+        return await _upload_kid_photo(file, save=from_phone)
     try:
-        await _upload_kid_photo(file)
+        await _upload_kid_photo(file, save=from_phone)
     except HTTPException as error:
         return templates.TemplateResponse(
             request, "partials/mobile_send_status.html",
@@ -1385,7 +1376,7 @@ async def upload_kid_photo(request: Request, file: UploadFile = File(...)):
         {"ok": True, "msg": "عکس ارسال شد."})
 
 
-async def _upload_kid_photo(file: UploadFile):
+async def _upload_kid_photo(file: UploadFile, save: bool = False):
     raw = await file.read()
     # Guards before RAM: type must be an image, size capped — a 100 MB
     # "photo" must fail here, not as a base64 preview three steps later.
@@ -1398,11 +1389,11 @@ async def _upload_kid_photo(file: UploadFile):
         raise HTTPException(status_code=400, detail="عکس شخص بیشتر از ۱۵ مگابایت است.")
     # Inbox, not session: browser and phone share this endpoint, and the
     # desktop drains it into its own session on the next render (the page
-    # already reloads after upload).
+    # already reloads after upload). Only phone captures are copied to disk.
     _capture_inbox["kid_photo_bytes"] = raw
     _capture_inbox["kid_photo_content_type"] = mime
-    # The image is held in RAM and is never written to static/uploads.
-    return {"status": "ok", "path": None, "stored_in_static": False}
+    _capture_inbox["kid_photo_save"] = save
+    return {"status": "ok", "path": None, "stored_in_static": save}
 
 
 # ─── JSON API: Generate (stateless) ───

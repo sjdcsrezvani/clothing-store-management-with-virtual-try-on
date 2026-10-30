@@ -146,7 +146,7 @@ def test_upload_rejects_an_unpaired_key(client, db_session):
     assert resp.status_code == 401
 
 
-def test_upload_accepts_the_paired_key_and_stores_no_file(client, db_session):
+def test_upload_accepts_the_paired_key(client, db_session):
     raw_key = pair_device(db_session)
     db_session.commit()
     resp = client.post("/api/image-gen/upload-kid-photo",

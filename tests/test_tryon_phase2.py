@@ -116,7 +116,7 @@ def test_numbered_sections_and_privacy_note(client):
     # The ۴ result card renders only once a generation completes; its number
     # lives in the template, not behind a job fixture.
     assert "<h3>۴ · تصویر نهایی" in open("templates/admin/tryon.html", encoding="utf-8").read()
-    assert "۳۰ روز" in page and "فشرده" in page  # retention + compression note
+    assert "۳۰ روز" in page and "ذخیره" in page  # retention note
     assert "data-confirm" in page  # dialog confirms, no native confirm()
     assert "return confirm(" not in page
 
