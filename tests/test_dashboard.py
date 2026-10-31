@@ -711,3 +711,73 @@ def test_the_dashboard_prints_as_the_days_own_brief():
     assert ".card, .stat-card { background: var(--paper) !important" in block
     assert "--paper-ink" in block
     assert ".action-grid { display: none !important; }" in block
+
+
+# ── cards are destinations, and every card wears the one card system ─────────
+
+def test_every_card_links_to_the_view_that_reproduces_it():
+    """The number and the destination are one fact: a generic page is a broken
+    link even when it returns 200. Static cards are deliberately absent."""
+    from services.dashboard import CARDS
+
+    expected = {
+        "pos": "/admin/pos-reconciliation?status=unresolved",
+        "credit": "/admin/credit?status=overdue",
+        "checks": "/admin/checks?status=overdue",
+        "books_disagree": "/admin/accounting",
+        "sms_failed": "/admin/sms/history?status=failed",
+        "stock": "/admin/products?stock=low",
+        "cash_stale": "/admin/cashbox",
+        "backup": "/admin/backups",
+        "sms": "/admin/sms/history?status=queued",
+        "today_sales": "/sales/?day=0&refunded=no",
+        "cashbox": "/admin/cashbox",
+        "today_profit": None,
+        "month_sales": "/admin/accounting?period=month",
+        "month_profit": None,
+        "month_expenses": "/admin/expenses?period=month",
+        "debt": "/admin/credit",
+        "inventory_value": None,
+        "birthdays_due": "/admin/birthdays",
+        "follow_ups_due": "/admin/follow-ups",
+        "tier_ups_due": "/admin/tier-up",
+        "downgrades_due": "/admin/tier-downgrades",
+        "club_total": "/admin/customers",
+        "club_active": "/admin/customers?status=active",
+    }
+    assert {card["key"]: card["href"] for card in CARDS} == expected
+
+
+def test_every_dashboard_card_carries_a_tone_and_an_icon():
+    """A card without either is a card that slipped back to the old page."""
+    from services.dashboard import CARDS
+
+    for card in CARDS:
+        assert card["tone"], f"{card['key']} has no tone"
+        assert card["icon"], f"{card['key']} has no icon"
+
+
+def test_every_rendered_card_wears_an_icon(client, db_session):
+    """The service specs and the cashier's hand-built cards both reach the
+    template with an icon; one missing card would break the single row shape."""
+    for username, role in (("icon-owner", "owner"), ("icon-cash", "cashier")):
+        user, password = _staff(db_session, username, role)
+        _session_as(client, user, password)
+        html = content_only(client.get("/admin").text)
+        assert html.count('class="stat-icon"') == html.count('class="stat-card')
+        assert html.count('class="action-icon"') == html.count('class="action-item')
+
+
+def test_the_seller_board_is_a_collapsed_summary(client, db_session):
+    """Reference material, not the headline: one line until asked, and even
+    then a bounded list. The old three-deep rows made the end of the page."""
+    owner, password = _staff(db_session, "dash-fold", "owner")
+    _session_as(client, owner, password)
+    html = content_only(client.get("/admin").text)
+
+    assert '<details class="staff-board">' in html
+    assert 'class="section-heading staff-summary"' in html
+    assert "staff-glance" in html
+    # No `open` attribute on the rendered board: the default is folded.
+    assert re.search(r'<details class="staff-board"(?![^>]*\bopen\b)', html)
+    assert "فروشندگان" in html

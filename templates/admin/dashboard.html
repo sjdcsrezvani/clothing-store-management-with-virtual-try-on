@@ -44,7 +44,7 @@
 
 {% if section.kind == 'history' %}
 {# The cashier's own week: full-card days behind, one tap each. #}
-<section class="card screen-only" aria-labelledby="dash-history-title">
+<section class="card screen-only dash-panel dash-panel-history" aria-labelledby="dash-history-title">
     <div class="section-heading">
         <div>
             <span class="eyebrow">فروش روزانه</span>
@@ -68,18 +68,19 @@
 {% elif section.kind == 'attention' %}
 {# The action row is the page's navigation: on paper it is a list of links to
    screens the printout cannot open, so it lives on the screen only. #}
-<section class="card screen-only" aria-labelledby="dash-{{ section.key }}">
+<section class="card screen-only" data-panel="{{ section.key }}" aria-labelledby="dash-{{ section.key }}">
     <div class="section-heading">
         <div>
             <span class="eyebrow">{{ section.eyebrow }}</span>
             <h3 id="dash-{{ section.key }}">{{ section.title }}</h3>
         </div>
     </div>
-    <div class="action-grid">
+    <div class="action-grid" data-count="{{ section.cards | length }}">
         {% for card in section.cards %}
         {# `is-clear` means «nothing here needs you» and only this row may carry
            it. A money card showing a zero must never look this calm. #}
         <a class="action-item{% if card.tone %} action-{{ card.tone }}{% endif %}{% if card.clear %} is-clear{% endif %}" href="{{ card.href }}">
+            {% if card.icon %}<span class="action-icon" aria-hidden="true"><svg class="ui-icon" focusable="false"><use href="#icon-{{ card.icon }}"></use></svg></span>{% endif %}
             <span class="action-count tnum">{{ card.value }}</span>
             <strong>{{ card.label }}</strong>
             <span class="action-sub">{{ card.sub }}</span>
@@ -89,7 +90,7 @@
 </section>
 
 {% elif section.kind == 'top' %}
-<section class="card" aria-labelledby="dash-{{ section.key }}">
+<section class="card dash-panel dash-panel-{{ section.key }}" aria-labelledby="dash-{{ section.key }}">
     <div class="section-heading">
         <div>
             <h3 id="dash-{{ section.key }}">{{ section.title }}</h3>
@@ -120,53 +121,62 @@
 </section>
 
 {% elif section.kind == 'staff' %}
-<section class="card" aria-labelledby="dash-{{ section.key }}">
-    <div class="section-heading">
-        <div>
+{# The board is reference material, not the day's headline: it stays folded
+   behind a one-line summary until someone asks for the ranking. Native
+   <details> keeps it keyboard-operable with no new script. #}
+<section class="card dash-panel dash-panel-{{ section.key }}" aria-labelledby="dash-{{ section.key }}">
+    <details class="staff-board">
+        <summary class="section-heading staff-summary">
             <span class="eyebrow">{{ section.eyebrow }}</span>
             <h3 id="dash-{{ section.key }}">{{ section.title }}</h3>
-        </div>
-        <div class="rank-toggle">
-            <a href="/admin"{% if not section.rank_week %} aria-current="true"{% endif %}>امروز</a>
-            <a href="/admin?rank=week"{% if section.rank_week %} aria-current="true"{% endif %}>۷ روز</a>
-        </div>
-    </div>
-    {% if section.rows %}
-    <ol class="ranked-list">
-        {% for row in section.rows %}
-        <li class="ranked-row">
-            <span class="ranked-rank tnum">{{ loop.index }}</span>
-            <span class="ranked-name"><strong>{{ row.name }}</strong></span>
-            <span class="ranked-figures">
-                <span class="ranked-units tnum">{{ row.invoices }} فاکتور</span>
-                <span class="ranked-money tnum">{{ row.sales }} ت</span>
-                <span class="ranked-discount tnum">تخفیف {{ row.discounts }} ت</span>
-            </span>
-        </li>
-        {% endfor %}
-    </ol>
-    {% else %}
-    <p class="empty-state">هنوز فروشی ثبت نشده است.</p>
-    {% endif %}
-    {% if section.targets_editable %}
-    <details class="targets-editor">
-        <summary>تعیین هدف روزانه</summary>
-        <form method="post" action="/admin/targets" class="form-row">
-            {% for w in range(7) %}
-            <div class="form-group">
-                <label for="tgt-{{ w }}">{{ section.weekdays[w] }}</label>
-                <input type="text" inputmode="numeric" id="tgt-{{ w }}" name="sales_target_{{ w }}"
-                       value="{{ section.targets[w|string] }}" dir="ltr">
+            <span class="staff-glance tnum">{{ section.summary.sellers }} فروشنده · {{ section.summary.invoices }} فاکتور · {{ section.summary.sales }}</span>
+            <span class="staff-chevron" aria-hidden="true">▼</span>
+        </summary>
+        <div class="staff-body">
+            <div class="staff-toolbar">
+                <div class="rank-toggle">
+                    <a href="/admin"{% if not section.rank_week %} aria-current="true"{% endif %}>امروز</a>
+                    <a href="/admin?rank=week"{% if section.rank_week %} aria-current="true"{% endif %}>۷ روز</a>
+                </div>
             </div>
-            {% endfor %}
-            <button type="submit" class="btn btn-primary btn-sm">ذخیره هدف‌ها</button>
-        </form>
+            {% if section.rows %}
+            <ol class="ranked-list staff-list">
+                {% for row in section.rows %}
+                <li class="ranked-row staff-row">
+                    <span class="ranked-rank tnum">{{ loop.index }}</span>
+                    <span class="ranked-name"><strong>{{ row.name }}</strong></span>
+                    <span class="staff-figures">
+                        <span class="ranked-units tnum">{{ row.invoices }} فاکتور</span>
+                        <span class="ranked-money tnum">{{ row.sales }}</span>
+                        <span class="ranked-discount tnum">تخفیف {{ row.discounts }}</span>
+                    </span>
+                </li>
+                {% endfor %}
+            </ol>
+            {% else %}
+            <p class="empty-state">هنوز فروشی ثبت نشده است.</p>
+            {% endif %}
+            {% if section.targets_editable %}
+            <details class="targets-editor">
+                <summary>تعیین هدف روزانه</summary>
+                <form method="post" action="/admin/targets" class="form-row">
+                    {% for w in range(7) %}
+                    <div class="form-group">
+                        <label for="tgt-{{ w }}">{{ section.weekdays[w] }}</label>
+                        <input type="text" inputmode="numeric" id="tgt-{{ w }}" name="sales_target_{{ w }}"
+                               value="{{ section.targets[w|string] }}" dir="ltr">
+                    </div>
+                    {% endfor %}
+                    <button type="submit" class="btn btn-primary btn-sm">ذخیره هدف‌ها</button>
+                </form>
+            </details>
+            {% endif %}
+        </div>
     </details>
-    {% endif %}
 </section>
 
 {% elif section.kind == 'reading' %}
-<section class="card" aria-labelledby="dash-{{ section.key }}">
+<section class="card dash-panel dash-panel-{{ section.key }}" aria-labelledby="dash-{{ section.key }}">
     <div class="section-heading">
         <div>
             {% if section.eyebrow %}<span class="eyebrow">{{ section.eyebrow }}</span>{% endif %}
@@ -183,20 +193,21 @@
 </section>
 
 {% else %}
-<section aria-labelledby="dash-{{ section.key }}">
+<section class="card dash-panel dash-panel-{{ section.key }}" aria-labelledby="dash-{{ section.key }}">
     <div class="section-heading">
         <div>
             {% if section.eyebrow %}<span class="eyebrow">{{ section.eyebrow }}</span>{% endif %}
             <h3 id="dash-{{ section.key }}">{{ section.title }}</h3>
         </div>
     </div>
-    <div class="stats-grid">
+    <div class="stats-grid" data-count="{{ section.cards | length }}">
         {% for card in section.cards %}
         {% if card.href %}
         <a class="stat-card{% if card.tone %} accent-{{ card.tone }}{% endif %}" href="{{ card.href }}">
         {% else %}
         <div class="stat-card{% if card.tone %} accent-{{ card.tone }}{% endif %}">
         {% endif %}
+            {% if card.icon %}<span class="stat-icon" aria-hidden="true"><svg class="ui-icon" focusable="false"><use href="#icon-{{ card.icon }}"></use></svg></span>{% endif %}
             <div class="stat-label">{{ card.label }}</div>
             <div class="stat-value tnum">
                 {{ card.value }}

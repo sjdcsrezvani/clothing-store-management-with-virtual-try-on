@@ -537,65 +537,74 @@ def _build_club_active(numbers: _Numbers, role: str) -> dict:
 
 def _card(key: str, section: str, label: str, build, *,
           min_role: str = "manager", tone: str | None = None,
-          href: str | None = None) -> dict:
+          icon: str | None = None, href: str | None = None) -> dict:
     return {"key": key, "section": section, "label": label, "build": build,
-            "min_role": min_role, "tone": tone, "href": href}
+            "min_role": min_role, "tone": tone, "icon": icon, "href": href}
 
 
 CARDS: tuple[dict, ...] = (
     # اقدام فوری — money first: figures that lose value while unread.
+    # Every card names a tone and an icon: the dashboard draws one card system,
+    # and a card without either is a card that would look like the old page.
     _card("pos", "urgent", "تراکنش کارتخوان", _build_pos_unresolved,
-          min_role="owner", tone="danger", href="/admin/pos-reconciliation"),
+          min_role="owner", tone="danger", icon="terminal",
+          href="/admin/pos-reconciliation?status=unresolved"),
     _card("credit", "urgent", "نسیه سررسیدشده", _build_credit_overdue,
-          tone="info", href="/admin/credit?status=overdue"),
+          tone="info", icon="credit", href="/admin/credit?status=overdue"),
     _card("checks", "urgent", "چک سررسیدشده", _build_checks,
-          tone="info", href="/admin/checks"),
+          tone="info", icon="check", href="/admin/checks?status=overdue"),
     _card("books_disagree", "urgent", "مغایرت دفاتر", _build_books_disagree,
-          tone="danger", href="/admin/accounting"),
+          tone="danger", icon="accounting", href="/admin/accounting"),
     _card("sms_failed", "urgent", "پیامک ناموفق", _build_sms_failed,
-          tone="danger", href="/admin/sms"),
+          tone="danger", icon="sms", href="/admin/sms/history?status=failed"),
     # نیازمند توجه — the chores: ops work that waits without costing.
     _card("stock", "attention", "تنوع کم‌موجود", _build_stock,
-          tone="warning", href="/admin/products"),
+          tone="warning", icon="box", href="/admin/products?stock=low"),
     _card("cash_stale", "attention", "صندوق باز مانده", _build_cash_stale,
-          tone="warning", href="/admin/cashbox"),
+          tone="warning", icon="cash", href="/admin/cashbox"),
     _card("backup", "attention", "پشتیبان‌گیری", _build_backup,
-          min_role="owner", tone="success", href="/admin/backups"),
+          min_role="owner", tone="success", icon="backup",
+          href="/admin/backups"),
     _card("sms", "attention", "پیامک", _build_sms,
-          tone="warning", href="/admin/sms"),
+          tone="warning", icon="sms", href="/admin/sms/history?status=queued"),
     # امروز
     _card("today_sales", "today", "فروش", _build_today_sales,
-          tone="pine", href="/admin/accounting"),
+          tone="pine", icon="cart", href="/sales/?day=0&refunded=no"),
     _card("cashbox", "today", "صندوق", _build_cashbox,
-          tone="saffron", href="/admin/cashbox"),
+          tone="saffron", icon="cash", href="/admin/cashbox"),
     _card("today_profit", "today", "سود ناخالص", _build_today_profit,
-          min_role="owner", tone="pine"),
+          min_role="owner", tone="pine", icon="chart"),
     # این ماه
     _card("month_sales", "month", "فروش", _build_month_sales,
-          tone="sky", href="/admin/accounting"),
+          tone="sky", icon="cart", href="/admin/accounting?period=month"),
     _card("month_profit", "month", "سود خالص", _build_month_profit,
-          min_role="owner", tone="pine"),
+          min_role="owner", tone="pine", icon="chart"),
     _card("month_expenses", "month", "هزینه‌ها", _build_month_expenses,
-          min_role="manager", tone="saffron", href="/admin/expenses"),
+          min_role="manager", tone="saffron", icon="expenses",
+          href="/admin/expenses?period=month"),
     # مانده‌ها — balances, which belong to no single day or month
     _card("debt", "balances", "نسیه در گردش", _build_debt,
-          tone="persimmon", href="/admin/credit"),
+          tone="persimmon", icon="credit", href="/admin/credit"),
+    # The value is a report, not a list: there is no valuation page to open, so
+    # the card stays static rather than sending the reader somewhere inexact.
     _card("inventory_value", "balances", "ارزش موجودی انبار", _build_inventory_value,
-          min_role="manager", tone="ink", href="/admin/products"),
+          min_role="manager", tone="ink", icon="box"),
     # کارهای دوره‌ای — the sends are manager-operable, so managers see them;
     _card("birthdays_due", "periodic", "پیامک تولد", _build_birthdays_due,
-          min_role="manager", href="/admin/birthdays"),
+          min_role="manager", tone="persimmon", icon="campaign",
+          href="/admin/birthdays"),
     _card("follow_ups_due", "periodic", "پیگیری مشتریان", _build_follow_ups_due,
-          min_role="manager", href="/admin/follow-ups"),
+          min_role="manager", tone="sky", icon="sms", href="/admin/follow-ups"),
     _card("tier_ups_due", "periodic", "ارتقای سطح", _build_tier_ups_due,
-          min_role="manager", href="/admin/tier-up"),
+          min_role="manager", tone="pine", icon="crown", href="/admin/tier-up"),
     _card("downgrades_due", "periodic", "کاهش سطح", _build_downgrades_due,
-          min_role="manager", tone="danger", href="/admin/tier-downgrades"),
+          min_role="manager", tone="danger", icon="crown",
+          href="/admin/tier-downgrades"),
     # باشگاه مشتریان
     _card("club_total", "club", "اعضای باشگاه", _build_club_total,
-          href="/admin/customers"),
+          tone="lavender", icon="users", href="/admin/customers"),
     _card("club_active", "club", "مشتریان فعال", _build_club_active,
-          href="/admin/customers?status=active"),
+          tone="pine", icon="cart", href="/admin/customers?status=active"),
     # No club_debtors card: the balances debt card already splits current vs
     # overdue, and one fact twice trains the reader to stop reading it.
 )
@@ -780,19 +789,21 @@ def _cashier_overview(db: Session, *, user_id, user_name: str | None,
     weekday = _FA_WEEKDAYS[start.weekday()]
     cards = [
         {"key": "my_sales", "label": "فروش امروز من", "tone": "pine",
-         "href": f"/sales/?mine=1&day={offset}&refunded=no",
+         "icon": "cart", "href": f"/sales/?mine=1&day={offset}&refunded=no",
          "value": _money(mine["total"]),
          "sub": (f"{mine['count']} فاکتور · نقدی {_money(mine['legs']['cash'])} · "
                  f"کارتی {_money(mine['legs']['card'])} · "
                  f"نسیه {_money(mine['legs']['credit'])}"),
          "delta": _arrow(mine["total"], prev["total"]), "clear": False},
-        {"key": "my_discounts", "label": "تخفیف‌های من", "tone": None,
+        {"key": "my_discounts", "label": "تخفیف‌های من", "tone": "saffron",
+         "icon": "campaign",
          "href": f"/sales/?mine=1&day={offset}&discounted=1&refunded=no",
          "value": _money(mine["manual"] + mine["loyalty"]),
          "sub": (f"دستی {_money(mine['manual'])} · "
                  f"باشگاهی {_money(mine['loyalty'])}"),
          "delta": None, "clear": False},
-        {"key": "my_refunds", "label": "برگشتی‌های من", "tone": None,
+        {"key": "my_refunds", "label": "برگشتی‌های من", "tone": "persimmon",
+         "icon": "history",
          "href": f"/sales/?mine=1&day={offset}&refunded=yes",
          "value": str(mine["refund_count"]),
          "sub": (f"{_money(mine['refund_total'])} برگشت خورد — از فروش کم نشده"
@@ -807,8 +818,8 @@ def _cashier_overview(db: Session, *, user_id, user_name: str | None,
             Customer.created_at < end,
         ).count()
     cards.append(
-        {"key": "my_signups", "label": "مشتری‌های جدید من", "tone": None,
-         "href": f"/admin/customers?mine=1&day={offset}",
+        {"key": "my_signups", "label": "مشتری‌های جدید من", "tone": "lavender",
+         "icon": "users", "href": f"/admin/customers?mine=1&day={offset}",
          "value": str(signups),
          "sub": "ثبت‌شده امروز توسط من",
          "delta": None, "clear": signups == 0})
@@ -817,7 +828,7 @@ def _cashier_overview(db: Session, *, user_id, user_name: str | None,
         pct = min(100, int(round(mine["total"] * 100 / target)))
         cards.append(
             {"key": "my_target", "label": "هدف امروز فروشگاه", "tone": "sky",
-             "href": None,
+             "icon": "chart", "href": None,
              "value": f"٪{pct}",
              "sub": f"{_money(mine['total'])} از {_money(target)}",
              "delta": None, "clear": False,
@@ -826,7 +837,7 @@ def _cashier_overview(db: Session, *, user_id, user_name: str | None,
     shop = canonical_report(db, start, end)
     cards.append(
         {"key": "shop_today", "label": "فروش امروز فروشگاه", "tone": "sky",
-         "href": f"/sales/?day={offset}",
+         "icon": "cart", "href": f"/sales/?day={offset}",
          "value": _money(shop["net_sales"]),
          "sub": f"{shop['sale_count']} فاکتور در کل فروشگاه",
          "delta": None, "clear": False})
@@ -911,8 +922,12 @@ def _sellers_in_span(db: Session, start, end) -> list:
     return sorted(users, key=lambda u: (u.full_name or u.username))
 
 
-def _staff_ranking(db: Session, *, week: bool = False) -> list[dict]:
-    """Per-seller today (or trailing 7 days): sales, invoices, discounts."""
+def _staff_ranking(db: Session, *, week: bool = False) -> tuple[list[dict], dict]:
+    """Per-seller today (or trailing 7 days): sales, invoices, discounts.
+
+    The summary is summed here, before the raw total leaves each row, so the
+    collapsed seller card and the rows it hides can never disagree.
+    """
     if week:
         end = day_span(0)[1]
         start = end - timedelta(days=7)
@@ -929,9 +944,14 @@ def _staff_ranking(db: Session, *, week: bool = False) -> list[dict]:
             "_total": day["total"],
         })
     rows.sort(key=lambda r: r["_total"], reverse=True)
+    summary = {
+        "sellers": len(rows),
+        "invoices": sum(row["invoices"] for row in rows),
+        "sales": _money(sum(row["_total"] for row in rows)),
+    }
     for row in rows:
         del row["_total"]
-    return rows
+    return rows, summary
 
 
 def _live_counter(db: Session) -> dict | None:
@@ -1013,7 +1033,8 @@ def dashboard_overview(db: Session, *, role: str = "manager", user_id=None,
                     continue
                 section["cards"].append({
                     "key": spec["key"], "label": spec["label"],
-                    "tone": spec["tone"], "href": spec["href"],
+                    "tone": spec["tone"], "icon": spec["icon"],
+                    "href": spec["href"],
                     "delta": None, "clear": False, **card,
                 })
         if section["cards"] or section["rows"] or section.get("sentences") or kind == "top":
@@ -1021,10 +1042,11 @@ def dashboard_overview(db: Session, *, role: str = "manager", user_id=None,
     if role_allows(role, "manager"):
         # The counter, watched: who rang what, what is live, whether the day
         # meets its goal. Names are a manager's working material here.
-        staff_rows = _staff_ranking(db, week=rank_week)
+        staff_rows, staff_summary = _staff_ranking(db, week=rank_week)
         sections.append({
             "key": "staff", "title": "فروشندگان", "eyebrow": "امروز" if not rank_week else "۷ روز گذشته",
             "kind": "staff", "cards": [], "rows": staff_rows,
+            "summary": staff_summary,
             "rank_week": rank_week,
             "targets_editable": True,
             "targets": {str(w): get_setting_int(db, f"sales_target_{w}", 0)
@@ -1037,7 +1059,8 @@ def dashboard_overview(db: Session, *, role: str = "manager", user_id=None,
             sections.append({
                 "key": "live", "title": "الان صندوق", "eyebrow": "", "kind": "stats",
                 "cards": [{"key": "live_counter", "label": "صندوق و سبدهای باز",
-                           "tone": None, "href": "/admin/cashbox",
+                           "tone": "mint", "icon": "cash",
+                           "href": "/admin/cashbox",
                            "delta": None, "clear": False, **live}],
                 "rows": [],
             })
@@ -1046,7 +1069,7 @@ def dashboard_overview(db: Session, *, role: str = "manager", user_id=None,
             sections.append({
                 "key": "target", "title": "هدف امروز", "eyebrow": "", "kind": "stats",
                 "cards": [{"key": "shop_target", "label": "هدف امروز فروشگاه",
-                           "tone": "sky", "href": None,
+                           "tone": "sky", "icon": "chart", "href": None,
                            "delta": None, "clear": False, **target}],
                 "rows": [],
             })
