@@ -567,7 +567,7 @@ async def admin_tag_settings(request: Request, db: Session = Depends(get_db)):
     sample_item = item_from_variant(
         sample_variant, fmt, sample_kids, sample_adult) if sample_variant else {
         "variant_id": None, "barcode": "12345", "product_name": "نمونه محصول",
-        "name": "نمونه محصول", "price": 250000, "price_display": fmt(250000),
+        "name": "نمونه محصول", "price": 250000, "price_display": f"{fmt(250000)} تومان",
         "size": "۴ سال", "color": "آبی", "sku": "SKU-001", "brand": "رای کیدز",
         "category": "لباس کودک", "image_path": None,
         "care_instructions": "شست‌وشو با آب سرد",

@@ -10,6 +10,7 @@ from models import Product, ProductVariant, Settings, TagPrintBatch, TagTemplate
 from services.tags import (
     calculate_a4_fit,
     default_tag_config,
+    item_from_variant,
     render_tag_html,
     validate_tag_config,
     save_tag_template,
@@ -443,6 +444,19 @@ def test_tag_settings_page_has_no_layout_mode(client, authed):
     assert "ستون‌ها" in response.text
     assert "سطرها" in response.text
     assert "خطای قالب" not in response.text
+
+
+def test_tag_price_label_carries_the_shop_currency(db_session):
+    product = Product(name="قیمت تگ", category="لباس")
+    db_session.add(product)
+    db_session.flush()
+    variant = ProductVariant(product_id=product.id, price=5000, stock_quantity=1,
+                             barcode="PRICE-1")
+    db_session.add(variant)
+    db_session.commit()
+
+    item = item_from_variant(variant, lambda value: f"{value:,}")
+    assert item["price_display"] == "5,000 تومان"
 
 
 def test_tag_preview_samples_the_store_size_display_unit(client, db_session, authed):

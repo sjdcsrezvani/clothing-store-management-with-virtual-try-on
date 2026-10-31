@@ -607,13 +607,15 @@ def render_tag_html(config: dict[str, Any], item: dict[str, Any], store: dict[st
 def item_from_variant(variant, fmt=None, standard: str | None = None,
                       adult_standard: str | None = None) -> dict[str, Any]:
     product = variant.product
+    price_text = fmt(variant.price) if fmt else f"{variant.price:,}"
     return {
         "variant_id": variant.id,
         "barcode": variant.barcode,
         "product_name": product.name if product else "",
         "name": variant.display_name,
         "price": variant.price,
-        "price_display": fmt(variant.price) if fmt else f"{variant.price:,}",
+        # The tag's «قیمت» field is a price label, not a bare number.
+        "price_display": f"{price_text} تومان",
         "size": variant_size_display(variant, standard, adult_standard=adult_standard)
                 if standard else variant.size,
         "color": variant.color,
