@@ -323,21 +323,21 @@
                 <fieldset class="payment-options">
                     <legend class="sr-only">روش پرداخت</legend>
                     <label class="payment-option">
-                        <input type="radio" name="payment_method" value="card" checked>
+                        <input type="radio" name="payment_method" value="card"{% if payment_method|default('card') == 'card' %} checked{% endif %}>
                         <span>کارت</span>
                     </label>
                     <label class="payment-option">
-                        <input type="radio" name="payment_method" value="cash">
+                        <input type="radio" name="payment_method" value="cash"{% if payment_method == 'cash' %} checked{% endif %}>
                         <span>نقد</span>
                     </label>
                     {% if customer %}
                     <label class="payment-option">
-                        <input type="radio" name="payment_method" value="credit">
+                        <input type="radio" name="payment_method" value="credit"{% if payment_method == 'credit' %} checked{% endif %}>
                         <span>نسیه</span>
                     </label>
                     {% endif %}
                     <label class="payment-option">
-                        <input type="radio" name="payment_method" value="split">
+                        <input type="radio" name="payment_method" value="split"{% if payment_method == 'split' %} checked{% endif %}>
                         <span>ترکیبی</span>
                     </label>
                 </fieldset>
@@ -402,7 +402,10 @@
                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                         <button type="submit" id="terminal-submit" class="btn btn-primary btn-block">ارسال مبلغ به کارت‌خوان</button>
                     </form>
-                    <div id="terminal-status" class="alert" hidden role="status" aria-live="polite"></div>
+                    <div id="terminal-status"
+                         class="alert{% if manual_pos_approval_available %} alert-error{% endif %}"
+                         {% if not manual_pos_approval_available %}hidden{% endif %}
+                         role="status" aria-live="polite">{% if manual_pos_approval_available %}{% include "partials/manual_pos_approval.html" %}{% endif %}</div>
                 </div>
                 <div id="cash-calculator" class="cash-calculator">
                     <label for="cash-received">وجه دریافتی (تومان)</label>
@@ -579,9 +582,23 @@ document.addEventListener('submit', function (event) {
 // the global double-submit guard so this flow owns the button while it runs.
 // The terminal response fragment re-arms this through htmx:afterSwap.
 var tillSending = false;
+// The manual-approval button is a deliberate answer to an uncertain terminal;
+// it must reach confirm-sale, not start another terminal send. A click flag
+// keeps that decision independent of the submitter property.
+var manualApprovalClick = false;
+document.addEventListener('click', function (event) {
+    var button = event.target && event.target.closest
+        ? event.target.closest('button[name="manual_pos_approval"]')
+        : null;
+    manualApprovalClick = !!button;
+});
 document.addEventListener('submit', function (event) {
     var confirmForm = event.target;
     if (!confirmForm || confirmForm.id !== 'confirm-form') return;
+    if (manualApprovalClick) {
+        manualApprovalClick = false;
+        return;
+    }
     var confirmButton = document.getElementById('confirm-submit');
     var terminalForm = document.getElementById('terminal-form');
     if (!confirmButton || !terminalForm) return;
@@ -669,14 +686,19 @@ document.addEventListener('htmx:afterSwap', function (event) {
     if (!target) return;
     if (target.id === 'terminal-status') {
         updatePaymentUi();
-        if (!tillSending) return;
+        // Any approved terminal answer issues the invoice now — whether the
+        // cashier pressed the one-button confirm or the explicit send button.
+        // Leaving it for a second click is what stranded approved payments.
         tillSending = false;
         var confirmButton = document.getElementById('confirm-submit');
         if (confirmButton) confirmButton.classList.remove('is-loading');
         var token = document.getElementById('pos-approval-token');
         if (token && token.value) {
             var confirmForm = document.getElementById('confirm-form');
-            if (confirmForm) confirmForm.submit();
+            if (confirmForm) {
+                if (confirmForm.requestSubmit) confirmForm.requestSubmit();
+                else confirmForm.submit();
+            }
         }
         return;
     }

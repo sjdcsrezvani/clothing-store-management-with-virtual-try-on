@@ -1305,7 +1305,7 @@ CHECKOUT_TRANSITIONS = {
     "payment_approved": {"completed", "expired"},
     "payment_cancelled": {"draft", "expired"},
     "payment_declined": {"draft", "expired"},
-    "payment_uncertain": {"payment_declined", "payment_cancelled", "expired"},
+    "payment_uncertain": {"payment_approved", "payment_declined", "payment_cancelled", "expired"},
     "completed": {"refunded"},
     "refunded": set(),
     "expired": set(),

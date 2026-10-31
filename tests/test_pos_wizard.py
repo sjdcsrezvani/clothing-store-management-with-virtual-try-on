@@ -38,6 +38,20 @@ def test_terminal_send_is_a_primary_step_not_a_ghost():
     assert "btn-ghost" not in terminal_line
 
 
+def test_approved_terminal_answer_issues_the_invoice_without_a_second_click():
+    """An approval from either send button must complete the sale.
+
+    The old handler only auto-submitted when the one-button confirm started
+    the terminal call; the explicit «ارسال مبلغ» path stranded approved
+    payments in ``payment_approved`` with no invoice.
+    """
+    source = _checkout()
+    start = source.index("if (target.id === 'terminal-status')")
+    block = source[start:source.index("        return;", start)]
+    assert "if (!tillSending) return;" not in block
+    assert "confirmForm.requestSubmit" in block
+
+
 def test_probe_contract_survives_the_rebuild():
     """Ids the headless probe reads, strings it matches, behavior it asserts."""
     source = _checkout()

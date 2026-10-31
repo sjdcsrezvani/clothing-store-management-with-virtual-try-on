@@ -4,7 +4,7 @@ import re
 import socket
 import threading
 
-from models import Customer, POSTransaction, Product, ProductVariant, Sale, Settings, StaffUser
+from models import CheckoutSession, Customer, POSTransaction, Product, ProductVariant, Sale, SalePaymentPart, Settings, StaffUser
 from services import pos_terminal
 from services.checkout import create_checkout
 from tests.conftest import csrf_token
@@ -186,6 +186,364 @@ def test_terminal_error_is_persisted_as_uncertain_and_not_retried(client, db_ses
     transaction = db_session.query(POSTransaction).one()
     assert transaction.status == "uncertain"
     assert transaction.error_message == "terminal did not answer"
+
+
+def test_scan_after_payment_started_keeps_the_frozen_basket(client, db_session, monkeypatch):
+    _configure_pos(db_session)
+    variant = _make_pos_variant(db_session, price=100_000, stock=2)
+
+    def fake_send(host, port, amount, r4=None, r8=None):
+        raise TimeoutError("terminal did not answer")
+
+    monkeypatch.setattr("routers.sales.send_terminal_sale", fake_send)
+    token = _login_owner(client)
+    started = client.post("/sales/skip-customer", data={"csrf_token": token})
+    assert started.status_code == 200
+    checkout = db_session.query(CheckoutSession).one()
+    nonce = checkout.checkout_nonce
+    basket = [{
+        "variant_id": variant.id,
+        "product_id": variant.product_id,
+        "name": variant.display_name,
+        "unit_price": variant.price,
+        "unit_cost": variant.cost_price,
+        "quantity": 1,
+        "total_price": variant.price,
+    }]
+
+    added = client.post(
+        "/sales/add-to-basket",
+        data={
+            "customer_id": "0",
+            "barcode": variant.barcode,
+            "basket_json": "[]",
+            "csrf_token": token,
+        },
+    )
+    assert added.status_code == 200
+    send = client.post(
+        "/sales/send-to-terminal",
+        data={"checkout_nonce": nonce, "csrf_token": token},
+    )
+    assert send.status_code == 502
+    db_session.expire_all()
+    checkout = db_session.query(CheckoutSession).filter(
+        CheckoutSession.checkout_nonce == nonce).one()
+    assert checkout.state == "payment_uncertain"
+
+    rescanned = client.post(
+        "/sales/add-to-basket",
+        data={
+            "customer_id": "0",
+            "barcode": variant.barcode,
+            "basket_json": json.dumps(basket),
+            "csrf_token": token,
+        },
+    )
+    assert rescanned.status_code == 200
+    assert "پرداخت این سبد شروع شده" in rescanned.text
+    db_session.expire_all()
+    checkout = db_session.query(CheckoutSession).filter(
+        CheckoutSession.checkout_nonce == nonce).one()
+    assert [item["quantity"] for item in json.loads(checkout.basket_json)] == [1]
+
+
+def test_unknown_terminal_response_is_stored_as_uncertain(client, db_session, monkeypatch):
+    _configure_pos(db_session)
+    variant = _make_pos_variant(db_session, price=100_000, stock=1)
+    monkeypatch.setattr(
+        "routers.sales.send_terminal_sale",
+        lambda host, port, amount, r4=None, r8=None: {
+            "status": "unknown", "response_code": None,
+            "label": "Unknown response", "response": "garbage",
+        },
+    )
+    token = _login_owner(client)
+    nonce = "checkout-unknown-response"
+    _create_server_checkout(db_session, nonce, variant.id)
+
+    response = client.post(
+        "/sales/send-to-terminal",
+        data={**_send_data(nonce), "csrf_token": token},
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 200
+    assert 'name="manual_pos_approval"' in response.text
+    transaction = db_session.query(POSTransaction).one()
+    assert transaction.status == "uncertain"
+
+
+def _login_owner(client):
+    login_token = csrf_token(client)
+    login = client.post(
+        "/admin/login",
+        data={"username": "owner", "password": "test-admin-pass", "csrf_token": login_token},
+        follow_redirects=False,
+    )
+    assert login.status_code == 303
+    return csrf_token(client, "/sales/new")
+
+
+def _uncertain_terminal_checkout(client, db_session, monkeypatch, nonce, *, stock=1):
+    _configure_pos(db_session)
+    variant = _make_pos_variant(db_session, price=100_000, stock=stock)
+
+    def fake_send(host, port, amount, r4=None, r8=None):
+        raise TimeoutError("terminal did not answer")
+
+    monkeypatch.setattr("routers.sales.send_terminal_sale", fake_send)
+    token = _login_owner(client)
+    _create_server_checkout(db_session, nonce, variant.id)
+    response = client.post(
+        "/sales/send-to-terminal",
+        data={**_send_data(nonce), "csrf_token": token},
+    )
+    assert response.status_code == 502
+    return variant, token
+
+
+def test_uncertain_payment_can_be_manually_approved_and_invoiced(client, db_session, monkeypatch):
+    variant, token = _uncertain_terminal_checkout(
+        client, db_session, monkeypatch, "checkout-manual-approval")
+    basket = [{"variant_id": variant.id, "quantity": 1}]
+
+    response = client.post(
+        "/sales/confirm-sale",
+        data={
+            "customer_id": "0",
+            "basket_json": json.dumps(basket),
+            "payment_method": "card",
+            "pos_approval_token": "",
+            "manual_pos_approval": "1",
+            "checkout_nonce": "checkout-manual-approval",
+            "use_referrer_discount": "0",
+            "custom_discount_amount": "",
+            "custom_discount_percent": "",
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303, response.text[:1000]
+    db_session.expire_all()
+    sale = db_session.query(Sale).one()
+    transaction = db_session.query(POSTransaction).one()
+    checkout = db_session.query(CheckoutSession).filter(
+        CheckoutSession.checkout_nonce == "checkout-manual-approval").one()
+    db_session.refresh(variant)
+    assert sale.final_amount == 100_000
+    assert sale.payment_method == "card"
+    assert transaction.status == "linked_to_sale"
+    assert transaction.sale_id == sale.id
+    assert checkout.state == "completed"
+    assert variant.stock_quantity == 0
+    assert variant.reserved_quantity == 0
+
+
+def test_manual_approval_completes_a_split_sale(client, db_session, monkeypatch):
+    _configure_pos(db_session)
+    variant = _make_pos_variant(db_session, price=100_000, stock=1)
+
+    def fake_send(host, port, amount, r4=None, r8=None):
+        raise TimeoutError("terminal did not answer")
+
+    monkeypatch.setattr("routers.sales.send_terminal_sale", fake_send)
+    token = _login_owner(client)
+    nonce = "checkout-manual-approval-split"
+    checkout = _create_server_checkout(db_session, nonce, variant.id)
+    checkout.payment_method = "split"
+    checkout.split_json = json.dumps([
+        {"method": "cash", "amount": 40_000},
+        {"method": "card", "amount": 60_000},
+    ])
+    db_session.commit()
+    send = client.post(
+        "/sales/send-to-terminal",
+        data={"checkout_nonce": nonce, "csrf_token": token},
+    )
+    assert send.status_code == 502
+
+    basket = [{"variant_id": variant.id, "quantity": 1}]
+    response = client.post(
+        "/sales/confirm-sale",
+        data={
+            "customer_id": "0",
+            "basket_json": json.dumps(basket),
+            "payment_method": "split",
+            "split_cash": "40000",
+            "split_card": "60000",
+            "manual_pos_approval": "1",
+            "checkout_nonce": nonce,
+            "use_referrer_discount": "0",
+            "custom_discount_amount": "",
+            "custom_discount_percent": "",
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303, response.text[:1000]
+    db_session.expire_all()
+    sale = db_session.query(Sale).one()
+    transaction = db_session.query(POSTransaction).one()
+    parts = db_session.query(SalePaymentPart).order_by(SalePaymentPart.id).all()
+    db_session.refresh(variant)
+    assert sale.payment_method == "split"
+    assert [(part.method, part.amount) for part in parts] == [
+        ("cash", 40_000), ("card", 60_000)]
+    assert transaction.status == "linked_to_sale"
+    assert variant.stock_quantity == 0
+    assert variant.reserved_quantity == 0
+
+
+def test_manual_approval_refuses_a_changed_basket(client, db_session, monkeypatch):
+    variant, token = _uncertain_terminal_checkout(
+        client, db_session, monkeypatch, "checkout-manual-approval-changed", stock=2)
+    basket = [{
+        "variant_id": variant.id,
+        "product_id": variant.product_id,
+        "name": variant.display_name,
+        "unit_price": variant.price,
+        "unit_cost": variant.cost_price,
+        "quantity": 1,
+        "total_price": variant.price,
+    }]
+
+    checkout = db_session.query(CheckoutSession).filter(
+        CheckoutSession.checkout_nonce == "checkout-manual-approval-changed").one()
+    changed = [{**basket[0], "quantity": 2, "total_price": variant.price * 2}]
+    checkout.basket_json = json.dumps(changed)
+    db_session.commit()
+
+    response = client.post(
+        "/sales/confirm-sale",
+        data={
+            "customer_id": "0",
+            "basket_json": json.dumps(changed),
+            "payment_method": "card",
+            "pos_approval_token": "",
+            "manual_pos_approval": "1",
+            "checkout_nonce": "checkout-manual-approval-changed",
+            "use_referrer_discount": "0",
+            "custom_discount_amount": "",
+            "custom_discount_percent": "",
+            "csrf_token": token,
+        },
+    )
+
+    assert response.status_code == 200
+    assert "تغییر کرده" in response.text
+    assert db_session.query(Sale).count() == 0
+    db_session.expire_all()
+    transaction = db_session.query(POSTransaction).one()
+    assert transaction.status == "uncertain"
+
+
+def test_stranded_approved_payment_can_be_invoiced_after_reload(client, db_session, monkeypatch):
+    """An approved charge whose confirm request was lost is still one click from
+    an invoice: the stored approved attempt is enough, the token need not be."""
+    _configure_pos(db_session)
+    variant = _make_pos_variant(db_session, price=100_000, stock=1)
+
+    monkeypatch.setattr(
+        "routers.sales.send_terminal_sale",
+        lambda host, port, amount, r4=None, r8=None: {
+            "status": "approved", "response_code": "00200",
+            "label": "Approved", "response": "RS003RS00200",
+        },
+    )
+    token = _login_owner(client)
+    assert client.post("/sales/skip-customer", data={"csrf_token": token}).status_code == 200
+    added = client.post(
+        "/sales/add-to-basket",
+        data={
+            "customer_id": "0",
+            "barcode": variant.barcode,
+            "basket_json": "[]",
+            "csrf_token": token,
+        },
+    )
+    assert added.status_code == 200
+    checkout = db_session.query(CheckoutSession).one()
+    nonce = checkout.checkout_nonce
+    sent = client.post(
+        "/sales/send-to-terminal",
+        data={**_send_data(nonce), "csrf_token": token},
+    )
+    assert sent.status_code == 200
+    # The invoice request died before reaching the server.
+    db_session.expire_all()
+    checkout = db_session.query(CheckoutSession).filter(
+        CheckoutSession.checkout_nonce == nonce).one()
+    assert checkout.state == "payment_approved"
+    assert db_session.query(Sale).count() == 0
+
+    # The next visit to the till renders the frozen basket and the rescue button.
+    page = client.post("/sales/skip-customer", data={"csrf_token": token})
+    assert page.status_code == 200
+    assert 'name="manual_pos_approval"' in page.text
+
+    response = client.post(
+        "/sales/confirm-sale",
+        data={
+            "customer_id": "0",
+            "basket_json": json.dumps([{"variant_id": variant.id, "quantity": 1}]),
+            "payment_method": "card",
+            "pos_approval_token": "",
+            "manual_pos_approval": "1",
+            "checkout_nonce": nonce,
+            "use_referrer_discount": "0",
+            "custom_discount_amount": "",
+            "custom_discount_percent": "",
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303, response.text[:1000]
+    db_session.expire_all()
+    sale = db_session.query(Sale).one()
+    transaction = db_session.query(POSTransaction).one()
+    checkout = db_session.query(CheckoutSession).filter(
+        CheckoutSession.checkout_nonce == nonce).one()
+    db_session.refresh(variant)
+    assert sale.final_amount == 100_000
+    assert transaction.status == "linked_to_sale"
+    assert transaction.sale_id == sale.id
+    assert checkout.state == "completed"
+    assert variant.stock_quantity == 0
+    assert variant.reserved_quantity == 0
+
+
+def test_manual_approval_refuses_a_reconciled_transaction(client, db_session, monkeypatch):
+    variant, token = _uncertain_terminal_checkout(
+        client, db_session, monkeypatch, "checkout-manual-approval-reconciled")
+    transaction = db_session.query(POSTransaction).one()
+    transaction.reconciled = True
+    transaction.resolution_type = "reversed_externally"
+    db_session.commit()
+
+    response = client.post(
+        "/sales/confirm-sale",
+        data={
+            "customer_id": "0",
+            "basket_json": json.dumps([{"variant_id": variant.id, "quantity": 1}]),
+            "payment_method": "card",
+            "pos_approval_token": "",
+            "manual_pos_approval": "1",
+            "checkout_nonce": "checkout-manual-approval-reconciled",
+            "use_referrer_discount": "0",
+            "custom_discount_amount": "",
+            "custom_discount_percent": "",
+            "csrf_token": token,
+        },
+    )
+
+    assert response.status_code == 200
+    assert db_session.query(Sale).count() == 0
+    db_session.expire_all()
+    assert db_session.query(POSTransaction).one().status == "uncertain"
 
 
 def test_approved_pos_transaction_links_to_one_sale(client, db_session, monkeypatch):

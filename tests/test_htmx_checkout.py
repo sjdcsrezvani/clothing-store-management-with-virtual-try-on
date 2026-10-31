@@ -53,6 +53,27 @@ def test_send_to_terminal_swaps_a_fragment_with_token_and_indicator(client, db_s
     assert 'id="terminal-indicator"' in response.text
 
 
+def test_uncertain_terminal_response_offers_manual_approval(client, db_session, monkeypatch):
+    _configure_pos(db_session)
+    variant = _make_pos_variant(db_session, price=100_000, stock=1)
+
+    def fake_send(host, port, amount, r4=None, r8=None):
+        raise TimeoutError("terminal did not answer")
+
+    monkeypatch.setattr("routers.sales.send_terminal_sale", fake_send)
+    _login(client)
+    nonce = "checkout-htmx-manual-approval"
+    _create_server_checkout(db_session, nonce, variant.id)
+    response = client.post(
+        "/sales/send-to-terminal",
+        data={"checkout_nonce": nonce, "csrf_token": csrf_token(client, "/sales/new")},
+        headers={"HX-Request": "true"})
+    assert response.status_code == 200
+    assert "alert-error" in response.text
+    assert 'name="manual_pos_approval"' in response.text
+    assert 'form="confirm-form"' in response.text
+
+
 def test_send_to_terminal_refusal_is_a_fragment_for_the_till(client, db_session):
     _login(client)
     data = {"checkout_nonce": "no-such-checkout",

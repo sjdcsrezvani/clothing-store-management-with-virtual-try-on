@@ -1,0 +1,10 @@
+{# The terminal took the money but never sent its approval back. The cashier
+   confirms that fact here; the server only accepts the uncertain attempt that
+   matches this checkout, amount and basket. #}
+<div class="form-gap-top">
+    <p class="muted">{{ manual_pos_approval_note|default("اگر کارت‌خوان مبلغ را از کارت کم کرده ولی پاسخ تأیید برنگشت، پرداخت را دستی تأیید کنید.") }}</p>
+    <button type="submit" form="confirm-form" name="manual_pos_approval" value="1"
+            class="btn btn-primary btn-block">
+        پرداخت انجام شد — تأیید دستی و صدور فاکتور
+    </button>
+</div>

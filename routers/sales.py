@@ -96,12 +96,93 @@ def _get_pos_approval(request: Request, db: Session, amount: int, token: str, ch
 
     transaction_id = approval.get("transaction_id")
     transaction = db.query(POSTransaction).filter(POSTransaction.id == transaction_id).first()
-    if not transaction or transaction.status != "approved" or transaction.sale_id:
+    if not transaction or transaction.status != "approved" or transaction.sale_id or transaction.reconciled:
         return None
     if not hmac.compare_digest(transaction.approval_token_hash or "", _approval_hash(token)):
         return None
     if transaction.amount != int(amount) or transaction.checkout_nonce != checkout_nonce:
         return None
+    return transaction
+
+
+def _basket_signature(items) -> list[tuple[int, int]]:
+    """Variant+quantity identity of a basket, ignoring display fields."""
+    return [(int(item.get("variant_id")), int(item.get("quantity") or 1))
+            for item in (items or [])]
+
+
+def _manual_pos_approval(
+    request: Request,
+    db: Session,
+    checkout: CheckoutSession,
+    amount: int,
+    basket: list[dict],
+) -> POSTransaction | None:
+    """Approve a terminal payment by hand.
+
+    The terminal took the money but its answer never arrived — or it approved
+    and the invoice request was lost. Only the attempt for this exact
+    checkout, amount and basket can be approved; anything else stays for
+    reconciliation.
+    """
+    if checkout.state not in {"payment_uncertain", "payment_approved"}:
+        return None
+    transaction = db.query(POSTransaction).filter(
+        POSTransaction.checkout_nonce == checkout.checkout_nonce,
+        POSTransaction.sale_id.is_(None),
+        POSTransaction.reconciled == False,  # noqa: E712
+    ).first()
+    if transaction is None:
+        return None
+    if transaction.status != ("uncertain" if checkout.state == "payment_uncertain"
+                              else "approved"):
+        return None
+    if int(transaction.amount) != int(amount):
+        return None
+    try:
+        snapshot = json.loads(transaction.basket_snapshot or "[]")
+    except (TypeError, ValueError):
+        snapshot = []
+    if _basket_signature(snapshot) != _basket_signature(basket):
+        raise ValueError(
+            "سبد پس از ارسال به کارت‌خوان تغییر کرده است؛ برای تأیید دستی باید همان سبد اولیه باشد."
+        )
+    now = datetime.now(timezone.utc)
+    operator_id = request.session.get("staff_user_id")
+    was_uncertain = transaction.status == "uncertain"
+    transaction.status = "approved"
+    transaction.response_label = "تأیید دستی صندوق‌دار"
+    transaction.request_finished_at = now
+    transaction.last_retry_at = now
+    transaction.operator_user_id = operator_id
+    _append_pos_outcome_event(
+        db,
+        transaction,
+        "approved",
+        actor_user_id=operator_id,
+        request_id=request.headers.get("X-Request-ID"),
+    )
+    if was_uncertain:
+        # payment_approved already carries this state; only flip the uncertain
+        # attempt. Re-recording it would be an invalid self-transition.
+        set_payment_outcome(
+            db,
+            checkout,
+            "approved",
+            "تأیید دستی صندوق‌دار",
+            request_id=request.headers.get("X-Request-ID"),
+            commit=False,
+        )
+    log_action(
+        db,
+        "pos_manual_approval",
+        f"تأیید دستی پرداخت کارت‌خوان #{transaction.id}",
+        request=request,
+        target_type="pos_transaction",
+        target_id=transaction.id,
+        after={"amount": transaction.amount, "checkout_id": checkout.id},
+    )
+    db.flush()
     return transaction
 
 
@@ -121,7 +202,7 @@ def _transaction_response(transaction: POSTransaction, approval_token: str | Non
 
 
 def _terminal_result_fragment(request: Request, status_class: str, status_text: str,
-                              approval_token: str = ""):
+                              approval_token: str = "", manual_approval: bool = False):
     """What the till swaps back after a terminal send: the status line, the
     approval token (an empty value clears any earlier one) and an out-of-band
     copy of the indicator, whose own poll re-answers reachability."""
@@ -129,6 +210,7 @@ def _terminal_result_fragment(request: Request, status_class: str, status_text: 
         "status_class": status_class,
         "status_text": status_text,
         "approval_token": approval_token,
+        "manual_approval": manual_approval,
     })
 
 
@@ -275,7 +357,36 @@ def _render_scan(request, customer, basket, total_amount, db,
     # empty editor clears the draft; only an absent value leaves it alone.
     split_legs = _parse_split_legs(split_cash, split_card)
     split_stored = json.dumps(split_legs, ensure_ascii=False) if split_legs else ""
-    if not checkout or checkout.staff_user_id != staff_id or checkout.state in {"completed", "expired", "payment_cancelled", "payment_declined"}:
+    started = bool(
+        checkout
+        and checkout.staff_user_id == staff_id
+        and checkout.state in {"payment_pending", "payment_approved", "payment_uncertain"}
+    )
+    if started:
+        # The terminal already took (or may have taken) this amount. Render
+        # the frozen draft; a scan or a silent refresh must not rewrite it.
+        basket = json.loads(checkout.basket_json or "[]")
+        total_amount = sum(
+            int(item.get("total_price")
+                or int(item.get("unit_price") or 0) * int(item.get("quantity") or 1))
+            for item in basket
+        )
+        customer = _resolve_customer(checkout.customer_id or 0, db)
+        referrer_code = checkout.referrer_code or ""
+        referrer_phone = checkout.referrer_phone or ""
+        use_referrer_discount = "1" if checkout.use_referrer_discount else "0"
+        custom_discount_amount = checkout.custom_discount_amount
+        custom_discount_percent = checkout.custom_discount_percent
+        campaign_code = checkout.campaign_code or ""
+        split_legs = json.loads(checkout.split_json or "[]") if checkout.split_json else []
+        split_cash = str(_split_leg(split_legs, "cash") or "")
+        split_card = str(_split_leg(split_legs, "card") or "")
+        split_credit = str(_split_leg(split_legs, "credit") or "")
+        success = None
+        just_added = None
+        if error is None:
+            error = "پرداخت این سبد شروع شده است؛ برای تغییر سبد ابتدا نتیجه پرداخت را مشخص کنید."
+    elif not checkout or checkout.staff_user_id != staff_id or checkout.state in {"completed", "expired", "payment_cancelled", "payment_declined"}:
         checkout = create_checkout(
             db,
             customer_id=customer.id if customer else None,
@@ -298,7 +409,7 @@ def _render_scan(request, customer, basket, total_amount, db,
     # The typed code lives on the server-owned draft, so the amount recomputed
     # when the sale is confirmed can never differ from what the cashier saw.
     desired_code = (campaign_code or "")[:50] or None
-    if checkout.campaign_code != desired_code:
+    if not started and checkout.campaign_code != desired_code:
         checkout.campaign_code = desired_code
         db.commit()
     checkout_nonce = checkout.checkout_nonce
@@ -360,6 +471,20 @@ def _render_scan(request, customer, basket, total_amount, db,
             "due_date": credit_due_date_for(db),
             "terms_days": credit_terms_days(db),
         }
+    manual_pos_approval_available = bool(
+        checkout.state in {"payment_uncertain", "payment_approved"}
+        and checkout.pos_transaction is not None
+        and checkout.pos_transaction.status in {"uncertain", "approved"}
+        and not checkout.pos_transaction.sale_id
+        and not checkout.pos_transaction.reconciled
+    )
+    # A stranded approval and a silent terminal are different stories; the
+    # button is the same, the sentence it sits under is not.
+    manual_pos_approval_note = (
+        "پرداخت تأیید شده ولی فاکتور صادر نشده است؛ با تأیید دستی فاکتور را ثبت کنید."
+        if checkout.state == "payment_approved"
+        else "اگر کارت‌خوان مبلغ را از کارت کم کرده ولی پاسخ تأیید برنگشت، پرداخت را دستی تأیید کنید."
+    )
     return templates.TemplateResponse(request, "sales/checkout.html", {
         "step": "scan",
         "customer": customer,
@@ -403,6 +528,9 @@ def _render_scan(request, customer, basket, total_amount, db,
         "split_card": split_card,
         "split_credit": split_credit,
         "split_legs": split_legs,
+        "manual_pos_approval_available": manual_pos_approval_available,
+        "manual_pos_approval_note": manual_pos_approval_note,
+        "payment_method": checkout.payment_method,
     })
 
 
@@ -909,6 +1037,12 @@ async def sales_send_to_terminal(
                 request, "alert alert-error",
                 "تراکنش در کارت‌خوان لغو شد؛ فاکتور ثبت نشد.",
             )
+        if result.get("status") == "uncertain":
+            return _terminal_result_fragment(
+                request, "alert alert-error",
+                "پاسخ کارت‌خوان نرسید. اگر مبلغ از کارت کم شده، تأیید دستی را بزنید.",
+                manual_approval=True,
+            )
         return _terminal_result_fragment(
             request, "alert alert-error",
             f"{result.get('label') or 'پرداخت توسط کارت‌خوان تأیید نشد.'}؛ فاکتور ثبت نشد.",
@@ -917,11 +1051,18 @@ async def sales_send_to_terminal(
         # A refusal the app has already explained (terminal not configured,
         # amount reused, state uncertain): the strip carries the detail.
         try:
-            detail = json.loads(bytes(result.body)).get("detail")
+            payload = json.loads(bytes(result.body))
         except (TypeError, ValueError):
-            detail = None
+            payload = {}
+        if payload.get("status") == "uncertain":
+            return _terminal_result_fragment(
+                request, "alert alert-error",
+                "پاسخ کارت‌خوان نرسید. اگر مبلغ از کارت کم شده، تأیید دستی را بزنید.",
+                manual_approval=True,
+            )
         return _terminal_result_fragment(
-            request, "alert alert-error", detail or "ارتباط با کارت‌خوان ناموفق بود.",
+            request, "alert alert-error",
+            payload.get("detail") or "ارتباط با کارت‌خوان ناموفق بود.",
         )
     return result  # the login redirect for an expired session; the shell lands it
 
@@ -1005,7 +1146,10 @@ async def _send_to_terminal(request: Request, checkout_nonce: str, db: Session):
     try:
         db.flush()
         checkout.pos_transaction_id = transaction.id
-        checkout.payment_method = "card"
+        # A split invoice keeps its method; only the card leg rides the
+        # terminal. Overwriting it with «card» made the confirm step refuse
+        # the split the cashier had just tendered.
+        checkout.payment_method = "split" if len(draft_legs) >= 2 else "card"
         append_event(
             db,
             "PaymentRequested",
@@ -1096,7 +1240,13 @@ async def _send_to_terminal(request: Request, checkout_nonce: str, db: Session):
         })
 
     transaction.request_finished_at = datetime.now(timezone.utc)
-    transaction.status = result["status"]
+    # An unparseable answer is not a status the database accepts; it is the
+    # same "we do not know" as a timeout, and the till can approve it by hand.
+    transaction.status = (
+        result["status"]
+        if result["status"] in {"approved", "cancelled", "declined"}
+        else "uncertain"
+    )
     transaction.response_code = result.get("response_code")
     transaction.response_label = result.get("label")
     transaction.response_text = result.get("response")
@@ -1187,6 +1337,7 @@ async def sales_confirm(
     referrer_phone: str = Form(""),
     payment_method: str = Form("card"),
     pos_approval_token: str = Form(""),
+    manual_pos_approval: str = Form(""),
     checkout_nonce: str = Form(""),
     use_referrer_discount: str = Form(""),
     custom_discount_amount: str = Form(""),
@@ -1260,9 +1411,7 @@ async def sales_confirm(
         if checkout.state == "payment_approved":
             submitted_basket = json.loads(basket_json or "[]")
             stored_basket = json.loads(checkout.basket_json or "[]")
-            submitted_ids = [(int(i.get("variant_id")), int(i.get("quantity") or 1)) for i in submitted_basket]
-            stored_ids = [(int(i.get("variant_id")), int(i.get("quantity") or 1)) for i in stored_basket]
-            if submitted_ids != stored_ids:
+            if _basket_signature(submitted_basket) != _basket_signature(stored_basket):
                 raise HTTPException(status_code=409, detail="سبد پس از شروع پرداخت قابل تغییر نیست.")
     else:
         update_checkout_options(
@@ -1278,9 +1427,9 @@ async def sales_confirm(
         campaign_code=campaign_code,
         )
     try:
-        if checkout.state in {"payment_pending", "payment_approved"}:
-            # The terminal approved a stored total, so the basket and money
-            # stay frozen — but the breakdown is rebuilt from the draft's own
+        if checkout.state in {"payment_pending", "payment_approved", "payment_uncertain"}:
+            # The terminal took a stored total, so the basket and money stay
+            # frozen — but the breakdown is rebuilt from the draft's own
             # pinned inputs. A partial dict used to reach the sale with no
             # 'referred_discount' key and every card sale to a known customer
             # died after the terminal had already charged the card.
@@ -1440,7 +1589,30 @@ async def sales_confirm(
     if card_leg:
         pos_config = get_terminal_config(db)
         approval = _get_pos_approval(request, db, card_leg, pos_approval_token, checkout_nonce)
+        if pos_config["configured"] and approval is None and manual_pos_approval == "1":
+            try:
+                approval = _manual_pos_approval(request, db, checkout, card_leg, basket)
+            except ValueError as error:
+                db.rollback()
+                return _render_scan(
+                    request, customer, basket, total_amount, db,
+                    referrer_code=referrer_code,
+                    referrer_phone=referrer_phone,
+                    use_referrer_discount=use_referrer_discount,
+                    custom_discount_amount=_discount_int(custom_discount_amount),
+                    custom_discount_percent=_discount_int(custom_discount_percent),
+                    campaign_code=campaign_code,
+                    split_cash=split_cash,
+                    split_card=split_card,
+                    split_credit=split_credit,
+                    error=str(error),
+                )
         if pos_config["configured"] and approval is None:
+            message = (
+                "تأیید دستی ممکن نیست — تراکنش نامشخصی برای همین سبد و مبلغ پیدا نشد."
+                if manual_pos_approval == "1"
+                else "پرداخت کارت تأیید نشده است — ابتدا مبلغ را به کارت‌خوان ارسال کنید و نتیجه «تأیید شد» بگیرید."
+            )
             return _render_scan(
                 request, customer, basket, total_amount, db,
                 referrer_code=referrer_code,
@@ -1452,8 +1624,27 @@ async def sales_confirm(
                 split_cash=split_cash,
                 split_card=split_card,
                 split_credit=split_credit,
-                error="پرداخت کارت تأیید نشده است — ابتدا مبلغ را به کارت‌خوان ارسال کنید و نتیجه «تأیید شد» بگیرید.",
+                error=message,
             )
+        if approval is not None:
+            try:
+                snapshot = json.loads(approval.basket_snapshot or "[]")
+            except (TypeError, ValueError):
+                snapshot = []
+            if snapshot and _basket_signature(snapshot) != _basket_signature(basket):
+                return _render_scan(
+                    request, customer, basket, total_amount, db,
+                    referrer_code=referrer_code,
+                    referrer_phone=referrer_phone,
+                    use_referrer_discount=use_referrer_discount,
+                    custom_discount_amount=_discount_int(custom_discount_amount),
+                    custom_discount_percent=_discount_int(custom_discount_percent),
+                    campaign_code=campaign_code,
+                    split_cash=split_cash,
+                    split_card=split_card,
+                    split_credit=split_credit,
+                    error="سبد پس از ارسال به کارت‌خوان تغییر کرده است؛ همان سبد اولیه را برگردانید و دوباره تأیید کنید.",
+                )
 
     # نسیه: block the sale when it would push the customer past their credit limit.
     if payment_method == "credit" and customer:

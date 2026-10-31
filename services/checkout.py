@@ -163,12 +163,15 @@ def expire_stale(
 ) -> int:
     """Expire checkouts past their timeout and release their reservations.
 
-    Called by the scheduler and before every checkout read so abandoned
-    baskets don't hold stock forever."""
+    Called by the scheduler. Every non-terminal state is included: a terminal
+    attempt that was approved but never turned into an invoice (``payment_approved``)
+    used to sit outside this filter and hold its stock forever. The payment row
+    remains for the reconciliation page; only the checkout and its stock hold
+    expire."""
     now = _now()
     stale = db.query(CheckoutSession).filter(
         CheckoutSession.expires_at < now,
-        CheckoutSession.state.in_(("draft", "reserved")),
+        ~CheckoutSession.state.in_(("completed", "refunded", "expired")),
     ).all()
     count = 0
     for checkout in stale:

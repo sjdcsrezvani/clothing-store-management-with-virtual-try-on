@@ -6,7 +6,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from database import Base
-from models import CheckoutEvent, CheckoutSession, Product, ProductVariant, StockReservation
+from models import CheckoutEvent, CheckoutSession, Product, ProductVariant, Sale, StockReservation
 from services.checkout import (
     InsufficientStockError,
     atomic_decrement_stock,
@@ -80,10 +80,60 @@ def test_expired_checkout_releases_reservation_and_records_history():
     assert [event.to_state for event in checkout.history] == ["draft", "reserved", "expired"]
 
 
+@pytest.mark.parametrize("state", ["payment_pending", "payment_approved", "payment_uncertain"])
+def test_expired_terminal_checkout_releases_reservation(state):
+    """A terminal attempt that is never confirmed must not hold stock forever.
+
+    A checkout left in ``payment_approved`` (the card was charged but the
+    cashier never pressed «صدور فاکتور») used to sit outside ``expire_stale``'s
+    filter, leaving ``reserved_quantity`` at 1 for weeks.
+    """
+    db = _memory_session()
+    variant = _variant(db, stock=1)
+    checkout = create_checkout(db, basket_json=json.dumps([{"variant_id": variant.id, "quantity": 1}]))
+    reserve_basket(db, checkout, [{"variant_id": variant.id, "quantity": 1}])
+    checkout.state = state
+    checkout.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    db.commit()
+
+    assert expire_stale(db) == 1
+    db.refresh(checkout)
+    db.refresh(variant)
+    assert checkout.state == "expired"
+    assert variant.reserved_quantity == 0
+    assert db.query(StockReservation).filter(
+        StockReservation.checkout_session_id == checkout.id,
+        StockReservation.state == "released",
+    ).count() == 1
+
+
+def test_completed_sale_reduces_stock_and_clears_reservation():
+    """Completing a sale is a stock decrement, not a permanent reservation."""
+    db = _memory_session()
+    variant = _variant(db, stock=1)
+    checkout = create_checkout(db, basket_json=json.dumps([{"variant_id": variant.id, "quantity": 1}]))
+    reserve_basket(db, checkout, [{"variant_id": variant.id, "quantity": 1}])
+    sale = Sale(total_amount=100, final_amount=100, payment_method="cash")
+    db.add(sale)
+    db.flush()
+
+    atomic_decrement_stock(db, variant.id, 1, sale_id=sale.id, checkout=checkout)
+    complete_checkout(db, checkout, sale.id)
+    db.refresh(variant)
+    reservation = db.query(StockReservation).filter(
+        StockReservation.checkout_session_id == checkout.id).one()
+
+    assert variant.stock_quantity == 0
+    assert variant.reserved_quantity == 0
+    assert reservation.state == "consumed"
+    assert checkout.state == "completed"
+
+
 def test_checkout_state_machine_rejects_invalid_terminal_transition():
     assert transition_allowed("completed", "draft") is False
     assert transition_allowed("payment_cancelled", "completed") is False
     assert transition_allowed("uncertain", "completed") is False
+    assert transition_allowed("payment_uncertain", "payment_approved") is True
     assert transition_allowed("completed", "refunded") is True
 
 
