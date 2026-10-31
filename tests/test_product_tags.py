@@ -445,6 +445,26 @@ def test_tag_settings_page_has_no_layout_mode(client, authed):
     assert "خطای قالب" not in response.text
 
 
+def test_tag_preview_samples_the_store_size_display_unit(client, db_session, authed):
+    product = Product(name="نمونه واحد نمایش", category="لباس")
+    db_session.add(product)
+    db_session.flush()
+    db_session.add_all([
+        ProductVariant(product_id=product.id, price=100, stock_quantity=1,
+                       barcode="SAMPLE-LEGACY", size="35"),
+        ProductVariant(product_id=product.id, price=100, stock_quantity=1,
+                       barcode="SAMPLE-BAND", size="35",
+                       band_min_cm=80, band_max_cm=92,
+                       band_min_months=12, band_max_months=24),
+    ])
+    db_session.commit()
+
+    response = client.get("/admin/settings/tags")
+    assert response.status_code == 200
+    # Default kids unit is age: the band speaks it, the legacy raw «35» cannot.
+    assert "12-24 ماه" in response.text
+
+
 def test_print_page_uses_requested_grid_and_warns_on_overflow(client, db_session, authed):
     config = _tiny_fields(default_tag_config())
     config.update({

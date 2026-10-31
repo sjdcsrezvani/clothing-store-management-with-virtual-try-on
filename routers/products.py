@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import urlencode, quote_plus
 from fastapi import APIRouter, Depends, HTTPException, Request, Form, File, UploadFile, Query
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
-from sqlalchemy import and_, func
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session, joinedload
 from database import get_db
 from models import (
@@ -548,11 +548,19 @@ async def admin_tag_settings(request: Request, db: Session = Depends(get_db)):
     # surfacing later as a rule the browser showed and the server ignored.
     config = load_tag_config(db)
     tag_templates = list_tag_templates(db)
+    # A legacy size («35») has no band, so it can only echo that raw code. The
+    # preview must speak the shop's chosen display unit, so a banded variant
+    # wins the sample slot; the raw ones are still the fallback.
+    has_band = or_(
+        ProductVariant.band_min_cm.isnot(None),
+        ProductVariant.band_min_months.isnot(None),
+        ProductVariant.band_min_adult.isnot(None),
+    )
     sample_variant = (
         db.query(ProductVariant)
         .join(Product)
         .filter(Product.is_active == True, ProductVariant.is_active == True)
-        .order_by(Product.name, ProductVariant.id)
+        .order_by(case((has_band, 0), else_=1), Product.name, ProductVariant.id)
         .first()
     )
     sample_kids, sample_adult = get_sizing_standards(db)
