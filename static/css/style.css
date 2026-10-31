@@ -2729,7 +2729,8 @@ body.is-soft-busy::before {
 .switch-inline { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.76rem; font-weight: 700; color: var(--ink-soft); cursor: pointer; }
 .switch-inline input { width: auto; min-height: 0; }
 .tag-prop-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; }
-.tag-prop-grid label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.72rem; font-weight: 700; color: var(--ink-soft); }
+.tag-prop-grid > label { display: block; font-size: 0.72rem; font-weight: 700; color: var(--ink-soft); }
+.tag-prop-grid > label > input, .tag-prop-grid > label > select { display: block; margin-top: 0.2rem; }
 .tag-prop-grid input, .tag-prop-grid select { min-height: 38px; font-size: 0.85rem; }
 .tag-prop-grid input[type="color"] { padding: 0.2rem; cursor: pointer; }
 .tag-prop-grid .check-row { flex-direction: row; align-items: center; gap: 0.35rem; align-self: end; padding-bottom: 0.4rem; }
@@ -2762,6 +2763,8 @@ body.is-soft-busy::before {
 .ctl-row-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .ctl-row-last { margin-bottom: 0 !important; }
 .tag-ctl-card label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.74rem; font-weight: 700; }
+.tag-ctl-card .form-row > label { display: block; }
+.tag-ctl-card .form-row > label > input, .tag-ctl-card .form-row > label > select { display: block; margin-top: 0.25rem; }
 .tag-ctl-card label em { font-style: normal; color: var(--ink-soft); font-weight: 600; font-size: 0.68rem; }
 .tag-ctl-card input, .tag-ctl-card select { min-height: 40px; }
 .tag-ctl-card input[type="color"] { padding: 0.2rem; cursor: pointer; }
