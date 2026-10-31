@@ -261,9 +261,7 @@
     </div>
 
     <p class="form-error product-form-error" id="product-form-error" role="alert" hidden></p>
-    <div class="form-actions-row product-form-actions">
-        <button type="submit" class="btn btn-primary btn-large">{% if edit_mode %}ذخیره تغییرات{% else %}ثبت محصول{% endif %}</button>
-        <a href="{{ return_to or '/admin/products' }}" class="btn btn-ghost">لغو</a>
+    <div class="form-actions-row">
         <span class="form-stock-total">جمع ارزش موجودی: <strong class="tnum" id="form-stock-total">—</strong></span>
     </div>
 </form>

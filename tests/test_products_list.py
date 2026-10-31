@@ -4,7 +4,7 @@ CSV parity, bulk archive and the expandable variant rows.
 Unknown sort keys and page sizes answer the default list — a hand-typed query
 is a list, never an error.
 """
-from models import Product, ProductVariant
+from models import Product, ProductVariant, Settings
 from tests.conftest import csrf_token
 
 
@@ -96,6 +96,59 @@ def test_single_delete_now_reads_archive(client, authed, db_session):
     assert "بایگانی شود؟" in html
     assert 'data-confirm-title="بایگانی محصول"' in html
     assert "return confirm(" not in html
+
+
+def test_archived_list_links_back_to_the_active_list(client, authed, db_session):
+    _product(db_session, "بایگانی‌شده", barcode="A-2")
+    html = client.get("/admin/products?state=archived").text
+    assert 'href="/admin/products" class="btn btn-sm btn-ghost">بازگشت به فعال‌ها</a>' in html
+
+
+def test_archived_products_do_not_count_toward_the_stock_chips(client, authed, db_session):
+    _product(db_session, "ناموجود فعال", stock=0, barcode="O-1")
+    archived = _product(db_session, "ناموجود بایگانی", stock=0, barcode="O-2")
+    archived.is_active = False
+    for variant in archived.variants:
+        variant.is_active = False
+    db_session.commit()
+
+    html = client.get("/admin/products").text
+    assert "ناموجود (1 محصول)" in html
+    assert "ناموجود (2 محصول)" not in html
+
+
+def test_low_stock_threshold_is_the_owners_and_the_chip_counts_products(client, authed, db_session):
+    """Two low sizes of one product are one row to fix, and the line is the
+    shop's number — the chip says both without moving."""
+    product = _product(db_session, "دو سایز کم", stock=3, barcode="L-1")
+    db_session.add(ProductVariant(
+        product_id=product.id, price=100_000, stock_quantity=3, barcode="L-2",
+    ))
+    db_session.commit()
+
+    at_default = client.get("/admin/products").text
+    assert "کم‌موجود (0 محصول)" in at_default
+
+    db_session.add(Settings(key="low_stock_threshold", value="5"))
+    db_session.commit()
+    tuned = client.get("/admin/products").text
+    assert "کم‌موجود (1 محصول)" in tuned
+    assert "کم‌موجود (2 محصول)" not in tuned
+
+
+def test_archived_view_hides_the_active_shelf_stock_counts(client, authed):
+    html = client.get("/admin/products?state=archived").text
+    assert "stock-chips" not in html
+    assert "products-kpi" not in html
+
+
+def test_stock_chips_are_global_not_filtered_by_the_search_box(client, authed):
+    """The chip count is shop-wide; its link must show the rows it counted."""
+    import re
+    html = client.get("/admin/products?search=چیزی-که-نیست").text
+    href = re.search(r'href="([^"]*stock=out[^"]*)"', html).group(1)
+    assert "search=" not in href
+    assert "category=" not in href
 
 
 def test_csv_export_matches_the_filtered_view(client, authed, db_session):

@@ -13,6 +13,7 @@
 {% endset %}
 {% include 'partials/page_header.html' %}
 
+{% if state != 'archived' %}
 <div class="stats-grid products-kpi" aria-label="خلاصه محصولات">
     <div class="stat-card accent-sky">
         <div class="stat-label">محصولات فعال</div>
@@ -22,7 +23,7 @@
     <div class="stat-card accent-saffron">
         <div class="stat-label">تنوع کم‌موجودی</div>
         <div class="stat-value">{{ low_stock_count }}</div>
-        <div class="stat-sub">۲ عدد یا کمتر</div>
+        <div class="stat-sub">{{ low_stock_threshold }} عدد یا کمتر</div>
     </div>
     <div class="stat-card accent-persimmon">
         <div class="stat-label">تنوع ناموجود</div>
@@ -30,6 +31,7 @@
         <div class="stat-sub">نیازمند بررسی</div>
     </div>
 </div>
+{% endif %}
 
 <section class="card product-search-card">
     <div class="section-heading-row">
@@ -55,11 +57,13 @@
         <button type="submit" class="btn btn-primary">جست‌وجو</button>
         {% if search or category_filter or stock_filter != 'all' or state != 'active' or sort_key != 'newest' or sort_dir != 'desc' or per_page != 10 %}<a href="/admin/products" class="btn btn-ghost">پاک‌کردن فیلتر</a>{% endif %}
     </form>
+    {% if state != 'archived' %}
     <nav class="stock-chips" aria-label="پالایش موجودی">
-        <a class="stock-chip {% if stock_filter == 'all' %}is-active{% endif %}" href="/admin/products?search={{ search }}&category={{ category_filter }}&per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}&state={{ state }}&stock=all" {% if stock_filter == 'all' %}aria-current="true"{% endif %}>همه</a>
-        <a class="stock-chip {% if stock_filter == 'low' %}is-active{% endif %}" href="/admin/products?search={{ search }}&category={{ category_filter }}&per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}&state={{ state }}&stock=low" {% if stock_filter == 'low' %}aria-current="true"{% endif %}>کم‌موجود ({{ low_stock_count }})</a>
-        <a class="stock-chip {% if stock_filter == 'out' %}is-active{% endif %}" href="/admin/products?search={{ search }}&category={{ category_filter }}&per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}&state={{ state }}&stock=out" {% if stock_filter == 'out' %}aria-current="true"{% endif %}>ناموجود ({{ out_stock_count }})</a>
+        <a class="stock-chip {% if stock_filter == 'all' %}is-active{% endif %}" href="/admin/products?per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}&stock=all" {% if stock_filter == 'all' %}aria-current="true"{% endif %}>همه</a>
+        <a class="stock-chip {% if stock_filter == 'low' %}is-active{% endif %}" href="/admin/products?per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}&stock=low" {% if stock_filter == 'low' %}aria-current="true"{% endif %}>کم‌موجود ({{ low_product_count }} محصول)</a>
+        <a class="stock-chip {% if stock_filter == 'out' %}is-active{% endif %}" href="/admin/products?per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}&stock=out" {% if stock_filter == 'out' %}aria-current="true"{% endif %}>ناموجود ({{ out_product_count }} محصول)</a>
     </nav>
+    {% endif %}
 </section>
 
 <section class="card product-list-card" data-list-region="products" hx-boost="true" hx-target="closest [data-list-region]" hx-swap="outerHTML" hx-select="[data-list-region=products]">
@@ -70,7 +74,7 @@
         </div>
         <div class="list-heading-actions">
         {% if state == 'archived' %}
-        <a href="/admin/products?search={{ search }}&category={{ category_filter }}&stock={{ stock_filter }}&state={{ state }}&per_page={{ per_page }}&sort={{ sort_key }}&dir={{ sort_dir }}" class="btn btn-sm btn-ghost">بازگشت به فعال‌ها</a>
+        <a href="/admin/products" class="btn btn-sm btn-ghost">بازگشت به فعال‌ها</a>
         {% else %}
         {% if archived_count %}<a href="/admin/products?state=archived" class="btn btn-sm btn-ghost">بایگانی‌شده‌ها ({{ archived_count }})</a>{% endif %}
         <a href="/admin/products/export?search={{ search }}&category={{ category_filter }}&stock={{ stock_filter }}&sort={{ sort_key }}&dir={{ sort_dir }}" class="btn btn-sm btn-ghost"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-backup"/></svg>خروجی CSV</a>

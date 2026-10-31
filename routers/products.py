@@ -397,8 +397,16 @@ async def admin_products(
     categories = db.query(Product.category).distinct().all()
     categories = [c[0] for c in categories if c[0]]
     # Shared with the dashboard's «موجودی کم» alert, so the two can never quote
-    # different numbers for the same shelf.
+    # different numbers for the same shelf. The chips, however, filter the
+    # product list below: their badge must count products, not variants, or a
+    # product with three low sizes says «3» and still renders one row.
     alerts = stock_alerts(db)
+    low_product_count = _product_list_query(
+        db, "", "", "low", active_only=True,
+        standard=sizing_standard, adult_standard=sizing_standard_adult)[0].count()
+    out_product_count = _product_list_query(
+        db, "", "", "out", active_only=True,
+        standard=sizing_standard, adult_standard=sizing_standard_adult)[0].count()
 
     # The list speaks the shop's one display unit: each variant's stored band
     # is rendered once here, and the product summary keeps the distinct labels.
@@ -426,6 +434,9 @@ async def admin_products(
         "total_products": total,
         "low_stock_count": alerts["low_count"],
         "out_stock_count": alerts["out_count"],
+        "low_product_count": low_product_count,
+        "out_product_count": out_product_count,
+        "low_stock_threshold": alerts["threshold"],
         "sort_key": sort_key,
         "sort_dir": sort_dir,
         "per_page": per_page,
