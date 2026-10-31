@@ -19,10 +19,11 @@ from services.sizing import variant_size_display
 A4_WIDTH_MM = 210
 A4_HEIGHT_MM = 297
 TAG_CONFIG_KEY = "tag_layout_config"
-TAG_CONFIG_VERSION = 1
+TAG_CONFIG_VERSION = 2
 ALLOWED_BARCODE_MODES = {"real_barcode", "custom_image", "hidden"}
-ALLOWED_LAYOUT_MODES = {"fixed", "auto"}
 ALLOWED_ALIGNMENTS = {"left", "center", "right"}
+# The tag root is dir="rtl", so flex-start is visually right.
+ALIGN_TO_JUSTIFY = {"right": "flex-start", "center": "center", "left": "flex-end"}
 ALLOWED_FIELDS = {
     "product_name",
     "barcode",
@@ -94,12 +95,12 @@ def _field(x, y, width, height, *, visible=True, font_size=8, bold=False,
     }
 
 
-def _base_config(width=48, height=38, columns=4, rows=7, *, layout_mode="fixed"):
+def _base_config(width=48, height=38, columns=4, rows=7):
     width = float(width)
     height = float(height)
     content_width = width - 4
     half_width = content_width / 2
-    footer_y = max(0, height - 3)
+    footer_y = max(0, height - 4)
     # The barcode image (bars) and its code text are independent fields so
     # each can be shown, hidden, moved or removed on its own.
     barcode_top = 10.0
@@ -116,7 +117,6 @@ def _base_config(width=48, height=38, columns=4, rows=7, *, layout_mode="fixed")
         "margin_left_mm": 5,
         "gap_horizontal_mm": 2,
         "gap_vertical_mm": 2,
-        "layout_mode": layout_mode,
         "columns": columns,
         "rows": rows,
         "background": "#FFFFFF",
@@ -166,8 +166,8 @@ PRESETS = {
 # quantity in page language (margin-top, field-width) while the config spells
 # it in config language (margin_top_mm, width).
 TAG_NUMERIC_RULES: dict[str, tuple[float, float]] = {
-    "tag_width_mm": (25, 100),
-    "tag_height_mm": (20, 100),
+    "tag_width_mm": (20, 100),
+    "tag_height_mm": (15, 100),
     "margin_top_mm": (0, 50),
     "margin_right_mm": (0, 50),
     "margin_bottom_mm": (0, 50),
@@ -177,8 +177,8 @@ TAG_NUMERIC_RULES: dict[str, tuple[float, float]] = {
     "padding_mm": (0, 10),
     "corner_radius_mm": (0, 10),
     "border_width_mm": (0, 3),
-    "columns": (0, 20),
-    "rows": (0, 30),
+    "columns": (1, 100),
+    "rows": (1, 100),
     "font_size": (4, 48),
     "x": (0, 100),
     "y": (0, 100),
@@ -267,7 +267,11 @@ def _validate_color(value, name):
 
 
 def calculate_a4_fit(config: dict[str, Any]) -> dict[str, Any]:
-    """Calculate the usable A4 grid from a validated tag configuration."""
+    """Calculate the A4 grid for a validated configuration.
+
+    Overflow is allowed: the requested rows/columns are the layout, and the
+    caller shows a warning when the grid leaves the printable A4 area.
+    """
     available_width = A4_WIDTH_MM - config["margin_left_mm"] - config["margin_right_mm"]
     available_height = A4_HEIGHT_MM - config["margin_top_mm"] - config["margin_bottom_mm"]
     gap_x = config["gap_horizontal_mm"]
@@ -276,10 +280,8 @@ def calculate_a4_fit(config: dict[str, Any]) -> dict[str, Any]:
     max_rows = int(math.floor((available_height + gap_y + 1e-9) / (config["tag_height_mm"] + gap_y)))
     if max_columns < 1 or max_rows < 1:
         raise ValueError("این اندازه تگ در صفحه A4 جا نمی‌شود")
-    columns = config["columns"] if config["layout_mode"] == "fixed" else max_columns
-    rows = config["rows"] if config["layout_mode"] == "fixed" else max_rows
-    if columns < 1 or rows < 1 or columns > max_columns or rows > max_rows:
-        raise ValueError("تعداد سطر یا ستون انتخاب‌شده در صفحه A4 جا نمی‌شود")
+    columns = config["columns"]
+    rows = config["rows"]
     used_width = columns * config["tag_width_mm"] + (columns - 1) * gap_x
     used_height = rows * config["tag_height_mm"] + (rows - 1) * gap_y
     return {
@@ -287,11 +289,14 @@ def calculate_a4_fit(config: dict[str, Any]) -> dict[str, Any]:
         "rows": rows,
         "max_columns": max_columns,
         "max_rows": max_rows,
+        "fits": columns <= max_columns and rows <= max_rows,
         "tags_per_page": columns * rows,
         "used_width_mm": round(used_width, 2),
         "used_height_mm": round(used_height, 2),
         "unused_width_mm": round(available_width - used_width, 2),
         "unused_height_mm": round(available_height - used_height, 2),
+        "overflow_width_mm": round(max(0, used_width - available_width), 2),
+        "overflow_height_mm": round(max(0, used_height - available_height), 2),
         "available_width_mm": round(available_width, 2),
         "available_height_mm": round(available_height, 2),
     }
@@ -328,11 +333,13 @@ def validate_tag_config(raw: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("تنظیمات تگ معتبر نیست")
     config = default_tag_config()
     try:
-        config["version"] = int(raw.get("version", TAG_CONFIG_VERSION))
+        raw_version = int(raw.get("version", TAG_CONFIG_VERSION))
     except (TypeError, ValueError):
         raise ValueError("نسخه تنظیمات تگ نامعتبر است")
-    if config["version"] != TAG_CONFIG_VERSION:
+    if raw_version not in (1, TAG_CONFIG_VERSION):
         raise ValueError("نسخه تنظیمات تگ پشتیبانی نمی‌شود")
+    legacy = raw_version == 1
+    config["version"] = TAG_CONFIG_VERSION
 
     # Every bound comes from TAG_NUMERIC_RULES — the same table the form's
     # min/max attributes render from — so a bound edited in the table reaches
@@ -347,15 +354,18 @@ def validate_tag_config(raw: dict[str, Any]) -> dict[str, Any]:
         integer = key in ("columns", "rows")
         config[key] = _number(raw.get(key, config[key]), key, minimum, maximum, integer=integer)
 
-    config["layout_mode"] = raw.get("layout_mode", config["layout_mode"])
-    if config["layout_mode"] not in ALLOWED_LAYOUT_MODES:
-        raise ValueError("حالت چیدمان نامعتبر است")
-    if config["layout_mode"] == "fixed" and (config["columns"] == 0 or config["rows"] == 0):
-        raise ValueError("در چیدمان ثابت تعداد سطر و ستون الزامی است")
+    # Padding was a no-op in version 1 (absolute children ignored it); reset it
+    # so the saved design keeps its exact look after the version-2 migration.
+    if legacy:
+        config["padding_mm"] = 0
     if config["margin_left_mm"] + config["margin_right_mm"] >= A4_WIDTH_MM:
         raise ValueError("حاشیه‌های افقی معتبر نیستند")
     if config["margin_top_mm"] + config["margin_bottom_mm"] >= A4_HEIGHT_MM:
         raise ValueError("حاشیه‌های عمودی معتبر نیستند")
+    content_width = config["tag_width_mm"] - 2 * config["padding_mm"]
+    content_height = config["tag_height_mm"] - 2 * config["padding_mm"]
+    if content_width <= 0 or content_height <= 0:
+        raise ValueError("فاصله داخلی برای این اندازه تگ بزرگ است")
 
     config["background"] = _validate_color(raw.get("background", config["background"]), "background")
     config["border_color"] = _validate_color(raw.get("border_color", config["border_color"]), "border_color")
@@ -408,7 +418,7 @@ def validate_tag_config(raw: dict[str, Any]) -> dict[str, Any]:
             elif key in ("y", "height"):
                 maximum = config["tag_height_mm"]
             field[key] = _number(incoming.get(key, field[key]), f"{name}.{key}", minimum, maximum)
-        if field["x"] + field["width"] > config["tag_width_mm"] or field["y"] + field["height"] > config["tag_height_mm"]:
+        if field["x"] + field["width"] > content_width or field["y"] + field["height"] > content_height:
             raise ValueError(f"«{_label_of(name)}» خارج از محدوده تگ است")
         field["color"] = _validate_color(incoming.get("color", field["color"]), f"{name}.color")
         field["align"] = incoming.get("align", field["align"])
@@ -421,6 +431,10 @@ def validate_tag_config(raw: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(preset, str):
         raise ValueError("قالب تگ نامعتبر است")
     config["preset"] = preset[:40]
+    if not any(field.get("visible") for field in config["fields"].values()):
+        raise ValueError("حداقل یک فیلد تگ باید نمایش داده شود")
+    # One tag must physically fit the sheet; the grid itself is allowed to
+    # overflow and is reported by calculate_a4_fit at render time.
     calculate_a4_fit(config)
     return config
 
@@ -570,10 +584,12 @@ def render_tag_html(config: dict[str, Any], item: dict[str, Any], store: dict[st
                 continue
             content = html.escape(value)
             kind = "tag-field"
-        justify = {"left": "flex-start", "center": "center", "right": "flex-end"}[field["align"]]
+        justify = ALIGN_TO_JUSTIFY[field["align"]]
+        offset_x = config["padding_mm"] + field["x"]
+        offset_y = config["padding_mm"] + field["y"]
         style = (
             f'position:absolute;display:flex;align-items:center;overflow:hidden;box-sizing:border-box;'
-            f'left:{field["x"]}mm;top:{field["y"]}mm;width:{field["width"]}mm;height:{field["height"]}mm;'
+            f'left:{offset_x}mm;top:{offset_y}mm;width:{field["width"]}mm;height:{field["height"]}mm;'
             f'color:{field["color"]};font-size:{field["font_size"]}pt;font-weight:{700 if field["bold"] else 400};'
             f'text-align:{field["align"]};justify-content:{justify};line-height:1.2;'
         )
@@ -581,7 +597,7 @@ def render_tag_html(config: dict[str, Any], item: dict[str, Any], store: dict[st
     root_style = (
         f'position:relative;overflow:hidden;box-sizing:border-box;'
         f'width:{config["tag_width_mm"]}mm;height:{config["tag_height_mm"]}mm;'
-        f'padding:{config["padding_mm"]}mm;background:{config["background"]};'
+        f'background:{config["background"]};'
         f'border:{config["border_width_mm"]}mm solid {config["border_color"]};'
         f'border-radius:{config["corner_radius_mm"]}mm;'
     )

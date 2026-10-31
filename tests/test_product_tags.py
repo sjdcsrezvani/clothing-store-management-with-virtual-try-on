@@ -138,8 +138,117 @@ def test_tag_defaults_calculate_a4_capacity():
     assert fit["columns"] == 4
     assert fit["rows"] == 7
     assert fit["tags_per_page"] == 28
+    assert fit["fits"] is True
     assert fit["max_columns"] >= fit["columns"]
     assert fit["max_rows"] >= fit["rows"]
+
+
+def _tiny_fields(config):
+    for field in config["fields"].values():
+        field.update(x=0, y=0, width=2, height=2)
+    return config
+
+
+def test_a4_overflow_is_allowed_and_reported():
+    config = _tiny_fields(default_tag_config())
+    config.update({
+        "tag_width_mm": 32, "tag_height_mm": 25,
+        "margin_top_mm": 5, "margin_right_mm": 5,
+        "margin_bottom_mm": 5, "margin_left_mm": 5,
+        "gap_horizontal_mm": 2, "gap_vertical_mm": 2,
+        "columns": 6, "rows": 10,
+    })
+    validated = validate_tag_config(config)
+    fit = calculate_a4_fit(validated)
+
+    assert fit["fits"] is False
+    assert fit["overflow_width_mm"] == 2.0
+    assert fit["overflow_height_mm"] == 0.0
+    assert fit["tags_per_page"] == 60
+
+
+def test_small_tag_fits_an_eight_by_fifteen_grid():
+    config = _tiny_fields(default_tag_config())
+    config.update({
+        "tag_width_mm": 22, "tag_height_mm": 18,
+        "margin_top_mm": 5, "margin_right_mm": 5,
+        "margin_bottom_mm": 5, "margin_left_mm": 5,
+        "gap_horizontal_mm": 1, "gap_vertical_mm": 1,
+        "columns": 8, "rows": 15,
+    })
+    fit = calculate_a4_fit(validate_tag_config(config))
+
+    assert fit["fits"] is True
+    assert fit["tags_per_page"] == 120
+
+
+def test_legacy_layout_mode_is_dropped():
+    config = default_tag_config()
+    config["version"] = 1
+    config["layout_mode"] = "auto"
+    config["columns"] = 6
+    config["rows"] = 10
+
+    validated = validate_tag_config(config)
+
+    assert "layout_mode" not in validated
+    assert validated["version"] == 2
+    assert (validated["columns"], validated["rows"]) == (6, 10)
+
+
+def test_version_one_padding_preserves_the_old_look():
+    config = default_tag_config()
+    config["version"] = 1
+    config["padding_mm"] = 1
+    validated = validate_tag_config(config)
+
+    assert validated["version"] == 2
+    assert validated["padding_mm"] == 0
+    html = render_tag_html(validated, {"product_name": "لباس"}, {"name": "فروشگاه"})
+    assert "left:2.0mm;top:5.0mm" in html
+
+
+def test_version_two_padding_offsets_and_bounds_fields():
+    config = default_tag_config()
+    config["padding_mm"] = 1
+    validated = validate_tag_config(config)
+    assert validated["padding_mm"] == 1
+    html = render_tag_html(validated, {"product_name": "لباس"}, {"name": "فروشگاه"})
+    assert "left:3.0mm;top:6.0mm" in html
+
+    config["fields"]["product_name"]["width"] = config["tag_width_mm"]
+    with pytest.raises(ValueError):
+        validate_tag_config(config)
+
+
+def test_rtl_alignment_mapping_is_stable():
+    config = default_tag_config()
+    config["padding_mm"] = 0
+    config["fields"]["product_name"]["align"] = "right"
+    right = render_tag_html(config, {"product_name": "لباس"}, {"name": "فروشگاه"})
+    right_field = right.split('data-field="product_name"', 1)[1].split('>', 1)[0]
+    assert "justify-content:flex-start" in right_field
+
+    config["fields"]["product_name"]["align"] = "left"
+    left = render_tag_html(config, {"product_name": "لباس"}, {"name": "فروشگاه"})
+    left_field = left.split('data-field="product_name"', 1)[1].split('>', 1)[0]
+    assert "justify-content:flex-end" in left_field
+
+
+def test_all_hidden_design_is_rejected():
+    config = default_tag_config()
+    for field in config["fields"].values():
+        field["visible"] = False
+    with pytest.raises(ValueError):
+        validate_tag_config(config)
+
+
+def test_rows_and_columns_have_a_sanity_minimum():
+    for key in ("columns", "rows"):
+        config = default_tag_config()
+        config[key] = 0
+        with pytest.raises(ValueError):
+            validate_tag_config(config)
 
 
 def test_tag_config_rejects_unknown_fields_and_out_of_bounds_positions():
@@ -325,3 +434,33 @@ def test_native_barcode_form_marks_selected_quantity_and_scales_preview(client, 
     assert "--tag-scale:" in page.text
     assert "--frame-w:" in page.text
     assert "--frame-h:" in page.text
+
+
+def test_tag_settings_page_has_no_layout_mode(client, authed):
+    response = client.get("/admin/settings/tags")
+    assert response.status_code == 200
+    assert "حالت چیدمان" not in response.text
+    assert "ستون‌ها" in response.text
+    assert "سطرها" in response.text
+    assert "خطای قالب" not in response.text
+
+
+def test_print_page_uses_requested_grid_and_warns_on_overflow(client, db_session, authed):
+    config = _tiny_fields(default_tag_config())
+    config.update({
+        "tag_width_mm": 32, "tag_height_mm": 25,
+        "margin_top_mm": 5, "margin_right_mm": 5,
+        "margin_bottom_mm": 5, "margin_left_mm": 5,
+        "gap_horizontal_mm": 2, "gap_vertical_mm": 2,
+        "columns": 6, "rows": 10,
+    })
+    db_session.add(Settings(key="tag_layout_config", value=json.dumps(config, ensure_ascii=False)))
+    db_session.commit()
+
+    response = client.get("/admin/barcodes/print")
+    assert response.status_code == 200
+    assert "6 ستون × 10 ردیف" in response.text
+    assert "بیرون از A4" in response.text
+    assert "بزرگ‌تر است" in response.text
+    assert '"columns": 6' in response.text
+    assert '"rows": 10' in response.text

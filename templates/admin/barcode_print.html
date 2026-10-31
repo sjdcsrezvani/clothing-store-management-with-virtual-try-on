@@ -51,8 +51,16 @@
             <button type="submit" formmethod="post" formaction="/admin/barcodes/mark-printed" name="operation" value="mark" formnovalidate class="btn btn-sm btn-ghost" id="mark-printed-btn">ثبت به‌عنوان چاپ‌شده</button>
             <button type="submit" formnovalidate class="btn btn-sm btn-ghost" id="reprint-btn" name="reprint" value="1" formaction="/admin/barcodes/mark-printed" disabled>ثبت چاپ مجدد</button>
             <button type="submit" formnovalidate class="btn btn-sm btn-danger" id="reset-printed-btn" formaction="/admin/barcodes/reset" disabled>صفر کردن شمارش چاپ</button>
-            <span class="muted">{{ all_items_count }} تنوع در این فیلتر · {{ tag_fit.columns }} ستون × {{ tag_fit.rows }} ردیف در هر صفحه A4</span>
+            <span class="muted">{{ all_items_count }} تنوع در این فیلتر · {{ tag_fit.columns }} ستون × {{ tag_fit.rows }} ردیف در هر صفحه A4{% if not tag_fit.fits %} (بیرون از A4){% endif %}</span>
         </div>
+
+        {% if not tag_fit.fits %}
+        <div class="alert alert-warning" role="status">
+            چیدمان انتخابی {{ tag_fit.overflow_width_mm }} میلی‌متر از عرض و
+            {{ tag_fit.overflow_height_mm }} میلی‌متر از ارتفاع ناحیه چاپ A4 بزرگ‌تر است.
+            بخشی از تگ‌ها روی کاغذ چاپ نمی‌شود.
+        </div>
+        {% endif %}
 
         <div class="card barcode-print-sheet" id="barcode-sheet">
             {% if barcode_items %}

@@ -1126,8 +1126,8 @@ def test_the_tag_designer_resizes_from_the_keyboard_alone():
     # resize paths cannot disagree about what geometry is reachable.
     clamp_uses = len(re.findall(r"clamp\(f\.width \+ step", TAG_DESIGNER))
     assert clamp_uses == 1, "the keyboard resize must reuse the pointer path's clamps"
-    assert "clamp(f.width + step[0] * mm, 2, workingConfig.tag_width_mm - f.x)" in TAG_DESIGNER
-    assert "clamp(f.height + step[1] * mm, 2, workingConfig.tag_height_mm - f.y)" in TAG_DESIGNER
+    assert "clamp(f.width + step[0] * mm, 2, contentWidth() - f.x)" in TAG_DESIGNER
+    assert "clamp(f.height + step[1] * mm, 2, contentHeight() - f.y)" in TAG_DESIGNER
     # Escape backs the change out and ends the session; Enter and Tab end it.
     # Each call is asserted inside its own branch, so a refactor that leaves a
     # key check calling nothing fails here rather than at a keyboard.

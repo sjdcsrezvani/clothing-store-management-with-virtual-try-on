@@ -57,7 +57,6 @@ from services.events import append_event
 from services.tags import (
     ALLOWED_ALIGNMENTS,
     ALLOWED_BARCODE_MODES,
-    ALLOWED_LAYOUT_MODES,
     FIELD_LABELS,
     PRESETS,
     TAG_INPUT_KEYS,
@@ -572,7 +571,6 @@ async def admin_tag_settings(request: Request, db: Session = Depends(get_db)):
         # validator enforces — an option the server would refuse cannot be
         # offered, and a new accepted value cannot be missing from the page.
         "allow_list_sources": {
-            "layout_modes": sorted(ALLOWED_LAYOUT_MODES),
             "alignments": sorted(ALLOWED_ALIGNMENTS),
             "barcode_modes": sorted(ALLOWED_BARCODE_MODES),
             "barcode_densities": sorted(BARCODE_DENSITIES),
@@ -647,7 +645,7 @@ async def admin_tag_settings(request: Request, db: Session = Depends(get_db)):
     hard_bounds = []
     for m in re.finditer(r'<input\b[^>]*>', rendered):
         tag = m.group(0)
-        if 'type="number"' not in tag:
+        if 'inputmode="numeric"' not in tag:
             continue
         id_m = re.search(r'id="([a-z-]+)"', tag)
         key = TAG_INPUT_KEYS.get(id_m.group(1)) if id_m else None

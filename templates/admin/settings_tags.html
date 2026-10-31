@@ -73,10 +73,10 @@
         </form>
         <p class="muted" id="loaded-template-note" hidden>در حال ویرایش قالب «<strong id="loaded-template-name"></strong>» — «بازنویسی» همان را عوض می‌کند، «جدید» یک قالب جدا می‌سازد.</p>
         {% if tag_templates %}
-        <div class="tag-template-list" aria-label="قالب‌های ذخیره‌شده">
+        <div class="tag-template-list" role="list" aria-label="قالب‌های ذخیره‌شده">
             {% for template in tag_templates %}
             {% set usage = tag_template_usage.get(template.id, 0) %}
-            <div class="tag-template-row">
+            <div class="tag-template-row" role="listitem">
                 <strong>{{ template.name }}</strong>
                 {% if usage %}<small class="muted">{{ usage }} محصول</small>{% endif %}
                 <div class="tag-template-actions">
@@ -102,7 +102,7 @@
         <div><h4>فیلدهای تگ</h4><span class="muted" id="fields-hint"></span></div>
         <p class="muted tag-strip-tip">برای نمایش/مخفی‌کردن هر فیلد روی آن بزنید.</p>
     </div>
-    <div class="tag-fields-strip" id="tag-fields-strip" aria-label="تغییر نمایش فیلدهای تگ">
+    <div class="tag-fields-strip" id="tag-fields-strip" role="group" aria-label="تغییر نمایش فیلدهای تگ">
         {% for field in tag_field_options %}
         <button type="button" class="tag-field-chip{% if not field.visible %} is-off{% endif %}" data-field="{{ field.name }}" aria-pressed="{{ 'true' if field.visible else 'false' }}" title="{{ 'فعال — برای مخفی‌کردن کلیک کنید' if field.visible else 'مخفی — برای افزودن به تگ کلیک کنید' }} — {{ field.label }}">
             <i class="chip-dot" aria-hidden="true" style="background: {{ field.color }}"></i>
@@ -128,17 +128,17 @@
                     <button type="button" id="undo-btn" class="btn btn-sm btn-ghost" disabled title="Ctrl/⌘ + Z">↩ بازگردانی</button>
                 </div>
             </div>
-            <div id="tag-editor-canvas" class="tag-editor-canvas" aria-label="بوم ویرایش طرح تگ" tabindex="0"></div>
+            <div id="tag-editor-canvas" class="tag-editor-canvas" role="group" aria-label="بوم ویرایش طرح تگ" tabindex="0"></div>
             <div id="editor-diagnostics" class="editor-diagnostics" aria-live="polite"></div>
             <p class="editor-help">
                 <span class="kbd-hint">🖱 بکشید</span> جابه‌جایی و تغییر اندازه ·
-                <span class="kbd-hint">جهت‌ها</span> جابه‌جایی ۱ میلی‌متری ·
+                <span class="kbd-hint">جهت‌ها</span> جابه‌جایی ۰٫۱ میلی‌متری · Shift ۱ میلی‌متر ·
                 <span class="kbd-hint">Ctrl/⌘ + Z</span> بازگردانی
             </p>
         </div>
         <aside class="tag-field-controls" id="tag-field-controls" aria-label="تنظیمات فیلد انتخاب‌شده">
             <div class="tag-controls-head"><h4>فیلد انتخاب‌شده</h4></div>
-            <p id="selected-field-empty" class="muted tag-controls-empty">اول یک فیلد را از نوار بالا روشن کنید، بعد روی بوم کلیک کنید تا انتخاب شود.</p>
+            <p id="selected-field-empty" class="muted tag-controls-empty">روی یکی از کادرهای روی بوم بزنید تا تنظیماتش اینجا باز شود.</p>
             <div id="selected-field-form" hidden>
                 <div class="selected-field-title">
                     <i class="field-color-dot" id="selected-color-dot" aria-hidden="true"></i>
@@ -162,10 +162,10 @@
                 </div>
                 <div class="field-action-row">
                     <div class="field-nudge-buttons" aria-label="جابه‌جایی دقیق">
-                        <button type="button" class="btn btn-sm btn-ghost" data-nudge="up">▲</button>
-                        <button type="button" class="btn btn-sm btn-ghost" data-nudge="left">◀</button>
-                        <button type="button" class="btn btn-sm btn-ghost" data-nudge="down">▼</button>
-                        <button type="button" class="btn btn-sm btn-ghost" data-nudge="right">▶</button>
+                        <button type="button" class="btn btn-sm btn-ghost" data-nudge="up" aria-label="جابه‌جایی به بالا">▲</button>
+                        <button type="button" class="btn btn-sm btn-ghost" data-nudge="left" aria-label="جابه‌جایی به چپ">◀</button>
+                        <button type="button" class="btn btn-sm btn-ghost" data-nudge="down" aria-label="جابه‌جایی به پایین">▼</button>
+                        <button type="button" class="btn btn-sm btn-ghost" data-nudge="right" aria-label="جابه‌جایی به راست">▶</button>
                     </div>
                     <div class="field-layer-buttons" aria-label="لایه فیلد">
                         <button type="button" class="btn btn-sm btn-ghost" data-layer="back" title="فرستادن به لایه پایین‌تر">عقب ➡</button>
@@ -190,26 +190,18 @@
                     <label>ارتفاع تگ <em>mm</em>{{ num('tag-height', step='0.1') }}</label>
                 </div>
                 <div class="form-row ctl-row-4">
-                    <label>حاشیه بالا{{ num('margin-top', step='0.1') }}</label>
-                    <label>حاشیه پایین{{ num('margin-bottom', step='0.1') }}</label>
-                    <label>حاشیه راست{{ num('margin-right', step='0.1') }}</label>
-                    <label>حاشیه چپ{{ num('margin-left', step='0.1') }}</label>
+                    <label>حاشیه بالا <em>mm</em>{{ num('margin-top', step='0.1') }}</label>
+                    <label>حاشیه پایین <em>mm</em>{{ num('margin-bottom', step='0.1') }}</label>
+                    <label>حاشیه راست <em>mm</em>{{ num('margin-right', step='0.1') }}</label>
+                    <label>حاشیه چپ <em>mm</em>{{ num('margin-left', step='0.1') }}</label>
                 </div>
-                <div class="form-row ctl-row-4">
-                    <label>فاصله افقی{{ num('gap-horizontal', step='0.1') }}</label>
-                    <label>فاصله عمودی{{ num('gap-vertical', step='0.1') }}</label>
+                <div class="form-row ctl-row-4 ctl-row-last">
+                    <label>فاصله افقی <em>mm</em>{{ num('gap-horizontal', step='0.1') }}</label>
+                    <label>فاصله عمودی <em>mm</em>{{ num('gap-vertical', step='0.1') }}</label>
                     <label>ستون‌ها{{ num('tag-columns') }}</label>
                     <label>سطرها{{ num('tag-rows') }}</label>
                 </div>
-                <div class="form-row ctl-row-4 ctl-row-last">
-                    <label>حالت چیدمان<select id="layout-mode"><option value="fixed">ثابت</option><option value="auto">بیشترین تعداد قابل‌جای‌گیری</option></select><small class="field-help">خودکار ستون و سطر را از چیدمان بهینه بازنویسی می‌کند.</small></label>
-                    <div class="fit-summary" aria-live="polite">
-                        <span>چیدمان: <strong id="fit-grid">—</strong></span>
-                        <span>تگ در صفحه: <strong id="fit-count">—</strong></span>
-                        <span>ناحیه چاپ: <strong id="fit-area" dir="ltr">—</strong></span>
-                        <span>فضای خالی: <strong id="fit-unused" dir="ltr">—</strong></span>
-                    </div>
-                </div>
+                <p class="tag-fit-inline" id="fit-inline" aria-live="polite">—</p>
             </div>
 
             <div class="tag-ctl-card">
@@ -291,7 +283,8 @@
             <div><span>ناحیه قابل چاپ</span><strong id="side-fit-area">{{ tag_fit.available_width_mm }} × {{ tag_fit.available_height_mm }} mm</strong></div>
             <div><span>چیدمان</span><strong id="side-fit-grid">{{ tag_fit.columns }} × {{ tag_fit.rows }}</strong></div>
             <div><span>تگ در هر صفحه</span><strong id="side-fit-count">{{ tag_fit.tags_per_page }}</strong></div>
-            <div><span>فضای خالی</span><strong id="side-fit-unused">{{ tag_fit.unused_width_mm }} × {{ tag_fit.unused_height_mm }} mm</strong></div>
+            <div><span>وضعیت</span><strong id="side-fit-status"{% if not tag_fit.fits %} class="fit-bad"{% endif %}>{{ 'جا می‌شود' if tag_fit.fits else 'بیرون از A4' }}</strong></div>
+            <div><span>فضای خالی / بیش‌آمده</span><strong id="side-fit-unused">{% if tag_fit.fits %}{{ tag_fit.unused_width_mm }} × {{ tag_fit.unused_height_mm }} mm{% else %}{{ tag_fit.overflow_width_mm }} × {{ tag_fit.overflow_height_mm }} mm{% endif %}</strong></div>
         </div>
         <p class="muted fit-note">حاشیهٔ چاپگر را نیز بررسی کنید.</p>
     </section>
@@ -306,11 +299,9 @@ const savedTagTemplates = {{ tag_templates|tojson }};
 // used to hard-code a second copy that could silently drift from the editor's
 // labels and the chips'.
 const fieldLabels = {{ field_labels|tojson }};
-const allowLists = {{ allow_list_sources|tojson }};
 const tagSample = {{ {'product_name': sample_item.product_name, 'name': sample_item.name, 'barcode': sample_item.barcode, 'price': sample_item.price_display, 'size': sample_item.size, 'color': sample_item.color, 'sku': sample_item.sku, 'brand': sample_item.brand, 'category': sample_item.category, 'care_instructions': (sample_item.care_instructions or ''), 'instagram': (store.instagram or ''), 'store_name': store.name, 'image_path': sample_item.image_path}|tojson }};
 const barcodePreviewSources = {{ barcode_preview_sources|tojson }};
 
-const chipOrder = ['product_name','price','size','color','barcode','barcode_text','sku','brand','category','store_name','instagram','product_image','custom_text'];
 const A4 = { width: 210, height: 297 };
 
 let workingConfig = JSON.parse(JSON.stringify(initialTagConfig));
@@ -325,7 +316,7 @@ let undoGuardUntil = 0;
 const $ = id => document.getElementById(id);
 const canvasEl = () => $('tag-editor-canvas');
 
-const globalInputs = {tag_width_mm:'tag-width',tag_height_mm:'tag-height',margin_top_mm:'margin-top',margin_bottom_mm:'margin-bottom',margin_right_mm:'margin-right',margin_left_mm:'margin-left',gap_horizontal_mm:'gap-horizontal',gap_vertical_mm:'gap-vertical',columns:'tag-columns',rows:'tag-rows',layout_mode:'layout-mode',background:'tag-background',border_color:'tag-border-color',border_width_mm:'tag-border-width',padding_mm:'tag-padding',corner_radius_mm:'tag-radius',custom_text:'tag-custom-text',barcode_density:'barcode-density'};
+const globalInputs = {tag_width_mm:'tag-width',tag_height_mm:'tag-height',margin_top_mm:'margin-top',margin_bottom_mm:'margin-bottom',margin_right_mm:'margin-right',margin_left_mm:'margin-left',gap_horizontal_mm:'gap-horizontal',gap_vertical_mm:'gap-vertical',columns:'tag-columns',rows:'tag-rows',background:'tag-background',border_color:'tag-border-color',border_width_mm:'tag-border-width',padding_mm:'tag-padding',corner_radius_mm:'tag-radius',custom_text:'tag-custom-text',barcode_density:'barcode-density'};
 // The bounds come from the server's own table (TAG_NUMERIC_RULES), injected as
 // tagNumericRules — the third copy this page used to carry is gone, so a bound
 // edited on the server reaches the clamps here in the same build.
@@ -337,6 +328,15 @@ const IMG_FIT_STYLE = 'max-width:100%;max-height:100%;width:auto;height:auto;obj
 function copy(v){ return JSON.parse(JSON.stringify(v)); }
 function clamp(v,min,max){ return Math.max(min,Math.min(max,v)); }
 function numberValue(v){ const n = Number(v); return Number.isFinite(n) ? n : 0; }
+function displayNumber(value, decimals = 1){
+  const n = Number(value);
+  if (!Number.isFinite(n)) return value ?? '';
+  return String(Number(n.toFixed(decimals)));
+}
+const roundTenth = v => Math.round(v * 10) / 10;
+function pad(){ return numberValue(workingConfig.padding_mm); }
+function contentWidth(){ return numberValue(workingConfig.tag_width_mm) - 2 * pad(); }
+function contentHeight(){ return numberValue(workingConfig.tag_height_mm) - 2 * pad(); }
 
 // Refused numbers live here, keyed by input id, until a valid keystroke
 // clears them. The config keeps its last good value — a bad field rings and
@@ -347,7 +347,7 @@ function checkNumber(raw, key, label){
   const rule = numberLimits[key];
   const text = String(raw ?? '').trim();
   // Clearing a field to retype is not an error — the last good value holds
-  // until valid digits arrive. The server still refuses empties on save.
+  // until valid digits arrive or the field loses focus (which restores it).
   if (text === '') return { ok: false, empty: true };
   const n = Number(text);
   if (!Number.isFinite(n)) return { ok: false, message: `${label} عدد نیست.` };
@@ -416,18 +416,26 @@ function isEditable(el){
 }
 
 function keepFieldsInsideTag(){
-  const w = numberValue(workingConfig.tag_width_mm), h = numberValue(workingConfig.tag_height_mm);
+  const w = contentWidth(), h = contentHeight();
   if (w < 2 || h < 2) return;
   Object.values(workingConfig.fields).forEach(f => {
-    f.width = clamp(numberValue(f.width), 2, w);
-    f.height = clamp(numberValue(f.height), 2, h);
-    f.x = clamp(numberValue(f.x), 0, Math.max(0, w - f.width));
-    f.y = clamp(numberValue(f.y), 0, Math.max(0, h - f.height));
+    f.width = roundTenth(clamp(numberValue(f.width), 2, w));
+    f.height = roundTenth(clamp(numberValue(f.height), 2, h));
+    f.x = roundTenth(clamp(numberValue(f.x), 0, Math.max(0, w - f.width)));
+    f.y = roundTenth(clamp(numberValue(f.y), 0, Math.max(0, h - f.height)));
   });
 }
 
+function setDisplayValue(id, value, decimals = 1){
+  const el = $(id);
+  if (!el) return;
+  if (el === document.activeElement && String(el.value).trim() === '') return;
+  el.value = displayNumber(value, decimals);
+}
 function syncInputsFromConfig(){
-  Object.entries(globalInputs).forEach(([key, id]) => { $(id).value = workingConfig[key]; });
+  Object.entries(globalInputs).forEach(([key, id]) => {
+    setDisplayValue(id, workingConfig[key], (key === 'columns' || key === 'rows') ? 0 : 1);
+  });
   document.querySelectorAll('input[name="barcode-mode"]').forEach(i => { i.checked = (i.value === workingConfig.barcode_mode); });
   // Restored values are valid by construction: rings retire with the undo.
   Object.keys(inputErrors).forEach(id => { const el = $(id); if (el) flagInput(el, null); });
@@ -470,7 +478,7 @@ function updateDiagnostics(){
   });
   const labels = name => fieldLabels[name] || name;
   visible.forEach(([name, f]) => {
-    if (f.x < 0 || f.y < 0 || f.x + f.width > workingConfig.tag_width_mm || f.y + f.height > workingConfig.tag_height_mm) {
+    if (f.x < 0 || f.y < 0 || f.x + f.width > contentWidth() + 0.001 || f.y + f.height > contentHeight() + 0.001) {
       issues.push({ text: labels(name) + ' خارج از محدوده است', field: name });
     }
   });
@@ -524,24 +532,37 @@ function updateFitGuide(){
   const aw = A4.width - numberValue(workingConfig.margin_left_mm) - numberValue(workingConfig.margin_right_mm);
   const ah = A4.height - numberValue(workingConfig.margin_top_mm) - numberValue(workingConfig.margin_bottom_mm);
   const gx = numberValue(workingConfig.gap_horizontal_mm), gy = numberValue(workingConfig.gap_vertical_mm);
-  const mc = Math.floor((aw + gx) / (w + gx)), mr = Math.floor((ah + gy) / (h + gy));
+  const mc = w > 0 ? Math.floor((aw + gx) / (w + gx)) : 0;
+  const mr = h > 0 ? Math.floor((ah + gy) / (h + gy)) : 0;
   const ok = w >= 2 && h >= 2 && aw > 0 && ah > 0 && mc >= 1 && mr >= 1;
-  const c = workingConfig.layout_mode === 'auto' ? mc : numberValue(workingConfig.columns);
-  const r = workingConfig.layout_mode === 'auto' ? mr : numberValue(workingConfig.rows);
-  const fits = ok && c >= 1 && r >= 1 && c <= mc && r <= mr;
-  const gridTxt = fits ? c + ' × ' + r : 'جا نمی‌شود';
-  const countTxt = fits ? c * r : '—';
-  const areaTxt = (aw > 0 ? aw.toFixed(1) : '0') + ' × ' + (ah > 0 ? ah.toFixed(1) : '0') + ' mm';
-  const unusedTxt = fits ? (aw - (c * w + Math.max(0, c - 1) * gx)).toFixed(1) + ' × ' + (ah - (r * h + Math.max(0, r - 1) * gy)).toFixed(1) + ' mm' : '—';
+  const c = numberValue(workingConfig.columns), r = numberValue(workingConfig.rows);
+  const valid = ok && c >= 1 && r >= 1;
+  const fits = valid && c <= mc && r <= mr;
+  const count = valid ? c * r : 0;
+  const usedW = c * w + Math.max(0, c - 1) * gx;
+  const usedH = r * h + Math.max(0, r - 1) * gy;
+  const overflowW = Math.max(0, usedW - aw), overflowH = Math.max(0, usedH - ah);
+  const gridTxt = valid ? c + ' × ' + r : '—';
+  const countTxt = valid ? String(count) : '—';
+  const areaTxt = (aw > 0 ? displayNumber(aw) : '0') + ' × ' + (ah > 0 ? displayNumber(ah) : '0') + ' mm';
+  const unusedTxt = fits
+    ? displayNumber(aw - usedW) + ' × ' + displayNumber(ah - usedH) + ' mm'
+    : (valid ? 'بیش‌آمده: ' + displayNumber(overflowW) + ' × ' + displayNumber(overflowH) + ' mm' : '—');
+  const statusTxt = valid ? (fits ? 'جا می‌شود' : 'بیرون از A4 — بخشی از تگ‌ها چاپ نمی‌شود') : '—';
+  const inlineTxt = valid
+    ? c + ' × ' + r + ' = ' + count + ' تگ' + (fits ? '' : ' · بیش‌آمده: ' + displayNumber(overflowW) + ' × ' + displayNumber(overflowH) + ' mm')
+    : '—';
   const set = (id, txt, bad) => {
     const el = $(id); if (!el) return;
     el.textContent = txt;
     el.classList.toggle('fit-bad', !!bad);
   };
-  set('fit-grid', gridTxt, !fits); set('fit-count', countTxt, !fits);
-  set('fit-area', areaTxt, false); set('fit-unused', unusedTxt, false);
   set('side-fit-grid', gridTxt, !fits); set('side-fit-count', countTxt, !fits);
-  set('side-fit-area', areaTxt, false); set('side-fit-unused', unusedTxt, false);
+  set('side-fit-status', statusTxt, !fits);
+  set('side-fit-area', areaTxt, false); set('side-fit-unused', unusedTxt, !fits);
+  set('fit-inline', inlineTxt, !fits);
+  const guide = $('tag-content-guide');
+  if (guide) guide.style.inset = pad() + 'mm';
   const chip = $('dims-chip');
   if (chip) chip.textContent = w.toFixed(1) + ' × ' + h.toFixed(1) + ' mm';
   const hint = $('fields-hint');
@@ -555,7 +576,10 @@ function updateFitGuide(){
 function applyZoom(){
   const canvas = canvasEl();
   if (canvas) canvas.style.zoom = canvasZoom;
-  document.querySelectorAll('[data-zoom]').forEach(b => b.classList.toggle('active', Number(b.dataset.zoom) === canvasZoom));
+  document.querySelectorAll('[data-zoom]').forEach(b => {
+    b.classList.toggle('active', Number(b.dataset.zoom) === canvasZoom);
+    b.setAttribute('aria-pressed', String(Number(b.dataset.zoom) === canvasZoom));
+  });
 }
 document.querySelectorAll('[data-zoom]').forEach(b => b.addEventListener('click', () => {
   canvasZoom = Number(b.dataset.zoom);
@@ -603,32 +627,33 @@ function syncFieldChips(){
 
 // ---- Editor canvas ----
 function fieldBox(name, field){
-  const box = document.createElement('button');
-  box.type = 'button';
+  const box = document.createElement('div');
   box.className = 'tag-editor-field' + (field.visible ? '' : ' is-hidden-field') + (selectedField === name ? ' is-selected' : '');
   box.dataset.field = name;
-  box.style.left = field.x + 'mm';
-  box.style.top = field.y + 'mm';
+  box.style.left = (pad() + field.x) + 'mm';
+  box.style.top = (pad() + field.y) + 'mm';
   box.style.width = field.width + 'mm';
   box.style.height = field.height + 'mm';
   box.style.fontSize = Math.max(7, field.font_size) + 'pt';
   box.style.fontWeight = field.bold ? '700' : '400';
-  box.style.textAlign = field.align;
   box.style.color = 'var(--ink)';
-  box.appendChild(fieldColorDot(field.color));
+  const body = document.createElement('button');
+  body.type = 'button';
+  body.className = 'tag-editor-field-body';
+  body.style.justifyContent = alignMap[field.align];
+  body.style.textAlign = field.align;
+  body.title = (field.visible ? 'ویرایش ' : 'فیلد مخفی: ') + (fieldLabels[name] || name);
+  body.appendChild(fieldColorDot(field.color));
   const label = document.createElement('span');
   label.className = 'tag-editor-field-label';
   label.textContent = fieldLabels[name] || name;
-  box.appendChild(label);
-  box.title = (field.visible ? 'ویرایش ' : 'فیلد مخفی: ') + (fieldLabels[name] || name);
-  box.addEventListener('click', e => { e.stopPropagation(); selectField(name); });
-  box.addEventListener('pointerdown', e => startDrag(e, name));
-  // The corner is a real control, not a pointer-only decoration: a keyboard
-  // user reaches it with Tab (it sits inside the field's own button, which is
-  // in the tab order), presses Enter or Space, and then drags the same
-  // resize the mouse drags — with the arrow keys, ending with Enter. The
-  // label names the field it resizes, so screen-reader text is not just
-  // «تغییر اندازه» ten times over.
+  body.appendChild(label);
+  body.addEventListener('click', e => { e.stopPropagation(); selectField(name); });
+  body.addEventListener('pointerdown', e => startDrag(e, name));
+  box.appendChild(body);
+  // The corner is a real control, not a pointer-only decoration. It is a
+  // sibling of the field button (not nested inside it) so the markup has no
+  // interactive control inside another one, while staying keyboard-resizable.
   const handle = document.createElement('span');
   handle.className = 'tag-resize-handle';
   handle.setAttribute('role', 'button');
@@ -663,6 +688,12 @@ function renderEditor(){
   canvas.innerHTML = '';
   canvas.style.width = workingConfig.tag_width_mm + 'mm';
   canvas.style.height = workingConfig.tag_height_mm + 'mm';
+  const guide = document.createElement('div');
+  guide.id = 'tag-content-guide';
+  guide.className = 'tag-content-guide';
+  guide.setAttribute('aria-hidden', 'true');
+  guide.style.inset = pad() + 'mm';
+  canvas.appendChild(guide);
   Object.entries(workingConfig.fields)
     .filter(([, field]) => field.visible)
     .sort(([, a], [, b]) => (a.z || 0) - (b.z || 0))
@@ -690,11 +721,11 @@ function populateFieldControls(){
   const dot = $('selected-color-dot');
   if (dot) dot.style.background = field.color;
   $('field-visible').checked = field.visible;
-  $('field-x').value = field.x;
-  $('field-y').value = field.y;
-  $('field-width').value = field.width;
-  $('field-height').value = field.height;
-  $('field-font-size').value = field.font_size;
+  setDisplayValue('field-x', field.x);
+  setDisplayValue('field-y', field.y);
+  setDisplayValue('field-width', field.width);
+  setDisplayValue('field-height', field.height);
+  setDisplayValue('field-font-size', field.font_size);
   $('field-color').value = field.color;
   $('field-align').value = field.align;
   $('field-bold').checked = field.bold;
@@ -732,7 +763,7 @@ function startDrag(e, name){
   selectField(name);
   const field = workingConfig.fields[name], p = canvasPoint(e);
   pushUndo();
-  dragging = { name, dx: p.x - field.x, dy: p.y - field.y };
+  dragging = { name, dx: p.x - pad() - field.x, dy: p.y - pad() - field.y };
   try { canvasEl().setPointerCapture(e.pointerId); } catch (_) {}
 }
 function startResize(e, name){
@@ -786,8 +817,8 @@ document.addEventListener('keydown', e => {
   e.preventDefault();
   const f = workingConfig.fields[keyboardResize.name];
   const mm = e.shiftKey ? 5 : 1;
-  f.width = clamp(f.width + step[0] * mm, 2, workingConfig.tag_width_mm - f.x);
-  f.height = clamp(f.height + step[1] * mm, 2, workingConfig.tag_height_mm - f.y);
+  f.width = roundTenth(clamp(f.width + step[0] * mm, 2, contentWidth() - f.x));
+  f.height = roundTenth(clamp(f.height + step[1] * mm, 2, contentHeight() - f.y));
   workingConfig.preset = 'custom';
   renderEditor();
   populateFieldControls();
@@ -798,16 +829,16 @@ canvasEl().addEventListener('pointermove', e => {
   const p = canvasPoint(e);
   if (dragging) {
     const f = workingConfig.fields[dragging.name];
-    f.x = clamp(p.x - dragging.dx, 0, workingConfig.tag_width_mm - f.width);
-    f.y = clamp(p.y - dragging.dy, 0, workingConfig.tag_height_mm - f.height);
+    f.x = roundTenth(clamp(p.x - pad() - dragging.dx, 0, contentWidth() - f.width));
+    f.y = roundTenth(clamp(p.y - pad() - dragging.dy, 0, contentHeight() - f.height));
     const box = canvasEl().querySelector('.tag-editor-field[data-field="' + dragging.name + '"]');
-    if (box) { box.style.left = f.x + 'mm'; box.style.top = f.y + 'mm'; }
+    if (box) { box.style.left = (pad() + f.x) + 'mm'; box.style.top = (pad() + f.y) + 'mm'; }
     applyLivePreview();
     markUnsaved();
   } else if (resizing) {
     const f = workingConfig.fields[resizing.name];
-    f.width = clamp(resizing.width + p.x - resizing.startX, 2, workingConfig.tag_width_mm - f.x);
-    f.height = clamp(resizing.height + p.y - resizing.startY, 2, workingConfig.tag_height_mm - f.y);
+    f.width = roundTenth(clamp(resizing.width + p.x - resizing.startX, 2, contentWidth() - f.x));
+    f.height = roundTenth(clamp(resizing.height + p.y - resizing.startY, 2, contentHeight() - f.y));
     const box = canvasEl().querySelector('.tag-editor-field[data-field="' + resizing.name + '"]');
     if (box) { box.style.width = f.width + 'mm'; box.style.height = f.height + 'mm'; }
     applyLivePreview();
@@ -816,14 +847,14 @@ canvasEl().addEventListener('pointermove', e => {
 });
 document.addEventListener('pointerup', () => { dragging = null; resizing = null; });
 
-function nudge(dir){
+function nudge(dir, step = 0.1){
   if (!selectedField) return;
   const f = workingConfig.fields[selectedField];
   pushUndo();
-  if (dir === 'up') f.y = clamp(f.y - 1, 0, workingConfig.tag_height_mm - f.height);
-  if (dir === 'down') f.y = clamp(f.y + 1, 0, workingConfig.tag_height_mm - f.height);
-  if (dir === 'left') f.x = clamp(f.x - 1, 0, workingConfig.tag_width_mm - f.width);
-  if (dir === 'right') f.x = clamp(f.x + 1, 0, workingConfig.tag_width_mm - f.width);
+  if (dir === 'up') f.y = roundTenth(clamp(f.y - step, 0, contentHeight() - f.height));
+  if (dir === 'down') f.y = roundTenth(clamp(f.y + step, 0, contentHeight() - f.height));
+  if (dir === 'left') f.x = roundTenth(clamp(f.x - step, 0, contentWidth() - f.width));
+  if (dir === 'right') f.x = roundTenth(clamp(f.x + step, 0, contentWidth() - f.width));
   renderEditor();
   populateFieldControls();
   applyLivePreview();
@@ -835,7 +866,8 @@ document.querySelectorAll('[data-layer]').forEach(b => b.addEventListener('click
   pushUndo();
   const zs = Object.values(workingConfig.fields).map(x => x.z || 0);
   const f = workingConfig.fields[selectedField];
-  f.z = (b.dataset.layer === 'front' ? (Math.max.apply(null, zs) || 0) + 1 : (Math.min.apply(null, zs) || 0) - 1);
+  const nextZ = b.dataset.layer === 'front' ? (Math.max.apply(null, zs) || 0) + 1 : (Math.min.apply(null, zs) || 0) - 1;
+  f.z = clamp(nextZ, -100, 100);
   workingConfig.preset = 'custom';
   renderEditor();
   populateFieldControls();
@@ -844,11 +876,12 @@ document.querySelectorAll('[data-layer]').forEach(b => b.addEventListener('click
 }));
 $('tag-field-controls').addEventListener('input', updateSelectedField);
 $('tag-field-controls').addEventListener('change', updateSelectedField);
+$('tag-field-controls').addEventListener('focusout', () => populateFieldControls());
 document.addEventListener('keydown', e => {
   if (!selectedField || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
     e.preventDefault();
-    nudge({ ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' }[e.key]);
+    nudge({ ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' }[e.key], e.shiftKey ? 1 : 0.1);
   }
 });
 
@@ -922,7 +955,7 @@ document.querySelectorAll('.tag-template-load').forEach(button => button.addEven
 
 // ---- Live preview ----
 const baseDisplay = {};
-const alignMap = { left: 'flex-start', center: 'center', right: 'flex-end' };
+const alignMap = { right: 'flex-start', center: 'center', left: 'flex-end' };
 let realBarcodeSrc = null;
 
 function liveRoot(){ return ($('tag-live-preview') || document).querySelector('.tag-render'); }
@@ -945,8 +978,8 @@ function applyFieldStyle(el, name, f){
   if (!(name in baseDisplay)) baseDisplay[name] = el.style.display || getComputedStyle(el).display;
   el.style.display = f.visible ? baseDisplay[name] : 'none';
   if (!f.visible) return;
-  el.style.left = f.x + 'mm';
-  el.style.top = f.y + 'mm';
+  el.style.left = (pad() + f.x) + 'mm';
+  el.style.top = (pad() + f.y) + 'mm';
   el.style.width = f.width + 'mm';
   el.style.height = f.height + 'mm';
   el.style.fontSize = f.font_size + 'pt';
@@ -954,6 +987,7 @@ function applyFieldStyle(el, name, f){
   el.style.fontWeight = f.bold ? '700' : '400';
   el.style.textAlign = f.align;
   el.style.justifyContent = alignMap[f.align];
+  el.style.zIndex = String(f.z ?? 0);
 }
 function ensureFieldElement(name, f){
   const root = liveRoot();
@@ -1044,7 +1078,6 @@ function applyLivePreview(){
   root.style.borderColor = c.border_color;
   root.style.borderWidth = c.border_width_mm + 'mm';
   root.style.borderRadius = c.corner_radius_mm + 'mm';
-  root.style.padding = c.padding_mm + 'mm';
   Object.entries(c.fields).forEach(([name, f]) => {
     if (name === 'barcode') return;
     const el = ensureFieldElement(name, f);

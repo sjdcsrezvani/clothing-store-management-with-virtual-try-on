@@ -1,3 +1,24 @@
+## 3.0.2 — 2026-10-31
+
+### تنظیمات تگ: one layout, one truth
+
+- **«حالت چیدمان» is gone.** Rows and columns are the only layout control,
+  and the settings guide, print header, screen pagination, and printed grid
+  all use the same numbers.
+- **Overflow is allowed and warned.** A grid larger than A4 is saved as
+  entered and marked on both the settings page and the print page instead of
+  being silently rewritten.
+- **Tag padding now works, and layouts saved before this release keep their
+  exact look.** Version-1 designs migrate with padding zero; new presets keep
+  their 1 mm inset.
+- **The editor matches print.** Right/center/left alignment follows RTL,
+  layer changes stack in the live preview, nudges move 0.1 mm (Shift 1 mm),
+  and drag/resize values round to 0.1 mm.
+- **Safer saves.** An all-hidden design is refused, and a sticky save bar
+  keeps the action reachable.
+- Added regression tests for overflow, the 8 × 15 grid, migration, padding,
+  RTL alignment, and the removed layout mode.
+
 ## 3.0.1 — 1405/08/04 (2026-10-26)
 
 ### نصب تازه: every build is the shop's own
