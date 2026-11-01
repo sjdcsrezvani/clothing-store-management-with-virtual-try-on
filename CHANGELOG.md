@@ -1,4 +1,4 @@
-## 3.0.2 — 2026-10-31
+## 3.1.0 — 2026-11-01
 
 ### تنظیمات تگ: one layout, one truth
 
@@ -18,6 +18,35 @@
   keeps the action reachable.
 - Added regression tests for overflow, the 8 × 15 grid, migration, padding,
   RTL alignment, and the removed layout mode.
+
+### فروش: the till can let a sale go
+
+- **«لغو فروش» clears the basket and releases the stock.** An approved card
+  payment is the one thing cancellation may not throw away — that sale must
+  be invoiced or reconciled first — and a payment still talking to the
+  terminal keeps its place until the answer lands.
+- **A lost terminal answer no longer freezes the till.** A connection that
+  never opens is declined at once with its address in the message, the
+  status strip polls every 30 seconds instead of asking again on every
+  landing, and the slip prints the product name only with the shop's
+  Instagram in the footer — no borrowed number reads as an invoice.
+- **The invoice keeps to what identifies it:** the cashier line and the
+  printed barcode are gone from paper and screen alike.
+- Added regression tests for cancellation, receipt shape, terminal answer
+  recovery, and the total's digit order.
+
+### داشبورد: one card, and pages that fit it
+
+- **The dashboard is rebuilt around one card system**, low stock counts by
+  product instead of by row, and the campaign, ledger, variant, and product
+  pages stay inside their cards — the product editor is now a tabbed
+  two-pane layout.
+
+### عکس: lighter try-on photos
+
+- Stored person and garment photos are compressed, phone originals stay
+  original, the picker no longer uploads what it only previews, and try-on
+  is provider-aware.
 
 ## 3.0.1 — 1405/08/04 (2026-10-26)
 
