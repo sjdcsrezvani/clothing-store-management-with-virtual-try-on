@@ -33,6 +33,10 @@ RESPONSE_CODE_LABELS = {
 }
 
 
+class POSConnectionError(Exception):
+    """The TCP connection never opened, so the terminal cannot have seen the sale."""
+
+
 def _read_response_code(response: str) -> str | None:
     """Read the five-digit response value from a packed PEC response."""
     match = re.search(r"RS\d{3}RS(\d{5})", response)
@@ -116,7 +120,7 @@ def build_parsian_payload(amount_str: str) -> str:
 # the code below defends against: uppercase LT anywhere aborts the sale,
 # *, = and leading @ jump to the line end, ×/…/emoji have no glyphs, and
 # multiple number-runs per line render in reverse byte order (so item lines
-# carry {name} {total} {qty} and read {name} {qty} {total}).
+# carry {name} {total}  {qty} and read {name} {qty}  {total}).
 RECEIPT_MAX_BYTES = 120
 RECEIPT_R8_MAX_BYTES = 28
 RECEIPT_NAME_MAX_BYTES = 30
@@ -180,10 +184,20 @@ def build_receipt_text(items, discount_amount: int, final_amount: int,
         total = int(item.get("total_price") or 0)
         if qty <= 0 or total < 0:
             continue
-        lines.append(f"{_clean_name(item.get('name'))} {total} {qty}")
+        # Product name only: size/color would eat the short 2-item byte budget.
+        # The split is only for legacy snapshots finalized before product_name
+        # existed; new baskets carry the base name directly.
+        name = item.get("product_name") or str(item.get("name") or "").split(" - ")[0]
+        # Two spaces between total and qty; the terminal prints number runs in
+        # reverse, so this reads as {name} {qty}  {total}.
+        lines.append(f"{_clean_name(name)} {total}  {qty}")
     lines.append(f"تخفیف {int(discount_amount or 0)}")
     lines.append(f"جمع {int(final_amount or 0)}")
-    lines.append(f"{handle} {ref}".strip())
+    lines.append(f"اینستاگرام: {handle}")
+    # No invoice number here: this slip is printed before the Sale row exists,
+    # so the only number available is the POS transaction id — which is not the
+    # invoice number and caused INV4 vs sale #3 confusion.
+    _ = ref
     return "\n".join(lines)
 
 
@@ -215,10 +229,10 @@ def build_receipt_thanks() -> bytes:
 
 
 def build_footer_payload(shop_name: str, ref: str) -> bytes:
-    """Footer-only R4: handle + ref + the bigger thanks note. ~95B, always
+    """Footer-only R4: Instagram handle + the bigger thanks note. ~78B, always
     fits; hard-truncated only against an absurd shop configuration."""
-    _ = shop_name
-    text = "\n".join(["raykids_official " + ref, *_FOOTER_THANKS])
+    _ = shop_name, ref  # no invoice/transaction number on the terminal slip
+    text = "\n".join([f"اینستاگرام: raykids_official", *_FOOTER_THANKS])
     try:
         data = _receipt_bytes(text)
     except _UnsafeReceipt:  # fixed text cannot drop digits; belt and braces
@@ -338,7 +352,14 @@ def send_sale(
     log_event("socket_connecting", {"ip": host, "port": port, "amount": amount_text})
 
     try:
-        with socket.create_connection((host, port), timeout=timeout) as sock:
+        try:
+            # A dead address must not freeze the till for the whole payment
+            # window: a LAN SYN answers in milliseconds or not at all. The
+            # customer's PIN time still gets the full timeout on recv below.
+            sock = socket.create_connection((host, port), timeout=min(timeout, 5.0))
+        except OSError as error:
+            raise POSConnectionError(f"{address} — {error}") from error
+        with sock:
             payload = build_parsian_payload_bytes(amount_text, r4, r8)
             log_event(
                 "socket_connected",

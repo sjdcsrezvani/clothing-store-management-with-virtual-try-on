@@ -253,7 +253,18 @@
     <div class="checkout-right">
         {# ── Basket ── #}
         <div class="basket-section card">
-            <h3><span> سبد خرید</span> <span id="basket-count" class="basket-count"> {{ basket|length }} قلم </span></h3>
+            <div class="basket-head">
+                <h3><span>سبد خرید</span> <span id="basket-count" class="basket-count">{{ basket|length }} قلم</span></h3>
+                {% if basket and not cancel_blocked %}
+                <form method="post" action="/sales/cancel" class="basket-cancel"
+                      data-confirm="{{ cancel_confirm }}"
+                      data-confirm-title="لغو فروش" data-confirm-ok="لغو فروش">
+                    <input type="hidden" name="checkout_nonce" value="{{ checkout_nonce }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="btn btn-ghost btn-sm">لغو فروش</button>
+                </form>
+                {% endif %}
+            </div>
 
             {% if basket %}
             <div class="basket-list">
@@ -393,7 +404,7 @@
                 {# Step 2 — approve the amount: terminal for card, cash count for
                    cash, nothing for credit (the note above is its step 2). #}
                 <div class="pay-step" id="pay-step-terminal">
-                    {% include "partials/terminal_indicator.html" %}
+                    {% with initial = true %}{% include "partials/terminal_indicator.html" %}{% endwith %}
                     <form method="post" action="/sales/send-to-terminal" id="terminal-form"
                           hx-post="/sales/send-to-terminal" hx-target="#terminal-status"
                           hx-swap="outerHTML" hx-disabled-elt="#terminal-submit"

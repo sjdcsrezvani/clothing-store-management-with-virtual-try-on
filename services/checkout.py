@@ -472,7 +472,11 @@ def finalize_basket(db: Session, checkout: CheckoutSession) -> dict:
         verified.append({
             "variant_id": variant.id,
             "product_id": variant.product_id,
+            # The till wants the full variant label; the tiny terminal slip
+            # gets the product name only (size/color would eat the 2-item
+            # byte budget).
             "name": variant.display_name,
+            "product_name": variant.product.name if variant.product else variant.display_name,
             "unit_price": unit_price,
             "unit_cost": variant.cost_price,
             "quantity": qty,
@@ -824,6 +828,37 @@ def reopen_checkout(
     _set_state(db, checkout, "draft", "reopened after failed terminal payment")
     db.commit()
     db.refresh(checkout)
+
+
+def cancel_checkout(
+    db: Session,
+    checkout: CheckoutSession,
+    *,
+    request_id: str | None = None,
+    commit: bool = True,
+) -> None:
+    """Close a sale the cashier abandoned.
+
+    A failed terminal connection is safe to cancel; an approved payment is
+    not — that money must become an invoice (or be reconciled) first.
+    """
+    if checkout.state in {"completed", "refunded", "expired"}:
+        return
+    if checkout.state == "payment_approved":
+        raise ValueError("پرداخت این فروش تأیید شده است؛ فاکتور را صادر کنید.")
+    transaction = checkout.pos_transaction
+    if (transaction is not None and transaction.status == "approved"
+            and not transaction.sale_id):
+        raise ValueError("پرداخت این فروش تأیید شده است؛ فاکتور را صادر کنید.")
+    if checkout.state == "payment_pending":
+        raise ValueError("ارسال به کارت‌خوان در جریان است؛ چند لحظه بعد دوباره تلاش کنید.")
+    release_reservations(db, checkout, request_id=request_id)
+    if transition_allowed(checkout.state, "payment_cancelled"):
+        _set_state(db, checkout, "payment_cancelled", "cancelled by cashier")
+    elif transition_allowed(checkout.state, "expired"):
+        _set_state(db, checkout, "expired", "cancelled by cashier")
+    if commit:
+        db.commit()
 
 
 class InsufficientStockError(Exception):

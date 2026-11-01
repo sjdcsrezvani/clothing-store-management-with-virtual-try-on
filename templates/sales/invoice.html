@@ -28,7 +28,6 @@
         <div class="invoice-meta">
             <span>شماره: <span class="tnum">{{ sale.id }}</span></span>
             <span>{{ jalali_str(sale.created_at) }}</span>
-            {% if cashier_name %}<span>صندوقدار: {{ cashier_name }}</span>{% endif %}
         </div>
     </div>
 
@@ -98,7 +97,6 @@
         {% endif %}
     </div>
 
-    <div class="invoice-barcode">{{ barcode_svg|safe }}<div class="tnum">{{ sale.id }}</div></div>
 </div>
 
 <div class="invoice-foot">

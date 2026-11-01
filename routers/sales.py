@@ -45,7 +45,6 @@ from services.tier import (
 )
 from services.invoice import generate_invoice_pdf
 from services.store import get_store
-from services.barcode import code39_svg
 from services.events import append_event
 from services.pos_terminal import (
     send_sale as send_terminal_sale,
@@ -55,12 +54,13 @@ from services.pos_terminal import (
     build_receipt_thanks,
     build_footer_payload,
     wants_receipt,
+    POSConnectionError,
 )
 from services.inventory import record_stock_movement
 from services.checkout import (
     create_checkout, get_checkout, update_checkout_options, reserve_basket, finalize_basket,
     set_payment_pending, set_payment_outcome, complete_checkout, reopen_checkout,
-    atomic_decrement_stock, InsufficientStockError,
+    cancel_checkout, atomic_decrement_stock, InsufficientStockError,
 )
 
 
@@ -485,6 +485,17 @@ def _render_scan(request, customer, basket, total_amount, db,
         if checkout.state == "payment_approved"
         else "اگر کارت‌خوان مبلغ را از کارت کم کرده ولی پاسخ تأیید برنگشت، پرداخت را دستی تأیید کنید."
     )
+    pos_attempt = checkout.pos_transaction
+    cancel_blocked = bool(
+        checkout.state in {"payment_pending", "payment_approved"}
+        or (pos_attempt is not None and pos_attempt.status == "approved"
+            and not pos_attempt.sale_id)
+    )
+    cancel_confirm = (
+        "اگر مبلغی از کارت کم شده، ابتدا آن را در صفحه تطبیق کارت‌خوان مشخص کنید. این فروش لغو شود؟"
+        if pos_attempt is not None and pos_attempt.status == "uncertain"
+        else "این فروش لغو می‌شود و سبد خالی می‌شود. ادامه می‌دهید؟"
+    )
     return templates.TemplateResponse(request, "sales/checkout.html", {
         "step": "scan",
         "customer": customer,
@@ -517,6 +528,8 @@ def _render_scan(request, customer, basket, total_amount, db,
         # setup, card remains available as the app's existing manual-card
         # fallback; the terminal button can still use the default address.
         "pos_requires_approval": pos_config["configured"],
+        "cancel_blocked": cancel_blocked,
+        "cancel_confirm": cancel_confirm,
         "error": error,
         "success": success,
         "fmt": fmt,
@@ -630,6 +643,24 @@ async def sales_new(request: Request, db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "cashier")
     if not hasattr(guard, "role"):
         return guard
+    # «فروش جدید» is an explicit reset: start empty even when the previous
+    # draft is still waiting for a terminal answer. A payment that may have
+    # moved (pending/approved) keeps its pointer so it cannot be abandoned by
+    # a navigation; the cashier completes or reconciles it. The old row stays
+    # in the database either way.
+    active_nonce = request.session.get("checkout_nonce")
+    active = get_checkout(db, active_nonce) if active_nonce else None
+    active_pos = active.pos_transaction if active else None
+    money_in_flight = bool(
+        active and (
+            active.state in {"payment_pending", "payment_approved"}
+            or (active_pos is not None and active_pos.status == "approved"
+                and not active_pos.sale_id)
+        )
+    )
+    if not money_in_flight:
+        request.session.pop("checkout_nonce", None)
+        _clear_pos_approval(request)
     # A terminal row can send the till its figure and reference — displayed,
     # never applied: money joins a bill by being rung up, not by arriving
     # in a query string.
@@ -652,6 +683,39 @@ async def sales_new(request: Request, db: Session = Depends(get_db)):
         "pos_hint": pos_hint,
         "fmt": fmt,
     })
+
+
+@router.post("/cancel", response_class=HTMLResponse)
+async def sales_cancel(
+    request: Request,
+    checkout_nonce: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    """Cancel the till's current sale and start clean.
+
+    An approved terminal payment is not cancellable — it must become an
+    invoice or be reconciled. An uncertain attempt may be abandoned; its row
+    stays on the reconciliation page so a real charge is never lost.
+    """
+    guard = require_html_role(request, db, "cashier")
+    if not hasattr(guard, "role"):
+        return guard
+    nonce = checkout_nonce or request.session.get("checkout_nonce")
+    checkout = get_checkout(db, nonce) if nonce else None
+    if checkout and checkout.staff_user_id == guard.id:
+        try:
+            cancel_checkout(db, checkout, request_id=request.headers.get("X-Request-ID"))
+        except ValueError as error:
+            request.session["checkout_nonce"] = checkout.checkout_nonce
+            basket = json.loads(checkout.basket_json or "[]")
+            total_amount = sum(int(item.get("total_price") or 0) for item in basket)
+            return _render_scan(
+                request, _resolve_customer(checkout.customer_id or 0, db),
+                basket, total_amount, db, error=str(error),
+            )
+    request.session.pop("checkout_nonce", None)
+    _clear_pos_approval(request)
+    return RedirectResponse(url="/sales/new?msg=فروش لغو شد.", status_code=303)
 
 
 @router.post("/skip-customer", response_class=HTMLResponse)
@@ -1210,6 +1274,40 @@ async def _send_to_terminal(request: Request, checkout_nonce: str, db: Session):
         result = await asyncio.to_thread(
             send_terminal_sale, cfg["host"], cfg["port"], amount * 10, r4=r4, r8=r8,
         )
+    except POSConnectionError as error:
+        # The socket never opened: no amount reached the terminal, so this is
+        # a refusal, not the "money may have moved" uncertainty of a lost
+        # answer. Reservations are released by the outcome handler.
+        transaction.request_finished_at = datetime.now(timezone.utc)
+        transaction.last_retry_at = datetime.now(timezone.utc)
+        transaction.status = "declined"
+        transaction.error_message = str(error)[:500]
+        transaction.response_label = "کارت‌خوان در دسترس نیست"
+        _append_pos_outcome_event(
+            db,
+            transaction,
+            "declined",
+            actor_user_id=require_role.id,
+            request_id=request.headers.get("X-Request-ID"),
+        )
+        set_payment_outcome(
+            db,
+            checkout,
+            "declined",
+            transaction.response_label,
+            request_id=request.headers.get("X-Request-ID"),
+            commit=False,
+        )
+        db.commit()
+        return JSONResponse(status_code=502, content={
+            "detail": (
+                f"اتصال به کارت‌خوان {cfg['host']}:{cfg['port']} برقرار نشد — آدرس و شبکه را "
+                "بررسی کنید؛ برای تلاش دوباره فروش را لغو کنید."
+            ),
+            "status": "declined",
+            "transaction_id": transaction.id,
+            "terminal": {"host": cfg["host"], "port": cfg["port"]},
+        })
     except Exception as error:
         transaction.request_finished_at = datetime.now(timezone.utc)
         transaction.last_retry_at = datetime.now(timezone.utc)
@@ -1288,31 +1386,13 @@ async def _send_to_terminal(request: Request, checkout_nonce: str, db: Session):
 
 
 def _sale_receipt_extras(db, sale):
-    """Paper-only context: cashier, logo, barcode. Nothing here may fail a sale.
-
-    The cashier resolves through the checkout session that produced the sale;
-    old sales without one print without the line rather than a guess.
-    """
-    cashier_name = None
-    try:
-        session = db.query(CheckoutSession).filter(
-            CheckoutSession.sale_id == sale.id).order_by(CheckoutSession.id.desc()).first()
-        if session and session.staff_user_id:
-            staff = db.query(StaffUser).filter(StaffUser.id == session.staff_user_id).first()
-            if staff:
-                cashier_name = staff.full_name or staff.username
-    except Exception:
-        cashier_name = None
+    """Paper-only context: the shop logo. Nothing here may fail a sale."""
     try:
         logo_row = db.query(Settings).filter(Settings.key == "owner_logo_path").first()
         store_logo = (logo_row.value or "") if logo_row else ""
     except Exception:
         store_logo = ""
-    return {
-        "cashier_name": cashier_name,
-        "store_logo": store_logo,
-        "barcode_svg": code39_svg(sale.id),
-    }
+    return {"store_logo": store_logo}
 
 
 def _adjustment_message(adjustments: list) -> str:
@@ -1841,7 +1921,6 @@ async def sales_confirm(
     receipt = _sale_receipt_extras(db, sale)
     generate_invoice_pdf(
         sale, customer, sale_items, store=get_store(db),
-        cashier_name=receipt["cashier_name"],
         credit_remaining=sale_remaining(sale),
         footer_note=footer_text, payment_parts=sale.payment_parts)
 
@@ -1874,7 +1953,6 @@ async def sales_invoice_view(sale_id: int, request: Request, db: Session = Depen
     receipt = _sale_receipt_extras(db, sale)
     invoice_path = generate_invoice_pdf(
         sale, customer, items, store=get_store(db),
-        cashier_name=receipt["cashier_name"],
         credit_remaining=sale_remaining(sale),
         footer_note=footer_text, payment_parts=sale.payment_parts)
 

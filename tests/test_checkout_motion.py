@@ -31,6 +31,18 @@ def test_digit_tokens_ship_with_a_guard_and_no_colours():
     assert not re.findall(r"#[0-9a-fA-F]{3,8}\b", motion)
 
 
+def test_final_total_digits_keep_their_left_to_right_order():
+    """The label's RTL rule must not reach the nested digit flex: once JS
+    splits «1,000» into spans, an RTL flex lays them out as «000,1»."""
+    style = (ROOT / "static" / "css" / "style.css").read_text()
+    assert ".summary-row > span:first-child { direction: rtl; }" in style
+    motion = (ROOT / "static" / "css" / "motion.css").read_text()
+    group_line = next(line for line in motion.splitlines()
+                      if line.startswith(".t-digit-group"))
+    assert "direction: ltr" in group_line
+    assert "unicode-bidi: isolate" in group_line
+
+
 def test_final_total_pops_but_nothing_else_does():
     """Only the final total carries the hook — line items and the cash
     change must never animate per keystroke or per scan."""

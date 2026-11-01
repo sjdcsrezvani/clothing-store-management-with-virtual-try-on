@@ -16,6 +16,10 @@ def test_terminal_status_answers_the_till_with_a_fragment(client):
     assert response.status_code == 200
     assert 'id="terminal-indicator"' in response.text
     assert 'hx-get="/sales/terminal-status"' in response.text
+    # The landing fragment must not carry `load`: it would ask again the
+    # instant it swapped in, turning the poll into a tight loop.
+    assert 'hx-trigger="every 30s"' in response.text
+    assert 'hx-trigger="load' not in response.text
 
 
 def test_product_search_answers_the_till_with_option_rows(client, db_session):

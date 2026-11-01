@@ -6,7 +6,7 @@ windows-1256 bytes with byte-count lengths, PD=1, face Toman digits.
 Firmware quirks defended in code: uppercase LT aborts the sale, *, = and
 leading @ jump to the line end, ×/…/emoji have no glyphs, multiple
 number-runs per line render reversed (so item lines carry
-{name} {total} = {qty} and read {name} {qty} = {total}).
+{name} {total}  {qty} and read {name} {qty}  {total}).
 """
 from services.pos_terminal import (
     RECEIPT_MAX_BYTES,
@@ -42,24 +42,35 @@ def test_no_receipt_path_is_byte_identical_to_legacy():
         build_parsian_payload("180000").encode("ascii")
 
 
-def test_receipt_shape_item_total_qty_discount_final_handle_ref():
-    items = [{"name": "شلوار", "quantity": 2, "total_price": 200000},
-             {"name": "تیشرت", "quantity": 1, "total_price": 80000}]
+def test_receipt_shape_item_total_qty_discount_final_instagram():
+    items = [{"name": "شلوار - سایز ۳۸ - آبی", "product_name": "شلوار",
+              "quantity": 2, "total_price": 200000},
+             {"name": "تیشرت - سایز ۴۰ - سفید", "product_name": "تیشرت",
+              "quantity": 1, "total_price": 80000}]
     text = build_receipt_text(items, 20000, 260000, "raykids_official", "inv48271")
     assert text.splitlines() == [
-        "شلوار 200000 2",
-        "تیشرت 80000 1",
+        "شلوار 200000  2",
+        "تیشرت 80000  1",
         "تخفیف 20000",
         "جمع 260000",
-        "raykids_official inv48271",
+        "اینستاگرام: raykids_official",
     ]
     wire = build_receipt_payload(items, 20000, 260000, "", "inv48271")
     assert wire is not None and len(wire) <= RECEIPT_MAX_BYTES
 
 
-def test_inv_ref_costs_digits_plus_three():
-    assert len("inv48271".encode("ascii")) == 8  # 1-3 digit invoices: 4-6B
-    assert len("inv1234567".encode("ascii")) == 10  # 7-digit max: 10B
+def test_receipt_uses_product_name_only_not_size_or_color():
+    items = [{"name": "ست خرسی خط دار - سایز 46 - زرد روشن",
+              "product_name": "ست خرسی خط دار",
+              "quantity": 1, "total_price": 1000}]
+    text = build_receipt_text(items, 0, 1000, "raykids_official", "inv4")
+    assert text.splitlines()[0] == "ست خرسی خط دار 1000  1"
+    assert "سایز" not in text and "زرد" not in text
+    # Legacy snapshot without product_name: strip the variant suffix.
+    legacy = [{"name": "تیشرت آبی - سایز ۳۸ - آبی",
+               "quantity": 2, "total_price": 2000}]
+    assert build_receipt_text(legacy, 0, 2000, "x", "inv5").splitlines()[0] == \
+        "تیشرت آبی 2000  2"
 
 
 def test_unencodable_chars_are_dropped_not_fatal():
@@ -97,7 +108,7 @@ def test_overflow_falls_back_to_footer():
 def test_footer_shape_and_fit():
     data = build_footer_payload("", "inv48271")
     assert data.decode("windows-1256").splitlines() == [
-        "raykids_official inv48271",
+        "اينستاگرام: raykids_official",
         "از خريد شما ممنونيم",
         "راي کيدز دوستدار شما",
     ]

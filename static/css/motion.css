@@ -398,7 +398,7 @@
   }
   100% { transform: translate(0, 0); opacity: 1; filter: blur(0); }
 }
-.t-digit-group { display: inline-flex; align-items: baseline; }
+.t-digit-group { display: inline-flex; align-items: baseline; direction: ltr; unicode-bidi: isolate; }
 .t-digit { display: inline-block; will-change: transform, opacity, filter; }
 .t-digit-group.is-animating .t-digit { animation: t-digit-pop-in var(--digit-dur) var(--digit-ease) both; }
 .t-digit-group.is-animating .t-digit[data-stagger="1"] { animation-delay: var(--digit-stagger); }

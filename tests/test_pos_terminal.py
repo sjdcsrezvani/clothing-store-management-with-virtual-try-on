@@ -4,6 +4,8 @@ import re
 import socket
 import threading
 
+import pytest
+
 from models import CheckoutSession, Customer, POSTransaction, Product, ProductVariant, Sale, SalePaymentPart, Settings, StaffUser
 from services import pos_terminal
 from services.checkout import create_checkout
@@ -74,6 +76,18 @@ def test_send_sale_returns_cancelled_status(monkeypatch, tmp_path):
     assert result["ok"] is True
     assert result["status"] == "cancelled"
     assert result["response_code"] == "00250"
+
+
+def test_connect_failure_is_tagged_before_any_amount_is_sent(monkeypatch, tmp_path):
+    monkeypatch.setattr(pos_terminal, "LOG_FILE", tmp_path / "transactions.log")
+    # Bind then close: the port is certainly unused, so connect refuses fast.
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    probe.bind(("127.0.0.1", 0))
+    port = probe.getsockname()[1]
+    probe.close()
+
+    with pytest.raises(pos_terminal.POSConnectionError):
+        pos_terminal.send_sale("127.0.0.1", port, 123456, timeout=0.2)
 
 
 def _configure_pos(db_session):

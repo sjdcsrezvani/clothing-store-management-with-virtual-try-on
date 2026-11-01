@@ -63,7 +63,7 @@ def _register_font(c):
 
 
 def generate_invoice_pdf(sale, customer, items, store_name=None, store=None,
-                         cashier_name=None, credit_remaining=None,
+                         credit_remaining=None,
                          footer_note="", payment_parts=()) -> str:
     """
     Generate a PDF invoice and save it. Returns the URL path, or None if the
@@ -118,9 +118,6 @@ def generate_invoice_pdf(sale, customer, items, store_name=None, store=None,
         c.setFont(font, 9)
         c.drawRightString(width - 20 * mm, y, fa(f"شماره فاکتور: {sale.id}"))
         y -= 7 * mm
-        if cashier_name:
-            draw_line(f"صندوقدار: {cashier_name}", 20 * mm, y, size=9)
-            y -= 7 * mm
 
         if customer:
             full_name = f"{customer.first_name or ''} {customer.last_name or ''}".strip() or "—"
@@ -207,15 +204,6 @@ def generate_invoice_pdf(sale, customer, items, store_name=None, store=None,
             if getattr(sale, "refund_reason", None):
                 draw_line(f"دلیل: {sale.refund_reason}", 20 * mm, y, size=9)
                 y -= 6 * mm
-
-        # Scannable strip: the sale id as Code39, so a return is one scan.
-        try:
-            from reportlab.graphics.barcode.code39 import Standard39
-            strip = Standard39(str(sale.id), barHeight=12 * mm, barWidth=0.5)
-            strip.drawOn(c, (width - strip.width) / 2, y - 14 * mm)
-            y -= 18 * mm
-        except Exception:
-            logger.warning("Could not draw invoice barcode", exc_info=True)
 
         if footer_note:
             draw_line(footer_note, 20 * mm, y, size=8)

@@ -172,9 +172,9 @@ def test_invoice_phase1_paper_contract(client, db_session):
     assert "امتیاز کسب‌شده" not in page  # points off the paper
     assert "تعویض کالا با ارائه این فاکتور" in page  # fixed policy line
     assert "تهران، خیابان تست" in page and "021-11111111" in page
-    assert "صندوقدار" in page and "سارا" in page
+    assert "سارا" not in page  # cashier line removed from the paper
     assert "data-paper" in page and "paper-toggle" in page  # size toggle
-    assert "<svg" in page and "بارکد فاکتور" in page  # scannable strip
+    assert "بارکد فاکتور" not in page  # barcode strip removed
     assert 'class="em"' not in page  # purge finished: no emoji wrappers left
     assert "data-confirm" in page  # dialog refund…
     assert "return confirm(" not in page  # …not native
@@ -267,7 +267,7 @@ def test_invoice_pdf_parity_matrix_no_crash(tmp_path, monkeypatch):
     for sale in cases:
         path = generate_invoice_pdf(
             sale, customer if sale.id != 5 else None, [_fake_item()] * (30 if sale.id == 5 else 1),
-            store={"address": "تهران", "phone": "021-1"}, cashier_name="سارا",
+            store={"address": "تهران", "phone": "021-1"},
             credit_remaining=300_000, footer_note="متن پایین",
             payment_parts=parts if sale.payment_method == "split" else ())
         assert path and path.startswith("/static/uploads/invoices/invoice_")
