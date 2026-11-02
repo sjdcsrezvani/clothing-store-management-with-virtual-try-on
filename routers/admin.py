@@ -1943,10 +1943,6 @@ async def admin_owner_profile_update(request: Request, db: Session = Depends(get
             bank_iban = _check_iban(bank_iban)
         except ValueError as error:
             return RedirectResponse(url=f"/admin/owner-profile?err={error}", status_code=303)
-    website = str(form.get("owner_website", "") or "").strip()[:200]
-    if website and (" " in website or "." not in website):
-        return RedirectResponse(url="/admin/owner-profile?err=نشانی وب‌سایت معتبر نیست.", status_code=303)
-    instagram = str(form.get("owner_instagram", "") or "").strip().lstrip("@")[:100]
     # Logo: validated raster bytes under static/uploads/business, old file
     # removed on replace. Optional forever — never blocks the gate.
     from services.tags import validate_tag_image
@@ -1979,8 +1975,6 @@ async def admin_owner_profile_update(request: Request, db: Session = Depends(get
     updates["owner_signatory_user_id"] = signatory_id
     updates["owner_bank_account"] = str(form.get("owner_bank_account", "") or "").strip()[:80]
     updates["owner_bank_iban"] = bank_iban or ""
-    updates["owner_website"] = website
-    updates["owner_instagram"] = instagram
     if logo_path is not None:
         updates["owner_logo_path"] = logo_path
     elif str(form.get("remove_logo", "") or "") == "1":
@@ -2086,7 +2080,7 @@ SETTINGS_TABS = (
 # Which tab owns a field, so a validation error reopens the right panel.
 _SETTINGS_FIELD_TABS = {
     "barcode_code_length": "shop",
-    "store_name": "shop", "store_instagram": "shop",
+    "store_name": "shop", "store_instagram": "shop", "store_website": "shop",
     "store_tagline": "shop", "store_footer": "shop",
     "cash_opening_balance": "sales",
     "receipt_footer_note": "sales",
@@ -2462,6 +2456,16 @@ async def admin_update_settings(request: Request, db: Session = Depends(get_db))
         provider, entry = resolve_selection(provider, model)
         updates["tryon_provider"] = provider
         updates["tryon_model"] = entry["id"]
+    # The shop website is printed in document footers; a typo that is not a
+    # hostname would be printed as-is, so refuse it at the same boundary the
+    # owner-profile field used to.
+    store_website = str(form.get("store_website") or "").strip()
+    if store_website and (" " in store_website or "." not in store_website):
+        return RedirectResponse(
+            url="/admin/settings?tab=shop&field=store_website&err=نشانی وب‌سایت معتبر نیست.",
+            status_code=303)
+    if "store_website" in updates:
+        updates["store_website"] = store_website
     # A birthday target that names a module the store switched off would
     # contradict itself, so it falls back rather than silently doing nothing.
     child_off = str(updates.get(CHILD_PROFILE_KEY, "1")).strip().lower() in (

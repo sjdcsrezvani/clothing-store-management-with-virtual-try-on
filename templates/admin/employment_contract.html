@@ -44,8 +44,8 @@
   <h3>ماده ۸ — نسخ قرارداد</h3>
   <p>این قرارداد در دو نسخه هم‌ارزش تنظیم شد که یک نسخه نزد هر یک از طرفین باقی می‌ماند و هر دو نسخه حکم واحد را دارند.</p>
   <div class="document-signatures is-3col"><div>نام و امضای کارمند<br><strong>{{ staff_user.full_name }}</strong><br><br>امضا: ....................<br>تاریخ: ....................</div><div>نام و امضای {{ owner_settings.get('owner_signatory_title', 'کارفرما') }}<br><strong>{{ signatory_name }}</strong><br><br>امضا: ....................<br>تاریخ: ....................</div><div>مهر شرکت<br><br><br>....................</div></div>
-  {% if owner_settings.get('owner_website') or owner_settings.get('owner_instagram') %}
-  <p class="muted" style="text-align: center;">{% if owner_settings.get('owner_website') %}<span dir="ltr">{{ owner_settings.get('owner_website') }}</span>{% endif %}{% if owner_settings.get('owner_website') and owner_settings.get('owner_instagram') %} · {% endif %}{% if owner_settings.get('owner_instagram') %}اینستاگرام: <span dir="ltr">@{{ owner_settings.get('owner_instagram') }}</span>{% endif %}</p>
+  {% if store.website or store.instagram %}
+  <p class="muted" style="text-align: center;">{% if store.website %}<span dir="ltr">{{ store.website }}</span>{% endif %}{% if store.website and store.instagram %} · {% endif %}{% if store.instagram %}اینستاگرام: <span dir="ltr">{{ store.instagram }}</span>{% endif %}</p>
   {% endif %}
 </div>
 {% endif %}

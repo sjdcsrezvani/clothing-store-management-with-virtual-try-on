@@ -141,7 +141,7 @@ def test_logo_upload_replace_remove_and_doc_rendering(client, db_session):
     assert "در سربرگ قرارداد و رسید" in page
 
 
-def test_bank_web_fields_validate_and_print(client, db_session):
+def test_bank_fields_validate_and_print(client, db_session):
     _owner_client(client, db_session, name="phaseh2-owner-bank")
     bad_iban = client.post("/admin/owner-profile", data={
         "csrf_token": csrf_token(client, "/admin/owner-profile"),
@@ -149,26 +149,24 @@ def test_bank_web_fields_validate_and_print(client, db_session):
     }, follow_redirects=False)
     assert "شبا" in unquote(bad_iban.headers["location"])
 
-    bad_web = client.post("/admin/owner-profile", data={
-        "csrf_token": csrf_token(client, "/admin/owner-profile"),
-        "owner_full_name": "مالک", "owner_website": "not a site",
-    }, follow_redirects=False)
-    assert "وب‌سایت" in unquote(bad_web.headers["location"])
-
     good = client.post("/admin/owner-profile", data={
         "csrf_token": csrf_token(client, "/admin/owner-profile"),
         "owner_full_name": "مالک", "owner_business_name": "رای‌کیدز",
         "owner_address": "تهران", "owner_bank_account": "123456",
         "owner_bank_iban": "IR062960000000100324200001",
-        "owner_website": "raykid.example", "owner_instagram": "@raykid_store",
     }, files={"logo": ("logo.png", _tiny_png(), "image/png")},
         follow_redirects=False)
     assert good.status_code == 303
     values = {row.key: row.value for row in db_session.query(Settings).filter(
         Settings.key.like("owner_%")).all()}
     assert values["owner_bank_iban"] == "IR062960000000100324200001"
-    assert values["owner_instagram"] == "raykid_store"        # @ stripped
     assert values["owner_logo_path"].startswith("/static/uploads/business/")
+
+    from services.store import invalidate_store_cache
+    db_session.add(Settings(key="store_instagram", value="@raykid_store"))
+    db_session.add(Settings(key="store_website", value="raykid.example"))
+    db_session.commit()
+    invalidate_store_cache()
 
     import re
     worker, _ = _staff(db_session, "phaseh2-doc", "cashier")
@@ -185,3 +183,23 @@ def test_bank_web_fields_validate_and_print(client, db_session):
     assert "raykid.example" in doc
     assert "@raykid_store" in doc
     assert 'src="/static/uploads/business/logo-' in doc
+
+
+def test_shop_website_saves_in_settings_and_validates(client, db_session):
+    _owner_client(client, db_session, name="phaseh2-store-web")
+    bad = client.post("/admin/settings", data={
+        "csrf_token": csrf_token(client, "/admin/settings"),
+        "tab": "shop", "store_website": "not a site",
+    }, follow_redirects=False)
+    assert "وب‌سایت" in unquote(bad.headers["location"])
+
+    good = client.post("/admin/settings", data={
+        "csrf_token": csrf_token(client, "/admin/settings"),
+        "tab": "shop", "store_website": " raykid.example ",
+    }, follow_redirects=False)
+    assert good.status_code == 303
+    db_session.expire_all()
+    assert db_session.query(Settings).filter(
+        Settings.key == "store_website").one().value == "raykid.example"
+    assert 'name="store_website"' in client.get("/admin/settings?tab=shop").text
+

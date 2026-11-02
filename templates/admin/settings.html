@@ -79,6 +79,14 @@
         </div>
         <div class="form-row">
             <div class="form-group">
+                <label for="store_website">وب‌سایت فروشگاه</label>
+                <input type="text" id="store_website" name="store_website" dir="ltr"
+                       value="{{ settings.get('store_website', store.website) }}"
+                       placeholder="example.com">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
                 <label for="store_tagline">شعار / توضیح کوتاه</label>
                 <input type="text" id="store_tagline" name="store_tagline"
                        value="{{ settings.get('store_tagline', store.tagline) }}"

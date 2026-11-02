@@ -1,10 +1,11 @@
 """Store profile (branding) — single source of truth for the shop's name,
-tagline, Instagram handle, invoice footer, address and phone. Values live in the `settings`
-table so every shop can brand its own install; cached in memory for 60s and
-invalidated when settings are saved.
+tagline, Instagram handle, website, invoice footer, address and phone. Values
+live in the `settings` table so every shop can brand its own install; cached in
+memory for 60s and invalidated when settings are saved.
 
 Templates read `store.name`, `store.tagline`, `store.instagram`,
-`store.footer` via a Jinja2 context processor (see services/templating.py).
+`store.website`, `store.footer` via a Jinja2 context processor (see
+services/templating.py).
 """
 import time
 
@@ -17,6 +18,7 @@ DEFAULT_STORE = {
     "name": "فروشگاه من",
     "tagline": "سیستم مدیریت فروشگاه",
     "instagram": "",
+    "website": "",
     "footer": "",
     "address": "",
     "phone": "",
@@ -30,7 +32,7 @@ def _load(db=None) -> dict:
     if db is None:
         db = SessionLocal()
     try:
-        # One read of the settings table answers all four branding keys — the
+        # One read of the settings table answers all five branding keys — the
         # same one-query shape the shell theme read uses. A page render pays
         # for this loader only on a cache miss, and a miss is one query, not
         # four.
