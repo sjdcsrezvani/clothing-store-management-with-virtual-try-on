@@ -1,3 +1,22 @@
+## 3.1.1 — 2026-11-02
+
+### پرو مجازی: the flow tells the truth about itself
+
+- **The download wears the shop's own logo.** Watermarks come from the
+  owner-uploaded store logo, and a fresh install skips compositing entirely
+  instead of stamping a bundled image onto the customer's photo.
+- **Uploads land without a reload.** A chosen photo swaps into the slot in
+  place, and the confirm dialog now sits outside the closed upload panel so
+  it can actually show.
+- **Failures survive the page.** A failed job reloads into the reason card,
+  and the provider's attempt is kept on the job row so the debug log is
+  still there after a restart.
+- **The model list only offers what has been proven.** The catalog shows
+  edit models verified with the shop's own keys — Seedream runs at 2K — and
+  a source-photo echo is rejected as a non-edit.
+- Extended the try-on, closeout, and image-generation tests to cover the
+  new behavior.
+
 ## 3.1.0 — 2026-11-01
 
 ### تنظیمات تگ: one layout, one truth
