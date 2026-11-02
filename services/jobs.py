@@ -49,6 +49,20 @@ def claim_next(db, job_type: str | None = None) -> BackgroundJob | None:
     return job
 
 
+def _persist_attempt(job, payload: dict) -> None:
+    """Keep the last provider attempt on the job row so the log survives a
+    restart. Diagnostics must never break the generation itself."""
+    try:
+        from services import tryon_debug
+        attempt = tryon_debug.latest_for_job(job.id)
+        if not attempt:
+            return
+        payload["debug"] = {**attempt, "at": attempt["at"].isoformat()}
+        job.payload = json.dumps(payload, ensure_ascii=False)
+    except Exception:
+        pass
+
+
 async def process_one(db, job: BackgroundJob) -> bool:
     payload = json.loads(job.payload)
     if job.job_type == "sms":
@@ -80,6 +94,7 @@ async def process_one(db, job: BackgroundJob) -> bool:
                 provider.cleanup()
             except Exception:
                 pass
+            _persist_attempt(job, payload)
         try:
             output_path = Path(payload["output_path"])
             output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -109,6 +124,7 @@ def fail(db, job: BackgroundJob, error: Exception) -> None:
     if job.retry_count >= MAX_RETRIES:
         job.status = "failed"
         job.next_retry_at = None
+        job.completed_at = datetime.now(timezone.utc)
     else:
         job.status = "pending"
         job.next_retry_at = datetime.now(timezone.utc) + timedelta(minutes=2 ** min(job.retry_count, 4))

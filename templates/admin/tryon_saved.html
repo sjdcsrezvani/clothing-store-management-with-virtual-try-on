@@ -26,8 +26,10 @@
                     aria-label="نمایش تصویر در اندازه کامل">
                 <img src="{{ img.image_path }}" alt="تصویر پرو مجازی ذخیره‌شده"
                      class="tryon-gallery-thumb">
-                <img src="/static/logo.png" alt="" aria-hidden="true"
+                {% if store_logo %}
+                <img src="{{ store_logo }}" alt="" aria-hidden="true"
                      class="tryon-gallery-logo">
+                {% endif %}
             </button>
             <div class="muted tryon-gallery-date">
                 {{ jalali_str(img.created_at) }}
@@ -76,7 +78,7 @@
      data-close-lightbox>
      <div id="lightbox-stage" class="lightbox-stage t-modal-card">
         <img id="lightbox-img" src="" alt="تصویر پرو مجازی در اندازه کامل">
-        <img src="/static/logo.png" alt="" aria-hidden="true" class="lightbox-logo">
+        {% if store_logo %}<img src="{{ store_logo }}" alt="" aria-hidden="true" class="lightbox-logo">{% endif %}
     </div>
     <button type="button" id="lightbox-close" class="lightbox-close" aria-label="بستن تصویر"
             data-close-lightbox>✕</button>

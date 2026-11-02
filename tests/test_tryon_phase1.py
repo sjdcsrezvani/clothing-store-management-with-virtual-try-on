@@ -21,11 +21,11 @@ def test_selection_comes_from_settings_only(client, db_session):
     db_session.commit()
 
     provider, model, key = ig.get_tryon_selection(db_session)
-    assert (provider, model, key) == ("gapgpt", "gpt-image-2", "")  # no fallback key
+    assert (provider, model, key) == ("gapgpt", "gpt-image-2.5-sunburst", "")  # no fallback key
 
     _seed_key(db_session, "sk-from-settings")
     provider, model, key = ig.get_tryon_selection(db_session)
-    assert (provider, model, key) == ("gapgpt", "gpt-image-2", "sk-from-settings")
+    assert (provider, model, key) == ("gapgpt", "gpt-image-2.5-sunburst", "sk-from-settings")
 
     db_session.add_all([
         Settings(key="tryon_provider", value="avalai"),
@@ -40,7 +40,7 @@ def test_selection_comes_from_settings_only(client, db_session):
     db_session.query(Settings).filter(Settings.key == "tryon_model").update({"value": "not-a-model"})
     db_session.commit()
     provider, model, key = ig.get_tryon_selection(db_session)
-    assert (provider, model) == ("avalai", "gpt-image-2")
+    assert (provider, model) == ("avalai", "gpt-image-2.5-sunburst")
     assert key == "sk-avalai"
 
 
@@ -114,7 +114,7 @@ def test_both_keys_survive_provider_and_model_changes(client, db_session):
     token = csrf_token(client)
     first = client.post("/admin/settings", data={
         "tab": "messaging", "tryon_daily_limit": "50",
-        "tryon_provider": "gapgpt", "tryon_model": "gpt-image-2",
+        "tryon_provider": "gapgpt", "tryon_model": "gpt-image-2.5-sunburst",
         "tryon_api_key": "sk-gapgpt-END1", "tryon_api_key_avalai": "sk-avalai-END2",
         "csrf_token": token,
     }, follow_redirects=False)
@@ -259,22 +259,119 @@ def test_latest_job_helper_reads_session_job(client, db_session):
     assert _latest_tryon_job(req, db_session) is None
 
 
+def test_saved_download_composites_the_store_logo(client, db_session):
+    """The downloaded image carries the logo from Settings — and no logo at all
+    before the owner uploads one (a fresh install must not wear a bundled one)."""
+    import io
+    import uuid
+    from pathlib import Path as _Path
+    from PIL import Image
+    from models import GeneratedImage, Settings
+
+    token = csrf_token(client)
+    client.post("/admin/login", data={"username": "owner", "password": "test-admin-pass",
+                                      "csrf_token": token}, follow_redirects=False)
+    name = uuid.uuid4().hex
+    image_file = _Path("static/uploads/generated") / f"test-{name}.png"
+    logo_file = _Path("static/uploads/generated") / f"logo-{name}.png"
+    try:
+        image_file.parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (400, 400), (255, 255, 255)).save(image_file)
+        Image.new("RGB", (60, 60), (255, 0, 0)).save(logo_file)
+        record = GeneratedImage(image_path=f"/static/uploads/generated/{image_file.name}")
+        db_session.add(record)
+        db_session.add(Settings(key="owner_logo_path",
+                                value=f"/static/uploads/generated/{logo_file.name}"))
+        db_session.commit()
+
+        resp = client.get(f"/admin/try-on/saved/{record.id}/download?logo=yes")
+        assert resp.status_code == 200
+        out = Image.open(io.BytesIO(resp.content)).convert("RGB")
+        assert out.getpixel((5, 5)) == (255, 0, 0)
+
+        db_session.query(Settings).filter(Settings.key == "owner_logo_path").delete()
+        db_session.commit()
+        resp = client.get(f"/admin/try-on/saved/{record.id}/download?logo=yes")
+        out = Image.open(io.BytesIO(resp.content)).convert("RGB")
+        assert out.getpixel((5, 5)) == (255, 255, 255)
+    finally:
+        image_file.unlink(missing_ok=True)
+        logo_file.unlink(missing_ok=True)
+
+
 def test_tryon_page_shows_the_owner_debug_log(client, db_session):
     from services import tryon_debug
     tryon_debug.clear()
     tryon_debug.record(job_id=99, provider="avalai", model="seedream-5-0-260128",
                        ok=True, status=200, category="", code="", error="", raw="",
-                       fields="size=1K, images=2", result_bytes=10,
+                       fields="size=2K, images=2", result_bytes=10,
                        prep_ms=1, request_ms=2, download_ms=0, total_ms=3)
     try:
         token = csrf_token(client)
         client.post("/admin/login", data={"username": "owner", "password": "test-admin-pass", "csrf_token": token}, follow_redirects=False)
         page = client.get("/admin/try-on").text
-        assert "گزارش درخواست‌ها" in page
+        assert "لاگ تولید" in page
         assert "seedream-5-0-260128" in page
         assert "total 3ms" in page
     finally:
         tryon_debug.clear()
+
+
+def test_model_not_found_is_its_own_category():
+    from services.image_gen import classify_response
+    body = ('{"error":{"code":"model_not_found",'
+            '"message":"No available channel for model gpt-image-2 under group x"}}')
+    assert classify_response(503, body) == ("model_unavailable", "model_not_found")
+
+
+def test_persist_attempt_writes_the_debug_into_the_payload(db_session):
+    import json
+    from models import BackgroundJob
+    from services import tryon_debug
+    from services.jobs import _persist_attempt
+    tryon_debug.clear()
+    try:
+        job = BackgroundJob(job_type="tryon", payload=json.dumps({"a": 1}), status="processing")
+        db_session.add(job)
+        db_session.commit()
+        tryon_debug.record(
+            job_id=job.id, provider="gapgpt", model="gpt-image-2", ok=False,
+            status=503, category="model_unavailable", code="model_not_found",
+            error="No available channel", raw="{}", fields="size=1024x1024",
+            result_bytes=0, prep_ms=1, request_ms=2, download_ms=0, total_ms=3)
+        _persist_attempt(job, {"a": 1})
+        db_session.commit()
+        stored = json.loads(job.payload)
+        assert stored["a"] == 1
+        assert stored["debug"]["code"] == "model_not_found"
+        assert stored["debug"]["at"]
+    finally:
+        tryon_debug.clear()
+
+
+def test_tryon_context_exposes_the_persisted_attempt(db_session):
+    import json
+    from types import SimpleNamespace
+    from models import BackgroundJob
+    from routers.clothes_images import _tryon_context
+    job = BackgroundJob(
+        job_type="tryon", status="failed",
+        payload=json.dumps({"debug": {
+            "provider": "gapgpt", "model": "gpt-image-2", "ok": False,
+            "status": 503, "category": "model_unavailable",
+            "code": "model_not_found", "error": "No available channel",
+            "raw": "{}", "fields": "size=1024x1024", "prep_ms": 1,
+            "request_ms": 2, "download_ms": 0, "total_ms": 3,
+        }}),
+        error_message="No available channel",
+    )
+    db_session.add(job)
+    db_session.commit()
+    req = SimpleNamespace(session={"tryon_job_id": job.id, "staff_role": "owner"})
+    ctx = _tryon_context(db_session, req)
+    assert ctx["tryon_last_debug"]["code"] == "model_not_found"
+    assert ctx["tryon_jobs"][0]["id"] == job.id
+    assert ctx["tryon_jobs"][0]["debug"]["category"] == "model_unavailable"
 
 
 def test_tryon_page_shows_live_estimate_and_job_state(client):

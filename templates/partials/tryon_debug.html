@@ -1,36 +1,96 @@
-{# Owner-only diagnostic panel: the last provider attempts with the exact body
-   fields, HTTP status, normalized category and per-stage timings. It is how a
-   model sweep is read; it never includes the API key. #}
-<details class="card tryon-debug">
-    <summary>گزارش درخواست‌ها — {{ tryon_attempts|length }} مورد آخر (فقط مالک)</summary>
-    {% if tryon_attempts %}
+{# Owner-only generation log: the last provider attempt in full, then the
+   last ten try-on jobs. The attempt is persisted on the job row, so a restart
+   never erases the reason a generation failed. #}
+<details class="card tryon-debug tryon-log" {% if tryon_last_debug and not tryon_last_debug.ok %}open{% endif %}>
+    <summary>
+        لاگ تولید{% if tryon_job_id %} — درخواست #{{ tryon_job_id }}{% endif %}
+        {% if tryon_last_debug %}{% if tryon_last_debug.ok %}· موفق{% else %}· ناموفق{% endif %}{% endif %}
+    </summary>
+
+    {% if tryon_last_debug %}
+    {% set a = tryon_last_debug %}
+    <div class="tryon-debug-row{% if not a.ok %} is-fail{% endif %}">
+        <div class="tryon-debug-head">
+            <strong dir="ltr">{{ a.model }}</strong>
+            <span class="muted" dir="ltr">{{ a.provider }}</span>
+            {% if a.status %}<span class="muted" dir="ltr">HTTP {{ a.status }}</span>{% endif %}
+            <span class="tryon-debug-badge">{% if a.ok %}موفق{% else %}{{ a.category }}{% endif %}</span>
+        </div>
+        {% if a.url %}<div class="muted" dir="ltr">{{ a.url }}</div>{% endif %}
+        <div class="muted" dir="ltr">
+            total {{ a.total_ms }}ms · prep {{ a.prep_ms }}ms · request {{ a.request_ms }}ms · download {{ a.download_ms }}ms
+            {% if a.result_bytes %}· {{ a.result_bytes }} bytes{% endif %}
+        </div>
+        <div class="muted" dir="ltr">{{ a.fields }}</div>
+        {% if a.code %}<div class="muted" dir="ltr">code: {{ a.code }}</div>{% endif %}
+        {% if a.error %}<div class="tryon-debug-error">{{ a.error }}</div>{% endif %}
+        {% if a.raw and not a.ok %}
+        <details class="tryon-debug-raw">
+            <summary class="muted">پاسخ خام ارائه‌دهنده</summary>
+            <pre dir="ltr" id="tryon-raw">{{ a.raw }}</pre>
+        </details>
+        <button type="button" class="btn btn-ghost btn-sm" data-copy="tryon-raw">کپی پاسخ</button>
+        {% endif %}
+    </div>
+    {% elif tryon_job_error %}
+    {# Old jobs (or a failure before the provider was reached) have no
+       persisted attempt; the job row's own error is still the answer. #}
+    <div class="tryon-debug-row is-fail">
+        <div class="tryon-debug-head">
+            <strong dir="ltr">#{{ tryon_job_id }}</strong>
+            <span class="tryon-debug-badge">ناموفق</span>
+        </div>
+        <div class="tryon-debug-error">{{ tryon_job_error }}</div>
+    </div>
+    {% else %}
+    <p class="muted">هنوز درخواستی از این نشست ثبت نشده است.</p>
+    {% endif %}
+
+    {% if tryon_jobs %}
     <div class="tryon-debug-list">
-        {% for a in tryon_attempts %}
-        <div class="tryon-debug-row{% if not a.ok %} is-fail{% endif %}">
+        {% for j in tryon_jobs if j.id != tryon_job_id %}
+        <div class="tryon-debug-row{% if j.status == 'failed' %} is-fail{% endif %}">
             <div class="tryon-debug-head">
-                <strong dir="ltr">{{ a.model }}</strong>
-                <span class="muted" dir="ltr">{{ a.provider }}{% if a.job_id %} · #{{ a.job_id }}{% endif %}</span>
-                <span class="muted" dir="ltr">{{ a.at.strftime('%H:%M:%S') }}</span>
-                <span class="tryon-debug-badge">{% if a.ok %}موفق{% else %}{{ a.category }}{% endif %}</span>
+                <strong dir="ltr">#{{ j.id }}</strong>
+                {% if j.debug and j.debug.model %}<span class="muted" dir="ltr">{{ j.debug.model }}</span>{% endif %}
+                <span class="muted">{{ jalali_str(j.created_at) }}</span>
+                {% if j.completed_at %}
+                <span class="muted" dir="ltr">{{ ((j.completed_at - j.created_at).total_seconds())|round(1) }}s</span>
+                {% endif %}
+                <span class="tryon-debug-badge">
+                    {%- if j.status == 'completed' %}موفق{% elif j.status == 'failed' %}ناموفق
+                    {%- elif j.status == 'processing' %}در حال تولید{% else %}در صف{% endif -%}
+                </span>
             </div>
-            <div class="muted" dir="ltr">
-                total {{ a.total_ms }}ms · prep {{ a.prep_ms }}ms · request {{ a.request_ms }}ms · download {{ a.download_ms }}ms
-                {% if a.status %}· HTTP {{ a.status }}{% endif %}
-                {% if a.result_bytes %}· {{ a.result_bytes }} bytes{% endif %}
-            </div>
-            <div class="muted" dir="ltr">{{ a.fields }}</div>
-            {% if a.code %}<div class="muted" dir="ltr">code: {{ a.code }}</div>{% endif %}
-            {% if a.error %}<div class="tryon-debug-error">{{ a.error }}</div>{% endif %}
-            {% if a.raw and not a.ok %}
-            <details class="tryon-debug-raw">
-                <summary class="muted">پاسخ خام ارائه‌دهنده</summary>
-                <pre dir="ltr">{{ a.raw }}</pre>
-            </details>
-            {% endif %}
+            {% if j.error %}<div class="tryon-debug-error">{{ j.error }}</div>{% endif %}
         </div>
         {% endfor %}
     </div>
-    {% else %}
-    <p class="muted">هنوز درخواستی ثبت نشده است.</p>
+    {% endif %}
+
+    {% if tryon_attempts %}
+    <details class="tryon-debug-session">
+        <summary class="muted">جزئیات این نشست — {{ tryon_attempts|length }} مورد</summary>
+        <div class="tryon-debug-list">
+            {% for a in tryon_attempts %}
+            <div class="tryon-debug-row{% if not a.ok %} is-fail{% endif %}">
+                <div class="tryon-debug-head">
+                    <strong dir="ltr">{{ a.model }}</strong>
+                    <span class="muted" dir="ltr">{{ a.provider }}{% if a.job_id %} · #{{ a.job_id }}{% endif %}</span>
+                    <span class="muted" dir="ltr">{{ a.at.strftime('%H:%M:%S') }}</span>
+                    <span class="tryon-debug-badge">{% if a.ok %}موفق{% else %}{{ a.category }}{% endif %}</span>
+                </div>
+                <div class="muted" dir="ltr">
+                    total {{ a.total_ms }}ms · prep {{ a.prep_ms }}ms · request {{ a.request_ms }}ms · download {{ a.download_ms }}ms
+                    {% if a.status %}· HTTP {{ a.status }}{% endif %}
+                    {% if a.result_bytes %}· {{ a.result_bytes }} bytes{% endif %}
+                </div>
+                <div class="muted" dir="ltr">{{ a.fields }}</div>
+                {% if a.code %}<div class="muted" dir="ltr">code: {{ a.code }}</div>{% endif %}
+                {% if a.error %}<div class="tryon-debug-error">{{ a.error }}</div>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </details>
     {% endif %}
 </details>

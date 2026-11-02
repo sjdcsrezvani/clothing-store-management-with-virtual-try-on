@@ -357,7 +357,7 @@
         </div>
         <div class="form-row">
             <div class="form-group">
-                <label for="tryon_model">مدل پرو مجازی {{ tip('هر مدل با ارزان‌ترین تنظیمات معتبر خودش اجرا می‌شود (۱۰۲۴×۱۰۲۴؛ Seedream با 1K)') }}</label>
+                <label for="tryon_model">مدل پرو مجازی {{ tip('هر مدل با ارزان‌ترین تنظیمات معتبر خودش اجرا می‌شود (۱۰۲۴×۱۰۲۴؛ Seedream با 2K)') }}</label>
                 <select id="tryon_model" name="tryon_model">
                     {% for key, p in (tryon_providers or {}).items() %}
                     {% for m in p.models %}
@@ -365,7 +365,7 @@
                     {% endfor %}
                     {% endfor %}
                 </select>
-                <small>شماره مدل و هزینه تقریبی هر تصویر. مقایسه زمان و خطاها در صفحه پرو مجازی، بخش «گزارش درخواست‌ها».</small>
+                <small>شماره مدل و هزینه تقریبی هر تصویر. مقایسه زمان و خطاها در صفحه پرو مجازی، بخش «لاگ تولید».</small>
             </div>
         </div>
         <div class="form-row">

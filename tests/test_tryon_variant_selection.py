@@ -12,7 +12,7 @@ from routers.clothes_images import (
     _product_image_paths,
     _scanned_product_dict,
 )
-from services.image_gen import ImageGenService, MAIN_PROMPT
+from services.image_gen import EDIT_REMINDER, ImageGenService, MAIN_PROMPT
 
 
 def _variant(id, barcode, color="", size="", image_path=None, gallery=(), active=True):
@@ -123,7 +123,7 @@ def test_final_prompt_keeps_base_then_main_then_mid_then_outfit_rule():
     assert final.startswith("تیشرت تست.")
     assert MAIN_PROMPT in final
     assert final.index("جزئیات رنگ قرمز.") < final.index("OUTFIT RULE: last.")
-    assert final.endswith("OUTFIT RULE: last.")
+    assert final.endswith(EDIT_REMINDER)
 
 
 def _seed_product(db_session):
@@ -193,7 +193,7 @@ def test_switching_variant_then_generating_queues_the_new_variant_photo(
         final = ImageGenService()._build_prompt(
             payload["prompt"], payload["prompt_mid"], payload["prompt_suffix"])
         assert final.count(MAIN_PROMPT) == 1
-        assert final.endswith(payload["prompt_suffix"])
+        assert final.endswith(EDIT_REMINDER)
     finally:
         for path in captured.get("payload", {}).get("temporary_paths", []):
             Path(path).unlink(missing_ok=True)

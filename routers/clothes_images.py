@@ -2,6 +2,7 @@
 import asyncio
 import base64
 import hashlib
+import json
 import logging
 import os
 import tempfile
@@ -723,6 +724,12 @@ def _latest_tryon_job(request: Request, db: Session):
         BackgroundJob.id == job_id, BackgroundJob.job_type == "tryon").first()
 
 
+def _store_logo(db: Session) -> str:
+    """The shop's own uploaded logo URL; empty until the owner uploads one."""
+    row = db.query(Settings).filter(Settings.key == "owner_logo_path").first()
+    return (row.value or "").strip() if row else ""
+
+
 def _tryon_context(db: Session, request: Request, *, msg: str = "", err: str = "", pairing=None):
     """Everything the try-on page renders, shared by the page route and the
     pair route so the two cannot drift. ``pairing`` is set only on the response
@@ -738,6 +745,33 @@ def _tryon_context(db: Session, request: Request, *, msg: str = "", err: str = "
     attempt = tryon_debug.latest_for_job(job.id) if job else None
     last_seconds = (f"{attempt['total_ms'] / 1000:.1f}"
                     if attempt and attempt.get("ok") else None)
+    # The persisted attempt rides on the job row, so the log box still explains
+    # a failure after the app restarts and the in-memory ring buffer is gone.
+    last_debug = None
+    if job:
+        try:
+            last_debug = json.loads(job.payload or "{}").get("debug")
+        except (TypeError, ValueError):
+            last_debug = None
+    tryon_jobs = []
+    if is_owner:
+        rows = (db.query(BackgroundJob)
+                  .filter(BackgroundJob.job_type == "tryon")
+                  .order_by(BackgroundJob.id.desc())
+                  .limit(10).all())
+        for row in rows:
+            try:
+                debug = json.loads(row.payload or "{}").get("debug") or {}
+            except (TypeError, ValueError):
+                debug = {}
+            tryon_jobs.append({
+                "id": row.id,
+                "status": row.status,
+                "created_at": row.created_at,
+                "completed_at": row.completed_at,
+                "error": row.error_message,
+                "debug": debug,
+            })
     return {
         "kid_photo_preview": state["kid_photo_preview"],
         "scanned": state["scanned"],
@@ -747,10 +781,13 @@ def _tryon_context(db: Session, request: Request, *, msg: str = "", err: str = "
         "tryon_last_seconds": last_seconds,
         "show_tryon_debug": is_owner,
         "tryon_attempts": tryon_debug.recent() if is_owner else [],
+        "tryon_last_debug": last_debug if is_owner else None,
+        "tryon_jobs": tryon_jobs,
         "tryon_job_id": job.id if job else None,
         "tryon_job_status": job.status if job else None,
         "tryon_job_error": job.error_message if job and job.status == "failed" else None,
         "tryon_remaining": _tryon_remaining(db),
+        "store_logo": _store_logo(db),
         "backgrounds": TRYON_BACKGROUNDS,
         "pose_modes": TRYON_POSE_MODES,
         "face_modes": TRYON_FACE_MODES,
@@ -915,9 +952,9 @@ async def admin_tryon_retry(request: Request, db: Session = Depends(get_db)):
     if not tryon_can_generate(request, db):
         return RedirectResponse(
             url="/admin/try-on?err=سقف تولید روزانه تصویر رسیده است.", status_code=303)
-    import json
     payload = json.loads(job.payload or "{}")
     payload.pop("ip", None)
+    payload.pop("debug", None)  # a retry starts with a clean log
     payload["ip"] = request.client.host if request.client else "unknown"
     new_job = enqueue(db, "tryon", payload)
     db.commit()
@@ -1087,7 +1124,7 @@ async def admin_tryon_download(request: Request, logo: str = "no", db: Session =
     raw = Path(path).read_bytes()
     if logo == "yes":
         try:
-            out = composite_logo(raw)
+            out = composite_logo(raw, _store_logo(db))
         except Exception as e:
             logger.error("Logo composite failed: %s", e)
             return RedirectResponse(url=f"/admin/try-on?err=خطا در افزودن لوگو: {e}", status_code=303)
@@ -1251,6 +1288,7 @@ async def admin_tryon_saved(request: Request, db: Session = Depends(get_db)):
 
     return templates.TemplateResponse(request, "admin/tryon_saved.html", {
         "saved_images": saved,
+        "store_logo": _store_logo(db),
         "filter_q": q,
         "filter_day": day,
         "fmt": fmt,
@@ -1303,7 +1341,7 @@ async def admin_tryon_saved_download(
     raw = Path(path).read_bytes()
     if logo == "yes":
         try:
-            out = composite_logo(raw)
+            out = composite_logo(raw, _store_logo(db))
         except Exception as e:
             logger.error("Logo composite failed: %s", e)
             return RedirectResponse(url=f"/admin/try-on/saved?err=خطا در افزودن لوگو: {e}", status_code=303)
@@ -1368,20 +1406,28 @@ async def upload_kid_photo(request: Request, file: UploadFile = File(...)):
     swaps the send-status line; every other caller keeps the JSON contract —
     including the exact 400 details — unchanged."""
     from_phone = bool(request.headers.get(AUTH_HEADER))
+    # The browser's own form sets the photo on its session directly and gets
+    # the new card back for a seamless swap. The phone has no cookie for this
+    # browser, so it keeps the inbox hand-off.
+    state = None if from_phone else _state(request)
     if not request.headers.get("HX-Request"):
-        return await _upload_kid_photo(file, save=from_phone)
+        return await _upload_kid_photo(file, save=from_phone, state=state)
     try:
-        await _upload_kid_photo(file, save=from_phone)
+        await _upload_kid_photo(file, save=from_phone, state=state)
     except HTTPException as error:
         return templates.TemplateResponse(
             request, "partials/mobile_send_status.html",
             {"ok": False, "msg": str(error.detail)})
+    if from_phone:
+        return templates.TemplateResponse(
+            request, "partials/mobile_send_status.html",
+            {"ok": True, "msg": "عکس ارسال شد."})
     return templates.TemplateResponse(
-        request, "partials/mobile_send_status.html",
-        {"ok": True, "msg": "عکس ارسال شد."})
+        request, "partials/tryon_upload_success.html",
+        {"kid_photo_preview": state["kid_photo_preview"]})
 
 
-async def _upload_kid_photo(file: UploadFile, save: bool = False):
+async def _upload_kid_photo(file: UploadFile, save: bool = False, state=None):
     raw = await file.read()
     # Guards before RAM: type must be an image, size capped — a 100 MB
     # "photo" must fail here, not as a base64 preview three steps later.
@@ -1392,9 +1438,12 @@ async def _upload_kid_photo(file: UploadFile, save: bool = False):
         raise HTTPException(status_code=400, detail="Empty kid photo")
     if len(raw) > KID_PHOTO_MAX_BYTES:
         raise HTTPException(status_code=400, detail="عکس شخص بیشتر از ۱۵ مگابایت است.")
-    # Inbox, not session: browser and phone share this endpoint, and the
-    # desktop drains it into its own session on the next render (the page
-    # already reloads after upload). Only phone captures are copied to disk.
+    if state is not None:
+        _set_kid_photo(state, raw, mime, save=save)
+        return {"status": "ok", "path": None, "stored_in_static": save}
+    # Inbox, not session: the phone has no cookie for the desktop's session.
+    # The desktop drains it into its own state on the next render. Only phone
+    # captures are copied to disk.
     _capture_inbox["kid_photo_bytes"] = raw
     _capture_inbox["kid_photo_content_type"] = mime
     _capture_inbox["kid_photo_save"] = save
@@ -1413,7 +1462,10 @@ async def api_image_job(job_id: int, request: Request, db: Session = Depends(get
         # JSON contract below stays byte-identical for other callers.
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
-        if job.status == "completed":
+        # Both terminal states reload the page: completed shows the picture,
+        # failed shows the reason card and the log box. A failed swap alone
+        # would leave the owner with the generic strip and no explanation.
+        if job.status in ("completed", "failed"):
             return Response(headers={"HX-Redirect": "/admin/try-on"})
         return templates.TemplateResponse(request, "partials/tryon_live.html", {
             "job_id": job.id,

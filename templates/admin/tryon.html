@@ -18,19 +18,9 @@
         {# ── Kid photo (QR pairing lives here: the phone exists to take it) ── #}
         <div class="card">
             <h3>۱ · عکس شخص</h3>
-            {% if kid_photo_preview %}
-            <div class="tryon-photo-frame">
-                <img src="{{ kid_photo_preview }}" alt="عکس شخص برای پرو مجازی"
-                     class="tryon-photo">
-                <span class="tryon-guide" aria-hidden="true"></span>
+            <div id="tryon-photo-slot">
+                {% include 'partials/tryon_photo_slot.html' %}
             </div>
-            <p class="muted tryon-guide-note">صورت داخل قاب، نور روبه‌رو، پس‌زمینه ساده — همین سه‌تا کیفیت پرو را می‌سازد.</p>
-            {% else %}
-            <div class="tryon-photo-empty">
-                <p>هنوز عکسی آپلود نشده</p>
-                <small>از طریق گوشی یا فرم زیر آپلود کنید — صورت داخل قاب باشد</small>
-            </div>
-            {% endif %}
             <details{% if not kid_photo_preview %} open{% endif %}>
                 <summary class="tryon-upload-toggle">آپلود عکس شخص (یا گرفتن مجدد)</summary>
                 <form method="post" action="/api/image-gen/upload-kid-photo"
@@ -58,8 +48,9 @@
     // Both buttons post through htmx. The transport is htmx.ajax because the
     // crop button builds its blob in browser memory before anything can be
     // sent — a plain form post can't carry it. The answer is the same
-    // send-status strip the phone gets (data-status ok|err); success reloads
-    // the page so the new photo shows, failure just swamps the note line.
+    // send-status strip the phone gets (data-status ok|err); success also
+    // carries the new photo out of band, so nothing reloads. Failure just
+    // swamps the note line.
     var input = document.getElementById('kid-file');
     var plainBtn = document.getElementById('kid-plain-upload');
     var cropBtn = document.getElementById('kid-crop-upload');
@@ -80,6 +71,7 @@
         var body = new FormData();
         body.append('file', blob, name);
         htmx.ajax('POST', '/api/image-gen/upload-kid-photo', {
+            source: document.getElementById('kid-upload-form'),
             values: body,
             target: statusSlot(),
             swap: 'outerHTML',
@@ -118,14 +110,17 @@
         img.onerror = function () { URL.revokeObjectURL(url); noteLine('فایل خوانده نشد.'); };
         img.src = url;
     });
-    // The swapped-in strip answers with its verdict: success reloads (the
-    // page has to draw the new photo), failure already shows its text.
+    // The swapped-in strip answers with its verdict: success has already put
+    // the new photo in its slot out of band, so only the picked file resets.
     var pollFailures = 0;
     document.body.addEventListener('htmx:afterSwap', function (event) {
         var target = event.target;
         if (!target.matches || !target.matches('#send-status[data-status], #tryon-live')) return;
         if (target.matches('#tryon-live')) { pollFailures = 0; return; }
-        if (target.getAttribute('data-status') === 'ok') window.location.reload();
+        if (target.getAttribute('data-status') === 'ok') {
+            input.value = '';
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
     });
     // The old poll gave up after three bad rounds. Same words, then the
     // strip stops asking until someone refreshes: deleting its own attrs.
@@ -141,6 +136,7 @@
     });
 })();
 </script>
+            </details>
 <div id="tryon-confirm" data-dialog role="alertdialog" aria-modal="true"
      aria-labelledby="tryon-confirm-title" aria-describedby="tryon-confirm-text" class="confirm-scrim" tabindex="-1">
     <div class="t-modal-card confirm-card" role="document">
@@ -182,7 +178,6 @@
     });
 })();
 </script>
-            </details>
             <p class="muted tryon-privacy">عکس‌هایی که با گوشی می‌گیرید روی سرور ذخیره می‌شوند و پس از ۳۰ روز خودکار پاک می‌شوند. عکسی که از فایل انتخاب می‌کنید فقط در همین نشست می‌ماند و ذخیره نمی‌شود.</p>
             <section class="tryon-pairing" aria-label="گوشی ضبط عکس">
                 <h4>گوشی ضبط عکس</h4>
@@ -365,12 +360,15 @@
             </form>
             {% include 'partials/tryon_live.html' %}
             {% endif %}
+            {% if show_tryon_debug %}
+            {% include 'partials/tryon_debug.html' %}
+            {% endif %}
         </div>
 
         {# ── Step 3: the generated result ── #}
         {% if last_gen_url %}
         <div class="card tryon-result">
-            <h3>۴ · تصویر نهایی (با لوگو)</h3>
+            <h3>۴ · تصویر نهایی{% if store_logo %} (با لوگو){% endif %}</h3>
             <div id="final-preview" class="tryon-final-preview">
                 {# A button, not an image with a click handler: an <img> is not in the
                    tab order, so full size was reachable by mouse only. #}
@@ -402,6 +400,9 @@
                   data-confirm="همان ورودی‌ها دوباره تولید می‌شود (۱ تولید، هزینه دارد). ادامه؟">
                 <button type="submit" class="btn btn-primary">تلاش دوباره با همین ورودی‌ها</button>
             </form>
+            <p class="muted">اگر خطا مربوط به مدل یا کلید است،
+                <a class="text-link" href="/admin/settings?tab=messaging">تنظیمات هوش مصنوعی</a>
+                را باز کنید.</p>
         </div>
         {% endif %}
 
@@ -413,19 +414,17 @@
             </div>
         </a>
 
-        {% if show_tryon_debug %}
-        {% include 'partials/tryon_debug.html' %}
-        {% endif %}
     </div>
 </div>
 
 {# ─── Verbose generation loader (styles live in style.css) ─── #}
-<div id="gen-overlay" class="gen-overlay">
+<div id="gen-overlay" class="gen-overlay{% if tryon_job_status in ('pending', 'processing') %} is-open{% endif %}">
     <a href="/sales/new" onclick="return openNewSaleWindow();" rel="noopener" class="btn btn-success">باز کردن فروش جدید در پنجره دیگر</a>
     <div class="gen-spinner"></div>
     <div id="gen-step" role="status" class="gen-step-text"></div>
     <div class="gen-track"><div id="gen-bar" class="gen-bar"></div></div>
     <div class="gen-note">معمولاً ۱ تا ۲ دقیقه — در صف شلوغ ممکن است تا ۴ دقیقه طول بکشد (صفحه را نبندید)</div>
+    <button type="button" class="btn btn-ghost btn-sm" id="gen-hide">پنهان کردن</button>
 </div>
 
 {# ─── Lightbox ─── #}
@@ -437,7 +436,7 @@
      data-close-lightbox>
      <div id="lightbox-stage" class="lightbox-stage t-modal-card">
         <img id="lightbox-img" src="" alt="تصویر پرو مجازی در اندازه کامل">
-        <img src="/static/logo.png" alt="" aria-hidden="true" class="lightbox-logo">
+        {% if store_logo %}<img src="{{ store_logo }}" alt="" aria-hidden="true" class="lightbox-logo">{% endif %}
     </div>
     <button type="button" id="lightbox-close" class="lightbox-close" aria-label="بستن تصویر" data-close-lightbox>✕</button>
 </div>
@@ -476,6 +475,13 @@ document.addEventListener('change', function(e) {
 });
 // Category dropdown always visible — it applies to both outfit modes.
 
+document.addEventListener('click', function (e) {
+    var btn = e.target.closest ? e.target.closest('[data-copy]') : null;
+    if (!btn || !navigator.clipboard) return;
+    var el = document.getElementById(btn.getAttribute('data-copy'));
+    if (el) navigator.clipboard.writeText(el.textContent);
+});
+
 (function () {
     var form = document.getElementById('gen-form');
     if (!form) return;
@@ -483,7 +489,7 @@ document.addEventListener('change', function(e) {
     var step = document.getElementById('gen-step');
     var bar = document.getElementById('gen-bar');
     var phases = [
-        "دریافت عکس شخص…",
+        "در حال تولید…",
         "خواندن لباس و سایز…",
         "طراحی اولیه لباس…",
         "رنگ‌آمیزی پارچه…",
@@ -496,13 +502,14 @@ document.addEventListener('change', function(e) {
         "تلاش دوباره برای تولید…",
         "کمی صبر کنید، دوباره امتحان می‌کنیم…"
     ];
-    form.addEventListener('submit', function () {
-        var btn = form.querySelector('button[type="submit"]');
-        if (btn) btn.disabled = true;
-        overlay.style.display = 'flex';
+    var started = false;
+    function startPhases() {
+        if (started) return;
+        started = true;
         var i = 0;
+        var pct = 12;
         step.textContent = phases[0];
-        bar.style.width = '12%';
+        bar.style.width = pct + '%';
         setInterval(function () {
             i = (i + 1) % phases.length;
             // After the regular 7 phases cycle once (~17s), blend in retry lines
@@ -511,8 +518,22 @@ document.addEventListener('change', function(e) {
             } else {
                 step.textContent = phases[i];
             }
-            bar.style.width = (12 + ((i + 1) / phases.length) * 78) + '%';
+            pct = Math.min(pct + 6, 90);
+            bar.style.width = pct + '%';
         }, 2400);
+    }
+    // The page renders the overlay open while a job is queued or running, so
+    // a reload after the POST keeps the same loading screen up.
+    if (overlay.classList.contains('is-open')) startPhases();
+    form.addEventListener('submit', function () {
+        var btn = form.querySelector('button[type="submit"]');
+        if (btn) btn.disabled = true;
+        overlay.classList.add('is-open');
+        startPhases();
+    });
+    var hide = document.getElementById('gen-hide');
+    if (hide) hide.addEventListener('click', function () {
+        overlay.classList.remove('is-open');
     });
 })();
 </script>

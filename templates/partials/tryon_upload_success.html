@@ -1,0 +1,6 @@
+{# Desktop upload answer: the status line takes the swap, and the new photo
+   rides out of band so the page never reloads. #}
+<div class="send-status is-ok" id="send-status" data-status="ok">عکس ارسال شد.</div>
+<div id="tryon-photo-slot" hx-swap-oob="outerHTML">
+    {% include 'partials/tryon_photo_slot.html' %}
+</div>

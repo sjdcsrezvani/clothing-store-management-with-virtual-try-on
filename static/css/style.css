@@ -4675,6 +4675,7 @@ html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
 .tryon-saved-count { font-size: 0.85rem; margin-top: 0.3rem; }
 .tryon-duration { font-size: 0.85rem; margin: 0.6rem 0 0; }
 .tryon-debug { margin-top: 1rem; font-size: 0.85rem; }
+.tryon-log { padding: 0.9rem 1rem; box-shadow: none; }
 .tryon-debug summary { cursor: pointer; font-weight: 600; }
 .tryon-debug-list { margin-top: 0.6rem; display: flex; flex-direction: column; gap: 0.5rem; }
 .tryon-debug-row { border: 1px solid var(--rule); border-radius: 8px; padding: 0.5rem 0.6rem; background: var(--surface-soft); }
@@ -4685,6 +4686,7 @@ html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
 .tryon-debug-error { margin-top: 0.3rem; font-size: 0.8rem; color: var(--persimmon); overflow-wrap: anywhere; }
 .tryon-debug-raw pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0.3rem 0 0; font-size: 0.75rem; }
 .gen-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--scrim); backdrop-filter: blur(6px); z-index: 10001; flex-direction: column; align-items: center; justify-content: center; gap: 1.2rem; }
+.gen-overlay.is-open { display: flex; }
 .gen-step-text { color: var(--scrim-text); font-size: 1.25rem; font-weight: 600; text-align: center; padding: 0 1rem; }
 .gen-track { width: min(420px, 80vw); height: 10px; border-radius: 6px; background: color-mix(in srgb, var(--scrim-text) 15%, transparent); overflow: hidden; }
 .gen-bar { width: 10%; height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--candy), var(--lavender), var(--sky)); background-size: 200% 100%; animation: gen-shine 1.6s linear infinite; transition: width .8s ease; }

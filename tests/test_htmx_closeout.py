@@ -70,6 +70,31 @@ def test_tryon_page_speaks_htmx_only(authed, client):
     assert "fetch(" not in page and "DOMParser" not in page
     assert "data-status-url" not in page     # the old poll's address carrier
     assert "htmx.ajax" in page               # the crop upload's transport
+    # The form is the htmx source so the File stays multipart: without it htmx
+    # url-encodes the body and the upload arrives as a string, not an image.
+    assert "source: document.getElementById('kid-upload-form')" in page
+    assert 'id="tryon-photo-slot"' in page   # soft-swap landing spot
+    assert "window.location.reload()" not in page  # an upload never reloads
+    # The confirm dialog must sit outside the upload <details>: with a photo
+    # present that details is closed, and a dialog inside it is never visible.
+    assert page.index("</details>") < page.index('id="tryon-confirm"')
+
+
+def test_browser_upload_swaps_the_photo_without_reload(authed, client):
+    import io
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (8, 8), "red").save(buffer, "JPEG")
+    resp = client.post(
+        "/api/image-gen/upload-kid-photo",
+        files={"file": ("kid.jpg", buffer.getvalue(), "image/jpeg")},
+        headers={"HX-Request": "true"})
+    body = resp.text
+    assert 'hx-swap-oob="outerHTML"' in body   # the photo rides out of band
+    assert 'class="tryon-photo"' in body
+    assert "عکس ارسال شد." in body
+    assert "window.location" not in body
 
 
 def test_job_htx_renders_the_armed_strip(authed, client, db_session):
@@ -82,11 +107,14 @@ def test_job_htx_renders_the_armed_strip(authed, client, db_session):
     assert "در حال تولید… (processing)" in body
 
 
-def test_job_htx_failed_strip_stops_asking(authed, client, db_session):
+def test_job_htx_failed_redirects_out_of_the_poll(authed, client, db_session):
     job = _job(db_session, "failed", error_message="پرامپت نامناسب")
-    body = client.get(f"/api/image-gen/jobs/{job.id}", headers={"HX-Request": "true"}).text
-    assert "hx-get" not in body                              # unarmed — poll over
-    assert "ناموفق بود — ورودی‌ها سر جایشان است" in body
+    resp = client.get(f"/api/image-gen/jobs/{job.id}", headers={"HX-Request": "true"})
+    assert resp.status_code == 200
+    # The full reload is what draws the reason card and the log box; a bare
+    # strip swap left the owner with the generic sentence and no cause.
+    assert resp.headers["HX-Redirect"] == "/admin/try-on"
+    assert not resp.text.strip()
 
 
 def test_job_htx_completed_redirects_out_of_the_poll(authed, client, db_session):

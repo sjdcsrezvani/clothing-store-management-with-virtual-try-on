@@ -2,8 +2,8 @@
 
 Kid photo and garment photos are sent as reference images. The provider and
 model come from Settings; the catalog decides the exact body each model gets
-(multipart edits, Seedream JSON, or Muse JSON) and the cheapest options it
-accepts. Every attempt lands in the in-memory debug log for the try-on page.
+(multipart edits or Seedream JSON) and the cheapest options it accepts. Every
+attempt lands in the in-memory debug log for the try-on page.
 """
 import base64
 import io
@@ -19,7 +19,6 @@ from PIL import Image, ImageOps
 from services.image_models import (
     DEFAULT_MODEL,
     DEFAULT_PROVIDER,
-    MUSE_JSON,
     SEEDREAM_JSON,
     api_base,
     key_setting,
@@ -62,35 +61,27 @@ MAX_DIM = 1024
 # preprocessor never has to resize (which the user explicitly wants to avoid).
 MAX_BYTES = 25_000_000
 
-# Path to the brand logo used for in-app compositing on generated try-on images.
-# Resolved at import-time; falls back to None if missing so callers can no-op.
-LOGO_PATH = Path("static/logo.png")
-_LOGO_CACHE: Optional[Image.Image] = None
-
-
-def _load_logo() -> Optional[Image.Image]:
-    """Lazy-load the brand logo once. Returns None if not present or unreadable."""
-    global _LOGO_CACHE
-    if _LOGO_CACHE is not None:
-        return _LOGO_CACHE
-    if not LOGO_PATH.exists():
+def _load_logo(path: str) -> Optional[Image.Image]:
+    """Open a shop logo from disk; None when unset or unreadable."""
+    if not path:
         return None
+    file = Path(path.lstrip("/"))
     try:
-        _LOGO_CACHE = Image.open(LOGO_PATH)
-        _LOGO_CACHE.load()
-        return _LOGO_CACHE
+        logo = Image.open(file)
+        logo.load()
+        return logo
     except Exception as e:
-        logger.warning("Could not load brand logo at %s: %s", LOGO_PATH, e)
+        logger.warning("Could not load shop logo at %s: %s", file, e)
         return None
 
 
-def composite_logo(image_bytes: bytes, logo_width: int = 230) -> bytes:
-    """Return PNG bytes with the brand logo pinned to the top-left corner.
-    Falls back to a plain PNG re-encode if the logo is missing."""
+def composite_logo(image_bytes: bytes, logo_path: str = "", logo_width: int = 230) -> bytes:
+    """Return PNG bytes with the shop's logo pinned to the top-left corner.
+    No configured logo means no composite — a plain PNG re-encode."""
     base = Image.open(io.BytesIO(image_bytes))
     if base.mode != "RGBA":
         base = base.convert("RGBA")
-    logo = _load_logo()
+    logo = _load_logo(logo_path)
     if logo is None:
         buf = io.BytesIO()
         base.save(buf, "PNG")
@@ -172,6 +163,13 @@ MAIN_PROMPT = (
     "slim, or reshape them. "
 )
 
+# The model sometimes answers 200 with the source photo itself instead of an
+# edit. Keep this last so it has the strongest recency bias.
+EDIT_REMINDER = (
+    "Return a new edited photograph: the person must be wearing the target garment; "
+    "never return the source photo unchanged."
+)
+
 
 class ImageGenerationError(Exception):
     """Provider or transport failure, with the fields the debug panel needs."""
@@ -218,6 +216,11 @@ def classify_response(status: int, text: str) -> tuple[str, str]:
     blob = f"{code} {message} {text}".lower()
     if status in (401, 403):
         return "auth", code
+    # The model is in the catalog but the key's group has no upstream channel
+    # for it. That is a routing refusal, not a server fault: say so, because
+    # "خطای سرور" sends the owner looking in the wrong place.
+    if "model_not_found" in blob or "no available channel" in blob:
+        return "model_unavailable", code
     if any(marker in blob for marker in _POLICY_MARKERS):
         return "content_policy", code
     if status == 429 or "rate_limit" in blob or "rate limit" in blob:
@@ -235,6 +238,9 @@ def _describe(provider: str, category: str, code: str, status: int, message: str
                 f"— HTTP {status}. {detail}")
     if category == "auth":
         return f"کلید {provider} معتبر نیست یا دسترسی ندارد (HTTP {status}){code_txt}."
+    if category == "model_unavailable":
+        return (f"مدل انتخاب‌شده روی {provider} کانال فعال ندارد{code_txt} "
+                f"— گروه این کلید به این مدل دسترسی ندارد. در تنظیمات مدل دیگری انتخاب کنید. {detail}")
     if category == "rate_limit":
         return f"محدودیت نرخ {provider} (HTTP 429){code_txt}. کمی بعد دوباره امتحان کنید."
     if category == "server":
@@ -434,6 +440,17 @@ class ImageGenService:
                                 message=str(error), body=error.body) from error
         timings["download"] = int((time.perf_counter() - download_started) * 1000)
 
+        # A 200 that echoes the prepped person photo is a billed non-edit.
+        # Fail it so the shop never saves it as a successful try-on.
+        # shortcut: exact bytes only; a re-encoded echo would slip through.
+        if image_bytes == kid:
+            raise self._failure(
+                job_id=job_id, started=started, timings=timings, fields=fields,
+                status=200, category="no_op", code="source_echo",
+                message="ارائه‌دهنده همان عکس شخص را برگرداند و لباس را تغییر نداد "
+                        "— دوباره تلاش کنید یا عکس/ژست دیگری انتخاب کنید.",
+                body='{"reason":"output_equals_person_input"}')
+
         self._record(job_id=job_id, started=started, timings=timings, fields=fields,
                      ok=True, status=200, category="", code="", error="",
                      result_bytes=len(image_bytes))
@@ -445,12 +462,13 @@ class ImageGenService:
         options = self.model.get("options") or {}
         body_type = self.model["body"]
         if body_type == SEEDREAM_JSON:
-            # Seedream edits are JSON only; 1K is its name for the 1024 tier.
+            # Seedream edits are JSON only. 2K is the smallest tier it accepts
+            # on /v1/images/edits; "1K" is rejected as an invalid size.
             payload = {
                 "model": self.model_id,
                 "prompt": prompt,
                 "image": [_data_uri(blob) for _name, blob in images],
-                "size": "1K",
+                "size": "2K",
                 "response_format": "b64_json",
                 "sequential_image_generation": "disabled",
                 "watermark": False,
@@ -458,16 +476,6 @@ class ImageGenService:
             fields = self._fields_label(
                 {k: v for k, v in payload.items() if k not in ("model", "prompt", "image")},
                 len(images))
-            return {"json": payload}, fields
-        if body_type == MUSE_JSON:
-            # Muse documents no size/quality knob; its default square is used.
-            payload = {
-                "model": self.model_id,
-                "prompt": prompt,
-                "images": [{"image_url": _data_uri(blob)} for _name, blob in images],
-                "n": 1,
-            }
-            fields = self._fields_label({"n": 1}, len(images))
             return {"json": payload}, fields
 
         data = {"model": self.model_id, "prompt": prompt, **options}
@@ -487,7 +495,7 @@ class ImageGenService:
         from services import tryon_debug
         total_ms = int((time.perf_counter() - started) * 1000)
         tryon_debug.record(
-            job_id=job_id, provider=self.provider, model=self.model_id, ok=ok,
+            job_id=job_id, provider=self.provider, model=self.model_id, url=self.api_url, ok=ok,
             status=status, category=category, code=code, error=(error or "")[:400],
             raw=(body or "")[:500], fields=fields, result_bytes=result_bytes,
             prep_ms=timings.get("prep", 0), request_ms=timings.get("request", 0),
@@ -514,8 +522,7 @@ class ImageGenService:
     def _build_prompt(self, base: str, mid: str = "", suffix: str = "") -> str:
         """Assemble the final prompt in recency-weighted order:
            `base` (product intro) + MAIN_PROMPT + `mid` (background/pose/details)
-           + `suffix` (outfit-mode rule, kept last so it overrides everything via
-           recency bias)."""
+           + `suffix` (outfit-mode rule) + EDIT_REMINDER (never echo the source)."""
         base = (base or "").strip().rstrip(".")
         out = f"{base}. {MAIN_PROMPT}" if base else MAIN_PROMPT
         mid = (mid or "").strip()
@@ -524,7 +531,7 @@ class ImageGenService:
         suffix = (suffix or "").strip()
         if suffix:
             out += f" {suffix}"
-        return out
+        return f"{out} {EDIT_REMINDER}"
 
     def test_connection(self, timeout: float = 15.0) -> dict:
         """Cheap non-billable probe: the gateway models endpoint, short leash.

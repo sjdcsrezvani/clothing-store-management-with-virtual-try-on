@@ -1,0 +1,15 @@
+{# The person photo, shared by the try-on page and the htmx upload answer so a
+   new photo can swap in without reloading the page. #}
+{% if kid_photo_preview %}
+<div class="tryon-photo-frame">
+    <img src="{{ kid_photo_preview }}" alt="عکس شخص برای پرو مجازی"
+         class="tryon-photo">
+    <span class="tryon-guide" aria-hidden="true"></span>
+</div>
+<p class="muted tryon-guide-note">صورت داخل قاب، نور روبه‌رو، پس‌زمینه ساده — همین سه‌تا کیفیت پرو را می‌سازد.</p>
+{% else %}
+<div class="tryon-photo-empty">
+    <p>هنوز عکسی آپلود نشده</p>
+    <small>از طریق گوشی یا فرم زیر آپلود کنید — صورت داخل قاب باشد</small>
+</div>
+{% endif %}

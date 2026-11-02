@@ -12,7 +12,7 @@ from pathlib import Path
 import httpx
 from PIL import Image
 
-from services.image_gen import ImageGenService, ImageGenerationError, MAX_BYTES
+from services.image_gen import EDIT_REMINDER, ImageGenService, ImageGenerationError, MAX_BYTES
 
 
 def make_image(path, size=(3000, 4000), color=(200, 100, 50)):
@@ -41,7 +41,7 @@ class TestBuildPrompt(unittest.TestCase):
         p = svc._build_prompt("summer dress")
         self.assertIn("summer dress", p)
         self.assertIn("garment", p)
-        self.assertTrue(p.rstrip().endswith("reshape them."))  # MAIN_PROMPT tail
+        self.assertTrue(p.rstrip().endswith(EDIT_REMINDER))  # no-op guard tail
 
     def test_empty_base_uses_framing_only(self):
         svc = ImageGenService()
@@ -51,7 +51,7 @@ class TestBuildPrompt(unittest.TestCase):
 
 
 class TestGatewayRequest(unittest.TestCase):
-    def _svc_with_handler(self, handler, provider="gapgpt", model="gpt-image-2"):
+    def _svc_with_handler(self, handler, provider="gapgpt", model="gpt-image-2.5-sunburst"):
         svc = ImageGenService(api_key="test-key", provider=provider, model=model)
         svc.client = httpx.Client(transport=httpx.MockTransport(handler))
         return svc
@@ -79,7 +79,7 @@ class TestGatewayRequest(unittest.TestCase):
         self.assertTrue(seen["headers"]["authorization"].startswith("Bearer "))
         body = seen["body"]
         self.assertEqual(body.count(b'name="image[]"'), 2)      # kid + garment
-        self.assertIn(b"gpt-image-2", body)
+        self.assertIn(b"gpt-image-2.5-sunburst", body)
         self.assertIn(b'"size"', body)                           # size field present
         self.assertIn(b'"quality"', body)                        # cheapest GPT tier
         self.assertNotIn(b"response_format", body)               # 400s GPT Image
@@ -96,24 +96,11 @@ class TestGatewayRequest(unittest.TestCase):
         self.assertEqual(out, b"img")
         self.assertTrue(seen["content_type"].startswith("application/json"))
         payload = seen["json"]
-        self.assertEqual(payload["size"], "1K")
+        self.assertEqual(payload["size"], "2K")
         self.assertEqual(len(payload["image"]), 2)
         self.assertTrue(payload["image"][0].startswith("data:image/jpeg;base64,"))
         self.assertEqual(payload["response_format"], "b64_json")
         self.assertNotIn("quality", payload)
-
-    def test_muse_sends_json_image_objects_and_no_size(self):
-        seen = {}
-        def handler(request):
-            seen["json"] = json.loads(request.content)
-            return self._b64_resp()
-        svc = self._svc_with_handler(handler, "avalai", "muse-image-1.0")
-        with tempfile.TemporaryDirectory() as d:
-            svc.generate("try on", reference_image_paths=self._paths(d))
-        payload = seen["json"]
-        self.assertEqual(len(payload["images"]), 2)
-        self.assertTrue(payload["images"][0]["image_url"].startswith("data:image/jpeg;base64,"))
-        self.assertNotIn("size", payload)
 
     def test_content_policy_is_classified_and_logged(self):
         from services import tryon_debug
@@ -135,12 +122,26 @@ class TestGatewayRequest(unittest.TestCase):
         self.assertGreaterEqual(attempt["total_ms"], 0)
 
     def test_requires_kid_and_garment(self):
-        svc = ImageGenService(api_key="test-key", provider="gapgpt", model="gpt-image-2")
+        svc = ImageGenService(api_key="test-key", provider="gapgpt",
+                              model="gpt-image-2.5-sunburst")
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "kid.jpg"
             make_image(p)
             with self.assertRaises(ImageGenerationError):
                 svc.generate("try on", reference_image_paths=[str(p)])
+
+    def test_source_echo_is_rejected_as_no_op(self):
+        def handler(request):
+            echoed = Path(paths[0]).read_bytes()  # _prep fast-path sends this as-is
+            return httpx.Response(200, json={"data": [{
+                "b64_json": base64.b64encode(echoed).decode()}]})
+        svc = self._svc_with_handler(handler, "avalai", "gpt-image-2.5-flare")
+        with tempfile.TemporaryDirectory() as d:
+            paths = self._paths(d)
+            with self.assertRaises(ImageGenerationError) as caught:
+                svc.generate("try on", reference_image_paths=paths)
+        self.assertEqual(caught.exception.category, "no_op")
+        self.assertEqual(caught.exception.code, "source_echo")
 
     def test_extract_data_uri_prefix(self):
         svc = ImageGenService()

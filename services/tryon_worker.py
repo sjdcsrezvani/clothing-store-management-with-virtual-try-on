@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ async def tryon_worker_task() -> None:
                             job.status = "failed"
                             job.error_message = str(error)[:1000]
                             job.locked_at = None
+                            job.completed_at = datetime.now(timezone.utc)
                             session.commit()
                             return
                         except Exception as error:
