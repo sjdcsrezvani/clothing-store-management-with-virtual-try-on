@@ -1,3 +1,17 @@
+## 3.1.2 — 2026-11-02
+
+### برند فروشگاه: one home for the shop's contact, and tags that print it
+
+- **The store profile is the single source for contact branding.** The shop
+  website now lives in settings, the duplicate Instagram and website fields
+  are gone from the owner profile, and the employment contract footer reads
+  both from store settings.
+- **Printed tags wear the brand.** A website field prints on the tag, the
+  Instagram handle prints beside its logo, and older saved layouts receive
+  the new field clamped inside their own bounds so their preview keeps
+  rendering.
+- Added tests for the settings source and the new tag fields.
+
 ## 3.1.1 — 2026-11-02
 
 ### پرو مجازی: the flow tells the truth about itself
