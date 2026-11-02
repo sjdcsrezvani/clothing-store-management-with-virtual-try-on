@@ -36,6 +36,7 @@ ALLOWED_FIELDS = {
     "category",
     "store_name",
     "instagram",
+    "website",
     "product_image",
     "custom_text",
     "care_instructions",
@@ -52,6 +53,7 @@ FIELD_LABELS = {
     "category": "دسته‌بندی",
     "store_name": "نام فروشگاه",
     "instagram": "اینستاگرام",
+    "website": "وب‌سایت",
     "product_image": "تصویر محصول",
     "custom_text": "متن سفارشی",
     "care_instructions": "راهنمای نگهداری",
@@ -140,6 +142,7 @@ def _base_config(width=48, height=38, columns=4, rows=7):
             "brand": _field(2, footer_y, content_width, 2, font_size=6, visible=False),
             "category": _field(2, footer_y, content_width, 2, font_size=6, visible=False),
             "instagram": _field(2, footer_y, content_width, 2, font_size=5, visible=False, color="#777777"),
+            "website": _field(2, footer_y, content_width, 2, font_size=5, visible=False, color="#777777"),
             "product_image": _field(2, 10, content_width, min(14, max(2, height - 12)), font_size=7, visible=False),
             "custom_text": _field(2, footer_y, content_width, 2, font_size=6, visible=False),
             "care_instructions": _field(2, footer_y, content_width, 2, font_size=6, visible=False),
@@ -425,6 +428,16 @@ def validate_tag_config(raw: dict[str, Any]) -> dict[str, Any]:
         if field["align"] not in ALLOWED_ALIGNMENTS:
             raise ValueError(f"تراز «{_label_of(name)}» نامعتبر است")
         field["z"] = _number(incoming.get("z", field["z"]), f"{name}.z", -100, 100, integer=True)
+    # A field the incoming config predates keeps its default box, which was
+    # measured for the default tag size. Fit that box inside this tag so adding
+    # a field does not invalidate every shorter or narrower saved layout.
+    for name, field in merged_fields.items():
+        if name in fields:
+            continue
+        field["width"] = min(field["width"], content_width)
+        field["height"] = min(field["height"], content_height)
+        field["x"] = min(field["x"], max(0, content_width - field["width"]))
+        field["y"] = min(field["y"], max(0, content_height - field["height"]))
     _migrate_legacy_barcode_fields(merged_fields, fields)
     config["fields"] = merged_fields
     preset = raw.get("preset", "custom")
@@ -522,6 +535,15 @@ _IMG_FIT_STYLE = (
     "object-fit:contain;display:block;margin:0 auto;"
 )
 
+_INSTAGRAM_ICON = (
+    '<svg class="tag-instagram-icon" viewBox="0 0 24 24" aria-hidden="true" '
+    'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+    'stroke-linejoin="round" style="width:1em;height:1em;flex:none;">'
+    '<rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>'
+    '<path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>'
+    '<line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line></svg>'
+)
+
 
 def _item_values(item: dict[str, Any], store: dict[str, Any], custom_text: str) -> dict[str, str]:
     return {
@@ -536,6 +558,7 @@ def _item_values(item: dict[str, Any], store: dict[str, Any], custom_text: str) 
         "category": str(item.get("category") or ""),
         "store_name": str(store.get("name") or ""),
         "instagram": str(store.get("instagram") or ""),
+        "website": str(store.get("website") or ""),
         "custom_text": custom_text or "",
         "care_instructions": str(item.get("care_instructions") or ""),
     }
@@ -578,6 +601,18 @@ def render_tag_html(config: dict[str, Any], item: dict[str, Any], store: dict[st
             content = (f'<img class="tag-product-image" style="{_IMG_FIT_STYLE}" '
                        f'src="{html.escape(str(image_path), quote=True)}" alt="">')
             kind = "tag-field tag-image-field"
+        elif name == "instagram":
+            value = values.get(name, "")
+            if not value:
+                continue
+            # The handle reads left-to-right and the icon sits on its left; the
+            # tag root is RTL, so the group carries its own direction.
+            content = (
+                f'<span class="tag-instagram" dir="ltr" style="display:inline-flex;'
+                f'align-items:center;gap:0.25em;">{_INSTAGRAM_ICON}'
+                f'<span>{html.escape(value)}</span></span>'
+            )
+            kind = "tag-field"
         else:
             value = values.get(name, "")
             if not value:

@@ -604,8 +604,8 @@ async def admin_tag_settings(request: Request, db: Session = Depends(get_db)):
             }
             for name in (
                 "product_name", "price", "size", "color", "barcode", "barcode_text",
-                "sku", "brand", "category", "store_name", "instagram", "product_image", "custom_text",
-                "care_instructions",
+                "sku", "brand", "category", "store_name", "instagram", "website",
+                "product_image", "custom_text", "care_instructions",
             )
         ],
         "tag_templates": [

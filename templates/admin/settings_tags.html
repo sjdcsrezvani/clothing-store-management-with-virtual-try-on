@@ -299,7 +299,7 @@ const savedTagTemplates = {{ tag_templates|tojson }};
 // used to hard-code a second copy that could silently drift from the editor's
 // labels and the chips'.
 const fieldLabels = {{ field_labels|tojson }};
-const tagSample = {{ {'product_name': sample_item.product_name, 'name': sample_item.name, 'barcode': sample_item.barcode, 'price': sample_item.price_display, 'size': sample_item.size, 'color': sample_item.color, 'sku': sample_item.sku, 'brand': sample_item.brand, 'category': sample_item.category, 'care_instructions': (sample_item.care_instructions or ''), 'instagram': (store.instagram or ''), 'store_name': store.name, 'image_path': sample_item.image_path}|tojson }};
+const tagSample = {{ {'product_name': sample_item.product_name, 'name': sample_item.name, 'barcode': sample_item.barcode, 'price': sample_item.price_display, 'size': sample_item.size, 'color': sample_item.color, 'sku': sample_item.sku, 'brand': sample_item.brand, 'category': sample_item.category, 'care_instructions': (sample_item.care_instructions or ''), 'instagram': (store.instagram or ''), 'website': (store.website or ''), 'store_name': store.name, 'image_path': sample_item.image_path}|tojson }};
 const barcodePreviewSources = {{ barcode_preview_sources|tojson }};
 
 const A4 = { width: 210, height: 297 };
@@ -324,6 +324,7 @@ const tagNumericRules = {{ tag_numeric_rules|tojson }};
 const numberLimits = {};
 Object.entries(tagNumericRules).forEach(([key, rule]) => { numberLimits[key] = [rule[0], rule[1] === null ? Infinity : rule[1]]; });
 const IMG_FIT_STYLE = 'max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block;margin:0 auto;';
+const INSTAGRAM_ICON = '<svg class="tag-instagram-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:1em;height:1em;flex:none;"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line></svg>';
 
 function copy(v){ return JSON.parse(JSON.stringify(v)); }
 function clamp(v,min,max){ return Math.max(min,Math.min(max,v)); }
@@ -968,7 +969,7 @@ function sampleValueFor(name){
     product_name: tagSample.product_name, price: tagSample.price, size: tagSample.size,
     color: tagSample.color, sku: tagSample.sku, brand: tagSample.brand,
     category: tagSample.category, store_name: tagSample.store_name,
-    instagram: tagSample.instagram, barcode_text: tagSample.barcode || '',
+    instagram: tagSample.instagram, website: tagSample.website, barcode_text: tagSample.barcode || '',
     custom_text: workingConfig.custom_text || '',
     care_instructions: tagSample.care_instructions || ''
   };
@@ -1015,6 +1016,15 @@ function ensureFieldElement(name, f){
     } else {
       el.textContent = '—';
     }
+  } else if (name === 'instagram') {
+    const value = sampleValueFor(name);
+    const group = document.createElement('span');
+    group.className = 'tag-instagram';
+    group.dir = 'ltr';
+    group.style.cssText = 'display:inline-flex;align-items:center;gap:0.25em;';
+    group.innerHTML = INSTAGRAM_ICON + '<span></span>';
+    group.lastElementChild.textContent = value || '—';
+    el.appendChild(group);
   } else {
     const value = sampleValueFor(name);
     el.textContent = value || '—';

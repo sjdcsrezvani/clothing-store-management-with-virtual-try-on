@@ -292,6 +292,48 @@ def test_tag_renderer_uses_real_fields_and_escapes_values(monkeypatch):
     assert "cost_price" not in html
 
 
+def test_instagram_field_prints_icon_left_of_handle():
+    config = default_tag_config()
+    config["fields"]["instagram"]["visible"] = True
+    html = render_tag_html(config, {"product_name": "لباس"},
+                           {"name": "رای کیدز", "instagram": "@raykid_store"})
+
+    field = html.split('data-field="instagram"', 1)[1].split("</div>", 1)[0]
+    assert "tag-instagram" in field
+    assert "@raykid_store" in field
+    # The group is LTR, so icon-before-text puts the logo left of the handle.
+    assert field.index("<svg") < field.index("@raykid_store")
+
+
+def test_website_field_prints_store_settings_value():
+    config = default_tag_config()
+    config["fields"]["website"]["visible"] = True
+    html = render_tag_html(config, {"product_name": "لباس"},
+                           {"name": "رای کیدز", "instagram": "",
+                            "website": "raykid.example"})
+
+    field = html.split('data-field="website"', 1)[1].split("</div>", 1)[0]
+    assert "raykid.example" in field
+
+
+def test_new_field_defaults_fit_an_older_smaller_layout():
+    config = default_tag_config()
+    config.update(tag_width_mm=32, tag_height_mm=25, padding_mm=0)
+    store = config["fields"]["store_name"]
+    store.update(x=0, y=1, width=32, height=4)
+    product = config["fields"]["product_name"]
+    product.update(x=0, y=5, width=32, height=5)
+    # A layout saved before the website field existed.
+    config["fields"] = {"store_name": store, "product_name": product}
+
+    validated = validate_tag_config(config)
+    website = validated["fields"]["website"]
+    assert website["x"] + website["width"] <= 32
+    assert website["y"] + website["height"] <= 25
+    assert "tag-render" in render_tag_html(
+        validated, {"product_name": "لباس"}, {"name": "فروشگاه"})
+
+
 def test_tag_settings_persist_and_print_uses_saved_renderer(client, db_session, authed, monkeypatch):
     monkeypatch.setattr(
         "services.tags.generate_barcode_image",
