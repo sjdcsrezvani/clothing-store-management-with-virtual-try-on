@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 38
+MIGRATION_VERSION = 40
 
 
 def migration_status(engine) -> int:
@@ -453,6 +453,26 @@ def _rebuild_sms_messages(conn) -> None:
 
 
 def _apply_revision(conn, version: int) -> None:
+    if version == 40:
+        # Purchase tax is a percent of the item lines; total_cost already
+        # carries the computed amount, so legacy invoices default to no tax.
+        _add_column_if_missing(conn, "purchases", "tax_percent", "INTEGER DEFAULT 0")
+        return
+
+    if version == 39:
+        # Supplier profile: owner, contact channels and settlement identity.
+        # Additive and nullable — legacy suppliers keep their name/phone/note
+        # and read exactly as before.
+        _add_column_if_missing(conn, "suppliers", "owner_first_name", "VARCHAR(100)")
+        _add_column_if_missing(conn, "suppliers", "owner_last_name", "VARCHAR(100)")
+        _add_column_if_missing(conn, "suppliers", "landline", "VARCHAR(15)")
+        _add_column_if_missing(conn, "suppliers", "city", "VARCHAR(100)")
+        _add_column_if_missing(conn, "suppliers", "address", "TEXT")
+        _add_column_if_missing(conn, "suppliers", "supplier_type", "VARCHAR(80)")
+        _add_column_if_missing(conn, "suppliers", "economic_code", "VARCHAR(14)")
+        _add_column_if_missing(conn, "suppliers", "sheba", "VARCHAR(26)")
+        return
+
     if version == 38:
         # SMS queue management: soft-delete marker/actor and retry chain.
         # Additive; legacy rows keep NULL and read exactly as before.

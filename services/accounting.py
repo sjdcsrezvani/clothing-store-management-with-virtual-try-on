@@ -903,6 +903,14 @@ def purchase_item_totals(db, purchase_ids: list[int]) -> dict[int, dict]:
     }
 
 
+def purchase_tax_amount(items_subtotal: int, tax_percent: int) -> int:
+    """Tax on the item lines only; shipping is not taxed.
+
+    Half-up integer arithmetic, the same rounding the form's live total uses.
+    """
+    return (max(0, items_subtotal or 0) * max(0, tax_percent or 0) + 50) // 100
+
+
 def purchase_landed_unit_cost(
     unit_cost: int,
     quantity: int,

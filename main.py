@@ -186,6 +186,7 @@ def _apply_missing_columns(migration_engine=None):
             ("due_date", "DATETIME"),
             ("purchase_date", "DATETIME"),
             ("extra_cost", "INTEGER DEFAULT 0"),
+            ("tax_percent", "INTEGER DEFAULT 0"),
             ("extra_cost_in_landed", "BOOLEAN DEFAULT 1"),
         ],
         "purchase_items": [
@@ -217,6 +218,18 @@ def _apply_missing_columns(migration_engine=None):
             ("reversal_id", "INTEGER"),
             ("payment_method", "VARCHAR(20) DEFAULT 'cash'"),
             ("cash_session_id", "INTEGER"),
+        ],
+        "suppliers": [
+            # Revision 39's profile fields. This pass also heals a database
+            # whose schema_version reached 39 before the columns were written.
+            ("owner_first_name", "VARCHAR(100)"),
+            ("owner_last_name", "VARCHAR(100)"),
+            ("landline", "VARCHAR(15)"),
+            ("city", "VARCHAR(100)"),
+            ("address", "TEXT"),
+            ("supplier_type", "VARCHAR(80)"),
+            ("economic_code", "VARCHAR(14)"),
+            ("sheba", "VARCHAR(26)"),
         ],
         "supplier_payments": [
             ("cash_session_id", "INTEGER"),

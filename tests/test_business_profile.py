@@ -19,6 +19,10 @@ def test_page_names_the_employer_not_the_login(client, db_session):
     assert "هویت کسب‌وکار" in page
     assert "نه حساب ورود" in page
     assert "امضاکننده" in page
+    # One wide soft card: readiness strip, two-column fields, sticky save.
+    assert "owner-ready" in page
+    assert "owner-grid" in page
+    assert "settings-savebar" in page
 
 
 def test_identity_validators_refuse_garbage(client, db_session):
@@ -69,6 +73,8 @@ def test_signatory_picker_signs_docs_and_preview_matches_gate(client, db_session
 
     feed = client.get("/admin/owner-profile").text
     assert "آماده چاپ" in feed
+    assert '<details class="card owner-history">' in feed  # closed by default
+    assert "آخرین تغییرها" in feed
 
     cashier, password = _staff(db_session, "phaseh-peek", "cashier")
     _session_as(client, cashier, password)

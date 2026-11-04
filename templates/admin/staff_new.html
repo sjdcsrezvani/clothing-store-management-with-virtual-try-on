@@ -7,7 +7,7 @@
 <a class="btn btn-ghost" href="/admin/staff">بازگشت به فهرست کارکنان</a>
 {% endset %}
 {% include 'partials/page_header.html' %}
-<div class="card hire-narrow">
+<div class="card hire-wide">
   <div class="section-heading"><div><span class="eyebrow">استخدام</span><h3>افزودن کارمند و حساب ورود</h3></div></div>
   {# Staged hire: one form, four sections, no reload between stages. Without
      JS the wizard cannot advance, so a notice stands in for the form. #}
@@ -20,55 +20,55 @@
     <p class="form-error hire-form-error" id="hire-form-error" role="alert" hidden></p>
     <section data-hire-step="0" aria-labelledby="hire-step-title-0">
       <h4 id="hire-step-title-0" tabindex="-1">مرحله ۱ — حساب ورود</h4>
-      <div class="hire-grid">
-      <label class="hire-field">نام کاربری <span class="muted">(الزامی)</span><input name="username" autocomplete="username" dir="ltr" required></label>
-      <label class="hire-field">رمز عبور <span class="muted">(الزامی)</span><input name="password" type="password" minlength="6" autocomplete="new-password" required aria-describedby="hire-pass-help"><small class="field-help" id="hire-pass-help">حداقل ۶ کاراکتر</small></label>
-      <label class="hire-field">نقش<select name="role"><option value="cashier" selected>صندوقدار</option><option value="manager">مدیر</option><option value="owner">مالک</option></select></label>
+      <div class="hire-grid is-split">
+      <label class="hire-field"><span class="hire-label">نام کاربری <span class="required-mark" aria-hidden="true">*</span></span><input type="text" name="username" autocomplete="username" dir="ltr" required></label>
+      <label class="hire-field"><span class="hire-label">رمز عبور <span class="required-mark" aria-hidden="true">*</span></span><input type="password" name="password" minlength="6" autocomplete="new-password" required aria-describedby="hire-pass-help"><small class="field-help" id="hire-pass-help">حداقل ۶ کاراکتر</small></label>
+      <label class="hire-field">نقش<select name="role"><option value="cashier" selected>صندوقدار</option><option value="manager">مدیر</option><option value="owner">مالک</option></select><small class="field-help">دسترسی‌ها را بعداً از پرونده کارمند تنظیم کنید.</small></label>
       </div>
       <div class="staff-actions"><button type="button" class="btn btn-primary" data-hire-next>مرحله بعد</button></div>
     </section>
     <section data-hire-step="1" hidden aria-labelledby="hire-step-title-1">
       <h4 id="hire-step-title-1" tabindex="-1">مرحله ۲ — مشخصات فردی</h4>
-      <div class="hire-grid">
-      <label class="hire-field">نام و نام خانوادگی<input name="full_name" autocomplete="name"></label>
+      <div class="hire-grid is-split">
+      <label class="hire-field">نام و نام خانوادگی<input type="text" name="full_name" autocomplete="name"></label>
       <label class="hire-field">جنسیت<select name="gender"><option value="">انتخاب کنید</option><option value="male">مرد</option><option value="female">زن</option></select></label>
-      <label class="hire-field">کد پرسنلی<input name="employee_code"></label>
-      <label class="hire-field">کد ملی<input name="national_id" inputmode="numeric" dir="ltr" minlength="10" aria-describedby="hire-nid-help"><small class="field-help" id="hire-nid-help">۱۰ رقم</small></label>
-      <label class="hire-field">تلفن<input name="phone" type="tel" inputmode="tel" autocomplete="tel" dir="ltr" maxlength="11"></label>
-      <label class="hire-field">ایمیل<input name="email" type="email" autocomplete="email" dir="ltr"></label>
-      <label class="hire-field">تاریخ تولد<input class="persian-date-input" name="birth_date" inputmode="numeric" dir="ltr" placeholder="۱۳۷۰/۰۱/۰۱"></label>
-      <label class="hire-field">تحصیلات<input name="education"></label>
+      <label class="hire-field">کد پرسنلی<input type="text" name="employee_code"></label>
+      <label class="hire-field">کد ملی<input type="text" name="national_id" inputmode="numeric" dir="ltr" minlength="10" aria-describedby="hire-nid-help"><small class="field-help" id="hire-nid-help">۱۰ رقم</small></label>
+      <label class="hire-field">تلفن<input type="tel" name="phone" inputmode="tel" autocomplete="tel" dir="ltr" maxlength="11"></label>
+      <label class="hire-field">ایمیل<input type="email" name="email" autocomplete="email" dir="ltr"></label>
+      <label class="hire-field">تاریخ تولد<input type="text" class="persian-date-input" name="birth_date" inputmode="numeric" dir="ltr" placeholder="۱۳۷۰/۰۱/۰۱"></label>
+      <label class="hire-field">تحصیلات<input type="text" name="education"></label>
       </div>
       <div class="staff-actions"><button type="button" class="btn btn-ghost" data-hire-prev>مرحله قبل</button><button type="button" class="btn btn-primary" data-hire-next>مرحله بعد</button></div>
     </section>
     <section data-hire-step="2" hidden aria-labelledby="hire-step-title-2">
       <h4 id="hire-step-title-2" tabindex="-1">مرحله ۳ — همکاری و حقوق</h4>
-      <div class="hire-grid">
-      <label class="hire-field">عنوان شغلی<input name="job_title"></label>
+      <div class="hire-grid is-split">
+      <label class="hire-field">عنوان شغلی<input type="text" name="job_title"></label>
       <label class="hire-field">سمت سازمانی<select name="position_id"><option value="">—</option>{% for position in positions %}<option value="{{ position.id }}">{{ position.title }}</option>{% endfor %}</select><small class="field-help"><a href="/admin/positions">مدیریت سمت‌ها</a></small></label>
-      <label class="check-row"><input type="checkbox" name="insured" value="1"> بیمه تأمین اجتماعی</label>
       <label class="hire-field">نوع همکاری<select name="employment_type"><option value="full_time" selected>تمام‌وقت</option><option value="part_time">پاره‌وقت</option><option value="contractor">قراردادی</option></select></label>
+      <label class="check-row"><input type="checkbox" name="insured" value="1"> بیمه تأمین اجتماعی</label>
       {% from 'partials/numeric_input.html' import num with context %}
       <label class="hire-field">حقوق ماهانه (تومان){{ num('salary_amount', '', describedby='hire-salary-help') }}<small class="field-help" id="hire-salary-help">خالی یعنی بدون حقوق ثابت</small></label>
       <label class="hire-field">روز پرداخت ماهانه{{ num('salary_payment_day', '', describedby='hire-payday-help') }}<small class="field-help" id="hire-payday-help">۱ تا ۳۱</small></label>
-      <label class="hire-field">تاریخ شروع<input class="persian-date-input" name="hire_date" inputmode="numeric" dir="ltr" placeholder="۱۴۰۵/۰۱/۰۱"></label>
+      <label class="hire-field">تاریخ شروع<input type="text" class="persian-date-input" name="hire_date" inputmode="numeric" dir="ltr" placeholder="۱۴۰۵/۰۱/۰۱"></label>
       <label class="hire-field">مدت قرارداد<select name="contract_term_months" aria-describedby="hire-term-help"><option value="">باز / بدون مدت</option>{% for months, label in contract_terms.items() %}<option value="{{ months }}">{{ label }}</option>{% endfor %}</select><small class="field-help" id="hire-term-help">شروع + مدت = پایان</small></label>
-      <p class="muted" id="hire-contract-preview" aria-live="polite"></p>
-      <label class="hire-field">پایان قرارداد<input class="persian-date-input" name="contract_end_date" inputmode="numeric" dir="ltr" placeholder="۱۴۰۵/۱۲/۲۹"></label>
-      <label class="hire-field">برنامه کاری<input name="work_schedule"></label>
+      <p class="muted form-span-2" id="hire-contract-preview" aria-live="polite"></p>
+      <label class="hire-field">پایان قرارداد<input type="text" class="persian-date-input" name="contract_end_date" inputmode="numeric" dir="ltr" placeholder="۱۴۰۵/۱۲/۲۹"></label>
+      <label class="hire-field">برنامه کاری<input type="text" name="work_schedule"></label>
       </div>
       <div class="staff-actions"><button type="button" class="btn btn-ghost" data-hire-prev>مرحله قبل</button><button type="button" class="btn btn-primary" data-hire-next>مرحله بعد</button></div>
     </section>
     <section data-hire-step="3" hidden aria-labelledby="hire-step-title-3">
       <h4 id="hire-step-title-3" tabindex="-1">مرحله ۴ — بانکی و تماس</h4>
-      <div class="hire-grid">
-      <label class="hire-field">حساب بانکی<input name="bank_account" inputmode="numeric" dir="ltr"></label>
-      <label class="hire-field">شبا<input name="iban" inputmode="numeric" dir="ltr" aria-describedby="hire-iban-help"><small class="field-help" id="hire-iban-help">IR و ۲۴ رقم</small></label>
-      <label class="hire-field">نام مخاطب اضطراری<input name="emergency_name"></label>
-      <label class="hire-field">نسبت<input name="emergency_relation" placeholder="مثلاً همسر، پدر"></label>
-      <label class="hire-field">تلفن اضطراری<input name="emergency_phone" type="tel" inputmode="tel" dir="ltr" maxlength="11"></label>
-      <label class="hire-field">نشانی<textarea name="address" rows="3" autocomplete="street-address"></textarea></label>
-      <label class="hire-field">یادداشت<textarea name="notes" rows="3"></textarea></label>
+      <div class="hire-grid is-split">
+      <label class="hire-field">حساب بانکی<input type="text" name="bank_account" inputmode="numeric" dir="ltr"></label>
+      <label class="hire-field">شبا<input type="text" name="iban" dir="ltr" aria-describedby="hire-iban-help"><small class="field-help" id="hire-iban-help">IR و ۲۴ رقم</small></label>
+      <label class="hire-field">نام مخاطب اضطراری<input type="text" name="emergency_name"></label>
+      <label class="hire-field">نسبت<input type="text" name="emergency_relation" placeholder="مثلاً همسر، پدر"></label>
+      <label class="hire-field">تلفن اضطراری<input type="tel" name="emergency_phone" inputmode="tel" dir="ltr" maxlength="11"></label>
+      <label class="hire-field is-wide">نشانی<textarea name="address" rows="3" autocomplete="street-address"></textarea></label>
+      <label class="hire-field is-wide">یادداشت<textarea name="notes" rows="3"></textarea></label>
       </div>
       <div class="staff-actions"><button type="button" class="btn btn-ghost" data-hire-prev>مرحله قبل</button><button class="btn btn-primary" type="submit">ثبت کارمند</button></div>
     </section>
@@ -101,6 +101,8 @@
         });
         dots.forEach(function (dot, index) {
             dot.classList.toggle('active', index === current);
+            // Steps behind the cursor are complete; .done already has a style.
+            dot.classList.toggle('done', index < current);
             if (index <= reached) {
                 dot.removeAttribute('disabled');
             } else {
@@ -136,8 +138,14 @@
 
     function fieldLabel(field) {
         var label = field.closest ? field.closest('label') : null;
-        var text = label && label.firstChild && label.firstChild.nodeType === 3
-            ? label.firstChild.nodeValue : '';
+        if (!label) return '';
+        // A marked label keeps its text in .hire-label so the asterisk and the
+        // text do not become two stacked flex items.
+        var marked = label.querySelector('.hire-label');
+        var text = marked && marked.firstChild && marked.firstChild.nodeType === 3
+            ? marked.firstChild.nodeValue
+            : (label.firstChild && label.firstChild.nodeType === 3
+                ? label.firstChild.nodeValue : '');
         return text.replace(/\s+/g, ' ').trim();
     }
 

@@ -601,6 +601,14 @@ class Supplier(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(200), nullable=False)
     phone = Column(String(15), nullable=True)
+    owner_first_name = Column(String(100), nullable=True)
+    owner_last_name = Column(String(100), nullable=True)
+    landline = Column(String(15), nullable=True)
+    city = Column(String(100), nullable=True)
+    address = Column(Text, nullable=True)
+    supplier_type = Column(String(80), nullable=True)
+    economic_code = Column(String(14), nullable=True)
+    sheba = Column(String(26), nullable=True)
     note = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -687,8 +695,11 @@ class Purchase(Base):
     purchase_date = Column(DateTime, nullable=True)
     # Shipping / other charges the wholesaler billed on top of the item lines.
     extra_cost = Column(Integer, default=0, nullable=False)
-    # Whether extra_cost is spread into the variants' cost basis (landed cost).
-    extra_cost_in_landed = Column(Boolean, default=True, nullable=False)
+    # Tax as a percent of the item lines; total_cost carries the amount.
+    tax_percent = Column(Integer, default=0, nullable=False)
+    # Legacy: old invoices could spread extra_cost into the cost basis. New
+    # purchases never do; the column stays so historical detail keeps meaning.
+    extra_cost_in_landed = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     supplier = relationship("Supplier", back_populates="purchases")

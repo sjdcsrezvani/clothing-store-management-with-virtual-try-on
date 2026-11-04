@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from database import get_db
-from models import Customer, Referral, generate_referral_code, to_english_digits
+from models import Customer, generate_referral_code, to_english_digits
 from services._common import (
     current_year_month,
     fmt,
@@ -48,21 +48,17 @@ async def create_customer(
         return guard
     phone = to_english_digits(phone.strip())
     if not phone.startswith("09") or len(phone) != 11:
-        return templates.TemplateResponse(request, "index.html", {
-            "error": "شماره موبایل نامعتبر است. فرمت صحیح: 09xxxxxxxxx",
-            "fmt": fmt,
-            "jalali_str": jalali_str,
-        })
+        return RedirectResponse(
+            url="/admin/customers?err=" + quote_plus("شماره موبایل نامعتبر است. فرمت صحیح: 09xxxxxxxxx"),
+            status_code=303,
+        )
 
     existing = db.query(Customer).filter(Customer.phone == phone).first()
     if existing:
-        return templates.TemplateResponse(request, "customer.html", {
-            "customer": existing,
-            "message": "این شماره قبلاً ثبت شده است.",
-            "fmt": fmt,
-            "jalali_str": jalali_str,
-            **_panel_context(db, existing),
-        })
+        return RedirectResponse(
+            url=f"/admin/customers/{existing.id}?msg=" + quote_plus("این شماره قبلاً ثبت شده است."),
+            status_code=303,
+        )
 
     code = generate_referral_code()
     while db.query(Customer).filter(Customer.referral_code == code).first():
@@ -85,61 +81,10 @@ async def create_customer(
     db.commit()
     await queue_welcome_sms(phone, first_name, code, db, customer=customer)
 
-    return templates.TemplateResponse(request, "customer.html", {
-        "customer": customer,
-        "message": "ثبت‌نام با موفقیت انجام شد!",
-        "fmt": fmt,
-        "jalali_str": jalali_str,
-        **_panel_context(db, customer),
-    })
-
-
-@router.get("/customers/lookup", response_class=HTMLResponse)
-async def lookup_customer(request: Request, phone: str = "", db: Session = Depends(get_db)):
-    if not phone:
-        referrer_discount = get_discount_setting(db, "default_referrer_discount", 50000)
-        referred_discount = get_discount_setting(db, "default_referred_discount", 30000)
-        min_purchase = get_discount_setting(db, "min_purchase_for_discount", 500000)
-        monthly_limit = get_discount_setting(db, "monthly_referral_limit", 10)
-        tier_config = get_tier_config(db)
-        return templates.TemplateResponse(request, "index.html", {
-            "referrer_discount": referrer_discount,
-            "referred_discount": referred_discount,
-            "min_purchase": min_purchase,
-            "monthly_limit": monthly_limit,
-            "tier_config": tier_config,
-            "fmt": fmt,
-            "jalali_str": jalali_str,
-        })
-
-    phone = to_english_digits(phone.strip())
-    customer = db.query(Customer).filter(Customer.phone == phone).first()
-    if not customer:
-        return templates.TemplateResponse(request, "index.html", {
-            "error": "مشتری با این شماره یافت نشد.",
-            "referrer_discount": get_discount_setting(db, "default_referrer_discount", 50000),
-            "referred_discount": get_discount_setting(db, "default_referred_discount", 30000),
-            "min_purchase": get_discount_setting(db, "min_purchase_for_discount", 500000),
-            "monthly_limit": get_discount_setting(db, "monthly_referral_limit", 10),
-            "tier_config": get_tier_config(db),
-            "fmt": fmt,
-            "jalali_str": jalali_str,
-        })
-
-    referrals = db.query(Referral).filter(Referral.referrer_id == customer.id).all()
-    referred_customers = []
-    for r in referrals:
-        referred = db.query(Customer).filter(Customer.id == r.referred_id).first()
-        if referred:
-            referred_customers.append({"customer": referred, "referral": r})
-
-    return templates.TemplateResponse(request, "customer.html", {
-        "customer": customer,
-        "referrals": referred_customers,
-        "fmt": fmt,
-        "jalali_str": jalali_str,
-        **_panel_context(db, customer),
-    })
+    return RedirectResponse(
+        url=f"/admin/customers/{customer.id}?msg=" + quote_plus("مشتری ثبت شد."),
+        status_code=303,
+    )
 
 
 @router.post("/customers/{customer_id}/update-details", response_class=HTMLResponse)

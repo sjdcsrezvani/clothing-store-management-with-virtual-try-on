@@ -1,5 +1,10 @@
 {% extends "base.html" %}
-{% block title %}{% if purchase.is_draft %}پیش‌فاکتور{% else %}فاکتور خرید{% endif %} #{{ purchase.id }} — {{ store.name }}{% endblock %}
+{% set supplier = purchase.supplier %}
+{% set shop_name = owner_settings.get('owner_business_name') or store.name %}
+{% set shop_address = owner_settings.get('owner_address') or store.address %}
+{% set shop_phone = owner_settings.get('owner_phone') or store.phone %}
+{% set show_landed = purchase.extra_cost_in_landed and purchase.extra_cost %}
+{% block title %}{% if purchase.is_draft %}پیش‌فاکتور{% else %}فاکتور خرید{% endif %} #{{ purchase.id }} — {{ shop_name }}{% endblock %}
 {% block content %}
 <div class="document-actions">
     <button type="button" class="btn btn-primary" onclick="window.print()">چاپ فاکتور خرید</button>
@@ -8,7 +13,15 @@
 
 <div class="print-document">
     <div class="print-document-header">
-        <h1>{{ store.name }}</h1>
+        {% if owner_settings.get('owner_logo_path') %}
+        <img src="{{ owner_settings.get('owner_logo_path') }}" alt="" class="invoice-logo">
+        {% endif %}
+        <h1>{{ shop_name }}</h1>
+        {% if shop_address %}<div class="invoice-contact">{{ shop_address }}</div>{% endif %}
+        {% if shop_phone %}<div class="invoice-contact tnum" dir="ltr">{{ shop_phone }}</div>{% endif %}
+        {% if owner_settings.get('owner_business_registration') %}
+        <div class="invoice-contact">شماره ثبت: <span dir="ltr">{{ owner_settings.get('owner_business_registration') }}</span></div>
+        {% endif %}
         <h2>{% if purchase.is_draft %}پیش‌فاکتور خرید از عمده‌فروش{% else %}فاکتور خرید از عمده‌فروش{% endif %}</h2>
         <div class="print-document-meta">
             <span>شماره خرید: #{{ purchase.id }}</span>
@@ -21,7 +34,10 @@
         <tbody>
             <tr>
                 <th scope="row">تأمین‌کننده</th>
-                <td>{{ purchase.supplier.name if purchase.supplier else '—' }}</td>
+                <td>
+                    <strong>{{ supplier.name if supplier and supplier.name else '—' }}</strong>
+                    {% if supplier and supplier.supplier_type %}<span class="muted"> · {{ supplier.supplier_type }}</span>{% endif %}
+                </td>
                 <th scope="row">وضعیت پرداخت</th>
                 <td>
                     {% if settlement.status == 'draft' %}پیش‌نویس
@@ -37,6 +53,37 @@
                 <th scope="row">سررسید</th>
                 <td>{{ jalali_str(settlement.due_date, with_time=False) if settlement.due_date else '—' }}</td>
             </tr>
+            {% if supplier %}
+            {% set owner_name = [supplier.owner_first_name, supplier.owner_last_name] | select | join(' ') %}
+            {% if owner_name or supplier.phone or supplier.landline or supplier.city %}
+            <tr>
+                <th scope="row">مالک</th>
+                <td>{{ owner_name or '—' }}</td>
+                <th scope="row">موبایل</th>
+                <td class="tnum" dir="ltr">{{ supplier.phone or '—' }}</td>
+            </tr>
+            <tr>
+                <th scope="row">تلفن ثابت</th>
+                <td class="tnum" dir="ltr">{{ supplier.landline or '—' }}</td>
+                <th scope="row">شهر</th>
+                <td>{{ supplier.city or '—' }}</td>
+            </tr>
+            {% endif %}
+            {% if supplier.economic_code or supplier.sheba %}
+            <tr>
+                <th scope="row">کد اقتصادی</th>
+                <td class="tnum" dir="ltr">{{ supplier.economic_code or '—' }}</td>
+                <th scope="row">شبا</th>
+                <td class="tnum" dir="ltr">{{ supplier.sheba or '—' }}</td>
+            </tr>
+            {% endif %}
+            {% if supplier.address %}
+            <tr>
+                <th scope="row">نشانی تأمین‌کننده</th>
+                <td colspan="3">{{ supplier.address }}</td>
+            </tr>
+            {% endif %}
+            {% endif %}
             {% if purchase.note %}
             <tr>
                 <th scope="row">توضیح</th>
@@ -54,47 +101,54 @@
                 <th scope="col">تعداد</th>
                 <th scope="col">قیمت خرید</th>
                 <th scope="col">جمع</th>
+                {% if show_landed %}
                 <th scope="col">بهای تمام‌شده</th>
                 <th scope="col">جمع با حمل</th>
+                {% endif %}
             </tr>
         </thead>
         <tbody>
             {% for line in lines %}
             <tr>
                 <td class="tnum">{{ loop.index }}</td>
-                <td>
-                    {{ line.item.product.name if line.item.product else '—' }}
-                    {% if line.item.variant and line.item.variant.display_name %} — {{ line.item.variant.display_name }}{% endif %}
-                </td>
+                <td>{{ line.item.variant.display_name if line.item.variant else (line.item.product.name if line.item.product else '—') }}</td>
                 <td class="tnum">{{ line.item.quantity }}</td>
                 <td class="tnum">{{ fmt(line.unit_cost) }}</td>
                 <td class="tnum">{{ fmt(line.line_total) }}</td>
+                {% if show_landed %}
                 <td class="tnum">{{ fmt(line.landed_unit_cost) }}</td>
                 <td class="tnum">{{ fmt(line.landed_line_total) }}</td>
+                {% endif %}
             </tr>
             {% endfor %}
         </tbody>
         <tfoot>
             <tr>
-                <th scope="row" colspan="6">جمع اقلام</th>
+                <th scope="row" colspan="{{ 6 if show_landed else 4 }}">جمع اقلام</th>
                 <td class="tnum">{{ fmt(items_subtotal) }} تومان</td>
             </tr>
             {% if purchase.extra_cost %}
             <tr>
-                <th scope="row" colspan="6">هزینه حمل و سایر</th>
+                <th scope="row" colspan="{{ 6 if show_landed else 4 }}">هزینه حمل و سایر</th>
                 <td class="tnum">{{ fmt(purchase.extra_cost) }} تومان</td>
             </tr>
             {% endif %}
+            {% if purchase.tax_percent %}
             <tr>
-                <th scope="row" colspan="6">مبلغ کل فاکتور</th>
+                <th scope="row" colspan="{{ 6 if show_landed else 4 }}">مالیات ({{ purchase.tax_percent }}٪)</th>
+                <td class="tnum">{{ fmt(tax_amount) }} تومان</td>
+            </tr>
+            {% endif %}
+            <tr>
+                <th scope="row" colspan="{{ 6 if show_landed else 4 }}">مبلغ کل فاکتور</th>
                 <td class="tnum"><strong>{{ fmt(settlement.total) }} تومان</strong></td>
             </tr>
             <tr>
-                <th scope="row" colspan="6">پرداخت‌شده</th>
+                <th scope="row" colspan="{{ 6 if show_landed else 4 }}">پرداخت‌شده</th>
                 <td class="tnum">{{ fmt(settlement.paid) }} تومان</td>
             </tr>
             <tr>
-                <th scope="row" colspan="6">مانده</th>
+                <th scope="row" colspan="{{ 6 if show_landed else 4 }}">مانده</th>
                 <td class="tnum">{{ fmt(settlement.remaining) }} تومان</td>
             </tr>
         </tfoot>

@@ -318,7 +318,7 @@ def test_the_shared_period_filter_pairs_its_dates_on_each_page(client, authed):
 
 
 # Every birthday field is drawn by one partial now, so the ceiling is declared once.
-BIRTHDAY_SURFACES = ["index.html", "customer.html", "sales/checkout.html"]
+BIRTHDAY_SURFACES = ["customer.html", "sales/checkout.html"]
 
 
 @pytest.mark.parametrize("template", ["partials/buys_for.html"])

@@ -550,11 +550,24 @@ matches whichever theme the panel is set to, dark and high-contrast included.
 
 ## Backups
 
-- A backup is created automatically every night at 02:00 UTC and kept in
-  `backups/` (last 30).
-- **پشتیبان‌ها** in the admin panel: back up now, download any backup.
-- **Restore:** stop the app, copy the backup file over `referral.db` (keep a
-  copy of the current file first), start the app again.
+- A backup is created automatically every N days at the 02:00 UTC pass, while
+  the app is running. The default is every 30 days, keeping the newest 10; both
+  are configurable on the **پشتیبان‌ها** page.
+- Each backup has two parts: the database (all shop records) and an uploads
+  tarball (product images and attachments). They share one name stem, so
+  restoring one always brings its files with it.
+- **Restore in the app:** on **پشتیبان‌ها**, pick the backup from the restore
+  card's dropdown and confirm. No restart is needed. A safety snapshot of the
+  current state is taken first unless you untick it, and that snapshot is the
+  way back if the wrong version was chosen.
+- **Restore from another machine:** upload the «دانلود همه» zip to bring the
+  database and images back together, or a lone `.db` to bring records only.
+  Uploading only shelves the file; press «بازیابی» afterwards.
+- **Only if the app cannot start:** stop it, copy the backup file over
+  `referral.db`, and start it again. Close the app first and keep a copy of the
+  current file; copying the database while the app runs can miss transactions
+  still in the WAL file. In the desktop app this file lives in the data
+  directory listed under **Data location** below.
 
 ## Development from a clean checkout
 

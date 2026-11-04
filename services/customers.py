@@ -428,30 +428,6 @@ def export_customers(db: Session, *, search: str = "", tier: str = "", status: s
         created_by_user_id=created_by_user_id, day_offset=day_offset), sort).all()
 
 
-def bulk_tag_customers(db: Session, ids: list[int], tag: str, *, remove: bool = False) -> int:
-    """Tag (or untag) many customers at once, in palette order.
-
-    Unknown tags are refused, not stored: the column is a CSV of palette keys
-    and a stray string would render as nothing anywhere.
-    """
-    if tag not in TAG_KEYS:
-        raise ValueError(f"Unknown tag: {tag}")
-    changed = 0
-    for customer in db.query(Customer).filter(Customer.id.in_(ids or [0])).all():
-        keys = parse_tags(customer.tags)
-        if remove:
-            if tag not in keys:
-                continue
-            keys = [key for key in keys if key != tag]
-        elif tag in keys:
-            continue
-        else:
-            keys = parse_tags(",".join(keys + [tag]))
-        customer.tags = serialize_tags(keys)
-        changed += 1
-    return changed
-
-
 def list_customers(db: Session, *, search: str = "", tier: str = "", status: str = "all",
                    tag: str = "", sort: str = "date", page: int = 1,
                    per_page: int = PER_PAGE, drifted: bool = False,

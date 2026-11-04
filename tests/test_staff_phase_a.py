@@ -84,6 +84,34 @@ def test_new_page_renders_full_hire_form(client, db_session):
     assert 'hx-boost="false"' in page
 
 
+def test_hire_form_controls_carry_explicit_types_and_use_the_wide_split(client, db_session):
+    """Untyped inputs fall back to native boxes: every hire control names its
+    type so it inherits the themed field system."""
+    import re
+
+    _owner_client(client, db_session, name="phasea-owner-types")
+    page = client.get("/admin/staff/new").text
+    form = page.split('id="hire-form"', 1)[1].split("</form>", 1)[0]
+    untyped = [
+        tag for tag in re.findall(r"<input\b[^>]*>", form)
+        if "type=" not in tag
+    ]
+    assert not untyped, untyped
+    assert "hire-wide" in page
+    assert page.count("hire-grid is-split") == 4
+
+
+def test_profile_and_positions_controls_carry_explicit_types(client, db_session):
+    import re
+
+    owner, _ = _owner_client(client, db_session, name="phasea-owner-types-prof")
+    page = client.get(f"/admin/staff/{owner.id}").text
+    form = page.split('id="staff-overview-form"', 1)[1].split("</form>", 1)[0]
+    assert not [tag for tag in re.findall(r"<input\b[^>]*>", form) if "type=" not in tag]
+    positions = client.get("/admin/positions").text
+    assert not [tag for tag in re.findall(r"<input\b[^>]*>", positions) if "type=" not in tag]
+
+
 def test_create_lands_on_the_new_profile(client, db_session):
     _owner_client(client, db_session, name="phasea-owner-create")
     token = csrf_token(client, "/admin/staff/new")

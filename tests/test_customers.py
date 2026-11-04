@@ -836,7 +836,7 @@ def _create_customer_step(client, phone="09129998877"):
 def test_child_block_is_absent_from_every_form_when_the_module_is_off(authed, db_session):
     set_setting(db_session, "child_profile_enabled", "0")
 
-    registration = authed.get("/customers/lookup").text
+    registration = _create_customer_step(authed)
     checkout = _create_customer_step(authed)
     profile_customer = make_customer(db_session, first_name="بدون‌فرزند")
     profile = list_html(authed, f"/{profile_customer.id}")
@@ -855,7 +855,7 @@ def test_child_block_is_absent_from_every_form_when_the_module_is_off(authed, db
 
 
 def test_child_block_is_present_when_the_module_is_on(authed, db_session):
-    registration = authed.get("/customers/lookup").text
+    registration = _create_customer_step(authed)
     assert "child_birthday" in registration
     assert "نام فرزند" in registration
     # ...and the customer is asked to choose, because the choice is theirs.
@@ -895,7 +895,7 @@ def test_the_panel_refuses_a_child_choice_when_the_module_is_off(authed, db_sess
     customer = make_customer(db_session, child_name="قبلی", child_birthday="01-01")
     set_setting(db_session, "child_profile_enabled", "0")
 
-    token = csrf_token(authed, "/customers/lookup")
+    token = csrf_token(authed)
     response = authed.post(f"/customers/{customer.id}/update-details", data={
         "csrf_token": token,
         "buys_for": "child",
@@ -1131,8 +1131,8 @@ def adult_shop(db):
 
 
 def panel_html(client, customer) -> str:
-    """The cashier-facing customer panel, which is what the counter sees."""
-    return client.get(f"/customers/lookup?phone={customer.phone}").text
+    """The customer profile the counter reads, with the birthday fields prefilled."""
+    return client.get(f"/admin/customers/{customer.id}").text
 
 
 def test_a_childrens_shop_defaults_the_choice_to_the_child(authed, db_session):
@@ -1141,7 +1141,7 @@ def test_a_childrens_shop_defaults_the_choice_to_the_child(authed, db_session):
     The customer's own panel ships too — the choice is theirs to switch — but it
     starts hidden, so the form still asks what this shop's customers expect.
     """
-    registration = authed.get("/customers/lookup").text
+    registration = _create_customer_step(authed)
     assert re.search(r'id="buys-for-child"[^>]*checked', registration)
     assert not re.search(r'id="buys-for-self"[^>]*checked', registration)
     assert re.search(r'data-buys-for-panel="self"[^>]*is-hidden', registration)
@@ -1155,7 +1155,7 @@ def test_a_childrens_shop_defaults_the_choice_to_the_child(authed, db_session):
 def test_adult_shop_signup_asks_for_the_customers_own_birthday(authed, db_session):
     adult_shop(db_session)
 
-    registration = authed.get("/customers/lookup").text
+    registration = _create_customer_step(authed)
     assert 'id="birth_date"' in registration
     assert 'id="child_birthday"' not in registration
     # With only one possible answer there is nothing to ask.
@@ -1173,7 +1173,7 @@ def test_switching_the_child_module_off_still_asks_for_a_birthday(authed, db_ses
     birthday at all and its birthday discount could never fire on anyone.
     """
     set_setting(db_session, "child_profile_enabled", "0")
-    assert 'id="birth_date"' in authed.get("/customers/lookup").text
+    assert 'id="birth_date"' in _create_customer_step(authed)
 
 
 def test_registration_stores_the_customers_own_birthday(authed, db_session):
@@ -1236,9 +1236,9 @@ def test_the_panel_can_record_the_customers_birthday(authed, db_session):
     adult_shop(db_session)
     customer = make_customer(db_session, first_name="بدون‌تولد")
 
-    assert "/update-details" in panel_html(authed, customer)
+    assert 'id="birth_date"' in panel_html(authed, customer)
 
-    token = csrf_token(authed, "/customers/lookup")
+    token = csrf_token(authed)
     response = authed.post(f"/customers/{customer.id}/update-details", data={
         "csrf_token": token,
         "buys_for": "self",
@@ -1256,7 +1256,7 @@ def test_the_panel_stores_only_the_side_the_customer_chose(authed, db_session):
     """A child-buyer's hand-posted customer birthday is never written."""
     customer = make_customer(db_session, first_name="والد")
 
-    token = csrf_token(authed, "/customers/lookup")
+    token = csrf_token(authed)
     response = authed.post(f"/customers/{customer.id}/update-details", data={
         "csrf_token": token,
         "buys_for": "child",
@@ -1280,7 +1280,7 @@ def test_the_panel_can_switch_the_choice_without_losing_the_other_side(authed, d
     customer = make_customer(db_session, first_name="تازه", child_name="آوا",
                              child_birthday="03-15", child_birth_year=1400)
 
-    token = csrf_token(authed, "/customers/lookup")
+    token = csrf_token(authed)
     authed.post(f"/customers/{customer.id}/update-details", data={
         "csrf_token": token,
         "buys_for": "self",

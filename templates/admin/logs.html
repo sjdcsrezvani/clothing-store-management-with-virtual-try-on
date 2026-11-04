@@ -12,38 +12,70 @@
     <a class="source-chip {% if source == 'all' %}is-active{% endif %}" role="tab" {% if source == 'all' %}aria-selected="true"{% endif %} href="/admin/logs?source=all">همه با هم</a>
 </div>
 
-<form method="get" action="/admin/logs" class="card search-form">
-    <input type="hidden" name="source" value="{{ source }}">
-    {% if source == 'events' %}
-    <label class="sr-only" for="logs-aggregate">نوع موجودیت</label>
-    <input id="logs-aggregate" name="aggregate_type" value="{{ aggregate_type }}" maxlength="50" placeholder="موجودیت: sale" dir="ltr">
-    <label class="sr-only" for="logs-event">نوع رویداد</label>
-    <input id="logs-event" name="event_type" value="{{ event_type }}" maxlength="60" placeholder="رویداد: SaleCompleted" dir="ltr">
-    {% elif source == 'actions' %}
-    <label class="sr-only" for="logs-action">عملیات</label>
-    <select name="action" id="logs-action">
-        <option value="">همه عملیات‌ها</option>
-        {% for code in known_actions %}
-        <option value="{{ code }}"{% if code == action %} selected{% endif %}>{{ action_labels.get(code, code) }}</option>
-        {% endfor %}
-    </select>
-    <label class="sr-only" for="logs-actor">کننده</label>
-    <select name="actor" id="logs-actor">
-        <option value="">همه کاربران</option>
-        {% for person in actors %}
-        <option value="{{ person.id }}"{% if person.id == actor_id %} selected{% endif %}>{{ person.full_name or person.username }}</option>
-        {% endfor %}
-    </select>
-    {% endif %}
-    <label class="sr-only" for="logs-from">از تاریخ</label>
-    <input class="persian-date-input" id="logs-from" name="from" value="{{ date_from }}" inputmode="numeric" dir="ltr" data-pdp-pair="#logs-to" placeholder="۱۴۰۵/۰۱/۰۱">
-    <label class="sr-only" for="logs-to">تا تاریخ</label>
-    <input class="persian-date-input" id="logs-to" name="to" value="{{ date_to }}" inputmode="numeric" dir="ltr" placeholder="۱۴۰۵/۰۶/۳۱">
-    <label class="sr-only" for="logs-q">جست‌وجو در جزئیات</label>
-    <input id="logs-q" name="q" value="{{ search }}" maxlength="100" placeholder="جست‌وجو در جزئیات…">
-    <button class="btn btn-primary" type="submit">فیلتر</button>
-    {% if filters_active %}<a class="btn btn-ghost" href="/admin/logs?source={{ source }}">پاک کردن فیلترها</a>{% endif %}{% if offset %}<a class="btn btn-ghost" href="{{ back_url }}">۱۰۰ ردیف اول</a>{% endif %}
-</form>
+<div class="card filter-card logs-filter">
+    <form method="get" action="/admin/logs" class="logs-filter-form">
+        <input type="hidden" name="source" value="{{ source }}">
+        <div class="logs-filter-row">
+            {% if source == 'events' %}
+            <label class="filter-field">
+                <span>موجودیت</span>
+                <input id="logs-aggregate" name="aggregate_type" value="{{ aggregate_type }}" maxlength="50" placeholder="sale" dir="ltr">
+            </label>
+            <label class="filter-field">
+                <span>رویداد</span>
+                <input id="logs-event" name="event_type" value="{{ event_type }}" maxlength="60" placeholder="SaleCompleted" dir="ltr">
+            </label>
+            {% elif source == 'actions' %}
+            <label class="filter-field">
+                <span>عملیات</span>
+                <select name="action" id="logs-action">
+                    <option value="">همه عملیات‌ها</option>
+                    {% for code in known_actions %}
+                    <option value="{{ code }}"{% if code == action %} selected{% endif %}>{{ action_labels.get(code, code) }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="filter-field">
+                <span>کننده</span>
+                <select name="actor" id="logs-actor">
+                    <option value="">همه کاربران</option>
+                    {% for person in actors %}
+                    <option value="{{ person.id }}"{% if person.id == actor_id %} selected{% endif %}>{{ person.full_name or person.username }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            {% endif %}
+            <label class="filter-field is-search">
+                <span>جست‌وجو در جزئیات</span>
+                <span class="logs-search">
+                    <svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-search"/></svg>
+                    <input id="logs-q" name="q" value="{{ search }}" maxlength="100" placeholder="مثلاً نام مشتری یا شماره فاکتور">
+                </span>
+            </label>
+        </div>
+        <div class="logs-filter-row">
+            <div class="filter-field">
+                <span>از تاریخ و ساعت</span>
+                <div class="logs-range-control">
+                    <input class="persian-date-input" id="logs-from" name="from" value="{{ date_from }}" inputmode="numeric" dir="ltr" data-pdp-pair="#logs-to" placeholder="۱۴۰۵/۰۱/۰۱" aria-label="از تاریخ">
+                    <input id="logs-from-time" name="from_time" value="{{ time_from }}" inputmode="numeric" dir="ltr" maxlength="5" placeholder="14:30" autocomplete="off" aria-label="از ساعت">
+                </div>
+            </div>
+            <div class="filter-field">
+                <span>تا تاریخ و ساعت</span>
+                <div class="logs-range-control">
+                    <input class="persian-date-input" id="logs-to" name="to" value="{{ date_to }}" inputmode="numeric" dir="ltr" placeholder="۱۴۰۵/۰۶/۳۱" aria-label="تا تاریخ">
+                    <input id="logs-to-time" name="to_time" value="{{ time_to }}" inputmode="numeric" dir="ltr" maxlength="5" placeholder="18:00" autocomplete="off" aria-label="تا ساعت">
+                </div>
+            </div>
+            <div class="logs-filter-actions">
+                <button class="btn btn-primary" type="submit">فیلتر</button>
+                {% if filters_active %}<a class="btn btn-ghost" href="/admin/logs?source={{ source }}">پاک کردن فیلترها</a>{% endif %}{% if offset %}<a class="btn btn-ghost" href="{{ back_url }}">۱۰۰ ردیف اول</a>{% endif %}
+            </div>
+        </div>
+        <p class="filter-note muted">ساعت را به وقت محلی وارد کنید (مثلاً ۱۴:۳۰)؛ خالی گذاشتن ساعت یعنی کل روز.</p>
+    </form>
+</div>
 
 {% if archivable > 0 %}
 <div class="card">

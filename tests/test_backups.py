@@ -75,8 +75,29 @@ def test_manual_backup_files_verify_and_caches(client, db_session):
         assert len(files) == 1
         page = client.get("/admin/backups").text
         assert files[0].name in page
-        assert "تأیید شده" in page  # cached badge, no emoji
+        assert "سالم" in page  # cached badge, no emoji
         assert (BACKUP_DIR / ".verify.json").exists()
+    finally:
+        _clean()
+
+
+def test_backup_date_comes_from_its_name_not_upload_time(client, db_session):
+    import sqlite3
+    _owner_client(client, db_session, name="bk-owner-date")
+    _clean()
+    try:
+        src = BACKUP_DIR / "referral_20200102_030405.db"
+        conn = sqlite3.connect(str(src))
+        conn.execute("CREATE TABLE sales (id INTEGER PRIMARY KEY)")
+        conn.execute("CREATE TABLE customers (id INTEGER PRIMARY KEY)")
+        conn.commit()
+        conn.close()
+
+        row = backup.list_backups()[0]
+        assert row["name"] == src.name
+        assert row["created"].year == 2020
+        assert row["mtime"].year != 2020  # uploaded today, dated by its name
+        assert "۱۳۹۸" in client.get("/admin/backups").text
     finally:
         _clean()
 
@@ -89,9 +110,10 @@ def test_schedule_settings_normalize_garbage(client, db_session):
     }, follow_redirects=False)
     assert res.status_code == 303
     values = {row.key: row.value for row in db_session.query(Settings).filter(
-        Settings.key.like("backup_%")).all()}
+        Settings.key.like("%backup%")).all()}
     assert values["backup_every_days"] == "30"  # off-menu reads as default
     assert values["backup_keep_count"] == "30"  # clamped to the ceiling
+    assert "restore_snapshot" not in values  # a schedule save cannot touch it
     page = client.get("/admin/backups").text
     assert "هر ۳۰ روز" in page
 
@@ -136,6 +158,150 @@ def test_schedule_helpers():
 
 def _shelf_names():
     return sorted(path.name for path in _shelf())
+
+
+def _set_probe(db_session, value):
+    row = db_session.query(Settings).filter(Settings.key == "bk_restore_probe").first()
+    if row is None:
+        db_session.add(Settings(key="bk_restore_probe", value=str(value)))
+    else:
+        row.value = str(value)
+    db_session.commit()
+
+
+def _zip_pair_bytes(name):
+    """The exact zip «دانلود همه» gives back: a database and its tarball."""
+    import io
+    import zipfile
+    pair = _pair_of(name)
+    assert pair is not None and pair.is_file()
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.write(BACKUP_DIR / name, arcname=name)
+        archive.write(pair, arcname=pair.name)
+    return buf.getvalue()
+
+
+def test_restore_card_lists_backups_and_owns_the_safety_toggle(client, db_session):
+    _owner_client(client, db_session, name="bk-owner-restore-card")
+    _clean()
+    try:
+        _backup_now(client)
+        page = client.get("/admin/backups").text
+        assert 'id="restore"' in page
+        assert 'id="restore-name"' in page
+        assert 'name="restore_snapshot"' in page
+        schedule = page.split('action="/admin/backups/schedule"', 1)[1].split("</form>", 1)[0]
+        assert "restore_snapshot" not in schedule
+        assert "زیپ" in page
+        assert ".db" in page
+        assert "دیتابیس + فایل‌ها" in page
+        assert "سالم" in page
+    finally:
+        _clean()
+
+
+def test_zip_upload_shelves_pair_and_restore_brings_uploads(client, db_session):
+    _owner_client(client, db_session, name="bk-owner-zip-restore")
+    _clean()
+    marker = backup.UPLOADS_DIR / "bk_zip_restore_marker.txt"
+    try:
+        marker.write_text("zip-before")
+        _backup_now(client)
+        name = _shelf_names()[-1]
+        archive = _zip_pair_bytes(name)
+        (BACKUP_DIR / name).unlink()
+        _pair_of(name).unlink()
+
+        res = client.post("/admin/backups/upload", data={
+            "csrf_token": csrf_token(client, "/admin/backups"),
+        }, files={"backup_file": ("backups.zip", archive, "application/zip")},
+            follow_redirects=False)
+        assert res.status_code == 303
+        assert len(_shelf()) == 1
+        new_name = _shelf_names()[0]
+        assert _pair_of(new_name) is not None
+
+        marker.write_text("zip-after")
+        restore = client.post("/admin/backups/restore", data={
+            "csrf_token": csrf_token(client, "/admin/backups"),
+            "name": new_name, "restore_snapshot": "0",
+        }, follow_redirects=False)
+        assert restore.status_code == 303
+        assert marker.read_text() == "zip-before"
+    finally:
+        try:
+            marker.unlink()
+        except OSError:
+            pass
+        _clean()
+
+
+def test_restoring_an_old_backup_survives_a_small_keep_limit(client, db_session):
+    _owner_client(client, db_session, name="bk-owner-old-restore")
+    _clean()
+    try:
+        for value in range(4):
+            _set_probe(db_session, value)
+            _backup_now(client)
+        names = _shelf_names()
+        assert len(names) == 4
+        target = names[0]  # oldest: probe value 0
+
+        saved = client.post("/admin/backups/schedule", data={
+            "csrf_token": csrf_token(client, "/admin/backups"),
+            "backup_every_days": "30", "backup_keep_count": "3",
+            "restore_snapshot": "1",
+        }, follow_redirects=False)
+        assert saved.status_code == 303
+
+        db_session.query(Settings).filter(
+            Settings.key == "bk_restore_probe").delete()
+        db_session.commit()
+
+        res = client.post("/admin/backups/restore", data={
+            "csrf_token": csrf_token(client, "/admin/backups"),
+            "name": target, "restore_snapshot": "1",
+        }, follow_redirects=False)
+        assert res.status_code == 303
+        assert res.headers["location"].startswith("/admin/?msg=")
+
+        db_session.rollback()
+        db_session.expire_all()
+        probe = db_session.query(Settings).filter(
+            Settings.key == "bk_restore_probe").first()
+        assert probe is not None and probe.value == "0"
+        assert target in _shelf_names(), "the selected backup must not be pruned"
+    finally:
+        db_session.query(Settings).filter(
+            Settings.key == "bk_restore_probe").delete()
+        db_session.commit()
+        _clean()
+
+
+def test_restore_snapshot_toggle_is_per_restore(client, db_session):
+    _owner_client(client, db_session, name="bk-owner-toggle")
+    _clean()
+    try:
+        _backup_now(client)
+        name = _shelf_names()[-1]
+        before = len(_shelf())
+
+        off = client.post("/admin/backups/restore", data={
+            "csrf_token": csrf_token(client, "/admin/backups"),
+            "name": name, "restore_snapshot": "0",
+        }, follow_redirects=False)
+        assert off.status_code == 303
+        assert len(_shelf()) == before
+
+        on = client.post("/admin/backups/restore", data={
+            "csrf_token": csrf_token(client, "/admin/backups"),
+            "name": name, "restore_snapshot": "1",
+        }, follow_redirects=False)
+        assert on.status_code == 303
+        assert len(_shelf()) == before + 1
+    finally:
+        _clean()
 
 
 def test_restore_brings_back_pre_backup_state(client, db_session):
@@ -200,7 +366,8 @@ def test_upload_validates_and_shelves(client, db_session):
             follow_redirects=False)
         assert good.status_code == 303
         assert len(_shelf()) == 1
-        assert "ناحیه خطر" in client.get("/admin/backups").text
+        page = client.get("/admin/backups").text
+        assert 'id="restore"' in page and "افزودن به فهرست" in page
     finally:
         _clean()
 
@@ -217,8 +384,10 @@ def test_newer_schema_backup_warns_but_stays(client, db_session):
         conn.commit()
         conn.close()
         page = client.get("/admin/backups").text
-        assert "نسخه جدیدتر" in page
-        assert "ساختار این نسخه جدیدتر" in page  # inside the restore confirm
+        card = page.split('id="restore"', 1)[1]
+        assert "نسخه جدیدتر" in card
+        assert "ساختار این نسخه" in card
+        assert "سازگار نباشد" in card
     finally:
         _clean()
 
@@ -281,7 +450,7 @@ def test_pairless_backup_restores_db_only(client, db_session):
         _backup_now(client)
         name = _shelf_names()[-1]
         _pair_of(name).unlink()
-        assert "بدون فایل‌پیوست" in client.get("/admin/backups").text
+        assert "فقط دیتابیس" in client.get("/admin/backups").text
         res = client.post("/admin/backups/restore", data={
             "csrf_token": csrf_token(client, "/admin/backups"), "name": name,
         }, follow_redirects=False)

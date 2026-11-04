@@ -129,6 +129,10 @@
                 <span>هزینه حمل و سایر هزینه‌ها</span>
                 <strong class="tnum" id="purchase-total-extra">0 ت</strong>
             </div>
+            <div class="purchase-totals-row">
+                <span>مالیات</span>
+                <strong class="tnum" id="purchase-total-tax">0 ت</strong>
+            </div>
             <div class="purchase-totals-row is-grand">
                 <span>مبلغ کل فاکتور</span>
                 <strong class="tnum" id="purchase-total-grand">0 ت</strong>
@@ -138,16 +142,22 @@
         <div class="section-heading-row section-heading-spaced">
             <div>
                 <h3>هزینه‌های تکمیلی</h3>
-                <p class="muted">هزینه حمل روی مبلغ فاکتور می‌نشیند و بین ردیف‌ها پخش می‌شود تا سوابق بهای تمام‌شده واقعی باشد.</p>
+                <p class="muted">هزینه حمل و مالیات روی مبلغ فاکتور می‌نشینند؛ بهای هر کالا همان است که ثبت شده و تغییر نمی‌کند.</p>
             </div>
             <span class="section-step">۳</span>
         </div>
         <div class="form-row product-form-grid-wide">
-            <div class="form-group">
+            <div class="form-group form-span-2">
                 <label for="purchase-extra-cost">هزینه حمل / سایر</label>
                 <input type="text" id="purchase-extra-cost" name="extra_cost" min="0" inputmode="numeric"
                        value="{{ edit_purchase.extra_cost if editing and edit_purchase.extra_cost else 0 }}" placeholder="مثال: 150000">
                 <small class="field-help">مبلغی که عمده‌فروش یا باربری جدا از اقلام می‌گیرد.</small>
+            </div>
+            <div class="form-group">
+                <label for="purchase-tax-percent">مالیات (٪)</label>
+                <input type="text" id="purchase-tax-percent" name="tax_percent" min="0" max="100" inputmode="numeric"
+                       value="{{ edit_purchase.tax_percent if editing and edit_purchase.tax_percent else '' }}" placeholder="مثال: 10">
+                <small class="field-help">درصد مالیات روی جمع اقلام؛ خالی یعنی بدون مالیات.</small>
             </div>
             <div class="form-group">
                 <label for="due_date">سررسید پرداخت</label>
@@ -155,17 +165,6 @@
                        value="{% if editing and edit_purchase.due_date %}{{ jalali_str(edit_purchase.due_date, with_time=False) }}{% endif %}"
                        placeholder="۱۴۰۵/۰۷/۱۵">
                 <small class="field-help">برای خرید نسیه؛ خریدهای سررسیدگذشته در فهرست هشدار می‌گیرند.</small>
-            </div>
-            <div class="form-group form-span-2">
-                <label class="checkbox-row" for="extra_cost_in_landed">
-                    <input type="checkbox" id="extra_cost_in_landed" name="extra_cost_in_landed" value="on"
-                           {% if not editing or edit_purchase.extra_cost_in_landed %}checked{% endif %}>
-                    <span>هزینه حمل در بهای تمام‌شده هر کالا لحاظ شود</span>
-                </label>
-                {# The hidden field follows the checkbox so an unchecked box still
-                   posts a value, and the server reads the first one. #}
-                <input type="hidden" name="extra_cost_in_landed" value="0">
-                <small class="field-help">اگر تیک را بردارید، هزینه حمل فقط روی مبلغ فاکتور می‌ماند و در سوابق ردیف‌ها لحاظ نمی‌شود.</small>
             </div>
         </div>
 
@@ -403,6 +402,7 @@
     var scopeNote = document.getElementById('purchase-scope-note');
     var supplierSelect = document.getElementById('supplier_id');
     var extraInput = document.getElementById('purchase-extra-cost');
+    var taxInput = document.getElementById('purchase-tax-percent');
     var nextIdx = 0;
 
     function money(value) {
@@ -643,9 +643,12 @@
             row.querySelector('[data-role="line-total"]').textContent = line ? money(line) : '—';
         });
         var extra = num(extraInput.value || 0);
-        var total = subtotal + extra;
+        var taxPercent = Math.min(100, Math.max(0, Math.floor(num(taxInput.value || 0))));
+        var tax = Math.round(subtotal * taxPercent / 100);
+        var total = subtotal + extra + tax;
         document.getElementById('purchase-total-items').textContent = money(subtotal) + ' ت';
         document.getElementById('purchase-total-extra').textContent = money(extra) + ' ت';
+        document.getElementById('purchase-total-tax').textContent = money(tax) + ' ت';
         document.getElementById('purchase-total-grand').textContent = money(total) + ' ت';
     }
 
@@ -863,6 +866,7 @@
         }
     });
     extraInput.addEventListener('input', updateTotals);
+    taxInput.addEventListener('input', updateTotals);
     // Changing the supplier drops picked rows, so a stocked form confirms
     // first — the wipe itself still lives in resyncScope, after the answer.
     let prevSupplier = supplierSelect ? supplierSelect.value : '';

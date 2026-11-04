@@ -5,13 +5,15 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import unquote
 
 from models import (
-    BusinessEvent, Product, Purchase, PurchaseItem, StockMovement, Supplier, SupplierPayment,
+    BusinessEvent, Product, Purchase, PurchaseItem, Settings, StockMovement, Supplier,
+    SupplierPayment,
 )
 from services.accounting import (
     get_cashbox,
     get_supplier_balances,
     purchase_overview,
     purchase_settlement,
+    purchase_tax_amount,
 )
 from tests.conftest import csrf_token
 from tests.test_sales_money import _make_variant
@@ -28,8 +30,8 @@ def _redirect_text(response) -> str:
     return unquote(response.headers.get("location", ""))
 
 
-def _make_supplier(db_session, name="عمده‌فروش تست"):
-    supplier = Supplier(name=name)
+def _make_supplier(db_session, name="عمده‌فروش تست", **extra):
+    supplier = Supplier(name=name, **extra)
     db_session.add(supplier)
     db_session.commit()
     db_session.refresh(supplier)
@@ -155,13 +157,14 @@ def test_finalizing_a_draft_applies_cost_and_debt_once(client, db_session, authe
     assert variant.stock_quantity == 5
     assert variant.received_purchase_id == purchase.id
 
-    # The landed figure is still recorded as evidence: 40,000 + 5,000 shipping.
-    movement = db_session.query(StockMovement).filter(
+    # The line keeps its landed evidence, and since the item cost is final
+    # there is no cost-basis movement to write.
+    item = db_session.query(PurchaseItem).filter(PurchaseItem.purchase_id == purchase.id).one()
+    assert item.landed_unit_cost == 40_000
+    assert db_session.query(StockMovement).filter(
         StockMovement.purchase_id == purchase.id,
         StockMovement.movement_type == "cost_adjustment",
-    ).one()
-    assert movement.quantity_delta == 0
-    assert movement.unit_cost == 50_000
+    ).count() == 0
 
     assert db_session.query(BusinessEvent).filter(
         BusinessEvent.event_type == "PurchaseRecorded",
@@ -180,57 +183,162 @@ def test_finalizing_a_draft_applies_cost_and_debt_once(client, db_session, authe
     assert variant.received_purchase_id == purchase.id
     assert db_session.query(StockMovement).filter(
         StockMovement.purchase_id == purchase.id,
-    ).count() == 1
+    ).count() == 0
 
 
-def test_purchase_spreads_shipping_into_landed_cost(client, db_session, authed):
+def test_shipping_and_tax_stay_on_the_invoice_not_the_item_cost(client, db_session, authed):
     supplier = _make_supplier(db_session, name="لندد")
-    # Starts at a different cost so the landed-cost change is a real change.
     _, variant = _make_variant(db_session, price=100_000, cost=40_000, stock=5, name="لندد تست")
 
     response = _add_purchase(
         client, variant, quantity=10, unit_cost=45_000,
-        supplier_id=str(supplier.id), extra_cost="50000",
+        supplier_id=str(supplier.id), extra_cost="50000", tax_percent="10",
     )
     assert response.status_code == 303
 
     purchase = _latest_purchase(db_session)
-    assert purchase.total_cost == 250_000  # 200,000 mirrored + 50,000 shipping
+    # 5 × 40,000 items + 50,000 shipping + 10% tax on the items.
+    assert purchase.total_cost == 270_000
     assert purchase.extra_cost == 50_000
-    assert purchase.extra_cost_in_landed is True
+    assert purchase.tax_percent == 10
+    # Item cost is final; shipping is never folded into the cost basis.
+    assert purchase.extra_cost_in_landed is False
 
     db_session.refresh(variant)
-    assert variant.stock_quantity == 5  # quantities belong to the product screens
-    assert variant.cost_price == 40_000  # recorded, never adopted
-    # Shipping spread by line value: 200k/5 units → 40k + 10k landed evidence.
+    assert variant.stock_quantity == 5
+    assert variant.cost_price == 40_000
     assert variant.received_purchase_id == purchase.id
-    movement = db_session.query(StockMovement).filter(
+    assert db_session.query(StockMovement).filter(
         StockMovement.purchase_id == purchase.id,
         StockMovement.movement_type == "cost_adjustment",
-    ).one()
-    assert movement.quantity_delta == 0
-    assert movement.unit_cost == 50_000
+    ).count() == 0
 
 
-def test_purchase_can_keep_shipping_out_of_cost_basis(client, db_session, authed):
+def test_legacy_landed_checkbox_post_is_ignored(client, db_session, authed):
+    """The removed option must not come back through a stale form post."""
     supplier = _make_supplier(db_session, name="بدون لندد")
     _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=0, name="بدون لندد")
 
-    # An unchecked box posts only its "0" companion field.
     response = _add_purchase(
         client, variant, quantity=10, unit_cost=45_000, supplier_id=str(supplier.id),
-        extra_cost="50000", **{"extra_cost_in_landed": ["0"]},
+        extra_cost="50000", **{"extra_cost_in_landed": ["on"]},
     )
     assert response.status_code == 303
 
     purchase = _latest_purchase(db_session)
-    assert purchase.total_cost == 50_000
     assert purchase.extra_cost_in_landed is False
     db_session.refresh(variant)
-    # Invoiced total includes shipping, but the cost basis does not move.
     assert variant.cost_price == 50_000
     assert variant.stock_quantity == 0
     assert variant.received_purchase_id == purchase.id
+
+
+def test_purchase_tax_rounds_half_up_like_the_live_form():
+    assert purchase_tax_amount(105, 10) == 11
+    assert purchase_tax_amount(250_000, 9) == 22_500
+    assert purchase_tax_amount(0, 10) == 0
+
+
+def test_purchase_form_shows_tax_percent_and_no_landed_option(client, authed):
+    page = client.get("/admin/purchases")
+    assert page.status_code == 200
+    assert 'name="tax_percent"' in page.text
+    assert "extra_cost_in_landed" not in page.text
+
+
+def test_tax_percent_is_saved_and_books_the_taxed_total(client, db_session, authed):
+    supplier = _make_supplier(db_session, name="مالیات‌دار")
+    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=5, name="کالای مالیات")
+
+    response = _add_purchase(
+        client, variant, supplier_id=str(supplier.id),
+        extra_cost="50000", tax_percent="۱۰",
+    )
+    assert response.status_code == 303
+
+    purchase = _latest_purchase(db_session)
+    assert purchase.tax_percent == 10
+    # 5 × 50,000 items + 50,000 shipping + 10% tax on the items.
+    assert purchase.total_cost == 325_000
+
+    balances = {row["supplier"].id: row for row in get_supplier_balances(db_session)}
+    assert balances[supplier.id]["invoiced"] == 325_000
+    assert balances[supplier.id]["owed"] == 325_000
+
+
+def test_tax_percent_can_be_changed_on_a_draft(client, db_session, authed):
+    supplier = _make_supplier(db_session, name="ویرایش مالیات")
+    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=5, name="کالای ویرایش مالیات")
+
+    _create_draft(client, variant, supplier_id=str(supplier.id))
+    purchase = _latest_purchase(db_session)
+    assert purchase.total_cost == 250_000
+
+    updated = _post(client, f"/admin/purchases/{purchase.id}/update", {
+        "supplier_id": str(supplier.id),
+        "purchase_variant_0": str(variant.id),
+        "extra_cost": "0",
+        "tax_percent": "۹",
+    })
+    assert updated.status_code == 303
+
+    db_session.refresh(purchase)
+    assert purchase.tax_percent == 9
+    assert purchase.total_cost == 272_500  # 250,000 + 9% tax
+
+
+def test_purchase_receipt_prints_the_product_name_once(client, db_session, authed):
+    supplier = _make_supplier(db_session, name="رسید بدون تکرار")
+    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=1, name="تیشرت آبی")
+    variant.size = "35"
+    variant.color = "آبی آسمانی"
+    db_session.commit()
+
+    _add_purchase(client, variant, supplier_id=str(supplier.id))
+    purchase = _latest_purchase(db_session)
+    label = "تیشرت آبی - سایز 35 - آبی آسمانی"
+
+    receipt = client.get(f"/admin/purchases/{purchase.id}/print")
+    assert receipt.status_code == 200
+    assert label in receipt.text
+    assert receipt.text.count("تیشرت آبی") == 1
+
+    detail = client.get(f"/admin/purchases/{purchase.id}")
+    assert detail.status_code == 200
+    assert detail.text.count("تیشرت آبی") == 1
+
+
+def test_purchase_receipt_shows_tax_supplier_profile_and_shop_contact(client, db_session, authed):
+    supplier = _make_supplier(
+        db_session, name="پوشاک آوا", supplier_type="تولیدی",
+        owner_first_name="مریم", owner_last_name="رضایی",
+        phone="09121234567", landline="02112345678", city="تهران",
+        address="خیابان ولیعصر، پلاک ۱۰", economic_code="12345678901234",
+        sheba="IR123456789012345678901234",
+    )
+    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=2, name="کالای رسید")
+    _add_purchase(
+        client, variant, supplier_id=str(supplier.id),
+        extra_cost="10000", tax_percent="10", note="فاکتور رسید",
+    )
+    purchase = _latest_purchase(db_session)
+    assert purchase.total_cost == 120_000  # 100,000 + 10,000 + 10% tax
+
+    db_session.add(Settings(key="store_address", value="نشانی فروشگاه تست"))
+    db_session.add(Settings(key="store_phone", value="02122223333"))
+    db_session.commit()
+    from services.store import invalidate_store_cache
+    invalidate_store_cache()
+
+    receipt = client.get(f"/admin/purchases/{purchase.id}/print")
+    assert receipt.status_code == 200
+    for expected in (
+        "پوشاک آوا", "تولیدی", "مریم رضایی", "09121234567", "02112345678",
+        "تهران", "خیابان ولیعصر، پلاک ۱۰", "12345678901234",
+        "IR123456789012345678901234", "نشانی فروشگاه تست", "02122223333",
+        "مالیات (10٪)", "10,000", "120,000",
+    ):
+        assert expected in receipt.text, expected
 
 
 def test_finalizing_books_full_credit_without_touching_the_till(client, db_session, authed):

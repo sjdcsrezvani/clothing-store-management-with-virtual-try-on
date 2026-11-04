@@ -10,70 +10,89 @@
 {% include 'partials/page_header.html' %}
 {% if msg %}<div class="screen-only"><div class="toaster-flash" data-toast data-toast-type="success" role="status">{{ msg }}</div></div>{% endif %}
 {% if err %}<div class="screen-only"><div class="toaster-flash" data-toast data-toast-type="error" role="alert">{{ err }}</div></div>{% endif %}
-<div class="card hire-narrow">
-  <div class="section-heading"><div><span class="eyebrow">کسب‌وکار</span><h3>آمادگی قرارداد</h3></div></div>
-  {% if business_missing %}
-  <p class="muted">برای چاپ قرارداد این موارد لازم است:</p>
-  <ul>
-  {% for label, link in business_missing %}
-    <li>{{ label }}</li>
-  {% endfor %}
-  </ul>
-  {% else %}
-  <p><span class="badge badge-available">آماده چاپ</span> <span class="muted">هر سه قلم هویتی کامل است.</span></p>
-  {% endif %}
-</div>
-<form method="post" action="/admin/owner-profile" enctype="multipart/form-data">
-<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-<div class="card hire-narrow">
-  <div class="section-heading"><div><span class="eyebrow">هویت</span><h3>مشخصات مالک</h3></div></div>
-  <div class="hire-grid">
-  <label class="hire-field">نام و نام خانوادگی مالک <span class="muted">(الزامی)</span><input name="owner_full_name" autocomplete="name" value="{{ owner_settings.get('owner_full_name', '') }}" required></label>
-  <label class="hire-field">کد ملی / شناسه ملی<input name="owner_national_id" inputmode="numeric" maxlength="10" value="{{ owner_settings.get('owner_national_id', '') }}" inputmode="numeric" dir="ltr"></label>
-  <label class="hire-field">تلفن<input name="owner_phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="11" value="{{ owner_settings.get('owner_phone', '') }}" dir="ltr"></label>
-  <label class="hire-field">ایمیل<input type="email" name="owner_email" autocomplete="email" value="{{ owner_settings.get('owner_email', '') }}" dir="ltr"></label>
+
+<div class="owner-shell">
+  <div class="owner-ready{% if not business_missing %} is-ready{% endif %}">
+    {% if business_missing %}
+    <span class="owner-ready-title">برای چاپ قرارداد این موارد لازم است:</span>
+    <span class="owner-ready-chips">
+      {% for label, link in business_missing %}
+      <span class="owner-ready-chip">{{ label }}</span>
+      {% endfor %}
+    </span>
+    {% else %}
+    <span class="badge badge-available">آماده چاپ</span>
+    <span class="muted">هر سه قلم هویتی کامل است.</span>
+    {% endif %}
   </div>
-</div>
-<div class="card hire-narrow">
-  <div class="section-heading"><div><span class="eyebrow">کسب‌وکار</span><h3>مشخصات فروشگاه</h3></div></div>
-  <div class="hire-grid">
-  {% if owner_settings.get('owner_logo_path') %}
-  <p class="form-span-2"><img src="{{ owner_settings.get('owner_logo_path') }}" alt="لوگوی فروشگاه" style="max-height: 72px;"><br><label class="check-row"><input type="checkbox" name="remove_logo" value="1"> حذف لوگو</label></p>
-  {% endif %}
-  <div class="hire-field"><span>لوگوی فروشگاه</span>
-    <div class="image-field" data-image-field>
-      <label class="image-drop" for="owner-logo">
-        <span class="image-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></span>
-        <span class="image-drop-copy"><strong>انتخاب لوگو</strong><small>کلیک کنید یا عکس را اینجا رها کنید · JPG، PNG، WebP</small></span>
-        <input class="image-input" type="file" id="owner-logo" name="logo" accept="image/png,image/jpeg,image/webp">
-      </label>
-      <div class="image-picked" data-image-picked hidden>
-        <div class="image-picked-grid" data-image-picked-grid></div>
-        <button type="button" class="image-clear" data-image-clear>حذف انتخاب</button>
+
+  <form method="post" action="/admin/owner-profile" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="card owner-card">
+    <section class="owner-section">
+      <div class="section-heading"><div><span class="eyebrow">هویت</span><h3>مشخصات مالک</h3></div></div>
+      <div class="owner-grid">
+        <label class="hire-field"><span class="owner-label">نام و نام خانوادگی مالک <span class="muted">(الزامی)</span></span><input name="owner_full_name" autocomplete="name" value="{{ owner_settings.get('owner_full_name', '') }}" required></label>
+        <label class="hire-field"><span class="owner-label">کد ملی / شناسه ملی</span><input name="owner_national_id" inputmode="numeric" maxlength="10" value="{{ owner_settings.get('owner_national_id', '') }}" dir="ltr"></label>
+        <label class="hire-field"><span class="owner-label">تلفن</span><input name="owner_phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="11" value="{{ owner_settings.get('owner_phone', '') }}" dir="ltr"></label>
+        <label class="hire-field"><span class="owner-label">ایمیل</span><input type="email" name="owner_email" autocomplete="email" value="{{ owner_settings.get('owner_email', '') }}" dir="ltr"></label>
       </div>
+    </section>
+
+    <section class="owner-section">
+      <div class="section-heading"><div><span class="eyebrow">کسب‌وکار</span><h3>مشخصات فروشگاه</h3></div></div>
+      <div class="owner-business-layout">
+        <div class="owner-logo-panel">
+          <span class="owner-logo-title">لوگوی فروشگاه</span>
+          {% if owner_settings.get('owner_logo_path') %}
+          <img class="owner-logo-preview" src="{{ owner_settings.get('owner_logo_path') }}" alt="لوگوی فروشگاه">
+          {% endif %}
+          <div class="image-field" data-image-field>
+            <label class="image-drop" for="owner-logo">
+              <span class="image-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></span>
+              <span class="image-drop-copy"><strong>{% if owner_settings.get('owner_logo_path') %}تغییر لوگو{% else %}انتخاب لوگو{% endif %}</strong><small>کلیک کنید یا عکس را اینجا رها کنید · JPG، PNG، WebP</small></span>
+              <input class="image-input" type="file" id="owner-logo" name="logo" accept="image/png,image/jpeg,image/webp">
+            </label>
+            <div class="image-picked" data-image-picked hidden>
+              <div class="image-picked-grid" data-image-picked-grid></div>
+              <button type="button" class="image-clear" data-image-clear>حذف انتخاب</button>
+            </div>
+          </div>
+          {% if owner_settings.get('owner_logo_path') %}
+          <label class="check-row"><input type="checkbox" name="remove_logo" value="1"> حذف لوگو</label>
+          {% endif %}
+          <small class="field-help">در سربرگ قرارداد و رسید چاپ می‌شود؛ اختیاری</small>
+        </div>
+
+        <div class="owner-grid">
+          <label class="hire-field"><span class="owner-label">نام کسب‌وکار <span class="muted">(الزامی برای قرارداد)</span></span><input name="owner_business_name" value="{{ owner_settings.get('owner_business_name', store.name) }}"></label>
+          <label class="hire-field"><span class="owner-label">شماره ثبت کسب‌وکار</span><input name="owner_business_registration" value="{{ owner_settings.get('owner_business_registration', '') }}" dir="ltr"></label>
+          <label class="hire-field"><span class="owner-label">حساب بانکی کسب‌وکار</span><input name="owner_bank_account" value="{{ owner_settings.get('owner_bank_account', '') }}" dir="ltr" inputmode="numeric"></label>
+          <label class="hire-field"><span class="owner-label">شبای کسب‌وکار</span><input name="owner_bank_iban" value="{{ owner_settings.get('owner_bank_iban', '') }}" dir="ltr" inputmode="numeric"></label>
+          <label class="hire-field is-wide"><span class="owner-label">نشانی مالک / کسب‌وکار <span class="muted">(الزامی برای قرارداد)</span></span><textarea name="owner_address" rows="3">{{ owner_settings.get('owner_address', '') }}</textarea></label>
+        </div>
+      </div>
+    </section>
+
+    <section class="owner-section">
+      <div class="section-heading"><div><span class="eyebrow">امضا</span><h3>امضاکننده اسناد</h3></div></div>
+      <div class="owner-grid">
+        <label class="hire-field"><span class="owner-label">امضاکننده</span><select name="owner_signatory_user_id" aria-describedby="owner-sig-help"><option value="">مالک (پیش‌فرض)</option>{% for person in staffers %}<option value="{{ person.id }}" {% if owner_settings.get('owner_signatory_user_id', '') == person.id|string %}selected{% endif %}>{{ person.full_name or person.username }} ({{ person.username }})</option>{% endfor %}</select><small class="field-help" id="owner-sig-help">نام و امضای این نفر پای قرارداد و رسید می‌نشیند</small></label>
+        <label class="hire-field"><span class="owner-label">عنوان امضاکننده</span><input name="owner_signatory_title" value="{{ owner_settings.get('owner_signatory_title', 'کارفرما') }}"></label>
+      </div>
+    </section>
+
+    <div class="settings-savebar owner-savebar">
+      <button class="btn btn-primary" type="submit">ذخیره هویت کسب‌وکار</button>
     </div>
-    <small class="field-help">در سربرگ قرارداد و رسید چاپ می‌شود؛ اختیاری</small>
   </div>
-  <label class="hire-field">نام کسب‌وکار <span class="muted">(الزامی برای قرارداد)</span><input name="owner_business_name" value="{{ owner_settings.get('owner_business_name', store.name) }}"></label>
-  <label class="hire-field">شماره ثبت کسب‌وکار<input name="owner_business_registration" value="{{ owner_settings.get('owner_business_registration', '') }}" dir="ltr"></label>
-  <label class="hire-field">حساب بانکی کسب‌وکار<input name="owner_bank_account" value="{{ owner_settings.get('owner_bank_account', '') }}" dir="ltr" inputmode="numeric"></label>
-  <label class="hire-field">شبای کسب‌وکار<input name="owner_bank_iban" value="{{ owner_settings.get('owner_bank_iban', '') }}" dir="ltr" inputmode="numeric"></label>
-  <label class="hire-field">نشانی مالک / کسب‌وکار <span class="muted">(الزامی برای قرارداد)</span><textarea name="owner_address" rows="3">{{ owner_settings.get('owner_address', '') }}</textarea></label>
-  </div>
+  </form>
+
+  {% if feed %}
+  <details class="card owner-history">
+    <summary>آخرین تغییرها</summary>
+    <div class="table-scroll"><table class="data-table"><thead><tr><th scope="col">زمان</th><th scope="col">ثبت‌کننده</th><th scope="col">شرح</th></tr></thead><tbody>{% for entry in feed %}<tr><td>{{ jalali_str(entry.created_at) }}</td><td>{{ actor_names.get(entry.staff_user_id, '—') }}</td><td>{{ entry.detail or '—' }}</td></tr>{% endfor %}</tbody></table></div>
+  </details>
+  {% endif %}
 </div>
-<div class="card hire-narrow">
-  <div class="section-heading"><div><span class="eyebrow">امضا</span><h3>امضاکننده اسناد</h3></div></div>
-  <div class="hire-grid">
-  <label class="hire-field">امضاکننده<select name="owner_signatory_user_id" aria-describedby="owner-sig-help"><option value="">مالک (پیش‌فرض)</option>{% for person in staffers %}<option value="{{ person.id }}" {% if owner_settings.get('owner_signatory_user_id', '') == person.id|string %}selected{% endif %}>{{ person.full_name or person.username }} ({{ person.username }})</option>{% endfor %}</select><small class="field-help" id="owner-sig-help">نام و امضای این نفر پای قرارداد و رسید می‌نشیند</small></label>
-  <label class="hire-field">عنوان امضاکننده<input name="owner_signatory_title" value="{{ owner_settings.get('owner_signatory_title', 'کارفرما') }}"></label>
-  </div>
-  <div class="staff-actions"><button class="btn btn-primary" type="submit">ذخیره هویت کسب‌وکار</button></div>
-</div>
-</form>
-{% if feed %}
-<div class="card hire-narrow">
-  <div class="section-heading"><div><span class="eyebrow">سابقه</span><h3>آخرین تغییرها</h3></div></div>
-  <div class="table-scroll"><table class="data-table"><thead><tr><th scope="col">زمان</th><th scope="col">ثبت‌کننده</th><th scope="col">شرح</th></tr></thead><tbody>{% for entry in feed %}<tr><td>{{ jalali_str(entry.created_at) }}</td><td>{{ actor_names.get(entry.staff_user_id, '—') }}</td><td>{{ entry.detail or '—' }}</td></tr>{% endfor %}</tbody></table></div>
-</div>
-{% endif %}
 {% endblock %}

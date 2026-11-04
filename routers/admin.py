@@ -38,14 +38,12 @@ from services._common import (
     get_birthday_target,
     get_setting_int as get_discount_setting,
     get_setting_int,
-    get_setting_bool,
     jalali_age,
     jalali_str,
     amount_to_words,
     page_arg,
     int_arg,
     parse_jalali_input,
-    parse_jalali_input_end,
     rel_time,
     jalali_day_label,
     highlight,
@@ -63,7 +61,6 @@ from services.customers import (
     archive_customer,
     birthday_fields,
     build_customer_rows,
-    bulk_tag_customers,
     can_delete_customer,
     customer_overview,
     customer_profile,
@@ -84,7 +81,7 @@ from services.backup import (
     backup_download_path, backup_schema_version, backups_storage,
     create_backup, delete_backup, download_all_bytes, latest_backup,
     list_backups, normalize_every_days, normalize_keep_count, recheck_backup,
-    restore_live_from, uploads_tarball_for, verify_cached,
+    restore_live_from, shelve_uploaded_backup, uploads_tarball_for, verify_cached,
 )
 from services.dashboard import dashboard_overview
 from services.pos_reconciliation import unresolved_transactions
@@ -498,31 +495,6 @@ async def admin_customers_export(
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="customers_{today}.csv"'},
     )
-
-
-@router.post("/customers/bulk-tag", response_class=HTMLResponse)
-async def admin_customers_bulk_tag(request: Request, db: Session = Depends(get_db)):
-    guard = require_html_role(request, db, "manager")
-    if not hasattr(guard, "role"):
-        return guard
-    form = await request.form()
-    ids = [int(raw) for raw in form.getlist("ids") if str(raw).isdigit()]
-    tag = str(form.get("tag", "") or "")
-    remove = str(form.get("mode", "") or "") == "remove"
-    try:
-        changed = bulk_tag_customers(db, ids, tag, remove=remove) if ids else 0
-    except ValueError:
-        return RedirectResponse(
-            url="/admin/customers?err=برچسب نامعتبر است.", status_code=303)
-    if changed:
-        db.commit()
-        verb = "برداشته شد" if remove else "افزوده شد"
-        message = f"برچسب {TAG_LABELS.get(tag, tag)} برای {changed} مشتری {verb}."
-    else:
-        message = "مشتری‌ای برای برچسب‌زدن انتخاب نشده بود."
-    log_action(db, "customer_bulk_tag", message, request=request, after={"count": changed, "tag": tag})
-    return RedirectResponse(
-        url="/admin/customers?msg=" + quote_plus(message), status_code=303)
 
 
 @router.get("/customers/{customer_id}", response_class=HTMLResponse)
@@ -2603,6 +2575,8 @@ async def admin_backups(request: Request, db: Session = Depends(get_db)):
             pair_size = None
         row["uploads_size_fa"] = (
             format_bytes_fa(pair_size) if pair_size is not None else "")
+        row["includes_uploads"] = pair_size is not None
+        row["created_fa"] = jalali_str(row.get("created") or row.get("mtime"), False)
         version = backup_schema_version(BACKUP_DIR / backup["name"])
         row["schema_newer"] = version is not None and version > MIGRATION_VERSION
         backups.append(row)
@@ -2633,7 +2607,6 @@ async def admin_backups(request: Request, db: Session = Depends(get_db)):
         "keep_options": [(option, to_persian_digits(str(option)))
                          for option in (5, 10, 15, 20, 30)],
         "keep_count": keep,
-        "restore_snapshot": get_setting_bool(db, "restore_snapshot", True),
         "shelf_count": to_persian_digits(str(count)),
         "shelf_size": format_bytes_fa(total),
     })
@@ -2648,10 +2621,8 @@ async def admin_backup_schedule(request: Request, db: Session = Depends(get_db))
     form = await request.form()
     every = normalize_every_days(form.get("backup_every_days"))
     keep = normalize_keep_count(form.get("backup_keep_count"))
-    snapshot = str(form.get("restore_snapshot") or "") == "1"
     for key, value in (("backup_every_days", str(every)),
-                       ("backup_keep_count", str(keep)),
-                       ("restore_snapshot", "1" if snapshot else "0")):
+                       ("backup_keep_count", str(keep))):
         setting = db.query(Settings).filter(Settings.key == key).first()
         if setting:
             setting.value = value
@@ -2711,10 +2682,6 @@ async def admin_backups_download_all(request: Request, db: Session = Depends(get
     )
 
 
-# Uploaded database files land here first: validated, never trusted.
-BACKUP_UPLOAD_MAX_BYTES = 200 * 1024 * 1024
-
-
 @router.post("/backups/restore", response_class=HTMLResponse)
 async def admin_backup_restore(request: Request, db: Session = Depends(get_db)):
     """Bring the shop back to one of its backups: validate, optionally
@@ -2730,11 +2697,11 @@ async def admin_backup_restore(request: Request, db: Session = Depends(get_db)):
     path = backup_download_path(str(form.get("name") or ""))
     if path is None:
         return RedirectResponse(url="/admin/backups?err=فایل یافت نشد.", status_code=303)
-    snapshot = get_setting_bool(db, "restore_snapshot", True)
-    keep = normalize_keep_count(
-        get_setting_int(db, "backup_keep_count", BACKUP_KEEP_DEFAULT))
+    # The form posts a hidden 0 and the checkbox 1: an unchecked box would
+    # otherwise arrive missing and read as "yes".
+    snapshot = str(form.get("restore_snapshot") or "0") == "1"
     ok, message = await asyncio.to_thread(
-        restore_live_from, path, make_snapshot=snapshot, keep_count=keep)
+        restore_live_from, path, make_snapshot=snapshot)
     if ok:
         return RedirectResponse(url=f"/admin/?msg={message}", status_code=303)
     return RedirectResponse(url=f"/admin/backups?err={message}", status_code=303)
@@ -2742,54 +2709,21 @@ async def admin_backup_restore(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/backups/upload", response_class=HTMLResponse)
 async def admin_backup_upload(request: Request, db: Session = Depends(get_db)):
-    """Shelve a database file from elsewhere: validated, renamed onto the
-    shelf, pruned never — the next backup pass does that. Restoring it is a
-    second, deliberate step from its own row."""
+    """Shelve a database or a full zip from elsewhere. Nothing live changes:
+    the file waits on the shelf until the restore card picks it."""
     guard = require_html_role(request, db, "owner")
     if not hasattr(guard, "role"):
         return guard
     form = await request.form()
     upload = form.get("backup_file")
     filename = getattr(upload, "filename", "") or ""
-    if not filename.lower().endswith(".db"):
+    data = await upload.read() if upload is not None else b""
+    ok, message, name = shelve_uploaded_backup(data, filename)
+    if not ok:
         return RedirectResponse(
-            url="/admin/backups?err=فقط فایل ‎.db‎ پذیرفته می‌شود.", status_code=303)
-    data = await upload.read()
-    if not data or len(data) > BACKUP_UPLOAD_MAX_BYTES:
-        return RedirectResponse(
-            url="/admin/backups?err=فایل خالی یا بیش از حد بزرگ است.", status_code=303)
-    if not data.startswith(b"SQLite format 3\x00"):
-        return RedirectResponse(
-            url="/admin/backups?err=این فایل دیتابیس نیست.", status_code=303)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    staging = BACKUP_DIR / f".upload_{stamp}.db"
-    try:
-        BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-        staging.write_bytes(data)
-        from services.operations import verify_sqlite_backup
-        if not verify_sqlite_backup(staging).get("verified"):
-            return RedirectResponse(
-                url="/admin/backups?err=فایل خراب است؛ بارگذاری نشد.", status_code=303)
-        import sqlite3
-        with sqlite3.connect(f"file:{staging}?mode=ro", uri=True) as connection:
-            tables = {row[0] for row in connection.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'")}
-        if not {"sales", "customers"} <= tables:
-            return RedirectResponse(
-                url="/admin/backups?err=این فایل فروشگاه نیست.", status_code=303)
-        dest = BACKUP_DIR / f"referral_{stamp}.db"
-        staging.rename(dest)
-    except OSError:
-        return RedirectResponse(
-            url="/admin/backups?err=نوشتن فایل ناموفق بود.", status_code=303)
-    finally:
-        try:
-            if staging.exists():
-                staging.unlink()
-        except OSError:
-            pass
+            url=f"/admin/backups?err={message}", status_code=303)
     return RedirectResponse(
-        url="/admin/backups?msg=فایل پذیرفته شد — برای بازیابی، دکمه بازیابی همان ردیف.",
+        url=f"/admin/backups?msg={message} «{name}» در کارت بازیابی آماده است.",
         status_code=303)
 
 
@@ -3106,6 +3040,34 @@ LOGS_PAGE_SIZE = 100
 LOGS_CSV_HEADERS = ["زمان", "عملیات", "کننده", "پیوند", "آی‌پی", "جزئیات"]
 
 
+def _logs_bound(date_raw: str, time_raw: str, *, end: bool):
+    """A Jalali date + optional HH:MM as a UTC instant for the query.
+
+    The table prints local time, so the filter reads the same clock: the
+    bound is built in local time and only then converted to UTC. An empty
+    or unreadable time falls back to the whole day (00:00 or 23:59:59).
+    Returns (bound, echoed HH:MM).
+    """
+    day = parse_jalali_input(date_raw)
+    if day is None:
+        return None, ""
+    cleaned = to_english_digits(str(time_raw or "")).strip()
+    hour, minute = (23, 59) if end else (0, 0)
+    echoed = ""
+    if cleaned:
+        try:
+            hour_s, minute_s = cleaned.replace(".", ":").split(":")
+            hour, minute = int(hour_s), int(minute_s)
+            if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                raise ValueError
+            echoed = f"{hour:02d}:{minute:02d}"
+        except (TypeError, ValueError):
+            hour, minute = (23, 59) if end else (0, 0)
+    local = day.replace(tzinfo=None, hour=hour, minute=minute,
+                        second=59 if end else 0)
+    return local.astimezone(timezone.utc), echoed
+
+
 def _logs_filter_values(request: Request, db: Session) -> dict:
     """Cleaned audit-trail filters, shared by the page and the CSV export.
 
@@ -3119,6 +3081,8 @@ def _logs_filter_values(request: Request, db: Session) -> dict:
     action = (qp.get("action") or "").strip()
     date_from_raw = (qp.get("from") or "").strip()
     date_to_raw = (qp.get("to") or "").strip()
+    time_from_raw = (qp.get("from_time") or "").strip()
+    time_to_raw = (qp.get("to_time") or "").strip()
     aggregate_type = (qp.get("aggregate_type") or "").strip()[:50]
     event_type = (qp.get("event_type") or "").strip()[:60]
     search = (qp.get("q") or "").strip()[:100]
@@ -3134,10 +3098,10 @@ def _logs_filter_values(request: Request, db: Session) -> dict:
     actor_raw = (qp.get("actor") or "").strip()
     if actor_raw.isdigit():
         actor = db.query(StaffUser).filter(StaffUser.id == int(actor_raw)).first()
-    date_from = parse_jalali_input(date_from_raw)
+    date_from, time_from = _logs_bound(date_from_raw, time_from_raw, end=False)
     if date_from is None:
         date_from_raw = ""
-    date_to = parse_jalali_input_end(date_to_raw)
+    date_to, time_to = _logs_bound(date_to_raw, time_to_raw, end=True)
     if date_to is None:
         date_to_raw = ""
     return {
@@ -3145,7 +3109,9 @@ def _logs_filter_values(request: Request, db: Session) -> dict:
         "known_actions": known_actions, "search": search,
         "aggregate_type": aggregate_type, "event_type": event_type,
         "date_from": date_from, "date_from_raw": date_from_raw,
-        "date_to": date_to, "date_to_raw": date_to_raw, "offset": offset,
+        "date_to": date_to, "date_to_raw": date_to_raw,
+        "time_from": time_from, "time_to": time_to,
+        "offset": offset,
     }
 
 
@@ -3275,8 +3241,12 @@ async def admin_logs(request: Request, db: Session = Depends(get_db)):
         replay["q"] = filters["search"]
     if filters["date_from_raw"]:
         replay["from"] = filters["date_from_raw"]
+    if filters["time_from"]:
+        replay["from_time"] = filters["time_from"]
     if filters["date_to_raw"]:
         replay["to"] = filters["date_to_raw"]
+    if filters["time_to"]:
+        replay["to_time"] = filters["time_to"]
 
     if source == "events":
         base = _events_base_query(db, filters)
@@ -3358,11 +3328,14 @@ async def admin_logs(request: Request, db: Session = Depends(get_db)):
         "event_type": filters["event_type"],
         "date_from": filters["date_from_raw"],
         "date_to": filters["date_to_raw"],
+        "time_from": filters["time_from"],
+        "time_to": filters["time_to"],
         "filters_active": bool(
             filters["action"] or filters["actor"] is not None
             or filters["aggregate_type"] or filters["event_type"]
             or filters["search"]
-            or filters["date_from_raw"] or filters["date_to_raw"]),
+            or filters["date_from_raw"] or filters["date_to_raw"]
+            or filters["time_from"] or filters["time_to"]),
         "offset": offset,
         "has_more": has_more,
         "more_url": more_url,

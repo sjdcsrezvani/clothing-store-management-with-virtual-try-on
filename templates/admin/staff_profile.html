@@ -9,7 +9,7 @@
 <a class="btn btn-ghost" href="/admin/staff/{{ staff_user.id }}/contract" target="_blank" rel="noopener">چاپ قرارداد</a>
 {% endset %}
 {% include 'partials/page_header.html' %}
-<div class="card hire-narrow">
+<div class="card hire-wide">
   <div class="staff-profile-head">
     <h3>{{ staff_user.full_name or staff_user.username }}</h3>
     {% if staff_user.role == 'owner' %}<span class="badge badge-warning">مالک</span>{% elif staff_user.role == 'manager' %}<span class="badge badge-info">مدیر</span>{% else %}<span class="badge badge-none">صندوقدار</span>{% endif %}
@@ -27,31 +27,31 @@
 </div>
 
 {% if active_tab == 'overview' %}
-<div class="card hire-narrow">
+<div class="card hire-wide">
   <div class="section-heading"><div><span class="eyebrow">قرارداد</span><h3>وضعیت قرارداد</h3></div></div>
   <p>{% if staff_user.contract_term_months %}{{ contract_terms.get(staff_user.contract_term_months|string, '') }} · {% endif %}از {{ jalali_str(staff_user.hire_date, false) if staff_user.hire_date else '—' }} تا {{ jalali_str(staff_user.contract_end_date, false) if staff_user.contract_end_date else 'نامشخص (باز)' }}{% if contract_days_left is not none %} · <strong>{{ contract_days_left }} روز مانده</strong>{% endif %}</p>
 </div>
-<div class="card hire-narrow">
+<div class="card hire-wide">
   <div class="section-heading"><div><span class="eyebrow">عملکرد ماه {{ current_period }}</span><h3>فروش ثبت‌شده با شیفت ایشان</h3></div><span class="appearance-active">{{ performance.invoices }} فاکتور · {{ fmt(performance.revenue) }} تومان</span></div>
   <p class="muted">عملکرد صندوق ایشان در همین ماه؛ فروش کارتی و بدون شیفت در تحلیل فروش می‌ماند.</p>
 </div>
-<div class="card hire-narrow">
+<div class="card hire-wide">
   <div class="section-heading"><div><span class="eyebrow">مشخصات</span><h3>ویرایش اطلاعات پرسنلی</h3></div></div>
   <form method="post" action="/admin/staff/{{ staff_user.id }}" id="staff-overview-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="role" value="{{ staff_user.role }}">
-    <div class="hire-grid">
+    <div class="hire-grid is-split">
     <h4 class="form-span-2 muted">حساب ورود</h4>
-    <label class="hire-field">نام کاربری<input name="username" value="{{ staff_user.username }}" dir="ltr" required maxlength="100" autocomplete="off"><small class="field-help">نام ورود؛ تغییرش از ورود بعدی اعمال می‌شود.</small></label>
-    <label class="hire-field">رمز جدید<input name="password" type="password" minlength="6" autocomplete="new-password" placeholder="بدون تغییر"></label>
+    <label class="hire-field">نام کاربری<input type="text" name="username" value="{{ staff_user.username }}" dir="ltr" required maxlength="100" autocomplete="off"><small class="field-help">نام ورود؛ تغییرش از ورود بعدی اعمال می‌شود.</small></label>
+    <label class="hire-field">رمز جدید<input type="password" name="password" minlength="6" autocomplete="new-password" placeholder="بدون تغییر"></label>
     <h4 class="form-span-2 muted">مشخصات فردی</h4>
-    <label class="hire-field">نام کامل<input name="full_name" value="{{ staff_user.full_name or '' }}"></label>
+    <label class="hire-field">نام کامل<input type="text" name="full_name" value="{{ staff_user.full_name or '' }}"></label>
     <label class="hire-field">جنسیت<select name="gender"><option value="">انتخاب کنید</option><option value="male" {% if staff_user.gender == 'male' %}selected{% endif %}>مرد</option><option value="female" {% if staff_user.gender == 'female' %}selected{% endif %}>زن</option></select></label>
-    <label class="hire-field">کد پرسنلی<input name="employee_code" value="{{ staff_user.employee_code or '' }}"></label>
-    <label class="hire-field">کد ملی<input name="national_id" value="{{ staff_user.national_id or '' }}" inputmode="numeric" dir="ltr"></label>
-    <label class="hire-field">تلفن<input name="phone" value="{{ staff_user.phone or '' }}" inputmode="tel" dir="ltr"></label>
-    <label class="hire-field">ایمیل<input name="email" type="email" value="{{ staff_user.email or '' }}" dir="ltr"></label>
-    <label class="hire-field">عنوان شغلی<input name="job_title" value="{{ staff_user.job_title or '' }}"></label>
+    <label class="hire-field">کد پرسنلی<input type="text" name="employee_code" value="{{ staff_user.employee_code or '' }}"></label>
+    <label class="hire-field">کد ملی<input type="text" name="national_id" value="{{ staff_user.national_id or '' }}" inputmode="numeric" dir="ltr"></label>
+    <label class="hire-field">تلفن<input type="tel" name="phone" value="{{ staff_user.phone or '' }}" inputmode="tel" dir="ltr"></label>
+    <label class="hire-field">ایمیل<input type="email" name="email" value="{{ staff_user.email or '' }}" dir="ltr"></label>
+    <label class="hire-field">عنوان شغلی<input type="text" name="job_title" value="{{ staff_user.job_title or '' }}"></label>
     <label class="hire-field">سمت سازمانی<select name="position_id"><option value="">—</option>{% for position in positions %}<option value="{{ position.id }}" {% if staff_user.position_id == position.id %}selected{% endif %}>{{ position.title }}</option>{% endfor %}</select><small class="field-help">در قرارداد چاپ می‌شود · <a href="/admin/positions">مدیریت سمت‌ها</a></small></label>
     <label class="check-row"><input type="checkbox" name="insured" value="1" {% if staff_user.insured %}checked{% endif %}> بیمه تأمین اجتماعی</label>
     <input type="hidden" name="insured_present" value="1">
@@ -60,22 +60,22 @@
     {% from 'partials/numeric_input.html' import num with context %}
     <label class="hire-field">حقوق ماهانه (تومان){{ num('salary_amount', staff_user.salary_amount or 0) }}</label>
     <label class="hire-field">روز پرداخت ماهانه{{ num('salary_payment_day', staff_user.salary_payment_day or '') }}</label>
-    <label class="hire-field">تاریخ شروع<input class="persian-date-input" id="hire_date_{{ staff_user.id }}" name="hire_date" data-pdp-pair="#contract_end_date_{{ staff_user.id }}" placeholder="۱۴۰۵/۰۱/۰۱" value="{{ jalali_str(staff_user.hire_date, with_time=False) if staff_user.hire_date else '' }}"></label>
+    <label class="hire-field">تاریخ شروع<input type="text" class="persian-date-input" id="hire_date_{{ staff_user.id }}" name="hire_date" data-pdp-pair="#contract_end_date_{{ staff_user.id }}" placeholder="۱۴۰۵/۰۱/۰۱" value="{{ jalali_str(staff_user.hire_date, with_time=False) if staff_user.hire_date else '' }}"></label>
     <label class="hire-field">مدت قرارداد<select name="contract_term_months" aria-describedby="prof-term-help"><option value="">باز / بدون مدت</option>{% for months, label in contract_terms.items() %}<option value="{{ months }}" {% if staff_user.contract_term_months|string == months %}selected{% endif %}>{{ label }}</option>{% endfor %}</select><small class="field-help" id="prof-term-help">با تعیین مدت، پایان قرارداد از شروع + مدت ساخته می‌شود{% if contract_days_left is not none %}؛ {{ contract_days_left }} روز مانده{% endif %}</small>
     <p class="muted form-span-2" id="profile-contract-preview" aria-live="polite"></p>
-    <label class="hire-field">پایان قرارداد<input class="persian-date-input" id="contract_end_date_{{ staff_user.id }}" name="contract_end_date" placeholder="۱۴۰۵/۱۲/۲۹" value="{{ jalali_str(staff_user.contract_end_date, with_time=False) if staff_user.contract_end_date else '' }}"></label>
-    <label class="hire-field">تاریخ تولد<input class="persian-date-input" name="birth_date" placeholder="۱۳۷۰/۰۱/۰۱" value="{{ jalali_str(staff_user.birth_date, with_time=False) if staff_user.birth_date else '' }}"></label>
-    <label class="hire-field">تحصیلات<input name="education" value="{{ staff_user.education or '' }}"></label>
-    <label class="hire-field">برنامه کاری<input name="work_schedule" value="{{ staff_user.work_schedule or '' }}"></label>
-    <label class="hire-field">حساب بانکی<input name="bank_account" value="{{ staff_user.bank_account or '' }}" dir="ltr"></label>
+    <label class="hire-field">پایان قرارداد<input type="text" class="persian-date-input" id="contract_end_date_{{ staff_user.id }}" name="contract_end_date" placeholder="۱۴۰۵/۱۲/۲۹" value="{{ jalali_str(staff_user.contract_end_date, with_time=False) if staff_user.contract_end_date else '' }}"></label>
+    <label class="hire-field">تاریخ تولد<input type="text" class="persian-date-input" name="birth_date" placeholder="۱۳۷۰/۰۱/۰۱" value="{{ jalali_str(staff_user.birth_date, with_time=False) if staff_user.birth_date else '' }}"></label>
+    <label class="hire-field">تحصیلات<input type="text" name="education" value="{{ staff_user.education or '' }}"></label>
+    <label class="hire-field">برنامه کاری<input type="text" name="work_schedule" value="{{ staff_user.work_schedule or '' }}"></label>
+    <label class="hire-field">حساب بانکی<input type="text" name="bank_account" value="{{ staff_user.bank_account or '' }}" dir="ltr"></label>
     <h4 class="form-span-2 muted">بانکی و تماس</h4>
-    <label class="hire-field">شبا<input name="iban" value="{{ staff_user.iban or '' }}" dir="ltr"></label>
-    <label class="hire-field">نام مخاطب اضطراری<input name="emergency_name" value="{{ staff_user.emergency_name or '' }}"></label>
-    <label class="hire-field">نسبت<input name="emergency_relation" value="{{ staff_user.emergency_relation or '' }}" placeholder="مثلاً همسر، پدر"></label>
-    <label class="hire-field">تلفن اضطراری<input name="emergency_phone" value="{{ staff_user.emergency_phone or '' }}" inputmode="tel" dir="ltr"></label>
+    <label class="hire-field">شبا<input type="text" name="iban" value="{{ staff_user.iban or '' }}" dir="ltr"></label>
+    <label class="hire-field">نام مخاطب اضطراری<input type="text" name="emergency_name" value="{{ staff_user.emergency_name or '' }}"></label>
+    <label class="hire-field">نسبت<input type="text" name="emergency_relation" value="{{ staff_user.emergency_relation or '' }}" placeholder="مثلاً همسر، پدر"></label>
+    <label class="hire-field">تلفن اضطراری<input type="tel" name="emergency_phone" value="{{ staff_user.emergency_phone or '' }}" inputmode="tel" dir="ltr"></label>
     {% if staff_user.emergency_contact and not staff_user.emergency_name %}<p class="muted form-span-2">مخاطب قدیمی: {{ staff_user.emergency_contact }}</p>{% endif %}
-    <label class="hire-field">نشانی<textarea name="address" rows="3">{{ staff_user.address or '' }}</textarea></label>
-    <label class="hire-field">یادداشت<textarea name="notes" rows="3">{{ staff_user.notes or '' }}</textarea></label>
+    <label class="hire-field is-wide">نشانی<textarea name="address" rows="3">{{ staff_user.address or '' }}</textarea></label>
+    <label class="hire-field is-wide">یادداشت<textarea name="notes" rows="3">{{ staff_user.notes or '' }}</textarea></label>
     </div>
     <div class="staff-actions"><button class="btn btn-primary" type="submit">ذخیره اطلاعات</button></div>
   </form>
@@ -124,8 +124,8 @@
     {% if staff_user.role != 'owner' %}
     <fieldset class="hire-fieldset">
     <legend class="muted">سقف‌های فردی تخفیف</legend>
-    <label class="hire-field">سقف مبلغ تخفیف در هر فاکتور (تومان)<input name="max_discount_amount" inputmode="numeric" aria-describedby="prof-capamt-help" value="{{ staff_user.max_discount_amount if staff_user.max_discount_amount is not none else '' }}" placeholder="پیش‌فرض نقش"><small class="field-help" id="prof-capamt-help">خالی یعنی سقف نقش (<bdi>{{ fmt(role_discount_limits.amount) }} تومان</bdi>)؛ کمتر هم می‌شود، بیشتر نه</small></label>
-    <label class="hire-field">سقف درصد تخفیف در هر فاکتور<input name="max_discount_percent" inputmode="numeric" aria-describedby="prof-cappct-help" value="{{ staff_user.max_discount_percent if staff_user.max_discount_percent is not none else '' }}" placeholder="پیش‌فرض نقش"><small class="field-help" id="prof-cappct-help">خالی یعنی سقف نقش (<bdi>{{ role_discount_limits.percent }}٪</bdi>)؛ کمتر هم می‌شود، بیشتر نه</small></label>
+    <label class="hire-field">سقف مبلغ تخفیف در هر فاکتور (تومان)<input type="text" name="max_discount_amount" inputmode="numeric" aria-describedby="prof-capamt-help" value="{{ staff_user.max_discount_amount if staff_user.max_discount_amount is not none else '' }}" placeholder="پیش‌فرض نقش"><small class="field-help" id="prof-capamt-help">خالی یعنی سقف نقش (<bdi>{{ fmt(role_discount_limits.amount) }} تومان</bdi>)؛ کمتر هم می‌شود، بیشتر نه</small></label>
+    <label class="hire-field">سقف درصد تخفیف در هر فاکتور<input type="text" name="max_discount_percent" inputmode="numeric" aria-describedby="prof-cappct-help" value="{{ staff_user.max_discount_percent if staff_user.max_discount_percent is not none else '' }}" placeholder="پیش‌فرض نقش"><small class="field-help" id="prof-cappct-help">خالی یعنی سقف نقش (<bdi>{{ role_discount_limits.percent }}٪</bdi>)؛ کمتر هم می‌شود، بیشتر نه</small></label>
     </fieldset>
     {% endif %}
     {% if staff_user.role != 'owner' %}<div class="staff-actions"><button class="btn btn-primary" type="submit">ذخیره کلیدها</button></div>{% endif %}
@@ -146,7 +146,7 @@
   <form method="post" action="/admin/staff/{{ staff_user.id }}/salary" hx-boost="false" data-confirm="پرداخت حقوق ثبت و سند هزینه ماهانه ساخته می‌شود. ادامه؟" data-confirm-title="ثبت حقوق؟" data-confirm-ok="ثبت حقوق">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="hire-grid">
-    <label class="hire-field">ماه پرداخت (شمسی)<input name="period_key" id="salary-period-input" inputmode="numeric" aria-describedby="prof-period-help" placeholder="1405-06" maxlength="7" dir="ltr" required><small class="field-help" id="prof-period-help">سال چهاررقمی، خط‌تیره، ماه دو رقمی — مثل 1405-06. فقط ماه کامل‌شده.</small></label>
+    <label class="hire-field">ماه پرداخت (شمسی)<input type="text" name="period_key" id="salary-period-input" inputmode="numeric" aria-describedby="prof-period-help" placeholder="1405-06" maxlength="7" dir="ltr" required><small class="field-help" id="prof-period-help">سال چهاررقمی، خط‌تیره، ماه دو رقمی — مثل 1405-06. فقط ماه کامل‌شده.</small></label>
     <div class="staff-actions" role="group" aria-label="ماه‌های اخیر">
       {% for month in closed_months %}
       <button type="button" class="btn btn-sm btn-ghost" data-salary-month="{{ month }}">{{ month }}</button>
@@ -171,7 +171,7 @@
     <button type="button" class="btn btn-ghost" id="salary-item-add">افزودن قلم</button>
     <p class="muted">کسورات و پیش‌پرداخت از حقوق کم می‌کند؛ اضافه‌کاری و پاداش به آن اضافه می‌کند.</p>
     <p class="muted" id="salary-math-preview" aria-live="polite"></p>
-    <label class="hire-field">توضیح<input name="note"></label>
+    <label class="hire-field">توضیح<input type="text" name="note"></label>
     </div>
     <div class="staff-actions"><button class="btn btn-success" type="submit">ثبت حقوق و چاپ رسید</button></div>
   </form>
@@ -350,9 +350,9 @@
   <form method="post" action="/admin/staff/{{ staff_user.id }}/attendance">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="hire-grid">
-    <label class="hire-field">روز<input class="persian-date-input" name="day" placeholder="۱۴۰۵/۰۱/۰۱" value="{{ today_jalali }}"></label>
+    <label class="hire-field">روز<input type="text" class="persian-date-input" name="day" placeholder="۱۴۰۵/۰۱/۰۱" value="{{ today_jalali }}"></label>
     <label class="hire-field">وضعیت<select name="status">{% for value, label in attendance_statuses.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
-    <label class="hire-field">یادداشت<input name="note" maxlength="200"></label>
+    <label class="hire-field">یادداشت<input type="text" name="note" maxlength="200"></label>
     </div>
     <div class="staff-actions"><button class="btn btn-primary" type="submit">ثبت حضور</button></div>
   </form>

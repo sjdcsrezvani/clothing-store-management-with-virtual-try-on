@@ -20,12 +20,19 @@ logger = logging.getLogger(__name__)
 BACKUP_DIR = Path("backups")
 KEEP_COUNT = 30
 _BACKUP_RE = re.compile(r"^referral_\d{8}_\d{6}(?:_\d+)?\.db$")
+_BACKUP_STAMP_RE = re.compile(r"^referral_(\d{8})_(\d{6})(?:_\d+)?\.db$")
 
 # Every database backup pairs with an uploads tarball of the same stem:
 # referral_20240101_020000.db <-> referral_20240101_020000_uploads.tar.gz
 # A backup without its tarball (older rows, bare uploads) restores DB-only.
 UPLOADS_DIR = Path("static/uploads")
 _UPLOADS_TARBALL_SUFFIX = "_uploads.tar.gz"
+
+# What the upload form will accept. The database is small; a zip may carry the
+# uploads tree too, so it gets a larger allowance. Both are capped before any
+# bytes are written.
+UPLOAD_MAX_BYTES = 200 * 1024 * 1024
+UPLOAD_ZIP_MAX_BYTES = 500 * 1024 * 1024
 
 # The owner picks the cadence, not the clock: automatic backups run every
 # N days (at the 2 AM UTC pass), keeping the newest K files.
@@ -43,9 +50,10 @@ def _db_path() -> Path | None:
     return Path(DATABASE_URL[len("sqlite:///"):])
 
 
-def create_backup(keep_count: int | None = None) -> str | None:
+def create_backup(keep_count: int | None = None, *, prune: bool = True) -> str | None:
     """Snapshot the live database into backups/. Returns the new file path or
-    None on failure. Prunes old backups, keeping the newest keep_count."""
+    None on failure. Prunes old backups, keeping the newest keep_count, unless
+    ``prune`` is false (a pre-restore snapshot must not delete its target)."""
     src = _db_path()
     if not src or not src.exists():
         logger.warning("Backup skipped: database file not found at %s", src)
@@ -80,7 +88,8 @@ def create_backup(keep_count: int | None = None) -> str | None:
         pair = archive_uploads(dest)
         if pair is None:
             logger.warning("Backup %s has no uploads tarball", dest.name)
-        _prune(keep_count)
+        if prune:
+            _prune(keep_count)
         logger.info("Backup created: %s", dest)
         return str(dest)
     except Exception as e:
@@ -113,21 +122,39 @@ def _prune(keep_count: int | None = None) -> None:
                 pass
 
 
+def _backup_datetime(name: str) -> datetime | None:
+    """The wall-clock stamp written into a backup filename, if it has one."""
+    match = _BACKUP_STAMP_RE.match(name)
+    if not match:
+        return None
+    try:
+        return datetime.strptime(match.group(1) + match.group(2), "%Y%m%d%H%M%S")
+    except ValueError:
+        return None
+
+
 def list_backups() -> list[dict]:
-    """Backup files sorted newest-first, with size + mtime for the admin page."""
+    """Backup files sorted newest-first, with size + dates for the admin page.
+
+    ``created`` comes from the backup's own name, so a copy brought from
+    elsewhere keeps the date of the data it holds; ``mtime`` stays the copy's
+    arrival time for the scheduling clock.
+    """
     items = []
     for f in BACKUP_DIR.glob("referral_*.db"):
         if not _BACKUP_RE.match(f.name):
             continue
         stat = f.stat()
         metadata = verify_sqlite_backup(f)
+        created = _backup_datetime(f.name) or datetime.fromtimestamp(stat.st_mtime)
         items.append({
             "name": f.name,
             "size": stat.st_size,
             "mtime": datetime.fromtimestamp(stat.st_mtime),
+            "created": created,
             **metadata,
         })
-    items.sort(key=lambda i: i["mtime"], reverse=True)
+    items.sort(key=lambda i: (i["created"], i["mtime"]), reverse=True)
     return items
 
 
@@ -350,6 +377,147 @@ def recheck_backup(name: str) -> dict | None:
     return fresh
 
 
+def _validate_sqlite_upload(data: bytes) -> bool:
+    """A file is a shop database only if it opens clean and owns the tables."""
+    if not data.startswith(b"SQLite format 3\x00"):
+        return False
+    import os
+    import tempfile
+    fd, temp_name = tempfile.mkstemp(suffix=".db")
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+        if not verify_sqlite_backup(temp_name).get("verified"):
+            return False
+        with sqlite3.connect(f"file:{temp_name}?mode=ro", uri=True) as connection:
+            tables = {row[0] for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+        return {"sales", "customers"} <= tables
+    except (OSError, sqlite3.Error):
+        return False
+    finally:
+        try:
+            Path(temp_name).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _validate_tarball_upload(data: bytes) -> bool:
+    """Only an ``uploads/`` tree is accepted; no absolute or parent paths."""
+    import io
+    import tarfile
+    try:
+        with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
+            members = archive.getmembers()
+    except (tarfile.TarError, OSError):
+        return False
+    if not members:
+        return False
+    total = 0
+    for member in members:
+        name = member.name.replace("\\", "/")
+        parts = [part for part in name.split("/") if part]
+        if name.startswith("/") or ".." in parts or not parts or parts[0] != "uploads":
+            return False
+        total += max(member.size, 0)
+        if total > UPLOAD_ZIP_MAX_BYTES:
+            return False
+    return True
+
+
+def _free_stem(preferred: str) -> str:
+    """A stem whose database and tarball names are both still free."""
+    candidate = preferred
+    n = 0
+    while ((BACKUP_DIR / f"{candidate}.db").exists()
+           or (BACKUP_DIR / f"{candidate}{_UPLOADS_TARBALL_SUFFIX}").exists()):
+        n += 1
+        candidate = f"{preferred}_{n}"
+    return candidate
+
+
+def _write_upload(stem: str, db_data: bytes,
+                  tar_data: bytes | None) -> tuple[bool, str, str | None]:
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    db_path = BACKUP_DIR / f"{stem}.db"
+    pair_path = BACKUP_DIR / f"{stem}{_UPLOADS_TARBALL_SUFFIX}"
+    try:
+        db_path.write_bytes(db_data)
+        if tar_data is not None:
+            pair_path.write_bytes(tar_data)
+    except OSError:
+        for path in (db_path, pair_path):
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        return False, "نوشتن فایل ناموفق بود.", None
+    message = ("دیتابیس و فایل‌ها پذیرفته شدند." if tar_data is not None
+               else "فایل دیتابیس پذیرفته شد.")
+    return True, message, db_path.name
+
+
+def _shelve_zip(data: bytes) -> tuple[bool, str, str | None]:
+    import io
+    import zipfile
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            infos = archive.infolist()
+            names = [info.filename for info in infos]
+            if any(not name or "/" in name or "\\" in name for name in names):
+                return False, "زیپ باید فایل‌ها را در ریشه داشته باشد.", None
+            db_names = [name for name in names if _BACKUP_RE.match(name)]
+            tar_names = [name for name in names
+                         if name.endswith(_UPLOADS_TARBALL_SUFFIX)]
+            if len(db_names) != 1:
+                return False, "زیپ باید دقیقاً یک نسخه دیتابیس داشته باشد.", None
+            if len(tar_names) > 1:
+                return False, "زیپ بیش از یک بایگانی فایل دارد.", None
+            db_name = db_names[0]
+            tar_name = tar_names[0] if tar_names else None
+            stem = db_name[:-len(".db")]
+            if tar_name and tar_name != f"{stem}{_UPLOADS_TARBALL_SUFFIX}":
+                return False, "فایل‌های زیپ با هم همخوان نیستند.", None
+            total = sum(max(info.file_size, 0) for info in infos)
+            if total > UPLOAD_ZIP_MAX_BYTES:
+                return False, "حجم بازشده زیپ بیش از حد بزرگ است.", None
+            db_data = archive.read(db_name)
+            tar_data = archive.read(tar_name) if tar_name else None
+    except (zipfile.BadZipFile, OSError, RuntimeError, NotImplementedError, KeyError):
+        return False, "زیپ خوانده نشد.", None
+    if not _validate_sqlite_upload(db_data):
+        return False, "فایل دیتابیس خراب است یا فروشگاه نیست.", None
+    if tar_data is not None and not _validate_tarball_upload(tar_data):
+        return False, "بایگانی فایل‌ها خراب است.", None
+    return _write_upload(_free_stem(stem), db_data, tar_data)
+
+
+def shelve_uploaded_backup(data: bytes, filename: str) -> tuple[bool, str, str | None]:
+    """Shelve a database or a full zip; nothing live is touched.
+
+    A zip must carry exactly one ``referral_*.db`` and, optionally, its
+    matching ``referral_*_uploads.tar.gz``. A lone database restores records
+    only. Returns (ok, message, stored name).
+    """
+    if not data:
+        return False, "فایل خالی است.", None
+    name = Path(filename or "").name
+    lower = name.lower()
+    if lower.endswith(".zip"):
+        if len(data) > UPLOAD_ZIP_MAX_BYTES:
+            return False, "زیپ بیش از حد بزرگ است.", None
+        return _shelve_zip(data)
+    if lower.endswith(".db"):
+        if len(data) > UPLOAD_MAX_BYTES:
+            return False, "فایل بیش از حد بزرگ است.", None
+        if not _validate_sqlite_upload(data):
+            return False, "فایل خراب است یا فروشگاه نیست؛ بارگذاری نشد.", None
+        preferred = (name[:-len(".db")] if _BACKUP_RE.match(name)
+                     else f"referral_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+        return _write_upload(_free_stem(preferred), data, None)
+    return False, "فقط فایل ‎.db‎ یا زیپ ‎.zip‎ پذیرفته می‌شود.", None
+
+
 def uploads_tarball_for(db_name: str) -> Path | None:
     """The uploads tarball paired with a database backup, if it is on disk."""
     if not _BACKUP_RE.match(db_name):
@@ -467,14 +635,17 @@ def _quiesce_live(live: Path) -> None:
             pass
 
 
-def restore_live_from(backup_path: str | Path, *, make_snapshot: bool = True,
-                      keep_count: int | None = None) -> tuple[bool, str]:
+def restore_live_from(backup_path: str | Path, *,
+                      make_snapshot: bool = True) -> tuple[bool, str]:
     """Replace the live database content with a backup file — no restart.
 
     Validates first, snapshots the present next (unless asked not to), then
     copies page-by-page through SQLite's own online-backup API, migrates an
     older schema forward in place, swaps the paired uploads tarball when one
     rides along, and re-verifies. Returns (ok, message).
+
+    The safety snapshot never prunes: the selected backup may be the oldest on
+    the shelf, and deleting it before the copy would make the restore fail.
     """
     from database import engine
     target = Path(backup_path)
@@ -493,7 +664,7 @@ def restore_live_from(backup_path: str | Path, *, make_snapshot: bool = True,
         return False, "عملیات دیگری در جریان است؛ کمی بعد دوباره تلاش کنید."
     with lock:
         version = backup_schema_version(target)
-        if make_snapshot and not create_backup(keep_count):
+        if make_snapshot and not create_backup(prune=False):
             return False, "نسخه امن ساخته نشد؛ بازیابی لغو شد."
         try:
             _quiesce_live(live)

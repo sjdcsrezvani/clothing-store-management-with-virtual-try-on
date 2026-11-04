@@ -326,7 +326,7 @@ def test_revision_36_and_37_add_the_sizing_columns(tmp_path):
         conn.execute(text("INSERT INTO products (name) VALUES ('پیراهن')"))
         conn.execute(text("INSERT INTO product_variants (product_id, size) VALUES (1, '110')"))
 
-    assert upgrade(engine) == MIGRATION_VERSION == 38
+    assert upgrade(engine) == MIGRATION_VERSION == 40
 
     with engine.connect() as conn:
         products = {row[1] for row in conn.execute(text("PRAGMA table_info(products)"))}
@@ -336,6 +336,21 @@ def test_revision_36_and_37_add_the_sizing_columns(tmp_path):
                 "band_min_adult", "band_max_adult"} <= variants
         row = conn.execute(text("SELECT size, band_min_cm FROM product_variants WHERE id=1")).one()
         assert row == ("110", None)
+
+
+def test_revision_40_adds_purchase_tax_percent(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'v39-purchases.db'}")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE schema_version (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)"))
+        conn.execute(text("INSERT INTO schema_version (id, version) VALUES (1, 39)"))
+        conn.execute(text(
+            "CREATE TABLE purchases (id INTEGER PRIMARY KEY, total_cost INTEGER)"))
+        conn.execute(text("INSERT INTO purchases (total_cost) VALUES (100000)"))
+    assert upgrade(engine) == MIGRATION_VERSION == 40
+    with engine.connect() as conn:
+        columns = {row[1] for row in conn.execute(text("PRAGMA table_info(purchases)"))}
+        assert "tax_percent" in columns
+        assert conn.execute(text("SELECT tax_percent FROM purchases WHERE id=1")).scalar() == 0
 
 
 def test_revision_38_adds_sms_queue_management_columns(tmp_path):
@@ -354,7 +369,7 @@ def test_revision_38_adds_sms_queue_management_columns(tmp_path):
                           "VALUES ('09120000000', 'سلام', 'queued', 'marketing', 'manual', "
                           "'2026-01-01 00:00:00')"))
 
-    assert upgrade(engine) == MIGRATION_VERSION == 38
+    assert upgrade(engine) == MIGRATION_VERSION == 40
 
     with engine.connect() as conn:
         columns = {row[1] for row in conn.execute(text("PRAGMA table_info(sms_messages)"))}

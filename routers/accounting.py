@@ -39,6 +39,7 @@ from services.accounting import (
     unpaid_credit_sales,
     get_supplier_balances, purchase_effective_at, purchase_effective_column,
     purchase_item_totals, purchase_landed_unit_cost, purchase_overview,
+    purchase_tax_amount,
     purchase_paid_amount, purchase_paid_from_rollup, purchase_payment_rollup,
     purchase_settlement, refresh_purchase_amount_paid,
     add_cash_withdrawal, cash_shift_summary, last_counted_balance,
@@ -1628,7 +1629,14 @@ async def admin_suppliers(
         suppliers = [s for s in suppliers
                      if needle in (s.name or "").casefold()
                      or needle in (s.note or "").casefold()
-                     or (digit_needle and digit_needle in (s.phone or ""))]
+                     or needle in (s.owner_first_name or "").casefold()
+                     or needle in (s.owner_last_name or "").casefold()
+                     or needle in f"{s.owner_first_name or ''} {s.owner_last_name or ''}".casefold()
+                     or needle in (s.city or "").casefold()
+                     or needle in (s.supplier_type or "").casefold()
+                     or (digit_needle and digit_needle in (s.phone or ""))
+                     or (digit_needle and digit_needle in (s.landline or ""))
+                     or (digit_needle and digit_needle in (s.economic_code or ""))]
     reverse = (sort_dir == "desc")
     if sort_key == "name":
         suppliers.sort(key=lambda s: (s.name or "").casefold(), reverse=reverse)
@@ -1661,67 +1669,172 @@ async def admin_suppliers(
     })
 
 
-@router.post("/suppliers/add", response_class=HTMLResponse)
-async def admin_supplier_add(
-    request: Request,
-    name: str = Form(...),
-    phone: str = Form(""),
-    note: str = Form(""),
-    db: Session = Depends(get_db),
-):
+SUPPLIER_TYPES = ("عمده‌فروش", "تولیدی", "واردکننده", "خدمات", "سایر")
+SUPPLIER_FORM_FIELDS = (
+    "name", "owner_first_name", "owner_last_name", "phone", "landline",
+    "city", "address", "supplier_type", "economic_code", "sheba", "note",
+)
+
+
+def _supplier_form_data(supplier=None) -> dict:
+    """Every editable supplier field, blank for a new record."""
+    return {
+        field: (getattr(supplier, field, "") or "") if supplier else ""
+        for field in SUPPLIER_FORM_FIELDS
+    }
+
+
+def _supplier_form_context(db, *, supplier=None, values=None, error=""):
+    """The shared add/edit page: values, type/city suggestions and the error."""
+    types = list(SUPPLIER_TYPES)
+    for (value,) in db.query(Supplier.supplier_type).filter(
+        Supplier.supplier_type.isnot(None), Supplier.supplier_type != "",
+    ).distinct().all():
+        value = (value or "").strip()
+        if value and value not in types:
+            types.append(value)
+    cities = sorted({
+        (row[0] or "").strip()
+        for row in db.query(Supplier.city).filter(
+            Supplier.city.isnot(None), Supplier.city != "",
+        ).distinct().all()
+        if (row[0] or "").strip()
+    })
+    return {
+        "supplier": supplier,
+        "values": values if values is not None else _supplier_form_data(supplier),
+        "error": error,
+        "supplier_types": types,
+        "cities": cities,
+        "fmt": fmt,
+        "jalali_str": jalali_str,
+    }
+
+
+def _normalize_supplier_sheba(value) -> str | None:
+    """IR + 24 digits, or 24 digits with IR supplied for the typist.
+
+    ``shortcut:`` format check only, not the IBAN mod-97 checksum, upgrade when
+    a wrong-but-well-formed SHEBA starts costing a payment.
+    """
+    cleaned = (to_english_digits(str(value or "")).upper()
+               .replace(" ", "").replace("-", "").replace(".", "").strip())
+    if not cleaned:
+        return ""
+    digits = cleaned[2:] if cleaned.startswith("IR") else cleaned
+    if not digits.isdigit() or len(digits) != 24:
+        return None
+    return "IR" + digits
+
+
+def _supplier_payload(form) -> tuple[dict, str]:
+    """Read and validate the supplier form; returns entered values + an error."""
+    data = {field: str(form.get(field, "") or "").strip() for field in SUPPLIER_FORM_FIELDS}
+    if not data["name"]:
+        return data, "نام تأمین‌کننده الزامی است."
+    phone = _normalize_supplier_phone(data["phone"])
+    if phone == "":
+        return data, "شماره موبایل الزامی است."
+    if phone is None:
+        return data, "شماره موبایل معتبر نیست — فقط رقم بنویسید (۸ تا ۱۵ رقم)."
+    landline = _normalize_supplier_phone(data["landline"])
+    if landline is None:
+        return data, "تلفن ثابت معتبر نیست — فقط رقم بنویسید (۸ تا ۱۵ رقم)."
+    economic_code = (to_english_digits(data["economic_code"])
+                     .replace(" ", "").replace("-", "").strip())
+    if economic_code and (not economic_code.isdigit() or len(economic_code) != 14):
+        return data, "کد اقتصادی باید دقیقاً ۱۴ رقم باشد."
+    sheba = _normalize_supplier_sheba(data["sheba"])
+    if sheba is None:
+        return data, "شبا معتبر نیست — ۲۴ رقم یا IR + ۲۴ رقم وارد کنید."
+    data.update(phone=phone, landline=landline,
+                economic_code=economic_code, sheba=sheba)
+    return data, ""
+
+
+def _supplier_attrs(data) -> dict:
+    """The validated form as model columns (empty optional values as NULL)."""
+    attrs = {field: data[field] or None for field in SUPPLIER_FORM_FIELDS}
+    attrs["name"] = data["name"]
+    attrs["phone"] = data["phone"] or None
+    return attrs
+
+
+@router.get("/suppliers/new", response_class=HTMLResponse)
+async def admin_supplier_new(request: Request, db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
-    if not name.strip():
-        return RedirectResponse(url="/admin/suppliers?err=نام تأمین‌کننده الزامی است.", status_code=303)
-    clean_name = name.strip()
-    clean_phone = _normalize_supplier_phone(phone)
-    if clean_phone is None:
-        return RedirectResponse(
-            url="/admin/suppliers?err=" + quote_plus("شماره تلفن معتبر نیست — فقط رقم بنویسید."),
-            status_code=303)
-    supplier = Supplier(name=clean_name, phone=clean_phone or None, note=note.strip() or None)
-    db.add(supplier)
-    db.flush()
-    db.commit()
-    log_action(db, "supplier_add", clean_name, request=request, target_type="supplier", target_id=supplier.id, after={"name": clean_name})
-    # Warn-but-allow on duplicates: two wholesalers can share a name, but the
-    # owner should know the new row is not the only one wearing it.
-    message = "تأمین‌کننده اضافه شد."
-    if _supplier_name_taken(db, clean_name, ignore_id=supplier.id):
-        message += " هم‌نام دیگری با همین نام وجود دارد."
-    return RedirectResponse(url="/admin/suppliers?msg=" + quote_plus(message), status_code=303)
+    return templates.TemplateResponse(
+        request, "admin/supplier_form.html", _supplier_form_context(db),
+    )
 
 
-@router.post("/suppliers/{supplier_id}/edit", response_class=HTMLResponse)
-async def admin_supplier_edit(
-    supplier_id: int,
-    request: Request,
-    name: str = Form(...),
-    phone: str = Form(""),
-    note: str = Form(""),
-    db: Session = Depends(get_db),
+@router.get("/suppliers/{supplier_id}/edit", response_class=HTMLResponse)
+async def admin_supplier_edit_page(
+    supplier_id: int, request: Request, db: Session = Depends(get_db),
 ):
     guard = require_html_role(request, db, "manager")
     if not hasattr(guard, "role"):
         return guard
     supplier = db.query(Supplier).filter(Supplier.id == supplier_id).first()
     if not supplier:
-        return RedirectResponse(url="/admin/suppliers?err=تأمین‌کننده یافت نشد.", status_code=303)
-    if not name.strip():
-        return RedirectResponse(url="/admin/suppliers?err=نام تأمین‌کننده الزامی است.", status_code=303)
-    clean_phone = _normalize_supplier_phone(phone)
-    if clean_phone is None:
         return RedirectResponse(
-            url="/admin/suppliers?err=" + quote_plus("شماره تلفن معتبر نیست — فقط رقم بنویسید."),
-            status_code=303)
-    before = {"name": supplier.name, "phone": supplier.phone, "note": supplier.note}
-    supplier.name = name.strip()
-    supplier.phone = clean_phone or None
-    supplier.note = note.strip() or None
+            url="/admin/suppliers?err=تأمین‌کننده یافت نشد.", status_code=303)
+    return templates.TemplateResponse(
+        request, "admin/supplier_form.html",
+        _supplier_form_context(db, supplier=supplier),
+    )
+
+
+@router.post("/suppliers/add", response_class=HTMLResponse)
+async def admin_supplier_add(request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    data, error = _supplier_payload(await request.form())
+    if error:
+        return templates.TemplateResponse(
+            request, "admin/supplier_form.html",
+            _supplier_form_context(db, values=data, error=error),
+            status_code=400,
+        )
+    supplier = Supplier(**_supplier_attrs(data))
+    db.add(supplier)
+    db.flush()
+    db.commit()
+    log_action(db, "supplier_add", supplier.name, request=request,
+               target_type="supplier", target_id=supplier.id,
+               after=_supplier_form_data(supplier))
+    # Warn-but-allow on duplicates: two wholesalers can share a name, but the
+    # owner should know the new row is not the only one wearing it.
+    message = "تأمین‌کننده اضافه شد."
+    if _supplier_name_taken(db, supplier.name, ignore_id=supplier.id):
+        message += " هم‌نام دیگری با همین نام وجود دارد."
+    return RedirectResponse(url="/admin/suppliers?msg=" + quote_plus(message), status_code=303)
+
+
+@router.post("/suppliers/{supplier_id}/edit", response_class=HTMLResponse)
+async def admin_supplier_edit(supplier_id: int, request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    supplier = db.query(Supplier).filter(Supplier.id == supplier_id).first()
+    if not supplier:
+        return RedirectResponse(url="/admin/suppliers?err=تأمین‌کننده یافت نشد.", status_code=303)
+    data, error = _supplier_payload(await request.form())
+    if error:
+        return templates.TemplateResponse(
+            request, "admin/supplier_form.html",
+            _supplier_form_context(db, supplier=supplier, values=data, error=error),
+            status_code=400,
+        )
+    before = _supplier_form_data(supplier)
+    for field, value in _supplier_attrs(data).items():
+        setattr(supplier, field, value)
     db.commit()
     log_action(db, "supplier_edit", supplier.name, request=request, target_type="supplier", target_id=supplier.id,
-               before=before, after={"name": supplier.name, "phone": supplier.phone, "note": supplier.note})
+               before=before, after=_supplier_form_data(supplier))
     message = f"مشخصات {supplier.name} به‌روز شد."
     if _supplier_name_taken(db, supplier.name, ignore_id=supplier.id):
         message += " هم‌نام دیگری با همین نام وجود دارد."
@@ -2025,6 +2138,12 @@ def _purchase_money(value) -> int:
         return max(0, int(float(cleaned)))
     except (TypeError, ValueError):
         return 0
+
+
+def _purchase_percent(value) -> int:
+    """A tax rate clamped to 0–100; the number reader is the same one."""
+    cleaned = str(value or "").replace("٪", "").replace("%", "")
+    return min(100, _purchase_money(cleaned))
 
 
 # The cashbox forms' numeric fields, with the bound each route enforces and
@@ -2346,13 +2465,7 @@ async def admin_purchase_add(request: Request, db: Session = Depends(get_db)):
     supplier_id = str(form.get("supplier_id", "") or "")
     note = str(form.get("note", "") or "")[:1000]
     extra_cost = _purchase_money(form.get("extra_cost"))
-    # The form posts the checkbox plus a "0" companion, so accept whichever
-    # truthy value arrives; a client that sends nothing keeps landed costing on.
-    landed_values = [str(value).strip().lower() for value in form.getlist("extra_cost_in_landed")]
-    extra_in_landed = (
-        any(value in {"on", "1", "true", "yes"} for value in landed_values)
-        if landed_values else True
-    )
+    tax_percent = _purchase_percent(form.get("tax_percent"))
     purchase_date = _purchase_form_date(form.get("purchase_date"))
     due_date = _purchase_form_date(form.get("due_date"))
     supplier_pk = int(supplier_id) if supplier_id.isdigit() and int(supplier_id) > 0 else None
@@ -2372,12 +2485,14 @@ async def admin_purchase_add(request: Request, db: Session = Depends(get_db)):
             url="/admin/purchases?err=حداقل یک محصول را به فاکتور اضافه کنید.", status_code=303,
         )
 
+    subtotal = _purchase_items_subtotal(items)
     purchase = Purchase(
         supplier_id=supplier_pk,
-        total_cost=_purchase_items_subtotal(items) + extra_cost,
+        total_cost=subtotal + extra_cost + purchase_tax_amount(subtotal, tax_percent),
         note=note.strip() or None,
         extra_cost=extra_cost,
-        extra_cost_in_landed=extra_in_landed,
+        tax_percent=tax_percent,
+        extra_cost_in_landed=False,
         purchase_date=purchase_date,
         due_date=due_date,
         # Assembly stage: no cost basis, no payable and no cash movement yet.
@@ -2486,17 +2601,17 @@ async def admin_purchase_update(purchase_id: int, request: Request, db: Session 
             status_code=303,
         )
 
-    landed_values = [str(value).strip().lower() for value in form.getlist("extra_cost_in_landed")]
     purchase.supplier_id = supplier_pk
     purchase.note = str(form.get("note", "") or "")[:1000].strip() or None
     purchase.extra_cost = _purchase_money(form.get("extra_cost"))
-    purchase.extra_cost_in_landed = (
-        any(value in {"on", "1", "true", "yes"} for value in landed_values)
-        if landed_values else True
-    )
+    purchase.tax_percent = _purchase_percent(form.get("tax_percent"))
+    purchase.extra_cost_in_landed = False
     purchase.purchase_date = _purchase_form_date(form.get("purchase_date"))
     purchase.due_date = _purchase_form_date(form.get("due_date"))
-    purchase.total_cost = _purchase_items_subtotal(items) + purchase.extra_cost
+    subtotal = _purchase_items_subtotal(items)
+    purchase.total_cost = subtotal + purchase.extra_cost + purchase_tax_amount(
+        subtotal, purchase.tax_percent,
+    )
     _replace_purchase_items(db, purchase, items)
     db.commit()
     log_action(
@@ -2561,10 +2676,15 @@ async def admin_purchase_finalize(
                 status_code=303,
             )
 
-    total_cost = sum((item.unit_cost or 0) * (item.quantity or 0) for item in items) \
-        + (purchase.extra_cost or 0)
+    subtotal = sum((item.unit_cost or 0) * (item.quantity or 0) for item in items)
+    total_cost = subtotal + (purchase.extra_cost or 0) + purchase_tax_amount(
+        subtotal, purchase.tax_percent,
+    )
 
     purchase.total_cost = total_cost
+    # Old drafts could still carry the removed landed option; finalisation
+    # always treats the entered item cost as final.
+    purchase.extra_cost_in_landed = False
     purchase.is_draft = False
     for item in items:
         if item.variant is not None:
@@ -2586,6 +2706,8 @@ async def admin_purchase_finalize(
             "total_cost": purchase.total_cost,
             "supplier_id": purchase.supplier_id,
             "extra_cost": purchase.extra_cost or 0,
+            "tax_percent": purchase.tax_percent or 0,
+            "tax_amount": purchase_tax_amount(subtotal, purchase.tax_percent),
             "purchase_date": purchase_effective_at(purchase).isoformat() if purchase_effective_at(purchase) else None,
             "amount_paid": purchase.amount_paid or 0,
         },
@@ -3037,6 +3159,7 @@ async def admin_purchase_detail(purchase_id: int, request: Request, db: Session 
         return RedirectResponse(url="/admin/purchases?err=خرید موردنظر پیدا نشد.", status_code=303)
 
     now = datetime.now(timezone.utc)
+    items_subtotal = sum((i.unit_cost or 0) * i.quantity for i in purchase.items)
     return templates.TemplateResponse(request, "admin/purchases_detail.html", {
         "purchase": purchase,
         "settlement": purchase_settlement(db, purchase, now=now),
@@ -3046,7 +3169,8 @@ async def admin_purchase_detail(purchase_id: int, request: Request, db: Session 
         "movements": db.query(StockMovement).filter(StockMovement.purchase_id == purchase.id)
             .order_by(StockMovement.created_at.asc(), StockMovement.id.asc()).all(),
         "invoice_total": purchase.total_cost or 0,
-        "items_subtotal": sum((i.unit_cost or 0) * i.quantity for i in purchase.items),
+        "items_subtotal": items_subtotal,
+        "tax_amount": purchase_tax_amount(items_subtotal, purchase.tax_percent),
         "units": sum(i.quantity for i in purchase.items),
         "now": now,
         "msg": request.query_params.get("msg", ""),
@@ -3112,14 +3236,18 @@ async def admin_purchase_print(purchase_id: int, request: Request, db: Session =
     purchase = _purchase_with_lines(db, purchase_id)
     if not purchase:
         return RedirectResponse(url="/admin/purchases?err=خرید موردنظر پیدا نشد.", status_code=303)
+    items_subtotal = sum((i.unit_cost or 0) * i.quantity for i in purchase.items)
     return templates.TemplateResponse(request, "admin/purchases_print.html", {
         "purchase": purchase,
         "settlement": purchase_settlement(db, purchase),
         "lines": _purchase_lines(purchase),
-        "items_subtotal": sum((i.unit_cost or 0) * i.quantity for i in purchase.items),
+        "items_subtotal": items_subtotal,
+        "tax_amount": purchase_tax_amount(items_subtotal, purchase.tax_percent),
         "units": sum(i.quantity for i in purchase.items),
         "payments": db.query(SupplierPayment).filter(SupplierPayment.purchase_id == purchase.id)
             .order_by(SupplierPayment.created_at.asc(), SupplierPayment.id.asc()).all(),
+        "owner_settings": {row.key: row.value for row in db.query(Settings).filter(
+            Settings.key.like("owner_%")).all()},
         "fmt": fmt,
         "jalali_str": jalali_str,
     })

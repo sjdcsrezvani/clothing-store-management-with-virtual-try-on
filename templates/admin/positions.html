@@ -13,7 +13,7 @@
   <form method="post" action="/admin/positions">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="hire-grid">
-    <label class="hire-field">عنوان سمت<input name="title" maxlength="100" placeholder="مثلاً فروشنده ارشد" required></label>
+    <label class="hire-field">عنوان سمت<input type="text" name="title" maxlength="100" placeholder="مثلاً فروشنده ارشد" required></label>
     </div>
     <div class="staff-actions"><button class="btn btn-primary" type="submit">ثبت سمت</button></div>
   </form>
@@ -30,7 +30,7 @@
     <td><details><summary class="btn btn-sm btn-ghost">ویرایش</summary><form method="post" action="/admin/positions/{{ position.id }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       {% if holder_counts.get(position.id, 0) %}<p class="muted">{{ holder_counts.get(position.id) }} نفر این سمت را دارند؛ بازنشستگی، قراردادهای چاپ‌شده را عوض نمی‌کند.</p>{% endif %}
-      <label class="hire-field">عنوان جدید<input name="title" maxlength="100" value="{{ position.title }}"></label>
+      <label class="hire-field">عنوان جدید<input type="text" name="title" maxlength="100" value="{{ position.title }}"></label>
       <label class="check-row"><input type="checkbox" name="is_active" value="1" {% if position.is_active %}checked{% endif %}> فعال</label>
       <div class="staff-actions"><button class="btn btn-sm btn-ghost" type="submit">ذخیره</button></div>
     </form></details></td>

@@ -5,13 +5,15 @@
 هر چند روز یک‌بار، یک نسخه کامل خودکار ساخته می‌شود — دستی هم هر وقت بخواهید.
 {% endset %}
 {% set page_actions %}
+<a class="btn btn-ghost" href="#restore"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-backup"/></svg>بازیابی</a>
 <a class="btn btn-ghost" href="/admin/backups/download-all" title="{{ shelf_count }} نسخه · {{ shelf_size }}"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-backup"/></svg>دانلود همه</a>
 {% endset %}
 {% include 'partials/page_header.html' %}
 
 <div class="card">
     <div class="section-heading"><div><span class="eyebrow">وضعیت پشتیبان‌گیری</span><h3>{% if last_backup %}آخرین نسخه: {{ last_backup }} ({{ last_age }}){% else %}هنوز نسخه‌ای ساخته نشده{% endif %}</h3></div></div>
-    <p class="muted">خودکار هر {{ every_days_fa }} روز (اجرای بعدی: {{ next_run }}) · {{ shelf_count }} نسخه · {{ shelf_size }}</p>
+    <p class="muted">خودکار هر {{ every_days_fa }} روز، حدود ساعت ۰۲:۰۰ UTC و فقط وقتی برنامه در حال اجراست (اجرای بعدی: {{ next_run }}) · {{ shelf_count }} نسخه · {{ shelf_size }}</p>
+    <p class="muted">هر نسخه دو بخش دارد: دیتابیس (همه اطلاعات) و فایل‌ها (تصاویر و پیوست‌ها).</p>
     <div class="list-heading-actions">
         <form method="post" action="/admin/backup">
             <button type="submit" class="btn btn-primary"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-backup"/></svg>پشتیبان‌گیری الآن</button>
@@ -32,7 +34,6 @@
                 {% endfor %}
             </select>
         </label>
-        <label class="switch-inline"><input type="checkbox" name="restore_snapshot" value="1"{% if restore_snapshot %} checked{% endif %}> پیش از بازیابی، نسخه امن بگیر</label>
         <button class="btn btn-ghost" type="submit">ذخیره زمان‌بندی</button>
     </form>
 </div>
@@ -46,6 +47,7 @@
                 <tr>
                     <th scope="col">نام فایل</th>
                     <th scope="col">حجم</th>
+                    <th scope="col">محتوا</th>
                     <th scope="col">تاریخ</th>
                     <th scope="col">وضعیت</th>
                     <th scope="col">عملیات</th>
@@ -55,9 +57,10 @@
                 {% for b in backups %}
                 <tr>
                     <td data-label="نام فایل" dir="ltr" class="tnum" title="{{ b.name }}">{{ b.name }}</td>
-                    <td data-label="حجم" class="tnum">{{ b.size_fa }}{% if b.uploads_size_fa %}<br><small class="muted">+ فایل‌ها: {{ b.uploads_size_fa }}</small>{% else %}<br><small class="muted">بدون فایل‌پیوست</small>{% endif %}</td>
-                    <td data-label="تاریخ" class="tnum">{{ jalali_str(b.mtime, false) }}</td>
-                    <td data-label="وضعیت">{% if b.verified %}<span class="badge badge-success">تأیید شده</span>{% else %}<span class="badge badge-warning">بررسی نشده</span>{% endif %}{% if b.schema_newer %} <span class="badge badge-warning">نسخه جدیدتر</span>{% endif %}
+                    <td data-label="حجم" class="tnum">{{ b.size_fa }}{% if b.uploads_size_fa %}<br><small class="muted">+ فایل‌ها: {{ b.uploads_size_fa }}</small>{% endif %}</td>
+                    <td data-label="محتوا">{% if b.includes_uploads %}دیتابیس + فایل‌ها{% else %}فقط دیتابیس{% endif %}</td>
+                    <td data-label="تاریخ" class="tnum">{{ b.created_fa }}</td>
+                    <td data-label="وضعیت">{% if b.verified %}<span class="badge badge-success">سالم</span>{% else %}<span class="badge badge-warning">بررسی نشده</span>{% endif %}{% if b.schema_newer %} <span class="badge badge-warning">نسخه جدیدتر</span>{% endif %}
                         <form method="post" action="/admin/backups/recheck" class="inline-form">
                             <input type="hidden" name="name" value="{{ b.name }}">
                             <button type="submit" class="text-link">بررسی مجدد</button>
@@ -65,10 +68,6 @@
                     </td>
                     <td data-label="عملیات">
                         <a href="/admin/backups/download?name={{ b.name }}" class="btn btn-sm btn-ghost">دانلود</a>
-                        <form method="post" action="/admin/backups/restore" class="inline-form" data-native data-confirm="بازیابی از «{{ b.name }}»؟ کل اطلاعات فعلی جایگزین می‌شود.{% if b.schema_newer %} توجه: ساختار این نسخه جدیدتر از برنامه است.{% endif %}" data-confirm-title="بازیابی فروشگاه؟" data-confirm-ok="بازیابی">
-                            <input type="hidden" name="name" value="{{ b.name }}">
-                            <button type="submit" class="btn btn-sm btn-danger-quiet">بازیابی</button>
-                        </form>
                         <form method="post" action="/admin/backups/delete" class="inline-form" data-confirm="پشتیبان «{{ b.name }}» حذف شود؟" data-confirm-title="حذف پشتیبان؟" data-confirm-ok="حذف">
                             <input type="hidden" name="name" value="{{ b.name }}">
                             <button type="submit" class="btn btn-sm btn-danger-quiet">حذف</button>
@@ -79,26 +78,45 @@
             </tbody>
         </table>
     </div>
+    <p class="muted field-help">«سالم» یعنی فایل باز و بررسی شده است؛ «نسخه جدیدتر» یعنی ساختار آن از این برنامه جلوتر است.</p>
     {% else %}
     <p class="empty-state">هنوز پشتیبان‌گیری انجام نشده است.</p>
     <div class="tag-pagination"><form method="post" action="/admin/backup"><button type="submit" class="btn btn-primary">اولین پشتیبان‌گیری</button></form></div>
     {% endif %}
 </div>
 
-<div class="card danger-zone">
-    <div class="section-heading"><div><span class="eyebrow">ناحیه خطر</span><h3>بازیابی فروشگاه</h3></div></div>
-    <ol class="restore-steps">
-        <li>ردیف نسخه موردنظر را پیدا کنید — یا فایل را از جای دیگر بیاورید.</li>
-        <li>«بازیابی» را بزنید و در گفت‌وگو تأیید کنید.</li>
-        <li>برنامه روی همان نسخه بالا می‌آید؛ نیازی به کاری نیست.</li>
-    </ol>
-    <p class="muted">بازیابی کل اطلاعات فعلی را جایگزین می‌کند — دیتابیس و فایل‌های پیوستش با هم. پیش از هر بازیابی یک نسخه امن گرفته می‌شود (در زمان‌بندی بالا قابل تغییر است).</p>
+<div class="card danger-zone" id="restore">
+    <div class="section-heading"><div><span class="eyebrow">بازیابی</span><h3>بازیابی فروشگاه</h3></div></div>
+    <p class="muted">برای بازیابی، نسخه را از همین فهرست انتخاب کنید؛ نیازی به انتخاب فایل نیست. بازیابی کل اطلاعات فعلی را جایگزین می‌کند — دیتابیس و فایل‌های پیوستش با هم.</p>
+
+    {% if backups %}
+    <form method="post" action="/admin/backups/restore" class="form-row" data-native id="restore-form">
+        <label>نسخه برای بازیابی
+            <select name="name" id="restore-name" required>
+                {% for b in backups %}
+                <option value="{{ b.name }}" data-created="{{ b.created_fa }}" data-files="{{ '1' if b.includes_uploads else '0' }}"{% if b.schema_newer %} data-newer="1"{% endif %}>{{ b.created_fa }} — {{ b.size_fa }}{% if b.uploads_size_fa %} + {{ b.uploads_size_fa }}{% endif %} — {% if b.includes_uploads %}دیتابیس + فایل‌ها{% else %}فقط دیتابیس{% endif %}{% if b.schema_newer %} — نسخه جدیدتر{% endif %}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label class="switch-inline">
+            <input type="hidden" name="restore_snapshot" value="0">
+            <input type="checkbox" name="restore_snapshot" value="1" id="restore-snapshot" checked>
+            پیش از بازیابی، از وضعیت فعلی نسخه امن بساز
+        </label>
+        <button type="submit" class="btn btn-danger">بازیابی این نسخه</button>
+    </form>
+    <p class="field-help" id="restore-summary" aria-live="polite"></p>
+    <p class="muted field-help">اگر اشتباه شد، همین نسخه امن شما را برمی‌گرداند.</p>
+    {% else %}
+    <p class="empty-state">هنوز نسخه‌ای برای بازیابی نیست — اول یک نسخه بسازید یا فایل را پایین اضافه کنید.</p>
+    {% endif %}
+
     <form method="post" action="/admin/backups/upload" enctype="multipart/form-data" class="form-row">
         <label>فایل پشتیبان از جای دیگر
-            <input type="file" name="backup_file" accept=".db" required aria-describedby="backup-upload-help">
-            <small class="field-help" id="backup-upload-help">فقط ‎.db‎، حداکثر ۲۰۰ مگابایت</small>
+            <input type="file" name="backup_file" accept=".zip,.db" required aria-describedby="backup-upload-help">
+            <small class="field-help" id="backup-upload-help">زیپ «دانلود همه» را انتخاب کنید تا دیتابیس و تصاویر با هم برگردند. اگر فقط فایل ‎.db‎ دارید، همان را انتخاب کنید؛ اطلاعات برمی‌گردد ولی تصاویر نه. فایل فقط به فهرست اضافه می‌شود و تا زدن «بازیابی» چیزی را عوض نمی‌کند.</small>
         </label>
-        <button class="btn btn-ghost" type="submit">بارگذاری در قفسه</button>
+        <button class="btn btn-ghost" type="submit">افزودن به فهرست</button>
     </form>
 </div>
 
@@ -118,6 +136,35 @@
 </div>
 <script>
 (function () {
+    var form = document.getElementById('restore-form');
+    var select = document.getElementById('restore-name');
+    var snapshot = document.getElementById('restore-snapshot');
+    var summary = document.getElementById('restore-summary');
+
+    // The dropdown is the whole story: say its date, contents, and whether
+    // undo is armed before the owner presses the red button.
+    function refreshRestore() {
+        if (!form || !select || !summary) return;
+        var option = select.options[select.selectedIndex];
+        if (!option) return;
+        var files = option.getAttribute('data-files') === '1';
+        var newer = option.getAttribute('data-newer') === '1';
+        var safety = !snapshot || snapshot.checked;
+        var parts = [];
+        parts.push('نسخه ' + option.getAttribute('data-created'));
+        parts.push(files ? 'شامل دیتابیس و فایل‌ها' : 'فقط دیتابیس؛ تصاویر برنمی‌گردند');
+        if (newer) parts.push('توجه: ساختار این نسخه از برنامه جدیدتر است؛ سازگار نباشد بازیابی نمی‌شود');
+        if (!safety) parts.push('بدون نسخه امن — بازگشتی نخواهد بود');
+        var text = parts.join(' · ');
+        summary.textContent = text;
+        form.setAttribute('data-confirm',
+            'بازیابی فروشگاه از نسخه «' + option.value + '»؟ ' + text +
+            '. کل اطلاعات فعلی جایگزین می‌شود.');
+    }
+    if (select) select.addEventListener('change', refreshRestore);
+    if (snapshot) snapshot.addEventListener('change', refreshRestore);
+    refreshRestore();
+
     var pendingForm = null;
     document.addEventListener('submit', function (event) {
         var form = event.target.closest ? event.target.closest('form[data-confirm]') : null;

@@ -175,6 +175,33 @@ def _sizing_context() -> dict:
     }
 
 
+def _variant_form_context(variant: ProductVariant, **extra) -> dict:
+    """The variant plus its place among the product's variants.
+
+    The edit page can then walk the shelf — previous, next, and the product it
+    belongs to — without going back to the product page between rows. Active
+    variants lead, archived ones follow, the same order the product page shows.
+    """
+    siblings = sorted(
+        variant.product.variants,
+        key=lambda item: (not item.is_active, item.id),
+    )
+    index = next(
+        (position for position, item in enumerate(siblings) if item.id == variant.id),
+        0,
+    )
+    return {
+        "variant": variant,
+        "product": variant.product,
+        "previous_variant": siblings[index - 1] if index > 0 else None,
+        "next_variant": siblings[index + 1] if index + 1 < len(siblings) else None,
+        "variant_position": index + 1,
+        "variant_count": len(siblings),
+        **_sizing_context(),
+        **extra,
+    }
+
+
 def _selected_quantities(form) -> dict[int, int]:
     quantities = {}
 
@@ -1229,12 +1256,10 @@ async def admin_variant_edit_form(variant_id: int, request: Request, next: str =
     if not variant:
         raise HTTPException(status_code=404, detail="تنوع یافت نشد")
 
-    return templates.TemplateResponse(request, "admin/variant_form.html", {
-        "variant": variant,
-        "product": variant.product,
-        "return_to": _safe_next(next, f"/admin/products/{variant.product_id}"),
-        **_sizing_context(),
-    })
+    return templates.TemplateResponse(request, "admin/variant_form.html", _variant_form_context(
+        variant,
+        return_to=_safe_next(next, f"/admin/products/{variant.product_id}"),
+    ))
 
 
 @router.post("/variants/{variant_id}", response_class=HTMLResponse)
@@ -1269,17 +1294,11 @@ async def admin_variant_update(
     try:
         price_int = int(to_english_digits(price))
     except ValueError:
-        return templates.TemplateResponse(request, "admin/variant_form.html", {
-            "variant": variant,
-            "product": variant.product,
-            "error": "قیمت فروش معتبر نیست.",
-        })
+        return templates.TemplateResponse(request, "admin/variant_form.html", _variant_form_context(
+            variant, error="قیمت فروش معتبر نیست."))
     if price_int < 0:
-        return templates.TemplateResponse(request, "admin/variant_form.html", {
-            "variant": variant,
-            "product": variant.product,
-            "error": "قیمت فروش نمی‌تواند منفی باشد.",
-        })
+        return templates.TemplateResponse(request, "admin/variant_form.html", _variant_form_context(
+            variant, error="قیمت فروش نمی‌تواند منفی باشد."))
 
     fake_cost_price_int = None
     if fake_cost_price.strip():
@@ -1298,47 +1317,32 @@ async def admin_variant_update(
         try:
             cost_price_int = int(to_english_digits(cost_price))
         except ValueError:
-            return templates.TemplateResponse(request, "admin/variant_form.html", {
-                "variant": variant,
-                "product": variant.product,
-                "error": "قیمت خرید معتبر نیست.",
-            })
+            return templates.TemplateResponse(request, "admin/variant_form.html", _variant_form_context(
+                variant, error="قیمت خرید معتبر نیست."))
         if cost_price_int < 0:
-            return templates.TemplateResponse(request, "admin/variant_form.html", {
-                "variant": variant,
-                "product": variant.product,
-                "error": "قیمت خرید نمی‌تواند منفی باشد.",
-            })
+            return templates.TemplateResponse(request, "admin/variant_form.html", _variant_form_context(
+                variant, error="قیمت خرید نمی‌تواند منفی باشد."))
 
     try:
         stock_int = int(to_english_digits(stock_quantity))
     except ValueError:
         stock_int = variant.stock_quantity
     if stock_int < 0 or stock_int < (variant.reserved_quantity or 0):
-        return templates.TemplateResponse(request, "admin/variant_form.html", {
-            "variant": variant,
-            "product": variant.product,
-            "error": "موجودی نمی‌تواند کمتر از موجودی رزروشده باشد.",
-        })
+        return templates.TemplateResponse(request, "admin/variant_form.html", _variant_form_context(
+            variant, error="موجودی نمی‌تواند کمتر از موجودی رزروشده باشد."))
     try:
         reorder_point_int = max(0, int(to_english_digits(reorder_point or "0")))
     except ValueError:
-        return templates.TemplateResponse(request, "admin/variant_form.html", {
-            "variant": variant,
-            "product": variant.product,
-            "error": "مقدار نقطه سفارش معتبر نیست.",
-        })
+        return templates.TemplateResponse(request, "admin/variant_form.html", _variant_form_context(
+            variant, error="مقدار نقطه سفارش معتبر نیست."))
 
     weight_raw = (weight_grams or "").strip()
     if weight_raw:
         try:
             weight_int = max(0, int(to_english_digits(weight_raw)))
         except ValueError:
-            return templates.TemplateResponse(request, "admin/variant_form.html", {
-                "variant": variant,
-                "product": variant.product,
-                "error": "وزن معتبر نیست.",
-            })
+            return templates.TemplateResponse(request, "admin/variant_form.html", _variant_form_context(
+                variant, error="وزن معتبر نیست."))
     else:
         weight_int = None
 

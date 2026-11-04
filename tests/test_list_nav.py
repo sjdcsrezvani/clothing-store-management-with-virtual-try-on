@@ -167,7 +167,7 @@ def test_widget_regions_rebind_after_swap():
     tags = (ROOT / "templates/admin/barcode_print.html").read_text()
     assert "bindTagRegion(region)" in tags
     customers = (ROOT / "templates/admin/customers.html").read_text()
-    assert "initCustomersRegion(region)" in customers
+    assert 'data-list-region="customers"' in customers
 
 
 def test_list_pages_serve_their_region(client, authed):

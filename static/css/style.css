@@ -514,7 +514,11 @@ button:disabled {
    help — stacked on a strict beat. Other forms migrate here one page at a
    time; nothing outside the hire wizard uses these classes yet. */
 .hire-grid { display: grid; grid-template-columns: minmax(0, 1fr); row-gap: 1.1rem; }
+/* Staff pages opt into the wide two-column layout; the positions card keeps
+   the original narrow single column. */
+.hire-grid.is-split { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 1rem; }
 .hire-field { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; font-size: 0.85rem; font-weight: 600; }
+.hire-field.is-wide { grid-column: 1 / -1; }
 .hire-field > .muted { font-weight: 400; }
 .hire-field > .field-help { margin-top: 0; }
 .hire-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
@@ -539,6 +543,12 @@ button:disabled {
 /* The wizard reads as a form, not a spreadsheet: one comfortable column.
    Full-width fields stop looking stretched once the column itself is narrow. */
 .hire-narrow { max-width: 640px; margin-inline: auto; }
+/* The staff screens use the page's width; positions stays narrow above. */
+.hire-wide { max-width: 960px; margin-inline: auto; }
+@media (max-width: 760px) {
+  .hire-grid.is-split { grid-template-columns: minmax(0, 1fr); }
+  .hire-field.is-wide { grid-column: auto; }
+}
 /* Three fields that belong on one line (name/number/amount rows): without
    this they fall into the two-column grid above and the third wraps alone
    at half width. */
@@ -1792,19 +1802,29 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
 
 .filter-bar { margin-bottom: 1.25rem; }
 
-/* The suppliers page's two forms: the add row and the per-row payment cell.
-   The payment form lives inside a table cell, so it wraps instead of
+/* The supplier add/edit page: one shared form, sectioned like the cheque form.
+   The payment form still lives inside a table cell, so it wraps instead of
    overflowing on a narrow screen — the select gets the room, the amount a
    fixed hand-width, like every money input. */
-.supplier-add-form {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  margin: 0;
+.supplier-form-card { max-width: 980px; margin-inline: auto; }
+.supplier-form-section { border: 0; padding: 0; margin: 0 0 1.1rem; min-width: 0; }
+.supplier-form-section legend { padding: 0; margin: 0 0 0.7rem; font-size: 0.78rem; font-weight: 800; color: var(--link-hover); letter-spacing: 0.02em; }
+.supplier-form-section legend::before {
+  content: ""; display: inline-block; width: 0.4rem; height: 0.4rem;
+  margin-inline-end: 0.45rem; border-radius: 999px;
+  background: currentColor; vertical-align: 0.05em;
 }
-.supplier-add-form input[name="name"] { flex: 2; min-width: 220px; }
-.supplier-add-form input[name="phone"] { flex: 1; min-width: 150px; }
-.supplier-add-form input[name="note"] { flex: 2; min-width: 220px; }
+.supplier-form .form-group { margin-bottom: 0; }
+.supplier-form .form-row + .form-row { margin-top: 0.9rem; }
+.supplier-form-identity { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); }
+.supplier-form textarea { min-height: 76px; resize: vertical; }
+.supplier-form-actions { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; padding-top: 1rem; border-top: 1px solid var(--rule); }
+.supplier-form-actions .btn { margin: 0; }
+.supplier-form-error { margin-bottom: 1rem; }
+.supplier-meta { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.15rem; color: var(--ink-soft); font-size: 0.72rem; }
+@media (max-width: 760px) {
+  .supplier-form-identity, .supplier-form .form-row { grid-template-columns: minmax(0, 1fr); }
+}
 .supplier-payment-form {
   display: flex;
   gap: 0.25rem;
@@ -2531,6 +2551,18 @@ body.is-soft-busy::before {
 }
 .variant-entry-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .variant-edit-layout, .product-edit-layout { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(250px, 0.65fr); gap: 1.2rem; align-items: start; }
+/* The variant's own neighbours: one row above the form, so walking a product's
+   shelf never means going back to the product page between rows. */
+.variant-record-nav { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.variant-record-pager { display: flex; align-items: center; gap: 0.4rem; }
+.variant-record-position { color: var(--ink-soft); font-size: 0.78rem; font-weight: 700; white-space: nowrap; }
+.variant-record-pager .btn { min-width: 0; }
+@media (max-width: 600px) {
+  .variant-record-nav { flex-direction: column; align-items: stretch; }
+  .variant-record-nav > .btn { align-self: flex-start; }
+  .variant-record-pager { justify-content: space-between; }
+  .variant-record-pager .btn { flex: 1 1 auto; }
+}
 /* The main column owns the wide variants table; without this a grid item's
    auto min-width lets the table push the card past the viewport instead of
    scrolling inside .table-scroll. */
@@ -4180,6 +4212,25 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
 /* Triggered alerts read as a worklist, one cheque per row. */
 .check-alert-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.6rem 0; border-bottom: 1px solid var(--rule); }
 .check-alert-row:last-child { border-bottom: none; }
+/* The new-cheque form: three labelled groups on quiet rules, the amount as the
+   loudest field, and the action separated from the last field by its own bar. */
+.check-form-section { border: 0; padding: 0; margin: 0 0 1.1rem; min-width: 0; }
+.check-form-section legend { padding: 0; margin: 0 0 0.7rem; font-size: 0.78rem; font-weight: 800; color: var(--link-hover); letter-spacing: 0.02em; }
+.check-form-section legend::before {
+  content: ""; display: inline-block; width: 0.4rem; height: 0.4rem;
+  margin-inline-end: 0.45rem; border-radius: 999px;
+  background: currentColor; vertical-align: 0.05em;
+}
+.check-form .form-group { margin-bottom: 0; }
+.check-form-identity { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr); }
+.check-form-terms { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) minmax(0, 1fr); }
+.check-amount-field input { font-size: 1.15rem; font-weight: 800; letter-spacing: 0.01em; }
+.check-form textarea { min-height: 72px; resize: vertical; }
+.check-form-actions { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.3rem; padding-top: 1rem; border-top: 1px solid var(--rule); }
+.check-form-actions .btn { margin: 0; }
+@media (max-width: 760px) {
+  .check-form-identity, .check-form-terms { grid-template-columns: minmax(0, 1fr); }
+}
 /* Nine columns never fit a phone: narrow screens stack rows into labelled
    cards instead of scrolling sideways, like every other admin list. */
 @media (max-width: 700px) {
@@ -4421,6 +4472,56 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
    The change dialog shows raw before/after JSON: LTR, capped, scrollable.
    On phones the log table stacks into cards the same way the customer and
    credit tables do — data-labels name each cell. */
+/* The filter is one soft toolbar, not a row of framed white boxes: the labels
+   whisper, fields float on the card, and each date+time pair is one control. */
+.logs-filter { background: var(--surface-soft); border-color: transparent; box-shadow: none; padding: 0.9rem 1rem; }
+.logs-filter::before { display: none; }
+.logs-filter-form { display: flex; flex-direction: column; gap: 0.75rem; }
+.logs-filter-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.65rem; }
+.logs-filter-row + .logs-filter-row { padding-top: 0.75rem; border-top: 1px dashed color-mix(in srgb, var(--rule) 80%, transparent); }
+.logs-filter .filter-field > span { font-size: 0.72rem; font-weight: 700; color: var(--ink-soft); }
+.logs-filter .filter-field > input,
+.logs-filter .filter-field > select {
+  min-width: 11rem; padding: 0.58rem 0.8rem; font-size: 0.9rem;
+  background: var(--card); border-color: transparent;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 6%, transparent);
+}
+.logs-filter .filter-field > input:focus,
+.logs-filter .filter-field > select:focus { border-color: var(--candy); box-shadow: var(--focus-ring); }
+.logs-filter .filter-field.is-search { flex: 1 1 17rem; }
+.logs-search {
+  display: flex; align-items: center; gap: 0.5rem; padding-inline-start: 0.75rem;
+  background: var(--card); border-radius: var(--radius);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 6%, transparent);
+}
+.logs-search .ui-icon { width: 1rem; height: 1rem; color: var(--ink-soft); flex: 0 0 auto; }
+.logs-search > input {
+  flex: 1; min-width: 0; width: 100%; padding: 0.58rem 0.55rem;
+  background: transparent; border: 1px solid transparent; box-shadow: none;
+}
+.logs-search > input:focus { border-color: transparent; box-shadow: none; }
+.logs-search:focus-within { box-shadow: inset 0 0 0 1.5px var(--candy); }
+.logs-range-control {
+  display: flex; align-items: stretch; background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 6%, transparent);
+}
+.logs-range-control > input {
+  width: 9.2rem; padding: 0.58rem 0.75rem; font-size: 0.9rem;
+  background: transparent; border: 1px solid transparent; box-shadow: none;
+}
+.logs-range-control > input + input {
+  width: 5.6rem; flex: 0 0 auto;
+  border-inline-start: 1px solid color-mix(in srgb, var(--rule) 80%, transparent);
+  border-start-start-radius: 0; border-end-start-radius: 0;
+}
+.logs-range-control > input:focus { border-color: var(--candy); box-shadow: none; }
+.logs-filter-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+@media (max-width: 700px) {
+  .logs-filter-row { align-items: stretch; }
+  .logs-filter .filter-field { flex: 1 1 100%; }
+  .logs-range-control > input { width: 100%; }
+}
 .log-diff { direction: ltr; text-align: left; max-block-size: 12rem; overflow: auto; background: var(--surface-soft); border: 1px solid var(--rule); border-radius: var(--radius-sm); padding: 0.6rem 0.8rem; font-size: 0.75rem; }
 /* The global sticky header is transparent — rows would read through it. */
 .logs-table thead th { background: var(--card); }
@@ -4888,4 +4989,96 @@ html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
 }
 @media (prefers-reduced-motion: reduce) {
   .image-field .image-drop { transition: none; }
+}
+
+/* ===================== Owner profile =====================
+   One soft panel instead of three narrow cards: two fields per row, a compact
+   readiness strip, a slim logo column and a sticky save. Scoped to .owner-* so
+   the shared hire styles used by staff/contract pages stay untouched. */
+.owner-shell { max-width: 960px; margin-inline: auto; }
+.owner-ready {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
+  padding: 0.6rem 0.9rem; margin-bottom: 1rem; border-radius: var(--radius);
+  font-size: 0.82rem;
+  background: color-mix(in srgb, var(--sunshine) 16%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--sunshine) 35%, var(--rule));
+}
+.owner-ready.is-ready {
+  background: color-mix(in srgb, var(--mint) 14%, var(--card));
+  border-color: color-mix(in srgb, var(--mint) 38%, var(--rule));
+}
+.owner-ready-title { font-weight: 700; }
+.owner-ready-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.owner-ready-chip {
+  padding: 0.12rem 0.5rem; border-radius: 999px;
+  background: var(--card); font-weight: 700;
+}
+
+.owner-card { background: var(--surface-soft); border-color: transparent; }
+.owner-card::before { display: none; }
+.owner-section + .owner-section {
+  border-top: 1px dashed color-mix(in srgb, var(--rule) 80%, transparent);
+  margin-top: 1rem; padding-top: 1rem;
+}
+.owner-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem 1rem;
+}
+.owner-grid .is-wide { grid-column: 1 / -1; }
+/* Labels wrap differently ("(الزامی)" pushes one to two lines); reserving the
+   same two-line label block keeps every control in a row on one baseline. */
+.owner-card .owner-label { display: block; line-height: 1.4; }
+.owner-card .owner-grid > .hire-field:not(.is-wide) > .owner-label { min-height: 2.8em; }
+
+/* White fields floating on the gray panel: no hard frame, focus speaks. */
+.owner-card .hire-field > input,
+.owner-card .hire-field > select,
+.owner-card .hire-field > textarea {
+  background: var(--card); border-color: transparent; border-radius: 10px;
+  padding: 0.6rem 0.75rem; font-size: 0.9rem;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 6%, transparent);
+}
+.owner-card .hire-field > input:focus,
+.owner-card .hire-field > select:focus,
+.owner-card .hire-field > textarea:focus {
+  border-color: var(--candy); box-shadow: var(--focus-ring);
+}
+
+.owner-business-layout {
+  display: grid; grid-template-columns: 220px minmax(0, 1fr);
+  gap: 1.1rem; align-items: start;
+}
+.owner-logo-panel { display: flex; flex-direction: column; gap: 0.35rem; }
+.owner-logo-title { display: block; font-size: 0.85rem; font-weight: 600; line-height: 1.4; min-height: 2.8em; }
+.owner-logo-preview {
+  display: block; width: 100%; max-height: 72px;
+  object-fit: contain; margin-bottom: 0.1rem;
+}
+.owner-logo-panel .image-drop {
+  flex-direction: column; text-align: center; gap: 0.45rem;
+  padding: 0.8rem 0.6rem;
+}
+.owner-logo-panel .image-drop-copy { text-align: center; }
+.owner-logo-panel .field-help { margin-top: 0; }
+
+.owner-card .settings-savebar {
+  background: var(--surface-soft);
+  border-top: 1px dashed color-mix(in srgb, var(--rule) 80%, transparent);
+}
+
+.owner-history { padding: 0.9rem 1.1rem; }
+.owner-history::before { display: none; }
+.owner-history > summary { cursor: pointer; font-weight: 800; font-size: 0.9rem; }
+.owner-history[open] > summary {
+  padding-bottom: 0.7rem; margin-bottom: 0.7rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+@media (max-width: 760px) {
+  .owner-grid { grid-template-columns: 1fr; }
+  .owner-grid .is-wide { grid-column: auto; }
+  .owner-business-layout { grid-template-columns: 1fr; }
+  /* Single column needs no baseline reservation. */
+  .owner-card .owner-grid > .hire-field > .owner-label,
+  .owner-logo-title { min-height: 0; }
 }

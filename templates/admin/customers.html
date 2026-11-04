@@ -185,23 +185,10 @@
     </p>
 
     {% if rows %}
-    <form id="bulk-tag-form" method="post" action="/admin/customers/bulk-tag" class="bulk-bar" hidden>
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <strong><span id="bulk-count">۰</span> انتخاب شده</strong>
-        <label class="sr-only" for="bulk-tag">برچسب</label>
-        <select name="tag" id="bulk-tag">
-            {% for key, label in tag_palette %}
-            <option value="{{ key }}">{{ label }}</option>
-            {% endfor %}
-        </select>
-        <button type="submit" name="mode" value="add" class="btn btn-sm btn-primary">افزودن برچسب</button>
-        <button type="submit" name="mode" value="remove" class="btn btn-sm btn-ghost">برداشتن برچسب</button>
-    </form>
     <div class="table-scroll">
         <table class="data-table customer-table">
             <thead>
                 <tr>
-                    <th scope="col" class="bulk-cell"><label class="sr-only" for="bulk-check-all">انتخاب همه</label><input type="checkbox" id="bulk-check-all"></th>
                     <th scope="col" aria-sort="{{ 'ascending' if sort == 'name' else 'none' }}"><a class="sort-link" href="/admin/customers?{{ export_qs }}&sort=name">مشتری</a></th>
                     <th scope="col" aria-sort="{{ 'ascending' if sort == 'tier' else 'none' }}"><a class="sort-link" href="/admin/customers?{{ export_qs }}&sort=tier">سطح</a></th>
                     <th scope="col" aria-sort="{{ 'descending' if sort == 'purchase_desc' else 'ascending' if sort == 'purchase_asc' else 'none' }}"><a class="sort-link" href="/admin/customers?{{ export_qs }}&sort={{ 'purchase_asc' if sort == 'purchase_desc' else 'purchase_desc' }}">خریدها</a></th>
@@ -218,7 +205,6 @@
                 {% for row in rows %}
                 {% set customer = row.customer %}
                 <tr>
-                    <td class="bulk-cell"><label class="sr-only" for="bulk-{{ customer.id }}">انتخاب {{ customer.full_name }}</label><input type="checkbox" class="bulk-check" id="bulk-{{ customer.id }}" name="ids" value="{{ customer.id }}" form="bulk-tag-form"></td>
                     <td class="customer-name" data-label="مشتری">
                         <strong><a href="/admin/customers/{{ customer.id }}">{{ customer.full_name }}</a></strong>
                         <small class="customer-phone">{{ customer.phone }}</small>
@@ -341,43 +327,4 @@
     </div>
     {% endif %}
 </section>
-<script>
-// The bulk bar is bound per element, so it is one function the shell re-runs
-// after every in-place swap (and once on load). dataset flags keep a second
-// run over the same nodes a no-op — the products list's rule.
-function initCustomersRegion(root) {
-    var all = root.querySelector('#bulk-check-all');
-    var bar = root.querySelector('#bulk-tag-form');
-    var count = root.querySelector('#bulk-count');
-    if (!all || !bar || !count || bar.dataset.bound) return;
-    bar.dataset.bound = 'true';
-    var boxes = Array.prototype.slice.call(root.querySelectorAll('.bulk-check'));
-    function sync() {
-        var checked = boxes.filter(function (box) { return box.checked; });
-        count.textContent = checked.length;
-        bar.toggleAttribute('hidden', checked.length === 0);
-        all.checked = boxes.length > 0 && checked.length === boxes.length;
-        all.indeterminate = checked.length > 0 && checked.length < boxes.length;
-    }
-    all.addEventListener('change', function () {
-        boxes.forEach(function (box) { box.checked = all.checked; });
-        sync();
-    });
-    boxes.forEach(function (box) { box.addEventListener('change', sync); });
-}
-function initCustomersPage() {
-    initCustomersRegion(document);
-    // The region swaps itself whole via htmx: rebind its widgets on arrival.
-    document.body.addEventListener('htmx:load', function (event) {
-        var region = event.target.closest
-            ? event.target.closest('[data-list-region="customers"]') : null;
-        if (region) initCustomersRegion(region);
-    });
-}
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initCustomersPage);
-} else {
-    initCustomersPage();
-}
-</script>
 {% endblock %}

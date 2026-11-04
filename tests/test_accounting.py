@@ -159,11 +159,10 @@ def test_purchase_updates_cost_but_never_stock(client, db_session, authed):
     purchase = db_session.query(Purchase).order_by(Purchase.id.desc()).first()
     assert purchase.total_cost == 300_000
     assert db_session.query(PurchaseItem).filter(PurchaseItem.purchase_id == purchase.id).count() == 1
-    # The landed figure is recorded as evidence, and writes no stock movement.
+    # The item cost is final: shipping stays on the invoice and writes no
+    # cost-basis movement.
     movements = db_session.query(StockMovement).filter(StockMovement.purchase_id == purchase.id).all()
-    assert [m.movement_type for m in movements] == ["cost_adjustment"]
-    assert movements[0].quantity_delta == 0
-    assert movements[0].unit_cost == 60_000  # 50,000 + 10,000 shipping evidence
+    assert movements == []
 
     # Reversing keeps the purchase row, unstamps the variant, and leaves
     # stock and cost exactly where they were.

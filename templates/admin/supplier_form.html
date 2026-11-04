@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% set page_title = ('ویرایش ' ~ supplier.name) if supplier else 'افزودن تأمین‌کننده' %}
+{% block content %}
+
+{% set page_description %}
+فقط مشخصات تأمین‌کننده را اینجا ثبت کنید؛ خریدها، فاکتورها و پرداخت‌ها در صفحه «خرید» و فهرست تأمین‌کنندگان مدیریت می‌شوند.
+{% endset %}
+{% set page_actions %}
+<a href="/admin/suppliers" class="btn btn-ghost">بازگشت به فهرست</a>
+{% endset %}
+{% include 'partials/page_header.html' %}
+
+{% if error %}
+<div class="alert alert-error supplier-form-error" role="alert">{{ error }}</div>
+{% endif %}
+
+<div class="card supplier-form-card">
+    <form method="post"
+          action="{% if supplier %}/admin/suppliers/{{ supplier.id }}/edit{% else %}/admin/suppliers/add{% endif %}"
+          class="supplier-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+        <fieldset class="supplier-form-section">
+            <legend>مشخصات تأمین‌کننده</legend>
+            <div class="form-row supplier-form-identity">
+                <div class="form-group">
+                    <label for="supplier-name">نام تأمین‌کننده <span class="required-mark">*</span></label>
+                    <input type="text" id="supplier-name" name="name" value="{{ values.name }}" required
+                           autocomplete="organization" placeholder="نام فروشگاه، شرکت یا شخص">
+                </div>
+                <div class="form-group">
+                    <label for="supplier-type">نوع تأمین‌کننده</label>
+                    <input type="text" id="supplier-type" name="supplier_type" value="{{ values.supplier_type }}"
+                           list="supplier-types" autocomplete="off" placeholder="عمده‌فروش، تولیدی، ...">
+                </div>
+                <div class="form-group">
+                    <label for="supplier-economic-code">کد اقتصادی</label>
+                    <input type="text" id="supplier-economic-code" name="economic_code"
+                           value="{{ values.economic_code }}" inputmode="numeric" dir="ltr"
+                           placeholder="14 رقم">
+                </div>
+            </div>
+        </fieldset>
+
+        <fieldset class="supplier-form-section">
+            <legend>مالک و تماس</legend>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="supplier-owner-first">نام مالک</label>
+                    <input type="text" id="supplier-owner-first" name="owner_first_name"
+                           value="{{ values.owner_first_name }}" autocomplete="given-name" placeholder="نام">
+                </div>
+                <div class="form-group">
+                    <label for="supplier-owner-last">نام خانوادگی مالک</label>
+                    <input type="text" id="supplier-owner-last" name="owner_last_name"
+                           value="{{ values.owner_last_name }}" autocomplete="family-name" placeholder="نام خانوادگی">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="supplier-mobile">موبایل <span class="required-mark">*</span></label>
+                    <input type="tel" id="supplier-mobile" name="phone" value="{{ values.phone }}" required
+                           dir="ltr" autocomplete="tel" placeholder="09123456789">
+                </div>
+                <div class="form-group">
+                    <label for="supplier-landline">تلفن ثابت</label>
+                    <input type="tel" id="supplier-landline" name="landline" value="{{ values.landline }}"
+                           dir="ltr" placeholder="02112345678">
+                </div>
+            </div>
+        </fieldset>
+
+        <fieldset class="supplier-form-section">
+            <legend>نشانی</legend>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="supplier-city">شهر</label>
+                    <input type="text" id="supplier-city" name="city" value="{{ values.city }}"
+                           list="supplier-cities" autocomplete="address-level2" placeholder="نام شهر">
+                </div>
+                <div class="form-group">
+                    <label for="supplier-address">آدرس</label>
+                    <textarea id="supplier-address" name="address" rows="3"
+                              autocomplete="street-address" placeholder="نشانی کامل تأمین‌کننده">{{ values.address }}</textarea>
+                </div>
+            </div>
+        </fieldset>
+
+        <fieldset class="supplier-form-section">
+            <legend>تسویه و یادداشت</legend>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="supplier-sheba">شبا</label>
+                    <input type="text" id="supplier-sheba" name="sheba" value="{{ values.sheba }}"
+                           dir="ltr" autocomplete="off" placeholder="IR000000000000000000000000">
+                    <small class="field-help">۲۴ رقم شبا را وارد کنید؛ پیشوند IR خودکار اضافه می‌شود.</small>
+                </div>
+                <div class="form-group">
+                    <label for="supplier-note">یادداشت</label>
+                    <textarea id="supplier-note" name="note" rows="3"
+                              placeholder="توضیح کوتاه، اختیاری">{{ values.note }}</textarea>
+                </div>
+            </div>
+        </fieldset>
+
+        <datalist id="supplier-types">
+            {% for value in supplier_types %}<option value="{{ value }}"></option>{% endfor %}
+        </datalist>
+        <datalist id="supplier-cities">
+            {% for value in cities %}<option value="{{ value }}"></option>{% endfor %}
+        </datalist>
+
+        <div class="supplier-form-actions">
+            <button type="submit" class="btn btn-primary">
+                {% if supplier %}ذخیره مشخصات{% else %}افزودن تأمین‌کننده{% endif %}
+            </button>
+            <a href="/admin/suppliers" class="btn btn-ghost">انصراف</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

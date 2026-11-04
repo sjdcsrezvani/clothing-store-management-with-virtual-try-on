@@ -707,8 +707,11 @@ def test_the_counter_panel_names_the_campaign_the_cashier_must_honour(client, db
     db_session.commit()
     login(client)
 
-    body = client.get(f"/customers/lookup?phone={customer.phone}").text
-    assert "کمپین فعال" in body
+    token = csrf_token(client, "/sales/new")
+    body = client.post("/sales/lookup-customer", data={
+        "phone": customer.phone, "csrf_token": token,
+    }).text
+    assert "کمپین" in body
     assert campaign.name in body
 
 

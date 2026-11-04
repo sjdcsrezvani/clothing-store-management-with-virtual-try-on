@@ -1033,7 +1033,7 @@ def _one_of_everything(db_session, staff: dict) -> dict[str, object]:
         "customer_id": customer.id, "product_id": product.id, "variant_id": variant.id,
         "purchase_id": purchase.id, "draft_purchase_id": draft.id, "campaign_id": campaign.id,
         "staff_id": staff["cashier"].id, "payment_id": salary.id,
-        "supplier_payment_id": supplier_payment.id,
+        "supplier_payment_id": supplier_payment.id, "supplier_id": supplier.id,
         "template_id": template.id, "session_id": closed_shift.id, "img_id": image.id,
         "sale_id": credit_sale.id, "barcode": variant.barcode,
         "message_id": message_id,

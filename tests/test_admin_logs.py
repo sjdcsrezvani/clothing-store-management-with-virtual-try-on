@@ -51,6 +51,24 @@ def test_combined_filters_narrow_to_one_row(client, db_session):
     assert f'<option value="{cashier.id}" selected>' in page
 
 
+def test_hour_and_minute_filter_narrows_to_one_minute(client, db_session):
+    _owner_client(client, db_session, name="logs-owner-minute")
+    target = (datetime.now(timezone.utc) - timedelta(days=4)).replace(
+        second=0, microsecond=0)
+    _log(db_session, "logout", "ردیف همان دقیقه", created_at=target)
+    _log(db_session, "logout", "ردیف دو ساعت بعد",
+         created_at=target + timedelta(hours=2))
+    day = _jalali_day(target)
+    minute = target.astimezone().strftime("%H:%M")
+
+    page = client.get(
+        f"/admin/logs?from={day}&from_time={minute}"
+        f"&to={day}&to_time={minute}").text
+    assert "ردیف همان دقیقه" in page
+    assert "ردیف دو ساعت بعد" not in page
+    assert f'value="{minute}"' in page  # the form echoes the parsed time
+
+
 def test_garbage_filter_values_degrade_to_unfiltered(client, db_session):
     _owner_client(client, db_session, name="logs-owner-garbage")
     _log(db_session, "logout", "ردیف ماندگار")

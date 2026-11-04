@@ -26,7 +26,7 @@
     <div class="stat-card accent-sky">
         <div class="stat-label">مبلغ کل فاکتور</div>
         <div class="stat-value tnum">{{ fmt(settlement.total) }} ت</div>
-        <div class="stat-sub">اقلام {{ fmt(items_subtotal) }} ت + هزینه {{ fmt(purchase.extra_cost or 0) }} ت</div>
+        <div class="stat-sub">اقلام {{ fmt(items_subtotal) }} ت + هزینه {{ fmt(purchase.extra_cost or 0) }} ت{% if purchase.tax_percent %} + مالیات {{ fmt(tax_amount) }} ت{% endif %}</div>
     </div>
     {% if purchase.is_draft %}
     <div class="stat-card accent-pine">
@@ -68,7 +68,7 @@
             <span class="badge badge-info">پرداخت‌نشده</span>
             {% endif %}
         </div>
-        <div class="stat-sub">{% if purchase.is_draft %}هنوز روی حساب‌ها اثر نگذاشته است{% elif purchase.extra_cost_in_landed %}هزینه حمل در سوابق هر قلم لحاظ شده{% else %}هزینه حمل فقط روی مبلغ فاکتور است{% endif %}</div>
+        <div class="stat-sub">{% if purchase.is_draft %}هنوز روی حساب‌ها اثر نگذاشته است{% elif purchase.extra_cost_in_landed and purchase.extra_cost %}هزینه حمل در سوابق هر قلم لحاظ شده{% else %}هزینه حمل فقط روی مبلغ فاکتور است{% endif %}</div>
     </div>
 </div>
 
@@ -91,21 +91,21 @@
                             <th scope="col">قیمت خرید واحد</th>
                             <th scope="col">جمع ردیف</th>
                             <th scope="col">{% if purchase.is_draft %}بهای تمام‌شده واحد (سوابق){% else %}بهای تمام‌شده واحد{% endif %}</th>
-                            <th scope="col">سهم هزینه حمل</th>
+                            {% if purchase.extra_cost_in_landed and purchase.extra_cost %}<th scope="col">سهم هزینه حمل</th>{% endif %}
                         </tr>
                     </thead>
                     <tbody>
                         {% for line in lines %}
                         <tr>
                             <td>
-                                <strong>{{ line.item.product.name if line.item.product else '—' }}</strong>
-                                <small>{{ line.item.variant.display_name if line.item.variant else 'تنوع حذف‌شده' }}</small>
+                                <strong>{{ line.item.variant.display_name if line.item.variant else (line.item.product.name if line.item.product else '—') }}</strong>
+                                {% if not line.item.variant %}<small>تنوع حذف‌شده</small>{% endif %}
                             </td>
                             <td class="tnum">{{ line.item.quantity }}</td>
                             <td class="tnum">{{ fmt(line.unit_cost) }} ت</td>
                             <td class="tnum">{{ fmt(line.line_total) }} ت</td>
                             <td class="tnum">{{ fmt(line.landed_unit_cost) }} ت</td>
-                            <td class="tnum">{% if line.extra_share %}{{ fmt(line.extra_share) }} ت{% else %}—{% endif %}</td>
+                            {% if purchase.extra_cost_in_landed and purchase.extra_cost %}<td class="tnum">{% if line.extra_share %}{{ fmt(line.extra_share) }} ت{% else %}—{% endif %}</td>{% endif %}
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -200,6 +200,7 @@
             <dl class="purchase-amount-list">
                 <div><dt>جمع اقلام</dt><dd class="tnum">{{ fmt(items_subtotal) }} ت</dd></div>
                 <div><dt>هزینه حمل و سایر</dt><dd class="tnum">{{ fmt(purchase.extra_cost or 0) }} ت</dd></div>
+                {% if purchase.tax_percent %}<div><dt>مالیات ({{ purchase.tax_percent }}٪)</dt><dd class="tnum">{{ fmt(tax_amount) }} ت</dd></div>{% endif %}
                 <div class="is-total"><dt>مبلغ کل فاکتور</dt><dd class="tnum">{{ fmt(settlement.total) }} ت</dd></div>
                 <div><dt>پرداخت‌شده</dt><dd class="tnum">{{ fmt(settlement.paid) }} ت</dd></div>
                 <div><dt>مانده</dt><dd class="tnum">{{ fmt(settlement.remaining) }} ت</dd></div>

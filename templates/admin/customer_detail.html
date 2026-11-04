@@ -13,7 +13,6 @@
 {% set page_actions %}
 <a href="/admin/customers" class="btn btn-ghost">فهرست مشتریان</a>
         <a href="/admin/credit/{{ customer.id }}" class="btn btn-ghost">حساب نسیه</a>
-        <a href="/customers/lookup?phone={{ customer.phone }}" class="btn btn-ghost">پنل مشتری</a>
 {% endset %}
 {% include 'partials/page_header.html' %}
 
@@ -324,19 +323,6 @@
                 </li>
             </ul>
 
-            <details class="identity-disclosure">
-                <summary>ویرایش نام و تلفن</summary>
-                {# Identity corrections post here, not to the meta card: a phone
-                   obeys the signup rule and never collides with another file. #}
-                <form method="post" action="/admin/customers/{{ customer.id }}/identity" class="identity-form">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                    <input type="text" name="first_name" value="{{ customer.first_name or '' }}" placeholder="نام" aria-label="نام">
-                    <input type="text" name="last_name" value="{{ customer.last_name or '' }}" placeholder="نام خانوادگی" aria-label="نام خانوادگی">
-                    <input type="tel" name="phone" value="{{ customer.phone }}" dir="ltr" required placeholder="09123456789" aria-label="شماره موبایل *">
-                    <button type="submit" class="btn btn-sm btn-primary">ذخیره مشخصات</button>
-                </form>
-            </details>
-
             {% for entry in profile.birthdays %}
             <p class="birthday-line">
                 <span class="customer-meta">{{ entry.label }}:</span>
@@ -362,6 +348,31 @@
                 روی تولد خودش و کسی که برای فرزندش خرید می‌کند روی تولد فرزند.
                 {% if not child_profile %}این فروشگاه پرونده فرزند ندارد.{% endif %}
             </p>
+
+            <h4>نام و تلفن</h4>
+            {# Identity corrections post to their own route: the phone obeys the
+               signup rule and never collides with another file. #}
+            <form method="post" action="/admin/customers/{{ customer.id }}/identity" class="identity-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="identity_first_name">نام</label>
+                        <input type="text" id="identity_first_name" name="first_name" value="{{ customer.first_name or '' }}" placeholder="مثال: رضا">
+                    </div>
+                    <div class="form-group">
+                        <label for="identity_last_name">نام خانوادگی</label>
+                        <input type="text" id="identity_last_name" name="last_name" value="{{ customer.last_name or '' }}" placeholder="مثال: محمدی">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="identity_phone">شماره موبایل</label>
+                    <input type="tel" id="identity_phone" name="phone" value="{{ customer.phone }}" dir="ltr" required placeholder="09123456789">
+                    <small class="field-help">شماره‌ای که برای مشتری دیگری ثبت شده پذیرفته نمی‌شود؛ سابقه خرید با همین پرونده می‌ماند.</small>
+                </div>
+                <button type="submit" class="btn btn-primary">ذخیره نام و تلفن</button>
+            </form>
+
+            <h4>تولد، برچسب و یادداشت</h4>
             <form method="post" action="/admin/customers/{{ customer.id }}/meta">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
