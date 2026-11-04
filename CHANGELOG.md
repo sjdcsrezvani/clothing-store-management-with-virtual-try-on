@@ -1,3 +1,36 @@
+## 3.1.3 — 2026-11-04
+
+### تأمین‌کننده‌ها: a supplier is a profile, not a phone number
+
+- **Add and edit suppliers on their own screens.** A supplier now keeps its
+  owner, contact channels, city and address, and its settlement identity —
+  type, economic code and SHEBA — instead of a single name-and-phone row.
+  Legacy suppliers keep what they had and read exactly as before (migration 39).
+- **Variant editing keeps its place.** Editing a variant returns to where you
+  came from instead of dropping you back at the top of the list.
+- **Purchases carry tax as a percentage** of the item lines, with legacy
+  invoices defaulting to no tax (migration 40).
+
+### پشتیبان‌ها: a backup that brings its images with it
+
+- **Database and uploads travel as one pair.** Each backup has a database part
+  and an uploads tarball under one name stem, so restoring one always brings
+  its files along.
+- **Restore from inside the app,** no restart: pick the backup from the restore
+  card and confirm, with a safety snapshot of the current state taken first
+  unless you untick it.
+- **Restore from another machine** by uploading the «دانلود همه» zip — or a lone
+  `.db` for records only — and pressing «بازیابی».
+- **The schedule is yours.** Automatic backups run every N days at the 02:00
+  pass and keep the newest N; both numbers live on the page.
+
+### لاگ‌ها و پروفایل: the filters read the clock, the profile is one panel
+
+- Log filters now search by hour and minute, rebuilt as a single row rather
+  than a wall of fields.
+- The owner profile is one soft panel with a sticky save bar.
+- Extended the backup, supplier, purchase, migration, and navigation tests.
+
 ## 3.1.2 — 2026-11-02
 
 ### برند فروشگاه: one home for the shop's contact, and tags that print it
