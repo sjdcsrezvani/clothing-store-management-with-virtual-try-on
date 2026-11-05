@@ -2316,6 +2316,37 @@ def _purchase_with_lines(db, purchase_id: int):
     ).filter(Purchase.id == purchase_id).first()
 
 
+def _purchase_product_notes(purchase) -> list[dict]:
+    """One side note per product: the sizes and colours it brought, and the
+    cost those variants add up to. A supplier invoice often names a product
+    once and lists sizes underneath; this is that reading, derived from lines."""
+    groups, order = {}, []
+    for item in purchase.items or []:
+        variant = item.variant
+        product = item.product or (variant.product if variant is not None else None)
+        if product is None:
+            continue
+        key = product.id if product.id is not None else product.name
+        group = groups.get(key)
+        if group is None:
+            group = {"name": product.name, "sizes": [], "colors": [],
+                     "quantity": 0, "total": 0, "variants": set()}
+            groups[key] = group
+            order.append(group)
+        size = (variant.size or "").strip() if variant is not None else ""
+        color = (variant.color or "").strip() if variant is not None else ""
+        if size and size not in group["sizes"]:
+            group["sizes"].append(size)
+        if color and color not in group["colors"]:
+            group["colors"].append(color)
+        group["variants"].add(item.variant_id or item.id)
+        group["quantity"] += item.quantity or 0
+        group["total"] += (item.unit_cost or 0) * (item.quantity or 0)
+    # One variant already names its product on the line; the note is for the
+    # product-level case where several sizes/colours came in together.
+    return [group for group in order if len(group["variants"]) > 1]
+
+
 def _purchase_lines(purchase) -> list[dict]:
     """Per-line amounts including each line's share of the shipping cost."""
     items = purchase.items or []
@@ -3164,6 +3195,7 @@ async def admin_purchase_detail(purchase_id: int, request: Request, db: Session 
         "purchase": purchase,
         "settlement": purchase_settlement(db, purchase, now=now),
         "lines": _purchase_lines(purchase),
+        "product_notes": _purchase_product_notes(purchase),
         "payments": db.query(SupplierPayment).filter(SupplierPayment.purchase_id == purchase.id)
             .order_by(SupplierPayment.created_at.desc(), SupplierPayment.id.desc()).all(),
         "movements": db.query(StockMovement).filter(StockMovement.purchase_id == purchase.id)
@@ -3241,6 +3273,7 @@ async def admin_purchase_print(purchase_id: int, request: Request, db: Session =
         "purchase": purchase,
         "settlement": purchase_settlement(db, purchase),
         "lines": _purchase_lines(purchase),
+        "product_notes": _purchase_product_notes(purchase),
         "items_subtotal": items_subtotal,
         "tax_amount": purchase_tax_amount(items_subtotal, purchase.tax_percent),
         "units": sum(i.quantity for i in purchase.items),

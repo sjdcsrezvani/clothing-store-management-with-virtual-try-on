@@ -81,6 +81,18 @@
                     <p class="muted">{{ lines|length }} ردیف · جمع تعداد {{ units }} عدد{% if purchase.is_draft %} · بهای تمام‌شده زیر فقط برای سوابق است{% endif %}</p>
                 </div>
             </div>
+            {% if product_notes %}
+            <div class="purchase-product-notes">
+                {% for note in product_notes %}
+                <p class="purchase-product-note">
+                    <strong>{{ note.name }}</strong>
+                    {% if note.sizes %}<span>سایز: {{ note.sizes|join('، ') }}</span>{% endif %}
+                    {% if note.colors %}<span>رنگ: {{ note.colors|join('، ') }}</span>{% endif %}
+                    <span class="tnum">{{ note.quantity }} عدد · {{ fmt(note.total) }} ت</span>
+                </p>
+                {% endfor %}
+            </div>
+            {% endif %}
             {% if lines %}
             <div class="table-scroll">
                 <table class="purchase-lines-table">

@@ -5,8 +5,8 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import unquote
 
 from models import (
-    BusinessEvent, Product, Purchase, PurchaseItem, Settings, StockMovement, Supplier,
-    SupplierPayment,
+    BusinessEvent, Product, ProductVariant, Purchase, PurchaseItem, Settings,
+    StockMovement, Supplier, SupplierPayment,
 )
 from services.accounting import (
     get_cashbox,
@@ -89,6 +89,58 @@ def _catalog(client) -> list:
     )
     assert match, "the purchases page must ship its product catalogue"
     return json.loads(match.group(1))
+
+
+def _grouped_product(db_session, supplier, name="پیراهن گروهی"):
+    product = Product(name=name, supplier_id=supplier.id)
+    db_session.add(product)
+    db_session.flush()
+    variants = [
+        ProductVariant(product_id=product.id, price=100_000, cost_price=10_000,
+                       stock_quantity=3, barcode="GROUP-1", size="S", color="آبی"),
+        ProductVariant(product_id=product.id, price=100_000, cost_price=20_000,
+                       stock_quantity=2, barcode="GROUP-2", size="M", color="قرمز"),
+    ]
+    db_session.add_all(variants)
+    db_session.commit()
+    return product, variants
+
+
+def test_purchase_form_offers_product_level_add_with_sizes_and_colors(client, authed, db_session):
+    supplier = _make_supplier(db_session, name="گروهی‌فروش")
+    _grouped_product(db_session, supplier)
+
+    page = client.get("/admin/purchases").text
+    assert 'id="purchase-add-product"' in page
+    assert "addWholeProduct" in page
+
+    entry = next(p for p in _catalog(client) if p["name"] == "پیراهن گروهی")
+    assert [v["size"] for v in entry["variants"]] == ["S", "M"]
+    assert [v["color"] for v in entry["variants"]] == ["آبی", "قرمز"]
+
+
+def test_purchase_detail_and_print_summarize_a_product(client, authed, db_session):
+    supplier = _make_supplier(db_session, name="گروهی‌فروش ۲")
+    _, variants = _grouped_product(db_session, supplier, name="شلوار گروهی")
+    response = _post(client, "/admin/purchases/add", {
+        "supplier_id": str(supplier.id),
+        "purchase_variant_0": str(variants[0].id),
+        "purchase_variant_1": str(variants[1].id),
+    })
+    assert response.status_code == 303
+    purchase = _latest_purchase(db_session)
+
+    detail = client.get(f"/admin/purchases/{purchase.id}").text
+    assert "purchase-product-notes" in detail
+    assert "سایز: S، M" in detail
+    assert "رنگ: آبی، قرمز" in detail
+    # 3 × 10,000 + 2 × 20,000 = 70,000
+    assert "5 عدد" in detail and "70,000" in detail
+
+    printed = client.get(f"/admin/purchases/{purchase.id}/print").text
+    assert "print-product-notes" in printed
+    assert "سایز S، M" in printed
+    assert "رنگ آبی، قرمز" in printed
 
 
 def test_draft_invoice_touches_nothing_until_finalized(client, db_session, authed):

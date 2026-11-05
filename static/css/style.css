@@ -2949,6 +2949,12 @@ input.is-invalid:focus, select.is-invalid:focus, textarea.is-invalid:focus {
 .purchase-scope-note.is-warning { color: var(--link-hover); font-weight: 700; }
 .purchase-draft-banner { margin-bottom: 1rem; }
 
+.purchase-add-product { min-height: 34px; max-width: 100%; }
+.purchase-product-note { margin: 0.2rem 0 0.6rem; color: var(--ink-soft); font-size: 0.82rem; }
+.purchase-product-notes { display: grid; gap: 0.3rem; margin: 0 0 0.9rem; padding: 0.65rem 0.85rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--surface-soft); }
+.purchase-product-notes .purchase-product-note { margin: 0; display: flex; flex-wrap: wrap; gap: 0.4rem 0.9rem; align-items: baseline; }
+.purchase-product-notes .purchase-product-note .tnum { margin-inline-start: auto; color: var(--ink); font-weight: 700; }
+.print-product-notes { display: grid; gap: 0.25rem; margin: 0.8rem 0; font-size: 0.82rem; }
 .purchase-totals { display: grid; gap: 0.4rem; margin: 1rem 0; padding: 0.9rem 1rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--surface-soft); }
 .purchase-totals-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; font-size: 0.86rem; color: var(--ink-soft); }
 .purchase-totals-row strong { color: var(--ink); }

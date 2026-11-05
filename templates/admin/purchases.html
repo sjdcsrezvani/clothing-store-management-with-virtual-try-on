@@ -94,7 +94,7 @@
         <div class="section-heading-row section-heading-spaced">
             <div>
                 <h3>محصولات این فاکتور</h3>
-                <p class="muted">نام محصول، تنوع یا بارکد را بنویسید و از فهرست انتخاب کنید؛ بارکدخوان هم مثل صفحه‌کلید کار می‌کند.</p>
+                <p class="muted">برای یک محصول با همه سایزها و رنگ‌ها، از «افزودن محصول» استفاده کنید؛ یا نام تنوع/بارکد را بنویسید و از فهرست انتخاب کنید.</p>
                 <p class="muted">تعداد و بهای هر ردیف از خود تنوع می‌آید و اینجا فقط انتخاب می‌شود؛ تنوع انتخاب‌شده از فهرست محو می‌شود تا دوباره خریده نشود.</p>
             </div>
             <span class="section-step">۲</span>
@@ -111,12 +111,17 @@
         <div class="section-heading-row purchase-items-head">
             <div>
                 <h4>ردیف‌های کالا</h4>
-                <p class="muted">هر ردیف یک محصول از همین تأمین‌کننده است؛ حذف ردیف در انتهای همان خط انجام می‌شود.</p>
+                <p class="muted">هر ردیف یک تنوع از همین تأمین‌کننده است؛ حذف ردیف در انتهای همان خط انجام می‌شود.</p>
             </div>
             <div class="purchase-items-tools">
+                <label class="sr-only" for="purchase-add-product">افزودن محصول با همه سایزها و رنگ‌ها</label>
+                <select id="purchase-add-product" class="purchase-add-product">
+                    <option value="">افزودن محصول با همه سایزها و رنگ‌ها…</option>
+                </select>
                 <button type="button" class="btn btn-sm btn-ghost" id="purchase-add-row">افزودن ردیف</button>
             </div>
         </div>
+        <p class="purchase-product-note" id="purchase-product-note" role="status"></p>
 
         <div id="purchase-rows"></div>
 
@@ -337,6 +342,7 @@
   "variants": [
     {% for v in p.variants if v.is_active and v.received_purchase_id is none %}
     {"id": {{ v.id }}, "label": {{ v.display_name|tojson }}, "barcode": {{ (v.barcode or '')|tojson }},
+     "size": {{ (v.size or '')|tojson }}, "color": {{ (v.color or '')|tojson }},
      "price": {{ v.price or 0 }}, "cost": {{ v.cost_price or 0 }}, "stock": {{ v.stock_quantity or 0 }},
      "reorder_point": {{ v.reorder_point or 0 }}}{% if not loop.last %},{% endif %}
     {% endfor %}
@@ -403,6 +409,8 @@
     var supplierSelect = document.getElementById('supplier_id');
     var extraInput = document.getElementById('purchase-extra-cost');
     var taxInput = document.getElementById('purchase-tax-percent');
+    var productSelect = document.getElementById('purchase-add-product');
+    var productNote = document.getElementById('purchase-product-note');
     var nextIdx = 0;
 
     function money(value) {
@@ -598,6 +606,7 @@
         paintMirror(row);
         paintContext(row);
         updateTotals();
+        paintProductPicker();
     }
 
     function paintMirror(row) {
@@ -700,6 +709,7 @@
             row.remove();
             if (!rowsHost.children.length) addRow();
             updateTotals();
+            paintProductPicker();
         });
 
         var context = document.createElement('p');
@@ -803,6 +813,67 @@
         return 'added';
     }
 
+    // ── Add a whole product: one pick, every size and colour ──
+    function unique(values) {
+        var out = [];
+        values.forEach(function (value) {
+            value = String(value || '').trim();
+            if (value && out.indexOf(value) === -1) out.push(value);
+        });
+        return out;
+    }
+
+    function productChoices() {
+        var supplier = currentSupplierId();
+        if (!supplier) return [];
+        var picked = pickedIds();
+        return catalog.map(function (product, index) {
+            var variants = product.variants.filter(function (variant) {
+                return String(variant.supplierId || '') === supplier
+                    && !picked[String(variant.id)];
+            });
+            return { product: product, index: index, variants: variants };
+        }).filter(function (entry) { return entry.variants.length; });
+    }
+
+    function paintProductPicker() {
+        if (!productSelect) return;
+        productSelect.innerHTML = '<option value="">افزودن محصول با همه سایزها و رنگ‌ها…</option>';
+        productChoices().forEach(function (entry) {
+            var option = document.createElement('option');
+            option.value = String(entry.index);
+            option.textContent = entry.product.name
+                + ' (' + entry.variants.length + ' تنوع)';
+            productSelect.appendChild(option);
+        });
+    }
+
+    function addWholeProduct(index) {
+        var entry = null;
+        productChoices().forEach(function (candidate) {
+            if (String(candidate.index) === String(index)) entry = candidate;
+        });
+        if (!entry) return;
+        entry.variants.forEach(function (variant) { addOrFill(variant); });
+        // Leave one empty row ready for the next scan or pick.
+        var last = rowsHost.lastElementChild;
+        if (last && rowVariant(last)) addRow();
+
+        var sizes = unique(entry.variants.map(function (v) { return v.size; }));
+        var colors = unique(entry.variants.map(function (v) { return v.color; }));
+        var total = entry.variants.reduce(function (sum, v) {
+            return sum + num(v.stock || 0) * num(v.cost || 0);
+        }, 0);
+        var bits = [];
+        if (sizes.length) bits.push('سایزها: ' + sizes.join('، '));
+        if (colors.length) bits.push('رنگها: ' + colors.join('، '));
+        bits.push('جمع: ' + money(total) + ' ت');
+        productNote.textContent = '«' + entry.product.name + '» — ' + bits.join(' · ');
+        updateTotals();
+        paintProductPicker();
+        paintScopeNote();
+    }
+
     function setScanMessage(text, isError) {
         scanMessage.textContent = text;
         scanMessage.classList.toggle('is-error', !!isError);
@@ -839,6 +910,8 @@
     // Changing the supplier re-scopes every row, dropping picks that no longer fit.
     function resyncScope() {
         paintScopeNote();
+        paintProductPicker();
+        if (productNote) productNote.textContent = '';
         var dropped = [];
         rowsHost.querySelectorAll('.purchase-item-row').forEach(function (row) {
             var variant = rowVariant(row);
@@ -859,6 +932,13 @@
     document.getElementById('purchase-add-row').addEventListener('click', function () {
         addRow();
     });
+    if (productSelect) {
+        productSelect.addEventListener('change', function () {
+            var index = productSelect.value;
+            productSelect.value = '';
+            if (index !== '') addWholeProduct(index);
+        });
+    }
     scanInput.addEventListener('keydown', function (event) {
         if (event.key === 'Enter') {
             event.preventDefault();
@@ -930,6 +1010,7 @@
         errBox.hidden = true;
     });
     paintScopeNote();
+    paintProductPicker();
     // Scanner-ready without yanking the page down to the items section.
     if (typeof scanInput.focus === 'function') {
         try { scanInput.focus({ preventScroll: true }); } catch (error) { scanInput.focus(); }

@@ -93,6 +93,19 @@
         </tbody>
     </table>
 
+    {% if product_notes %}
+    <div class="print-product-notes">
+        {% for note in product_notes %}
+        <div class="print-product-note">
+            <strong>{{ note.name }}</strong>
+            {% if note.sizes %} — سایز {{ note.sizes|join('، ') }}{% endif %}
+            {% if note.colors %} · رنگ {{ note.colors|join('، ') }}{% endif %}
+            — {{ note.quantity }} عدد، {{ fmt(note.total) }} تومان
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     <table>
         <thead>
             <tr>
