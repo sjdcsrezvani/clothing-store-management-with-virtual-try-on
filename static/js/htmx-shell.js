@@ -188,8 +188,14 @@
                 region.removeAttribute('aria-busy');
             }
         };
+        // Any terminal outcome lifts the veil — an aborted, timed-out or
+        // erroring flight must not leave the region dimmed and refusing the
+        // next request forever.
+        document.body.addEventListener('htmx:afterRequest', liftVeil);
         document.body.addEventListener('htmx:responseError', liftVeil);
         document.body.addEventListener('htmx:sendError', liftVeil);
+        document.body.addEventListener('htmx:timeout', liftVeil);
+        document.body.addEventListener('htmx:abort', liftVeil);
 
         document.body.addEventListener('htmx:load', function (event) {
             unboostNativeLinks(event.target);

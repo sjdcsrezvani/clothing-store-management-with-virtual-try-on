@@ -170,61 +170,81 @@
         });
         if (window.ensureCsrf) window.ensureCsrf(form);
 
+        var watchdog = null;
         function finish() {
+            if (watchdog) { clearTimeout(watchdog); watchdog = null; }
             busy = false;
             document.body.classList.remove('is-soft-busy');
             locks.forEach(function (control, index) {
                 control.disabled = disabled[index];
                 control.removeAttribute('aria-busy');
+                control.classList.remove('is-loading'); // app.js adds it, too
             });
         }
+        // The bar must never outlive the request: a missed terminal event (a
+        // swapped form, an aborted XHR) would otherwise animate forever.
+        watchdog = setTimeout(finish, 15000);
 
         function answer(event) {
-            var xhr = event.detail && event.detail.xhr;
-            if (!xhr) { finish(); return; }
-            var finalUrl = xhr.responseURL || action;
-            var asked = new URL(action, location.href).href;
-            var landed;
-            try { landed = new URL(finalUrl, location.href); } catch (error) { finish(); return; }
-            if (!xhr.status || xhr.status >= 400) { finish(); return; }
+            try {
+                var xhr = event.detail && event.detail.xhr;
+                if (!xhr) { finish(); return; }
+                var finalUrl = xhr.responseURL || action;
+                var asked = new URL(action, location.href).href;
+                var landed;
+                try { landed = new URL(finalUrl, location.href); } catch (error) { finish(); return; }
+                if (!xhr.status || xhr.status >= 400) { finish(); return; }
 
-            var direct = landed.href === asked;
-            // A different page is a real destination (create, detail, login).
-            if (!direct && landed.pathname !== location.pathname) {
-                location.assign(landed.href);
-                return;
+                var direct = landed.href === asked;
+                // A different page is a real destination (create, detail, login).
+                if (!direct && landed.pathname !== location.pathname) {
+                    finish(); // this document is leaving; stop its bar now
+                    location.assign(landed.href);
+                    return;
+                }
+
+                var isMain = selector === '#app-main';
+                var reuse = direct || sameView(landed.href, location.href);
+                if (reuse && xhr.responseText && swap(xhr.responseText, selector)) {
+                    if (!isMain) toast(parse(xhr.responseText), landed.href);
+                    if (!direct) history.replaceState(null, '', keepHash(landed.href));
+                    finish();
+                    restore(scroll);
+                    return;
+                }
+
+                // The redirect resets filters: fetch the view the owner actually
+                // had, with the server's intended params merged in.
+                var url = direct ? location.href : keepView(landed.href);
+                toast(null, landed.href);
+                history.replaceState(null, '', keepHash(url));
+                var pending = htmx.ajax('GET', url, {
+                    target: selector, select: selector, swap: 'outerHTML'
+                });
+                Promise.resolve(pending).then(function () {
+                    finish();
+                    restore(scroll);
+                }, function () {
+                    finish();
+                    restore(scroll);
+                });
+            } catch (error) {
+                finish();
+                throw error;
             }
-
-            var isMain = selector === '#app-main';
-            var reuse = direct || sameView(landed.href, location.href);
-            if (reuse && xhr.responseText && swap(xhr.responseText, selector)) {
-                if (!isMain) toast(parse(xhr.responseText), landed.href);
-                if (!direct) history.replaceState(null, '', keepHash(landed.href));
-                finish();
-                restore(scroll);
-                return;
-            }
-
-            // The redirect resets filters: fetch the view the owner actually
-            // had, with the server's intended params merged in.
-            var url = direct ? location.href : keepView(landed.href);
-            toast(null, landed.href);
-            history.replaceState(null, '', keepHash(url));
-            var pending = htmx.ajax('GET', url, {
-                target: selector, select: selector, swap: 'outerHTML'
-            });
-            Promise.resolve(pending).then(function () {
-                finish();
-                restore(scroll);
-            }, function () {
-                finish();
-                restore(scroll);
-            });
         }
 
         form.addEventListener('htmx:afterRequest', answer, { once: true });
+        form.addEventListener('htmx:responseError', finish, { once: true });
+        form.addEventListener('htmx:sendError', finish, { once: true });
+        form.addEventListener('htmx:timeout', finish, { once: true });
         try {
-            htmx.ajax('POST', action, { source: form, swap: 'none', values: values });
+            // htmx 2 returns a promise for the request itself. Clearing here
+            // does not depend on an event reaching this (possibly swapped-out)
+            // form — the bar stops when the POST is actually over.
+            var pendingPost = htmx.ajax(
+                'POST', action, { source: form, swap: 'none', values: values });
+            Promise.resolve(pendingPost).then(finish, finish);
         } catch (error) {
             finish();
         }
@@ -232,7 +252,10 @@
 
     window.addEventListener('submit', function (event) {
         var form = event.target;
-        if (!form || form.tagName !== 'FORM' || event.defaultPrevented) return;
+        if (!form || form.tagName !== 'FORM') return;
+        // A gate above refused the submit (a page dialog, captured before
+        // app.js). Put its button back so it does not spin on a cancel.
+        if (event.defaultPrevented) { reset(form); return; }
         var verb = ((event.submitter && event.submitter.getAttribute('formmethod')) ||
                     form.getAttribute('method') || 'get').toUpperCase();
         if (verb !== 'POST') return;
@@ -249,6 +272,7 @@
         submitControls(form).forEach(function (control, index) {
             control.disabled = was ? !!was[index] : false;
             control.removeAttribute('aria-busy');
+            control.classList.remove('is-loading');
         });
     }
 

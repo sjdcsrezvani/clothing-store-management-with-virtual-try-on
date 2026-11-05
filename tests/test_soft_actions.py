@@ -24,8 +24,29 @@ def test_soft_module_served_with_the_full_contract(client):
         "data-list-region", "#app-main", "history.replaceState",
         "data-native", "native-actions", "htmx.ajax", "htmx.swap",
         "keepView", "is-soft-busy",
+        # The progress bar has a guaranteed exit: a watchdog, and a finish
+        # before a real navigation takes the document away.
+        "setTimeout(finish", "clearTimeout(watchdog)",
     ):
         assert snippet in resp.text, snippet
+
+
+def test_every_busy_indicator_has_a_terminal_exit():
+    soft = (ROOT / "static/js/soft.js").read_text()
+    # The header bar and the button spinner both clear when the save ends,
+    # and a refused submit (dialog cancelled) puts its button back.
+    assert soft.count("classList.remove('is-loading')") == 2
+    assert "if (event.defaultPrevented) { reset(form); return; }" in soft
+    shell = (ROOT / "static/js/htmx-shell.js").read_text()
+    for event in ("htmx:afterRequest", "htmx:responseError", "htmx:sendError",
+                  "htmx:timeout", "htmx:abort"):
+        assert "addEventListener('%s', liftVeil)" % event in shell, event
+
+
+def test_variant_save_is_a_plain_soft_form():
+    form = (ROOT / "templates/admin/variant_form.html").read_text()
+    line = next(l for l in form.splitlines() if 'id="variant-edit-form"' in l)
+    assert "hx-boost" not in line  # soft.js owns the save, not a second htmx path
 
 
 def test_confirm_layer_hands_the_answer_to_the_soft_layer():
