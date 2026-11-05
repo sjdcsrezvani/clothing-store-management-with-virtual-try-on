@@ -115,7 +115,12 @@ def test_purchase_form_offers_product_level_add_with_sizes_and_colors(client, au
     assert "chooseProduct" in page
     assert "purchase_variant_" in page
 
-    entry = next(p for p in _catalog(client) if p["name"] == "پیراهن گروهی")
+    catalogue = _catalog(client)
+    entry = next(p for p in catalogue if p["name"] == "پیراهن گروهی")
+    # Every product carries its own id; without it the picker maps them all
+    # to one key and the last product wins every click.
+    assert entry["id"] > 0
+    assert len({p["id"] for p in catalogue}) == len(catalogue)
     assert [v["size"] for v in entry["variants"]] == ["S", "M"]
     assert [v["color"] for v in entry["variants"]] == ["آبی", "قرمز"]
 

@@ -332,6 +332,7 @@
 [
 {% for p in products %}
 {
+  "id": {{ p.id }},
   "name": {{ p.name|tojson }},
   "supplier_id": {{ p.supplier_id or 0 }},
   "variants": [
