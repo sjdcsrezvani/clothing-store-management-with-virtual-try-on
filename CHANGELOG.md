@@ -1,3 +1,42 @@
+## 3.1.4 — 2026-11-05
+
+### خریدها: an invoice written the way the product is bought
+
+- **Add a whole product to a supplier invoice at once.** Every size and colour
+  lands as its own variant line under one product-level note with the combined
+  cost, and the draft detail and printed receipt repeat the same summary
+  instead of one row per variant.
+- **The picker selects a product once,** with its sizes, colours, quantities
+  and per-variant costs in a small note beneath the row — and each option now
+  resolves to its own product instead of all of them collapsing onto the last one.
+- **A reversed purchase can be deleted.** A mistaken invoice that was reversed
+  may be purged from the list or its detail page: reversed-only, confirmed
+  first, removing the invoice, its lines and its cost evidence while leaving
+  already-paid money with the supplier.
+
+### انبار: a price edit leaves a trail
+
+- Sale-price and real-cost edits from the variant form append a zero-quantity
+  stock movement with the before and after values, the staff user who saved it
+  and whether it came from the desktop app or a browser. The movements page
+  labels price rows separately and shows both values.
+- Size and colour edits stay out of the ledger — they change neither money nor stock.
+
+### ورود و اندازه‌ها: sessions that end, sizes that can be sold
+
+- Admin sessions last 10 hours, and logout clears the cookie from the desktop
+  app's persistent jar as well as the browser.
+- The size picker only offers sizes with an active, sellable variant.
+
+### صفحه‌ها: nothing spins forever
+
+- The top bar, submit spinners, and list veils all have a guaranteed exit —
+  they clear on the request promise, on every terminal htmx event, and on a
+  watchdog; a cancelled confirm dialog restores its button.
+- Tag ± survives region swaps, and variant and saved try-on images share one
+  closable lightbox that stays above the generation overlay.
+- The product list gains a sellable-size filter and numbered pages.
+
 ## 3.1.3 — 2026-11-04
 
 ### تأمین‌کننده‌ها: a supplier is a profile, not a phone number
