@@ -93,44 +93,41 @@
         </tbody>
     </table>
 
-    {% if product_notes %}
-    <div class="print-product-notes">
-        {% for note in product_notes %}
-        <div class="print-product-note">
-            <strong>{{ note.name }}</strong>
-            {% if note.sizes %} — سایز {{ note.sizes|join('، ') }}{% endif %}
-            {% if note.colors %} · رنگ {{ note.colors|join('، ') }}{% endif %}
-            — {{ note.quantity }} عدد، {{ fmt(note.total) }} تومان
-        </div>
-        {% endfor %}
-    </div>
-    {% endif %}
-
     <table>
         <thead>
             <tr>
                 <th scope="col">#</th>
                 <th scope="col">کالا</th>
                 <th scope="col">تعداد</th>
-                <th scope="col">قیمت خرید</th>
+                <th scope="col">میانگین قیمت خرید</th>
                 <th scope="col">جمع</th>
                 {% if show_landed %}
-                <th scope="col">بهای تمام‌شده</th>
+                <th scope="col">میانگین بهای تمام‌شده</th>
                 <th scope="col">جمع با حمل</th>
                 {% endif %}
             </tr>
         </thead>
         <tbody>
-            {% for line in lines %}
+            {% for note in product_notes %}
             <tr>
                 <td class="tnum">{{ loop.index }}</td>
-                <td>{{ line.item.variant.display_name if line.item.variant else (line.item.product.name if line.item.product else '—') }}</td>
-                <td class="tnum">{{ line.item.quantity }}</td>
-                <td class="tnum">{{ fmt(line.unit_cost) }}</td>
-                <td class="tnum">{{ fmt(line.line_total) }}</td>
+                <td>
+                    <strong>{{ note.name }}</strong>
+                    <div class="print-variant-notes">
+                        {% for variant in note.variants %}
+                        <div>
+                            {% if variant.size %}سایز {{ variant.size }}{% else %}بدون سایز{% endif %}{% if variant.color %} · {{ variant.color }}{% endif %}
+                            — {{ variant.quantity }} عدد × {{ fmt(variant.unit_cost) }} = {{ fmt(variant.line_total) }} تومان
+                        </div>
+                        {% endfor %}
+                    </div>
+                </td>
+                <td class="tnum">{{ note.quantity }}</td>
+                <td class="tnum">{{ fmt(note.average_cost) }}</td>
+                <td class="tnum">{{ fmt(note.total) }}</td>
                 {% if show_landed %}
-                <td class="tnum">{{ fmt(line.landed_unit_cost) }}</td>
-                <td class="tnum">{{ fmt(line.landed_line_total) }}</td>
+                <td class="tnum">{{ fmt(note.landed_average) }}</td>
+                <td class="tnum">{{ fmt(note.landed_total) }}</td>
                 {% endif %}
             </tr>
             {% endfor %}

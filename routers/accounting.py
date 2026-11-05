@@ -2280,11 +2280,16 @@ def _purchase_draft_lines(purchase) -> list[dict]:
     lines = []
     for item in purchase.items:
         variant = item.variant
+        product = item.product or (variant.product if variant and variant.product else None)
         lines.append({
             "variant_id": item.variant_id,
+            "product_id": item.product_id or (variant.product_id if variant else None),
+            "product_name": product.name if product else "کالای حذف‌شده",
             "label": variant.display_name if variant else "کالای حذف‌شده",
             "barcode": (variant.barcode or "") if variant else "",
-            "supplier_id": (variant.product.supplier_id or 0) if variant and variant.product else 0,
+            "size": (variant.size or "") if variant else "",
+            "color": (variant.color or "") if variant else "",
+            "supplier_id": (product.supplier_id or 0) if product else 0,
             "cost": (variant.cost_price or 0) if variant else 0,
             "stock": (variant.stock_quantity or 0) if variant else 0,
             "quantity": item.quantity,
@@ -2317,11 +2322,12 @@ def _purchase_with_lines(db, purchase_id: int):
 
 
 def _purchase_product_notes(purchase) -> list[dict]:
-    """One side note per product: the sizes and colours it brought, and the
-    cost those variants add up to. A supplier invoice often names a product
-    once and lists sizes underneath; this is that reading, derived from lines."""
+    """The invoice read at product level: one row per product, with its sizes,
+    colours and quantities as a small note underneath, exactly the way a
+    wholesaler writes a product once and lists the variants below it."""
     groups, order = {}, []
-    for item in purchase.items or []:
+    for line in _purchase_lines(purchase):
+        item = line["item"]
         variant = item.variant
         product = item.product or (variant.product if variant is not None else None)
         if product is None:
@@ -2329,8 +2335,12 @@ def _purchase_product_notes(purchase) -> list[dict]:
         key = product.id if product.id is not None else product.name
         group = groups.get(key)
         if group is None:
-            group = {"name": product.name, "sizes": [], "colors": [],
-                     "quantity": 0, "total": 0, "variants": set()}
+            group = {
+                "name": product.name, "sizes": [], "colors": [],
+                "quantity": 0, "total": 0, "landed_total": 0,
+                "average_cost": 0, "landed_average": 0, "extra_share": 0,
+                "variants": [],
+            }
             groups[key] = group
             order.append(group)
         size = (variant.size or "").strip() if variant is not None else ""
@@ -2339,12 +2349,24 @@ def _purchase_product_notes(purchase) -> list[dict]:
             group["sizes"].append(size)
         if color and color not in group["colors"]:
             group["colors"].append(color)
-        group["variants"].add(item.variant_id or item.id)
         group["quantity"] += item.quantity or 0
-        group["total"] += (item.unit_cost or 0) * (item.quantity or 0)
-    # One variant already names its product on the line; the note is for the
-    # product-level case where several sizes/colours came in together.
-    return [group for group in order if len(group["variants"]) > 1]
+        group["total"] += line["line_total"]
+        group["landed_total"] += line["landed_line_total"]
+        group["variants"].append({
+            "size": size,
+            "color": color,
+            "quantity": item.quantity or 0,
+            "unit_cost": line["unit_cost"],
+            "line_total": line["line_total"],
+            "landed_unit_cost": line["landed_unit_cost"],
+            "landed_line_total": line["landed_line_total"],
+        })
+    for group in order:
+        quantity = group["quantity"]
+        group["average_cost"] = round(group["total"] / quantity) if quantity else 0
+        group["landed_average"] = round(group["landed_total"] / quantity) if quantity else 0
+        group["extra_share"] = group["landed_total"] - group["total"]
+    return order
 
 
 def _purchase_lines(purchase) -> list[dict]:

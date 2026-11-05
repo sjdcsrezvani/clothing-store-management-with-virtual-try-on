@@ -111,8 +111,9 @@ def test_purchase_form_offers_product_level_add_with_sizes_and_colors(client, au
     _grouped_product(db_session, supplier)
 
     page = client.get("/admin/purchases").text
-    assert 'id="purchase-add-product"' in page
-    assert "addWholeProduct" in page
+    # The row itself is the product picker; its note lists the variants.
+    assert "chooseProduct" in page
+    assert "purchase_variant_" in page
 
     entry = next(p for p in _catalog(client) if p["name"] == "پیراهن گروهی")
     assert [v["size"] for v in entry["variants"]] == ["S", "M"]
@@ -131,16 +132,18 @@ def test_purchase_detail_and_print_summarize_a_product(client, authed, db_sessio
     purchase = _latest_purchase(db_session)
 
     detail = client.get(f"/admin/purchases/{purchase.id}").text
-    assert "purchase-product-notes" in detail
-    assert "سایز: S، M" in detail
-    assert "رنگ: آبی، قرمز" in detail
+    assert "purchase-variant-notes" in detail
+    assert "سایز S" in detail and "سایز M" in detail
+    assert "آبی" in detail and "قرمز" in detail
     # 3 × 10,000 + 2 × 20,000 = 70,000
     assert "5 عدد" in detail and "70,000" in detail
+    assert detail.count("شلوار گروهی") == 1
 
     printed = client.get(f"/admin/purchases/{purchase.id}/print").text
-    assert "print-product-notes" in printed
-    assert "سایز S، M" in printed
-    assert "رنگ آبی، قرمز" in printed
+    assert "print-variant-notes" in printed
+    assert "سایز S" in printed and "سایز M" in printed
+    assert "آبی" in printed and "قرمز" in printed
+    assert printed.count("شلوار گروهی") == 1
 
 
 def test_draft_invoice_touches_nothing_until_finalized(client, db_session, authed):
@@ -348,16 +351,17 @@ def test_purchase_receipt_prints_the_product_name_once(client, db_session, authe
 
     _add_purchase(client, variant, supplier_id=str(supplier.id))
     purchase = _latest_purchase(db_session)
-    label = "تیشرت آبی - سایز 35 - آبی آسمانی"
 
     receipt = client.get(f"/admin/purchases/{purchase.id}/print")
     assert receipt.status_code == 200
-    assert label in receipt.text
+    # The product is named once; its size and colour live in the note below.
     assert receipt.text.count("تیشرت آبی") == 1
+    assert "سایز 35" in receipt.text and "آبی آسمانی" in receipt.text
 
     detail = client.get(f"/admin/purchases/{purchase.id}")
     assert detail.status_code == 200
     assert detail.text.count("تیشرت آبی") == 1
+    assert "سایز 35" in detail.text and "آبی آسمانی" in detail.text
 
 
 def test_purchase_receipt_shows_tax_supplier_profile_and_shop_contact(client, db_session, authed):
@@ -719,7 +723,7 @@ def test_purchase_form_scopes_products_to_the_selected_supplier(client, db_sessi
     page = client.get("/admin/purchases")
     # The picker reads the supplier select and filters the catalogue by it.
     assert "purchase-scope-note" in page.text
-    assert "scopedVariants" in page.text
+    assert "scopedProducts" in page.text
     assert "currentSupplierId" in page.text
 
 

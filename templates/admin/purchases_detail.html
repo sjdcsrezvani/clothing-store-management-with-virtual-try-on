@@ -78,46 +78,41 @@
             <div class="section-heading-row">
                 <div>
                     <h3>اقلام خرید</h3>
-                    <p class="muted">{{ lines|length }} ردیف · جمع تعداد {{ units }} عدد{% if purchase.is_draft %} · بهای تمام‌شده زیر فقط برای سوابق است{% endif %}</p>
+                    <p class="muted">{{ product_notes|length }} محصول · جمع تعداد {{ units }} عدد{% if purchase.is_draft %} · بهای تمام‌شده زیر فقط برای سوابق است{% endif %}</p>
                 </div>
             </div>
             {% if product_notes %}
-            <div class="purchase-product-notes">
-                {% for note in product_notes %}
-                <p class="purchase-product-note">
-                    <strong>{{ note.name }}</strong>
-                    {% if note.sizes %}<span>سایز: {{ note.sizes|join('، ') }}</span>{% endif %}
-                    {% if note.colors %}<span>رنگ: {{ note.colors|join('، ') }}</span>{% endif %}
-                    <span class="tnum">{{ note.quantity }} عدد · {{ fmt(note.total) }} ت</span>
-                </p>
-                {% endfor %}
-            </div>
-            {% endif %}
-            {% if lines %}
             <div class="table-scroll">
                 <table class="purchase-lines-table">
                     <thead>
                         <tr>
-                            <th scope="col">محصول و تنوع</th>
+                            <th scope="col">محصول</th>
                             <th scope="col">تعداد</th>
-                            <th scope="col">قیمت خرید واحد</th>
-                            <th scope="col">جمع ردیف</th>
-                            <th scope="col">{% if purchase.is_draft %}بهای تمام‌شده واحد (سوابق){% else %}بهای تمام‌شده واحد{% endif %}</th>
+                            <th scope="col">میانگین قیمت خرید</th>
+                            <th scope="col">جمع</th>
+                            <th scope="col">{% if purchase.is_draft %}میانگین بهای تمام‌شده (سوابق){% else %}میانگین بهای تمام‌شده{% endif %}</th>
                             {% if purchase.extra_cost_in_landed and purchase.extra_cost %}<th scope="col">سهم هزینه حمل</th>{% endif %}
                         </tr>
                     </thead>
                     <tbody>
-                        {% for line in lines %}
+                        {% for note in product_notes %}
                         <tr>
                             <td>
-                                <strong>{{ line.item.variant.display_name if line.item.variant else (line.item.product.name if line.item.product else '—') }}</strong>
-                                {% if not line.item.variant %}<small>تنوع حذف‌شده</small>{% endif %}
+                                <strong>{{ note.name }}</strong>
+                                <ul class="purchase-variant-notes">
+                                    {% for variant in note.variants %}
+                                    <li>
+                                        {% if variant.size %}سایز {{ variant.size }}{% else %}بدون سایز{% endif %}{% if variant.color %} · {{ variant.color }}{% endif %}
+                                        — {{ variant.quantity }} عدد × {{ fmt(variant.unit_cost) }} ت = {{ fmt(variant.line_total) }} ت
+                                    </li>
+                                    {% endfor %}
+                                </ul>
                             </td>
-                            <td class="tnum">{{ line.item.quantity }}</td>
-                            <td class="tnum">{{ fmt(line.unit_cost) }} ت</td>
-                            <td class="tnum">{{ fmt(line.line_total) }} ت</td>
-                            <td class="tnum">{{ fmt(line.landed_unit_cost) }} ت</td>
-                            {% if purchase.extra_cost_in_landed and purchase.extra_cost %}<td class="tnum">{% if line.extra_share %}{{ fmt(line.extra_share) }} ت{% else %}—{% endif %}</td>{% endif %}
+                            <td class="tnum">{{ note.quantity }}</td>
+                            <td class="tnum">{{ fmt(note.average_cost) }} ت</td>
+                            <td class="tnum">{{ fmt(note.total) }} ت</td>
+                            <td class="tnum">{{ fmt(note.landed_average) }} ت</td>
+                            {% if purchase.extra_cost_in_landed and purchase.extra_cost %}<td class="tnum">{% if note.extra_share %}{{ fmt(note.extra_share) }} ت{% else %}—{% endif %}</td>{% endif %}
                         </tr>
                         {% endfor %}
                     </tbody>

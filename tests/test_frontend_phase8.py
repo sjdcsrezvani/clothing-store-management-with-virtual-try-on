@@ -92,7 +92,9 @@ def test_purchase_row_amount_follows_the_selected_variant():
     # Choosing a product mirrors its own stock and cost into the row: nothing
     # is typed, so no field may carry the amounts.
     assert "function paintMirror(row)" in page
-    assert "function afterSelectionChange(row, variant)" in page
+    assert "function chooseProduct(" in page
+    # One product row carries every size; its variants are the note below.
+    assert "purchase-variant-note" in page
     assert 'input[name^="purchase_qty_"]' not in page
     assert 'input[name^="purchase_cost_"]' not in page
     # Regression: amounts were once typed per row and fell back to the
@@ -106,12 +108,12 @@ def test_purchase_picker_is_a_scoped_search_not_a_giant_select():
     page = (ROOT / "templates/admin/purchases.html").read_text()
     css = (ROOT / "static/css/style.css").read_text()
     assert "input.setAttribute('role', 'combobox')" in page
-    assert "function scopedVariants()" in page
-    assert "function searchVariants(query)" in page
+    assert "function scopedProducts()" in page
+    assert "function searchProducts(query, picker)" in page
     assert "product.supplier_id" in page
     # Persian text is matched loosely: نیم‌فاصله، ي/ك عربی and Persian digits.
     assert "function fold(value)" in page
-    assert "byBarcode[fold(variant.barcode)] = variant;" in page
+    assert "productByBarcode[fold(variant.barcode)] = product;" in page
     # No <select> of products is built any more.
     assert "function buildSelect" not in page
     assert "optgroup" not in page

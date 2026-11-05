@@ -94,8 +94,8 @@
         <div class="section-heading-row section-heading-spaced">
             <div>
                 <h3>محصولات این فاکتور</h3>
-                <p class="muted">برای یک محصول با همه سایزها و رنگ‌ها، از «افزودن محصول» استفاده کنید؛ یا نام تنوع/بارکد را بنویسید و از فهرست انتخاب کنید.</p>
-                <p class="muted">تعداد و بهای هر ردیف از خود تنوع می‌آید و اینجا فقط انتخاب می‌شود؛ تنوع انتخاب‌شده از فهرست محو می‌شود تا دوباره خریده نشود.</p>
+                <p class="muted">هر ردیف یک محصول است؛ نام محصول را بنویسید یا بارکد یکی از سایزها را اسکن کنید. سایزها، رنگ‌ها و تعداد هر کدام زیر همان ردیف می‌آید.</p>
+                <p class="muted">تعداد و بهای هر سایز از خود تنوع می‌آید و اینجا فقط انتخاب می‌شود؛ محصول انتخاب‌شده از فهرست محو می‌شود تا دوباره خریده نشود.</p>
             </div>
             <span class="section-step">۲</span>
         </div>
@@ -111,17 +111,12 @@
         <div class="section-heading-row purchase-items-head">
             <div>
                 <h4>ردیف‌های کالا</h4>
-                <p class="muted">هر ردیف یک تنوع از همین تأمین‌کننده است؛ حذف ردیف در انتهای همان خط انجام می‌شود.</p>
+                <p class="muted">هر ردیف یک محصول از همین تأمین‌کننده است؛ حذف ردیف در انتهای همان خط انجام می‌شود.</p>
             </div>
             <div class="purchase-items-tools">
-                <label class="sr-only" for="purchase-add-product">افزودن محصول با همه سایزها و رنگ‌ها</label>
-                <select id="purchase-add-product" class="purchase-add-product">
-                    <option value="">افزودن محصول با همه سایزها و رنگ‌ها…</option>
-                </select>
                 <button type="button" class="btn btn-sm btn-ghost" id="purchase-add-row">افزودن ردیف</button>
             </div>
         </div>
-        <p class="purchase-product-note" id="purchase-product-note" role="status"></p>
 
         <div id="purchase-rows"></div>
 
@@ -374,32 +369,60 @@
         return text.replace(/\s+/g, ' ').trim();
     }
 
-    var byId = {};
-    var byBarcode = {};
-    catalog.forEach(function (product) {
-        product.variants.forEach(function (variant) {
+    var byVariantId = {};
+    var productById = {};
+    var productByBarcode = {};
+    function variantsOf(product) {
+        return product && product.variants ? product.variants : [];
+    }
+    function indexProduct(product) {
+        productById[String(product.id)] = product;
+        variantsOf(product).forEach(function (variant) {
             variant.productName = product.name;
+            variant.productId = product.id;
             variant.supplierId = String(product.supplier_id || '');
-            byId[String(variant.id)] = variant;
-            if (variant.barcode) {
-                byBarcode[String(variant.barcode)] = variant;
-                byBarcode[fold(variant.barcode)] = variant;
-            }
+            byVariantId[String(variant.id)] = variant;
         });
-    });
+    }
+    catalog.forEach(indexProduct);
 
     var draftLines = [];
     try { draftLines = JSON.parse(document.getElementById('purchase-draft-lines').textContent || '[]'); } catch (error) { draftLines = []; }
     // Lines of an inactive product are not in the catalogue any more, but the
     // draft must still show them until they are removed.
     draftLines.forEach(function (line) {
-        var id = String(line.variant_id);
-        if (byId[id]) return;
-        byId[id] = {
-            id: line.variant_id, label: line.label, barcode: line.barcode || '',
-            price: 0, cost: line.cost || 0, stock: line.stock || 0, reorder_point: 0,
-            productName: line.label, supplierId: String(line.supplier_id || ''),
-        };
+        if (byVariantId[String(line.variant_id)]) return;
+        var productId = line.product_id != null ? String(line.product_id) : ('draft-' + line.variant_id);
+        var product = productById[productId];
+        if (!product) {
+            product = {
+                id: productId,
+                name: line.product_name || line.label || 'کالای حذف‌شده',
+                supplier_id: line.supplier_id || 0,
+                variants: [],
+            };
+            catalog.push(product);
+            productById[productId] = product;
+        }
+        product.variants.push({
+            id: line.variant_id,
+            label: line.label,
+            barcode: line.barcode || '',
+            size: line.size || '',
+            color: line.color || '',
+            price: 0,
+            cost: line.cost || 0,
+            stock: line.stock || 0,
+            reorder_point: 0,
+        });
+        indexProduct(product);
+    });
+    catalog.forEach(function (product) {
+        variantsOf(product).forEach(function (variant) {
+            if (!variant.barcode) return;
+            productByBarcode[String(variant.barcode)] = product;
+            productByBarcode[fold(variant.barcode)] = product;
+        });
     });
 
     var rowsHost = document.getElementById('purchase-rows');
@@ -409,16 +432,13 @@
     var supplierSelect = document.getElementById('supplier_id');
     var extraInput = document.getElementById('purchase-extra-cost');
     var taxInput = document.getElementById('purchase-tax-percent');
-    var productSelect = document.getElementById('purchase-add-product');
-    var productNote = document.getElementById('purchase-product-note');
     var nextIdx = 0;
+    var nextVariantIdx = 0;
 
     function money(value) {
         return Number(value || 0).toLocaleString('en-US');
     }
 
-    // Money fields accept Persian digits (type=text + inputmode=numeric);
-    // live totals normalize before arithmetic, the server via to_english_digits.
     function num(value) {
         var fa = '۰۱۲۳۴۵۶۷۸۹', ar = '٠١٢٣٤٥٦٧٨٩';
         var s = String(value == null ? '' : value)
@@ -431,104 +451,57 @@
         return supplierSelect && supplierSelect.value ? String(supplierSelect.value) : '';
     }
 
-    // Only the chosen supplier's products may be picked: one invoice, one
-    // supplier. Picked rows and received variants never show again — one
-    // arrival cannot be bought twice.
-    function pickedIds() {
+    function rowProduct(row) { return row._product || null; }
+    function rowVariants(row) { return row._variants || []; }
+
+    function pickedProductIds() {
         var ids = {};
         rowsHost.querySelectorAll('.purchase-item-row').forEach(function (row) {
-            var variant = rowVariant(row);
-            if (variant) ids[String(variant.id)] = true;
+            if (rowProduct(row)) ids[String(rowProduct(row).id)] = true;
         });
         return ids;
     }
-    function scopedVariants() {
+
+    // One supplier's products, minus the ones already on the invoice.
+    function scopedProducts() {
         var supplier = currentSupplierId();
         if (!supplier) return [];
-        var picked = pickedIds();
-        var list = [];
-        catalog.forEach(function (product) {
-            if (String(product.supplier_id || '') !== supplier) return;
-            product.variants.forEach(function (variant) {
-                if (!picked[String(variant.id)]) list.push(variant);
-            });
+        var picked = pickedProductIds();
+        return catalog.filter(function (product) {
+            return String(product.supplier_id || '') === supplier
+                && variantsOf(product).length
+                && !picked[String(product.id)];
         });
-        return list;
+    }
+
+    function productSizes(product) {
+        var sizes = [];
+        variantsOf(product).forEach(function (variant) {
+            var size = String(variant.size || '').trim();
+            if (size && sizes.indexOf(size) === -1) sizes.push(size);
+        });
+        return sizes;
     }
 
     function paintScopeNote() {
-        var supplier = currentSupplierId();
         var picked = supplierSelect && supplierSelect.selectedIndex >= 0
             ? supplierSelect.options[supplierSelect.selectedIndex].textContent.trim() : '';
-        if (!supplier) {
+        if (!currentSupplierId()) {
             scopeNote.textContent = 'برای دیدن محصولات، ابتدا تأمین‌کننده را انتخاب کنید.';
             scopeNote.classList.remove('is-warning');
             return;
         }
-        var count = scopedVariants().length;
+        var count = scopedProducts().length;
         if (!count) {
-            scopeNote.textContent = 'به «' + picked + '» هنوز محصولی اختصاص داده نشده است؛ از صفحه محصولات تأمین‌کننده هر محصول را مشخص کنید.';
+            scopeNote.textContent = 'محصول دیگری از «' + picked + '» برای افزودن نمانده است.';
             scopeNote.classList.add('is-warning');
             return;
         }
-        scopeNote.textContent = 'فقط محصولات ' + picked + ' نمایش داده می‌شوند (' + count + ' تنوع قابل انتخاب).';
+        scopeNote.textContent = 'فقط محصولات ' + picked + ' نمایش داده می‌شوند (' + count + ' محصول).';
         scopeNote.classList.remove('is-warning');
     }
 
-    function labelledField(id, placeholder, type) {
-        var wrapper = document.createElement('div');
-        var label = document.createElement('label');
-        label.className = 'sr-only';
-        label.setAttribute('for', id);
-        label.textContent = placeholder;
-        var input = document.createElement('input');
-        input.type = type || 'number';
-        input.id = id;
-        input.name = id;
-        input.inputMode = 'numeric';
-        input.placeholder = placeholder;
-        wrapper.appendChild(label);
-        wrapper.appendChild(input);
-        return { wrapper: wrapper, input: input };
-    }
-
-    // The row keeps its picker state object: the widget needs its list and
-    // hidden input, not just the wrapper element.
     function rowPicker(row) { return row._picker || null; }
-    function rowVariant(row) {
-        var hidden = row.querySelector('input[name^="purchase_variant_"]');
-        return hidden && hidden.value ? byId[hidden.value] : null;
-    }
-
-    // ── The picker: type a name or scan a barcode instead of hunting a select ──
-    function buildPicker(idx) {
-        var host = document.createElement('div');
-        host.className = 'purchase-picker';
-
-        var input = document.createElement('input');
-        input.type = 'text';
-        input.className = 'purchase-picker-input';
-        input.setAttribute('role', 'combobox');
-        input.setAttribute('aria-autocomplete', 'list');
-        input.setAttribute('aria-expanded', 'false');
-        input.autocomplete = 'off';
-        input.placeholder = 'جست‌وجوی محصول، تنوع یا بارکد…';
-
-        var hidden = document.createElement('input');
-        hidden.type = 'hidden';
-        hidden.name = 'purchase_variant_' + idx;
-        hidden.value = '';
-
-        var list = document.createElement('ul');
-        list.className = 'purchase-picker-list';
-        list.setAttribute('role', 'listbox');
-        list.hidden = true;
-
-        host.appendChild(input);
-        host.appendChild(hidden);
-        host.appendChild(list);
-        return { host: host, input: input, hidden: hidden, list: list, matches: [], active: -1 };
-    }
 
     function closeList(picker) {
         picker.list.hidden = true;
@@ -548,106 +521,175 @@
             picker.list.appendChild(empty);
             return;
         }
-        picker.matches.forEach(function (variant, index) {
+        picker.matches.forEach(function (product, index) {
             var option = document.createElement('li');
             option.className = 'purchase-picker-option' + (index === picker.active ? ' is-active' : '');
             option.setAttribute('role', 'option');
             option.setAttribute('aria-selected', index === picker.active ? 'true' : 'false');
-            option.dataset.variantId = String(variant.id);
+            option.dataset.productId = String(product.id);
             var name = document.createElement('span');
-            name.textContent = variant.label;
+            name.textContent = product.name;
             var meta = document.createElement('small');
-            var bits = ['موجودی ' + variant.stock];
-            if (variant.cost) bits.push('بهای تمام‌شده ' + money(variant.cost));
-            meta.textContent = bits.join(' · ');
+            var sizes = productSizes(product);
+            meta.textContent = variantsOf(product).length + ' تنوع'
+                + (sizes.length ? ' · ' + sizes.join('، ') : '');
             option.appendChild(name);
             option.appendChild(meta);
             picker.list.appendChild(option);
         });
     }
 
-    function searchVariants(query) {
+    function searchProducts(query, picker) {
         var needle = fold(query);
-        var pool = scopedVariants();
+        var pool = scopedProducts();
+        // The selected product is excluded from the pool; while its name is
+        // still in the box the list should not look mysteriously empty.
+        var current = picker.product;
+        if (current && String(current.supplier_id || '') === currentSupplierId()) {
+            pool = pool.concat([current]);
+        }
         if (!needle) return pool.slice(0, 30);
         var exact = [];
         var partial = [];
-        pool.forEach(function (variant) {
-            var barcode = fold(variant.barcode);
-            var label = fold(variant.label);
-            if (barcode && barcode === needle) exact.push(variant);
-            else if (label.indexOf(needle) !== -1 || barcode.indexOf(needle) !== -1) partial.push(variant);
+        pool.forEach(function (product) {
+            var name = fold(product.name);
+            var hit = name.indexOf(needle) !== -1;
+            if (!hit) {
+                variantsOf(product).some(function (variant) {
+                    var label = fold(variant.label);
+                    var barcode = fold(variant.barcode);
+                    if (barcode && barcode === needle) { exact.push(product); hit = true; return true; }
+                    if (label.indexOf(needle) !== -1 || (barcode && barcode.indexOf(needle) !== -1)) {
+                        partial.push(product);
+                        hit = true;
+                        return true;
+                    }
+                    return false;
+                });
+            } else {
+                partial.push(product);
+            }
         });
-        return exact.concat(partial).slice(0, 30);
+        var out = [];
+        exact.concat(partial).forEach(function (product) {
+            if (out.indexOf(product) === -1) out.push(product);
+        });
+        return out.slice(0, 30);
     }
 
     function openList(picker) {
-        picker.matches = searchVariants(picker.input.value);
+        picker.matches = searchProducts(picker.input.value, picker);
         picker.active = picker.matches.length === 1 ? 0 : -1;
-        // An empty list still renders its reason, so typing something unknown
-        // says so instead of silently closing.
         renderMatches(picker);
         picker.list.hidden = false;
         picker.input.setAttribute('aria-expanded', 'true');
         picker.host.classList.add('is-open');
     }
 
-    function setSelection(picker, variant, keepQuery) {
-        picker.hidden.value = variant ? String(variant.id) : '';
-        picker.host.classList.toggle('is-selected', !!variant);
-        if (variant) picker.input.value = keepQuery ? picker.input.value : variant.label;
-        closeList(picker);
-        var row = picker.host.closest('.purchase-item-row');
-        if (row) afterSelectionChange(row, variant);
+    function clearSelection(row, picker) {
+        picker.product = null;
+        row._product = null;
+        row._variants = [];
+        paintRow(row);
     }
 
-    function afterSelectionChange(row, variant) {
-        // The row mirrors the variant: stock and cost are read, never typed.
+    function chooseProduct(row, product, variants) {
+        var picker = rowPicker(row);
+        picker.product = product;
+        picker.input.value = product ? product.name : '';
+        picker.host.classList.toggle('is-selected', !!product);
+        row._product = product;
+        row._variants = product
+            ? (variants && variants.length ? variants.slice() : variantsOf(product).slice())
+            : [];
+        closeList(picker);
+        paintRow(row);
+        paintScopeNote();
+    }
+
+    function paintRow(row) {
+        var bag = row.querySelector('[data-role="variants"]');
+        if (bag) {
+            bag.innerHTML = '';
+            rowVariants(row).forEach(function (variant) {
+                var hidden = document.createElement('input');
+                hidden.type = 'hidden';
+                hidden.name = 'purchase_variant_' + nextVariantIdx;
+                nextVariantIdx += 1;
+                hidden.value = String(variant.id);
+                bag.appendChild(hidden);
+            });
+        }
         paintMirror(row);
         paintContext(row);
+        paintLineTotal(row);
         updateTotals();
-        paintProductPicker();
     }
 
     function paintMirror(row) {
         var mirror = row.querySelector('[data-role="mirror"]');
-        var variant = rowVariant(row);
+        var variants = rowVariants(row);
         if (!mirror) return;
-        if (!variant) { mirror.innerHTML = '<span class="muted">—</span>'; return; }
-        var qty = num(variant.stock || 0);
-        var cost = num(variant.cost || 0);
+        if (!variants.length) { mirror.innerHTML = '<span class="muted">—</span>'; return; }
+        var quantity = 0, total = 0;
+        variants.forEach(function (variant) {
+            quantity += num(variant.stock || 0);
+            total += num(variant.stock || 0) * num(variant.cost || 0);
+        });
+        var average = quantity ? Math.round(total / quantity) : 0;
         mirror.innerHTML = '';
         var q = document.createElement('strong');
         q.className = 'tnum';
-        q.textContent = qty + ' عدد';
+        q.textContent = quantity + ' عدد';
         var x = document.createElement('span');
         x.className = 'muted';
         x.textContent = '×';
         var c = document.createElement('span');
         c.className = 'tnum';
-        c.textContent = money(cost) + ' ت';
+        c.textContent = money(average) + ' ت';
         mirror.appendChild(q);
         mirror.appendChild(x);
         mirror.appendChild(c);
     }
 
+    // The sizes, colours and per-variant cost sit under the product row — the
+    // same small note the printed receipt carries.
     function paintContext(row) {
         var context = row.querySelector('.purchase-item-context');
-        var variant = rowVariant(row);
-        if (!variant) { context.textContent = ''; return; }
-        var parts = ['موجودی فعلی: ' + variant.stock + ' عدد'];
-        if (variant.cost) parts.push('بهای تمام‌شده فعلی: ' + money(variant.cost) + ' ت');
-        if (variant.reorder_point) parts.push('نقطه سفارش: ' + variant.reorder_point);
-        if (variant.barcode) parts.push('بارکد: ' + variant.barcode);
-        if (!num(variant.stock || 0)) parts.push('موجودی صفر — دریافت خالی ثبت می‌شود');
-        context.textContent = parts.join(' · ');
+        if (!context) return;
+        context.innerHTML = '';
+        rowVariants(row).forEach(function (variant) {
+            var line = document.createElement('div');
+            line.className = 'purchase-variant-note';
+            var bits = [variant.size ? 'سایز ' + variant.size : 'بدون سایز'];
+            if (variant.color) bits.push(variant.color);
+            var stock = num(variant.stock || 0);
+            var cost = num(variant.cost || 0);
+            line.textContent = bits.join(' · ')
+                + ' — ' + stock + ' عدد × ' + money(cost) + ' ت = '
+                + money(stock * cost) + ' ت';
+            context.appendChild(line);
+        });
+    }
+
+    function rowTotal(row) {
+        var total = 0;
+        rowVariants(row).forEach(function (variant) {
+            total += num(variant.stock || 0) * num(variant.cost || 0);
+        });
+        return total;
+    }
+
+    function paintLineTotal(row) {
+        var cell = row.querySelector('[data-role="line-total"]');
+        var total = rowTotal(row);
+        if (cell) cell.textContent = total ? money(total) : '—';
     }
 
     function updateTotals() {
         var subtotal = 0;
         rowsHost.querySelectorAll('.purchase-item-row').forEach(function (row) {
-            var variant = rowVariant(row);
-            var line = variant ? num(variant.stock || 0) * num(variant.cost || 0) : 0;
+            var line = rowTotal(row);
             subtotal += line;
             row.querySelector('[data-role="line-total"]').textContent = line ? money(line) : '—';
         });
@@ -664,74 +706,58 @@
     function firstEmptyRow() {
         var found = null;
         rowsHost.querySelectorAll('.purchase-item-row').forEach(function (row) {
-            if (!found && !rowVariant(row)) found = row;
+            if (!found && !rowProduct(row)) found = row;
         });
         return found;
     }
 
-    function addRow(prefill) {
-        prefill = prefill || {};
-        var idx = nextIdx;
-        nextIdx += 1;
-        var row = document.createElement('div');
-        row.className = 'purchase-item-row';
+    function addRowIfLast(row) {
+        if (row === rowsHost.lastElementChild) addRow();
+    }
 
-        var main = document.createElement('div');
-        main.className = 'purchase-item-main';
-        var picker = buildPicker(idx);
-        row._picker = picker;
-        var pickerLabel = document.createElement('label');
-        pickerLabel.className = 'sr-only';
-        pickerLabel.setAttribute('for', picker.input.id);
-        picker.input.id = 'purchase_picker_' + idx;
-        pickerLabel.setAttribute('for', picker.input.id);
-        pickerLabel.textContent = 'محصول';
-        main.appendChild(pickerLabel);
-        main.appendChild(picker.host);
+    function flashRow(row) {
+        row.classList.remove('is-flash');
+        void row.offsetWidth;
+        row.classList.add('is-flash');
+    }
 
-        // The row mirrors the variant: quantities and costs live on the
-        // product and are only confirmed here, never typed.
-        var mirror = document.createElement('div');
-        mirror.className = 'purchase-item-mirror';
-        mirror.dataset.role = 'mirror';
-        mirror.innerHTML = '<span class="muted">—</span>';
+    // ── The picker: type a product name or scan a barcode ──
+    function buildPicker(idx, row) {
+        var host = document.createElement('div');
+        host.className = 'purchase-picker';
 
-        var totalCell = document.createElement('div');
-        totalCell.className = 'purchase-item-total';
-        totalCell.dataset.role = 'line-total';
+        var input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'purchase-picker-input';
+        input.id = 'purchase_picker_' + idx;
+        input.setAttribute('role', 'combobox');
+        input.setAttribute('aria-autocomplete', 'list');
+        input.setAttribute('aria-expanded', 'false');
+        input.autocomplete = 'off';
+        input.placeholder = 'جست‌وجوی محصول…';
 
-        var remove = document.createElement('button');
-        remove.type = 'button';
-        remove.className = 'btn btn-sm btn-danger purchase-item-remove';
-        remove.textContent = '✕';
-        remove.setAttribute('aria-label', 'حذف این ردیف');
-        remove.addEventListener('click', function () {
-            row.remove();
-            if (!rowsHost.children.length) addRow();
-            updateTotals();
-            paintProductPicker();
-        });
+        var list = document.createElement('ul');
+        list.className = 'purchase-picker-list';
+        list.setAttribute('role', 'listbox');
+        list.hidden = true;
 
-        var context = document.createElement('p');
-        context.className = 'purchase-item-context';
+        host.appendChild(input);
+        host.appendChild(list);
+        var picker = {
+            host: host, input: input, list: list, matches: [], active: -1,
+            product: null,
+        };
 
-        row.appendChild(main);
-        row.appendChild(mirror);
-        row.appendChild(totalCell);
-        row.appendChild(remove);
-        row.appendChild(context);
-        rowsHost.appendChild(row);
-
-        picker.input.addEventListener('input', function () {
-            if (picker.hidden.value) setSelection(picker, null, true);
+        input.addEventListener('input', function () {
+            if (picker.product) clearSelection(row, picker);
             openList(picker);
         });
-        picker.input.addEventListener('focus', function () { openList(picker); });
-        picker.input.addEventListener('blur', function () {
+        input.addEventListener('focus', function () { openList(picker); });
+        input.addEventListener('blur', function () {
             // Let a click on an option land before the list disappears.
             setTimeout(function () { closeList(picker); }, 140);
         });
-        picker.input.addEventListener('keydown', function (event) {
+        input.addEventListener('keydown', function (event) {
             if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
                 if (picker.list.hidden) openList(picker);
                 if (!picker.matches.length) return;
@@ -745,8 +771,7 @@
                 event.preventDefault();
                 if (picker.list.hidden) openList(picker);
                 if (!picker.matches.length) return;
-                var chosen = picker.matches[picker.active >= 0 ? picker.active : 0];
-                setSelection(picker, chosen);
+                chooseProduct(row, picker.matches[picker.active >= 0 ? picker.active : 0]);
                 addRowIfLast(row);
                 return;
             }
@@ -755,123 +780,117 @@
             }
         });
         // mousedown would blur the input before the click fires.
-        picker.list.addEventListener('mousedown', function (event) { event.preventDefault(); });
-        picker.list.addEventListener('click', function (event) {
+        list.addEventListener('mousedown', function (event) { event.preventDefault(); });
+        list.addEventListener('click', function (event) {
             var option = event.target.closest('.purchase-picker-option');
             if (!option) return;
-            var variant = byId[option.dataset.variantId];
-            if (variant) setSelection(picker, variant);
-            addRowIfLast(row);
+            var product = productById[option.dataset.productId];
+            if (product) {
+                chooseProduct(row, product);
+                addRowIfLast(row);
+            }
         });
 
-        var seed = prefill.variantId ? byId[String(prefill.variantId)] : null;
-        if (seed) {
-            picker.input.value = seed.label;
-            setSelection(picker, seed);
-        } else {
+        return picker;
+    }
+
+    function addRow(prefill) {
+        prefill = prefill || {};
+        var idx = nextIdx;
+        nextIdx += 1;
+        var row = document.createElement('div');
+        row.className = 'purchase-item-row';
+        row._product = null;
+        row._variants = [];
+
+        var main = document.createElement('div');
+        main.className = 'purchase-item-main';
+        var picker = buildPicker(idx, row);
+        row._picker = picker;
+        var pickerLabel = document.createElement('label');
+        pickerLabel.className = 'sr-only';
+        pickerLabel.setAttribute('for', picker.input.id);
+        pickerLabel.textContent = 'محصول';
+        main.appendChild(pickerLabel);
+        main.appendChild(picker.host);
+
+        var mirror = document.createElement('div');
+        mirror.className = 'purchase-item-mirror';
+        mirror.dataset.role = 'mirror';
+        mirror.innerHTML = '<span class="muted">—</span>';
+
+        var totalCell = document.createElement('div');
+        totalCell.className = 'purchase-item-total';
+        totalCell.dataset.role = 'line-total';
+
+        var remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'btn btn-sm btn-danger purchase-item-remove';
+        remove.textContent = '✕';
+        remove.setAttribute('aria-label', 'حذف این محصول');
+        remove.addEventListener('click', function () {
+            row.remove();
+            if (!rowsHost.children.length) addRow();
             updateTotals();
+            paintScopeNote();
+        });
+
+        var context = document.createElement('div');
+        context.className = 'purchase-item-context';
+
+        var bag = document.createElement('div');
+        bag.dataset.role = 'variants';
+        bag.hidden = true;
+
+        row.appendChild(main);
+        row.appendChild(mirror);
+        row.appendChild(totalCell);
+        row.appendChild(remove);
+        row.appendChild(context);
+        row.appendChild(bag);
+        rowsHost.appendChild(row);
+
+        var seed = null;
+        if (prefill.productId != null) seed = productById[String(prefill.productId)] || null;
+        if (!seed && prefill.variantId != null) {
+            var variant = byVariantId[String(prefill.variantId)];
+            if (variant) seed = productById[String(variant.productId)] || null;
+        }
+        if (seed) {
+            // A reopened draft keeps exactly the variants it was saved with;
+            // a fresh product pick brings the whole product.
+            var seeded = null;
+            if (prefill.variantIds) {
+                seeded = prefill.variantIds.map(function (id) {
+                    return byVariantId[String(id)];
+                }).filter(Boolean);
+            }
+            chooseProduct(row, seed, seeded);
+        } else {
+            paintRow(row);
         }
         return row;
     }
 
-    function addRowIfLast(row) {
-        if (row === rowsHost.lastElementChild) addRow();
-    }
-
-    function selectRow(row, variant) {
-        var picker = rowPicker(row);
-        if (!picker) return row;
-        picker.input.value = variant.label;
-        setSelection(picker, variant);
-        return row;
-    }
-
-    function flashRow(row) {
-        row.classList.remove('is-flash');
-        void row.offsetWidth;
-        row.classList.add('is-flash');
-    }
-
-    function addOrFill(variant) {
+    function addOrFillProduct(product) {
         var existing = null;
         rowsHost.querySelectorAll('.purchase-item-row').forEach(function (row) {
-            if (!existing && rowVariant(row) && String(rowVariant(row).id) === String(variant.id)) existing = row;
+            if (!existing && rowProduct(row) && String(rowProduct(row).id) === String(product.id)) existing = row;
         });
-        // One arrival, one row: scanning a picked variant flashes its row
-        // instead of duplicating it.
         if (existing) {
             flashRow(existing);
             return 'exists';
         }
-        var empty = firstEmptyRow();
-        if (empty) {
-            selectRow(empty, variant);
+        var row = firstEmptyRow();
+        if (row) {
+            chooseProduct(row, product);
         } else {
-            addRow({ variantId: variant.id });
+            row = addRow({ productId: product.id });
         }
+        addRowIfLast(row);
         updateTotals();
-        return 'added';
-    }
-
-    // ── Add a whole product: one pick, every size and colour ──
-    function unique(values) {
-        var out = [];
-        values.forEach(function (value) {
-            value = String(value || '').trim();
-            if (value && out.indexOf(value) === -1) out.push(value);
-        });
-        return out;
-    }
-
-    function productChoices() {
-        var supplier = currentSupplierId();
-        if (!supplier) return [];
-        var picked = pickedIds();
-        return catalog.map(function (product, index) {
-            var variants = product.variants.filter(function (variant) {
-                return String(variant.supplierId || '') === supplier
-                    && !picked[String(variant.id)];
-            });
-            return { product: product, index: index, variants: variants };
-        }).filter(function (entry) { return entry.variants.length; });
-    }
-
-    function paintProductPicker() {
-        if (!productSelect) return;
-        productSelect.innerHTML = '<option value="">افزودن محصول با همه سایزها و رنگ‌ها…</option>';
-        productChoices().forEach(function (entry) {
-            var option = document.createElement('option');
-            option.value = String(entry.index);
-            option.textContent = entry.product.name
-                + ' (' + entry.variants.length + ' تنوع)';
-            productSelect.appendChild(option);
-        });
-    }
-
-    function addWholeProduct(index) {
-        var entry = null;
-        productChoices().forEach(function (candidate) {
-            if (String(candidate.index) === String(index)) entry = candidate;
-        });
-        if (!entry) return;
-        entry.variants.forEach(function (variant) { addOrFill(variant); });
-        // Leave one empty row ready for the next scan or pick.
-        var last = rowsHost.lastElementChild;
-        if (last && rowVariant(last)) addRow();
-
-        var sizes = unique(entry.variants.map(function (v) { return v.size; }));
-        var colors = unique(entry.variants.map(function (v) { return v.color; }));
-        var total = entry.variants.reduce(function (sum, v) {
-            return sum + num(v.stock || 0) * num(v.cost || 0);
-        }, 0);
-        var bits = [];
-        if (sizes.length) bits.push('سایزها: ' + sizes.join('، '));
-        if (colors.length) bits.push('رنگها: ' + colors.join('، '));
-        bits.push('جمع: ' + money(total) + ' ت');
-        productNote.textContent = '«' + entry.product.name + '» — ' + bits.join(' · ');
-        updateTotals();
-        paintProductPicker();
         paintScopeNote();
+        return 'added';
     }
 
     function setScanMessage(text, isError) {
@@ -887,58 +906,48 @@
             if (supplierSelect) supplierSelect.focus();
             return;
         }
-        // A barcode gun may deliver Persian digits, and the catalogue keys are
-        // the stored codes, so both are folded before matching.
-        var variant = byBarcode[code] || byId[code]
-            || byBarcode[fold(code)] || byId[fold(code)];
-        if (!variant) {
-            setScanMessage('با کد «' + code + '» کالایی پیدا نشد.', true);
+        var product = productByBarcode[code] || productByBarcode[fold(code)];
+        if (!product) {
+            var variant = byVariantId[code] || byVariantId[fold(code)];
+            if (variant) product = productById[String(variant.productId)] || null;
+        }
+        if (!product) {
+            setScanMessage('با کد «' + code + '» محصولی پیدا نشد.', true);
             scanInput.select();
             return;
         }
-        if (String(variant.supplierId || '') !== currentSupplierId()) {
-            setScanMessage('«' + variant.label + '» به تأمین‌کننده انتخاب‌شده تعلق ندارد.', true);
+        if (String(product.supplier_id || '') !== currentSupplierId()) {
+            setScanMessage('«' + product.name + '» به تأمین‌کننده انتخاب‌شده تعلق ندارد.', true);
             scanInput.select();
             return;
         }
-        addOrFill(variant);
-        // The variant label already starts with the product name.
-        setScanMessage('افزوده شد: ' + variant.label, false);
+        addOrFillProduct(product);
+        setScanMessage('افزوده شد: ' + product.name, false);
         scanInput.value = '';
     }
 
     // Changing the supplier re-scopes every row, dropping picks that no longer fit.
     function resyncScope() {
         paintScopeNote();
-        paintProductPicker();
-        if (productNote) productNote.textContent = '';
         var dropped = [];
         rowsHost.querySelectorAll('.purchase-item-row').forEach(function (row) {
-            var variant = rowVariant(row);
-            if (!variant) return;
-            if (String(variant.supplierId || '') !== currentSupplierId()) {
-                var picker = rowPicker(row);
-                if (!picker) return;
-                dropped.push(variant.productName || variant.label);
-                picker.input.value = '';
-                setSelection(picker, null);
+            var product = rowProduct(row);
+            if (!product) return;
+            if (String(product.supplier_id || '') !== currentSupplierId()) {
+                dropped.push(product.name);
+                clearSelection(row, rowPicker(row));
+                rowPicker(row).input.value = '';
             }
         });
         if (dropped.length) {
             setScanMessage('از این فاکتور حذف شد (تأمین‌کننده دیگری دارد): ' + dropped.join('، '), true);
         }
+        paintScopeNote();
     }
 
     document.getElementById('purchase-add-row').addEventListener('click', function () {
         addRow();
     });
-    if (productSelect) {
-        productSelect.addEventListener('change', function () {
-            var index = productSelect.value;
-            productSelect.value = '';
-            if (index !== '') addWholeProduct(index);
-        });
-    }
     scanInput.addEventListener('keydown', function (event) {
         if (event.key === 'Enter') {
             event.preventDefault();
@@ -957,7 +966,7 @@
         supplierSelect.addEventListener('change', async function () {
             var stocked = false;
             rowsHost.querySelectorAll('.purchase-item-row').forEach(function (row) {
-                if (rowVariant(row)) stocked = true;
+                if (rowProduct(row)) stocked = true;
             });
             if (stocked && supplierSelect.value !== prevSupplier
                     && !(await window.RaykidConfirm.ask(
@@ -973,12 +982,21 @@
     }
 
     if (draftLines.length) {
+        var productLines = {};
         draftLines.forEach(function (line) {
-            addRow({ variantId: line.variant_id });
+            var variant = byVariantId[String(line.variant_id)];
+            if (!variant) return;
+            var productId = String(variant.productId);
+            if (!productLines[productId]) productLines[productId] = [];
+            productLines[productId].push(variant.id);
         });
-    } else {
-        addRow();
+        Object.keys(productLines).forEach(function (productId) {
+            addRow({ productId: productId, variantIds: productLines[productId] });
+        });
     }
+    if (!rowsHost.children.length) addRow();
+    else if (rowsHost.lastElementChild && rowProduct(rowsHost.lastElementChild)) addRow();
+
     // Unpicked typing never reaches the server (it drops such rows), so the
     // form refuses it here instead — naming the row, before anything posts.
     document.getElementById('purchase-form').addEventListener('submit', function (event) {
@@ -994,7 +1012,7 @@
         var rows = Array.prototype.slice.call(rowsHost.querySelectorAll('.purchase-item-row'));
         var valid = 0, badRow = null, badIndex = 0;
         rows.forEach(function (row, i) {
-            if (rowVariant(row)) { valid += 1; return; }
+            if (rowProduct(row) && rowVariants(row).length) { valid += 1; return; }
             var picker = rowPicker(row);
             var typed = picker && picker.input.value.trim();
             if (typed && badRow === null) { badRow = row; badIndex = i + 1; }
@@ -1004,13 +1022,12 @@
             return;
         }
         if (!valid) {
-            refuse('فاکتور بدون ردیف ثبت نمی‌شود — دست‌کم یک تنوع انتخاب کنید.', null);
+            refuse('فاکتور بدون ردیف ثبت نمی‌شود — دست‌کم یک محصول انتخاب کنید.', null);
             return;
         }
         errBox.hidden = true;
     });
     paintScopeNote();
-    paintProductPicker();
     // Scanner-ready without yanking the page down to the items section.
     if (typeof scanInput.focus === 'function') {
         try { scanInput.focus({ preventScroll: true }); } catch (error) { scanInput.focus(); }
