@@ -181,3 +181,17 @@ def test_the_product_tab_shows_stock_by_band(client, db_session, authed):
     page = client.get("/admin/analytics?tab=product&period=all").text
     assert "موجودی به تفکیک سایز" in page
     assert "6-7 سال" in page
+
+
+def test_the_top_variants_card_stops_at_ten(client, db_session, authed):
+    now = datetime.now(timezone.utc)
+    sold = []
+    for index in range(12):
+        product = _product(db_session, f"پیراهن {index}", "adult")
+        variant = _variant(db_session, product, "M", barcode=f"AN-TOP-{index}")
+        sold.append((product, variant))
+    _sell(db_session, now, *sold)
+
+    page = client.get("/admin/analytics?tab=product&period=all").text
+    card = page.split("پرفروش‌ترین واریانت‌ها", 1)[1].split("</table>", 1)[0]
+    assert card.count("<tr>") == 11  # one header row + ten variants

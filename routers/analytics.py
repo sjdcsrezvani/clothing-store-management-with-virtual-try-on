@@ -185,7 +185,7 @@ async def admin_analytics(
         data["inventory"] = get_inventory_value(db)
         data["sell_through"] = get_sell_through(db, start, end)
         data["dead_stock"] = get_dead_stock(db, start, end)
-        data["top_variants"] = get_top_selling_variants(db, start, end)
+        data["top_variants"] = get_top_selling_variants(db, start, end, limit=10)
 
     if active_tab == "sizes":
         filters = _size_filters(request, db)
