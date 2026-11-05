@@ -2775,18 +2775,34 @@ async def admin_purchase_finalize(
     return RedirectResponse(url=f"/admin/purchases/{purchase.id}?msg={message}", status_code=303)
 
 
-def _cost_change(payload: str | None):
-    """``(old_cost, new_cost)`` when a movement's event recorded a cost change."""
+def _movement_payload(payload: str | None) -> dict:
     if not payload:
-        return None
+        return {}
     try:
         data = json.loads(payload)
     except (TypeError, ValueError):
-        return None
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _cost_change(data: dict):
+    """``(old_cost, new_cost)`` when a movement's event recorded a cost change."""
     old, new = data.get("old_cost"), data.get("new_cost")
     if old is None or new is None:
         return None
     return (int(old), int(new))
+
+
+def _price_change(data: dict):
+    """``(old_price, new_price)`` for a sale-price edit."""
+    old, new = data.get("old_price"), data.get("new_price")
+    if old is None or new is None:
+        return None
+    return (int(old), int(new))
+
+
+def _client_label(data: dict) -> str:
+    return {"app": "اپلیکیشن", "browser": "مرورگر"}.get(data.get("client_kind"), "")
 
 
 def _movement_event_join(query):
@@ -2977,18 +2993,28 @@ async def admin_inventory_movements(
             variant = movement.variant
             current_stock = int(variant.stock_quantity or 0) if variant else 0
             ledger_total = snapshot["totals"].get(movement.variant_id, 0)
+            event = _movement_payload(payload)
+            price_change = _price_change(event)
+            if price_change:
+                type_label = "اصلاح قیمت فروش"
+            elif movement.movement_type == "cost_adjustment":
+                type_label = "اصلاح بهای تمام‌شده"
+            else:
+                type_label = movement_type_label(movement.movement_type)
             movements.append({
                 "movement": movement,
                 "product": variant.product if variant else None,
                 "direction": movement_direction(movement.quantity_delta),
-                "type_label": movement_type_label(movement.movement_type),
+                "type_label": type_label,
                 "is_legacy": movement.movement_type in LEGACY_MOVEMENT_TYPES,
                 "balance_after": snapshot["by_movement"].get(movement.id),
                 "ledger_total": ledger_total,
                 "current_stock": current_stock,
                 "balanced": ledger_total == current_stock,
                 "actor_name": actor_names.get(actor_id),
-                "cost_change": _cost_change(payload),
+                "client_label": _client_label(event),
+                "cost_change": _cost_change(event),
+                "price_change": price_change,
             })
 
     products = db.query(Product).filter(Product.is_active == True).order_by(Product.name).all()

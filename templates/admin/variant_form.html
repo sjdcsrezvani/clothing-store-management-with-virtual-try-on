@@ -32,6 +32,7 @@
 <section class="card">
     <form method="post" action="/admin/variants/{{ variant.id }}" id="variant-edit-form" enctype="multipart/form-data" hx-encoding="multipart/form-data">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="client_kind" value="browser" data-client-kind>
         <div class="section-heading-row"><div><h3>مشخصات فروش</h3><p class="muted">قیمت‌ها و شناسه‌ها را دقیق و قابل جست‌وجو نگه دارید.</p></div><span class="section-step">۱</span></div>
         <div class="form-row product-form-grid-wide">
             <div class="form-group"><label for="size">سایز</label>
@@ -248,6 +249,8 @@
 </style>
 <script>
 (function () {
+    const clientKind = document.querySelector('[data-client-kind]');
+    if (clientKind && window.pywebview) clientKind.value = 'app';
     const visible = document.getElementById('cost_price');
     const second = document.getElementById('fake_cost_price');
     const editor = document.getElementById('second-cost-row');

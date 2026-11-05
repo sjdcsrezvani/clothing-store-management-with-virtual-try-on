@@ -48,6 +48,7 @@ from services.inventory import (
     record_opening_stock,
     record_stock_adjustment,
     record_cost_adjustment,
+    record_price_adjustment,
     sellable_expression,
     stock_alerts,
 )
@@ -1338,6 +1339,7 @@ async def admin_variant_update(
     storage_location: str = Form(""),
     size_system: str = Form(""),
     color_code: str = Form(""),
+    client_kind: str = Form("browser"),
     db: Session = Depends(get_db),
 ):
     """Update a specific variant."""
@@ -1439,13 +1441,25 @@ async def admin_variant_update(
             if not variant.image_path:
                 variant.image_path = path
 
-    # Update variant. Cost edits are also recorded so the current cost can be
-    # explained without rewriting historical SaleItem costs.
+    # Update variant. Price and cost edits are also recorded so the current
+    # figures can be explained without rewriting historical SaleItem costs.
+    old_price = variant.price
     old_cost_price = variant.cost_price
+    client_kind = client_kind if client_kind in {"app", "browser"} else "browser"
     variant.size = size if size else None
     variant.color = color if color else None
     variant.price = price_int
     variant.cost_price = cost_price_int
+    record_price_adjustment(
+        db,
+        variant,
+        old_price,
+        price_int,
+        note="اصلاح دستی قیمت فروش توسط مدیر",
+        actor_user_id=guard.id,
+        request_id=request.headers.get("X-Request-ID"),
+        client_kind=client_kind,
+    )
     record_cost_adjustment(
         db,
         variant,
@@ -1454,6 +1468,7 @@ async def admin_variant_update(
         note="اصلاح دستی بهای تمام‌شده توسط مدیر",
         actor_user_id=guard.id,
         request_id=request.headers.get("X-Request-ID"),
+        client_kind=client_kind,
     )
     variant.fake_cost_price = fake_cost_price_int
     record_stock_adjustment(

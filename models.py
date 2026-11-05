@@ -1428,6 +1428,7 @@ BUSINESS_EVENT_TYPES = (
     "StockReturned",
     "StockAdjusted",
     "StockCostAdjusted",
+    "StockPriceAdjusted",
     "PaymentRequested",
     "PaymentApproved",
     "PaymentCancelled",

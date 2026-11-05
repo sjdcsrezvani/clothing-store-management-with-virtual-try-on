@@ -273,7 +273,7 @@
                     <th scope="col">نوع حرکت</th>
                     <th scope="col" aria-sort="{{ 'descending' if sort_key == 'delta' and sort_dir == 'desc' else 'ascending' if sort_key == 'delta' else 'none' }}"><a class="sort-link" href="?{{ sort_base_qs }}&sort=delta&dir={{ 'asc' if sort_key == 'delta' and sort_dir == 'desc' else 'desc' }}">تغییر</a></th>
                     <th scope="col">موجودی پس از حرکت</th>
-                    <th scope="col">بهای واحد</th>
+                    <th scope="col">قیمت فروش / بهای واحد</th>
                     <th scope="col">کاربر</th>
                     <th scope="col">مرجع</th>
                     <th scope="col">توضیح</th>
@@ -315,7 +315,11 @@
                         <small class="movement-meta">اکنون: {{ row.current_stock }}</small>
                     </td>
                     <td class="tnum movement-cost">
-                        {% if row.cost_change %}
+                        {% if row.price_change %}
+                        <small>فروش</small>
+                        {{ fmt(row.price_change[0]) }} → {{ fmt(row.price_change[1]) }}
+                        {% elif row.cost_change %}
+                        <small>خرید</small>
                         {{ fmt(row.cost_change[0]) }} → {{ fmt(row.cost_change[1]) }}
                         {% elif movement.unit_cost is not none %}
                         {{ fmt(movement.unit_cost) }}
@@ -323,7 +327,10 @@
                         —
                         {% endif %}
                     </td>
-                    <td>{{ row.actor_name or '—' }}</td>
+                    <td>
+                        {{ row.actor_name or '—' }}
+                        {% if row.client_label %}<small class="movement-meta">{{ row.client_label }}</small>{% endif %}
+                    </td>
                     <td class="movement-ref">
                         {% if movement.purchase_id %}
                         <a class="text-link" href="/admin/purchases/{{ movement.purchase_id }}">خرید #{{ movement.purchase_id }}</a>

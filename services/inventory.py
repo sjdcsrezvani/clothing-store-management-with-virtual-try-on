@@ -31,7 +31,7 @@ MOVEMENT_LABELS = {
     "sale": "فروش",
     "sale_refund": "برگشت فروش",
     "adjustment": "اصلاح دستی",
-    "cost_adjustment": "اصلاح بهای تمام‌شده",
+    "cost_adjustment": "اصلاح قیمت یا بهای تمام‌شده",
 }
 
 # Since purchases stopped moving stock, only historical rows carry this type.
@@ -254,6 +254,7 @@ def record_cost_adjustment(
     actor_user_id: int | None = None,
     request_id: str | None = None,
     purchase_id: int | None = None,
+    client_kind: str | None = None,
 ):
     """Record a cost-basis edit without changing stock or sale history.
 
@@ -286,6 +287,54 @@ def record_cost_adjustment(
             "old_cost": old_cost,
             "new_cost": new_cost,
             "purchase_id": purchase_id,
+            "client_kind": client_kind,
+        },
+    )
+    return movement
+
+
+def record_price_adjustment(
+    db,
+    variant: ProductVariant,
+    old_price: int,
+    new_price: int,
+    note: str = "",
+    *,
+    actor_user_id: int | None = None,
+    request_id: str | None = None,
+    client_kind: str | None = None,
+):
+    """Record a sale-price edit as a zero-quantity ledger row.
+
+    The stock ledger is the one place a manager audits catalogue changes, so a
+    price edit lands there with its before/after, the acting user and the
+    client that saved it. It never changes stock or the cost basis.
+    """
+    if int(old_price or 0) == int(new_price or 0):
+        return None
+    movement = StockMovement(
+        variant_id=variant.id,
+        quantity_delta=0,
+        movement_type="cost_adjustment",
+        unit_cost=None,
+        note=(note or "")[:500] or None,
+    )
+    db.add(movement)
+    db.flush()
+    from services.events import append_event
+    append_event(
+        db,
+        "StockPriceAdjusted",
+        "variant",
+        variant.id,
+        idempotency_key=f"stock-movement:{movement.id}",
+        actor_user_id=actor_user_id,
+        request_id=request_id,
+        payload={
+            "movement_id": movement.id,
+            "old_price": old_price,
+            "new_price": new_price,
+            "client_kind": client_kind,
         },
     )
     return movement

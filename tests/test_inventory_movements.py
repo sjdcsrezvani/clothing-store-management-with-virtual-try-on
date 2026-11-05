@@ -1,4 +1,5 @@
 """Inventory ledger page: filters, running balances, actor trail, reconciliation."""
+import json
 import re
 from datetime import datetime, timezone
 
@@ -199,6 +200,52 @@ def test_cost_adjustment_shows_before_and_after(client, db_session, authed):
     assert "42,000 → 46,500" in page.text
     # A cost row moves no quantity, so it must not look like a stock change.
     assert "movement-delta is-zero" in page.text
+
+
+def test_variant_edit_records_price_and_real_cost_with_actor(client, db_session, authed):
+    manager = db_session.query(StaffUser).filter(StaffUser.username == "owner").first()
+    manager.full_name = "مدیر قیمت"
+    _, variant = _make_variant(
+        db_session, price=100_000, cost=50_000, stock=4, name="ثبت تغییر قیمت",
+    )
+    db_session.commit()
+
+    response = client.post(f"/admin/variants/{variant.id}", data={
+        "csrf_token": csrf_token(client, f"/admin/variants/{variant.id}/edit"),
+        "size": "", "color": "", "price": "120000", "cost_price": "60000",
+        "stock_quantity": "4", "sku": "", "tryon_details": "",
+        "client_kind": "app",
+    }, follow_redirects=False)
+    assert response.status_code == 303
+
+    rows = db_session.query(StockMovement).filter(
+        StockMovement.variant_id == variant.id,
+        StockMovement.movement_type == "cost_adjustment",
+    ).order_by(StockMovement.id).all()
+    assert len(rows) == 2
+    events = {}
+    for row in rows:
+        event = db_session.query(BusinessEvent).filter(
+            BusinessEvent.idempotency_key == f"stock-movement:{row.id}",
+        ).one()
+        events[event.event_type] = (event, json.loads(event.payload))
+    assert set(events) == {"StockPriceAdjusted", "StockCostAdjusted"}
+    price_event, price_payload = events["StockPriceAdjusted"]
+    cost_event, cost_payload = events["StockCostAdjusted"]
+    assert price_event.actor_user_id == manager.id
+    assert cost_event.actor_user_id == manager.id
+    assert (price_payload["old_price"], price_payload["new_price"]) == (100_000, 120_000)
+    assert (cost_payload["old_cost"], cost_payload["new_cost"]) == (50_000, 60_000)
+    assert price_payload["client_kind"] == cost_payload["client_kind"] == "app"
+
+    page = client.get(LEDGER_URL).text
+    body = _rows(page)
+    assert "اصلاح قیمت فروش" in body
+    assert "اصلاح بهای تمام‌شده" in body
+    assert "100,000 → 120,000" in body
+    assert "50,000 → 60,000" in body
+    assert "مدیر قیمت" in body
+    assert "اپلیکیشن" in body
 
 
 def test_references_link_to_their_documents(client, db_session, authed):

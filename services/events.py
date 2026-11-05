@@ -59,6 +59,7 @@ BUSINESS_EVENT_LABELS = {
     "StockReturned": "برگشت موجودی",
     "StockAdjusted": "اصلاح موجودی",
     "StockCostAdjusted": "اصلاح بهای موجودی",
+    "StockPriceAdjusted": "اصلاح قیمت فروش",
     "PaymentRequested": "درخواست پرداخت",
     "PaymentApproved": "تأیید پرداخت",
     "PaymentCancelled": "لغو پرداخت",
