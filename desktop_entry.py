@@ -236,7 +236,10 @@ def main() -> None:
             print(f"Phone try-on URL: {lan_url}/admin/mobile")
 
         window.events.loaded += expose_phone_url
-        webview.start(func=lambda: None)
+        # private_mode keeps cookies in memory only, so every launch forgot the
+        # login. A real storefront needs the signed session to survive a close.
+        webview.start(func=lambda: None, private_mode=False,
+                      storage_path=os.path.join(data_dir, "webview"))
         server.should_exit = True
         thread.join(timeout=5)
         if gateway_server is not None:

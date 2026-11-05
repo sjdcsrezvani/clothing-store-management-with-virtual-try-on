@@ -197,6 +197,42 @@ def test_bulk_archive_without_selection_names_it(client, authed):
     assert "msg=" in response.headers["location"]
 
 
+def _sized_product(db_session, name, size, stock, barcode):
+    product = Product(name=name, category="لباس")
+    db_session.add(product)
+    db_session.flush()
+    db_session.add(ProductVariant(
+        product_id=product.id, price=100_000, stock_quantity=stock,
+        barcode=barcode, size=size,
+    ))
+    db_session.commit()
+    return product
+
+
+def test_size_picker_offers_sellable_sizes_and_filters_the_list(client, authed, db_session):
+    _sized_product(db_session, "پیراهن سایز کوچک", "S", 5, "SZ-1")
+    _sized_product(db_session, "پیراهن سایز متوسط", "M", 0, "SZ-2")
+
+    html = client.get("/admin/products").text
+    assert '<option value="S"' in html
+    # An out-of-stock size cannot be bought, so it is not offered.
+    assert '<option value="M"' not in html
+
+    filtered = client.get("/admin/products?size=S").text
+    assert "پیراهن سایز کوچک" in filtered
+    assert "پیراهن سایز متوسط" not in filtered
+    # The next page link must keep the chosen size.
+    assert "size=S" in filtered
+
+
+def test_pagination_lists_page_numbers(client, authed, db_session):
+    for index in range(12):
+        _product(db_session, f"شماره {index:02d}", barcode=f"N-{index}")
+    html = client.get("/admin/products?per_page=10").text
+    assert 'class="pagination-page is-current" aria-current="page">1</span>' in html
+    assert 'class="pagination-page" href="/admin/products?page=2' in html
+
+
 def test_pagination_preserves_every_param(client, authed, db_session):
     for index in range(12):
         _product(db_session, f"صفحه {index:02d}", barcode=f"P-{index}")

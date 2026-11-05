@@ -70,19 +70,7 @@
 {% endif %}
 
 {# ─── Lightbox ─── #}
-{# One dialog pattern everywhere (see tryon.html): role + aria-modal, the
-   [data-dialog] fade in motion.css, focus back to the opener on close.
-   The scrim dismisses on a click as a convenience for the mouse; the
-   keyboard's own ways out are the ✕ button below and Escape. #}
-<div id="lightbox" data-dialog role="dialog" aria-modal="true" aria-label="نمایش تصویر در اندازه کامل" tabindex="-1" class="lightbox-scrim"
-     data-close-lightbox>
-     <div id="lightbox-stage" class="lightbox-stage t-modal-card">
-        <img id="lightbox-img" src="" alt="تصویر پرو مجازی در اندازه کامل">
-        {% if store_logo %}<img src="{{ store_logo }}" alt="" aria-hidden="true" class="lightbox-logo">{% endif %}
-    </div>
-    <button type="button" id="lightbox-close" class="lightbox-close" aria-label="بستن تصویر"
-            data-close-lightbox>✕</button>
-</div>
+{% include 'partials/lightbox.html' %}
 <div id="gallery-confirm" data-dialog role="alertdialog" aria-modal="true"
      aria-labelledby="gallery-confirm-title" aria-describedby="gallery-confirm-text" class="confirm-scrim" tabindex="-1">
     <div class="t-modal-card confirm-card" role="document">
@@ -95,27 +83,6 @@
     </div>
 </div>
 <script>
-var lightboxOpener = null;
-function openLightbox(src) {
-    lightboxOpener = document.activeElement;
-    document.getElementById('lightbox-img').src = src;
-    document.getElementById('lightbox').classList.add('is-open');
-    document.getElementById('lightbox-close').focus();
-}
-function closeLightbox(e) {
-    if (!e || e.target === e.currentTarget || e.target.tagName === 'DIV') {
-        document.getElementById('lightbox').classList.remove('is-open');
-        if (lightboxOpener && document.contains(lightboxOpener)) lightboxOpener.focus();
-    }
-}
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') closeLightbox();
-});
-document.addEventListener('click', function(e) {
-    var opener = e.target.closest ? e.target.closest('[data-lightbox-src]') : null;
-    if (opener) { openLightbox(opener.getAttribute('data-lightbox-src')); return; }
-    if (e.target.closest && e.target.closest('[data-close-lightbox]')) closeLightbox(e);
-});
 (function () {
     var pendingForm = null;
     document.addEventListener('submit', function (event) {

@@ -1,0 +1,35 @@
+{# One dialog pattern everywhere: role + aria-modal announce it, the fade is
+   [data-dialog] in motion.css, focus returns to the picture that opened it.
+   Any page opens it with a [data-lightbox-src] control. #}
+<div id="lightbox" data-dialog role="dialog" aria-modal="true" aria-label="نمایش تصویر در اندازه کامل" tabindex="-1" class="lightbox-scrim"
+     data-close-lightbox>
+    <div id="lightbox-stage" class="lightbox-stage t-modal-card">
+        <img id="lightbox-img" src="" alt="تصویر در اندازه کامل">
+        {% if store_logo %}<img src="{{ store_logo }}" alt="" aria-hidden="true" class="lightbox-logo">{% endif %}
+    </div>
+    <button type="button" id="lightbox-close" class="lightbox-close" aria-label="بستن تصویر" data-close-lightbox>✕</button>
+</div>
+<script>
+var lightboxOpener = null;
+function openLightbox(src) {
+    lightboxOpener = document.activeElement;
+    document.getElementById('lightbox-img').src = src;
+    document.getElementById('lightbox').classList.add('is-open');
+    // The keyboard goes where the eye went: Tab lands inside the open lightbox
+    // rather than continuing through the page behind it.
+    document.getElementById('lightbox-close').focus();
+}
+function closeLightbox() {
+    document.getElementById('lightbox').classList.remove('is-open');
+    if (lightboxOpener && document.contains(lightboxOpener)) lightboxOpener.focus();
+}
+document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closeLightbox();
+});
+document.addEventListener('click', function (e) {
+    var opener = e.target.closest ? e.target.closest('[data-lightbox-src]') : null;
+    if (opener) { openLightbox(opener.getAttribute('data-lightbox-src')); return; }
+    // The ✕ button and the bare scrim close it; the stage itself does not.
+    if (e.target.id === 'lightbox-close' || e.target.id === 'lightbox') closeLightbox();
+});
+</script>

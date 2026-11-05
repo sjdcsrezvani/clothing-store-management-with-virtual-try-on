@@ -66,15 +66,16 @@ def test_drawer_overlay_fades_without_changing_its_coat():
 
 
 def test_lightboxes_are_dialogs_with_focus_return():
+    shared = (ROOT / "templates" / "partials" / "lightbox.html").read_text()
+    assert 'data-dialog' in shared
+    assert 'role="dialog"' in shared
+    assert 'aria-modal="true"' in shared
+    assert "lightboxOpener" in shared
+    # Pins the keyboard-shell suite reads literally.
+    assert "e.key === 'Escape'" in shared
+    assert "lightbox-close').focus()" in shared
     for name in ("tryon.html", "tryon_saved.html"):
-        source = (ROOT / "templates" / "admin" / name).read_text()
-        assert 'data-dialog' in source, name
-        assert 'role="dialog"' in source, name
-        assert 'aria-modal="true"' in source, name
-        assert "lightboxOpener" in source, name
-        # Pins the keyboard-shell suite reads literally.
-        assert "e.key === 'Escape'" in source, name
-        assert "lightbox-close').focus()" in source, name
+        assert "partials/lightbox.html" in (ROOT / "templates" / "admin" / name).read_text(), name
 
 
 def test_mobile_overlay_is_a_dialog():

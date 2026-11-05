@@ -2274,7 +2274,11 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .badge-info { background: color-mix(in srgb, var(--sky) 14%, var(--card)); color: var(--info-ink); }
 .table-actions { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
 .table-actions form { display: inline; }
-.product-pagination { display: flex; align-items: center; justify-content: center; gap: 1rem; padding-top: 1.2rem; color: var(--ink-soft); }
+.product-pagination { display: flex; align-items: center; justify-content: center; gap: 0.4rem; padding-top: 1.2rem; color: var(--ink-soft); flex-wrap: wrap; }
+.product-pagination .pagination-page { display: inline-flex; align-items: center; justify-content: center; min-width: 2rem; min-height: 2rem; padding: 0 0.45rem; border: 1px solid var(--rule); border-radius: var(--radius-sm); color: var(--ink); font-weight: 700; }
+.product-pagination .pagination-page:hover { background: var(--surface-soft); }
+.product-pagination .pagination-page.is-current { background: var(--brand-fill); border-color: var(--brand-fill); color: var(--brand-label); }
+.product-pagination .pagination-gap { padding: 0 0.2rem; }
 .products-empty { min-height: 180px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.4rem; }
 /* Reload-free list regions: while the rows refetch, the region dims instead of
    flashing away — a veil, not a spinner, for a fetch that takes milliseconds. */

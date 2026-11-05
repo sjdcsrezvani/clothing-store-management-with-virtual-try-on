@@ -407,6 +407,15 @@ def test_product_tag_template_can_be_saved_assigned_and_used_for_print(client, d
     assert "--tag-w-mm: 60.0" in response.text
 
 
+def test_tag_steppers_are_delegated_from_the_document():
+    """The tag region swaps itself on every filter/page change; a stepper
+    listener bound to that node dies with it and the +/- buttons go dead."""
+    html = (Path(__file__).resolve().parents[1]
+            / "templates/admin/barcode_print.html").read_text()
+    assert "document.addEventListener('click', function (event) {" in html
+    assert "region.addEventListener('click'" not in html
+
+
 def test_tag_template_names_must_be_unique(db_session):
     config = default_tag_config()
     save_tag_template(db_session, "تگ ساده", config)

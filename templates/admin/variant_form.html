@@ -80,7 +80,7 @@
                 </div>
             </div>
             <small class="field-help">همین عکس مرجع پرو مجازی است.</small>
-            {% if variant.image_path and '/uploads/barcodes/' not in variant.image_path %}<figure class="image-current"><img src="{{ variant.image_path }}" alt="تصویر اصلی فعلی تنوع"><figcaption>تصویر اصلی فعلی</figcaption></figure>{% endif %}
+            {% if variant.image_path and '/uploads/barcodes/' not in variant.image_path %}<figure class="image-current"><button type="button" class="lightbox-open" data-lightbox-src="{{ variant.image_path }}" aria-label="نمایش تصویر اصلی تنوع در اندازه کامل"><img src="{{ variant.image_path }}" alt="تصویر اصلی فعلی تنوع"></button><figcaption>تصویر اصلی فعلی</figcaption></figure>{% endif %}
         </div>
         <div class="form-group">
             <span class="field-label">گالری تنوع</span>
@@ -101,7 +101,7 @@
         <ul class="variant-gallery">
             {% for frame in variant.images|sort(attribute='sort_order') %}
             <li class="{% if frame.image_path == variant.image_path %}is-primary{% endif %}">
-                <img src="{{ frame.image_path }}" alt="قاب {{ loop.index }} تنوع" loading="lazy">
+                <button type="button" class="lightbox-open" data-lightbox-src="{{ frame.image_path }}" aria-label="نمایش قاب {{ loop.index }} تنوع در اندازه کامل"><img src="{{ frame.image_path }}" alt="قاب {{ loop.index }} تنوع" loading="lazy"></button>
                 {% if frame.image_path == variant.image_path %}<span class="badge badge-info">تصویر اصلی</span>{% endif %}
                 <span class="variant-gallery-actions">
                     {% if frame.image_path != variant.image_path %}
@@ -296,4 +296,5 @@
 </script>
 <script type="application/json" id="sizing-ladders">{{ sizing_ladders_json|safe }}</script>
 <script src="/static/js/sizing.js?v={{ static_version }}"></script>
+{% include 'partials/lightbox.html' %}
 {% endblock %}

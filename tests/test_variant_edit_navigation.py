@@ -28,6 +28,17 @@ def _product_with_three_variants(db_session):
     return product, variants
 
 
+def test_variant_images_open_the_shared_lightbox(client, db_session, authed):
+    product, variants = _product_with_three_variants(db_session)
+    variant = variants[0]
+    variant.image_path = "/static/uploads/products/full.jpg"
+    db_session.commit()
+    html = client.get(f"/admin/variants/{variant.id}/edit").text
+    assert "partials/lightbox" not in html  # included, not printed
+    assert 'id="lightbox"' in html
+    assert f'data-lightbox-src="/static/uploads/products/full.jpg"' in html
+
+
 def test_variant_edit_marks_its_text_fields_as_text(client, db_session, authed):
     product, variants = _product_with_three_variants(db_session)
     page = client.get(f"/admin/variants/{variants[0].id}/edit").text

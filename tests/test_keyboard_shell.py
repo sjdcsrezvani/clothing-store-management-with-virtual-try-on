@@ -784,21 +784,25 @@ def test_the_lightbox_is_a_dialog_a_keyboard_can_work():
     thing being clicked could be clicked without a mouse.
     """
     openers = closers = 0
+    shared = (ROOT / "templates" / "partials" / "lightbox.html").read_text(encoding="utf-8")
     for name in ("tryon.html", "tryon_saved.html"):
         source = (ROOT / "templates" / "admin" / name).read_text(encoding="utf-8")
+        assert "partials/lightbox.html" in source, f"{name}: no shared lightbox"
         for element in _Interactive.walk(source):
             attributes = element["attributes"]
             classes = (attributes.get("class") or "").split()
             if "lightbox-open" in classes:
                 assert element["tag"] == "button", f"{name}: the picture is a <{element['tag']}>"
                 openers += 1
-            if "lightbox-close" in classes:
-                assert element["tag"] == "button", f"{name}: the ✕ is a <{element['tag']}>"
-                closers += 1
-        assert "e.key === 'Escape'" in source, f"{name}: Escape does not close the lightbox"
-        assert "lightbox-close').focus()" in source, (
-            f"{name}: opening the lightbox leaves the keyboard out on the page behind it")
-    assert (openers, closers) == (2, 2), (openers, closers)
+    for element in _Interactive.walk(shared):
+        classes = (element["attributes"].get("class") or "").split()
+        if "lightbox-close" in classes:
+            assert element["tag"] == "button", f"the ✕ is a <{element['tag']}>"
+            closers += 1
+    assert "e.key === 'Escape'" in shared, "Escape does not close the lightbox"
+    assert "lightbox-close').focus()" in shared, (
+        "opening the lightbox leaves the keyboard out on the page behind it")
+    assert (openers, closers) == (2, 1), (openers, closers)
 
 
 def test_the_skip_link_is_the_first_thing_the_keyboard_reaches(client, db_session):

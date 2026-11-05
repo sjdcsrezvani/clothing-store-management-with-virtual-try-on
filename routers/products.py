@@ -255,7 +255,7 @@ PRODUCT_STOCK_FILTERS = ("all", "low", "out")
 
 def _product_list_query(db, search: str = "", category: str = "", stock: str = "all",
                         active_only: bool = True, standard: str | None = None,
-                        adult_standard: str | None = None):
+                        adult_standard: str | None = None, size: str = ""):
     """The filtered products query the list, the CSV and the bulk bar share.
 
     Price and stock are variant aggregates, so the query carries them as
@@ -319,6 +319,23 @@ def _product_list_query(db, search: str = "", category: str = "", stock: str = "
     if category:
         query = query.filter(Product.category == category)
 
+    if size:
+        # The filter speaks the page's size column, which is the band label in
+        # the shop's chosen unit — the stored tag value is not what the owner
+        # reads. Only sellable variants qualify.
+        wanted = size.strip()
+        selling = (db.query(ProductVariant).join(Product)
+                   .options(joinedload(ProductVariant.product))
+                   .filter(Product.is_active == active_only,
+                           ProductVariant.is_active == True,  # noqa: E712
+                           sellable_expression() > 0))
+        matching = [
+            variant.product_id for variant in selling
+            if variant_size_display(variant, standard or "age",
+                                    adult_standard=adult_standard) == wanted
+        ]
+        query = query.filter(Product.id.in_(matching))
+
     if stock == "out":
         query = query.filter(Product.variants.any(and_(
             ProductVariant.is_active == True,  # noqa: E712
@@ -364,6 +381,28 @@ def _safe_next(value, fallback: str) -> str:
     return fallback
 
 
+def _size_sort_key(label: str):
+    """Numbers first, in numeric order; labels («3-4 سال») sort by their first
+    number, so the picker follows the shelf instead of the alphabet."""
+    digits = to_english_digits(label)
+    match = re.match(r"\s*(\d+)", digits)
+    return (0, int(match.group(1)), digits) if match else (1, 0, digits)
+
+
+def _page_numbers(page: int, total_pages: int, span: int = 2):
+    """Page links with the first and last always reachable; ``None`` marks a
+    gap. A store with twenty pages should not print twenty buttons."""
+    wanted = {1, total_pages}
+    wanted.update(range(max(1, page - span), min(total_pages, page + span) + 1))
+    out, previous = [], 0
+    for number in sorted(wanted):
+        if previous and number > previous + 1:
+            out.append(None)
+        out.append(number)
+        previous = number
+    return out
+
+
 def _product_per_page(raw: str) -> int:
     try:
         per_page = int(raw)
@@ -394,6 +433,7 @@ async def admin_products(
     per_page: str = "10",
     stock: str = "all",
     state: str = "active",
+    size: str = "",
     db: Session = Depends(get_db),
 ):
     guard = require_html_role(request, db, "manager")
@@ -414,7 +454,7 @@ async def admin_products(
 
     query, price_sq, avail_sq = _product_list_query(
         db, search, category, stock, active_only=not archived_view,
-        standard=sizing_standard, adult_standard=sizing_standard_adult)
+        standard=sizing_standard, adult_standard=sizing_standard_adult, size=size)
     total = query.count()
     total_pages = max(1, (total + per_page - 1) // per_page)
     page = min(max(page, 1), total_pages)
@@ -428,6 +468,20 @@ async def admin_products(
     # product list below: their badge must count products, not variants, or a
     # product with three low sizes says «3» and still renders one row.
     alerts = stock_alerts(db)
+    # The size picker lists what is actually sellable, labelled exactly as the
+    # table labels it — a size the shelf cannot fill is not a choice.
+    size_choices = sorted({
+        variant_size_display(variant, sizing_standard,
+                             adult_standard=sizing_standard_adult)
+        for variant in (
+            db.query(ProductVariant).join(Product)
+            .options(joinedload(ProductVariant.product))
+            .filter(Product.is_active == (not archived_view),
+                    ProductVariant.is_active == True,  # noqa: E712
+                    sellable_expression() > 0)
+        )
+        if variant.size
+    }, key=_size_sort_key)
     low_product_count = _product_list_query(
         db, "", "", "low", active_only=True,
         standard=sizing_standard, adult_standard=sizing_standard_adult)[0].count()
@@ -469,10 +523,13 @@ async def admin_products(
         "per_page": per_page,
         "per_page_options": PRODUCT_PER_PAGE_OPTIONS,
         "stock_filter": stock,
+        "size_filter": size.strip(),
+        "size_choices": size_choices,
+        "page_numbers": _page_numbers(page, total_pages),
         "state": "archived" if archived_view else "active",
         "archived_count": db.query(Product).filter(Product.is_active == False).count(),  # noqa: E712
         "list_qs": urlencode({
-            "search": search, "category": category, "stock": stock,
+            "search": search, "category": category, "stock": stock, "size": size,
             "state": "archived" if archived_view else "active",
             "per_page": per_page, "sort": sort_key, "dir": sort_dir, "page": page,
         }),
@@ -490,6 +547,7 @@ async def admin_products_export(
     search: str = "",
     category: str = "",
     stock: str = "all",
+    size: str = "",
     db: Session = Depends(get_db),
 ):
     guard = require_html_role(request, db, "manager")
@@ -502,7 +560,7 @@ async def admin_products_export(
     kids_standard, adult_standard = get_sizing_standards(db)
     query, price_sq, avail_sq = _product_list_query(
         db, search, category, stock, standard=kids_standard,
-        adult_standard=adult_standard)
+        adult_standard=adult_standard, size=size)
     order, tiebreak = _product_order(sort_key, sort_dir, price_sq, avail_sq)
 
     rows = [["نام", "برند", "دسته‌بندی", "SKU پایه", "تنوع فعال",

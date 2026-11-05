@@ -349,8 +349,9 @@ function bindTagRegion(root) {
     // state: the first bind passes `document`, which has no dataset.
     if (!window.__tagSteppersBound) {
         window.__tagSteppersBound = true;
-        const region = document.querySelector('[data-list-region="tags"]') || document;
-        region.addEventListener('click', function (event) {
+        // Document, not the region: the region swaps itself on every filter or
+        // page change, and a listener bound to it dies with the old node.
+        document.addEventListener('click', function (event) {
             const step = event.target.closest ? event.target.closest('[data-step]') : null;
             if (!step) return;
             const item = step.closest('.tag-selection-item');
