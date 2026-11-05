@@ -1308,6 +1308,7 @@ html[data-theme="kids-boutique"] .context-mark, html[data-theme="kids-boutique"]
   /* Wide tables must not stop at the screen's edge, and a min-width set for
      the screen would clip them again; the record is allowed to reflow. */
   .table-scroll { overflow: visible !important; }
+  .card-scroll { max-height: none !important; overflow: visible !important; }
   table { min-width: 0 !important; }
   /* Whatever form still prints: its buttons are the screen's reply, and its
      fields read as text — the value is the fact, not the box around it. */
@@ -1942,6 +1943,10 @@ a.stat-card:hover { text-decoration: none; box-shadow: var(--shadow-hover); }
   margin-bottom: 1.5rem;
 }
 .chart-card { min-height: 280px; overflow: hidden; }
+/* A matrix may gain a colour or a size at any time; give it the full row so
+   the cells shrink and wrap instead of pushing the card into a sideways
+   scroll. */
+.chart-card--wide { grid-column: 1 / -1; }
 /* ECharts mounts into these host divs (SVG needs a container; a canvas
    element cannot take children). Explicit height: without one the box
    collapses and the chart paints into a strip. */
@@ -4347,9 +4352,17 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
   .charts-grid, .tables-grid { grid-template-columns: 1fr; }
 }
-.matrix { border-collapse: collapse; font-size: 0.85rem; }
-.matrix th, .matrix td { border: 1px solid var(--rule); padding: 0.35rem 0.6rem; min-width: 2.8rem; white-space: nowrap; }
+.matrix { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 0.85rem; }
+.matrix th, .matrix td { border: 1px solid var(--rule); padding: 0.35rem 0.45rem; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .inv-row { display: flex; justify-content: space-between; padding: 0.25rem 0; }
+/* Long breakdowns scroll inside their card instead of stretching the row. */
+.card-scroll {
+  max-height: 12rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.card-scroll thead th { position: sticky; top: 0; z-index: 1; background: var(--card); }
 /* Analytics rhythm: stacked sections breathe the same, small print reads the
    same, and key-value rows reuse .inv-row. Data-driven widths and heat stay
    inline — they are figures, not styling. */

@@ -208,8 +208,8 @@
     <div class="charts-grid">
         <div class="card chart-card"><h3>میانگین قیمت/هزینه/سود <span class="tip-icon" tabindex="0" role="button" data-tip="میانگین قیمت فروش، هزینه تمام‌شده و سود به ازای هر واحد فروخته‌شده (بر اساس قیمت‌های واقعی فاکتور، نه قیمت لیست). اگر میله سود منفی باشد یعنی زیان می‌دهید.">?</span></h3><p class="chart-note" data-chart="pricingChart">{{ notes.pricingChart }}</p><div class="chart-host" id="pricingChart" role="img" aria-label="{{ notes.pricingChart }}"></div></div>
         <div class="card chart-card"><h3>پرفروش‌ترین رنگ <span class="tip-icon" tabindex="0" role="button" data-tip="پرفروش‌ترین رنگ‌ها بر اساس تعداد واحد فروخته‌شده. اگر رنگی بالای لیست باشد یعنی مشتریان آن رنگ را بیشتر می‌خرند — آن را بیشتر موجود کنید.">?</span></h3><p class="chart-note" data-chart="colorChart">{{ notes.colorChart }}</p><div class="chart-host" id="colorChart" role="img" aria-label="{{ notes.colorChart }}"></div></div>
-        <div class="card chart-card"><h3>پرفروش‌ترین سایز <span class="tip-icon" tabindex="0" role="button" data-tip="پرفروش‌ترین سایزها بر اساس تعداد واحد فروخته‌شده. سایزهای پرفروش را بیشتر سفارش دهید و سایزهای کم‌فروش را کمتر.">?</span></h3><p class="chart-note" data-chart="sizeChart">{{ notes.sizeChart }}</p><div class="chart-host" id="sizeChart" role="img" aria-label="{{ notes.sizeChart }}"></div></div>
-        <div class="card chart-card">
+        <div class="card chart-card chart-card--wide"><h3>پرفروش‌ترین سایز <span class="tip-icon" tabindex="0" role="button" data-tip="پرفروش‌ترین سایزها بر اساس تعداد واحد فروخته‌شده. سایزهای پرفروش را بیشتر سفارش دهید و سایزهای کم‌فروش را کمتر.">?</span></h3><p class="chart-note" data-chart="sizeChart">{{ notes.sizeChart }}</p><div class="chart-host" id="sizeChart" role="img" aria-label="{{ notes.sizeChart }}"></div></div>
+        <div class="card chart-card chart-card--wide">
             <div class="section-heading-row">
                 <h3>ماتریس رنگ × سایز <span class="tip-icon" tabindex="0" role="button" data-tip="ماتریس ترکیب رنگ × سایز: هر خانه آن ترکیب را نشان می‌دهد. خانه‌های تیره‌تر پرفروش‌ترند. برای تصمیم‌گیری سفارش مجدد ضروری است — مثلاً «مشکی سایز متوسط» بیشتر فروش دارد یا «سفید سایز بزرگ»؟">?</span></h3>
                 <span class="picked-tools" role="group" aria-label="حالت ماتریس">
@@ -238,7 +238,7 @@
             <div class="inv-row"><span>سرمایه انبار</span><b class="tnum">{{ fmt(inventory.total_cost) }} تومان</b></div>
             <div class="inv-row"><span>ارزش فروش انبار</span><b class="tnum">{{ fmt(inventory.total_retail) }} تومان</b></div>
             <div class="inv-row"><span>موجودی کل</span><b class="tnum">{{ fmt(inventory.units) }}</b></div>
-            <div class="kv-divider">
+            <div class="kv-divider card-scroll">
                 {% for c in inventory.categories[:8] %}
                 <div class="inv-row">
                     <span>{{ c.category }}</span><span class="tnum">{{ fmt(c.cost) }} تومان</span>
@@ -249,7 +249,7 @@
         <div class="card">
             <h3>موجودی به تفکیک سایز <span class="tip-icon" tabindex="0" role="button" data-tip="تعداد و سرمایه انبار به تفکیک سایز. سایزهایی که تگ‌هایشان یکی است یک ردیف‌اند؛ ردیف بالاتر یعنی سرمایه بیشتری روی آن سایز خوابیده.">?</span></h3>
             {% if stock_by_band %}
-            <div class="table-scroll">
+            <div class="table-scroll card-scroll">
                 <table class="data-table">
                     <thead><tr><th>سایز</th><th>تعداد</th><th>سرمایه</th></tr></thead>
                     <tbody>
