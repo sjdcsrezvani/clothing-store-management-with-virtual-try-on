@@ -74,6 +74,7 @@ def test_lightboxes_are_dialogs_with_focus_return():
     # Pins the keyboard-shell suite reads literally.
     assert "e.key === 'Escape'" in shared
     assert "lightbox-close').focus()" in shared
+    assert "closeButton.addEventListener('click'" in shared
     for name in ("tryon.html", "tryon_saved.html"):
         assert "partials/lightbox.html" in (ROOT / "templates" / "admin" / name).read_text(), name
 

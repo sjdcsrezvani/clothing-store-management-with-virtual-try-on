@@ -26,6 +26,14 @@ function closeLightbox() {
 document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') closeLightbox();
 });
+// Bind the ✕ directly as well: a click on the button must never depend on a
+// delegated handler's target check, whatever is layered over the scrim.
+var closeButton = document.getElementById('lightbox-close');
+if (closeButton) closeButton.addEventListener('click', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    closeLightbox();
+});
 document.addEventListener('click', function (e) {
     var opener = e.target.closest ? e.target.closest('[data-lightbox-src]') : null;
     if (opener) { openLightbox(opener.getAttribute('data-lightbox-src')); return; }

@@ -797,7 +797,7 @@ every commit in the push is checked, not only the newest one.
 
 ## Security notes
 
-- Admin auth is session-based (signed cookie, 30-day expiry) with PBKDF2-hashed
+- Admin auth is session-based (signed cookie, 10h expiry) with PBKDF2-hashed
   passwords stored in the settings table, plus a login rate limiter.
 - Every state-changing form is CSRF-protected.
 - `/api/*` endpoints (customer lookup, photo upload, image generation) require the

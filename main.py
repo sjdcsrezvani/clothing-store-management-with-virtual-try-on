@@ -420,7 +420,7 @@ app.add_middleware(NoStoreHTMLMiddleware)
 app.add_middleware(
     SessionMiddleware,
     secret_key=SESSION_SECRET,
-    max_age=30 * 24 * 3600,     # stay signed in on the shop's own machine
+    max_age=10 * 3600,          # 10h admin session
     same_site="strict",
     https_only=False,
 )

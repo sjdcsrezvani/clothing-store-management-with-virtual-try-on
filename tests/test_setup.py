@@ -26,7 +26,7 @@ def test_desktop_window_keeps_cookies_between_launches():
 
 def test_admin_session_outlives_a_normal_day():
     source = (Path(__file__).resolve().parents[1] / "main.py").read_text()
-    assert "max_age=30 * 24 * 3600" in source
+    assert "max_age=10 * 3600" in source
 
 
 def test_setup_is_local_only():

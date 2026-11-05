@@ -209,18 +209,24 @@ def _sized_product(db_session, name, size, stock, barcode):
     return product
 
 
-def test_size_picker_offers_sellable_sizes_and_filters_the_list(client, authed, db_session):
+def test_size_picker_needs_an_active_sellable_variant(client, authed, db_session):
     _sized_product(db_session, "پیراهن سایز کوچک", "S", 5, "SZ-1")
     _sized_product(db_session, "پیراهن سایز متوسط", "M", 0, "SZ-2")
+    _sized_product(db_session, "پیراهن سایز بزرگ", "L", 5, "SZ-3")
+    archived = db_session.query(ProductVariant).filter_by(barcode="SZ-3").one()
+    archived.is_active = False
+    db_session.commit()
 
     html = client.get("/admin/products").text
     assert '<option value="S"' in html
-    # An out-of-stock size cannot be bought, so it is not offered.
+    # Out of stock or archived variants do not offer a size the shelf cannot fill.
     assert '<option value="M"' not in html
+    assert '<option value="L"' not in html
 
     filtered = client.get("/admin/products?size=S").text
     assert "پیراهن سایز کوچک" in filtered
     assert "پیراهن سایز متوسط" not in filtered
+    assert "پیراهن سایز بزرگ" not in filtered
     # The next page link must keep the chosen size.
     assert "size=S" in filtered
 

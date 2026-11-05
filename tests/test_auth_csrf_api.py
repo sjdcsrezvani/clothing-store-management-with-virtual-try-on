@@ -32,6 +32,10 @@ def test_login_correct_password_grants_access(client):
 def test_logout_clears_session(client, authed):
     resp = client.post("/admin/logout", data={"csrf_token": csrf_token(client, "/admin/")}, follow_redirects=False)
     assert resp.status_code == 303
+    # The cookie is deleted, not merely emptied: the persistent desktop jar
+    # must not hand the next person the previous account.
+    cookie = "; ".join(resp.headers.get_list("set-cookie"))
+    assert "session=" in cookie and "Max-Age=0" in cookie
     resp = client.get("/admin/", follow_redirects=False)
     assert resp.status_code == 303
 

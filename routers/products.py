@@ -322,15 +322,16 @@ def _product_list_query(db, search: str = "", category: str = "", stock: str = "
     if size:
         # The filter speaks the page's size column, which is the band label in
         # the shop's chosen unit — the stored tag value is not what the owner
-        # reads. Only sellable variants qualify.
+        # reads. The variant must be active *and* sellable, or the list would
+        # promise a size the shelf cannot fill.
         wanted = size.strip()
-        selling = (db.query(ProductVariant).join(Product)
-                   .options(joinedload(ProductVariant.product))
-                   .filter(Product.is_active == active_only,
-                           ProductVariant.is_active == True,  # noqa: E712
-                           sellable_expression() > 0))
+        carrying = (db.query(ProductVariant).join(Product)
+                    .options(joinedload(ProductVariant.product))
+                    .filter(Product.is_active == active_only,
+                            ProductVariant.is_active == True,  # noqa: E712
+                            sellable_expression() > 0))
         matching = [
-            variant.product_id for variant in selling
+            variant.product_id for variant in carrying
             if variant_size_display(variant, standard or "age",
                                     adult_standard=adult_standard) == wanted
         ]
@@ -468,8 +469,8 @@ async def admin_products(
     # product list below: their badge must count products, not variants, or a
     # product with three low sizes says «3» and still renders one row.
     alerts = stock_alerts(db)
-    # The size picker lists what is actually sellable, labelled exactly as the
-    # table labels it — a size the shelf cannot fill is not a choice.
+    # The picker offers sizes that are actually sellable, labelled exactly as
+    # the table labels them — a size the shelf cannot fill is not a choice.
     size_choices = sorted({
         variant_size_display(variant, sizing_standard,
                              adult_standard=sizing_standard_adult)

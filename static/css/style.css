@@ -4748,7 +4748,9 @@ html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
 .tryon-gallery-variant img { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; border: 1px solid var(--rule); }
 .tryon-gallery-variant-label { font-size: 0.6rem; margin-top: 2px; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tryon-gallery-actions { display: flex; gap: 0.3rem; padding: 0 0.4rem 0.5rem; justify-content: center; }
-.lightbox-scrim { display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--scrim); z-index: 9999; align-items: center; justify-content: center; }
+/* Above the generation overlay (10001): an open preview must keep its ✕ usable
+   even while a new try-on is loading behind it. */
+.lightbox-scrim { display: flex; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--scrim); z-index: 10002; align-items: center; justify-content: center; }
 .lightbox-stage { position: relative; display: inline-block; line-height: 0; }
 .lightbox-stage img:first-child { max-width: 95vw; max-height: 95vh; object-fit: contain; border-radius: 8px; display: block; }
 .lightbox-logo { position: absolute; top: 0; left: 0; width: 200px; height: 200px; pointer-events: none; }

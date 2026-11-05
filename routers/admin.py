@@ -211,7 +211,12 @@ async def admin_logout(request: Request, db: Session = Depends(get_db)):
     if current_staff_user(db, request):
         log_action(db, "logout", "خروج", request=request)
     request.session.clear()
-    return RedirectResponse(url="/admin/login", status_code=303)
+    response = RedirectResponse(url="/admin/login", status_code=303)
+    # The desktop window keeps its cookie jar between launches, so logout must
+    # delete the cookie itself — an empty session in the jar is still a login
+    # that the next person must not inherit.
+    response.delete_cookie("session", path="/")
+    return response
 
 
 # ── First-run setup wizard ─────────────────────────────────────────────────
