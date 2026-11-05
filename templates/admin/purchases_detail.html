@@ -259,7 +259,18 @@
                 <button type="submit" class="btn btn-danger">حذف پیش‌نویس</button>
             </form>
         </section>
-        {% elif not purchase.is_reversed %}
+        {% elif purchase.is_reversed %}
+        <section class="card danger-zone">
+            <h3>حذف رکورد برگشت‌خورده</h3>
+            <p class="muted">این خرید قبلاً برگشت خورده و روی موجودی و حساب‌ها اثری ندارد. حذف، رکورد فاکتور و سابقه بهایش را برای همیشه پاک می‌کند؛ پرداخت‌های ثبت‌شده به عنوان بدهی تأمین‌کننده باقی می‌مانند.</p>
+            <form method="post" action="/admin/purchases/{{ purchase.id }}/purge"
+                  data-confirm="این رکورد برگشت‌خورده برای همیشه حذف می‌شود و قابل بازگشت نیست. ادامه؟"
+                  data-confirm-title="حذف رکورد برگشت‌خورده" data-confirm-ok="حذف" hx-boost="false">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-danger">حذف رکورد</button>
+            </form>
+        </section>
+        {% else %}
         <section class="card danger-zone">
             <h3>برگشت خرید</h3>
             <p class="muted">برای حفظ تاریخچه، خرید حذف نمی‌شود: تنوع‌ها برای رسید دوباره آزاد می‌شوند و اگر پرداختی ثبت شده باشد، آزاد می‌شود و به عنوان بدهی تأمین‌کننده باقی می‌ماند. موجودی انبار و بهای تمام‌شده دست‌نخورده می‌ماند.</p>

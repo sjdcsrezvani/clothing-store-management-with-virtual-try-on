@@ -291,7 +291,14 @@
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                                 <button type="submit" class="btn btn-sm btn-danger">حذف</button>
                             </form>
-                            {% elif not p.is_reversed %}
+                            {% elif p.is_reversed %}
+                            <form method="post" action="/admin/purchases/{{ p.id }}/purge"
+                                  data-confirm="این رکورد برگشت‌خورده برای همیشه حذف می‌شود و قابل بازگشت نیست. ادامه؟"
+                                  data-confirm-title="حذف رکورد برگشت‌خورده" data-confirm-ok="حذف" hx-boost="false">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <button type="submit" class="btn btn-sm btn-danger">حذف</button>
+                            </form>
+                            {% else %}
                             <form method="post" action="/admin/purchases/{{ p.id }}/delete"
                                   data-confirm="این خرید برگشت داده می‌شود و تنوع‌هایش برای رسید دوباره آزاد می‌شوند. ادامه؟"
                                   data-confirm-title="برگشت خرید" data-confirm-ok="برگشت" hx-boost="false">

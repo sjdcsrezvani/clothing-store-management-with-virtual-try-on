@@ -3202,6 +3202,46 @@ async def admin_purchase_delete(purchase_id: int, request: Request, db: Session 
     return RedirectResponse(url=f"/admin/purchases?msg={message}", status_code=303)
 
 
+@router.post("/purchases/{purchase_id}/purge", response_class=HTMLResponse)
+async def admin_purchase_purge(purchase_id: int, request: Request, db: Session = Depends(get_db)):
+    """Erase an already-reversed purchase, and only that.
+
+    Reversal has already undone the invoice: payments are unlinked and the
+    variants are free to be received again. Purging then removes the mistaken
+    record itself; the money already paid stays with the supplier.
+    """
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    purchase = db.query(Purchase).filter(Purchase.id == purchase_id).first()
+    if not purchase:
+        return RedirectResponse(url="/admin/purchases", status_code=303)
+    if not purchase.is_reversed:
+        return RedirectResponse(
+            url=f"/admin/purchases/{purchase_id}?err=فقط خرید برگشت‌خورده حذف می‌شود؛ اول خرید را برگشت دهید.",
+            status_code=303,
+        )
+
+    line_count = db.query(PurchaseItem).filter(PurchaseItem.purchase_id == purchase.id).count()
+    # Cost-basis evidence points at this invoice; it goes with the record.
+    db.query(StockMovement).filter(StockMovement.purchase_id == purchase.id) \
+        .delete(synchronize_session=False)
+    db.query(SupplierPayment).filter(SupplierPayment.purchase_id == purchase.id) \
+        .update({SupplierPayment.purchase_id: None}, synchronize_session=False)
+    db.query(PurchaseItem).filter(PurchaseItem.purchase_id == purchase.id) \
+        .delete(synchronize_session=False)
+    db.delete(purchase)
+    db.commit()
+    log_action(
+        db, "purchase_purge", f"حذف رکورد برگشت‌خورده فاکتور #{purchase_id}", request=request,
+        target_type="purchase", target_id=purchase_id, before={"lines": line_count},
+    )
+    return RedirectResponse(
+        url=f"/admin/purchases?msg=رکورد برگشت‌خورده فاکتور #{purchase_id} حذف شد.",
+        status_code=303,
+    )
+
+
 @router.get("/purchases/{purchase_id}", response_class=HTMLResponse)
 async def admin_purchase_detail(purchase_id: int, request: Request, db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "manager")

@@ -667,6 +667,51 @@ def test_reversal_unlinks_payments_without_losing_them(client, db_session, authe
     assert balances[supplier.id]["owed"] == 0
 
 
+def test_reversed_purchase_can_be_purged_with_its_evidence(client, db_session, authed):
+    supplier = _make_supplier(db_session, name="حذف رکورد برگشتی")
+    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=5, name="حذف‌شدنی")
+    _add_purchase(client, variant, supplier_id=str(supplier.id))
+    purchase = _latest_purchase(db_session)
+    purchase_id = purchase.id
+
+    _post(client, f"/admin/purchases/{purchase_id}/payment", {"amount": "50000"})
+    _post(client, f"/admin/purchases/{purchase_id}/delete", {})
+
+    # The detail page offers the purge only after the invoice is reversed.
+    reversed_page = client.get(f"/admin/purchases/{purchase_id}").text
+    assert f'action="/admin/purchases/{purchase_id}/purge"' in reversed_page
+
+    response = _post(client, f"/admin/purchases/{purchase_id}/purge", {})
+    assert response.status_code == 303
+    assert db_session.query(Purchase).filter(Purchase.id == purchase_id).first() is None
+    assert db_session.query(PurchaseItem).filter(PurchaseItem.purchase_id == purchase_id).count() == 0
+    assert db_session.query(StockMovement).filter(StockMovement.purchase_id == purchase_id).count() == 0
+    # Money already paid is real: the payment survives, detached from the record.
+    payment = db_session.query(SupplierPayment).one()
+    assert payment.purchase_id is None
+    assert payment.amount == 50_000
+    db_session.refresh(variant)
+    assert variant.received_purchase_id is None
+    balances = {row["supplier"].id: row for row in get_supplier_balances(db_session)}
+    assert balances[supplier.id]["invoiced"] == 0
+    assert balances[supplier.id]["paid"] == 50_000
+    assert balances[supplier.id]["owed"] == 0
+
+
+def test_purge_refuses_a_purchase_that_is_not_reversed(client, db_session, authed):
+    supplier = _make_supplier(db_session, name="حذف زودهنگام")
+    _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=5, name="حذف‌نشده")
+    _add_purchase(client, variant, supplier_id=str(supplier.id))
+    purchase = _latest_purchase(db_session)
+
+    response = _post(client, f"/admin/purchases/{purchase.id}/purge", {})
+    assert response.status_code == 303
+    assert "فقط خرید برگشت‌خورده" in _redirect_text(response)
+    db_session.refresh(purchase)
+    assert purchase.is_reversed is False
+    assert db_session.query(PurchaseItem).filter(PurchaseItem.purchase_id == purchase.id).count() == 1
+
+
 def test_purchase_pages_render_detail_receipt_and_list(client, db_session, authed):
     supplier = _make_supplier(db_session, name="صفحه خرید")
     _, variant = _make_variant(db_session, price=100_000, cost=50_000, stock=0, name="کالای صفحه خرید")
