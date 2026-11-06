@@ -51,6 +51,9 @@ NAV_SECTIONS: tuple[dict, ...] = (
         _item("/sales/", "تاریخچه فروش", "history", "sales-history", "cashier"),
         _item("/admin/try-on", "پرو مجازی", "dress", "tryon", "cashier"),
     )},
+    {"key": "content", "label": "محتوا", "items": (
+        _item("/admin/instagram-studio", "استودیو اینستاگرام", "camera", "instagram-studio", "manager"),
+    )},
     {"key": "inventory", "label": "کالا و انبار", "items": (
         _item("/admin/products", "محصولات و موجودی", "box", "products"),
         _item("/admin/purchases", "خرید از عمده‌فروش", "truck", "purchases"),
@@ -107,7 +110,9 @@ PARENTS: tuple[tuple[str, str, str], ...] = (
     ("/admin/tier-up", "customers", "ارتقای سطح"),
     ("/admin/tier-downgrades", "customers", "کاهش سطح"),
     ("/admin/settings/appearance", "settings", "ظاهر فروشگاه"),
+    ("/admin/settings/shop-models", "settings", "مدل‌های فروشگاه"),
     ("/admin/try-on/saved", "tryon", "تصاویر ذخیره‌شده"),
+    ("/admin/instagram-studio/", "instagram-studio", "استودیو اینستاگرام"),
     ("/admin/staff/", "staff", "کارمند"),
     ("/admin/payroll/", "staff", "رسید پرداخت حقوق"),
     ("/admin/backups/download", "backups", "دانلود پشتیبان"),

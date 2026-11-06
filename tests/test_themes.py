@@ -691,6 +691,8 @@ NOT_A_PAGE: dict[str, str] = {
     "/sales/api/barcode/{barcode}": "the scanner's lookup, which answers in JSON",
     "/sales/api/product-search": "the name search for damaged tags, which answers in JSON",
     "/admin/try-on/saved/{img_id}/download": "the saved photo itself, not a page",
+    "/admin/instagram-studio/history/{generation_id}/download": "the generated Instagram image itself, not a page",
+    "/admin/instagram-studio/jobs/{job_id}": "the studio's progress poll, HTML only for HTMX and JSON otherwise",
 }
 
 # Addresses the matrix does not open at all, each with the reason. The till's
@@ -903,10 +905,10 @@ def _one_of_everything(db_session, staff: dict) -> dict[str, object]:
     """
     from datetime import datetime, timedelta, timezone
 
-    from models import (Campaign, CashSession, CashSessionEntry, CheckRecord, Customer,
-                        Expense, GeneratedImage, Product, ProductVariant, Purchase,
-                        PurchaseItem, Sale, SaleItem, SalaryPayment, SmsMessage,
-                        SmsTemplate, Supplier, SupplierPayment)
+    from models import (BackgroundJob, Campaign, CashSession, CashSessionEntry, CheckRecord,
+                        Customer, Expense, GeneratedImage, InstagramGeneration, Product,
+                        ProductVariant, Purchase, PurchaseItem, Sale, SaleItem, SalaryPayment,
+                        SmsMessage, SmsTemplate, Supplier, SupplierPayment)
 
     now = datetime.now(timezone.utc)
     product = Product(name="کتانی تست", category="کفش")
@@ -1026,6 +1028,19 @@ def _one_of_everything(db_session, staff: dict) -> dict[str, object]:
     image = GeneratedImage(customer_id=customer.id, image_path="generated/matrix.png",
                            prompt_used="پرو تست", created_at=now - timedelta(hours=3))
     db_session.add(image)
+
+    # One Instagram generation: the history page and its delete/download
+    # controls need a row; the job is deliberately failed so no file is needed.
+    instagram_job = BackgroundJob(job_type="instagram_image", payload="{}", status="failed",
+                                  error_message="خطای تست", created_at=now - timedelta(hours=2))
+    db_session.add(instagram_job)
+    db_session.flush()
+    instagram = InstagramGeneration(
+        created_by_staff_id=staff["owner"].id, scenario="garment",
+        product_id=product.id, variant_id=variant.id, garment_mode="flat_lay",
+        aspect_ratio="4:5", rendered_prompt="پرامپت تست", prompt_version="test",
+        job_id=instagram_job.id, created_at=now - timedelta(hours=2))
+    db_session.add(instagram)
     db_session.commit()
     message_id = db_session.query(SmsMessage.id).order_by(SmsMessage.id).first()[0]
 
@@ -1037,6 +1052,7 @@ def _one_of_everything(db_session, staff: dict) -> dict[str, object]:
         "template_id": template.id, "session_id": closed_shift.id, "img_id": image.id,
         "sale_id": credit_sale.id, "barcode": variant.barcode,
         "message_id": message_id,
+        "generation_id": instagram.id, "job_id": instagram_job.id,
     }
 
 

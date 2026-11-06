@@ -222,6 +222,54 @@ class Settings(Base):
     value = Column(Text, nullable=True)
 
 
+class InstagramGeneration(Base):
+    """One paid Instagram Studio request. The output/status live on its
+    BackgroundJob row, so there is exactly one source of truth for job state
+    and no status column to drift out of sync."""
+
+    __tablename__ = "instagram_generations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    created_by_staff_id = Column(Integer, ForeignKey("staff_users.id"), nullable=False, index=True)
+    scenario = Column(String(30), nullable=False, default="garment", index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=True, index=True)
+    variant_id = Column(Integer, ForeignKey("product_variants.id"), nullable=True, index=True)
+    garment_mode = Column(String(40), nullable=True)
+    model_slot = Column(String(20), nullable=True)
+    pose_key = Column(String(40), nullable=True)
+    background_key = Column(String(40), nullable=True)
+    aspect_ratio = Column(String(10), nullable=False, default="4:5")
+    user_text = Column(Text, nullable=True)
+    rendered_prompt = Column(Text, nullable=False)
+    prompt_version = Column(String(30), nullable=False)
+    provider = Column(String(40), nullable=True)
+    model = Column(String(80), nullable=True)
+    job_id = Column(Integer, ForeignKey("background_jobs.id"), nullable=True, unique=True, index=True)
+    is_favorite = Column(Boolean, nullable=False, default=False, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    staff = relationship("StaffUser")
+    product = relationship("Product")
+    variant = relationship("ProductVariant")
+    job = relationship("BackgroundJob")
+
+
+class ShopModel(Base):
+    """One of the eight fixed AI model profiles for Instagram Studio."""
+
+    __tablename__ = "shop_models"
+
+    id = Column(Integer, primary_key=True)
+    slot_key = Column(String(20), unique=True, nullable=False, index=True)
+    label_fa = Column(String(80), nullable=False)
+    image_path = Column(String(500), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
+                      onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_by_staff_id = Column(Integer, ForeignKey("staff_users.id"), nullable=True)
+
+
 class ProductImage(Base):
     __tablename__ = "product_images"
 
@@ -345,7 +393,8 @@ class ProductVariant(Base):
     cost_price = Column(Integer, default=0)
     # Optional display-only cost price; sales and analytics always use cost_price.
     fake_cost_price = Column(Integer, nullable=True)
-    # Free-text garment details (two-piece, sleeve length, etc.) appended to the try-on prompt.
+    # Free-text garment details (two-piece, sleeve length, etc.) appended to the
+    # try-on and Instagram Studio prompts.
     tryon_details = Column(Text, nullable=True)
 
     # Unique barcode per variant

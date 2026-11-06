@@ -763,3 +763,36 @@ def tryon_record_generation(request: Request | None = None, ip: str | None = Non
     _generation_day[today] = _generation_day.get(today, 0) + 1
     ip = ip or (_client_ip(request) if request is not None else "worker")
     _generation_ip.setdefault(ip, []).append(time.time())
+
+
+# ── Instagram Studio caps ────────────────────────────────────────────────────
+# Unlike try-on, this count lives in the database: a pending job reserves its
+# slot at enqueue, a failed job releases it, and an app restart cannot hand the
+# owner a fresh 20-image budget.
+
+def _instagram_day_start():
+    return datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def instagram_daily_limit(db) -> int:
+    from services._common import get_setting_int
+    return get_setting_int(db, "instagram_daily_limit", 20)
+
+
+def instagram_daily_remaining(db) -> int:
+    """How many Instagram generations are left today.
+
+    Pending and processing jobs count because the provider will bill them if
+    they succeed; failed jobs do not count because they were never billed.
+    """
+    from models import BackgroundJob
+    used = db.query(BackgroundJob).filter(
+        BackgroundJob.job_type == "instagram_image",
+        BackgroundJob.created_at >= _instagram_day_start(),
+        BackgroundJob.status.in_(("pending", "processing", "completed")),
+    ).count()
+    return max(0, instagram_daily_limit(db) - used)
+
+
+def instagram_can_generate(db) -> bool:
+    return instagram_daily_remaining(db) > 0

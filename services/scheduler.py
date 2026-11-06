@@ -80,10 +80,10 @@ async def scheduler_task():
                     job = claim_next(db)
                     if not job:
                         break
-                    if job.job_type == "tryon":
-                        # Try-on has its own dedicated worker (10s loop,
-                        # fail-fast, quota-on-success). The generic path
-                        # would requeue billable failures — release it.
+                    if job.job_type in {"tryon", "instagram_image"}:
+                        # Paid image jobs have their own dedicated worker
+                        # (10s loop, fail-fast, quota-on-success). The generic
+                        # path would requeue billable failures — release it.
                         job.status = "pending"
                         job.locked_at = None
                         db.commit()

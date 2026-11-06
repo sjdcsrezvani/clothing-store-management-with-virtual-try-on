@@ -65,7 +65,9 @@ KNOWN_PATHS = (
     "/admin/sms/history", "/admin/sms/templates/new", "/admin/sms/templates/3/edit",
     "/admin/birthdays", "/admin/follow-ups", "/admin/tier-up", "/admin/tier-downgrades",
     "/admin/try-on", "/admin/try-on/saved", "/admin/settings",
-    "/admin/settings/appearance", "/admin/staff", "/admin/staff/2/contract",
+    "/admin/instagram-studio", "/admin/instagram-studio/history",
+    "/admin/settings/appearance", "/admin/settings/shop-models",
+    "/admin/staff", "/admin/staff/2/contract",
     "/admin/payroll/9/receipt", "/admin/backups", "/admin/backups/download",
     "/admin/accounting", "/admin/accounting/export", "/admin/cashbox",
     "/admin/cashbox/sessions/7",
@@ -78,8 +80,10 @@ KNOWN_PATHS = (
 REACHABLE = {
     "cashier": ("/sales/new", "/sales/", "/admin/cashbox"),
     "manager": ("/admin", "/admin/products", "/admin/credit", "/admin/sms",
-                "/admin/settings/tags"),
-    "owner": ("/admin/settings", "/admin/settings/appearance", "/admin/birthdays",
+                "/admin/settings/tags", "/admin/instagram-studio",
+                "/admin/instagram-studio/history"),
+    "owner": ("/admin/settings", "/admin/settings/appearance",
+              "/admin/settings/shop-models", "/admin/birthdays",
               "/admin/tier-up", "/admin/logs"),
 }
 
@@ -154,9 +158,9 @@ def test_every_sidebar_entry_states_a_role_that_exists():
     assert len(keys) == len(set(keys))
 
 
-def test_the_categories_are_the_five_the_shop_reads_by():
+def test_the_categories_are_the_six_the_shop_reads_by():
     assert [section["label"] for section in NAV_SECTIONS] == [
-        "فروش", "کالا و انبار", "مشتریان و باشگاه", "مالی", "مدیریت",
+        "فروش", "محتوا", "کالا و انبار", "مشتریان و باشگاه", "مالی", "مدیریت",
     ]
     # No category is a junk drawer: the old «ابزارها» held nine unrelated things.
     assert max(len(section["items"]) for section in NAV_SECTIONS) <= 6

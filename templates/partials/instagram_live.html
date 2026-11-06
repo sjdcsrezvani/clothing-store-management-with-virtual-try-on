@@ -1,0 +1,76 @@
+<div id="instagram-result" role="status"
+     {% if job.status in ('pending', 'processing') %}hx-get="/admin/instagram-studio/jobs/{{ job.id }}" hx-trigger="every 3s" hx-target="this" hx-swap="outerHTML"{% endif %}>
+    {% if job.status == 'completed' and job.result_url %}
+    <div class="card tryon-result">
+        <div class="section-heading">
+            <div>
+                <span class="eyebrow">نتیجه</span>
+                <h3>تصویر آماده است</h3>
+            </div>
+        </div>
+        <img src="{{ job.result_url }}" alt="تصویر تولیدشده اینستاگرام"
+             style="max-width:100%;border-radius:10px;">
+        <div class="tryon-result-actions">
+            {% if generation %}
+            {% if has_logo and logo_requested %}
+            <a href="/admin/instagram-studio/history/{{ generation.id }}/download?logo=yes"
+               class="btn btn-primary btn-sm">دانلود با لوگو</a>
+            <a href="/admin/instagram-studio/history/{{ generation.id }}/download"
+               class="btn btn-ghost btn-sm">دانلود بدون لوگو</a>
+            {% else %}
+            <a href="/admin/instagram-studio/history/{{ generation.id }}/download"
+               class="btn btn-primary btn-sm">دانلود</a>
+            {% if has_logo %}
+            <a href="/admin/instagram-studio/history/{{ generation.id }}/download?logo=yes"
+               class="btn btn-ghost btn-sm">دانلود با لوگو</a>
+            {% endif %}
+            {% endif %}
+            {% endif %}
+            {% if generation %}
+            <form method="post" action="/admin/instagram-studio/history/{{ generation.id }}/favorite">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="back" value="{{ favorite_back }}">
+                <button type="submit"
+                        class="btn btn-ghost btn-sm favorite-toggle {% if generation.is_favorite %}is-favorite{% endif %}"
+                        aria-pressed="{{ 'true' if generation.is_favorite else 'false' }}"
+                        aria-label="{% if generation.is_favorite %}حذف از علاقه‌مندی‌ها{% else %}افزودن به علاقه‌مندی‌ها{% endif %}">
+                    <svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-star"/></svg>
+                    <span class="sr-only">{% if generation.is_favorite %}حذف از علاقه‌مندی‌ها{% else %}افزودن به علاقه‌مندی‌ها{% endif %}</span>
+                </button>
+            </form>
+            {% if variation %}
+            {% include 'partials/instagram_variation.html' %}
+            {% endif %}
+            {% endif %}
+            <a href="/admin/instagram-studio/history" class="btn btn-ghost btn-sm">تاریخچه</a>
+        </div>
+        {% if generation %}
+        <details style="margin-top:1rem;text-align:right;">
+            <summary class="muted">پرامپت نهایی</summary>
+            <pre style="white-space:pre-wrap;direction:ltr;text-align:left;">{{ generation.rendered_prompt }}</pre>
+        </details>
+        {% endif %}
+    </div>
+    {% elif job.status == 'failed' %}
+    <div class="card">
+        <div class="section-heading">
+            <div>
+                <span class="eyebrow">نتیجه</span>
+                <h3>تولید ناموفق بود</h3>
+            </div>
+        </div>
+        <p class="muted">{{ job.error_message or 'خطای نامشخص از ارائه‌دهنده.' }}</p>
+        <a href="{{ retry_url }}" class="btn btn-ghost btn-sm">تلاش دوباره</a>
+    </div>
+    {% else %}
+    <div class="card">
+        <div class="section-heading">
+            <div>
+                <span class="eyebrow">نتیجه</span>
+                <h3>در حال تولید…</h3>
+            </div>
+        </div>
+        <p class="muted">وضعیت: {{ job.status }} — این صفحه خودش به‌روز می‌شود.</p>
+    </div>
+    {% endif %}
+</div>

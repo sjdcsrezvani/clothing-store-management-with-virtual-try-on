@@ -1,0 +1,418 @@
+"""Instagram Studio validation and job-creation contract."""
+import uuid
+from pathlib import Path
+
+import pytest
+from PIL import Image
+
+from models import BackgroundJob, InstagramGeneration, Product, ProductVariant, ShopModel, VariantImage
+from services.instagram_studio import (
+    InstagramValidationError,
+    collect_reference_paths,
+    create_generation,
+    delete_generation_files,
+    variation_payload,
+    variant_reference_images,
+)
+from tests.test_roles import _staff
+
+
+def _make_product_with_images(db_session, count=2, name="تیشرت تست", details=None):
+    product = Product(name=name)
+    db_session.add(product)
+    db_session.flush()
+    variant = ProductVariant(product_id=product.id, price=100_000,
+                             barcode=f"IG{uuid.uuid4().hex[:6]}",
+                             tryon_details=details)
+    db_session.add(variant)
+    db_session.flush()
+
+    root = Path("static/uploads/ig_test") / uuid.uuid4().hex
+    root.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for i in range(count):
+        path = root / f"ref{i}.jpg"
+        Image.new("RGB", (80, 80), (30 * i, 80, 120)).save(path, "JPEG")
+        url = "/" + str(path)
+        db_session.add(VariantImage(variant_id=variant.id, image_path=url, sort_order=i))
+        paths.append(url)
+    if paths:
+        variant.image_path = paths[0]
+    db_session.commit()
+    db_session.refresh(variant)
+    return product, variant, paths, root
+
+
+def _cleanup(root: Path):
+    import shutil
+    shutil.rmtree(root, ignore_errors=True)
+
+
+def test_reference_images_are_variant_gallery_only(db_session):
+    product, variant, paths, root = _make_product_with_images(db_session, count=2)
+    try:
+        images = variant_reference_images(variant)
+        assert [image["path"] for image in images] == paths
+        assert images[0]["label"] == "تصویر اصلی"
+    finally:
+        _cleanup(root)
+
+
+def test_collect_reference_paths_accepts_subset_and_rejects_foreign_path(db_session):
+    product, variant, paths, root = _make_product_with_images(db_session, count=3)
+    try:
+        selected = collect_reference_paths(variant, [paths[2], paths[0]])
+        assert selected == [paths[2].lstrip("/"), paths[0].lstrip("/")]
+
+        with pytest.raises(InstagramValidationError):
+            collect_reference_paths(variant, ["/static/uploads/other.jpg"])
+
+        with pytest.raises(InstagramValidationError):
+            collect_reference_paths(variant, paths + [paths[0]])
+    finally:
+        _cleanup(root)
+
+
+def test_variant_without_images_is_rejected(db_session):
+    product = Product(name="بدون عکس")
+    db_session.add(product)
+    db_session.flush()
+    variant = ProductVariant(product_id=product.id, price=100_000, barcode="IGNOIMG")
+    db_session.add(variant)
+    db_session.commit()
+
+    with pytest.raises(InstagramValidationError) as error:
+        collect_reference_paths(variant, [])
+    assert "عکس محصول ثبت نشده" in str(error.value)
+
+
+def test_create_generation_builds_prompt_and_enqueues_one_job(db_session):
+    product, variant, paths, root = _make_product_with_images(db_session)
+    user, _password = _staff(db_session, "ig-maker", "manager")
+    try:
+        generation, job = create_generation(
+            db_session,
+            staff=user,
+            product=product,
+            variant=variant,
+            selected_paths=[paths[0], paths[1]],
+            scene_key="flat_lay",
+            aspect_ratio="4:5",
+            user_text="soft morning light",
+            logo=False,
+            logo_path="",
+        )
+        assert generation.id
+        assert generation.prompt_version
+        assert "flat_lay" not in generation.rendered_prompt or "arranged neatly flat" in generation.rendered_prompt
+        assert "soft morning light" in generation.rendered_prompt
+        assert generation.job_id == job.id
+        assert job.job_type == "instagram_image"
+        payload = __import__("json").loads(job.payload)
+        assert "/static/uploads/instagram/" in payload["result_url"]
+        assert payload["reference_paths"] == [paths[0].lstrip("/"), paths[1].lstrip("/")]
+        assert payload["aspect_ratio"] == "4:5"
+        assert "prompt" in payload and payload["prompt"] == generation.rendered_prompt
+        assert db_session.query(BackgroundJob).filter(
+            BackgroundJob.job_type == "instagram_image").count() == 1
+    finally:
+        _cleanup(root)
+
+
+def test_create_product_brief_reads_variant_details_and_allows_no_scene(db_session):
+    product, variant, paths, root = _make_product_with_images(
+        db_session, details="دو تکه؛ آستین کوتاه")
+    user, _password = _staff(db_session, "ig-brief-maker", "manager")
+    try:
+        generation, job = create_generation(
+            db_session,
+            staff=user,
+            product=product,
+            variant=variant,
+            selected_paths=[paths[0]],
+            scene_key="",
+            aspect_ratio="4:5",
+            user_text="soft morning light, minimal beige studio",
+            scenario="product_brief",
+        )
+        assert generation.scenario == "product_brief"
+        assert generation.garment_mode is None
+        assert "دو تکه؛ آستین کوتاه" in generation.rendered_prompt
+        assert "soft morning light, minimal beige studio" in generation.rendered_prompt
+        assert job.job_type == "instagram_image"
+    finally:
+        _cleanup(root)
+
+
+def test_product_brief_rejects_a_brief_shorter_than_ten_characters(db_session):
+    product, variant, paths, root = _make_product_with_images(db_session)
+    user, _password = _staff(db_session, "ig-brief-short", "manager")
+    try:
+        with pytest.raises(InstagramValidationError):
+            create_generation(
+                db_session,
+                staff=user,
+                product=product,
+                variant=variant,
+                selected_paths=[paths[0]],
+                scene_key="",
+                aspect_ratio="4:5",
+                user_text="کوتاه",
+                scenario="product_brief",
+            )
+        assert db_session.query(InstagramGeneration).count() == 0
+        assert db_session.query(BackgroundJob).count() == 0
+    finally:
+        _cleanup(root)
+
+
+def test_garment_generation_injects_variant_details(db_session):
+    product, variant, paths, root = _make_product_with_images(
+        db_session, details="یقه گرد؛ دکمه پشت")
+    user, _password = _staff(db_session, "ig-details", "manager")
+    try:
+        generation, _job = create_generation(
+            db_session,
+            staff=user,
+            product=product,
+            variant=variant,
+            selected_paths=[paths[0]],
+            scene_key="packshot",
+            aspect_ratio="4:5",
+        )
+        assert "یقه گرد؛ دکمه پشت" in generation.rendered_prompt
+    finally:
+        _cleanup(root)
+
+
+def _model_options(**overrides):
+    values = dict(
+        scenario="model_scene",
+        model_slot="girl_7",
+        pose_key="standing_front",
+        background_key="studio_white",
+        framing_key="full_body",
+        lighting_key="soft_daylight",
+        composition_key="centered_catalog",
+    )
+    values.update(overrides)
+    return values
+
+
+def _model_slot(db_session, tmp_path, slot_key="girl_7", image=True):
+    path = str(tmp_path / f"{slot_key}.jpg")
+    if image:
+        Image.new("RGB", (120, 120), (120, 150, 180)).save(path, "JPEG")
+    model = ShopModel(slot_key=slot_key, label_fa="مدل تست", image_path=path if image else None)
+    db_session.add(model)
+    db_session.commit()
+    return model
+
+
+def test_model_scene_requires_an_active_model_with_an_image(db_session, tmp_path):
+    product, variant, paths, root = _make_product_with_images(db_session)
+    user, _password = _staff(db_session, "ig-model-missing", "manager")
+    try:
+        with pytest.raises(InstagramValidationError):
+            create_generation(
+                db_session, staff=user, product=product, variant=variant,
+                selected_paths=[paths[0]], scene_key="", aspect_ratio="4:5",
+                **_model_options())
+        assert db_session.query(InstagramGeneration).count() == 0
+
+        _model_slot(db_session, tmp_path, image=False)
+        with pytest.raises(InstagramValidationError):
+            create_generation(
+                db_session, staff=user, product=product, variant=variant,
+                selected_paths=[paths[0]], scene_key="", aspect_ratio="4:5",
+                **_model_options())
+    finally:
+        _cleanup(root)
+
+
+def test_model_scene_rejects_a_disappeared_model_file(db_session, tmp_path):
+    product, variant, paths, root = _make_product_with_images(db_session)
+    user, _password = _staff(db_session, "ig-model-gone", "manager")
+    try:
+        _model_slot(db_session, tmp_path)
+        model = db_session.query(ShopModel).one()
+        model.image_path = str(tmp_path / "gone.jpg")
+        db_session.commit()
+        with pytest.raises(InstagramValidationError):
+            create_generation(
+                db_session, staff=user, product=product, variant=variant,
+                selected_paths=[paths[0]], scene_key="", aspect_ratio="4:5",
+                **_model_options())
+    finally:
+        _cleanup(root)
+
+
+def test_model_scene_prepends_the_model_reference_and_stores_choices(db_session, tmp_path):
+    import json
+
+    product, variant, paths, root = _make_product_with_images(
+        db_session, details="دو تکه؛ آستین کوتاه")
+    user, _password = _staff(db_session, "ig-model-maker", "manager")
+    try:
+        _model_slot(db_session, tmp_path, slot_key="boy_13")
+        generation, job = create_generation(
+            db_session, staff=user, product=product, variant=variant,
+            selected_paths=[paths[0]], scene_key="", aspect_ratio="4:5",
+            user_text="soft morning light",
+            **_model_options(
+                model_slot="boy_13", pose_key="three_quarter",
+                background_key="park", framing_key="three_quarter_body",
+                lighting_key="golden_hour",
+                composition_key="editorial_negative_space"))
+        payload = json.loads(job.payload)
+        assert payload["reference_paths"][0] == str(tmp_path / "boy_13.jpg")
+        assert payload["reference_paths"][1:] == [paths[0].lstrip("/")]
+        assert generation.scenario == "model_scene"
+        assert generation.model_slot == "boy_13"
+        assert generation.pose_key == "three_quarter"
+        assert generation.background_key == "park"
+        assert generation.garment_mode is None
+        assert "teenager" in generation.rendered_prompt
+        assert "دو تکه؛ آستین کوتاه" in generation.rendered_prompt
+        assert "soft morning light" in generation.rendered_prompt
+    finally:
+        _cleanup(root)
+
+
+def test_model_scene_rejects_unknown_pose_or_background(db_session, tmp_path):
+    product, variant, paths, root = _make_product_with_images(db_session)
+    user, _password = _staff(db_session, "ig-model-invalid", "manager")
+    try:
+        _model_slot(db_session, tmp_path)
+        with pytest.raises(InstagramValidationError):
+            create_generation(
+                db_session, staff=user, product=product, variant=variant,
+                selected_paths=[paths[0]], scene_key="", aspect_ratio="4:5",
+                **_model_options(pose_key="not-a-pose"))
+        with pytest.raises(InstagramValidationError):
+            create_generation(
+                db_session, staff=user, product=product, variant=variant,
+                selected_paths=[paths[0]], scene_key="", aspect_ratio="4:5",
+                **_model_options(background_key="not-a-place"))
+    finally:
+        _cleanup(root)
+
+
+def test_text_scene_needs_no_product_or_references(db_session):
+    import json
+
+    user, _password = _staff(db_session, "ig-text-maker", "manager")
+    generation, job = create_generation(
+        db_session, staff=user, product=None, variant=None, selected_paths=[],
+        scene_key="", aspect_ratio="4:5", scenario="text",
+        user_text="cozy autumn campaign with warm knit layers")
+    payload = json.loads(job.payload)
+    assert payload["reference_paths"] == []
+    assert generation.scenario == "text"
+    assert generation.product_id is None
+    assert generation.variant_id is None
+    assert generation.garment_mode is None
+    assert "cozy autumn campaign" in generation.rendered_prompt
+    assert "garment" not in generation.rendered_prompt.lower()
+
+
+def test_text_scene_requires_a_ten_character_brief(db_session):
+    user, _password = _staff(db_session, "ig-text-short", "manager")
+    with pytest.raises(InstagramValidationError):
+        create_generation(
+            db_session, staff=user, product=None, variant=None, selected_paths=[],
+            scene_key="", aspect_ratio="4:5", scenario="text", user_text="too short")
+    assert db_session.query(InstagramGeneration).count() == 0
+
+
+def test_variation_payload_reuses_the_garment_inputs(db_session):
+    import json
+
+    product, variant, paths, root = _make_product_with_images(db_session)
+    user, _password = _staff(db_session, "ig-variation-garment", "manager")
+    try:
+        generation, job = create_generation(
+            db_session, staff=user, product=product, variant=variant,
+            selected_paths=[paths[0], paths[1]], scene_key="flat_lay",
+            aspect_ratio="1:1", user_text="soft morning light", logo=True,
+            logo_path="static/uploads/logo.png")
+        variation = variation_payload(generation, json.loads(job.payload))
+        assert variation["scenario"] == "garment"
+        assert variation["product_id"] == product.id
+        assert variation["variant_id"] == variant.id
+        assert variation["image_paths"] == paths[:2]
+        assert variation["garment_mode"] == "flat_lay"
+        assert variation["aspect_ratio"] == "1:1"
+        assert variation["user_text"] == "soft morning light"
+        assert variation["logo"] is True
+        assert variation["model_slot"] == ""
+    finally:
+        _cleanup(root)
+
+
+def test_variation_payload_skips_the_model_reference_and_keeps_the_controls(
+        db_session, tmp_path):
+    import json
+
+    product, variant, paths, root = _make_product_with_images(db_session)
+    user, _password = _staff(db_session, "ig-variation-model", "manager")
+    try:
+        _model_slot(db_session, tmp_path, slot_key="boy_7")
+        generation, job = create_generation(
+            db_session, staff=user, product=product, variant=variant,
+            selected_paths=[paths[0]], scene_key="", aspect_ratio="4:5",
+            scenario="model_scene", model_slot="boy_7", pose_key="seated_bench",
+            background_key="park", framing_key="waist_up",
+            lighting_key="golden_hour", composition_key="candid_lifestyle",
+            show_full_garment=False)
+        payload = json.loads(job.payload)
+        assert payload["framing_key"] == "waist_up"
+        assert payload["lighting_key"] == "golden_hour"
+        assert payload["composition_key"] == "candid_lifestyle"
+        assert payload["show_full_garment"] is False
+        variation = variation_payload(generation, payload)
+        assert variation["image_paths"] == paths[:1]
+        assert variation["model_slot"] == "boy_7"
+        assert variation["pose_key"] == "seated_bench"
+        assert variation["framing_key"] == "waist_up"
+        assert variation["show_full_garment"] is False
+    finally:
+        _cleanup(root)
+
+
+def test_variation_payload_for_text_has_no_references(db_session):
+    import json
+
+    user, _password = _staff(db_session, "ig-variation-text", "manager")
+    generation, job = create_generation(
+        db_session, staff=user, product=None, variant=None, selected_paths=[],
+        scene_key="", aspect_ratio="9:16", scenario="text",
+        user_text="cozy autumn campaign with warm knit layers")
+    variation = variation_payload(generation, json.loads(job.payload))
+    assert variation["scenario"] == "text"
+    assert variation["image_paths"] == []
+    assert variation["aspect_ratio"] == "9:16"
+    assert variation["user_text"] == "cozy autumn campaign with warm knit layers"
+
+
+def test_delete_generation_files_removes_output_and_thumbnail(db_session, tmp_path):
+    output = tmp_path / "out.jpg"
+    thumb = tmp_path / "thumbs" / "out.jpg"
+    thumb.parent.mkdir()
+    output.write_bytes(b"image")
+    thumb.write_bytes(b"thumb")
+    job = BackgroundJob(job_type="instagram_image", payload="{}", status="completed",
+                        result_path=str(output), result_url="/static/uploads/instagram/out.jpg")
+    db_session.add(job)
+    db_session.flush()
+    user, _password = _staff(db_session, "ig-delete", "owner")
+    generation = InstagramGeneration(
+        created_by_staff_id=user.id, scenario="garment", rendered_prompt="p",
+        prompt_version="v", job_id=job.id,
+    )
+    db_session.add(generation)
+    db_session.commit()
+
+    delete_generation_files(generation, thumb_path=str(thumb))
+    assert not output.exists()
+    assert not thumb.exists()

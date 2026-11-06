@@ -14,7 +14,7 @@ from database import get_db
 from datetime import datetime, timedelta, timezone
 from models import (
     Campaign, Customer, Referral, Settings, Sale, SaleItem, SaleCampaign, GeneratedImage, AdminLog, POSTransaction, StockMovement,
-    BusinessEvent, StaffUser, SalaryPayment, CashSession, AttendanceRecord, JobPosition,
+    BusinessEvent, StaffUser, SalaryPayment, CashSession, AttendanceRecord, JobPosition, ShopModel,
 )
 from config import ADMIN_PASSWORD, API_TOKEN
 from migrations import MIGRATION_VERSION
@@ -140,6 +140,7 @@ from services.payroll import (create_salary_payment, current_period_key,
                              is_payroll_due, normalize_period_key,
                              run_monthly_payday, void_salary_payment)
 from services.themes import THEMES, DEFAULT_THEME_ID, THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY, DEFAULT_CUSTOM_PRIMARY, DEFAULT_CUSTOM_SECONDARY, CUSTOM_FONT_KEY, CUSTOM_RADIUS_KEY, CUSTOM_DARK_KEY, CUSTOM_PRIMARY_DARK_KEY, CUSTOM_SECONDARY_DARK_KEY, DEFAULT_CUSTOM_FONT, DEFAULT_CUSTOM_RADIUS, DEFAULT_CUSTOM_DARK, DEFAULT_CUSTOM_PRIMARY_DARK, DEFAULT_CUSTOM_SECONDARY_DARK, CUSTOM_FONTS, CUSTOM_RADII, FONT_SIZE_KEY, DENSITY_KEY, DEFAULT_FONT_SIZE, DEFAULT_DENSITY, FONT_SIZES, DENSITIES, all_theme_previews, validate_hex, contrast_ratio, get_theme, invalidate_theme_cache, migrate_retired_theme
+from services.shop_models import ensure_shop_models, save_model_image, delete_model_image
 
 router = APIRouter(prefix="/admin")
 
@@ -2014,6 +2015,7 @@ SETTINGS_NUMERIC_RULES = {
     "monthly_referral_limit": (1, None, "سقف معرفی ماهانه"),
     "birthday_sms_days_before": (0, 60, "روزهای قبل از تولد"),
     "tryon_daily_limit": (0, 1000, "سقف تولید روزانه"),
+    "instagram_daily_limit": (0, 1000, "سقف تولید روزانه اینستاگرام"),
     "credit_terms_days": (0, 365, "مهلت پرداخت نسیه"),
     "credit_reminder_min_hours": (0, 24 * 30, "فاصله بین دو یادآوری"),
     "default_credit_limit": (0, None, "سقف اعتبار پیش‌فرض"),
@@ -2069,6 +2071,7 @@ _SETTINGS_FIELD_TABS = {
     "birthday_sms_days_before": "discounts",
     "birthday_target": "discounts", "child_profile_enabled": "discounts",
     "tryon_daily_limit": "messaging",
+    "instagram_daily_limit": "messaging",
     "tryon_api_key": "messaging", "tryon_api_key_avalai": "messaging",
     "tryon_provider": "messaging", "tryon_model": "messaging",
     "tryon_autoclear_kid": "messaging",
@@ -2389,6 +2392,62 @@ async def admin_update_appearance(request: Request, db: Session = Depends(get_db
     log_action(db, "theme_update", "به‌روزرسانی ظاهر فروشگاه", request=request, target_type="settings", after={"theme": theme_id})
 
     return RedirectResponse(url="/admin/settings/appearance?msg=ظاهر فروشگاه ذخیره شد.", status_code=303)
+
+
+@router.get("/settings/shop-models", response_class=HTMLResponse)
+async def admin_shop_models(request: Request, db: Session = Depends(get_db)):
+    """Owner-only library of the eight AI model references."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    rows = ensure_shop_models(db)
+    return templates.TemplateResponse(request, "admin/settings_shop_models.html", {
+        "shop_models": rows,
+        "msg": request.query_params.get("msg", ""),
+        "err": request.query_params.get("err", ""),
+    })
+
+
+@router.post("/settings/shop-models", response_class=HTMLResponse)
+async def admin_shop_model_upload(request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    form = await request.form()
+    slot_key = str(form.get("slot_key") or "").strip()
+    model = db.query(ShopModel).filter(ShopModel.slot_key == slot_key).first()
+    if model is None:
+        return RedirectResponse(
+            url="/admin/settings/shop-models?err=" + quote_plus("مدل انتخاب‌شده پیدا نشد."),
+            status_code=303)
+    upload = form.get("image")
+    if upload is None or not getattr(upload, "filename", ""):
+        return RedirectResponse(
+            url="/admin/settings/shop-models?err=" + quote_plus("عکس مدل را انتخاب کنید."),
+            status_code=303)
+
+    try:
+        raw = await upload.read()
+        url = save_model_image(raw, upload.filename or "",
+                               getattr(upload, "content_type", None))
+    except ValueError as error:
+        return RedirectResponse(
+            url="/admin/settings/shop-models?err=" + quote_plus(str(error)),
+            status_code=303)
+
+    old_url = model.image_path or ""
+    model.image_path = url
+    model.is_active = True
+    model.updated_by_staff_id = guard.id
+    model.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    if old_url and old_url != url:
+        delete_model_image(old_url)
+    log_action(db, "shop_model_update", slot_key, request=request,
+               target_type="shop_model", target_id=model.id, after={"image_path": url})
+    return RedirectResponse(
+        url="/admin/settings/shop-models?msg=" + quote_plus("عکس مدل ذخیره شد."),
+        status_code=303)
 
 
 @router.post("/settings", response_class=HTMLResponse)

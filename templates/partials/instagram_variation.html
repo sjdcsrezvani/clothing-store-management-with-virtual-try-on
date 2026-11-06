@@ -1,0 +1,32 @@
+{% if variation %}
+<form method="post" action="/admin/instagram-studio/generate"
+      onsubmit="this.querySelector('button[type=submit]').disabled=true;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="scenario" value="{{ variation.scenario }}">
+    {% if variation.scenario != 'text' %}
+    <input type="hidden" name="product_id" value="{{ variation.product_id or 0 }}">
+    <input type="hidden" name="variant_id" value="{{ variation.variant_id or 0 }}">
+    {% for path in variation.image_paths %}
+    <input type="hidden" name="image_paths" value="{{ path }}">
+    {% endfor %}
+    <input type="hidden" name="garment_mode" value="{{ variation.garment_mode }}">
+    {% endif %}
+    <input type="hidden" name="aspect_ratio" value="{{ variation.aspect_ratio }}">
+    <textarea name="user_text" hidden>{{ variation.user_text }}</textarea>
+    {% if variation.logo %}
+    <input type="hidden" name="logo" value="1">
+    {% endif %}
+    {% if variation.model_slot %}
+    <input type="hidden" name="model_slot" value="{{ variation.model_slot }}">
+    <input type="hidden" name="pose_key" value="{{ variation.pose_key }}">
+    <input type="hidden" name="background_key" value="{{ variation.background_key }}">
+    <input type="hidden" name="framing_key" value="{{ variation.framing_key }}">
+    <input type="hidden" name="lighting_key" value="{{ variation.lighting_key }}">
+    <input type="hidden" name="composition_key" value="{{ variation.composition_key }}">
+    {% if variation.show_full_garment %}
+    <input type="hidden" name="show_full_garment" value="1">
+    {% endif %}
+    {% endif %}
+    <button type="submit" class="btn btn-ghost btn-sm">تولید تنوع</button>
+</form>
+{% endif %}

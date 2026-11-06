@@ -10,7 +10,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from config import SESSION_SECRET
 from database import engine, Base, SessionLocal
-from routers import customers, api, admin, products, sales, analytics, campaigns, accounting, sms
+from routers import customers, api, admin, products, sales, analytics, campaigns, accounting, sms, instagram_studio
 from routers.clothes_images import admin_router as clothes_admin_router, api_router as clothes_api_router
 from routers.sms_device import gateway_app as _sms_gateway_app  # noqa: F401  (supervised on :8101 by desktop_entry)
 from services.security import CSRFMiddleware, NoStoreHTMLMiddleware, PERMISSION_DENIED_DETAIL
@@ -495,6 +495,7 @@ app.include_router(analytics.router)
 app.include_router(campaigns.router)
 app.include_router(accounting.router)
 app.include_router(sms.router)
+app.include_router(instagram_studio.router)
 app.include_router(clothes_admin_router)
 app.include_router(clothes_api_router)
 

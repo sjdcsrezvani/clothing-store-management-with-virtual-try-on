@@ -65,8 +65,8 @@
             {% if variant.needs_reorder %}این تنوع به نقطه سفارش رسیده است.{% else %}موجودی بالاتر از نقطه سفارش است.{% endif %}
         </div>
 
-        <div class="section-heading-row section-heading-spaced"><div><h3>تصویر و توضیحات</h3><p class="muted">اطلاعات تکمیلی فقط برای تیم فروش و پرو مجازی استفاده می‌شود.</p></div><span class="section-step">۳</span></div>
-        <div class="form-group"><label for="tryon_details">جزئیات تکمیلی</label><textarea id="tryon_details" name="tryon_details" rows="3" placeholder="مثلاً دو تکه است؛ آستین کوتاه">{{ variant.tryon_details or '' }}</textarea></div>
+        <div class="section-heading-row section-heading-spaced"><div><h3>تصویر و توضیحات</h3><p class="muted">اطلاعات تکمیلی برای تیم فروش، پرو مجازی و استودیو اینستاگرام استفاده می‌شود.</p></div><span class="section-step">۳</span></div>
+        <div class="form-group"><label for="tryon_details">جزئیات تکمیلی</label><textarea id="tryon_details" name="tryon_details" rows="3" placeholder="مثلاً دو تکه است؛ آستین کوتاه">{{ variant.tryon_details or '' }}</textarea><small class="field-help">هرچه پارچه، یقه، آستین، چاپ و جزئیات دوخت را دقیق‌تر بنویسید، پرامپت استودیو اینستاگرام هم دقیق‌تر می‌شود.</small></div>
         <div class="form-group">
             <span class="field-label">تصویر اصلی تنوع</span>
             <div class="image-field" data-image-field>

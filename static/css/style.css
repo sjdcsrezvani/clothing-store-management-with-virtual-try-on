@@ -4751,6 +4751,7 @@ html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
 .tryon-final-preview img { max-width: 100%; max-height: 400px; border-radius: 12px; box-shadow: var(--shadow-hover); display: block; }
 .tryon-result-actions { display: flex; gap: 0.5rem; justify-content: center; margin-top: 1rem; flex-wrap: wrap; }
 .tryon-result-actions form { display: inline; }
+.favorite-toggle.is-favorite .ui-icon { fill: currentColor; }
 .tryon-filters { display: flex; gap: 0.5rem; align-items: end; flex-wrap: wrap; margin-bottom: 0.8rem; }
 .tryon-filters label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.85rem; }
 .tryon-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.8rem; }

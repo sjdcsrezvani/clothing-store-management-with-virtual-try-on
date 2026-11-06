@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% set page_title %}مدل‌های فروشگاه{% endset %}
+{% set page_description %}
+هشت مدل ثابت برای عکاسی اینستاگرام. همه مدل‌ها ساختگی و هوش مصنوعی‌اند؛ عکس واقعی کودک یا مشتری آپلود نکنید.
+{% endset %}
+{% set page_actions %}
+<a href="/admin/settings?tab=messaging" class="btn btn-ghost">تنظیمات</a>
+{% endset %}
+{% include 'partials/page_header.html' %}
+{% if msg %}<div class="screen-only"><div class="toaster-flash" data-toast data-toast-type="success" role="status">{{ msg }}</div></div>{% endif %}
+{% if err %}<div class="screen-only"><div class="toaster-flash" data-toast data-toast-type="error" role="alert">{{ err }}</div></div>{% endif %}
+
+<div class="card">
+    <div class="section-heading">
+        <div>
+            <span class="eyebrow">استودیو اینستاگرام</span>
+            <h3>کتابخانه مدل‌ها</h3>
+        </div>
+    </div>
+    <p class="muted" style="margin-top:0;">
+        برای هر مدل یک عکس مرجع بگذارید: PNG، JPG یا WebP، حداکثر ۱۰ مگابایت و
+        حداقل ۵۱۲ پیکسل در ضلع بزرگ‌تر. عکس قبلی هنگام جایگزینی حذف می‌شود.
+        اگر مدلی عکس نداشته باشد، در استودیو قابل انتخاب نیست.
+    </p>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:1rem;">
+    {% for model in shop_models %}
+    <div class="card">
+        <div class="section-heading">
+            <div>
+                <span class="eyebrow">مدل</span>
+                <h3>{{ model.label_fa }}</h3>
+            </div>
+            <span class="source-chip {% if model.image_path %}is-active{% endif %}">
+                {% if model.image_path %}آماده{% else %}بدون عکس{% endif %}
+            </span>
+        </div>
+
+        {% if model.image_path %}
+        <img src="{{ model.image_path }}" alt="{{ model.label_fa }}"
+             style="width:100%;max-width:260px;object-fit:cover;border-radius:10px;">
+        {% else %}
+        <p class="muted">هنوز عکسی برای این مدل ثبت نشده است.</p>
+        {% endif %}
+
+        <form method="post" action="/admin/settings/shop-models"
+              enctype="multipart/form-data" style="margin-top:0.8rem;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="slot_key" value="{{ model.slot_key }}">
+            <div class="form-group">
+                <label for="model-image-{{ model.slot_key }}">
+                    {% if model.image_path %}جایگزینی عکس{% else %}انتخاب عکس{% endif %}
+                </label>
+                <input id="model-image-{{ model.slot_key }}" type="file" name="image"
+                       accept="image/png,image/jpeg,image/webp" required>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm">ذخیره عکس</button>
+        </form>
+    </div>
+    {% endfor %}
+</div>
+
+{% endblock %}

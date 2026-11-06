@@ -32,14 +32,17 @@ def reclaim_stale(db, timeout_minutes: int = 15) -> int:
     return count
 
 
-def claim_next(db, job_type: str | None = None) -> BackgroundJob | None:
+def claim_next(db, job_type: str | tuple[str, ...] | None = None) -> BackgroundJob | None:
     now = datetime.now(timezone.utc)
     query = db.query(BackgroundJob).filter(
         BackgroundJob.status == "pending",
         (BackgroundJob.next_retry_at.is_(None) | (BackgroundJob.next_retry_at <= now)),
     )
     if job_type:
-        query = query.filter(BackgroundJob.job_type == job_type)
+        if isinstance(job_type, tuple):
+            query = query.filter(BackgroundJob.job_type.in_(job_type))
+        else:
+            query = query.filter(BackgroundJob.job_type == job_type)
     job = query.order_by(BackgroundJob.id.asc()).with_for_update().first()
     if not job:
         return None
@@ -106,6 +109,30 @@ async def process_one(db, job: BackgroundJob) -> bool:
         finally:
             for path in payload.get("temporary_paths", []):
                 _remove_temp_file(path)
+    if job.job_type == "instagram_image":
+        from services.image_gen import get_tryon_selection
+        from services.instagram_gen import generate_instagram_image, write_output
+        provider_name, model_name, api_key = get_tryon_selection(db)
+        image_bytes = await __import__("asyncio").to_thread(
+            generate_instagram_image,
+            prompt=payload["prompt"],
+            reference_paths=payload.get("reference_paths") or [],
+            aspect_ratio=payload.get("aspect_ratio", "4:5"),
+            provider=provider_name,
+            model=model_name,
+            api_key=api_key,
+            # Store the clean render; the logo is composited on download so the
+            # same generation can be downloaded both ways (plan 6.10).
+            logo=False,
+            logo_path="",
+            job_id=job.id,
+        )
+        output_path = Path(payload["output_path"])
+        write_output(image_bytes, str(output_path), payload.get("thumbnail_path", ""))
+        job.result_path = str(output_path)
+        job.result_url = payload["result_url"]
+        db.commit()
+        return True
     raise RuntimeError(f"Unsupported background job type: {job.job_type}")
 
 

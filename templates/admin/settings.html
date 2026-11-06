@@ -28,6 +28,7 @@
     <a href="/admin/settings/appearance" class="btn btn-sm btn-ghost">ظاهر و تم‌ها</a>
     <a href="/admin/settings/tags" class="btn btn-sm btn-ghost">طرح تگ و بارکد</a>
     <a href="/admin/owner-profile" class="btn btn-sm btn-ghost">هویت کسب‌وکار</a>
+    <a href="/admin/settings/shop-models" class="btn btn-sm btn-ghost">مدل‌های فروشگاه</a>
 </div>
 
 <div class="card" id="settings-card" {% if error_field %}data-error-field="{{ error_field }}"{% endif %}>
@@ -353,6 +354,10 @@
             <div class="form-group">
                 <label for="tryon_daily_limit">سقف تولید روزانه {{ tip('حداکثر تصویر تولیدشده با هوش مصنوعی در روز (هر تصویر هزینه دارد)') }}</label>
                 <span class="field-unit">{{ num('tryon_daily_limit', settings.get('tryon_daily_limit', '50')) }}<span class="unit">عدد</span></span>
+            </div>
+            <div class="form-group">
+                <label for="instagram_daily_limit">سقف تولید روزانه اینستاگرام {{ tip('سقف جداگانه استودیو اینستاگرام؛ هر تصویر هزینه دارد و با شکست مصرف نمی‌شود') }}</label>
+                <span class="field-unit">{{ num('instagram_daily_limit', settings.get('instagram_daily_limit', '20')) }}<span class="unit">عدد</span></span>
             </div>
             <div class="form-group">
                 <label for="tryon_provider">ارائه‌دهنده تصویر {{ tip('کلید هر ارائه‌دهنده جدا ذخیره می‌شود؛ با عوض کردن این گزینه، فهرست مدل‌ها هم عوض می‌شود') }}</label>
