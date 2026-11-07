@@ -2559,6 +2559,8 @@ body.is-soft-busy::before {
   .variant-remove:hover { color: var(--link-hover); border-color: var(--rule); }
 }
 .variant-entry-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.variant-image-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.8rem; }
+.variant-image-slot[hidden] { display: none; }
 .variant-edit-layout, .product-edit-layout { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(250px, 0.65fr); gap: 1.2rem; align-items: start; }
 /* The variant's own neighbours: one row above the form, so walking a product's
    shelf never means going back to the product page between rows. */
@@ -2603,15 +2605,6 @@ body.is-soft-busy::before {
 .detail-list dd { margin: 0; font-weight: 800; text-align: left; }
 .stock-status-callout { display: flex; align-items: center; gap: 0.4rem; padding: 0.7rem 0.85rem; border-radius: var(--radius-sm); background: var(--success-bg); color: var(--success-ink); font-size: 0.82rem; font-weight: 700; }
 .stock-status-callout.is-warning { background: var(--warning-bg); color: var(--warning-ink); }
-/* Variant gallery: frames in a row, the primary wearing its badge. */
-.variant-gallery { list-style: none; margin: 0.8rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.7rem; }
-.variant-gallery li { position: relative; width: 120px; border: 1px solid var(--rule); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface-soft); }
-.variant-gallery li.is-primary { border-color: var(--candy); }
-.variant-gallery img { display: block; width: 100%; height: 96px; object-fit: cover; }
-.variant-gallery .badge { position: absolute; top: 0.3rem; inset-inline-start: 0.3rem; }
-.variant-gallery-actions { display: flex; gap: 0.3rem; padding: 0.35rem; flex-wrap: wrap; }
-.variant-gallery-actions form { display: inline; }
-.variant-gallery-actions .btn { min-height: 0; padding: 0.25rem 0.5rem; font-size: 0.75rem; }
 .demand-counter-group { margin-top: 0.9rem; padding-top: 0.75rem; border-top: 1px solid var(--rule); display: grid; gap: 0.55rem; }
 .demand-counter-heading { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
 .demand-counter-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
@@ -2690,7 +2683,7 @@ body.is-soft-busy::before {
 .tag-quantity { width: 4.8rem !important; min-height: 32px !important; padding: 0.25rem 0.35rem !important; text-align: center; font-size: 0.78rem !important; }
 
 @media (max-width: 900px) {
-  .product-form-grid-wide, .variant-entry-grid, .size-run-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .product-form-grid-wide, .variant-entry-grid, .variant-image-slots, .size-run-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .variant-edit-layout, .product-edit-layout { grid-template-columns: 1fr; }
   .variant-edit-side, .product-edit-side { position: static; }
   .tag-settings-layout { grid-template-columns: 1fr; }
@@ -2699,7 +2692,7 @@ body.is-soft-busy::before {
   .tag-settings-side .card:last-child { grid-column: 1 / -1; }
 }
 @media (max-width: 600px) {
-  .product-form-grid-wide, .variant-entry-grid, .size-run-grid { grid-template-columns: 1fr; }
+  .product-form-grid-wide, .variant-entry-grid, .variant-image-slots, .size-run-grid { grid-template-columns: 1fr; }
   .products-kpi { grid-template-columns: 1fr; }
   .section-heading-row, .product-list-heading { align-items: stretch; flex-direction: column; }
   /* The buttons share each row and grow to fill it: three of them fit one row

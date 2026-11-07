@@ -208,7 +208,7 @@
         <div class="section-heading-row">
             <div><h3>{% if edit_mode %}افزودن تنوع جدید{% else %}تنوع‌های قابل فروش{% endif %}</h3><p class="muted">هر تنوع می‌تواند بارکد، SKU، قیمت، محل انبار و آستانه سفارش مستقل داشته باشد.</p></div>
         </div>
-        <div id="variants-container" data-existing-variants="{% if edit_mode and product.variants %}1{% else %}0{% endif %}"></div>
+        <div id="variants-container" data-existing-variants="{% if edit_mode and product.variants %}1{% else %}0{% endif %}" data-image-mode="{{ image_mode|default('garment') }}"></div>
         <details class="size-run" id="size-run">
             <summary>ساخت گروهی تنوع‌ها <small>سایزهای یک رنگ را یکجا بساز</small></summary>
             <div class="size-run-body">
@@ -234,19 +234,55 @@
                         <input type="text" id="size_run_location" name="size_run_location" placeholder="قفسه A-2">
                     </div>
                     <div class="form-group form-span-2">
-                        <span class="field-label">تصویر این رنگ</span>
-                        <div class="image-field" data-image-field>
-                            <label class="image-drop" for="size_run_photo">
-                                <span class="image-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></span>
-                                <span class="image-drop-copy"><strong>انتخاب عکس</strong><small>کلیک کنید یا عکس را اینجا رها کنید · JPG، PNG، WebP</small></span>
-                                <input class="image-input" type="file" id="size_run_photo" name="size_run_photo" accept="image/png,image/jpeg,image/webp">
-                            </label>
-                            <div class="image-picked" data-image-picked hidden>
-                                <div class="image-picked-grid" data-image-picked-grid></div>
-                                <button type="button" class="image-clear" data-image-clear>حذف انتخاب</button>
+                        <span class="field-label">تصاویر این رنگ</span>
+                        <div class="variant-image-slots">
+                            <div class="variant-image-slot" data-image-slot="0">
+                                <span class="field-label" data-slot-label>تصویر اصلی</span>
+                                <div class="image-field" data-image-field>
+                                    <label class="image-drop" for="size_run_photo">
+                                        <span class="image-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></span>
+                                        <span class="image-drop-copy"><strong>انتخاب عکس</strong><small>کلیک کنید یا عکس را اینجا رها کنید · JPG، PNG، WebP</small></span>
+                                        <input class="image-input" type="file" id="size_run_photo" name="size_run_photo" accept="image/png,image/jpeg,image/webp">
+                                    </label>
+                                    <div class="image-picked" data-image-picked hidden>
+                                        <div class="image-picked-grid" data-image-picked-grid></div>
+                                        <button type="button" class="image-clear" data-image-clear>حذف انتخاب</button>
+                                    </div>
+                                </div>
+                                <small class="field-help" data-slot-hint>عکس روبه‌روی لباس.</small>
+                            </div>
+                            <div class="variant-image-slot" data-image-slot="1">
+                                <span class="field-label" data-slot-label>تصویر پشت</span>
+                                <div class="image-field" data-image-field>
+                                    <label class="image-drop" for="size_run_photo_1">
+                                        <span class="image-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></span>
+                                        <span class="image-drop-copy"><strong>انتخاب عکس</strong><small>کلیک کنید یا عکس را اینجا رها کنید · JPG، PNG، WebP</small></span>
+                                        <input class="image-input" type="file" id="size_run_photo_1" name="size_run_photo_1" accept="image/png,image/jpeg,image/webp">
+                                    </label>
+                                    <div class="image-picked" data-image-picked hidden>
+                                        <div class="image-picked-grid" data-image-picked-grid></div>
+                                        <button type="button" class="image-clear" data-image-clear>حذف انتخاب</button>
+                                    </div>
+                                </div>
+                                <small class="field-help" data-slot-hint>پشت همان لباس.</small>
+                            </div>
+                            <div class="variant-image-slot" data-image-slot="2">
+                                <span class="field-label" data-slot-label>تصویر جزئیات</span>
+                                <div class="image-field" data-image-field>
+                                    <label class="image-drop" for="size_run_photo_2">
+                                        <span class="image-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></span>
+                                        <span class="image-drop-copy"><strong>انتخاب عکس</strong><small>کلیک کنید یا عکس را اینجا رها کنید · JPG، PNG، WebP</small></span>
+                                        <input class="image-input" type="file" id="size_run_photo_2" name="size_run_photo_2" accept="image/png,image/jpeg,image/webp">
+                                    </label>
+                                    <div class="image-picked" data-image-picked hidden>
+                                        <div class="image-picked-grid" data-image-picked-grid></div>
+                                        <button type="button" class="image-clear" data-image-clear>حذف انتخاب</button>
+                                    </div>
+                                </div>
+                                <small class="field-help" data-slot-hint>نزدیک از پارچه، دوخت، چاپ یا یقه.</small>
                             </div>
                         </div>
-                        <small class="field-help">یک عکس برای همه سایزهای این رنگ.</small>
+                        <small class="field-help">هر عکس برای همه سایزهای این رنگ کپی می‌شود.</small>
                     </div>
                 </div>
                 <div class="size-run-sizes" id="size-run-sizes"></div>
@@ -538,6 +574,87 @@ function copyPhoto(from, to) {
     }
 }
 
+/* ---- Fixed photo slots: main, back/detail or top/left/right ------------- */
+
+var imageSlotConfig = null;
+
+function imageSlotConfigData() {
+    if (imageSlotConfig) return imageSlotConfig;
+    var node = document.getElementById('variant-image-slot-config');
+    try { imageSlotConfig = JSON.parse(node ? node.textContent : '{}') || {}; } catch (error) { imageSlotConfig = {}; }
+    return imageSlotConfig;
+}
+
+function imageSlotSpecs(mode) {
+    var config = imageSlotConfigData();
+    return config[mode] || config.garment || [];
+}
+
+function imageModeFromText(text) {
+    text = String(text || '').toLowerCase();
+    if (/کفش|کتانی|بوت|صندل|\b(shoe|sneaker|boot|sandal)s?\b/.test(text)) return 'shoes';
+    if (/جوراب|کلاه|دستکش|\b(sock|hat|cap|beanie|glove)s?\b/.test(text)) return 'accessory';
+    return 'garment';
+}
+
+function variantImageSlot(index, slot) {
+    const name = slot === 0 ? `variant_image_${index}` : `variant_image_${slot}_${index}`;
+    return `
+        <div class="form-group variant-image-slot" data-image-slot="${slot}">
+            <span class="field-label" data-slot-label></span>
+            <div class="image-field" data-image-field>
+                <label class="image-drop">
+                    <span class="image-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></span>
+                    <span class="image-drop-copy"><strong>انتخاب عکس</strong><small>کلیک کنید یا عکس را اینجا رها کنید · JPG، PNG، WebP</small></span>
+                    <input class="image-input" type="file" name="${name}" accept="image/png,image/jpeg,image/webp">
+                </label>
+                <div class="image-picked" data-image-picked hidden>
+                    <div class="image-picked-grid" data-image-picked-grid></div>
+                    <button type="button" class="image-clear" data-image-clear>حذف انتخاب</button>
+                </div>
+            </div>
+            <small class="field-help" data-slot-hint></small>
+        </div>`;
+}
+
+function applyImageMode(mode) {
+    if (!container) return;
+    mode = imageSlotConfigData()[mode] ? mode : 'garment';
+    container.dataset.imageMode = mode;
+    const specs = imageSlotSpecs(mode);
+    const boxes = Array.from(container.querySelectorAll('[data-image-slot]'));
+    const run = document.getElementById('size-run');
+    if (run) boxes.push(...run.querySelectorAll('[data-image-slot]'));
+    boxes.forEach(box => {
+        const slot = Number(box.getAttribute('data-image-slot'));
+        const spec = specs[slot];
+        box.hidden = !spec;
+        const input = box.querySelector('input[type=file]');
+        if (input) input.disabled = !spec;
+        const label = box.querySelector('[data-slot-label]');
+        const hint = box.querySelector('[data-slot-hint]');
+        if (spec && label) label.textContent = spec.label;
+        if (spec && hint) hint.textContent = spec.hint;
+    });
+}
+
+function refreshImageModeFromProduct() {
+    const text = ['category', 'garment_type', 'name'].map(id => {
+        const field = document.getElementById(id);
+        return field ? field.value : '';
+    }).join(' ');
+    applyImageMode(imageModeFromText(text));
+}
+
+function runPhoto(slot) {
+    return document.getElementById(slot === 0 ? 'size_run_photo' : `size_run_photo_${slot}`);
+}
+
+function entryPhoto(entry, slot) {
+    const group = entry.querySelector(`[data-image-slot="${slot}"]`);
+    return group ? group.querySelector('input[type=file]') : null;
+}
+
 /* ---- The size run: a colour's sizes, built in one go ----------------- */
 
 function sizeRunValue(id) {
@@ -655,8 +772,8 @@ function removeEmptyVariantRows() {
                 const field = sharedField(entry, key);
                 return field && String(field.value || '').trim() !== '';
             });
-        const photo = sharedField(entry, 'image');
-        const hasPhoto = photo && photo.files && photo.files.length > 0;
+        const hasPhoto = Array.from(entry.querySelectorAll('input[type=file][name^="variant_image"]'))
+            .some(input => input.files && input.files.length > 0);
         if (!typed && !hasPhoto && variantNum(fieldVal(entry, 'stock')) <= 0) entry.remove();
     });
     refreshFormTotal();
@@ -685,7 +802,7 @@ function createSizeRun() {
         cost: sizeRunValue('size_run_cost'),
         location: sizeRunValue('size_run_location')
     };
-    const photo = document.getElementById('size_run_photo');
+    const photos = [0, 1, 2].map(runPhoto).filter(Boolean);
     let made = 0;
     let skipped = 0;
     removeEmptyVariantRows();
@@ -693,7 +810,7 @@ function createSizeRun() {
         const stock = String(input.value || '').trim();
         const size = input.dataset.sizeValue;
         if (used.indexOf(size) !== -1) { skipped += 1; return; }
-        addVariant({ size: size, stock: stock, shared: shared, photo: photo });
+        addVariant({ size: size, stock: stock, shared: shared, photos: photos });
         made += 1;
     });
     // The run has used the photo: a colour change from here owns a new one.
@@ -727,7 +844,7 @@ function applySizeRun(entry, spec) {
         if (field && value !== undefined && value !== null && String(value) !== '') field.value = value;
     });
     setEntrySize(entry, spec.size);
-    if (spec.photo) copyPhoto(spec.photo, sharedField(entry, 'image'));
+    (spec.photos || []).forEach((photo, slot) => copyPhoto(photo, entryPhoto(entry, slot)));
     // The colour code paints a swatch and the row's dot: both read the
     // field's value, so the field has to say it changed.
     const code = sharedField(entry, 'color_code');
@@ -845,19 +962,10 @@ function addVariant(spec) {
                 </label><input type="text" inputmode="numeric" name="variant_reorder_point_${index}" min="0" data-sync-default="point" aria-describedby="hint-vrp-${index}" value="{{ (product.default_reorder_point or 0) if product else 0 }}" placeholder="مثال: 5"></div>
                 <div class="form-group"><label>محل انبار</label><input type="text" name="variant_storage_location_${index}" placeholder="قفسه A-2"></div>
             </div>
-            <div class="form-group">
-                <span class="field-label">تصویر اصلی تنوع</span>
-                <div class="image-field" data-image-field>
-                    <label class="image-drop">
-                        <span class="image-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></span>
-                        <span class="image-drop-copy"><strong>انتخاب تصویر اصلی</strong><small>کلیک کنید یا عکس را اینجا رها کنید · JPG، PNG، WebP</small></span>
-                        <input class="image-input" type="file" name="variant_image_${index}" accept="image/png,image/jpeg,image/webp">
-                    </label>
-                    <div class="image-picked" data-image-picked hidden>
-                        <div class="image-picked-grid" data-image-picked-grid></div>
-                        <button type="button" class="image-clear" data-image-clear>حذف انتخاب</button>
-                    </div>
-                </div>
+            <div class="variant-image-slots">
+                ${variantImageSlot(index, 0)}
+                ${variantImageSlot(index, 1)}
+                ${variantImageSlot(index, 2)}
             </div>
             <div class="variant-entry-total">ارزش موجودی: <strong class="tnum" data-row-total>—</strong></div>
             </div></div></div>
@@ -867,6 +975,7 @@ function addVariant(spec) {
     if (window.RaykidSizing) window.RaykidSizing.setup(container);
     const fresh = container.lastElementChild;
     if (window.initImageFields) window.initImageFields(fresh);
+    applyImageMode(container.dataset.imageMode || 'garment');
     if (spec) {
         // A row out of a size run: the colour's values, the run's size.
         applySizeRun(fresh, spec);
@@ -948,20 +1057,21 @@ function bootSizeRun() {
         // A photo picked since the last run is a hand's choice — kept.
         color.addEventListener('change', () => {
             if (panel.dataset.photoPicked === '1') return;
-            const photo = document.getElementById('size_run_photo');
-            if (photo) {
+            [0, 1, 2].map(runPhoto).filter(Boolean).forEach(photo => {
                 photo.value = '';
                 photo.dispatchEvent(new Event('change', { bubbles: true }));
-            }
+            });
         });
     }
-    const photo = document.getElementById('size_run_photo');
-    if (photo && !photo.dataset.sizeRunBound) {
+    [0, 1, 2].map(runPhoto).filter(Boolean).forEach(photo => {
+        if (photo.dataset.sizeRunBound) return;
         photo.dataset.sizeRunBound = 'true';
         photo.addEventListener('change', () => {
-            panel.dataset.photoPicked = photo.files && photo.files.length ? '1' : '0';
+            const picked = [0, 1, 2].map(runPhoto)
+                .some(field => field && field.files && field.files.length);
+            panel.dataset.photoPicked = picked ? '1' : '0';
         });
-    }
+    });
     renderSizeRun();
 }
 
@@ -974,6 +1084,14 @@ function bootVariantForm() {
         container.querySelectorAll('.variant-entry').forEach(syncSkuRow);
     });
     bootSizeRun();
+    ['category', 'garment_type', 'name'].forEach(id => {
+        const field = document.getElementById(id);
+        if (!field || field.dataset.imageModeBound) return;
+        field.dataset.imageModeBound = 'true';
+        field.addEventListener('input', refreshImageModeFromProduct);
+        field.addEventListener('change', refreshImageModeFromProduct);
+    });
+    refreshImageModeFromProduct();
     {% if not edit_mode or not product.variants %}addVariant();{% endif %}
 }
 if (document.readyState === 'loading') {
@@ -1156,6 +1274,7 @@ if (document.readyState === 'loading') {
 // count until a reload, never a silent second POST.
 </script>
 <script type="application/json" id="sizing-ladders">{{ sizing_ladders_json|safe }}</script>
+<script type="application/json" id="variant-image-slot-config">{{ image_slot_config|tojson }}</script>
 {% if edit_mode and product.variants %}
 {# The variants this product already has: a size already in this colour is
    the same variant twice, so the run panel leaves it alone. #}

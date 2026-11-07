@@ -25,6 +25,7 @@ from models import (
     to_english_digits,
 )
 from services.security import log_action, require_html_role
+from services.image_slots import SLOTS as IMAGE_SLOT_CONFIG, image_mode_for, image_slots_for
 from services.image_storage import save_upload_image
 from services.sizing import (SIZE_TYPES as SIZING_TYPES, SYSTEMS as SIZING_SYSTEMS,
                              resolve_band, size_options, band_display,
@@ -146,9 +147,80 @@ def _product_form_error(request, db, product, edit_mode: bool, message: str, tab
     }
     context.update(_catalog_datalists(db))
     context.update(_sizing_context())
+    context.update(_product_image_context(product))
     if edit_mode:
         context.update({"fmt": fmt, "jalali_str": jalali_str})
     return templates.TemplateResponse(request, "admin/product_form.html", context)
+
+
+def _product_image_context(product) -> dict:
+    """The fixed photo slots this product's family uses."""
+    return {
+        "image_mode": image_mode_for(product),
+        "image_slots": image_slots_for(product),
+        "image_slot_config": IMAGE_SLOT_CONFIG,
+    }
+
+
+def _variant_frames(variant) -> list[VariantImage]:
+    return sorted(variant.images or [], key=lambda frame: (frame.sort_order, frame.id or 0))
+
+
+def _variant_slot_uploads(form, idx: int | None):
+    if idx is None:
+        names = ("variant_image", "variant_image_1", "variant_image_2")
+    else:
+        names = (f"variant_image_{idx}", f"variant_image_1_{idx}", f"variant_image_2_{idx}")
+    return [(slot, form.get(name)) for slot, name in enumerate(names)]
+
+
+def _drop_replaced_upload(db: Session, path: str | None, frame: VariantImage) -> None:
+    """Delete the replaced photo from disk unless another frame still uses it."""
+    if not path or "/uploads/products" not in path:
+        return
+    in_use = db.query(VariantImage).filter(
+        VariantImage.image_path == path,
+        VariantImage.id != (frame.id or 0),
+    ).first()
+    if in_use:
+        return
+    try:
+        target = Path(path.lstrip("/"))
+        if target.is_file():
+            target.unlink()
+    except OSError:
+        pass
+
+
+async def _apply_variant_image_uploads(db: Session, variant: ProductVariant,
+                                       uploads, upload_dir: Path) -> None:
+    """Store each picked slot on its positional frame (0 main, 1 back/left,
+    2 detail/right). Re-uploading a slot replaces that frame instead of
+    stacking a second gallery."""
+    if variant.id is None and any(hasattr(upload, "filename") and upload.filename
+                                  for _slot, upload in uploads):
+        db.flush()
+    for slot, upload in uploads:
+        if not (hasattr(upload, "filename") and upload.filename):
+            continue
+        path = save_upload_image(
+            await upload.read(), upload.filename, upload_dir,
+            "/static/uploads/products")
+        frame = next((item for item in _variant_frames(variant)
+                      if item.sort_order == slot), None)
+        if frame is not None:
+            _drop_replaced_upload(db, frame.image_path, frame)
+            frame.image_path = path
+        else:
+            frame = VariantImage(image_path=path, sort_order=slot)
+            variant.images.append(frame)
+        if slot == 0:
+            variant.image_path = path
+    if variant.image_path is None:
+        frames = _variant_frames(variant)
+        if frames:
+            # A shop that started with the back shot still gets a thumbnail.
+            variant.image_path = frames[0].image_path
 
 
 def _catalog_datalists(db) -> dict:
@@ -198,6 +270,8 @@ def _variant_form_context(variant: ProductVariant, **extra) -> dict:
         "next_variant": siblings[index + 1] if index + 1 < len(siblings) else None,
         "variant_position": index + 1,
         "variant_count": len(siblings),
+        "image_mode": image_mode_for(variant.product),
+        "image_slots": image_slots_for(variant.product),
         **_sizing_context(),
         **extra,
     }
@@ -848,6 +922,7 @@ async def admin_product_add_form(request: Request, db: Session = Depends(get_db)
         "tag_templates": list_tag_templates(db),
         **_catalog_datalists(db),
         **_sizing_context(),
+        **_product_image_context(None),
     })
 
 
@@ -921,6 +996,7 @@ async def admin_product_add(
             "tag_templates": list_tag_templates(db),
             "error": "حداقل یک تنوع اضافه کنید.",
             **_sizing_context(),
+            **_product_image_context(None),
         })
 
     upload_dir = Path("static/uploads/products")
@@ -1016,13 +1092,8 @@ async def admin_product_add(
                 return _product_form_error(request, db, None, False, f"بارکد {barcode} تکراری است.", tab="variants")
         seen_barcodes.add(barcode)
 
-        # Handle variant image upload
+        # Handle variant image slots (main, back/left, detail/right).
         variant_image_path = None
-        variant_image = form.get(f"variant_image_{idx}")
-        if hasattr(variant_image, 'filename') and variant_image.filename:
-            variant_image_path = save_upload_image(
-                await variant_image.read(), variant_image.filename, upload_dir,
-                "/static/uploads/products")
 
         # Create variant
         variant = ProductVariant(
@@ -1048,6 +1119,8 @@ async def admin_product_add(
             band_max_adult=band.adult_max if band else None,
         )
         db.add(variant)
+        await _apply_variant_image_uploads(
+            db, variant, _variant_slot_uploads(form, idx), upload_dir)
         created_variants.append((variant, stock_int))
 
     if not created_variants and not product.variants:
@@ -1087,6 +1160,7 @@ async def admin_product_edit_form(product_id: int, request: Request, next: str =
         "tag_templates": list_tag_templates(db),
         **_catalog_datalists(db),
         **_sizing_context(),
+        **_product_image_context(product),
         "return_to": _safe_next(next, ""),
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
@@ -1224,13 +1298,8 @@ async def admin_product_update(
                 return _product_form_error(request, db, product, True, f"بارکد {barcode} تکراری است.", tab="variants")
         seen_barcodes.add(barcode)
 
-        # Handle variant image upload
+        # Handle variant image slots (main, back/left, detail/right).
         variant_image_path = None
-        variant_image = form.get(f"variant_image_{idx}")
-        if hasattr(variant_image, 'filename') and variant_image.filename:
-            variant_image_path = save_upload_image(
-                await variant_image.read(), variant_image.filename, upload_dir,
-                "/static/uploads/products")
 
         # Create new variant
         variant = ProductVariant(
@@ -1256,6 +1325,8 @@ async def admin_product_update(
             band_max_adult=band.adult_max if band else None,
         )
         db.add(variant)
+        await _apply_variant_image_uploads(
+            db, variant, _variant_slot_uploads(form, idx), upload_dir)
         created_variants.append((variant, stock_int))
 
     if not created_variants and not product.variants:
@@ -1411,35 +1482,13 @@ async def admin_variant_update(
     # this handler never rewrites it. A damaged label gets a fresh code from
     # the regenerate action below, never from a typed field.
 
-    # Handle variant image upload
+    # Fixed photo slots: main, back/left, detail/right. A picked slot
+    # replaces its frame; an empty input leaves the current photo alone.
     form = await request.form()
-    variant_image = form.get("variant_image")
-    if hasattr(variant_image, 'filename') and variant_image.filename:
-        upload_dir = Path("static/uploads/products")
-        upload_dir.mkdir(parents=True, exist_ok=True)
-        variant.image_path = save_upload_image(
-            await variant_image.read(), variant_image.filename, upload_dir,
-            "/static/uploads/products")
-
-    # Gallery frames: every picked file joins the end of the row. The first
-    # frame doubles as the legacy single image while none is set, so every
-    # display that reads image_path keeps working.
-    gallery_files = [
-        upload for upload in form.getlist("variant_images")
-        if hasattr(upload, "filename") and upload.filename
-    ]
-    if gallery_files:
-        upload_dir = Path("static/uploads/products")
-        upload_dir.mkdir(parents=True, exist_ok=True)
-        order = max([frame.sort_order for frame in variant.images] + [-1]) + 1
-        for upload in gallery_files:
-            path = save_upload_image(
-                await upload.read(), upload.filename, upload_dir,
-                "/static/uploads/products")
-            db.add(VariantImage(variant_id=variant.id, image_path=path, sort_order=order))
-            order += 1
-            if not variant.image_path:
-                variant.image_path = path
+    upload_dir = Path("static/uploads/products")
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    await _apply_variant_image_uploads(
+        db, variant, _variant_slot_uploads(form, None), upload_dir)
 
     # Update variant. Price and cost edits are also recorded so the current
     # figures can be explained without rewriting historical SaleItem costs.
@@ -1602,32 +1651,11 @@ async def admin_variant_regenerate_barcode(
     )
 
 
-def _variant_gallery_back(variant_id: int, message: str) -> RedirectResponse:
+def _variant_image_back(variant_id: int, message: str) -> RedirectResponse:
     return RedirectResponse(
         url=f"/admin/variants/{variant_id}/edit?msg=" + quote_plus(message),
         status_code=303,
     )
-
-
-@router.post("/variant-images/{image_id}/primary", response_class=HTMLResponse)
-async def admin_variant_image_primary(image_id: int, request: Request, db: Session = Depends(get_db)):
-    """Pin a frame as the gallery's first — and the variant's display image."""
-    guard = require_html_role(request, db, "manager")
-    if not hasattr(guard, "role"):
-        return guard
-
-    frame = db.query(VariantImage).filter(VariantImage.id == image_id).first()
-    if not frame:
-        raise HTTPException(status_code=404, detail="تصویر یافت نشد")
-    siblings = db.query(VariantImage).filter(
-        VariantImage.variant_id == frame.variant_id,
-        VariantImage.id != frame.id,
-    ).all()
-    floor = min([each.sort_order for each in siblings] + [0])
-    frame.sort_order = floor - 1
-    frame.variant.image_path = frame.image_path
-    db.commit()
-    return _variant_gallery_back(frame.variant_id, "تصویر اصلی شد.")
 
 
 @router.post("/variant-images/{image_id}/delete", response_class=HTMLResponse)
@@ -1640,22 +1668,16 @@ async def admin_variant_image_delete(image_id: int, request: Request, db: Sessio
     if not frame:
         raise HTTPException(status_code=404, detail="تصویر یافت نشد")
     variant = frame.variant
-    path = Path(frame.image_path.lstrip("/"))
     doomed_path = frame.image_path
+    was_main = frame.sort_order == 0 or variant.image_path == doomed_path
+    _drop_replaced_upload(db, doomed_path, frame)
     db.delete(frame)
-    db.flush()
-    remaining = db.query(VariantImage).filter(
-        VariantImage.variant_id == variant.id
-    ).order_by(VariantImage.sort_order).all()
-    if variant.image_path == doomed_path:
-        variant.image_path = remaining[0].image_path if remaining else None
+    if was_main:
+        # The main slot stays empty: the back photo must not silently become
+        # the main one just because its frame survived.
+        variant.image_path = None
     db.commit()
-    try:
-        if path.is_file():
-            path.unlink()
-    except OSError:
-        pass
-    return _variant_gallery_back(variant.id, "تصویر حذف شد.")
+    return _variant_image_back(variant.id, "تصویر حذف شد.")
 
 
 @router.post("/variants/{variant_id}/demand", response_class=HTMLResponse)

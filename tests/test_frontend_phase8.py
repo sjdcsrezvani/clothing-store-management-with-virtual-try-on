@@ -261,8 +261,8 @@ def test_the_size_run_builds_a_colour_s_sizes_in_one_go():
     # variants the product already has.
     assert "function sizeRunUsedSizes" in page
     assert 'id="size-run-existing"' in page
-    # The run's photo rides to every size of the colour.
-    assert "copyPhoto(spec.photo, sharedField(entry, 'image'))" in page
+    # The run's photos ride to every size of the colour.
+    assert "copyPhoto(photo, entryPhoto(entry, slot))" in page
     assert ".size-run-table" in css
 
 
@@ -296,7 +296,6 @@ def test_variant_edit_form_owns_its_save_button():
     assert "ذخیره تغییرات" in main
     assert "stock_quantity" in main
     for form_id in ("regenerate-barcode-form",
-                    "variant-image-primary-{{ frame.id }}",
                     "variant-image-delete-{{ frame.id }}"):
         assert f'id="{form_id}"' in page
         assert f'form="{form_id}"' in page

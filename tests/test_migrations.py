@@ -326,7 +326,7 @@ def test_revision_36_and_37_add_the_sizing_columns(tmp_path):
         conn.execute(text("INSERT INTO products (name) VALUES ('پیراهن')"))
         conn.execute(text("INSERT INTO product_variants (product_id, size) VALUES (1, '110')"))
 
-    assert upgrade(engine) == MIGRATION_VERSION == 40
+    assert upgrade(engine) == MIGRATION_VERSION == 41
 
     with engine.connect() as conn:
         products = {row[1] for row in conn.execute(text("PRAGMA table_info(products)"))}
@@ -338,6 +338,47 @@ def test_revision_36_and_37_add_the_sizing_columns(tmp_path):
         assert row == ("110", None)
 
 
+def test_revision_41_moves_gallery_photos_into_fixed_slots(tmp_path):
+    """The slot form reads positional frames. A shop upgrading from the
+    gallery keeps its photos: frames are renumbered 0,1,2…, the legacy main
+    image becomes slot 0, and a gallery-only variant gets image_path."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'v40-slots.db'}")
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE schema_version (id INTEGER PRIMARY KEY, version INTEGER NOT NULL)"))
+        conn.execute(text("INSERT INTO schema_version (id, version) VALUES (1, 40)"))
+        conn.execute(text("CREATE TABLE product_variants (id INTEGER PRIMARY KEY, image_path VARCHAR(500))"))
+        conn.execute(text("""
+            CREATE TABLE variant_images (
+                id INTEGER PRIMARY KEY, variant_id INTEGER NOT NULL,
+                image_path VARCHAR(500) NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at DATETIME NOT NULL
+            )
+        """))
+        conn.execute(text("INSERT INTO product_variants VALUES (1, '/static/uploads/products/legacy.jpg')"))
+        conn.execute(text("INSERT INTO product_variants VALUES (2, '/static/uploads/products/main.jpg')"))
+        conn.execute(text("INSERT INTO product_variants VALUES (3, NULL)"))
+        # Two frames out of order: the main photo is second.
+        conn.execute(text("INSERT INTO variant_images VALUES (1, 2, '/static/uploads/products/back.jpg', 5, '2026-01-01')"))
+        conn.execute(text("INSERT INTO variant_images VALUES (2, 2, '/static/uploads/products/main.jpg', 9, '2026-01-01')"))
+        conn.execute(text("INSERT INTO variant_images VALUES (3, 3, '/static/uploads/products/only.jpg', 4, '2026-01-01')"))
+
+    assert upgrade(engine) == MIGRATION_VERSION == 41
+
+    with engine.connect() as conn:
+        rows = conn.execute(text(
+            "SELECT variant_id, image_path, sort_order FROM variant_images "
+            "ORDER BY variant_id, sort_order")).all()
+        assert rows == [
+            (1, "/static/uploads/products/legacy.jpg", 0),
+            (2, "/static/uploads/products/main.jpg", 0),
+            (2, "/static/uploads/products/back.jpg", 1),
+            (3, "/static/uploads/products/only.jpg", 0),
+        ]
+        assert conn.execute(text(
+            "SELECT image_path FROM product_variants WHERE id=3")).scalar() == \
+            "/static/uploads/products/only.jpg"
+
+
 def test_revision_40_adds_purchase_tax_percent(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'v39-purchases.db'}")
     with engine.begin() as conn:
@@ -346,7 +387,7 @@ def test_revision_40_adds_purchase_tax_percent(tmp_path):
         conn.execute(text(
             "CREATE TABLE purchases (id INTEGER PRIMARY KEY, total_cost INTEGER)"))
         conn.execute(text("INSERT INTO purchases (total_cost) VALUES (100000)"))
-    assert upgrade(engine) == MIGRATION_VERSION == 40
+    assert upgrade(engine) == MIGRATION_VERSION == 41
     with engine.connect() as conn:
         columns = {row[1] for row in conn.execute(text("PRAGMA table_info(purchases)"))}
         assert "tax_percent" in columns
@@ -369,7 +410,7 @@ def test_revision_38_adds_sms_queue_management_columns(tmp_path):
                           "VALUES ('09120000000', 'سلام', 'queued', 'marketing', 'manual', "
                           "'2026-01-01 00:00:00')"))
 
-    assert upgrade(engine) == MIGRATION_VERSION == 40
+    assert upgrade(engine) == MIGRATION_VERSION == 41
 
     with engine.connect() as conn:
         columns = {row[1] for row in conn.execute(text("PRAGMA table_info(sms_messages)"))}

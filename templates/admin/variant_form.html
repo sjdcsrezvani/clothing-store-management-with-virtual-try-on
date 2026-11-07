@@ -65,55 +65,39 @@
             {% if variant.needs_reorder %}این تنوع به نقطه سفارش رسیده است.{% else %}موجودی بالاتر از نقطه سفارش است.{% endif %}
         </div>
 
-        <div class="section-heading-row section-heading-spaced"><div><h3>تصویر و توضیحات</h3><p class="muted">اطلاعات تکمیلی برای تیم فروش، پرو مجازی و استودیو اینستاگرام استفاده می‌شود.</p></div><span class="section-step">۳</span></div>
+        <div class="section-heading-row section-heading-spaced"><div><h3>تصاویر تنوع</h3><p class="muted">هر جایگاه را جداگانه بارگذاری کنید؛ تصویر خالی بعداً هم قابل افزودن است.</p></div><span class="section-step">۳</span></div>
         <div class="form-group"><label for="tryon_details">جزئیات تکمیلی</label><textarea id="tryon_details" name="tryon_details" rows="3" placeholder="مثلاً دو تکه است؛ آستین کوتاه">{{ variant.tryon_details or '' }}</textarea><small class="field-help">هرچه پارچه، یقه، آستین، چاپ و جزئیات دوخت را دقیق‌تر بنویسید، پرامپت استودیو اینستاگرام هم دقیق‌تر می‌شود.</small></div>
-        <div class="form-group">
-            <span class="field-label">تصویر اصلی تنوع</span>
-            <div class="image-field" data-image-field>
-                <label class="image-drop" for="variant_image">
-                    <span class="image-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></span>
-                    <span class="image-drop-copy"><strong>انتخاب تصویر اصلی</strong><small>کلیک کنید یا عکس را اینجا رها کنید · JPG، PNG، WebP</small></span>
-                    <input class="image-input" type="file" id="variant_image" name="variant_image" accept="image/png,image/jpeg,image/webp">
-                </label>
-                <div class="image-picked" data-image-picked hidden>
-                    <div class="image-picked-grid" data-image-picked-grid></div>
-                    <button type="button" class="image-clear" data-image-clear>حذف انتخاب</button>
+        <div class="variant-image-slots">
+            {% for slot in image_slots %}
+            {% set frame = variant.images|selectattr('sort_order', 'equalto', slot.slot)|list|first %}
+            {% set legacy_main = variant.image_path if slot.slot == 0 and variant.image_path and '/uploads/barcodes/' not in variant.image_path else none %}
+            {% set current = frame.image_path if frame else legacy_main %}
+            <div class="form-group variant-image-slot">
+                <span class="field-label">{{ slot.label }}</span>
+                <div class="image-field" data-image-field>
+                    <label class="image-drop" for="variant_image_{{ slot.slot }}">
+                        <span class="image-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></span>
+                        <span class="image-drop-copy"><strong>{% if current %}جایگزینی تصویر{% else %}انتخاب تصویر{% endif %}</strong><small>کلیک کنید یا عکس را اینجا رها کنید · JPG، PNG، WebP</small></span>
+                        <input class="image-input" type="file" id="variant_image_{{ slot.slot }}" name="{% if slot.slot == 0 %}variant_image{% else %}variant_image_{{ slot.slot }}{% endif %}" accept="image/png,image/jpeg,image/webp">
+                    </label>
+                    <div class="image-picked" data-image-picked hidden>
+                        <div class="image-picked-grid" data-image-picked-grid></div>
+                        <button type="button" class="image-clear" data-image-clear>حذف انتخاب</button>
+                    </div>
                 </div>
+                <small class="field-help">{{ slot.hint }}</small>
+                {% if current %}
+                <figure class="image-current">
+                    <button type="button" class="lightbox-open" data-lightbox-src="{{ current }}" aria-label="نمایش {{ slot.label }} در اندازه کامل"><img src="{{ current }}" alt="{{ slot.label }} فعلی"></button>
+                    <figcaption>{{ slot.label }}</figcaption>
+                </figure>
+                {% if frame %}
+                <button type="submit" form="variant-image-delete-{{ frame.id }}" class="btn btn-sm btn-danger-quiet">حذف {{ slot.label }}</button>
+                {% endif %}
+                {% endif %}
             </div>
-            <small class="field-help">همین عکس مرجع پرو مجازی است.</small>
-            {% if variant.image_path and '/uploads/barcodes/' not in variant.image_path %}<figure class="image-current"><button type="button" class="lightbox-open" data-lightbox-src="{{ variant.image_path }}" aria-label="نمایش تصویر اصلی تنوع در اندازه کامل"><img src="{{ variant.image_path }}" alt="تصویر اصلی فعلی تنوع"></button><figcaption>تصویر اصلی فعلی</figcaption></figure>{% endif %}
-        </div>
-        <div class="form-group">
-            <span class="field-label">گالری تنوع</span>
-            <div class="image-field" data-image-field>
-                <label class="image-drop" for="variant_images">
-                    <span class="image-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></span>
-                    <span class="image-drop-copy"><strong>افزودن عکس به گالری</strong><small>کلیک کنید یا چند عکس را اینجا رها کنید · JPG، PNG، WebP</small></span>
-                    <input class="image-input" type="file" id="variant_images" name="variant_images" accept="image/png,image/jpeg,image/webp" multiple>
-                </label>
-                <div class="image-picked" data-image-picked hidden>
-                    <div class="image-picked-grid" data-image-picked-grid></div>
-                    <button type="button" class="image-clear" data-image-clear>حذف انتخاب</button>
-                </div>
-            </div>
-            <small class="field-help">عکس‌های تکمیلی برای نمایش؛ فقط اگر تصویر اصلی خالی باشد، اولین قاب گالری تصویر اصلی می‌شود.</small>
-        </div>
-        {% if variant.images %}
-        <ul class="variant-gallery">
-            {% for frame in variant.images|sort(attribute='sort_order') %}
-            <li class="{% if frame.image_path == variant.image_path %}is-primary{% endif %}">
-                <button type="button" class="lightbox-open" data-lightbox-src="{{ frame.image_path }}" aria-label="نمایش قاب {{ loop.index }} تنوع در اندازه کامل"><img src="{{ frame.image_path }}" alt="قاب {{ loop.index }} تنوع" loading="lazy"></button>
-                {% if frame.image_path == variant.image_path %}<span class="badge badge-info">تصویر اصلی</span>{% endif %}
-                <span class="variant-gallery-actions">
-                    {% if frame.image_path != variant.image_path %}
-                    <button type="submit" form="variant-image-primary-{{ frame.id }}" class="btn btn-sm btn-ghost">تصویر اصلی شود</button>
-                    {% endif %}
-                    <button type="submit" form="variant-image-delete-{{ frame.id }}" class="btn btn-sm btn-danger-quiet">حذف</button>
-                </span>
-            </li>
             {% endfor %}
-        </ul>
-        {% endif %}
+        </div>
         <div class="form-actions-row product-form-actions">
             <button type="submit" class="btn btn-primary btn-large">ذخیره تغییرات</button>
             <a href="{{ return_to or '/admin/products/' ~ product.id }}" class="btn btn-ghost">لغو</a>
@@ -132,11 +116,8 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     </form>
     {% for frame in variant.images|sort(attribute='sort_order') %}
-    <form id="variant-image-primary-{{ frame.id }}" method="post" action="/admin/variant-images/{{ frame.id }}/primary">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    </form>
     <form id="variant-image-delete-{{ frame.id }}" method="post" action="/admin/variant-images/{{ frame.id }}/delete" hx-boost="false"
-          data-confirm="این قاب از گالری حذف شود؟" data-confirm-title="حذف قاب" data-confirm-ok="حذف">
+          data-confirm="این تصویر از این جایگاه حذف شود؟" data-confirm-title="حذف تصویر" data-confirm-ok="حذف">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     </form>
     {% endfor %}

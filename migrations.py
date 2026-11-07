@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import inspect, text
 
-MIGRATION_VERSION = 40
+MIGRATION_VERSION = 41
 
 
 def migration_status(engine) -> int:
@@ -453,6 +453,82 @@ def _rebuild_sms_messages(conn) -> None:
 
 
 def _apply_revision(conn, version: int) -> None:
+    if version == 41:
+        # Fixed photo slots: every variant's frames move to positions 0, 1, 2
+        # (main, back/left, detail/right). A legacy single image becomes slot 0
+        # so the slot form can replace or delete it like any other photo.
+        table = conn.execute(text(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='variant_images'"
+        )).scalar()
+        variants_table = conn.execute(text(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='product_variants'"
+        )).scalar()
+        if not table or not variants_table:
+            return
+
+        rows = conn.execute(text(
+            "SELECT id, variant_id FROM variant_images "
+            "ORDER BY variant_id, sort_order, id"
+        )).fetchall()
+        positions = {}
+        for image_id, variant_id in rows:
+            position = positions.get(variant_id, 0)
+            conn.execute(text(
+                "UPDATE variant_images SET sort_order=:position WHERE id=:image_id"
+            ), {"position": position, "image_id": image_id})
+            positions[variant_id] = position + 1
+
+        variants = conn.execute(text(
+            "SELECT id, image_path FROM product_variants "
+            "WHERE image_path IS NOT NULL AND image_path <> ''"
+        )).fetchall()
+        for variant_id, image_path in variants:
+            if "/uploads/barcodes/" in image_path:
+                continue
+            match = conn.execute(text(
+                "SELECT id, sort_order FROM variant_images "
+                "WHERE variant_id=:variant_id AND image_path=:image_path "
+                "ORDER BY id LIMIT 1"
+            ), {"variant_id": variant_id, "image_path": image_path}).fetchone()
+            if match:
+                if match[1] != 0:
+                    zero = conn.execute(text(
+                        "SELECT id FROM variant_images "
+                        "WHERE variant_id=:variant_id AND sort_order=0"
+                    ), {"variant_id": variant_id}).fetchone()
+                    if zero:
+                        conn.execute(text(
+                            "UPDATE variant_images SET sort_order=:slot WHERE id=:image_id"
+                        ), {"slot": match[1], "image_id": zero[0]})
+                    conn.execute(text(
+                        "UPDATE variant_images SET sort_order=0 WHERE id=:image_id"
+                    ), {"image_id": match[0]})
+                continue
+
+            conn.execute(text(
+                "UPDATE variant_images SET sort_order = sort_order + 1 "
+                "WHERE variant_id=:variant_id"
+            ), {"variant_id": variant_id})
+            conn.execute(text(
+                "INSERT INTO variant_images (variant_id, image_path, sort_order, created_at) "
+                "VALUES (:variant_id, :image_path, 0, CURRENT_TIMESTAMP)"
+            ), {"variant_id": variant_id, "image_path": image_path})
+
+        # A gallery-only variant gets the display image the product list reads.
+        conn.execute(text("""
+            UPDATE product_variants
+               SET image_path = (
+                   SELECT image_path FROM variant_images
+                    WHERE variant_id = product_variants.id AND sort_order = 0
+               )
+             WHERE (image_path IS NULL OR image_path = '')
+               AND EXISTS (
+                   SELECT 1 FROM variant_images
+                    WHERE variant_id = product_variants.id AND sort_order = 0
+               )
+        """))
+        return
+
     if version == 40:
         # Purchase tax is a percent of the item lines; total_cost already
         # carries the computed amount, so legacy invoices default to no tax.
