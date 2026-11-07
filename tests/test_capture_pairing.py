@@ -210,7 +210,8 @@ def test_mobile_page_phone_compat_baseline(client):
     # font, tap-without-delay + unselectable controls, 44px targets.
     page = client.get("/admin/mobile").text
     assert "viewport-fit=cover" in page
-    assert "fonts.googleapis.com/css2?family=Vazirmatn" in page
+    assert "/static/css/fonts.css" in page
+    assert "fonts.googleapis.com" not in page
     assert "env(safe-area-inset-bottom" in page and "env(safe-area-inset-top" in page
     assert "touch-action:manipulation" in page
     assert "min-height:44px" in page

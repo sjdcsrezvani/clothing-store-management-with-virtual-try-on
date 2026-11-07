@@ -9,7 +9,7 @@
        their header. #}
     <title>{% block title %}{% if page_title %}{{ page_title }} — {% endif %}{{ store.name }}{% endblock %}</title>
     <meta name="csrf-token" content="{{ csrf_token }}">
-    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/fonts.css?v={{ static_version }}">
     <link rel="stylesheet" href="/static/css/style.css?v={{ static_version }}">
     <link rel="stylesheet" href="/static/css/motion.css?v={{ static_version }}">
     {# The browser's own chrome takes the theme's background, so an installed

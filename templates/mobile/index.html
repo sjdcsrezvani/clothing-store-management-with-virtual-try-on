@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 {# The capture tool the counter opens on a phone: deliberately not a page of the
-   shell — no sidebar, no breadcrumb, and no second request for the stylesheet,
-   because it has to come up on a phone over the shop's own Wi-Fi — but it wears
+   shell — no sidebar, no breadcrumb, and no second request for the 286 KB shell
+   stylesheet, only the small local font sheet — because it has to come up on a
+   phone over the shop's own Wi-Fi — but it wears
    the shop's palette like every other screen. The theme's tokens arrive on the
    <html> element below, which is where the stylesheet would have put its `:root`
    block, and every colour in this page is read from them. Persian, RTL, no
@@ -12,7 +13,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/fonts.css?v={{ static_version }}">
 {# The phone's own chrome takes the theme's background, as it does on every other
    page: an installed shortcut must not stay one colour across ten palettes. #}
 <meta name="theme-color" content="{{ theme.tokens['--bg'] }}">
