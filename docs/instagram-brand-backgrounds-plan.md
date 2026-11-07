@@ -1,6 +1,6 @@
 # Instagram Studio — Brand Backgrounds & Consistent Scenes
 
-Status: proposed, not implemented.
+Status: implemented 2026-11-07.
 Date: 2026-11-07.
 Use this file as the handoff brief; verify the current code before editing.
 

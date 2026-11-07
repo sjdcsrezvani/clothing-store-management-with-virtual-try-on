@@ -1141,6 +1141,19 @@ Create `docs/instagram-studio.md`:
 - Privacy/safety: all model references are AI-generated; no real customer photos.
 - Review-before-publish rule.
 
+### 10.7 Brand backgrounds and size wording (2026-11-07)
+
+Implemented from `docs/instagram-brand-backgrounds-plan.md`:
+
+- `InstagramBackground` per-shop table with four editable starter sets and exactly one active default.
+- `services/instagram_backgrounds.py` seeds lazily and resolves brand/generic choices.
+- Owner settings page: edit, duplicate, set default, activate/deactivate.
+- Product backgrounds apply to `hanger`, `wooden_hanger_wall`, `folded_stack`, and free campaigns; specialized scenes keep their own backgrounds.
+- Model tab merges brand backgrounds above the 21 generic locations; a brand background owns lighting and hides the lighting field.
+- Every brand background is prefixed with the fixed set-lock sentence.
+- Prompt builders no longer claim an output size. GPT edit requests use `gpt_size` (`1024x1536` / `1024x1024`); Seedream uses `seedream_size`; `normalize_image()` crops to `target`.
+- Tests cover prompt sections, background CRUD/resolution, studio UI, generation persistence, duplicate guard, and API sizes.
+
 ---
 
 ## 11. Out of scope
@@ -1161,7 +1174,7 @@ Do not build these unless the owner explicitly asks:
 - Real-person model references and consent workflows; all models are AI.
 - A second provider key or separate provider configuration.
 - A second worker loop.
-- A preset database table; presets stay in code.
+- A preset database table for scenes/aspects; scene and aspect presets stay in code. Brand backgrounds are the exception: they are per-shop DB rows.
 - A separate output table; one generation row = one image, status from the job.
 
 ---
