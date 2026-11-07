@@ -5,8 +5,27 @@ generation, so a prompt can be reproduced without a preset table. The garment
 fidelity block is deliberately repeated near the top and in the final checklist
 because image models weight recent text heavily.
 """
+from services.image_slots import (
+    MODE_GARMENT,
+    image_mode_for_family,
+    reference_views_for,
+)
+from services.instagram_product_types import (
+    FAMILY_LABELS_FA,
+    FAMILY_PROMPT_CLAUSES,
+    FEET,
+    HANDS,
+    HEADWEAR,
+    LAYERED,
+    LOWER,
+    ONE_PIECE,
+    OUTER,
+    SET,
+    SOCKS,
+    UPPER,
+)
 
-IG_PROMPT_VERSION = "2026-11-07.2"
+IG_PROMPT_VERSION = "2026-11-08.1"
 
 SCENARIO_GARMENT = "garment"
 SCENARIO_PRODUCT_BRIEF = "product_brief"
@@ -71,10 +90,13 @@ def _join_sections(sections: list[dict], separator: str = " ") -> str:
 # key -> (Persian label, English staging clause)
 SCENES = {
     "hanger": {
-        "label": "آویزان روی جاکرکش",
+        "label": "آویزان روی رگال",
         "clause": (
-            "The exact garment hangs naturally on a simple wooden hanger, centered, "
-            "retail display style, full garment visible, soft studio background."
+            "The exact garment hangs on the shop's fixed signature hanger: a natural "
+            "oak hanger with a centered brushed-brass hook, on a slim matte-black rail "
+            "fixed to the wall. The hanger, rail, and camera angle must be identical in "
+            "every image; do not change the hanger style, rail position, or angle. "
+            "Centered, full garment visible, straight-on."
         ),
     },
     "flat_lay": {
@@ -111,15 +133,18 @@ SCENES = {
     "folded_stack": {
         "label": "تاشده فروشگاهی",
         "clause": (
-            "The exact garment is neatly folded in a tidy retail stack, edges aligned, "
-            "boutique presentation, enough of the garment visible to identify it."
+            "The exact garment is neatly folded on the set's clean display surface, "
+            "edges aligned, boutique presentation, enough of the garment visible to "
+            "identify it. Do not add props."
         ),
     },
     "wooden_hanger_wall": {
-        "label": "جاکرکش چوبی روی دیوار",
+        "label": "رگال چوبی روی دیوار",
         "clause": (
-            "The exact garment hangs on a wooden hanger against a minimal wall, clean "
-            "negative space, soft daylight, full garment visible."
+            "The exact garment hangs on the same natural oak hanger with a centered "
+            "brushed-brass hook, on the same slim matte-black rail, viewed closer "
+            "against the wall with clean negative space. The hanger, rail, and camera "
+            "angle must be identical in every image; do not change them."
         ),
     },
     "packshot": {
@@ -150,6 +175,63 @@ SCENES = {
 # Order used by the UI.
 SCENE_KEYS = tuple(SCENES)
 
+# These scenes take their room/wall/floor from the selected brand background.
+ROOM_BACKGROUND_SCENES = ("hanger", "wooden_hanger_wall", "folded_stack")
+
+_HANGER_LOCK = (
+    "The hanger, rail, and camera angle must be identical in every image; do not "
+    "change the hanger style, rail position, or angle."
+)
+
+
+def _hanger_clause(scene_key: str, family: str | None) -> str:
+    """The hanger scene adapted to the product's physical staging family."""
+    if scene_key not in ("hanger", "wooden_hanger_wall"):
+        return SCENES[scene_key]["clause"]
+    if family == LOWER:
+        base = (
+            "The exact lower-body garment hangs on the shop's fixed slim matte-black "
+            "clip hanger: the waistband is held evenly by two clips and the legs hang "
+            "straight and fully visible, on the same slim matte-black rail fixed to "
+            "the wall."
+        )
+    elif family == SET:
+        base = (
+            "The exact two-piece set hangs on the shop's fixed rail: the upper-body "
+            "piece on the natural oak shoulder hanger with a centered brushed-brass "
+            "hook, and the matching lower-body piece on a slim matte-black clip hanger "
+            "directly below on the same rail, waistband clipped evenly, legs hanging "
+            "straight. Both pieces are fully visible as one coordinated set."
+        )
+    elif family == LAYERED:
+        base = (
+            "The exact layered outfit hangs on the shop's fixed signature hanger: the "
+            "under-layer top and the outer layer worn together exactly as in the "
+            "reference, on a natural oak hanger with a centered brushed-brass hook, on "
+            "a slim matte-black rail fixed to the wall. Both layers remain visible; do "
+            "not remove the under-layer or change the layering."
+        )
+    elif family == ONE_PIECE:
+        base = (
+            "The exact one-piece garment hangs on the shop's fixed signature shoulder "
+            "hanger: a natural oak hanger with a centered brushed-brass hook, on a slim "
+            "matte-black rail fixed to the wall. The piece stays one piece; do not "
+            "split it into a top and bottom or add a separate bottom."
+        )
+    else:
+        return SCENES[scene_key]["clause"]
+    camera = ("viewed closer against the wall with clean negative space"
+              if scene_key == "wooden_hanger_wall"
+              else "centered, straight-on")
+    return f"{base} {camera}. {_HANGER_LOCK}"
+
+# Repeated verbatim for every brand background so the set does not drift.
+BACKGROUND_LOCK = (
+    "Use the shop's fixed studio set. Keep the wall, floor, lighting direction, "
+    "lens, and color grade identical in every image; do not redesign, recolor, "
+    "or rearrange the set."
+)
+
 # Phase 2: a brief may run without a fixed product scene.
 NEUTRAL_CAMPAIGN_CLAUSE = (
     "Premium Instagram campaign composition for a children's clothing "
@@ -158,6 +240,8 @@ NEUTRAL_CAMPAIGN_CLAUSE = (
     "negative space where useful. No prop may cover or distract from the garment."
 )
 
+# `seedream_size` and `gpt_size` are the paid API request sizes; `target` is the
+# exact local crop. GPT models never receive the larger Seedream size.
 ASPECTS = {
     "4:5": {
         "label": "۴:۵ (فید اینستاگرام)",
@@ -433,17 +517,35 @@ FRAMING_KEYS = tuple(FRAMINGS)
 LIGHTING_KEYS = tuple(LIGHTINGS)
 COMPOSITION_KEYS = tuple(COMPOSITIONS)
 
-_REFERENCE_LINES = {
-    1: "Image 1 is the primary product photo of the exact garment.",
-    2: (
-        "Image 1 is the primary product photo. Image 2 is an additional view of the "
-        "same exact garment."
-    ),
-    3: (
-        "Image 1 is the primary product photo. Image 2 is an additional view. "
-        "Image 3 is a detail view of the same exact garment."
-    ),
-}
+def _reference_subject(family: str | None) -> str:
+    return "garment" if image_mode_for_family(family) == MODE_GARMENT else "product"
+
+
+def _chosen_views(count: int, family: str | None,
+                  views: list[str] | None) -> list[str]:
+    """The real selected slots, or the first `count` slots for count-only callers."""
+    allowed = reference_views_for(family)
+    chosen = list(views) if views is not None else allowed[:count]
+    if not chosen or len(chosen) > len(allowed) or any(
+            view not in allowed for view in chosen):
+        raise ValueError("reference views must be 1..{0}".format(len(allowed)))
+    return chosen
+
+
+def _reference_line(count: int, family: str | None = None,
+                    views: list[str] | None = None) -> str:
+    """Name only the photos that were actually selected.
+
+    The caller passes the real slots, so a variant with main + detail but no
+    back photo never gets a back-view line. Count-only callers keep the old
+    "first N slots" behavior.
+    """
+    chosen = _chosen_views(count, family, views)
+    subject = _reference_subject(family)
+    lines = [f"Image 1 is the {chosen[0]} of the exact {subject}."]
+    for index, view in enumerate(chosen[1:], start=2):
+        lines.append(f"Image {index} is the {view} of the same exact {subject}.")
+    return " ".join(lines)
 
 
 def scene_label(key: str) -> str:
@@ -474,12 +576,6 @@ def composition_label(key: str) -> str:
     return COMPOSITIONS[key]["label"]
 
 
-def _reference_line(count: int) -> str:
-    if count not in _REFERENCE_LINES:
-        raise ValueError("reference_count must be 1, 2, or 3")
-    return _REFERENCE_LINES[count]
-
-
 def _details_block(garment_details: str) -> str:
     details = (garment_details or "").strip()
     if not details:
@@ -489,6 +585,42 @@ def _details_block(garment_details: str) -> str:
         "Persian. If they conflict with the reference image, the reference image wins): "
         f'"{details}"'
     )
+
+
+def _family_section(garment_family: str | None) -> dict | None:
+    """One labeled section naming the garment type and what must stay intact."""
+    clause = FAMILY_PROMPT_CLAUSES.get(garment_family)
+    if not clause:
+        return None
+    label = FAMILY_LABELS_FA.get(garment_family, garment_family)
+    return _section(f"نوع محصول: {label}", f"Garment type ({label}): {clause}", SECTION_OPTION)
+
+
+def _is_brand_background(background: dict | None) -> bool:
+    return bool(background and (background.get("source") == "brand"
+                                or background.get("prompt_en")))
+
+
+def _background_section(background: dict | None, *,
+                        generic_prefix: bool = False) -> dict | None:
+    """One labeled section for a brand background or a generic model location.
+
+    For brand rows the raw owner prompt lives in `clause`/`prompt_en`; the lock
+    sentence is added here so every prompt path gets it exactly once.
+    """
+    if not background:
+        return None
+    label = (background.get("label") or background.get("label_fa") or "").strip()
+    clause = (background.get("clause") or background.get("prompt_en") or "").strip()
+    if not clause:
+        return None
+    if _is_brand_background(background):
+        text = f"{BACKGROUND_LOCK} {clause}"
+    elif generic_prefix:
+        text = f"Location: {clause}."
+    else:
+        text = clause
+    return _section(f"پس‌زمینه: {label}", text, SECTION_OPTION)
 
 
 # `product_name` and `variant_color` stay accepted for callers but are never
@@ -503,11 +635,20 @@ def garment_prompt_sections(
     reference_count: int,
     user_note: str = "",
     garment_details: str = "",
+    background: dict | None = None,
+    garment_family: str | None = None,
+    reference_views: list[str] | None = None,
 ) -> list[dict]:
     """The garment prompt as labeled sections, for both generation and preview."""
     scene = SCENES[scene_key]
+    scene_clause = _hanger_clause(scene_key, garment_family)
     aspect = ASPECTS[aspect_ratio]
-    reference_line = _reference_line(reference_count)
+    if reference_views is not None:
+        reference_count = len(reference_views)
+    reference_line = _reference_line(reference_count, garment_family, reference_views)
+    family_section = _family_section(garment_family)
+    background_section = (_background_section(background)
+                          if scene_key in ROOM_BACKGROUND_SCENES else None)
 
     note = (user_note or "").strip()
     note_block = ""
@@ -520,13 +661,12 @@ def garment_prompt_sections(
     return [
         _section("دستور پایه", BASE_BRIEF),
         _section("وفاداری به لباس مرجع", GARMENT_FIDELITY),
+        *([family_section] if family_section else []),
         _section("جزئیات ثبت‌شده تنوع", _details_block(garment_details), SECTION_USER),
         _section(f"عکس‌های مرجع: {reference_count}", reference_line, SECTION_OPTION),
-        _section(f"حالت عکاسی: {scene['label']}", scene["clause"], SECTION_OPTION),
+        _section(f"حالت عکاسی: {scene['label']}", scene_clause, SECTION_OPTION),
+        *([background_section] if background_section else []),
         _section(f"نسبت تصویر: {aspect['label']}", aspect["composition"], SECTION_OPTION),
-        _section("اندازه خروجی",
-                 f"Output size: {aspect['seedream_size']} ({aspect_ratio}).",
-                 SECTION_OPTION),
         _section("پرهیزها", NEGATIVES),
         _section("توضیح تکمیلی شما", note_block, SECTION_USER),
         _section("چک‌لیست نهایی", FINAL_CHECKLIST),
@@ -542,6 +682,9 @@ def build_garment_prompt(
     reference_count: int,
     user_note: str = "",
     garment_details: str = "",
+    background: dict | None = None,
+    garment_family: str | None = None,
+    reference_views: list[str] | None = None,
 ) -> str:
     """Assemble the final English prompt for one garment generation.
 
@@ -554,6 +697,9 @@ def build_garment_prompt(
         reference_count=reference_count,
         user_note=user_note,
         garment_details=garment_details,
+        background=background,
+        garment_family=garment_family,
+        reference_views=reference_views,
     ))
 
 
@@ -566,16 +712,24 @@ def product_brief_prompt_sections(
     reference_count: int,
     user_brief: str,
     garment_details: str = "",
+    background: dict | None = None,
+    garment_family: str | None = None,
+    reference_views: list[str] | None = None,
 ) -> list[dict]:
     """One product variant plus a free-text campaign brief, as labeled sections."""
     aspect = ASPECTS[aspect_ratio]
+    if reference_views is not None:
+        reference_count = len(reference_views)
     if scene_key and scene_key not in SCENES:
         raise KeyError(scene_key)
     brief = (user_brief or "").strip()
+    use_background = not scene_key or scene_key in ROOM_BACKGROUND_SCENES
+    background_section = _background_section(background) if use_background else None
+    family_section = _family_section(garment_family)
 
     if scene_key:
         scene_label_text = f"صحنه: {SCENES[scene_key]['label']}"
-        scene_clause = SCENES[scene_key]["clause"]
+        scene_clause = _hanger_clause(scene_key, garment_family)
     else:
         scene_label_text = "صحنه: بدون صحنه — کمپین آزاد"
         scene_clause = NEUTRAL_CAMPAIGN_CLAUSE
@@ -587,14 +741,14 @@ def product_brief_prompt_sections(
     return [
         _section("دستور پایه", BASE_BRIEF),
         _section("وفاداری به لباس مرجع", GARMENT_FIDELITY),
+        *([family_section] if family_section else []),
         _section("جزئیات ثبت‌شده تنوع", _details_block(garment_details), SECTION_USER),
         _section(f"عکس‌های مرجع: {reference_count}",
-                 _reference_line(reference_count), SECTION_OPTION),
-        _section(scene_label_text, scene_clause, SECTION_OPTION),
-        _section(f"نسبت تصویر: {aspect['label']}", aspect["composition"], SECTION_OPTION),
-        _section("اندازه خروجی",
-                 f"Output size: {aspect['seedream_size']} ({aspect_ratio}).",
+                 _reference_line(reference_count, garment_family, reference_views),
                  SECTION_OPTION),
+        _section(scene_label_text, scene_clause, SECTION_OPTION),
+        *([background_section] if background_section else []),
+        _section(f"نسبت تصویر: {aspect['label']}", aspect["composition"], SECTION_OPTION),
         _section("توضیح کمپین شما", brief_block, SECTION_USER),
         _section("پرهیزها", NEGATIVES),
         _section("چک‌لیست نهایی", FINAL_CHECKLIST),
@@ -610,6 +764,9 @@ def build_product_brief_prompt(
     reference_count: int,
     user_brief: str,
     garment_details: str = "",
+    background: dict | None = None,
+    garment_family: str | None = None,
+    reference_views: list[str] | None = None,
 ) -> str:
     """Phase 2 prompt: one product variant plus a free-text campaign brief.
 
@@ -626,6 +783,9 @@ def build_product_brief_prompt(
         reference_count=reference_count,
         user_brief=brief,
         garment_details=garment_details,
+        background=background,
+        garment_family=garment_family,
+        reference_views=reference_views,
     ))
 
 
@@ -655,8 +815,7 @@ def text_prompt_sections(*, user_text: str, aspect_ratio: str) -> list[dict]:
         _section("دستور پایه", TEXT_PROMPT_HEAD),
         _section("متن کمپین شما", f'"{brief}"' if brief else "", SECTION_USER),
         _section(f"نسبت تصویر: {aspect['label']}",
-                 f"Output size: {aspect['seedream_size']} ({aspect_ratio}).",
-                 SECTION_OPTION),
+                 f"Final delivery ratio: {aspect_ratio}.", SECTION_OPTION),
         _section("قواعد تصویر", TEXT_PROMPT_RULES),
     ]
 
@@ -700,8 +859,7 @@ def text_image_prompt_sections(*, user_text: str, aspect_ratio: str) -> list[dic
         _section("عکس مرجع شما", TEXT_IMAGE_REFERENCE, SECTION_OPTION),
         _section("متن کمپین شما", f'"{brief}"' if brief else "", SECTION_USER),
         _section(f"نسبت تصویر: {aspect['label']}",
-                 f"Output size: {aspect['seedream_size']} ({aspect_ratio}).",
-                 SECTION_OPTION),
+                 f"Final delivery ratio: {aspect_ratio}.", SECTION_OPTION),
         _section("قواعد تصویر", TEXT_PROMPT_RULES),
     ]
 
@@ -733,36 +891,232 @@ MODEL_TASK = (
     "watermarks, or extra people."
 )
 
-MODEL_REFERENCE = (
-    "Image 1 is the authorized AI model reference. Use it only for the model's "
-    "recognizable identity, face, hair, skin tone, and age presentation; do not "
-    "copy its clothing."
+MODEL_IDENTITY = (
+    "Image 1 is the authorized AI model reference. Use it ONLY for the model's "
+    "identity: face structure, facial features, skin tone and undertones, hair "
+    "color/texture/hairline, body shape/build, and apparent age. Ignore ALL clothing, "
+    "shoes, accessories, pose, and background in Image 1; they are not part of the "
+    "output and must never be copied. Preserve the model's face structure exactly: "
+    "same face shape, eye shape/spacing/size, nose, lip shape/fullness, brow shape, "
+    "jawline, chin, ear shape, hairline, skin tone and undertones. Preserve body "
+    "shape, build, and apparent age unchanged."
 )
 
-_MODEL_GARMENT_LINES = {
-    1: "Image 2 is the primary product photo of the exact garment.",
-    2: (
-        "Image 2 is the primary product photo. Image 3 is an additional view of "
-        "the same exact garment."
-    ),
-    3: (
-        "Image 2 is the primary product photo. Image 3 is an additional view. "
-        "Image 4 is a detail view of the same exact garment."
-    ),
+MODEL_FACE_RULE = (
+    "FACE RULE: preserve the model's face EXACTLY as in the reference photo — same "
+    "facial structure, same expression, same skin texture, same look. NO beautification, "
+    "no retouching, no skin-smoothing, no makeup, no expression change, no aging. The "
+    "model must still look like the same person."
+)
+
+MODEL_GARMENT_FIDELITY = (
+    "For the target garment, the supplied product reference image(s) are the only "
+    "source of truth. Reproduce the exact same garment, not a redesigned interpretation. "
+    "Preserve its exact visible color, silhouette, proportions, cut, neckline, sleeves, "
+    "hem, seams, closures, pockets, print, embroidery, trims, and placement of details. "
+    "A sweatshirt stays a sweatshirt (not a hoodie); a long-sleeve tee stays long-sleeve; "
+    "a one-piece stays one-piece; a crew-neck stays crew-neck. Do not add, remove, "
+    "recolor, simplify, embellish, or invent features of the target garment. Do not "
+    "substitute a similar garment. Do not add logos, labels, or text to the target "
+    "garment. The target garment must remain the clear visual subject. Other garments "
+    "may be added ONLY as the outfit rule below requires; they must be plain, coordinated, "
+    "clearly different from the target, and must never compete with or copy it."
+)
+
+MODEL_NEGATIVES = (
+    "Avoid: altered target-garment design or color; invented target-garment seams, "
+    "buttons, pockets, prints, labels, or logos; missing target-garment details; a second "
+    "copy of the target garment; matching clone outfits made from the target's fabric or "
+    "print; bare legs, underwear, or a missing lower body when the target is an "
+    "upper-body garment; missing shoes; an underdressed model; extra unrelated garments "
+    "that distract from the target; duplicated limbs; distorted anatomy; floating "
+    "garment; impossible fabric physics; cluttered background; props covering the "
+    "product; text; watermark; signature; fake brand marks; plastic skin; cartoon or CGI look."
+)
+
+MODEL_EDIT_REMINDER = (
+    "Return a new edited photograph: the model must be wearing the exact target garment "
+    "and a complete coordinated outfit; never return the model reference unchanged."
+)
+
+_OUTFIT_SCOPE = (
+    "This rule controls clothing only; keep the selected pose, framing, background, "
+    "and lighting unchanged."
+)
+
+MODEL_OUTFIT_UPPER = (
+    "OUTFIT RULE (this is critical — do NOT ignore): The target garment is a single "
+    "UPPER-BODY piece (top / t-shirt / shirt / sweatshirt / hoodie / sweater). Reproduce "
+    "it exactly. Build a full coordinated outfit around it. The bottom (pants / shorts / "
+    "skirt) must ALWAYS be present and must NEVER match the target's fabric, color, or "
+    "print; it is always a different category, different fabric, and different color. "
+    "T-shirt → jeans, chino shorts, or linen pants. Sweatshirt → jeans, chinos, or cargo "
+    "pants (never sweatpants). Hoodie → jeans or joggers (never matching hoodie-fabric "
+    "pants). Add shoes that complement the bottom — clean sneakers with jeans, sandals or "
+    "canvas shoes with shorts. No recolored clones, no matching-sweatsuit looks. Never "
+    "leave the lower body bare: no underwear-only, no missing bottom, no missing shoes. "
+    "Choose age-appropriate, modest clothing for the model's age. " + _OUTFIT_SCOPE
+)
+
+MODEL_OUTFIT_LOWER = (
+    "OUTFIT RULE (this is critical — do NOT ignore): The target garment is a single "
+    "LOWER-BODY piece (jeans / pants / shorts / skirt). Reproduce its category, cut, "
+    "length, fit, color, fabric, wash, and print exactly. Build a full coordinated outfit "
+    "around it. The top must ALWAYS be present and must NEVER match the bottom's fabric or "
+    "print, and must not echo its color head-to-toe (no denim-on-denim, no matching "
+    "tracksuit). The top is always a different category, different fabric, and different "
+    "color. Jeans → white or neutral t-shirt, henley, or plain shirt. Chinos/cargo → plain "
+    "t-shirt or pullover sweater. Shorts → t-shirt or polo. Skirt → soft blouse or plain "
+    "t-shirt. Add shoes that complement the look — clean sneakers with jeans, sandals or "
+    "canvas shoes with shorts, ballet flats with skirts. Only one bottom on the model — "
+    "never two bottoms. Choose age-appropriate, modest clothing. " + _OUTFIT_SCOPE
+)
+
+MODEL_OUTFIT_SET = (
+    "OUTFIT RULE (this is critical — do NOT ignore): The target is a complete two-piece "
+    "SET — top + bottom together. Reproduce the ENTIRE set exactly as shown — same top, "
+    "same bottom, same fabric, same color, same print, same proportions. Do NOT add another "
+    "top or another bottom, do NOT swap the set's bottom for jeans or anything else, and "
+    "do NOT add a piece made from the set's fabric. The ONLY thing you may change is the "
+    "SHOES: pick clean sneakers, canvas shoes, or sandals that complement the set. Choose "
+    "age-appropriate footwear. " + _OUTFIT_SCOPE
+)
+
+MODEL_OUTFIT_LAYERED = (
+    "OUTFIT RULE (this is critical — do NOT ignore): The target is a layered outfit — an "
+    "OUTER upper piece (jacket / hoodie / cardigan / coat) over a visible INNER piece "
+    "(t-shirt / shirt). Reproduce BOTH upper pieces exactly — the outer's cut, fabric, "
+    "print and color, and the inner layer exactly as visible at the neckline, cuffs, and "
+    "hem. Build a full coordinated outfit around them. The bottom must NEVER match either "
+    "upper layer's fabric or color; it is always a different category, different fabric, "
+    "and different color. Hoodie + tee → jeans or chinos (never matching-print sweatpants). "
+    "Jacket + tee → slim jeans, chinos, or cargo. Add shoes that fit the look — clean "
+    "sneakers or boots. Never drop the inner layer, never fuse the two layers into one "
+    "garment, never add a third upper layer, never add a matching tracksuit. Choose "
+    "age-appropriate, modest clothing. " + _OUTFIT_SCOPE
+)
+
+MODEL_OUTFIT_OUTER = (
+    "OUTFIT RULE (this is critical — do NOT ignore): The target is an outer layer (jacket "
+    "/ coat / cardigan). Reproduce it exactly — same front opening, collar, cuffs, pockets, "
+    "hem, fabric, print, and color. If the product photos show an inner layer, keep it "
+    "exactly as visible. If no inner layer is visible, add ONE plain neutral inner top "
+    "(t-shirt or shirt) that is clearly different from the outer's fabric, color, and "
+    "print; never leave the torso bare under the jacket. Add a coordinated bottom and shoes "
+    "that never match the outer's fabric or print — jeans or chinos with a casual jacket, "
+    "tailored trousers with a coat. Do not add a matching set, do not add a second outer "
+    "layer, and do not cover the target with another garment. Choose age-appropriate, "
+    "modest clothing. " + _OUTFIT_SCOPE
+)
+
+MODEL_OUTFIT_ONE_PIECE = (
+    "OUTFIT RULE (this is critical — do NOT ignore): The target is a ONE-PIECE garment "
+    "(dress / romper / jumpsuit / overall / pinafore), and may include the visible "
+    "under-layer shown in the product photos. Reproduce the whole piece exactly — shape, "
+    "cut, straps, sleeves, length, print, and color — and keep any visible under-layer "
+    "exactly as shown. It must stay ONE piece on the model: NEVER split it into a separate "
+    "top and bottom, NEVER invent pants beneath it, NEVER add a t-shirt or shorts that the "
+    "product photos do not show. Add shoes that suit the style — ballet flats, clean "
+    "sneakers, or sandals. If the legs need covering, use simple neutral tights or "
+    "leggings — never the garment's own fabric or print. Choose age-appropriate, modest "
+    "styling. " + _OUTFIT_SCOPE
+)
+
+MODEL_OUTFIT_HEADWEAR = (
+    "OUTFIT RULE (this is critical — do NOT ignore): The target is headwear. Place the "
+    "exact hat on the model's head — same crown, brim, silhouette, angle, fabric, print, "
+    "and color. Build a complete, modest, age-appropriate outfit around it: a simple top, "
+    "a coordinated bottom, and shoes. The outfit must never match the hat's fabric or "
+    "print and must not hide or compete with the hat. Do not add a second hat. "
+    + _OUTFIT_SCOPE
+)
+
+MODEL_OUTFIT_HANDS = (
+    "OUTFIT RULE (this is critical — do NOT ignore): The target is a pair of gloves. Both "
+    "gloves must be worn on the correct hands, matching left/right, with the exact cuffs, "
+    "seams, and prints visible. Build a complete, modest, age-appropriate outfit around "
+    "them: top, bottom, and shoes. Sleeves must end before the glove cuffs or be pushed up "
+    "so the gloves stay clearly visible; do not hide the gloves in pockets or behind the "
+    "body. The outfit must never match the gloves' fabric or print. " + _OUTFIT_SCOPE
+)
+
+MODEL_OUTFIT_FEET = (
+    "OUTFIT RULE (this is critical — do NOT ignore): The target is a pair of shoes. Both "
+    "shoes must be worn on the correct feet, matching left/right, with the exact toe shape, "
+    "sole, laces, straps, and side profile visible. Build a complete, modest, "
+    "age-appropriate outfit around them: top, bottom, and socks if appropriate. The "
+    "bottom's hem must not cover or hide the shoes; choose shorts, a skirt, cropped pants, "
+    "or a length that keeps both shoes clearly visible. The outfit must never match the "
+    "shoes' fabric or print. " + _OUTFIT_SCOPE
+)
+
+MODEL_OUTFIT_SOCKS = (
+    "OUTFIT RULE (this is critical — do NOT ignore): The target is a pair of socks. Both "
+    "socks must be worn, matching left/right, with the exact cuff, heel, toe, and pattern "
+    "visible. Build a complete, modest, age-appropriate outfit around them. Choose shorts, "
+    "a skirt, cropped pants, or a hem length that reveals the socks; shoes may be worn but "
+    "must not hide the sock cuff, heel, or pattern. The outfit must never match the socks' "
+    "fabric or print. " + _OUTFIT_SCOPE
+)
+
+MODEL_OUTFIT_GENERIC = (
+    "OUTFIT RULE (this is critical — do NOT ignore): Reproduce the exact target product "
+    "from the product photos and place it naturally on the model (worn, held, or carried "
+    "as appropriate). Build a simple, complete, modest, age-appropriate outfit around it: "
+    "top, bottom, and shoes. The added clothing must be plain and coordinated, must never "
+    "match or copy the target's fabric, print, or color, and must never hide or compete "
+    "with the target. Never leave the lower body bare and never leave the model "
+    "underdressed. " + _OUTFIT_SCOPE
+)
+
+MODEL_OUTFIT_RULES = {
+    UPPER: MODEL_OUTFIT_UPPER,
+    LOWER: MODEL_OUTFIT_LOWER,
+    SET: MODEL_OUTFIT_SET,
+    LAYERED: MODEL_OUTFIT_LAYERED,
+    OUTER: MODEL_OUTFIT_OUTER,
+    ONE_PIECE: MODEL_OUTFIT_ONE_PIECE,
+    HEADWEAR: MODEL_OUTFIT_HEADWEAR,
+    HANDS: MODEL_OUTFIT_HANDS,
+    FEET: MODEL_OUTFIT_FEET,
+    SOCKS: MODEL_OUTFIT_SOCKS,
 }
 
+MODEL_OUTFIT_LABELS_FA = {
+    UPPER: "بالاتنه — پایین‌تنه و کفش اضافه شود",
+    LOWER: "پایین‌تنه — بالاتنه و کفش اضافه شود",
+    SET: "ست دو تکه — فقط کفش هماهنگ",
+    LAYERED: "ست لایه‌دار — پایین‌تنه و کفش",
+    OUTER: "کاپشن/ژاکت — تی‌شرت زیر، پایین‌تنه و کفش",
+    ONE_PIECE: "یکسره — بدون شلوار، کفش/جوراب‌شلواری",
+}
+
+
+def outfit_rule(family: str | None) -> str:
+    return MODEL_OUTFIT_RULES.get(family, MODEL_OUTFIT_GENERIC)
+
+
+def _model_reference_line(garment_reference_count: int,
+                          garment_family: str | None = None,
+                          views: list[str] | None = None) -> str:
+    """The product images start at Image 2; absent slots get no line."""
+    chosen = _chosen_views(garment_reference_count, garment_family, views)
+    subject = _reference_subject(garment_family)
+    lines = []
+    for index, view in enumerate(chosen):
+        lines.append(f"Image {index + 2} is the {view} of the exact {subject}.")
+    return " ".join(lines)
+
 MODEL_FINAL_CHECKLIST = (
-    "Before finishing, verify: the model's identity and apparent age match the "
-    "reference; the garment color, silhouette, print, and trims match; the garment "
-    "is correctly fitted and visually dominant; hands and anatomy are realistic; "
-    "there is only one person; the background is clean; there is no text or watermark."
+    "Before finishing, verify: the model's identity, face structure, expression, and "
+    "apparent age match the reference; the face is not beautified, retouched, made up, or "
+    "aged; the target garment color, silhouette, print, and trims match; the target garment "
+    "is correctly fitted and visually dominant; the outfit is complete and modest — for a "
+    "top-only product a coordinated bottom and shoes are present, with no bare legs or "
+    "underwear; added pieces coordinate with the target and never match its fabric or "
+    "print; there is only one person; hands and anatomy are realistic; the background is "
+    "clean; there is no text or watermark."
 )
-
-
-def _model_reference_line(garment_reference_count: int) -> str:
-    if garment_reference_count not in _MODEL_GARMENT_LINES:
-        raise ValueError("garment_reference_count must be 1, 2, or 3")
-    return _MODEL_GARMENT_LINES[garment_reference_count]
 
 
 def _model_age_rule(age: int) -> str:
@@ -801,15 +1155,36 @@ def model_prompt_sections(
     user_note: str = "",
     garment_details: str = "",
     show_full_garment: bool = True,
+    background: dict | None = None,
+    garment_family: str | None = None,
+    outfit_family: str | None = None,
+    reference_views: list[str] | None = None,
 ) -> list[dict]:
     """The model-scene prompt as labeled sections, for generation and preview."""
     aspect = ASPECTS[aspect_ratio]
     pose = POSES[pose_key]
-    background = BACKGROUNDS[background_key]
     framing = FRAMINGS[framing_key]
-    lighting = LIGHTINGS[lighting_key]
     composition = COMPOSITIONS[composition_key]
-    garment_line = _model_reference_line(garment_reference_count)
+    if reference_views is not None:
+        garment_reference_count = len(reference_views)
+    garment_line = _model_reference_line(garment_reference_count, garment_family,
+                                         reference_views)
+    prompt_family = outfit_family if outfit_family is not None else garment_family
+    family_section = _family_section(prompt_family)
+    brand_background = _is_brand_background(background)
+    if brand_background:
+        background_section = _background_section(background)
+        lighting_sections = []  # the brand background owns lighting and lens
+    else:
+        location = BACKGROUNDS[background_key]
+        lighting = LIGHTINGS[lighting_key]
+        background_section = _section(
+            f"پس‌زمینه: {location['label']}",
+            f"Location: {location['clause']}.", SECTION_OPTION)
+        lighting_sections = [
+            _section(f"نور: {lighting['label']}",
+                     f"Lighting: {lighting['clause']}", SECTION_OPTION)
+        ]
 
     if framing_key == "detail_crop":
         visibility = (
@@ -831,16 +1206,17 @@ def model_prompt_sections(
     if note:
         note_block = (
             "Additional creative direction from the shop (must not override model "
-            "identity, garment fidelity, composition, or safety rules): "
-            f'"{note}"'
+            "identity, face fidelity, garment fidelity, outfit completeness, composition, "
+            f'or safety rules): "{note}"'
         )
 
     return [
         _section("دستور پایه", MODEL_BASE_BRIEF),
         _section("وظیفه صحنه", MODEL_TASK),
-        _section("وفاداری به لباس مرجع", GARMENT_FIDELITY),
+        _section("وفاداری به لباس مرجع", MODEL_GARMENT_FIDELITY),
+        *([family_section] if family_section else []),
         _section("جزئیات ثبت‌شده تنوع", _details_block(garment_details), SECTION_USER),
-        _section("عکس مرجع مدل", MODEL_REFERENCE),
+        _section("هویت مدل از عکس مرجع", MODEL_IDENTITY),
         _section(f"عکس‌های محصول: {garment_reference_count}",
                  garment_line, SECTION_OPTION),
         _section(f"مدل: {model_age} ساله {model_gender}",
@@ -848,22 +1224,20 @@ def model_prompt_sections(
                  "AI model library.", SECTION_OPTION),
         _section("قاعده سنی مدل", _model_age_rule(model_age)),
         _section(f"ژست: {pose['label']}", f"Pose: {pose['clause']}.", SECTION_OPTION),
-        _section(f"پس‌زمینه: {background['label']}",
-                 f"Location: {background['clause']}.", SECTION_OPTION),
+        *([background_section] if background_section else []),
         _section(f"کادر: {framing['label']}", f"Framing: {framing['clause']}",
                  SECTION_OPTION),
-        _section(f"نور: {lighting['label']}", f"Lighting: {lighting['clause']}",
-                 SECTION_OPTION),
+        *lighting_sections,
         _section(f"ترکیب‌بندی: {composition['label']}",
                  f"Composition: {composition['clause']}", SECTION_OPTION),
         _section("نمای لباس", visibility, SECTION_OPTION),
         _section(f"نسبت تصویر: {aspect['label']}", aspect["composition"], SECTION_OPTION),
-        _section("اندازه خروجی",
-                 f"Output size: {aspect['seedream_size']} ({aspect_ratio}).",
-                 SECTION_OPTION),
-        _section("پرهیزها", NEGATIVES),
+        _section("قاعده چهره", MODEL_FACE_RULE),
+        _section("پرهیزها", MODEL_NEGATIVES),
         _section("توضیح تکمیلی شما", note_block, SECTION_USER),
         _section("چک‌لیست نهایی", MODEL_FINAL_CHECKLIST),
+        _section("قاعده ست کامل", outfit_rule(prompt_family), SECTION_OPTION),
+        _section("یادآوری ویرایش", MODEL_EDIT_REMINDER),
     ]
 
 
@@ -883,6 +1257,10 @@ def build_model_prompt(
     user_note: str = "",
     garment_details: str = "",
     show_full_garment: bool = True,
+    background: dict | None = None,
+    garment_family: str | None = None,
+    outfit_family: str | None = None,
+    reference_views: list[str] | None = None,
 ) -> str:
     """Phase 3 prompt: the exact garment on one vetted AI model profile.
 
@@ -903,4 +1281,8 @@ def build_model_prompt(
         user_note=user_note,
         garment_details=garment_details,
         show_full_garment=show_full_garment,
+        background=background,
+        garment_family=garment_family,
+        outfit_family=outfit_family,
+        reference_views=reference_views,
     ))

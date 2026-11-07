@@ -111,6 +111,7 @@ PARENTS: tuple[tuple[str, str, str], ...] = (
     ("/admin/tier-downgrades", "customers", "کاهش سطح"),
     ("/admin/settings/appearance", "settings", "ظاهر فروشگاه"),
     ("/admin/settings/shop-models", "settings", "مدل‌های فروشگاه"),
+    ("/admin/settings/instagram-backgrounds", "settings", "پس‌زمینه‌های اینستاگرام"),
     ("/admin/try-on/saved", "tryon", "تصاویر ذخیره‌شده"),
     ("/admin/instagram-studio/", "instagram-studio", "استودیو اینستاگرام"),
     ("/admin/staff/", "staff", "کارمند"),

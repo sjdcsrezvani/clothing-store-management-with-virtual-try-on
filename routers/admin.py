@@ -141,6 +141,13 @@ from services.payroll import (create_salary_payment, current_period_key,
                              run_monthly_payday, void_salary_payment)
 from services.themes import THEMES, DEFAULT_THEME_ID, THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY, DEFAULT_CUSTOM_PRIMARY, DEFAULT_CUSTOM_SECONDARY, CUSTOM_FONT_KEY, CUSTOM_RADIUS_KEY, CUSTOM_DARK_KEY, CUSTOM_PRIMARY_DARK_KEY, CUSTOM_SECONDARY_DARK_KEY, DEFAULT_CUSTOM_FONT, DEFAULT_CUSTOM_RADIUS, DEFAULT_CUSTOM_DARK, DEFAULT_CUSTOM_PRIMARY_DARK, DEFAULT_CUSTOM_SECONDARY_DARK, CUSTOM_FONTS, CUSTOM_RADII, FONT_SIZE_KEY, DENSITY_KEY, DEFAULT_FONT_SIZE, DEFAULT_DENSITY, FONT_SIZES, DENSITIES, all_theme_previews, validate_hex, contrast_ratio, get_theme, invalidate_theme_cache, migrate_retired_theme
 from services.shop_models import ensure_shop_models, save_model_image, delete_model_image
+from services.instagram_backgrounds import (
+    duplicate_background,
+    list_backgrounds,
+    save_background,
+    set_default as set_default_background,
+    toggle_active as toggle_background,
+)
 
 router = APIRouter(prefix="/admin")
 
@@ -2453,6 +2460,112 @@ async def admin_shop_model_upload(request: Request, db: Session = Depends(get_db
     return RedirectResponse(
         url="/admin/settings/shop-models?msg=" + quote_plus("عکس مدل ذخیره شد."),
         status_code=303)
+
+
+@router.get("/settings/instagram-backgrounds", response_class=HTMLResponse)
+async def admin_instagram_backgrounds(request: Request, db: Session = Depends(get_db)):
+    """Owner-only library of per-shop room presets."""
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    rows = list_backgrounds(db, active_only=False)
+    from services.instagram_backgrounds import STARTER_BACKGROUNDS
+    return templates.TemplateResponse(
+        request, "admin/settings_instagram_backgrounds.html", {
+            "backgrounds": rows,
+            "starter_prompts": {item["key"]: item["prompt_en"]
+                                for item in STARTER_BACKGROUNDS},
+            "msg": request.query_params.get("msg", ""),
+            "err": request.query_params.get("err", ""),
+        })
+
+
+def _background_redirect(msg: str = "", err: str = "") -> RedirectResponse:
+    base = "/admin/settings/instagram-backgrounds"
+    if err:
+        return RedirectResponse(url=f"{base}?err={quote_plus(err)}", status_code=303)
+    return RedirectResponse(url=f"{base}?msg={quote_plus(msg)}", status_code=303)
+
+
+def _posted_check(form, name: str) -> bool:
+    return str(form.get(name) or "").strip().lower() in {"1", "on", "true", "yes"}
+
+
+@router.post("/settings/instagram-backgrounds/save", response_class=HTMLResponse)
+async def admin_instagram_background_save(request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    form = await request.form()
+    key = str(form.get("key") or "").strip() or None
+    try:
+        row = save_background(
+            db,
+            key=key,
+            label_fa=str(form.get("label_fa") or ""),
+            description_fa=str(form.get("description_fa") or ""),
+            prompt_en=str(form.get("prompt_en") or ""),
+            is_active=_posted_check(form, "is_active"),
+            is_default=True if _posted_check(form, "is_default") else None,
+            staff_id=guard.id,
+        )
+    except ValueError as error:
+        return _background_redirect(err=str(error))
+
+    log_action(db, "instagram_background_save", row.label_fa, request=request,
+               target_type="instagram_background", target_id=row.id,
+               after={"active": row.is_active, "default": row.is_default})
+    return _background_redirect(msg="پس‌زمینه ذخیره شد.")
+
+
+@router.post("/settings/instagram-backgrounds/default", response_class=HTMLResponse)
+async def admin_instagram_background_default(request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    form = await request.form()
+    try:
+        row = set_default_background(db, str(form.get("key") or ""), guard.id)
+    except ValueError as error:
+        return _background_redirect(err=str(error))
+
+    log_action(db, "instagram_background_default", row.label_fa, request=request,
+               target_type="instagram_background", target_id=row.id)
+    return _background_redirect(msg="پس‌زمینه پیش‌فرض تغییر کرد.")
+
+
+@router.post("/settings/instagram-backgrounds/toggle", response_class=HTMLResponse)
+async def admin_instagram_background_toggle(request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    form = await request.form()
+    try:
+        row = toggle_background(db, str(form.get("key") or ""), guard.id)
+    except ValueError as error:
+        return _background_redirect(err=str(error))
+
+    log_action(db, "instagram_background_toggle",
+               f"{row.label_fa}: {'فعال' if row.is_active else 'غیرفعال'}",
+               request=request, target_type="instagram_background", target_id=row.id)
+    return _background_redirect(
+        msg="پس‌زمینه فعال شد." if row.is_active else "پس‌زمینه غیرفعال شد.")
+
+
+@router.post("/settings/instagram-backgrounds/duplicate", response_class=HTMLResponse)
+async def admin_instagram_background_duplicate(request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    form = await request.form()
+    try:
+        row = duplicate_background(db, str(form.get("key") or ""), guard.id)
+    except ValueError as error:
+        return _background_redirect(err=str(error))
+
+    log_action(db, "instagram_background_duplicate", row.label_fa, request=request,
+               target_type="instagram_background", target_id=row.id)
+    return _background_redirect(msg="نسخه قابل ویرایش ساخته شد.")
 
 
 @router.post("/settings", response_class=HTMLResponse)

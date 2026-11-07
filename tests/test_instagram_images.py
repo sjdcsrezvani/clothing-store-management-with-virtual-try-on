@@ -108,6 +108,34 @@ def test_seedream_retries_at_2k_when_the_custom_size_is_rejected(monkeypatch, tm
     assert _size(out) == (1440, 1800)
 
 
+def test_gpt_edit_requests_use_the_gpt_size_for_every_aspect(monkeypatch, tmp_path):
+    import base64
+
+    import services.instagram_gen as instagram_gen
+    from services.instagram_prompts import ASPECTS
+
+    reference = tmp_path / "reference.jpg"
+    reference.write_bytes(_jpeg(200, 200))
+    encoded = base64.b64encode(_jpeg(1024, 1024)).decode("ascii")
+
+    for ratio, aspect in ASPECTS.items():
+        client = _FakeClient([
+            _FakeResponse(200, "", {"data": [{"b64_json": encoded}]}),
+        ])
+        monkeypatch.setattr(instagram_gen.httpx, "Client", lambda **kwargs: client)
+
+        out = instagram_gen.generate_instagram_image(
+            prompt="prompt", reference_paths=[str(reference)], aspect_ratio=ratio,
+            provider="avalai", model="gpt-image-2.5-flare", api_key="sk-test",
+        )
+
+        assert client.urls[0].endswith("/images/edits")
+        assert client.posts[0]["data"]["size"] == aspect["gpt_size"], ratio
+        assert aspect["seedream_size"] not in client.posts[0]["data"].values(), ratio
+        assert client.posts[0]["files"][0][0] == "image[]"
+        assert _size(out) == TARGET_SIZES[ratio]
+
+
 def test_text_generation_posts_json_without_references(monkeypatch):
     import base64
 

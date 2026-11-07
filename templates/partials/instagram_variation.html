@@ -18,6 +18,9 @@
     {% endif %}
     {% if variation.model_slot %}
     <input type="hidden" name="model_slot" value="{{ variation.model_slot }}">
+    {% if variation.outfit_category %}
+    <input type="hidden" name="outfit_category" value="{{ variation.outfit_category }}">
+    {% endif %}
     <input type="hidden" name="pose_key" value="{{ variation.pose_key }}">
     <input type="hidden" name="background_key" value="{{ variation.background_key }}">
     <input type="hidden" name="framing_key" value="{{ variation.framing_key }}">

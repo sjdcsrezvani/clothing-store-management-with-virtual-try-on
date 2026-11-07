@@ -1,12 +1,18 @@
 """Prompt builder contract for Instagram Studio Phase 1."""
 from services.instagram_prompts import (
     ASPECTS,
+    BACKGROUND_LOCK,
     BACKGROUNDS,
     COMPOSITIONS,
     FRAMINGS,
     IG_PROMPT_VERSION,
     LIGHTINGS,
+    MODEL_EDIT_REMINDER,
+    MODEL_FACE_RULE,
+    MODEL_IDENTITY,
+    MODEL_OUTFIT_RULES,
     POSES,
+    ROOM_BACKGROUND_SCENES,
     SCENES,
     aspect_label,
     build_garment_prompt,
@@ -15,13 +21,15 @@ from services.instagram_prompts import (
     build_text_image_prompt,
     build_text_prompt,
     garment_prompt_sections,
+    model_prompt_sections,
     scene_label,
     text_image_prompt_sections,
 )
 
 
 def _prompt(scene="packshot", aspect="4:5", refs=1, note="", details="",
-            product_name="", variant_color=""):
+            product_name="", variant_color="", background=None, family=None,
+            reference_views=None):
     return build_garment_prompt(
         product_name=product_name,
         variant_color=variant_color,
@@ -30,11 +38,14 @@ def _prompt(scene="packshot", aspect="4:5", refs=1, note="", details="",
         reference_count=refs,
         user_note=note,
         garment_details=details,
+        background=background,
+        garment_family=family,
+        reference_views=reference_views,
     )
 
 
 def _brief_prompt(scene="", brief="soft morning light, minimal beige studio", details="", aspect="4:5",
-                  product_name="", variant_color=""):
+                  product_name="", variant_color="", background=None, family=None):
     return build_product_brief_prompt(
         product_name=product_name,
         variant_color=variant_color,
@@ -43,6 +54,8 @@ def _brief_prompt(scene="", brief="soft morning light, minimal beige studio", de
         reference_count=1,
         user_brief=brief,
         garment_details=details,
+        background=background,
+        garment_family=family,
     )
 
 
@@ -93,15 +106,15 @@ def test_reference_mapping_is_generic_and_deterministic():
     assert "Image 2" not in one
 
     two = _prompt(refs=2)
-    assert "Image 2 is an additional view" in two
+    assert "Image 2 is the back view" in two
     assert "Image 3" not in two
 
     three = _prompt(refs=3)
-    assert "Image 3 is a detail view" in three
-    assert "back view" not in three.lower()
+    assert "Image 2 is the back view" in three
+    assert "Image 3 is the detail close-up" in three
 
 
-def test_aspect_ratios_have_exact_sizes_and_composition_clauses():
+def test_aspect_ratios_keep_the_composition_clause_without_a_size_claim():
     assert ASPECTS["4:5"]["seedream_size"] == "1440x1800"
     assert ASPECTS["1:1"]["seedream_size"] == "1440x1440"
     assert ASPECTS["9:16"]["seedream_size"] == "1440x2560"
@@ -110,7 +123,8 @@ def test_aspect_ratios_have_exact_sizes_and_composition_clauses():
     for ratio, entry in ASPECTS.items():
         prompt = _prompt(aspect=ratio)
         assert entry["composition"] in prompt, ratio
-        assert entry["seedream_size"] in prompt
+        assert entry["seedream_size"] not in prompt, ratio
+        assert "Output size" not in prompt, ratio
 
 
 def test_user_note_is_delimited_and_cannot_override_fidelity():
@@ -181,11 +195,11 @@ def test_model_prompt_maps_image_one_to_the_model_and_later_images_to_the_garmen
     assert "Image 3" not in one
 
     two = _model_prompt(garment_reference_count=2)
-    assert "Image 3 is an additional view" in two
+    assert "Image 3 is the back view" in two
     assert "Image 4" not in two
 
     three = _model_prompt(garment_reference_count=3)
-    assert "Image 4 is a detail view" in three
+    assert "Image 4 is the detail close-up" in three
 
 
 def test_model_prompt_carries_every_selected_photography_clause():
@@ -203,10 +217,12 @@ def test_model_prompt_carries_every_selected_photography_clause():
 def test_model_prompt_keeps_the_garment_fidelity_and_dominance_rules():
     prompt = _model_prompt()
     assert "only source of truth" in prompt
-    assert "The garment must remain the clear visual subject" in prompt
+    assert "The target garment must remain the clear visual subject" in prompt
     assert "Do not add text, logos, watermarks, or extra people" in prompt
     assert "correctly fitted and visually dominant" in prompt
     assert "Avoid:" in prompt
+    assert MODEL_IDENTITY in prompt
+    assert MODEL_FACE_RULE in prompt
 
 
 def test_model_prompt_age_rules_separate_children_teens_and_adults():
@@ -237,6 +253,76 @@ def test_model_detail_crop_does_not_claim_the_full_garment_is_visible():
     prompt = _model_prompt(framing_key="detail_crop", show_full_garment=True)
     assert "designated detail shot" in prompt
     assert "full garment must remain visible" not in prompt
+
+
+def test_model_prompt_completes_the_outfit_for_each_family():
+    upper = _model_prompt(garment_family="upper")
+    assert "UPPER-BODY piece" in upper
+    assert "must ALWAYS be present" in upper
+    assert "no missing bottom" in upper
+    assert "no missing shoes" in upper
+
+    lower = _model_prompt(garment_family="lower")
+    assert "LOWER-BODY piece" in lower
+    assert "Only one bottom on the model" in lower
+
+    set_prompt = _model_prompt(garment_family="set")
+    assert "complete two-piece SET" in set_prompt
+    assert "ONLY thing you may change is the SHOES" in set_prompt
+
+    layered = _model_prompt(garment_family="layered")
+    assert "layered outfit" in layered
+    assert "Never drop the inner layer" in layered
+    assert "different category, different fabric" in layered
+
+    outer = _model_prompt(garment_family="outer")
+    assert "outer layer" in outer
+    assert "ONE plain neutral inner top" in outer
+    assert "never leave the torso bare" in outer
+
+    one_piece = _model_prompt(garment_family="one_piece")
+    assert "ONE-PIECE garment" in one_piece
+    assert "NEVER invent pants beneath it" in one_piece
+
+    for family in ("headwear", "hands", "feet", "socks"):
+        assert MODEL_OUTFIT_RULES[family] in _model_prompt(garment_family=family)
+
+    unknown = _model_prompt()
+    assert MODEL_OUTFIT_RULES["upper"] not in unknown
+    assert "Reproduce the exact target product" in unknown
+
+
+def test_model_prompt_scopes_fidelity_and_keeps_outfit_rule_last():
+    prompt = _model_prompt(garment_family="upper")
+    assert "Other garments may be added ONLY as the outfit rule" in prompt
+    assert "extra pieces unless they are explicitly visible" not in prompt
+    assert prompt.index("Pose:") < prompt.index("FACE RULE:")
+    assert prompt.index("Before finishing, verify:") < prompt.index("OUTFIT RULE")
+    assert prompt.endswith(MODEL_EDIT_REMINDER)
+
+    product_only = _prompt()
+    assert "extra pieces unless they are explicitly visible" in product_only
+    assert "extra garments" in product_only
+
+
+def test_model_prompt_outfit_override_replaces_the_detected_rule():
+    prompt = _model_prompt(garment_family="upper", outfit_family="one_piece")
+    assert "ONE-PIECE garment" in prompt
+    assert "UPPER-BODY piece" not in prompt
+    labels = [section["label"] for section in model_prompt_sections(
+        model_age=7, model_gender="girl", pose_key="standing_front",
+        background_key="studio_white", framing_key="full_body",
+        lighting_key="soft_daylight", composition_key="centered_catalog",
+        aspect_ratio="4:5", garment_reference_count=1,
+        garment_family="upper", outfit_family="one_piece")]
+    assert "نوع محصول: یکسره" in labels
+
+
+def test_one_piece_hanger_and_family_clause_never_split_the_garment():
+    prompt = _prompt(scene="hanger", family="one_piece")
+    assert "one-piece garment hangs" in prompt
+    assert "do not split it into a top and bottom" in prompt
+    assert "two-piece set" not in prompt
 
 
 def test_model_prompt_rejects_unknown_keys_and_missing_garment_references():
@@ -337,3 +423,185 @@ def test_text_image_prompt_requires_a_brief_and_a_known_aspect():
         build_text_image_prompt(user_text="   ", aspect_ratio="4:5")
     with pytest.raises(KeyError):
         build_text_image_prompt(user_text="a valid campaign brief", aspect_ratio="16:9")
+
+
+BRAND_BACKGROUND = {
+    "key": "starter_ivory",
+    "label": "استودیو کرم",
+    "prompt_en": "Walls: warm ivory limewash plaster. Floor: pale oak.",
+    "source": "brand",
+}
+
+
+def test_hanger_scenes_use_the_same_signature_hanger_and_rail():
+    assert SCENES["hanger"]["label"] == "آویزان روی رگال"
+    assert SCENES["wooden_hanger_wall"]["label"] == "رگال چوبی روی دیوار"
+    for scene in ("hanger", "wooden_hanger_wall"):
+        prompt = _prompt(scene=scene)
+        assert "natural oak hanger" in prompt, scene
+        assert "brushed-brass hook" in prompt, scene
+        assert "matte-black rail" in prompt, scene
+        assert "identical in every image" in prompt, scene
+
+
+def test_room_scenes_carry_the_brand_background_and_its_lock():
+    assert ROOM_BACKGROUND_SCENES == ("hanger", "wooden_hanger_wall", "folded_stack")
+    for scene in ROOM_BACKGROUND_SCENES:
+        prompt = _prompt(scene=scene, background=BRAND_BACKGROUND)
+        assert BACKGROUND_LOCK in prompt, scene
+        assert BRAND_BACKGROUND["prompt_en"] in prompt, scene
+
+    sections = garment_prompt_sections(
+        scene_key="hanger", aspect_ratio="4:5", reference_count=1,
+        background=BRAND_BACKGROUND)
+    labels = {section["label"]: section for section in sections}
+    assert labels["پس‌زمینه: استودیو کرم"]["kind"] == "option"
+    assert BRAND_BACKGROUND["prompt_en"] in labels["پس‌زمینه: استودیو کرم"]["text"]
+
+
+def test_specialized_scenes_ignore_the_brand_background():
+    for scene in ("packshot", "detail_closeup", "ghost_mannequin",
+                  "fabric_texture", "soft_shadow_studio", "flat_lay", "back_view"):
+        prompt = _prompt(scene=scene, background=BRAND_BACKGROUND)
+        assert BRAND_BACKGROUND["prompt_en"] not in prompt, scene
+
+
+def test_product_brief_uses_the_background_for_free_and_room_scenes():
+    for scene in ("", "hanger", "wooden_hanger_wall", "folded_stack"):
+        prompt = _brief_prompt(scene=scene, background=BRAND_BACKGROUND)
+        assert BACKGROUND_LOCK in prompt, scene
+        assert BRAND_BACKGROUND["prompt_en"] in prompt, scene
+    assert BRAND_BACKGROUND["prompt_en"] not in _brief_prompt(
+        scene="packshot", background=BRAND_BACKGROUND)
+
+
+def test_model_brand_background_replaces_the_location_and_lighting():
+    sections = model_prompt_sections(
+        model_age=7, model_gender="girl", pose_key="standing_front",
+        background_key="studio_white", framing_key="full_body",
+        lighting_key="soft_daylight", composition_key="centered_catalog",
+        aspect_ratio="4:5", garment_reference_count=1,
+        background=BRAND_BACKGROUND)
+    labels = {section["label"] for section in sections}
+    assert "پس‌زمینه: استودیو کرم" in labels
+    assert not any(label.startswith("نور:") for label in labels)
+
+    prompt = _model_prompt(background=BRAND_BACKGROUND)
+    assert BACKGROUND_LOCK in prompt
+    assert BRAND_BACKGROUND["prompt_en"] in prompt
+    assert LIGHTINGS["soft_daylight"]["clause"] not in prompt
+    assert "Location:" not in prompt
+
+
+def test_model_generic_location_keeps_the_lighting_section():
+    prompt = _model_prompt(background_key="park", lighting_key="golden_hour")
+    assert BACKGROUNDS["park"]["clause"] in prompt
+    assert LIGHTINGS["golden_hour"]["clause"] in prompt
+
+
+def test_no_prompt_claims_a_provider_size():
+    prompts = [
+        _prompt(),
+        _brief_prompt(),
+        _model_prompt(),
+        build_text_prompt(user_text="a valid campaign brief", aspect_ratio="4:5"),
+        build_text_image_prompt(user_text="a valid campaign brief", aspect_ratio="4:5"),
+    ]
+    for prompt in prompts:
+        assert "Output size" not in prompt
+        for entry in ASPECTS.values():
+            assert entry["seedream_size"] not in prompt
+
+
+def test_set_hanger_stages_upper_on_shoulder_and_lower_on_clip_hanger():
+    prompt = _prompt(scene="hanger", family="set")
+    assert "two-piece set" in prompt
+    assert "upper-body piece" in prompt
+    assert "clip hanger" in prompt
+    assert "lower-body piece" in prompt
+    assert "identical in every image" in prompt
+
+    closer = _prompt(scene="wooden_hanger_wall", family="set")
+    assert "clip hanger" in closer
+    assert "viewed closer against the wall" in closer
+
+
+def test_lower_body_hanger_uses_a_clip_hanger():
+    prompt = _prompt(scene="hanger", family="lower")
+    assert "clip hanger" in prompt
+    assert "waistband" in prompt
+    assert "two clips" in prompt
+
+
+def test_layered_hanger_keeps_both_layers():
+    prompt = _prompt(scene="hanger", family="layered")
+    assert "under-layer top" in prompt
+    assert "outer layer" in prompt
+    assert "Both layers remain visible" in prompt
+
+
+def test_product_brief_set_hanger_uses_the_clip_hanger():
+    prompt = _brief_prompt(scene="hanger", family="set")
+    assert "clip hanger" in prompt
+
+
+def test_each_family_gets_its_own_type_clause():
+    upper = _prompt(refs=1, family="upper")
+    assert "Garment type (بالاتنه)" in upper
+    assert "upper-body garment" in upper
+    assert "neckline" in upper
+
+    shoes = _prompt(refs=1, family="feet")
+    assert "Garment type (کفش)" in shoes
+    assert "pair of shoes" in shoes
+    assert "left/right" in shoes
+
+    hat = _prompt(refs=1, family="headwear")
+    assert "Garment type (کلاه)" in hat
+    assert "headwear" in hat
+    assert "crown" in hat
+
+    unknown = _prompt(refs=1)
+    assert "Garment type" not in unknown
+
+
+def test_reference_lines_name_the_family_s_slots_and_skip_missing_ones():
+    shoes = _prompt(refs=3, family="feet")
+    assert "Image 1 is the primary product photo, top view" in shoes
+    assert "Image 2 is the left side view" in shoes
+    assert "Image 3 is the right side view" in shoes
+
+    hat = _prompt(refs=2, family="headwear")
+    assert "Image 2 is the back view" in hat
+    assert "Image 3" not in hat
+
+    only_main = _prompt(refs=1, family="headwear")
+    assert "Image 2" not in only_main
+    assert "back view" not in only_main.lower()
+
+
+def test_model_prompt_uses_the_family_s_slot_names():
+    shoes = _model_prompt(garment_reference_count=3, garment_family="feet")
+    assert "Garment type (کفش)" in shoes
+    assert "Image 2 is the primary product photo, top view" in shoes
+    assert "Image 3 is the left side view" in shoes
+    assert "Image 4 is the right side view" in shoes
+
+
+def test_reference_lines_follow_the_real_selected_slots():
+    prompt = _prompt(refs=2, reference_views=[
+        "primary product photo", "detail close-up"])
+    assert "Image 2 is the detail close-up" in prompt
+    assert "back view" not in prompt
+
+    only_detail = _prompt(refs=1, reference_views=["detail close-up"])
+    assert "Image 1 is the detail close-up" in only_detail
+    assert "Image 2" not in only_detail
+
+
+def test_model_reference_lines_follow_the_real_selected_slots():
+    prompt = _model_prompt(garment_reference_count=2, reference_views=[
+        "primary product photo", "detail close-up"])
+    assert "Image 2 is the primary product photo" in prompt
+    assert "Image 3 is the detail close-up" in prompt
+    assert "back view" not in prompt

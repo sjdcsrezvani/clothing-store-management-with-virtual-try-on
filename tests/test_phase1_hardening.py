@@ -65,6 +65,29 @@ def test_business_audit_records_have_actor(client, db_session):
     assert audit is not None
 
 
+def test_legacy_instagram_generations_gets_the_outfit_column(tmp_path):
+    db_path = tmp_path / "legacy-ig.db"
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE instagram_generations ("
+        "id INTEGER PRIMARY KEY, scenario VARCHAR(30))"
+    )
+    conn.commit()
+    conn.close()
+
+    from sqlalchemy import create_engine, inspect
+    from main import _apply_missing_columns
+    engine = create_engine(f"sqlite:///{db_path}",
+                           connect_args={"check_same_thread": False})
+    try:
+        _apply_missing_columns(engine)
+        names = {column["name"] for column in inspect(engine).get_columns(
+            "instagram_generations")}
+        assert "outfit_category" in names
+    finally:
+        engine.dispose()
+
+
 def test_legacy_schema_migration_is_additive(tmp_path, monkeypatch):
     db_path = tmp_path / "legacy.db"
     conn = sqlite3.connect(db_path)

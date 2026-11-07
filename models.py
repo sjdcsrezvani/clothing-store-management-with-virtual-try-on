@@ -236,6 +236,7 @@ class InstagramGeneration(Base):
     variant_id = Column(Integer, ForeignKey("product_variants.id"), nullable=True, index=True)
     garment_mode = Column(String(40), nullable=True)
     model_slot = Column(String(20), nullable=True)
+    outfit_category = Column(String(20), nullable=True)
     pose_key = Column(String(40), nullable=True)
     background_key = Column(String(40), nullable=True)
     aspect_ratio = Column(String(10), nullable=False, default="4:5")
@@ -268,6 +269,26 @@ class ShopModel(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
                       onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_by_staff_id = Column(Integer, ForeignKey("staff_users.id"), nullable=True)
+
+
+class InstagramBackground(Base):
+    """One editable room preset for Instagram Studio, stored per shop."""
+
+    __tablename__ = "instagram_backgrounds"
+
+    id = Column(Integer, primary_key=True)
+    key = Column(String(40), unique=True, nullable=False, index=True)
+    label_fa = Column(String(120), nullable=False)
+    description_fa = Column(String(240), nullable=True)
+    prompt_en = Column(Text, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True, index=True)
+    is_default = Column(Boolean, nullable=False, default=False, index=True)
+    is_starter = Column(Boolean, nullable=False, default=False)
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc), nullable=False)
     updated_by_staff_id = Column(Integer, ForeignKey("staff_users.id"), nullable=True)
 
 

@@ -72,6 +72,27 @@ def test_collect_reference_paths_accepts_subset_and_rejects_foreign_path(db_sess
         _cleanup(root)
 
 
+def test_prompt_names_the_real_slots_and_skips_the_absent_back_photo(db_session):
+    product, variant, paths, root = _make_product_with_images(db_session, count=2)
+    user, _password = _staff(db_session, "ig-slot-views", "manager")
+    try:
+        # Keep the main photo in slot 0 and move the second photo to the
+        # detail slot, leaving the back slot empty.
+        frame = db_session.query(VariantImage).filter(
+            VariantImage.image_path == paths[1]).one()
+        frame.sort_order = 2
+        db_session.commit()
+
+        generation, _job = create_generation(
+            db_session, staff=user, product=product, variant=variant,
+            selected_paths=[paths[0], paths[1]], scene_key="flat_lay",
+            aspect_ratio="4:5")
+        assert "Image 2 is the detail close-up" in generation.rendered_prompt
+        assert "back view" not in generation.rendered_prompt
+    finally:
+        _cleanup(root)
+
+
 def test_variant_without_images_is_rejected(db_session):
     product = Product(name="بدون عکس")
     db_session.add(product)
@@ -278,7 +299,84 @@ def test_model_scene_prepends_the_model_reference_and_stores_choices(db_session,
         _cleanup(root)
 
 
-def test_model_scene_rejects_unknown_pose_or_background(db_session, tmp_path):
+def test_model_scene_stores_the_effective_outfit_rule(db_session, tmp_path):
+    product, variant, paths, root = _make_product_with_images(db_session)
+    user, _password = _staff(db_session, "ig-model-outfit", "manager")
+    try:
+        _model_slot(db_session, tmp_path)
+        generation, job = create_generation(
+            db_session, staff=user, product=product, variant=variant,
+            selected_paths=[paths[0]], scene_key="", aspect_ratio="4:5",
+            **_model_options())
+        assert generation.outfit_category == "upper"
+        assert "UPPER-BODY piece" in generation.rendered_prompt
+        assert "no missing bottom" in generation.rendered_prompt
+        payload = __import__("json").loads(job.payload)
+        variation = variation_payload(generation, payload)
+        assert variation["outfit_category"] == "upper"
+    finally:
+        _cleanup(root)
+
+
+def test_model_scene_outfit_override_changes_the_rule(db_session, tmp_path):
+    product, variant, paths, root = _make_product_with_images(db_session)
+    product.name = "پیراهن تست"
+    db_session.commit()
+    user, _password = _staff(db_session, "ig-model-override", "manager")
+    try:
+        _model_slot(db_session, tmp_path)
+        generation, _job = create_generation(
+            db_session, staff=user, product=product, variant=variant,
+            selected_paths=[paths[0]], scene_key="", aspect_ratio="4:5",
+            outfit_category="one_piece", **_model_options())
+        assert generation.outfit_category == "one_piece"
+        assert "ONE-PIECE garment" in generation.rendered_prompt
+        assert "NEVER invent pants beneath it" in generation.rendered_prompt
+        assert "UPPER-BODY piece" not in generation.rendered_prompt
+    finally:
+        _cleanup(root)
+
+
+def test_model_scene_override_can_treat_a_one_piece_as_an_upper(db_session, tmp_path):
+    product, variant, paths, root = _make_product_with_images(db_session)
+    product.name = "سرهمی تست"
+    db_session.commit()
+    user, _password = _staff(db_session, "ig-model-onesie-override", "manager")
+    try:
+        _model_slot(db_session, tmp_path)
+        generation, _job = create_generation(
+            db_session, staff=user, product=product, variant=variant,
+            selected_paths=[paths[0]], scene_key="", aspect_ratio="4:5",
+            outfit_category="upper", **_model_options())
+        assert generation.outfit_category == "upper"
+        assert "UPPER-BODY piece" in generation.rendered_prompt
+        assert "no missing bottom" in generation.rendered_prompt
+        assert "NEVER invent pants beneath it" not in generation.rendered_prompt
+    finally:
+        _cleanup(root)
+
+
+def test_model_scene_ignores_a_clothing_override_for_accessories(db_session, tmp_path):
+    product, variant, paths, root = _make_product_with_images(db_session)
+    product.category = "کفش"
+    product.name = "کتانی تست"
+    db_session.commit()
+    user, _password = _staff(db_session, "ig-model-shoes-override", "manager")
+    try:
+        _model_slot(db_session, tmp_path)
+        generation, _job = create_generation(
+            db_session, staff=user, product=product, variant=variant,
+            selected_paths=[paths[0]], scene_key="", aspect_ratio="4:5",
+            outfit_category="one_piece", **_model_options())
+        assert generation.outfit_category == "feet"
+        assert "pair of shoes" in generation.rendered_prompt
+        assert "ONE-PIECE garment" not in generation.rendered_prompt
+    finally:
+        _cleanup(root)
+
+
+def test_model_scene_rejects_unknown_pose_and_falls_back_for_unknown_background(
+        db_session, tmp_path):
     product, variant, paths, root = _make_product_with_images(db_session)
     user, _password = _staff(db_session, "ig-model-invalid", "manager")
     try:
@@ -288,11 +386,105 @@ def test_model_scene_rejects_unknown_pose_or_background(db_session, tmp_path):
                 db_session, staff=user, product=product, variant=variant,
                 selected_paths=[paths[0]], scene_key="", aspect_ratio="4:5",
                 **_model_options(pose_key="not-a-pose"))
+        generation, _job = create_generation(
+            db_session, staff=user, product=product, variant=variant,
+            selected_paths=[paths[0]], scene_key="", aspect_ratio="4:5",
+            **_model_options(background_key="not-a-place"))
+        assert generation.background_key == "starter_ivory"
+        assert "Use the shop's fixed studio set" in generation.rendered_prompt
+    finally:
+        _cleanup(root)
+
+
+def test_product_room_scene_uses_the_shop_default_background(db_session):
+    product, variant, paths, root = _make_product_with_images(db_session)
+    user, _password = _staff(db_session, "ig-bg-room", "manager")
+    try:
+        generation, _job = create_generation(
+            db_session, staff=user, product=product, variant=variant,
+            selected_paths=[paths[0]], scene_key="hanger", aspect_ratio="4:5")
+        assert generation.background_key == "starter_ivory"
+        assert "warm ivory limewash plaster" in generation.rendered_prompt
+        assert "Use the shop's fixed studio set" in generation.rendered_prompt
+    finally:
+        _cleanup(root)
+
+
+def test_product_free_campaign_uses_the_shop_default_background(db_session):
+    product, variant, paths, root = _make_product_with_images(db_session)
+    user, _password = _staff(db_session, "ig-bg-brief", "manager")
+    try:
+        generation, _job = create_generation(
+            db_session, staff=user, product=product, variant=variant,
+            selected_paths=[paths[0]], scene_key="", aspect_ratio="4:5",
+            scenario="product_brief", user_text="soft morning light")
+        assert generation.background_key == "starter_ivory"
+        assert "warm ivory limewash plaster" in generation.rendered_prompt
+    finally:
+        _cleanup(root)
+
+
+def test_specialized_product_scene_stores_no_background(db_session):
+    product, variant, paths, root = _make_product_with_images(db_session)
+    user, _password = _staff(db_session, "ig-bg-packshot", "manager")
+    try:
+        generation, _job = create_generation(
+            db_session, staff=user, product=product, variant=variant,
+            selected_paths=[paths[0]], scene_key="packshot", aspect_ratio="4:5",
+            background_key="starter_oak")
+        assert generation.background_key is None
+        assert "پس‌زمینه:" not in generation.rendered_prompt
+    finally:
+        _cleanup(root)
+
+
+def test_accessory_product_rejects_a_hanger_scene(db_session):
+    product, variant, paths, root = _make_product_with_images(db_session)
+    product.category = "کفش"
+    product.name = "کتانی تست"
+    db_session.commit()
+    user, _password = _staff(db_session, "ig-shoes-hanger", "manager")
+    try:
         with pytest.raises(InstagramValidationError):
             create_generation(
                 db_session, staff=user, product=product, variant=variant,
-                selected_paths=[paths[0]], scene_key="", aspect_ratio="4:5",
-                **_model_options(background_key="not-a-place"))
+                selected_paths=[paths[0]], scene_key="hanger",
+                aspect_ratio="4:5")
+        assert db_session.query(InstagramGeneration).count() == 0
+    finally:
+        _cleanup(root)
+
+
+def test_set_generation_uses_the_two_hanger_clause(db_session):
+    product, variant, paths, root = _make_product_with_images(db_session)
+    product.category = "ست"
+    product.name = "ست لس"
+    db_session.commit()
+    user, _password = _staff(db_session, "ig-set-hanger", "manager")
+    try:
+        generation, _job = create_generation(
+            db_session, staff=user, product=product, variant=variant,
+            selected_paths=[paths[0]], scene_key="hanger", aspect_ratio="4:5")
+        assert "clip hanger" in generation.rendered_prompt
+        assert "upper-body piece" in generation.rendered_prompt
+    finally:
+        _cleanup(root)
+
+
+def test_model_brand_background_stores_the_key_and_drops_the_lighting_section(
+        db_session, tmp_path):
+    product, variant, paths, root = _make_product_with_images(db_session)
+    user, _password = _staff(db_session, "ig-bg-model-brand", "manager")
+    try:
+        _model_slot(db_session, tmp_path)
+        generation, _job = create_generation(
+            db_session, staff=user, product=product, variant=variant,
+            selected_paths=[paths[0]], scene_key="", aspect_ratio="4:5",
+            **_model_options(background_key="starter_oak",
+                             lighting_key="golden_hour"))
+        assert generation.background_key == "starter_oak"
+        assert "warm off-white plaster" in generation.rendered_prompt
+        assert "Warm golden-hour light" not in generation.rendered_prompt
     finally:
         _cleanup(root)
 

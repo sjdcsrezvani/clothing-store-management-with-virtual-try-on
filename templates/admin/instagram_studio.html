@@ -66,10 +66,11 @@
         برای کمپین‌های فصلی، مناسبت‌ها و تصاویر عمومی مناسب است.
     </p>
     <form method="post" action="/admin/instagram-studio/generate"
-          hx-get="/admin/instagram-studio/prompt-preview"
-          hx-trigger="load, change, input changed delay:400ms"
-          hx-target="#ig-prompt-preview" hx-swap="innerHTML" hx-sync="this:replace"
           onsubmit="this.querySelector('button[type=submit]').disabled=true;">
+        <div hx-get="/admin/instagram-studio/prompt-preview"
+             hx-trigger="load, change, input changed delay:400ms"
+             hx-include="closest form"
+             hx-target="#ig-prompt-preview" hx-swap="innerHTML" hx-sync="this:replace">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="scenario" value="text">
 
@@ -106,6 +107,7 @@
         <p class="muted" style="margin-bottom:0;">
             هر تولید هزینه دارد و از سقف روزانه کم می‌شود.
         </p>
+        </div>
     </form>
 </div>
 {% elif scenario == 'text_image' %}
@@ -122,10 +124,11 @@
     </p>
     <form method="post" action="/admin/instagram-studio/generate"
           enctype="multipart/form-data"
-          hx-get="/admin/instagram-studio/prompt-preview"
-          hx-trigger="load, change, input changed delay:400ms"
-          hx-target="#ig-prompt-preview" hx-swap="innerHTML" hx-sync="this:replace"
           onsubmit="this.querySelector('button[type=submit]').disabled=true;">
+        <div hx-get="/admin/instagram-studio/prompt-preview"
+             hx-trigger="load, change, input changed delay:400ms"
+             hx-include="closest form"
+             hx-target="#ig-prompt-preview" hx-swap="innerHTML" hx-sync="this:replace">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="scenario" value="text_image">
 
@@ -168,6 +171,7 @@
         <p class="muted" style="margin-bottom:0;">
             هر تولید هزینه دارد و از سقف روزانه کم می‌شود.
         </p>
+        </div>
     </form>
 </div>
 {% endif %}
@@ -184,6 +188,7 @@
 
 {% if scenario not in ('text', 'text_image') %}
 <script src="/static/js/instagram_variant_search.js?v={{ static_version }}" defer></script>
+<script src="/static/js/instagram_backgrounds.js?v={{ static_version }}" defer></script>
 {% endif %}
 
 {% endblock %}

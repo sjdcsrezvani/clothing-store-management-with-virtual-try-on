@@ -260,6 +260,9 @@ def _apply_missing_columns(migration_engine=None):
             ("result_url", "VARCHAR(500)"),
             ("created_at", "DATETIME"),
         ],
+        "instagram_generations": [
+            ("outfit_category", "VARCHAR(20)"),
+        ],
         "issued_checks": [
             ("supplier_id", "INTEGER"),
             ("provider_name", "VARCHAR(200)"),

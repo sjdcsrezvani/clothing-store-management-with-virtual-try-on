@@ -21,13 +21,26 @@ from services._common import int_arg
 from services.image_gen import composite_logo, get_generation_selection, get_tryon_selection
 from services.image_models import PROVIDERS
 from services.image_storage import compress_for_storage
+from services.instagram_backgrounds import (
+    background_choices_for_scenario,
+    default_background,
+)
+from services.instagram_product_types import (
+    ACCESSORY_FAMILIES,
+    FAMILY_LABELS_FA,
+    RECOMMENDATION_NOTES_FA,
+    product_family,
+    recommended_scene,
+    scene_keys_for_family,
+)
 from services.instagram_prompts import (
     ASPECTS,
-    BACKGROUNDS,
     COMPOSITIONS,
     FRAMINGS,
     LIGHTINGS,
+    MODEL_OUTFIT_LABELS_FA,
     POSES,
+    ROOM_BACKGROUND_SCENES,
     SCENARIO_GARMENT,
     SCENARIO_MODEL_SCENE,
     SCENARIO_PRODUCT_BRIEF,
@@ -45,6 +58,7 @@ from services.instagram_studio import (
     create_generation,
     join_prompt_sections,
     preview_prompt_sections,
+    resolve_outfit_family,
     variation_payload,
     variant_has_reference_photo,
     variant_reference_images,
@@ -198,16 +212,49 @@ async def _save_uploaded_reference(upload) -> str:
 def _variant_card_context(db: Session, scenario: str, product: Product,
                           variant: ProductVariant | None, guard) -> dict:
     """Everything the Step 2 card needs, shared by the page and the swap endpoint."""
+    backgrounds = background_choices_for_scenario(db, scenario)
+    default = default_background(db) if backgrounds else None
+    family = product_family(product)
+    allowed_scenes = scene_keys_for_family(family)
+    scenes = [{"key": key, "label": scene_label(key)} for key in SCENE_KEYS
+              if allowed_scenes is None or key in allowed_scenes]
+    recommended = recommended_scene(family)
+    first_scene = scenes[0]["key"] if scenes else ""
+    if scenario == SCENARIO_PRODUCT_BRIEF:
+        background_field_visible = True
+    elif scenario == SCENARIO_GARMENT:
+        background_field_visible = first_scene in ROOM_BACKGROUND_SCENES
+    else:
+        background_field_visible = False
     return {
         "product": product,
         "variant": variant,
         "reference_images": variant_reference_images(variant) if variant else [],
         "model_slots": (available_model_slots(db)
                         if scenario == SCENARIO_MODEL_SCENE else []),
-        "scenes": [{"key": key, "label": scene_label(key)} for key in SCENE_KEYS],
+        "scenes": scenes,
+        "recommended_scene": recommended or "",
+        "recommended_scene_label": scene_label(recommended) if recommended else "",
+        "recommended_url": _studio_url(
+            product_id=product.id,
+            variant_id=variant.id if variant else 0,
+            scenario=SCENARIO_GARMENT),
+        "garment_family_label": FAMILY_LABELS_FA.get(family, ""),
+        "recommendation_note": RECOMMENDATION_NOTES_FA.get(family, ""),
+        "outfit_choices": [{"key": key, "label": label}
+                           for key, label in MODEL_OUTFIT_LABELS_FA.items()],
+        "detected_outfit": family or "",
+        "detected_outfit_label": FAMILY_LABELS_FA.get(family, ""),
+        "outfit_override_visible": (
+            scenario == SCENARIO_MODEL_SCENE
+            and family not in ACCESSORY_FAMILIES
+        ),
         "poses": [{"key": key, "label": value["label"]} for key, value in POSES.items()],
-        "backgrounds": [{"key": key, "label": value["label"]}
-                        for key, value in BACKGROUNDS.items()],
+        "backgrounds": backgrounds,
+        "default_background_key": default.key if default else "",
+        "default_background_source": "brand" if default else "",
+        "room_background_scenes": list(ROOM_BACKGROUND_SCENES),
+        "background_field_visible": background_field_visible,
         "framings": [{"key": key, "label": value["label"]}
                      for key, value in FRAMINGS.items()],
         "lightings": [{"key": key, "label": value["label"]}
@@ -259,6 +306,7 @@ async def instagram_prompt_preview(request: Request, db: Session = Depends(get_d
             lighting_key=(params.get("lighting_key") or "").strip(),
             composition_key=(params.get("composition_key") or "").strip(),
             show_full_garment=bool(params.get("show_full_garment")),
+            outfit_category=(params.get("outfit_category") or "").strip(),
         )
         prompt = join_prompt_sections(sections)
     except InstagramValidationError as failure:
@@ -456,6 +504,7 @@ async def instagram_generate(request: Request, db: Session = Depends(get_db)):
     framing_key = str(form.get("framing_key") or "").strip()
     lighting_key = str(form.get("lighting_key") or "").strip()
     composition_key = str(form.get("composition_key") or "").strip()
+    outfit_category = str(form.get("outfit_category") or "").strip()
     show_full_garment = bool(form.get("show_full_garment"))
     if scenario == SCENARIO_MODEL_SCENE:
         pose_key = pose_key or "standing_front"
@@ -493,7 +542,12 @@ async def instagram_generate(request: Request, db: Session = Depends(get_db)):
                 InstagramGeneration.model_slot == model_slot,
                 InstagramGeneration.pose_key == pose_key,
                 InstagramGeneration.background_key == background_key,
+                InstagramGeneration.outfit_category == resolve_outfit_family(
+                    product, outfit_category),
             )
+        else:
+            duplicate = duplicate.filter(
+                InstagramGeneration.background_key == (background_key or None))
     if duplicate.first() is not None:
         return RedirectResponse(
             _studio_url(product_id=product_id, variant_id=variant_id, scenario=scenario,
@@ -543,6 +597,7 @@ async def instagram_generate(request: Request, db: Session = Depends(get_db)):
             lighting_key=lighting_key,
             composition_key=composition_key,
             show_full_garment=show_full_garment,
+            outfit_category=outfit_category,
         )
     except InstagramValidationError as error:
         if source_image_path:

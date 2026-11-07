@@ -1,4 +1,5 @@
 """Instagram Studio routes: role gate, enqueue, result, download."""
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -165,7 +166,28 @@ def test_generate_product_brief_creates_a_brief_generation(client, db_session):
         generation = db_session.query(InstagramGeneration).one()
         assert generation.scenario == "product_brief"
         assert generation.garment_mode is None
+        assert generation.background_key == "starter_ivory"
         assert "soft morning light, minimal beige studio" in generation.rendered_prompt
+    finally:
+        _cleanup(root)
+
+
+def test_duplicate_guard_separates_product_backgrounds(client, db_session):
+    product, variant, paths, root = _make_variant(db_session)
+    _login(client, db_session, "manager", "ig-duplicate-bg")
+    _seed_key(db_session)
+    try:
+        first = _post_generate(
+            client, product, variant, paths,
+            garment_mode="hanger", background_key="starter_ivory")
+        assert first.status_code == 303 and "job_id=" in first.headers["location"]
+
+        second = _post_generate(
+            client, product, variant, paths,
+            garment_mode="hanger", background_key="starter_oak")
+        assert second.status_code == 303
+        assert "job_id=" in second.headers["location"]
+        assert db_session.query(InstagramGeneration).count() == 2
     finally:
         _cleanup(root)
 
@@ -253,6 +275,67 @@ def test_model_scene_tab_shows_the_model_picker_and_controls(client, db_session,
         _cleanup(root)
 
 
+def test_model_scene_card_shows_the_outfit_override_for_clothing(
+        client, db_session, tmp_path):
+    product, variant, paths, root = _make_variant(db_session)
+    _make_shop_model(db_session, tmp_path)
+    _login(client, db_session, "manager", "ig-outfit-select")
+    try:
+        page = client.get(
+            f"/admin/instagram-studio?scenario=model_scene"
+            f"&product_id={product.id}&variant_id={variant.id}")
+        assert page.status_code == 200
+        assert 'name="outfit_category"' in page.text
+        assert "قاعده ست" in page.text
+        assert "خودکار — بالاتنه" in page.text
+    finally:
+        _cleanup(root)
+
+
+def test_model_scene_card_hides_the_outfit_override_for_accessories(
+        client, db_session, tmp_path):
+    product, variant, paths, root = _make_variant(db_session)
+    product.category = "کفش"
+    product.name = "کتانی تست"
+    db_session.commit()
+    _make_shop_model(db_session, tmp_path)
+    _login(client, db_session, "manager", "ig-outfit-shoes")
+    try:
+        page = client.get(
+            f"/admin/instagram-studio?scenario=model_scene"
+            f"&product_id={product.id}&variant_id={variant.id}")
+        assert page.status_code == 200
+        assert 'name="outfit_category"' not in page.text
+        assert "قاعده پوشش این محصول خودکار است (کفش)" in page.text
+    finally:
+        _cleanup(root)
+
+
+def test_model_scene_prompt_preview_uses_the_outfit_override(
+        client, db_session, tmp_path):
+    product, variant, paths, root = _make_variant(db_session)
+    _make_shop_model(db_session, tmp_path)
+    _login(client, db_session, "manager", "ig-outfit-preview")
+    try:
+        response = client.get(
+            "/admin/instagram-studio/prompt-preview",
+            params=[
+                ("scenario", "model_scene"),
+                ("product_id", product.id),
+                ("variant_id", variant.id),
+                ("image_paths", paths[0]),
+                ("model_slot", "girl_7"),
+                ("outfit_category", "one_piece"),
+                ("aspect_ratio", "4:5"),
+            ])
+        assert response.status_code == 200
+        assert "قاعده ست کامل" in response.text
+        assert "ONE-PIECE garment" in response.text
+        assert "UPPER-BODY piece" not in response.text
+    finally:
+        _cleanup(root)
+
+
 def test_model_scene_without_model_images_tells_the_manager(client, db_session):
     product, variant, paths, root = _make_variant(db_session)
     _login(client, db_session, "manager", "ig-model-empty")
@@ -262,6 +345,99 @@ def test_model_scene_without_model_images_tells_the_manager(client, db_session):
             f"&product_id={product.id}&variant_id={variant.id}")
         assert page.status_code == 200
         assert "عکس مرجعی برای مدل‌ها ثبت نشده" in page.text
+    finally:
+        _cleanup(root)
+
+
+def test_studio_preselects_the_default_brand_background(client, db_session):
+    product, variant, paths, root = _make_variant(db_session)
+    _login(client, db_session, "manager", "ig-bg-default")
+    try:
+        page = client.get(
+            f"/admin/instagram-studio?product_id={product.id}"
+            f"&variant_id={variant.id}")
+        assert page.status_code == 200
+        assert ('data-room-background-scenes='
+                '"hanger,wooden_hanger_wall,folded_stack"') in page.text
+        assert 'value="starter_ivory"' in page.text
+        assert "selected>استودیو کرم" in page.text
+        assert "دیوار کرم، کف چوب روشن، نور نرم پنجره" in page.text
+        assert "/static/js/instagram_backgrounds.js" in page.text
+    finally:
+        _cleanup(root)
+
+
+def test_model_scene_lists_brand_backgrounds_before_generic_ones(
+        client, db_session, tmp_path):
+    product, variant, paths, root = _make_variant(db_session)
+    _make_shop_model(db_session, tmp_path)
+    _login(client, db_session, "manager", "ig-bg-model")
+    try:
+        page = client.get(
+            f"/admin/instagram-studio?scenario=model_scene"
+            f"&product_id={product.id}&variant_id={variant.id}")
+        assert page.status_code == 200
+        assert page.text.index("استودیو کرم") < page.text.index("پارک")
+        assert 'data-source="brand"' in page.text
+        assert 'data-source="generic"' in page.text
+        assert "data-lighting-field hidden" in page.text
+    finally:
+        _cleanup(root)
+
+
+def test_accessory_product_hides_hanger_scenes_and_preselects_flat_lay(
+        client, db_session):
+    product, variant, paths, root = _make_variant(db_session)
+    product.category = "کفش"
+    product.name = "کتانی تست"
+    db_session.commit()
+    _login(client, db_session, "manager", "ig-accessory")
+    try:
+        page = client.get(
+            f"/admin/instagram-studio?product_id={product.id}"
+            f"&variant_id={variant.id}")
+        assert page.status_code == 200
+        assert "پیشنهاد برای این محصول (کفش)" in page.text
+        assert "آویزان روی رگال" not in page.text
+        assert 'value="flat_lay" selected' in page.text
+        assert "رگال و مانکن مناسب نیست" in page.text
+        assert "data-background-field hidden" in page.text
+    finally:
+        _cleanup(root)
+
+
+def test_set_product_preselects_hanger_and_explains_both_hangers(client, db_session):
+    product, variant, paths, root = _make_variant(db_session)
+    product.category = "ست"
+    product.name = "ست لس"
+    db_session.commit()
+    _login(client, db_session, "manager", "ig-set")
+    try:
+        page = client.get(
+            f"/admin/instagram-studio?product_id={product.id}"
+            f"&variant_id={variant.id}")
+        assert page.status_code == 200
+        assert "پیشنهاد برای این محصول (ست)" in page.text
+        assert "بالاتنه روی رگال شانه‌ای و پایین‌تنه روی رگال گیره‌ای" in page.text
+        assert 'value="hanger" selected' in page.text
+    finally:
+        _cleanup(root)
+
+
+def test_product_brief_suggests_the_product_shot_tab(client, db_session):
+    product, variant, paths, root = _make_variant(db_session)
+    product.category = "ست"
+    product.name = "ست لس"
+    db_session.commit()
+    _login(client, db_session, "manager", "ig-brief-recommend")
+    try:
+        page = client.get(
+            f"/admin/instagram-studio?scenario=product_brief"
+            f"&product_id={product.id}&variant_id={variant.id}")
+        assert page.status_code == 200
+        assert "پیشنهاد برای این محصول (ست)" in page.text
+        assert "scenario=garment" in page.text
+        assert "عکاسی محصول" in page.text
     finally:
         _cleanup(root)
 
@@ -297,6 +473,35 @@ def test_generate_model_scene_creates_a_generation(client, db_session, tmp_path)
         _cleanup(root)
 
 
+def test_generate_model_scene_stores_the_outfit_override(client, db_session, tmp_path):
+    product, variant, paths, root = _make_variant(db_session)
+    _make_shop_model(db_session, tmp_path)
+    _login(client, db_session, "manager", "ig-model-outfit-generate")
+    _seed_key(db_session)
+    try:
+        response = _post_generate(
+            client, product, variant, paths,
+            scenario="model_scene", garment_mode="", model_slot="girl_7",
+            outfit_category="one_piece", pose_key="standing_front",
+            background_key="studio_white", framing_key="full_body",
+            lighting_key="soft_daylight",
+            composition_key="centered_catalog", show_full_garment="1")
+        assert response.status_code == 303, response.text[:300]
+        generation = db_session.query(InstagramGeneration).one()
+        assert generation.outfit_category == "one_piece"
+        assert "ONE-PIECE garment" in generation.rendered_prompt
+        assert "UPPER-BODY piece" not in generation.rendered_prompt
+
+        job = db_session.get(BackgroundJob, generation.job_id)
+        job.status = "completed"
+        job.result_url = "/static/uploads/instagram/fake.jpg"
+        db_session.commit()
+        partial = client.get(f"/admin/instagram-studio/jobs/{job.id}",
+                             headers={"HX-Request": "true"})
+        assert partial.status_code == 200
+        assert 'name="outfit_category" value="one_piece"' in partial.text
+    finally:
+        _cleanup(root)
 
 
 def _post_text(client, **overrides):
@@ -743,6 +948,78 @@ def test_prompt_preview_labels_the_selected_options(client, db_session):
         _cleanup(root)
 
 
+def test_prompt_preview_includes_the_resolved_background(client, db_session):
+    product, variant, paths, root = _make_variant(db_session)
+    _login(client, db_session, "manager", "ig-preview-bg")
+    try:
+        response = client.get(
+            "/admin/instagram-studio/prompt-preview",
+            params=[
+                ("scenario", "garment"),
+                ("product_id", product.id),
+                ("variant_id", variant.id),
+                ("image_paths", paths[0]),
+                ("garment_mode", "hanger"),
+                ("background_key", "starter_oak"),
+                ("aspect_ratio", "4:5"),
+            ])
+        assert response.status_code == 200
+        assert "پس‌زمینه: اتاق چوبی گرم" in response.text
+        assert "fixed studio set" in response.text
+    finally:
+        _cleanup(root)
+
+
+def test_prompt_preview_rejects_a_hanger_scene_for_shoes(client, db_session):
+    product, variant, paths, root = _make_variant(db_session)
+    product.category = "کفش"
+    product.name = "کتانی تست"
+    db_session.commit()
+    _login(client, db_session, "manager", "ig-preview-shoes")
+    try:
+        response = client.get(
+            "/admin/instagram-studio/prompt-preview",
+            params=[
+                ("scenario", "garment"),
+                ("product_id", product.id),
+                ("variant_id", variant.id),
+                ("image_paths", paths[0]),
+                ("garment_mode", "hanger"),
+                ("aspect_ratio", "4:5"),
+            ])
+        assert response.status_code == 200
+        assert "این حالت عکاسی برای این نوع محصول مناسب نیست" in response.text
+    finally:
+        _cleanup(root)
+
+
+def test_prompt_preview_skips_the_absent_back_photo(client, db_session):
+    product, variant, paths, root = _make_variant(db_session, images=2)
+    _login(client, db_session, "manager", "ig-preview-slots")
+    try:
+        frame = db_session.query(VariantImage).filter(
+            VariantImage.image_path == paths[1]).one()
+        frame.sort_order = 2
+        db_session.commit()
+
+        response = client.get(
+            "/admin/instagram-studio/prompt-preview",
+            params=[
+                ("scenario", "garment"),
+                ("product_id", product.id),
+                ("variant_id", variant.id),
+                ("image_paths", paths[0]),
+                ("image_paths", paths[1]),
+                ("garment_mode", "flat_lay"),
+                ("aspect_ratio", "4:5"),
+            ])
+        assert response.status_code == 200
+        assert "Image 2 is the detail close-up" in response.text
+        assert "back view" not in response.text
+    finally:
+        _cleanup(root)
+
+
 def test_prompt_preview_for_text_image_needs_no_product(client, db_session):
     _login(client, db_session, "manager", "ig-preview-text-image")
     response = client.get(
@@ -772,6 +1049,38 @@ def test_every_scenario_page_shows_the_prompt_preview(client, db_session, tmp_pa
             assert page.status_code == 200, scenario
             assert 'hx-get="/admin/instagram-studio/prompt-preview"' in page.text, scenario
             assert 'id="ig-prompt-preview"' in page.text, scenario
+    finally:
+        _cleanup(root)
+
+
+def test_preview_load_trigger_is_not_on_the_form(client, db_session, tmp_path):
+    """htmx refuses a form's initial load when a required field is empty, which
+    left «در حال آماده‌سازی…» forever. The trigger is on a wrapper that includes
+    the form, so the first preview always renders."""
+    product, variant, paths, root = _make_variant(db_session)
+    _make_shop_model(db_session, tmp_path)
+    _login(client, db_session, "manager", "ig-preview-load")
+    try:
+        urls = [
+            "/admin/instagram-studio?scenario=text",
+            "/admin/instagram-studio?scenario=text_image",
+            f"/admin/instagram-studio?scenario=product_brief"
+            f"&product_id={product.id}&variant_id={variant.id}",
+            f"/admin/instagram-studio?scenario=model_scene"
+            f"&product_id={product.id}&variant_id={variant.id}",
+            f"/admin/instagram-studio?product_id={product.id}"
+            f"&variant_id={variant.id}",
+        ]
+        for url in urls:
+            page = client.get(url)
+            assert page.status_code == 200, url
+            forms = [form for form in re.findall(r"<form\b[^>]*>", page.text, re.S)
+                     if "/admin/instagram-studio/generate" in form]
+            assert forms, url
+            for form in forms:
+                assert "hx-get" not in form, url
+            assert 'hx-include="closest form"' in page.text, url
+            assert 'hx-trigger="load, change, input changed delay:400ms"' in page.text, url
     finally:
         _cleanup(root)
 

@@ -10,9 +10,16 @@ from pathlib import Path
 
 from models import InstagramGeneration, Product, ProductVariant, ShopModel, to_persian_digits
 from services.image_gen import get_generation_selection, get_tryon_selection
+from services.instagram_backgrounds import resolve_generation_background
+from services.image_slots import image_slots_for, reference_views_for
+from services.instagram_product_types import (
+    ACCESSORY_FAMILIES,
+    CLOTHING_FAMILIES,
+    is_scene_allowed,
+    product_family,
+)
 from services.instagram_prompts import (
     ASPECTS,
-    BACKGROUNDS,
     COMPOSITIONS,
     FRAMINGS,
     IG_PROMPT_VERSION,
@@ -53,25 +60,30 @@ def _disk_path(url: str) -> str:
 
 
 def variant_reference_images(variant: ProductVariant) -> list[dict]:
-    """Every usable photo of this exact variant, primary first.
+    """Every usable photo of this exact variant, main first.
 
-    The gallery is authoritative; the legacy single image is the fallback. A
-    barcode label is not a garment photo and is skipped.
+    Only the product family's fixed slots count now (main/back/detail or
+    main/back or top/left/right); a hidden extra frame or a legacy single
+    image still falls back when the gallery has no frames. A barcode label is
+    not a garment photo and is skipped.
     """
+    slots = image_slots_for(variant.product)
+    allowed = {slot["slot"] for slot in slots}
+    labels = {slot["slot"]: slot["label"] for slot in slots}
     frames = sorted(variant.images or [], key=lambda frame: (frame.sort_order, frame.id))
-    candidates = [frame.image_path for frame in frames]
-    if variant.image_path:
-        candidates.append(variant.image_path)
+    candidates = [(frame.sort_order, frame.image_path) for frame in frames
+                  if frame.sort_order in allowed]
+    if not candidates and variant.image_path:
+        candidates.append((0, variant.image_path))
 
     images: list[dict] = []
     seen: set[str] = set()
-    for path in candidates:
+    for slot, path in candidates:
         if not path or "/uploads/barcodes/" in path or path in seen:
             continue
         seen.add(path)
-        images.append({"path": path, "sort_order": len(images)})
-    for index, image in enumerate(images):
-        image["label"] = "تصویر اصلی" if index == 0 else f"تصویر {to_persian_digits(str(index + 1))}"
+        images.append({"path": path, "sort_order": slot,
+                       "label": labels.get(slot, f"تصویر {to_persian_digits(str(slot + 1))}")})
     return images
 
 
@@ -83,8 +95,36 @@ def variant_has_reference_photo(variant: ProductVariant) -> bool:
     )
 
 
+def selected_reference_views(variant: ProductVariant,
+                             paths: list[str]) -> list[str]:
+    """View names for the photos actually selected, by their real fixed slot.
+
+    A variant with main + detail but no back photo therefore names Image 2 as
+    the detail close-up, and never invents a back-view line.
+    """
+    views = reference_views_for(product_family(variant.product))
+    slot_by_path = {_disk_path(image["path"]): image["sort_order"]
+                    for image in variant_reference_images(variant)}
+    chosen = []
+    for path in paths:
+        slot = slot_by_path.get(_disk_path(path))
+        if slot is not None and 0 <= slot < len(views):
+            chosen.append(views[slot])
+    return chosen
+
+
 def join_prompt_sections(sections: list[dict]) -> str:
     return " ".join(section["text"] for section in sections if section["text"])
+
+
+def resolve_outfit_family(product: Product, outfit_category: str = "") -> str | None:
+    """The outfit rule to use: manual override, else the detected family."""
+    family = product_family(product)
+    if family in ACCESSORY_FAMILIES:
+        return family
+    if outfit_category in CLOTHING_FAMILIES:
+        return outfit_category
+    return family
 
 
 def prompt_sections(
@@ -104,6 +144,9 @@ def prompt_sections(
     lighting_key: str = "",
     composition_key: str = "",
     show_full_garment: bool = True,
+    background: dict | None = None,
+    reference_views: list[str] | None = None,
+    outfit_category: str = "",
 ) -> list[dict]:
     """The exact prompt that generation would send, one labeled section each."""
     note = (user_text or "").strip()[:1000]
@@ -113,6 +156,8 @@ def prompt_sections(
         return text_image_prompt_sections(user_text=note, aspect_ratio=aspect_ratio)
     if product is None or variant is None:
         raise InstagramValidationError("محصول و تنوع انتخاب‌شده معتبر نیست.")
+    family = product_family(product)
+    outfit_family = resolve_outfit_family(product, outfit_category)
     if scenario == SCENARIO_MODEL_SCENE:
         if model is None:
             raise InstagramValidationError("مدل انتخاب‌شده فعال نیست.")
@@ -129,6 +174,10 @@ def prompt_sections(
             user_note=note,
             garment_details=garment_details,
             show_full_garment=show_full_garment,
+            background=background,
+            garment_family=family,
+            outfit_family=outfit_family,
+            reference_views=reference_views,
         )
     if scenario == SCENARIO_PRODUCT_BRIEF:
         return product_brief_prompt_sections(
@@ -137,6 +186,9 @@ def prompt_sections(
             reference_count=reference_count,
             user_brief=note,
             garment_details=garment_details,
+            background=background,
+            garment_family=family,
+            reference_views=reference_views,
         )
     return garment_prompt_sections(
         scene_key=scene_key,
@@ -144,6 +196,9 @@ def prompt_sections(
         reference_count=reference_count,
         user_note=note,
         garment_details=garment_details,
+        background=background,
+        garment_family=family,
+        reference_views=reference_views,
     )
 
 
@@ -164,6 +219,7 @@ def preview_prompt_sections(
     lighting_key: str = "",
     composition_key: str = "",
     show_full_garment: bool = True,
+    outfit_category: str = "",
 ) -> list[dict]:
     """Same sections as generation, from whatever the form currently holds."""
     if scenario not in SCENARIOS:
@@ -178,10 +234,11 @@ def preview_prompt_sections(
 
     if product is None or variant is None:
         raise InstagramValidationError("برای پیش‌نمایش، محصول و تنوع را انتخاب کنید.")
-    chosen = [path for path in (selected_paths or []) if path]
+    chosen = [path for path in (selected_paths or []) if path][:MAX_REFERENCES]
     if not chosen:
         raise InstagramValidationError("حداقل یک عکس مرجع محصول انتخاب کنید.")
-    reference_count = min(len(chosen), MAX_REFERENCES)
+    reference_views = selected_reference_views(variant, chosen)
+    reference_count = len(reference_views)
     details = (variant.tryon_details or "").strip()
 
     if scenario == SCENARIO_MODEL_SCENE:
@@ -193,6 +250,8 @@ def preview_prompt_sections(
                  .first())
         if model is None:
             raise InstagramValidationError("مدل انتخاب‌شده فعال نیست.")
+        background = resolve_generation_background(
+            db, scenario=scenario, scene_key="", background_key=background_key)
         return prompt_sections(
             scenario=scenario, product=product, variant=variant, scene_key="",
             aspect_ratio=aspect_ratio, reference_count=reference_count,
@@ -203,17 +262,28 @@ def preview_prompt_sections(
             lighting_key=lighting_key or "soft_daylight",
             composition_key=composition_key or "centered_catalog",
             show_full_garment=show_full_garment,
+            background=background,
+            reference_views=reference_views,
+            outfit_category=outfit_category,
         )
     if scenario == SCENARIO_PRODUCT_BRIEF:
         if scene_key and scene_key not in SCENES:
             scene_key = ""
     elif scene_key not in SCENES:
         scene_key = SCENE_KEYS[0]
+    family = product_family(product)
+    if scene_key and not is_scene_allowed(family, scene_key):
+        raise InstagramValidationError(
+            "این حالت عکاسی برای این نوع محصول مناسب نیست؛ صحنه پیشنهادی را انتخاب کنید.")
+    background = resolve_generation_background(
+        db, scenario=scenario, scene_key=scene_key, background_key=background_key)
     return prompt_sections(
         scenario=scenario, product=product, variant=variant, scene_key=scene_key,
         aspect_ratio=aspect_ratio, reference_count=reference_count,
         user_text=user_text, garment_details=details,
         show_full_garment=show_full_garment,
+        background=background,
+        reference_views=reference_views,
     )
 
 
@@ -270,6 +340,7 @@ def create_generation(
     lighting_key: str = "",
     composition_key: str = "",
     show_full_garment: bool = True,
+    outfit_category: str = "",
 ) -> tuple[InstagramGeneration, object]:
     """Build the prompt, create the record, and enqueue one paid job."""
     if scenario not in SCENARIOS:
@@ -280,6 +351,7 @@ def create_generation(
     note = (user_text or "").strip()[:1000]
     model = None
     model_disk_path = ""
+    background = None
     if scenario == SCENARIO_TEXT:
         if len(note) < 10:
             raise InstagramValidationError("متن کمپین باید حداقل ۱۰ نویسه باشد.")
@@ -310,27 +382,45 @@ def create_generation(
         if model_age(model_slot) is None:
             raise InstagramValidationError("سن مدل انتخاب‌شده معتبر نیست.")
         pose_key = pose_key or "standing_front"
-        background_key = background_key or "studio_white"
         framing_key = framing_key or "full_body"
         lighting_key = lighting_key or "soft_daylight"
         composition_key = composition_key or "centered_catalog"
         if pose_key not in POSES:
             raise InstagramValidationError("ژست انتخاب‌شده معتبر نیست.")
-        if background_key not in BACKGROUNDS:
-            raise InstagramValidationError("پس‌زمینه انتخاب‌شده معتبر نیست.")
         if framing_key not in FRAMINGS:
             raise InstagramValidationError("کادر انتخاب‌شده معتبر نیست.")
-        if lighting_key not in LIGHTINGS:
-            raise InstagramValidationError("نور انتخاب‌شده معتبر نیست.")
         if composition_key not in COMPOSITIONS:
             raise InstagramValidationError("ترکیب‌بندی انتخاب‌شده معتبر نیست.")
+        background = resolve_generation_background(
+            db, scenario=scenario, scene_key="", background_key=background_key)
+        if background is None:
+            raise InstagramValidationError("پس‌زمینه انتخاب‌شده معتبر نیست.")
+        background_key = background["key"]
+        if background["source"] == "generic":
+            if lighting_key not in LIGHTINGS:
+                raise InstagramValidationError("نور انتخاب‌شده معتبر نیست.")
+        else:
+            # A brand background owns lighting; keep a valid key only for storage.
+            lighting_key = (lighting_key if lighting_key in LIGHTINGS
+                            else "soft_daylight")
     elif scene_key not in SCENES:
         raise InstagramValidationError("حالت عکاسی انتخاب‌شده معتبر نیست.")
+
+    if scenario in (SCENARIO_GARMENT, SCENARIO_PRODUCT_BRIEF):
+        family = product_family(product)
+        if scene_key and not is_scene_allowed(family, scene_key):
+            raise InstagramValidationError(
+                "این حالت عکاسی برای این نوع محصول مناسب نیست؛ صحنه پیشنهادی را انتخاب کنید.")
+        background = resolve_generation_background(
+            db, scenario=scenario, scene_key=scene_key,
+            background_key=background_key)
+        background_key = background["key"] if background else ""
 
     if scenario not in (SCENARIO_TEXT, SCENARIO_TEXT_IMAGE) and (
             product is None or variant is None):
         raise InstagramValidationError("محصول و تنوع انتخاب‌شده معتبر نیست.")
 
+    reference_views: list[str] | None = None
     if scenario == SCENARIO_TEXT:
         garment_paths: list[str] = []
         reference_paths = []
@@ -341,6 +431,7 @@ def create_generation(
         details = ""
     else:
         garment_paths = collect_reference_paths(variant, selected_paths)
+        reference_views = selected_reference_views(variant, garment_paths)
         reference_paths = ([model_disk_path] + garment_paths
                            if scenario == SCENARIO_MODEL_SCENE else garment_paths)
         details = (variant.tryon_details or "").strip()
@@ -349,6 +440,9 @@ def create_generation(
     else:
         provider_name, model_name, _api_key = get_tryon_selection(db)
 
+    stored_outfit = (resolve_outfit_family(product, outfit_category)
+                     if scenario == SCENARIO_MODEL_SCENE and product is not None
+                     else None)
     sections = prompt_sections(
         scenario=scenario,
         product=product,
@@ -366,6 +460,9 @@ def create_generation(
         lighting_key=lighting_key,
         composition_key=composition_key,
         show_full_garment=show_full_garment,
+        background=background,
+        reference_views=reference_views,
+        outfit_category=outfit_category,
     )
     prompt = join_prompt_sections(sections)
 
@@ -380,8 +477,9 @@ def create_generation(
         variant_id=variant.id if variant else None,
         garment_mode=scene_key or None,
         model_slot=model_slot or None,
+        outfit_category=stored_outfit,
         pose_key=pose_key or None,
-        background_key=background_key or None,
+        background_key=background["key"] if background else None,
         aspect_ratio=aspect_ratio,
         user_text=note or None,
         rendered_prompt=prompt,
@@ -442,6 +540,7 @@ def variation_payload(generation: InstagramGeneration, payload: dict) -> dict:
         "user_text": generation.user_text or "",
         "logo": bool(payload.get("logo")),
         "model_slot": generation.model_slot or "",
+        "outfit_category": generation.outfit_category or "",
         "pose_key": generation.pose_key or "",
         "background_key": generation.background_key or "",
         "framing_key": payload.get("framing_key") or "full_body",
