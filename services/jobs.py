@@ -110,13 +110,18 @@ async def process_one(db, job: BackgroundJob) -> bool:
             for path in payload.get("temporary_paths", []):
                 _remove_temp_file(path)
     if job.job_type == "instagram_image":
-        from services.image_gen import get_tryon_selection
+        from services.image_gen import get_generation_selection, get_tryon_selection
         from services.instagram_gen import generate_instagram_image, write_output
-        provider_name, model_name, api_key = get_tryon_selection(db)
+        references = payload.get("reference_paths") or []
+        # Text campaigns are the only reference-free path and use the separate
+        # generation model; every image path keeps the edit model.
+        selection = (get_tryon_selection(db) if references
+                     else get_generation_selection(db))
+        provider_name, model_name, api_key = selection
         image_bytes = await __import__("asyncio").to_thread(
             generate_instagram_image,
             prompt=payload["prompt"],
-            reference_paths=payload.get("reference_paths") or [],
+            reference_paths=references,
             aspect_ratio=payload.get("aspect_ratio", "4:5"),
             provider=provider_name,
             model=model_name,
@@ -128,10 +133,13 @@ async def process_one(db, job: BackgroundJob) -> bool:
             job_id=job.id,
         )
         output_path = Path(payload["output_path"])
-        write_output(image_bytes, str(output_path), payload.get("thumbnail_path", ""))
+        write_output(image_bytes, str(output_path))
         job.result_path = str(output_path)
         job.result_url = payload["result_url"]
         db.commit()
+        # The uploaded campaign photo is only needed for this one paid request.
+        for temporary in payload.get("temporary_paths", []):
+            Path(temporary).unlink(missing_ok=True)
         return True
     raise RuntimeError(f"Unsupported background job type: {job.job_type}")
 

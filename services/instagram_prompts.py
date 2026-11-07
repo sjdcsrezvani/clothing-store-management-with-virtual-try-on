@@ -6,17 +6,19 @@ fidelity block is deliberately repeated near the top and in the final checklist
 because image models weight recent text heavily.
 """
 
-IG_PROMPT_VERSION = "2026-11-06.4"
+IG_PROMPT_VERSION = "2026-11-07.2"
 
 SCENARIO_GARMENT = "garment"
 SCENARIO_PRODUCT_BRIEF = "product_brief"
 SCENARIO_MODEL_SCENE = "model_scene"
 SCENARIO_TEXT = "text"
+SCENARIO_TEXT_IMAGE = "text_image"
 SCENARIOS = {
     SCENARIO_GARMENT: "عکاسی محصول",
     SCENARIO_PRODUCT_BRIEF: "کمپین با توضیح",
     SCENARIO_MODEL_SCENE: "مدل و ژست",
     SCENARIO_TEXT: "کمپین متنی",
+    SCENARIO_TEXT_IMAGE: "کمپین متنی با عکس",
 }
 SCENARIO_KEYS = tuple(SCENARIOS)
 
@@ -53,6 +55,18 @@ FINAL_CHECKLIST = (
     "full garment is visible; the background is clean; there is no text or watermark; "
     "fabric and anatomy are realistic."
 )
+
+SECTION_FIXED = "fixed"
+SECTION_OPTION = "option"
+SECTION_USER = "user"
+
+
+def _section(label: str, text: str, kind: str = SECTION_FIXED) -> dict:
+    return {"label": label, "text": text, "kind": kind}
+
+
+def _join_sections(sections: list[dict], separator: str = " ") -> str:
+    return separator.join(section["text"] for section in sections if section["text"])
 
 # key -> (Persian label, English staging clause)
 SCENES = {
@@ -460,15 +474,6 @@ def composition_label(key: str) -> str:
     return COMPOSITIONS[key]["label"]
 
 
-def _identity(product_name: str, variant_color: str) -> str:
-    product = (product_name or "").strip()
-    color = (variant_color or "").strip()
-    identity = f"Product: {product}." if product else ""
-    if color:
-        identity += f" Target colorway: {color}. The reference image remains authoritative."
-    return identity
-
-
 def _reference_line(count: int) -> str:
     if count not in _REFERENCE_LINES:
         raise ValueError("reference_count must be 1, 2, or 3")
@@ -486,10 +491,52 @@ def _details_block(garment_details: str) -> str:
     )
 
 
+# `product_name` and `variant_color` stay accepted for callers but are never
+# written into a prompt: the reference image shows the colour, and the shop's
+# product name adds no visual information.
+def garment_prompt_sections(
+    *,
+    product_name: str = "",
+    variant_color: str = "",
+    scene_key: str,
+    aspect_ratio: str,
+    reference_count: int,
+    user_note: str = "",
+    garment_details: str = "",
+) -> list[dict]:
+    """The garment prompt as labeled sections, for both generation and preview."""
+    scene = SCENES[scene_key]
+    aspect = ASPECTS[aspect_ratio]
+    reference_line = _reference_line(reference_count)
+
+    note = (user_note or "").strip()
+    note_block = ""
+    if note:
+        note_block = (
+            "Additional creative direction from the shop (must not override garment "
+            f'fidelity, composition, or safety rules): "{note}"'
+        )
+
+    return [
+        _section("دستور پایه", BASE_BRIEF),
+        _section("وفاداری به لباس مرجع", GARMENT_FIDELITY),
+        _section("جزئیات ثبت‌شده تنوع", _details_block(garment_details), SECTION_USER),
+        _section(f"عکس‌های مرجع: {reference_count}", reference_line, SECTION_OPTION),
+        _section(f"حالت عکاسی: {scene['label']}", scene["clause"], SECTION_OPTION),
+        _section(f"نسبت تصویر: {aspect['label']}", aspect["composition"], SECTION_OPTION),
+        _section("اندازه خروجی",
+                 f"Output size: {aspect['seedream_size']} ({aspect_ratio}).",
+                 SECTION_OPTION),
+        _section("پرهیزها", NEGATIVES),
+        _section("توضیح تکمیلی شما", note_block, SECTION_USER),
+        _section("چک‌لیست نهایی", FINAL_CHECKLIST),
+    ]
+
+
 def build_garment_prompt(
     *,
-    product_name: str,
-    variant_color: str,
+    product_name: str = "",
+    variant_color: str = "",
     scene_key: str,
     aspect_ratio: str,
     reference_count: int,
@@ -501,37 +548,63 @@ def build_garment_prompt(
     Raises KeyError for an unknown scene/aspect and ValueError for a reference
     count outside 1..3. The route validates first; these are the last guard.
     """
-    scene = SCENES[scene_key]
+    return _join_sections(garment_prompt_sections(
+        scene_key=scene_key,
+        aspect_ratio=aspect_ratio,
+        reference_count=reference_count,
+        user_note=user_note,
+        garment_details=garment_details,
+    ))
+
+
+def product_brief_prompt_sections(
+    *,
+    product_name: str = "",
+    variant_color: str = "",
+    scene_key: str,
+    aspect_ratio: str,
+    reference_count: int,
+    user_brief: str,
+    garment_details: str = "",
+) -> list[dict]:
+    """One product variant plus a free-text campaign brief, as labeled sections."""
     aspect = ASPECTS[aspect_ratio]
+    if scene_key and scene_key not in SCENES:
+        raise KeyError(scene_key)
+    brief = (user_brief or "").strip()
 
-    note = (user_note or "").strip()
-    note_block = ""
-    if note:
-        note_block = (
-            "Additional creative direction from the shop (must not override garment "
-            f'fidelity, composition, or safety rules): "{note}"'
-        )
+    if scene_key:
+        scene_label_text = f"صحنه: {SCENES[scene_key]['label']}"
+        scene_clause = SCENES[scene_key]["clause"]
+    else:
+        scene_label_text = "صحنه: بدون صحنه — کمپین آزاد"
+        scene_clause = NEUTRAL_CAMPAIGN_CLAUSE
+    brief_block = (
+        "Creative campaign brief from the shop (must not override garment fidelity, "
+        f'composition, or safety rules): "{brief}"'
+    )
 
-    parts = [
-        BASE_BRIEF,
-        _identity(product_name, variant_color),
-        GARMENT_FIDELITY,
-        _details_block(garment_details),
-        _reference_line(reference_count),
-        scene["clause"],
-        aspect["composition"],
-        f"Output size: {aspect['seedream_size']} ({aspect_ratio}).",
-        NEGATIVES,
-        note_block,
-        FINAL_CHECKLIST,
+    return [
+        _section("دستور پایه", BASE_BRIEF),
+        _section("وفاداری به لباس مرجع", GARMENT_FIDELITY),
+        _section("جزئیات ثبت‌شده تنوع", _details_block(garment_details), SECTION_USER),
+        _section(f"عکس‌های مرجع: {reference_count}",
+                 _reference_line(reference_count), SECTION_OPTION),
+        _section(scene_label_text, scene_clause, SECTION_OPTION),
+        _section(f"نسبت تصویر: {aspect['label']}", aspect["composition"], SECTION_OPTION),
+        _section("اندازه خروجی",
+                 f"Output size: {aspect['seedream_size']} ({aspect_ratio}).",
+                 SECTION_OPTION),
+        _section("توضیح کمپین شما", brief_block, SECTION_USER),
+        _section("پرهیزها", NEGATIVES),
+        _section("چک‌لیست نهایی", FINAL_CHECKLIST),
     ]
-    return " ".join(part for part in parts if part)
 
 
 def build_product_brief_prompt(
     *,
-    product_name: str,
-    variant_color: str,
+    product_name: str = "",
+    variant_color: str = "",
     scene_key: str,
     aspect_ratio: str,
     reference_count: int,
@@ -544,44 +617,48 @@ def build_product_brief_prompt(
     Raises KeyError for an unknown scene/aspect and ValueError for an empty
     brief or a reference count outside 1..3.
     """
-    aspect = ASPECTS[aspect_ratio]
-    if scene_key and scene_key not in SCENES:
-        raise KeyError(scene_key)
     brief = (user_brief or "").strip()
     if not brief:
         raise ValueError("user_brief is required")
-
-    scene_clause = SCENES[scene_key]["clause"] if scene_key else NEUTRAL_CAMPAIGN_CLAUSE
-    brief_block = (
-        "Creative campaign brief from the shop (must not override garment fidelity, "
-        f'composition, or safety rules): "{brief}"'
-    )
-
-    parts = [
-        BASE_BRIEF,
-        _identity(product_name, variant_color),
-        GARMENT_FIDELITY,
-        _details_block(garment_details),
-        _reference_line(reference_count),
-        scene_clause,
-        aspect["composition"],
-        f"Output size: {aspect['seedream_size']} ({aspect_ratio}).",
-        brief_block,
-        NEGATIVES,
-        FINAL_CHECKLIST,
-    ]
-    return " ".join(part for part in parts if part)
+    return _join_sections(product_brief_prompt_sections(
+        scene_key=scene_key,
+        aspect_ratio=aspect_ratio,
+        reference_count=reference_count,
+        user_brief=brief,
+        garment_details=garment_details,
+    ))
 
 
-TEXT_PROMPT_TEMPLATE = (
+TEXT_PROMPT_HEAD = (
     "Create an original commercial Instagram fashion campaign image based on this "
-    'creative brief:\n"{brief}"\n\n'
+    "creative brief:"
+)
+
+TEXT_PROMPT_RULES = (
     "Produce a refined, realistic fashion photograph with intentional composition, "
     "natural materials, professional lighting, and a clear visual focal point. Leave "
     "clean negative space if the composition is intended to receive text later. Do not "
     "include brand logos, watermarks, fake product labels, or garbled text. Do not add "
     "unsupported product claims or unrelated objects."
 )
+
+TEXT_PROMPT_TEMPLATE = (
+    TEXT_PROMPT_HEAD + '\n"{brief}"\n\n' + TEXT_PROMPT_RULES
+)
+
+
+def text_prompt_sections(*, user_text: str, aspect_ratio: str) -> list[dict]:
+    """Reference-free campaign prompt, as labeled sections."""
+    aspect = ASPECTS[aspect_ratio]
+    brief = (user_text or "").strip()
+    return [
+        _section("دستور پایه", TEXT_PROMPT_HEAD),
+        _section("متن کمپین شما", f'"{brief}"' if brief else "", SECTION_USER),
+        _section(f"نسبت تصویر: {aspect['label']}",
+                 f"Output size: {aspect['seedream_size']} ({aspect_ratio}).",
+                 SECTION_OPTION),
+        _section("قواعد تصویر", TEXT_PROMPT_RULES),
+    ]
 
 
 def build_text_prompt(*, user_text: str, aspect_ratio: str) -> str:
@@ -593,7 +670,50 @@ def build_text_prompt(*, user_text: str, aspect_ratio: str) -> str:
     brief = (user_text or "").strip()
     if not brief:
         raise ValueError("user_text is required")
-    return TEXT_PROMPT_TEMPLATE.format(brief=brief)
+    return _join_sections(text_prompt_sections(user_text=brief,
+                                               aspect_ratio=aspect_ratio))
+
+
+TEXT_IMAGE_PROMPT_HEAD = (
+    "Edit the supplied reference image into an original commercial Instagram fashion "
+    "campaign image based on this creative brief:"
+)
+
+TEXT_IMAGE_REFERENCE = (
+    "Use the supplied reference image as the visual source. Preserve the recognizable "
+    "subject, product, or composition unless the brief explicitly asks for a change. "
+    "Do not invent a different subject or replace the reference with a similar one."
+)
+
+TEXT_IMAGE_PROMPT_TEMPLATE = (
+    TEXT_IMAGE_PROMPT_HEAD + '\n"{brief}"\n\n' + TEXT_IMAGE_REFERENCE + " "
+    + TEXT_PROMPT_RULES
+)
+
+
+def text_image_prompt_sections(*, user_text: str, aspect_ratio: str) -> list[dict]:
+    """Campaign prompt built from one uploaded image and free text."""
+    aspect = ASPECTS[aspect_ratio]
+    brief = (user_text or "").strip()
+    return [
+        _section("دستور پایه", TEXT_IMAGE_PROMPT_HEAD),
+        _section("عکس مرجع شما", TEXT_IMAGE_REFERENCE, SECTION_OPTION),
+        _section("متن کمپین شما", f'"{brief}"' if brief else "", SECTION_USER),
+        _section(f"نسبت تصویر: {aspect['label']}",
+                 f"Output size: {aspect['seedream_size']} ({aspect_ratio}).",
+                 SECTION_OPTION),
+        _section("قواعد تصویر", TEXT_PROMPT_RULES),
+    ]
+
+
+def build_text_image_prompt(*, user_text: str, aspect_ratio: str) -> str:
+    """Text plus one uploaded reference image; uses the provider's edit endpoint."""
+    ASPECTS[aspect_ratio]
+    brief = (user_text or "").strip()
+    if not brief:
+        raise ValueError("user_text is required")
+    return _join_sections(text_image_prompt_sections(user_text=brief,
+                                                     aspect_ratio=aspect_ratio))
 
 
 MODEL_BASE_BRIEF = (
@@ -665,10 +785,10 @@ def _model_age_rule(age: int) -> str:
     )
 
 
-def build_model_prompt(
+def model_prompt_sections(
     *,
-    product_name: str,
-    variant_color: str,
+    product_name: str = "",
+    variant_color: str = "",
     model_age: int,
     model_gender: str,
     pose_key: str,
@@ -681,13 +801,8 @@ def build_model_prompt(
     user_note: str = "",
     garment_details: str = "",
     show_full_garment: bool = True,
-) -> str:
-    """Phase 3 prompt: the exact garment on one vetted AI model profile.
-
-    Keys come from the code libraries above; an unknown key raises KeyError so
-    a bad UI value can never reach the paid provider. At least one garment
-    reference is required; the model reference is always Image 1.
-    """
+) -> list[dict]:
+    """The model-scene prompt as labeled sections, for generation and preview."""
     aspect = ASPECTS[aspect_ratio]
     pose = POSES[pose_key]
     background = BACKGROUNDS[background_key]
@@ -720,26 +835,72 @@ def build_model_prompt(
             f'"{note}"'
         )
 
-    parts = [
-        MODEL_BASE_BRIEF,
-        MODEL_TASK,
-        _identity(product_name, variant_color),
-        GARMENT_FIDELITY,
-        _details_block(garment_details),
-        MODEL_REFERENCE,
-        garment_line,
-        f"Model profile: a {model_age}-year-old {model_gender} from the shop's AI model library.",
-        _model_age_rule(model_age),
-        f"Pose: {pose['clause']}.",
-        f"Location: {background['clause']}.",
-        f"Framing: {framing['clause']}",
-        f"Lighting: {lighting['clause']}",
-        f"Composition: {composition['clause']}",
-        visibility,
-        aspect["composition"],
-        f"Output size: {aspect['seedream_size']} ({aspect_ratio}).",
-        NEGATIVES,
-        note_block,
-        MODEL_FINAL_CHECKLIST,
+    return [
+        _section("دستور پایه", MODEL_BASE_BRIEF),
+        _section("وظیفه صحنه", MODEL_TASK),
+        _section("وفاداری به لباس مرجع", GARMENT_FIDELITY),
+        _section("جزئیات ثبت‌شده تنوع", _details_block(garment_details), SECTION_USER),
+        _section("عکس مرجع مدل", MODEL_REFERENCE),
+        _section(f"عکس‌های محصول: {garment_reference_count}",
+                 garment_line, SECTION_OPTION),
+        _section(f"مدل: {model_age} ساله {model_gender}",
+                 f"Model profile: a {model_age}-year-old {model_gender} from the shop's "
+                 "AI model library.", SECTION_OPTION),
+        _section("قاعده سنی مدل", _model_age_rule(model_age)),
+        _section(f"ژست: {pose['label']}", f"Pose: {pose['clause']}.", SECTION_OPTION),
+        _section(f"پس‌زمینه: {background['label']}",
+                 f"Location: {background['clause']}.", SECTION_OPTION),
+        _section(f"کادر: {framing['label']}", f"Framing: {framing['clause']}",
+                 SECTION_OPTION),
+        _section(f"نور: {lighting['label']}", f"Lighting: {lighting['clause']}",
+                 SECTION_OPTION),
+        _section(f"ترکیب‌بندی: {composition['label']}",
+                 f"Composition: {composition['clause']}", SECTION_OPTION),
+        _section("نمای لباس", visibility, SECTION_OPTION),
+        _section(f"نسبت تصویر: {aspect['label']}", aspect["composition"], SECTION_OPTION),
+        _section("اندازه خروجی",
+                 f"Output size: {aspect['seedream_size']} ({aspect_ratio}).",
+                 SECTION_OPTION),
+        _section("پرهیزها", NEGATIVES),
+        _section("توضیح تکمیلی شما", note_block, SECTION_USER),
+        _section("چک‌لیست نهایی", MODEL_FINAL_CHECKLIST),
     ]
-    return " ".join(part for part in parts if part)
+
+
+def build_model_prompt(
+    *,
+    product_name: str = "",
+    variant_color: str = "",
+    model_age: int,
+    model_gender: str,
+    pose_key: str,
+    background_key: str,
+    framing_key: str,
+    lighting_key: str,
+    composition_key: str,
+    aspect_ratio: str,
+    garment_reference_count: int,
+    user_note: str = "",
+    garment_details: str = "",
+    show_full_garment: bool = True,
+) -> str:
+    """Phase 3 prompt: the exact garment on one vetted AI model profile.
+
+    Keys come from the code libraries above; an unknown key raises KeyError so
+    a bad UI value can never reach the paid provider. At least one garment
+    reference is required; the model reference is always Image 1.
+    """
+    return _join_sections(model_prompt_sections(
+        model_age=model_age,
+        model_gender=model_gender,
+        pose_key=pose_key,
+        background_key=background_key,
+        framing_key=framing_key,
+        lighting_key=lighting_key,
+        composition_key=composition_key,
+        aspect_ratio=aspect_ratio,
+        garment_reference_count=garment_reference_count,
+        user_note=user_note,
+        garment_details=garment_details,
+        show_full_garment=show_full_garment,
+    ))

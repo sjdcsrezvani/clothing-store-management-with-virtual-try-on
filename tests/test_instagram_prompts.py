@@ -12,15 +12,19 @@ from services.instagram_prompts import (
     build_garment_prompt,
     build_model_prompt,
     build_product_brief_prompt,
+    build_text_image_prompt,
     build_text_prompt,
+    garment_prompt_sections,
     scene_label,
+    text_image_prompt_sections,
 )
 
 
-def _prompt(scene="packshot", aspect="4:5", refs=1, note="", details=""):
+def _prompt(scene="packshot", aspect="4:5", refs=1, note="", details="",
+            product_name="", variant_color=""):
     return build_garment_prompt(
-        product_name="تیشرت رای‌کیدز",
-        variant_color="آبی",
+        product_name=product_name,
+        variant_color=variant_color,
         scene_key=scene,
         aspect_ratio=aspect,
         reference_count=refs,
@@ -29,10 +33,11 @@ def _prompt(scene="packshot", aspect="4:5", refs=1, note="", details=""):
     )
 
 
-def _brief_prompt(scene="", brief="soft morning light, minimal beige studio", details="", aspect="4:5"):
+def _brief_prompt(scene="", brief="soft morning light, minimal beige studio", details="", aspect="4:5",
+                  product_name="", variant_color=""):
     return build_product_brief_prompt(
-        product_name="تیشرت رای‌کیدز",
-        variant_color="آبی",
+        product_name=product_name,
+        variant_color=variant_color,
         scene_key=scene,
         aspect_ratio=aspect,
         reference_count=1,
@@ -43,8 +48,8 @@ def _brief_prompt(scene="", brief="soft morning light, minimal beige studio", de
 
 def _model_prompt(**overrides):
     values = dict(
-        product_name="تیشرت رای‌کیدز",
-        variant_color="آبی",
+        product_name="",
+        variant_color="",
         model_age=7,
         model_gender="girl",
         pose_key="standing_front",
@@ -275,3 +280,60 @@ def test_unknown_scene_or_aspect_is_rejected():
         _prompt(scene="not-a-scene")
     with pytest.raises(KeyError):
         _prompt(aspect="16:9")
+
+
+def test_prompt_sections_name_the_options_that_produced_them():
+    sections = garment_prompt_sections(
+        scene_key="packshot",
+        aspect_ratio="1:1",
+        reference_count=2,
+        user_note="soft morning light",
+        garment_details="دو تکه",
+    )
+    by_label = {section["label"]: section for section in sections}
+    assert by_label["حالت عکاسی: پکشات یکدست"]["kind"] == "option"
+    assert by_label["نسبت تصویر: ۱:۱ (مربع)"]["kind"] == "option"
+    assert by_label["عکس‌های مرجع: 2"]["kind"] == "option"
+    assert by_label["دستور پایه"]["kind"] == "fixed"
+    assert by_label["توضیح تکمیلی شما"]["kind"] == "user"
+    assert by_label["جزئیات ثبت‌شده تنوع"]["kind"] == "user"
+    assert by_label["حالت عکاسی: پکشات یکدست"]["text"] in _prompt(
+        scene="packshot", aspect="1:1", refs=2, note="soft morning light",
+        details="دو تکه")
+
+
+def test_prompts_never_include_the_product_name_or_colour():
+    product = "نام محصول یکتا"
+    colour = "رنگ یکتا"
+    prompts = [
+        _prompt(product_name=product, variant_color=colour),
+        _brief_prompt(product_name=product, variant_color=colour),
+        _model_prompt(product_name=product, variant_color=colour),
+    ]
+    for prompt in prompts:
+        assert product not in prompt
+        assert colour not in prompt
+        assert "محصول و رنگ" not in prompt
+
+
+def test_text_image_prompt_edits_the_uploaded_photo_from_the_brief():
+    prompt = build_text_image_prompt(
+        user_text="warm autumn window light, clean negative space",
+        aspect_ratio="1:1")
+    assert "Edit the supplied reference image" in prompt
+    assert "reference image as the visual source" in prompt
+    assert '"warm autumn window light, clean negative space"' in prompt
+    assert "1:1" in prompt
+
+    labels = {section["label"] for section in text_image_prompt_sections(
+        user_text="brief", aspect_ratio="4:5")}
+    assert "عکس مرجع شما" in labels
+    assert "متن کمپین شما" in labels
+
+
+def test_text_image_prompt_requires_a_brief_and_a_known_aspect():
+    import pytest
+    with pytest.raises(ValueError):
+        build_text_image_prompt(user_text="   ", aspect_ratio="4:5")
+    with pytest.raises(KeyError):
+        build_text_image_prompt(user_text="a valid campaign brief", aspect_ratio="16:9")

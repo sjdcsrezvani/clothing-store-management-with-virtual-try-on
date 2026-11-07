@@ -29,11 +29,12 @@ logger = logging.getLogger(__name__)
 
 TRYON_PROVIDER_SETTING = "tryon_provider"
 TRYON_MODEL_SETTING = "tryon_model"
+GENERATION_MODEL_SETTING = "instagram_generation_model"
 TRYON_KEY_SETTINGS = ("tryon_api_key", "tryon_api_key_avalai")
 
 
 def get_tryon_selection(db) -> tuple[str, str, str]:
-    """(provider, model, key) from Settings, resolved at execution time.
+    """(provider, model, key) for image edits from Settings, resolved at run time.
 
     No environment or built-in fallback: a key is owner-managed. An unknown
     provider/model falls back to the catalog default instead of breaking the
@@ -45,6 +46,25 @@ def get_tryon_selection(db) -> tuple[str, str, str]:
     ).all()}
     provider, entry = resolve_selection(
         rows.get(TRYON_PROVIDER_SETTING, ""), rows.get(TRYON_MODEL_SETTING, ""))
+    key = rows.get(key_setting(provider), "").strip()
+    return provider, entry["id"], key
+
+
+def get_generation_selection(db) -> tuple[str, str, str]:
+    """(provider, model, key) for text-to-image, a separate model setting.
+
+    The provider is shared with try-on so one key still covers both paths, but
+    the model comes from the provider's generation-only catalog.
+    """
+    from models import Settings
+    from services.image_models import resolve_generation_selection
+    rows = {r.key: (r.value or "") for r in db.query(Settings).filter(
+        Settings.key.in_((TRYON_PROVIDER_SETTING, GENERATION_MODEL_SETTING)
+                         + TRYON_KEY_SETTINGS)
+    ).all()}
+    provider, entry = resolve_generation_selection(
+        rows.get(TRYON_PROVIDER_SETTING, ""),
+        rows.get(GENERATION_MODEL_SETTING, ""))
     key = rows.get(key_setting(provider), "").strip()
     return provider, entry["id"], key
 

@@ -83,11 +83,13 @@ class _FakeClient:
         return self.responses.pop(0)
 
 
-def test_seedream_retries_at_2k_when_the_custom_size_is_rejected(monkeypatch):
+def test_seedream_retries_at_2k_when_the_custom_size_is_rejected(monkeypatch, tmp_path):
     import base64
 
     import services.instagram_gen as instagram_gen
 
+    reference = tmp_path / "reference.jpg"
+    reference.write_bytes(_jpeg(200, 200))
     encoded = base64.b64encode(_jpeg(1024, 1024)).decode("ascii")
     client = _FakeClient([
         _FakeResponse(400, '{"error":{"message":"invalid size: 1440x1800"}}'),
@@ -96,14 +98,78 @@ def test_seedream_retries_at_2k_when_the_custom_size_is_rejected(monkeypatch):
     monkeypatch.setattr(instagram_gen.httpx, "Client", lambda **kwargs: client)
 
     out = instagram_gen.generate_instagram_image(
-        prompt="prompt", reference_paths=[], aspect_ratio="4:5",
+        prompt="prompt", reference_paths=[str(reference)], aspect_ratio="4:5",
         provider="avalai", model="seedream-5-0-260128", api_key="sk-test",
     )
 
     assert client.posts[0]["json"]["size"] == "1440x1800"
     assert client.posts[1]["json"]["size"] == "2K"
-    assert client.urls[0].endswith("/images/generations")
+    assert client.urls[0].endswith("/images/edits")
     assert _size(out) == (1440, 1800)
+
+
+def test_text_generation_posts_json_without_references(monkeypatch):
+    import base64
+
+    import services.instagram_gen as instagram_gen
+
+    encoded = base64.b64encode(_jpeg(1024, 1024)).decode("ascii")
+    client = _FakeClient([_FakeResponse(200, "", {"data": [{"b64_json": encoded}]})])
+    monkeypatch.setattr(instagram_gen.httpx, "Client", lambda **kwargs: client)
+
+    out = instagram_gen.generate_instagram_image(
+        prompt="campaign", reference_paths=[], aspect_ratio="4:5",
+        provider="avalai", model="qwen-image-3.0-pro", api_key="sk-test",
+    )
+
+    assert client.urls[0].endswith("/images/generations")
+    assert client.posts[0]["json"] == {
+        "model": "qwen-image-3.0-pro",
+        "prompt": "campaign",
+        "n": 1,
+        "size": "1152x1440",
+    }
+    assert client.posts[0].get("files") is None
+    assert _size(out) == (1440, 1800)
+
+
+def test_text_generation_uses_the_square_size_for_the_gapgpt_model(monkeypatch):
+    import base64
+
+    import services.instagram_gen as instagram_gen
+
+    encoded = base64.b64encode(_jpeg(1024, 1024)).decode("ascii")
+    client = _FakeClient([_FakeResponse(200, "", {"data": [{"b64_json": encoded}]})])
+    monkeypatch.setattr(instagram_gen.httpx, "Client", lambda **kwargs: client)
+
+    instagram_gen.generate_instagram_image(
+        prompt="campaign", reference_paths=[], aspect_ratio="9:16",
+        provider="gapgpt", model="gapgpt/qwen-image-2.1", api_key="sk-test",
+    )
+
+    assert client.urls[0].endswith("/images/generations")
+    assert client.posts[0]["json"]["size"] == "1024x1024"
+
+
+def test_text_generation_retries_once_at_square_when_the_size_is_rejected(monkeypatch):
+    import base64
+
+    import services.instagram_gen as instagram_gen
+
+    encoded = base64.b64encode(_jpeg(1024, 1024)).decode("ascii")
+    client = _FakeClient([
+        _FakeResponse(400, '{"error":{"message":"invalid size"}}'),
+        _FakeResponse(200, "", {"data": [{"b64_json": encoded}]}),
+    ])
+    monkeypatch.setattr(instagram_gen.httpx, "Client", lambda **kwargs: client)
+
+    instagram_gen.generate_instagram_image(
+        prompt="campaign", reference_paths=[], aspect_ratio="4:5",
+        provider="avalai", model="qwen-image-3.0-pro", api_key="sk-test",
+    )
+
+    assert client.posts[0]["json"]["size"] == "1152x1440"
+    assert client.posts[1]["json"]["size"] == "1024x1024"
 
 
 def test_provider_errors_are_actionable_and_hide_raw_codes():
@@ -143,3 +209,23 @@ def test_a_missing_reference_file_is_refused_before_the_provider_call():
             api_key="sk-test",
         )
     assert error.value.code == "missing_reference"
+
+
+def test_write_output_prunes_outputs_past_the_retention_window(tmp_path):
+    import os
+    import time
+
+    import services.instagram_gen as instagram_gen
+
+    old = tmp_path / "ig_old.jpg"
+    old.write_bytes(b"old")
+    stale = time.time() - (instagram_gen.OUTPUT_RETENTION_DAYS + 1) * 86400
+    os.utime(old, (stale, stale))
+    fresh = tmp_path / "ig_fresh.jpg"
+    fresh.write_bytes(b"fresh")
+
+    instagram_gen.write_output(_jpeg(64, 64), str(tmp_path / "ig_new.jpg"))
+
+    assert not old.exists()
+    assert fresh.exists()
+    assert (tmp_path / "ig_new.jpg").exists()

@@ -1,4 +1,4 @@
-"""Instagram Studio routes: role gate, enqueue, history, delete, download."""
+"""Instagram Studio routes: role gate, enqueue, result, download."""
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -60,6 +60,7 @@ def _seed_key(db_session):
     db_session.add_all([
         Settings(key="tryon_provider", value="avalai"),
         Settings(key="tryon_model", value="seedream-5-0-260128"),
+        Settings(key="instagram_generation_model", value="qwen-image-3.0-pro"),
         Settings(key="tryon_api_key_avalai", value="sk-test-key"),
     ])
     db_session.commit()
@@ -202,30 +203,6 @@ def test_generate_product_brief_rejects_a_short_brief(client, db_session):
         _cleanup(root)
 
 
-def test_history_filters_by_scenario(client, db_session):
-    from services.instagram_studio import create_generation
-
-    product, variant, paths, root = _make_variant(db_session)
-    user, _password = _staff(db_session, "ig-history-filter", "manager")
-    try:
-        create_generation(
-            db_session, staff=user, product=product, variant=variant,
-            selected_paths=[paths[0]], scene_key="flat_lay", aspect_ratio="4:5",
-            user_text="garment-marker",
-        )
-        create_generation(
-            db_session, staff=user, product=product, variant=variant,
-            selected_paths=[paths[0]], scene_key="", aspect_ratio="4:5",
-            user_text="brief-marker", scenario="product_brief",
-        )
-        _session_as(client, user, _password)
-        page = client.get("/admin/instagram-studio/history?scenario=product_brief")
-        assert page.status_code == 200
-        assert "brief-marker" in page.text
-        assert "garment-marker" not in page.text
-    finally:
-        _cleanup(root)
-
 
 def test_variant_details_save_reaches_the_instagram_prompt(client, db_session):
     product, variant, paths, root = _make_variant(db_session)
@@ -320,35 +297,6 @@ def test_generate_model_scene_creates_a_generation(client, db_session, tmp_path)
         _cleanup(root)
 
 
-def test_history_filter_offers_the_model_scene(client, db_session):
-    _login(client, db_session, "manager", "ig-model-history")
-    page = client.get("/admin/instagram-studio/history")
-    assert page.status_code == 200
-    assert 'value="model_scene"' in page.text
-
-
-def test_history_card_shows_the_model_pose_and_background(client, db_session, tmp_path):
-    from services.instagram_studio import create_generation
-
-    product, variant, paths, root = _make_variant(db_session)
-    _make_shop_model(db_session, tmp_path)
-    user, password = _staff(db_session, "ig-model-history-card", "manager")
-    try:
-        create_generation(
-            db_session, staff=user, product=product, variant=variant,
-            selected_paths=[paths[0]], scene_key="", aspect_ratio="4:5",
-            scenario="model_scene", model_slot="girl_7", pose_key="seated_bench",
-            background_key="park", framing_key="full_body",
-            lighting_key="golden_hour", composition_key="candid_lifestyle")
-        _session_as(client, user, password)
-        page = client.get("/admin/instagram-studio/history?scenario=model_scene")
-        assert page.status_code == 200
-        assert "مدل و ژست" in page.text
-        assert "دختر ۷ ساله" in page.text
-        assert "نشسته روی نیمکت" in page.text
-        assert "پارک" in page.text
-    finally:
-        _cleanup(root)
 
 
 def _post_text(client, **overrides):
@@ -388,6 +336,8 @@ def test_generate_text_scene_creates_a_reference_free_job(client, db_session):
     assert generation.scenario == "text"
     assert generation.product_id is None
     assert generation.variant_id is None
+    assert generation.provider == "avalai"
+    assert generation.model == "qwen-image-3.0-pro"
     assert "cozy autumn campaign" in generation.rendered_prompt
     job = db_session.get(BackgroundJob, generation.job_id)
     assert json.loads(job.payload)["reference_paths"] == []
@@ -402,36 +352,6 @@ def test_generate_text_scene_refuses_a_short_brief(client, db_session):
     assert db_session.query(InstagramGeneration).count() == 0
 
 
-def test_history_offers_the_text_scene(client, db_session):
-    _login(client, db_session, "manager", "ig-text-history")
-    page = client.get("/admin/instagram-studio/history")
-    assert page.status_code == 200
-    assert 'value="text"' in page.text
-
-
-def test_history_card_offers_a_variation_form(client, db_session):
-    product, variant, paths, root = _make_variant(db_session)
-    _login(client, db_session, "manager", "ig-variation-card")
-    _seed_key(db_session)
-    try:
-        _post_generate(client, product, variant, paths)
-        generation = db_session.query(InstagramGeneration).one()
-        job = db_session.get(BackgroundJob, generation.job_id)
-        job.status = "completed"
-        db_session.commit()
-
-        page = client.get("/admin/instagram-studio/history")
-        assert page.status_code == 200
-        assert 'action="/admin/instagram-studio/generate"' in page.text
-        assert "تولید تنوع" in page.text
-        assert f'value="{product.id}"' in page.text
-        assert f'value="{variant.id}"' in page.text
-        assert f'value="{paths[0]}"' in page.text
-        assert 'name="garment_mode"' in page.text
-        assert 'name="aspect_ratio"' in page.text
-        assert 'name="user_text"' in page.text
-    finally:
-        _cleanup(root)
 
 
 def test_studio_reload_keeps_the_completed_and_failed_result_actions(client, db_session):
@@ -451,7 +371,6 @@ def test_studio_reload_keeps_the_completed_and_failed_result_actions(client, db_
         page = client.get(url)
         assert page.status_code == 200
         assert "تولید تنوع" in page.text
-        assert 'name="back" value="/admin/instagram-studio?product_id=' in page.text
 
         job.status = "failed"
         job.error_message = "Provider refused"
@@ -472,85 +391,8 @@ def test_studio_shows_usage_windows(client, db_session):
     assert "۳۰ روز گذشته" in page.text
 
 
-def test_manager_toggles_favorite_and_filters_the_history(client, db_session):
-    product, variant, paths, root = _make_variant(db_session)
-    _login(client, db_session, "manager", "ig-favorite")
-    _seed_key(db_session)
-    try:
-        _post_generate(client, product, variant, paths)
-        generation = db_session.query(InstagramGeneration).one()
-        back = f"/admin/instagram-studio/history?favorite=1"
-        token = csrf_token(client, "/admin/instagram-studio/history")
-        response = client.post(
-            f"/admin/instagram-studio/history/{generation.id}/favorite",
-            data={"csrf_token": token, "back": back}, follow_redirects=False)
-        assert response.status_code == 303
-        assert response.headers["location"] == back
-        db_session.refresh(generation)
-        assert generation.is_favorite is True
-
-        page = client.get("/admin/instagram-studio/history?favorite=1")
-        assert page.status_code == 200
-        assert product.name in page.text
-        assert 'aria-pressed="true"' in page.text
-
-        token = csrf_token(client, "/admin/instagram-studio/history")
-        client.post(
-            f"/admin/instagram-studio/history/{generation.id}/favorite",
-            data={"csrf_token": token, "back": "/admin/instagram-studio/history"},
-            follow_redirects=False)
-        db_session.refresh(generation)
-        assert generation.is_favorite is False
-    finally:
-        _cleanup(root)
 
 
-def test_favorite_toggle_is_manager_only(client, db_session):
-    product, variant, paths, root = _make_variant(db_session)
-    _login(client, db_session, "manager", "ig-favorite-owner")
-    _seed_key(db_session)
-    try:
-        _post_generate(client, product, variant, paths)
-        generation = db_session.query(InstagramGeneration).one()
-
-        _login(client, db_session, "cashier", "ig-favorite-cashier")
-        token = csrf_token(client, "/admin")
-        response = client.post(
-            f"/admin/instagram-studio/history/{generation.id}/favorite",
-            data={"csrf_token": token}, follow_redirects=False)
-        assert response.status_code == 403
-        db_session.refresh(generation)
-        assert generation.is_favorite is False
-    finally:
-        _cleanup(root)
-
-
-def test_favorite_toggle_refuses_an_external_return_url(client, db_session):
-    _login(client, db_session, "manager", "ig-favorite-redirect")
-    _seed_key(db_session)
-    product, variant, paths, root = _make_variant(db_session)
-    try:
-        _post_generate(client, product, variant, paths)
-        generation = db_session.query(InstagramGeneration).one()
-        token = csrf_token(client, "/admin/instagram-studio/history")
-        response = client.post(
-            f"/admin/instagram-studio/history/{generation.id}/favorite",
-            data={"csrf_token": token, "back": "https://evil.example/"},
-            follow_redirects=False)
-        assert response.status_code == 303
-        assert response.headers["location"].startswith("/admin/instagram-studio")
-    finally:
-        _cleanup(root)
-
-
-def test_history_card_shows_the_text_brief(client, db_session):
-    _login(client, db_session, "manager", "ig-text-card")
-    _seed_key(db_session)
-    _post_text(client)
-    page = client.get("/admin/instagram-studio/history?scenario=text")
-    assert page.status_code == 200
-    assert "کمپین متنی" in page.text
-    assert "cozy autumn campaign" in page.text
 
 
 def test_generate_rejects_when_daily_quota_is_exhausted(client, db_session):
@@ -573,7 +415,7 @@ def test_generate_rejects_when_daily_quota_is_exhausted(client, db_session):
         _cleanup(root)
 
 
-def test_history_and_job_partial_show_a_completed_image(client, db_session):
+def test_job_partial_shows_a_completed_image(client, db_session):
     product, variant, paths, root = _make_variant(db_session)
     _login(client, db_session, "manager", "ig-history")
     _seed_key(db_session)
@@ -592,12 +434,6 @@ def test_history_and_job_partial_show_a_completed_image(client, db_session):
         job.result_url = f"/static/uploads/instagram/{filename}"
         db_session.commit()
 
-        page = client.get("/admin/instagram-studio/history")
-        assert page.status_code == 200
-        assert product.name in page.text
-        payload = __import__("json").loads(job.payload)
-        assert payload["thumbnail_url"] in page.text
-
         partial = client.get(f"/admin/instagram-studio/jobs/{job.id}",
                              headers={"HX-Request": "true"})
         assert partial.status_code == 200
@@ -608,54 +444,6 @@ def test_history_and_job_partial_show_a_completed_image(client, db_session):
         _cleanup(root)
 
 
-def test_owner_can_delete_a_completed_generation_and_its_file(client, db_session):
-    product, variant, paths, root = _make_variant(db_session)
-    _login(client, db_session, "manager", "ig-delete-seed")
-    _seed_key(db_session)
-    try:
-        _post_generate(client, product, variant, paths)
-        generation = db_session.query(InstagramGeneration).one()
-        job = db_session.get(BackgroundJob, generation.job_id)
-        out_dir = Path("static/uploads/instagram")
-        out_dir.mkdir(parents=True, exist_ok=True)
-        output = out_dir / f"delete_{uuid.uuid4().hex[:8]}.jpg"
-        output.write_bytes(b"image")
-        job.status = "completed"
-        job.result_path = str(output)
-        job.result_url = f"/static/uploads/instagram/{output.name}"
-        db_session.commit()
-
-        owner, password = _staff(db_session, "ig-owner-delete", "owner")
-        _session_as(client, owner, password)
-        token = csrf_token(client, "/admin/instagram-studio/history")
-        response = client.post(
-            f"/admin/instagram-studio/history/{generation.id}/delete",
-            data={"csrf_token": token}, follow_redirects=False)
-        assert response.status_code == 303
-        assert db_session.query(InstagramGeneration).count() == 0
-        assert not output.exists()
-    finally:
-        _cleanup(root)
-
-
-def test_a_running_generation_cannot_be_deleted(client, db_session):
-    product, variant, paths, root = _make_variant(db_session)
-    _login(client, db_session, "manager", "ig-delete-running-seed")
-    _seed_key(db_session)
-    try:
-        _post_generate(client, product, variant, paths)
-        generation = db_session.query(InstagramGeneration).one()
-        owner, password = _staff(db_session, "ig-owner-running", "owner")
-        _session_as(client, owner, password)
-        token = csrf_token(client, "/admin/instagram-studio/history")
-        response = client.post(
-            f"/admin/instagram-studio/history/{generation.id}/delete",
-            data={"csrf_token": token}, follow_redirects=False)
-        assert response.status_code == 303
-        assert "err=" in response.headers["location"]
-        assert db_session.query(InstagramGeneration).count() == 1
-    finally:
-        _cleanup(root)
 
 
 def test_download_serves_the_clean_image(client, db_session):
@@ -675,10 +463,321 @@ def test_download_serves_the_clean_image(client, db_session):
         job.result_url = f"/static/uploads/instagram/{output.name}"
         db_session.commit()
 
-        response = client.get(f"/admin/instagram-studio/history/{generation.id}/download")
+        response = client.get(f"/admin/instagram-studio/generations/{generation.id}/download")
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("image/")
         assert response.content
     finally:
         output.unlink(missing_ok=True)
         _cleanup(root)
+
+
+def test_history_and_favorite_endpoints_are_gone(client, db_session):
+    _login(client, db_session, "manager", "ig-history-removed")
+    assert client.get("/admin/instagram-studio/history").status_code == 404
+    token = csrf_token(client, "/admin/instagram-studio")
+    response = client.post(
+        "/admin/instagram-studio/history/1/favorite",
+        data={"csrf_token": token}, follow_redirects=False)
+    assert response.status_code == 404
+
+
+def test_variant_search_finds_by_name_and_barcode_and_hides_no_photo(
+        client, db_session):
+    product, variant, paths, root = _make_variant(db_session)
+    _login(client, db_session, "manager", "ig-vs-name")
+    try:
+        hidden = ProductVariant(product_id=product.id, price=100_000,
+                                barcode=f"IGH{uuid.uuid4().hex[:6]}", color="قرمز")
+        db_session.add(hidden)
+        db_session.commit()
+
+        items = client.get("/admin/instagram-studio/variants",
+                           params={"q": "تیشرت"}).json()["items"]
+        assert [item["variant_id"] for item in items] == [variant.id]
+        assert items[0]["label"] == variant.display_name
+        assert items[0]["barcode"] == variant.barcode
+        assert items[0]["stock"] == variant.available_quantity
+
+        by_code = client.get("/admin/instagram-studio/variants",
+                             params={"q": variant.barcode}).json()["items"]
+        assert by_code[0]["variant_id"] == variant.id
+        assert by_code[0]["exact"] is True
+
+        # Colour and size are not search fields by design.
+        assert client.get("/admin/instagram-studio/variants",
+                          params={"q": "آبی"}).json()["items"] == []
+
+        fragment = client.get("/admin/instagram-studio/variants",
+                              params={"q": "تیشرت"},
+                              headers={"HX-Request": "true"})
+        assert fragment.status_code == 200
+        assert 'data-variant-id="' in fragment.text
+        assert "موجودی" in fragment.text
+    finally:
+        _cleanup(root)
+
+
+def test_variant_search_ranks_an_exact_barcode_before_its_prefix(
+        client, db_session):
+    product, variant, paths, root = _make_variant(db_session)
+    _login(client, db_session, "manager", "ig-vs-rank")
+    try:
+        longer = ProductVariant(product_id=product.id, price=100_000,
+                                barcode=variant.barcode + "X", color="سبز")
+        db_session.add(longer)
+        db_session.flush()
+        path = root / "longer.jpg"
+        Image.new("RGB", (80, 80), (10, 90, 40)).save(path, "JPEG")
+        db_session.add(VariantImage(variant_id=longer.id,
+                                    image_path="/" + str(path), sort_order=0))
+        db_session.commit()
+
+        items = client.get("/admin/instagram-studio/variants",
+                           params={"q": variant.barcode}).json()["items"]
+        assert items[0]["variant_id"] == variant.id
+        assert items[0]["exact"] is True
+        assert longer.id in [item["variant_id"] for item in items]
+    finally:
+        _cleanup(root)
+
+
+def test_variant_search_caps_the_list_at_five(client, db_session):
+    product, variant, paths, root = _make_variant(db_session)
+    _login(client, db_session, "manager", "ig-vs-five")
+    try:
+        for index in range(6):
+            extra = ProductVariant(
+                product_id=product.id, price=100_000,
+                barcode=f"IGE{uuid.uuid4().hex[:8]}", color=f"رنگ {index}")
+            db_session.add(extra)
+            db_session.flush()
+            path = root / f"extra{index}.jpg"
+            Image.new("RGB", (80, 80), (index * 10, 20, 90)).save(path, "JPEG")
+            db_session.add(VariantImage(variant_id=extra.id,
+                                        image_path="/" + str(path), sort_order=0))
+
+        db_session.commit()
+        items = client.get("/admin/instagram-studio/variants",
+                           params={"q": "تیشرت"}).json()["items"]
+        assert len(items) == 5
+    finally:
+        _cleanup(root)
+
+
+def test_variant_search_normalizes_persian_digits(client, db_session):
+    product, variant, paths, root = _make_variant(db_session)
+    _login(client, db_session, "manager", "ig-vs-digits")
+    try:
+        variant.barcode = "IG12345"
+        db_session.commit()
+        items = client.get("/admin/instagram-studio/variants",
+                           params={"q": "IG۱۲۳۴۵"}).json()["items"]
+        assert items[0]["variant_id"] == variant.id
+        assert items[0]["exact"] is True
+    finally:
+        _cleanup(root)
+
+
+def test_variant_search_is_manager_only_and_needs_two_characters(
+        client, db_session):
+    _login(client, db_session, "cashier", "ig-vs-cashier")
+    assert client.get("/admin/instagram-studio/variants",
+                      params={"q": "ab"}).status_code == 403
+
+    _login(client, db_session, "manager", "ig-vs-short")
+    assert client.get("/admin/instagram-studio/variants",
+                      params={"q": "a"}).json() == {"items": []}
+
+
+def test_variant_card_returns_the_selected_variant(client, db_session):
+    product, variant, paths, root = _make_variant(db_session)
+    _login(client, db_session, "manager", "ig-vs-card")
+    try:
+        page = client.get("/admin/instagram-studio/variant-card", params={
+            "scenario": "garment", "product_id": product.id,
+            "variant_id": variant.id})
+        assert page.status_code == 200
+        assert 'id="ig-variant-card"' in page.text
+        assert f'name="product_id" value="{product.id}"' in page.text
+        assert f'name="variant_id" value="{variant.id}"' in page.text
+        assert paths[0] in page.text
+        assert 'name="csrf_token"' in page.text
+
+        missing = client.get("/admin/instagram-studio/variant-card", params={
+            "scenario": "garment", "product_id": product.id,
+            "variant_id": variant.id + 999})
+        assert missing.status_code == 404
+    finally:
+        _cleanup(root)
+
+
+def test_variant_card_model_scene_carries_the_model_controls(
+        client, db_session, tmp_path):
+    product, variant, paths, root = _make_variant(db_session)
+    _make_shop_model(db_session, tmp_path)
+    _login(client, db_session, "manager", "ig-vs-card-model")
+    try:
+        page = client.get("/admin/instagram-studio/variant-card", params={
+            "scenario": "model_scene", "product_id": product.id,
+            "variant_id": variant.id})
+        assert page.status_code == 200
+        assert 'name="model_slot"' in page.text
+        assert 'name="pose_key"' in page.text
+    finally:
+        _cleanup(root)
+
+
+def test_studio_uses_the_variant_combobox_instead_of_chips(client, db_session):
+    _login(client, db_session, "manager", "ig-vs-page")
+    page = client.get("/admin/instagram-studio")
+    assert 'id="ig-variant-search"' in page.text
+    assert 'role="combobox"' in page.text
+    assert 'hx-get="/admin/instagram-studio/variants"' in page.text
+    assert '<form method="get" action="/admin/instagram-studio"' not in page.text
+
+
+def test_studio_prefills_the_selected_variant(client, db_session):
+    product, variant, paths, root = _make_variant(db_session)
+    _login(client, db_session, "manager", "ig-vs-prefill")
+    try:
+        page = client.get(
+            f"/admin/instagram-studio?product_id={product.id}"
+            f"&variant_id={variant.id}")
+        assert f'value="{variant.display_name}"' in page.text
+    finally:
+        _cleanup(root)
+
+
+def _post_text_image(client, tmp_path, **overrides):
+    source = tmp_path / "campaign.jpg"
+    Image.new("RGB", (100, 100), (120, 90, 60)).save(source, "JPEG")
+    token = csrf_token(client, "/admin/instagram-studio?scenario=text_image")
+    data = {
+        "csrf_token": token,
+        "scenario": "text_image",
+        "aspect_ratio": "4:5",
+        "user_text": "warm autumn window light, clean negative space",
+    }
+    data.update(overrides)
+    with source.open("rb") as handle:
+        return client.post(
+            "/admin/instagram-studio/generate", data=data,
+            files={"reference_image": ("campaign.jpg", handle, "image/jpeg")},
+            follow_redirects=False)
+
+
+def test_text_image_tab_offers_a_file_picker_and_no_product(client, db_session):
+    _login(client, db_session, "manager", "ig-text-image-tab")
+    page = client.get("/admin/instagram-studio?scenario=text_image")
+    assert page.status_code == 200
+    assert "کمپین متنی با عکس" in page.text
+    assert 'name="reference_image"' in page.text
+    assert 'enctype="multipart/form-data"' in page.text
+    assert 'name="user_text"' in page.text
+    assert 'name="product_id"' not in page.text
+    assert 'id="ig-variant-search"' not in page.text
+
+
+def test_generate_text_image_uses_the_edit_model_with_the_upload(client, db_session,
+                                                                tmp_path):
+    import json
+
+    _login(client, db_session, "manager", "ig-text-image-generate")
+    _seed_key(db_session)
+    response = _post_text_image(client, tmp_path)
+    assert response.status_code == 303, response.text[:300]
+    assert "job_id=" in response.headers["location"]
+
+    generation = db_session.query(InstagramGeneration).one()
+    assert generation.scenario == "text_image"
+    assert generation.product_id is None
+    assert generation.model == "seedream-5-0-260128"
+    assert "warm autumn window light" in generation.rendered_prompt
+    job = db_session.get(BackgroundJob, generation.job_id)
+    payload = json.loads(job.payload)
+    source = Path(payload["reference_paths"][0])
+    assert payload["temporary_paths"] == [str(source)]
+    assert source.exists()
+    source.unlink(missing_ok=True)
+
+
+def test_generate_text_image_rejects_a_file_that_is_not_an_image(client, db_session):
+    _login(client, db_session, "manager", "ig-text-image-bad")
+    _seed_key(db_session)
+    token = csrf_token(client, "/admin/instagram-studio?scenario=text_image")
+    response = client.post(
+        "/admin/instagram-studio/generate",
+        data={"csrf_token": token, "scenario": "text_image", "aspect_ratio": "4:5",
+              "user_text": "warm autumn window light, clean negative space"},
+        files={"reference_image": ("notes.txt", b"not an image", "text/plain")},
+        follow_redirects=False)
+    assert response.status_code == 303
+    assert "err=" in response.headers["location"]
+    assert db_session.query(InstagramGeneration).count() == 0
+
+
+def test_prompt_preview_labels_the_selected_options(client, db_session):
+    product, variant, paths, root = _make_variant(db_session)
+    _login(client, db_session, "manager", "ig-preview")
+    try:
+        response = client.get(
+            "/admin/instagram-studio/prompt-preview",
+            params=[
+                ("scenario", "garment"),
+                ("product_id", product.id),
+                ("variant_id", variant.id),
+                ("image_paths", paths[0]),
+                ("garment_mode", "packshot"),
+                ("aspect_ratio", "1:1"),
+                ("user_text", "soft morning light"),
+            ])
+        assert response.status_code == 200
+        assert "حالت عکاسی: پکشات یکدست" in response.text
+        assert "نسبت تصویر: ۱:۱ (مربع)" in response.text
+        assert "انتخاب شما" in response.text
+        assert "متن شما" in response.text
+        assert "ثابت" in response.text
+        assert "soft morning light" in response.text
+    finally:
+        _cleanup(root)
+
+
+def test_prompt_preview_for_text_image_needs_no_product(client, db_session):
+    _login(client, db_session, "manager", "ig-preview-text-image")
+    response = client.get(
+        "/admin/instagram-studio/prompt-preview",
+        params={"scenario": "text_image", "aspect_ratio": "4:5",
+                "user_text": "warm autumn window light"})
+    assert response.status_code == 200
+    assert "عکس مرجع شما" in response.text
+    assert "متن کمپین شما" in response.text
+    assert "warm autumn window light" in response.text
+
+
+def test_every_scenario_page_shows_the_prompt_preview(client, db_session, tmp_path):
+    product, variant, paths, root = _make_variant(db_session)
+    _make_shop_model(db_session, tmp_path)
+    _login(client, db_session, "manager", "ig-preview-every-scenario")
+    try:
+        for scenario in ("garment", "product_brief", "model_scene"):
+            page = client.get(
+                f"/admin/instagram-studio?scenario={scenario}"
+                f"&product_id={product.id}&variant_id={variant.id}")
+            assert page.status_code == 200, scenario
+            assert 'hx-get="/admin/instagram-studio/prompt-preview"' in page.text, scenario
+            assert 'id="ig-prompt-preview"' in page.text, scenario
+        for scenario in ("text", "text_image"):
+            page = client.get(f"/admin/instagram-studio?scenario={scenario}")
+            assert page.status_code == 200, scenario
+            assert 'hx-get="/admin/instagram-studio/prompt-preview"' in page.text, scenario
+            assert 'id="ig-prompt-preview"' in page.text, scenario
+    finally:
+        _cleanup(root)
+
+
+def test_prompt_preview_is_manager_only(client, db_session):
+    _login(client, db_session, "cashier", "ig-preview-cashier")
+    response = client.get("/admin/instagram-studio/prompt-preview",
+                          params={"scenario": "text", "user_text": "hello there"})
+    assert response.status_code == 403

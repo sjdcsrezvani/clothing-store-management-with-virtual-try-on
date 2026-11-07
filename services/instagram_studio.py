@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 
 from models import InstagramGeneration, Product, ProductVariant, ShopModel, to_persian_digits
-from services.image_gen import get_tryon_selection
+from services.image_gen import get_generation_selection, get_tryon_selection
 from services.instagram_prompts import (
     ASPECTS,
     BACKGROUNDS,
@@ -22,19 +22,21 @@ from services.instagram_prompts import (
     SCENARIO_MODEL_SCENE,
     SCENARIO_PRODUCT_BRIEF,
     SCENARIO_TEXT,
+    SCENARIO_TEXT_IMAGE,
     SCENARIOS,
     SCENES,
-    build_garment_prompt,
-    build_model_prompt,
-    build_product_brief_prompt,
-    build_text_prompt,
+    SCENE_KEYS,
+    garment_prompt_sections,
+    model_prompt_sections,
+    product_brief_prompt_sections,
+    text_image_prompt_sections,
+    text_prompt_sections,
 )
 from services.jobs import enqueue
 from services.shop_models import model_age, model_gender
 
 MAX_REFERENCES = 3
 OUTPUT_DIR = Path("static/uploads/instagram")
-THUMB_DIR = OUTPUT_DIR / "thumbs"
 OUTPUT_URL = "/static/uploads/instagram"
 
 
@@ -71,6 +73,148 @@ def variant_reference_images(variant: ProductVariant) -> list[dict]:
     for index, image in enumerate(images):
         image["label"] = "تصویر اصلی" if index == 0 else f"تصویر {to_persian_digits(str(index + 1))}"
     return images
+
+
+def variant_has_reference_photo(variant: ProductVariant) -> bool:
+    """True when the variant has at least one usable photo on disk."""
+    return any(
+        Path(_disk_path(image["path"])).exists()
+        for image in variant_reference_images(variant)
+    )
+
+
+def join_prompt_sections(sections: list[dict]) -> str:
+    return " ".join(section["text"] for section in sections if section["text"])
+
+
+def prompt_sections(
+    *,
+    scenario: str,
+    product: Product | None,
+    variant: ProductVariant | None,
+    scene_key: str,
+    aspect_ratio: str,
+    reference_count: int,
+    user_text: str = "",
+    garment_details: str = "",
+    model: ShopModel | None = None,
+    pose_key: str = "",
+    background_key: str = "",
+    framing_key: str = "",
+    lighting_key: str = "",
+    composition_key: str = "",
+    show_full_garment: bool = True,
+) -> list[dict]:
+    """The exact prompt that generation would send, one labeled section each."""
+    note = (user_text or "").strip()[:1000]
+    if scenario == SCENARIO_TEXT:
+        return text_prompt_sections(user_text=note, aspect_ratio=aspect_ratio)
+    if scenario == SCENARIO_TEXT_IMAGE:
+        return text_image_prompt_sections(user_text=note, aspect_ratio=aspect_ratio)
+    if product is None or variant is None:
+        raise InstagramValidationError("محصول و تنوع انتخاب‌شده معتبر نیست.")
+    if scenario == SCENARIO_MODEL_SCENE:
+        if model is None:
+            raise InstagramValidationError("مدل انتخاب‌شده فعال نیست.")
+        return model_prompt_sections(
+            model_age=model_age(model.slot_key),
+            model_gender=model_gender(model.slot_key),
+            pose_key=pose_key,
+            background_key=background_key,
+            framing_key=framing_key,
+            lighting_key=lighting_key,
+            composition_key=composition_key,
+            aspect_ratio=aspect_ratio,
+            garment_reference_count=reference_count,
+            user_note=note,
+            garment_details=garment_details,
+            show_full_garment=show_full_garment,
+        )
+    if scenario == SCENARIO_PRODUCT_BRIEF:
+        return product_brief_prompt_sections(
+            scene_key=scene_key,
+            aspect_ratio=aspect_ratio,
+            reference_count=reference_count,
+            user_brief=note,
+            garment_details=garment_details,
+        )
+    return garment_prompt_sections(
+        scene_key=scene_key,
+        aspect_ratio=aspect_ratio,
+        reference_count=reference_count,
+        user_note=note,
+        garment_details=garment_details,
+    )
+
+
+def preview_prompt_sections(
+    db,
+    *,
+    scenario: str,
+    product: Product | None,
+    variant: ProductVariant | None,
+    selected_paths: list[str] | None = None,
+    scene_key: str = "",
+    aspect_ratio: str = "4:5",
+    user_text: str = "",
+    model_slot: str = "",
+    pose_key: str = "",
+    background_key: str = "",
+    framing_key: str = "",
+    lighting_key: str = "",
+    composition_key: str = "",
+    show_full_garment: bool = True,
+) -> list[dict]:
+    """Same sections as generation, from whatever the form currently holds."""
+    if scenario not in SCENARIOS:
+        raise InstagramValidationError("حالت تولید انتخاب‌شده معتبر نیست.")
+    if aspect_ratio not in ASPECTS:
+        aspect_ratio = "4:5"
+    if scenario in (SCENARIO_TEXT, SCENARIO_TEXT_IMAGE):
+        return prompt_sections(
+            scenario=scenario, product=None, variant=None, scene_key="",
+            aspect_ratio=aspect_ratio, reference_count=0, user_text=user_text,
+        )
+
+    if product is None or variant is None:
+        raise InstagramValidationError("برای پیش‌نمایش، محصول و تنوع را انتخاب کنید.")
+    chosen = [path for path in (selected_paths or []) if path]
+    if not chosen:
+        raise InstagramValidationError("حداقل یک عکس مرجع محصول انتخاب کنید.")
+    reference_count = min(len(chosen), MAX_REFERENCES)
+    details = (variant.tryon_details or "").strip()
+
+    if scenario == SCENARIO_MODEL_SCENE:
+        if not model_slot:
+            raise InstagramValidationError("مدل عکاسی را انتخاب کنید.")
+        model = (db.query(ShopModel)
+                 .filter(ShopModel.slot_key == model_slot,
+                         ShopModel.is_active.is_(True))
+                 .first())
+        if model is None:
+            raise InstagramValidationError("مدل انتخاب‌شده فعال نیست.")
+        return prompt_sections(
+            scenario=scenario, product=product, variant=variant, scene_key="",
+            aspect_ratio=aspect_ratio, reference_count=reference_count,
+            user_text=user_text, garment_details=details, model=model,
+            pose_key=pose_key or "standing_front",
+            background_key=background_key or "studio_white",
+            framing_key=framing_key or "full_body",
+            lighting_key=lighting_key or "soft_daylight",
+            composition_key=composition_key or "centered_catalog",
+            show_full_garment=show_full_garment,
+        )
+    if scenario == SCENARIO_PRODUCT_BRIEF:
+        if scene_key and scene_key not in SCENES:
+            scene_key = ""
+    elif scene_key not in SCENES:
+        scene_key = SCENE_KEYS[0]
+    return prompt_sections(
+        scenario=scenario, product=product, variant=variant, scene_key=scene_key,
+        aspect_ratio=aspect_ratio, reference_count=reference_count,
+        user_text=user_text, garment_details=details,
+        show_full_garment=show_full_garment,
+    )
 
 
 def collect_reference_paths(variant: ProductVariant, selected_paths: list[str]) -> list[str]:
@@ -118,6 +262,7 @@ def create_generation(
     logo: bool = False,
     logo_path: str = "",
     scenario: str = SCENARIO_GARMENT,
+    source_image_path: str = "",
     model_slot: str = "",
     pose_key: str = "",
     background_key: str = "",
@@ -138,6 +283,11 @@ def create_generation(
     if scenario == SCENARIO_TEXT:
         if len(note) < 10:
             raise InstagramValidationError("متن کمپین باید حداقل ۱۰ نویسه باشد.")
+    elif scenario == SCENARIO_TEXT_IMAGE:
+        if len(note) < 10:
+            raise InstagramValidationError("متن کمپین باید حداقل ۱۰ نویسه باشد.")
+        if not source_image_path or not Path(source_image_path).exists():
+            raise InstagramValidationError("عکس مرجع انتخاب نشده یا معتبر نیست.")
     elif scenario == SCENARIO_PRODUCT_BRIEF:
         if len(note) < 10:
             raise InstagramValidationError("توضیح کمپین باید حداقل ۱۰ نویسه باشد.")
@@ -177,65 +327,51 @@ def create_generation(
     elif scene_key not in SCENES:
         raise InstagramValidationError("حالت عکاسی انتخاب‌شده معتبر نیست.")
 
-    if scenario != SCENARIO_TEXT and (product is None or variant is None):
+    if scenario not in (SCENARIO_TEXT, SCENARIO_TEXT_IMAGE) and (
+            product is None or variant is None):
         raise InstagramValidationError("محصول و تنوع انتخاب‌شده معتبر نیست.")
 
     if scenario == SCENARIO_TEXT:
         garment_paths: list[str] = []
         reference_paths = []
         details = ""
+    elif scenario == SCENARIO_TEXT_IMAGE:
+        garment_paths = []
+        reference_paths = [source_image_path]
+        details = ""
     else:
         garment_paths = collect_reference_paths(variant, selected_paths)
         reference_paths = ([model_disk_path] + garment_paths
                            if scenario == SCENARIO_MODEL_SCENE else garment_paths)
         details = (variant.tryon_details or "").strip()
-    provider_name, model_name, _api_key = get_tryon_selection(db)
-
     if scenario == SCENARIO_TEXT:
-        prompt = build_text_prompt(user_text=note, aspect_ratio=aspect_ratio)
-    elif scenario == SCENARIO_PRODUCT_BRIEF:
-        prompt = build_product_brief_prompt(
-            product_name=product.name,
-            variant_color=variant.color or "",
-            scene_key=scene_key,
-            aspect_ratio=aspect_ratio,
-            reference_count=len(reference_paths),
-            user_brief=note,
-            garment_details=details,
-        )
-    elif scenario == SCENARIO_MODEL_SCENE:
-        prompt = build_model_prompt(
-            product_name=product.name,
-            variant_color=variant.color or "",
-            model_age=model_age(model_slot),
-            model_gender=model_gender(model_slot),
-            pose_key=pose_key,
-            background_key=background_key,
-            framing_key=framing_key,
-            lighting_key=lighting_key,
-            composition_key=composition_key,
-            aspect_ratio=aspect_ratio,
-            garment_reference_count=len(garment_paths),
-            user_note=note,
-            garment_details=details,
-            show_full_garment=show_full_garment,
-        )
+        provider_name, model_name, _api_key = get_generation_selection(db)
     else:
-        prompt = build_garment_prompt(
-            product_name=product.name,
-            variant_color=variant.color or "",
-            scene_key=scene_key,
-            aspect_ratio=aspect_ratio,
-            reference_count=len(reference_paths),
-            user_note=note,
-            garment_details=details,
-        )
+        provider_name, model_name, _api_key = get_tryon_selection(db)
+
+    sections = prompt_sections(
+        scenario=scenario,
+        product=product,
+        variant=variant,
+        scene_key=scene_key,
+        aspect_ratio=aspect_ratio,
+        reference_count=(len(garment_paths) if scenario == SCENARIO_MODEL_SCENE
+                         else len(reference_paths)),
+        user_text=note,
+        garment_details=details,
+        model=model,
+        pose_key=pose_key,
+        background_key=background_key,
+        framing_key=framing_key,
+        lighting_key=lighting_key,
+        composition_key=composition_key,
+        show_full_garment=show_full_garment,
+    )
+    prompt = join_prompt_sections(sections)
 
     filename = f"ig_{uuid.uuid4().hex[:12]}.jpg"
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    THUMB_DIR.mkdir(parents=True, exist_ok=True)
     output_path = OUTPUT_DIR / filename
-    thumbnail_path = THUMB_DIR / filename
 
     generation = InstagramGeneration(
         created_by_staff_id=staff.id,
@@ -260,11 +396,11 @@ def create_generation(
         "generation_id": generation.id,
         "prompt": prompt,
         "reference_paths": reference_paths,
+        "temporary_paths": ([source_image_path]
+                            if scenario == SCENARIO_TEXT_IMAGE else []),
         "aspect_ratio": aspect_ratio,
         "output_path": str(output_path),
-        "thumbnail_path": str(thumbnail_path),
         "result_url": f"{OUTPUT_URL}/{filename}",
-        "thumbnail_url": f"{OUTPUT_URL}/thumbs/{filename}",
         "logo": bool(logo),
         "logo_path": logo_path,
         "framing_key": framing_key,
@@ -331,18 +467,3 @@ def available_model_slots(db) -> list[dict]:
             "image_url": row.image_path,
         })
     return choices
-
-
-def thumbnail_path_for(result_path: str) -> str:
-    path = Path(result_path)
-    return str(path.parent / "thumbs" / path.name)
-
-
-def delete_generation_files(generation: InstagramGeneration, thumb_path: str = "") -> None:
-    """Remove the generated image and its thumbnail; missing files are fine."""
-    job = generation.job
-    if job and job.result_path:
-        Path(job.result_path).unlink(missing_ok=True)
-        thumb_path = thumb_path or thumbnail_path_for(job.result_path)
-    if thumb_path:
-        Path(thumb_path).unlink(missing_ok=True)

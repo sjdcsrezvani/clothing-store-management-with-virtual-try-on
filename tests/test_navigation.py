@@ -65,7 +65,7 @@ KNOWN_PATHS = (
     "/admin/sms/history", "/admin/sms/templates/new", "/admin/sms/templates/3/edit",
     "/admin/birthdays", "/admin/follow-ups", "/admin/tier-up", "/admin/tier-downgrades",
     "/admin/try-on", "/admin/try-on/saved", "/admin/settings",
-    "/admin/instagram-studio", "/admin/instagram-studio/history",
+    "/admin/instagram-studio",
     "/admin/settings/appearance", "/admin/settings/shop-models",
     "/admin/staff", "/admin/staff/2/contract",
     "/admin/payroll/9/receipt", "/admin/backups", "/admin/backups/download",
@@ -80,8 +80,7 @@ KNOWN_PATHS = (
 REACHABLE = {
     "cashier": ("/sales/new", "/sales/", "/admin/cashbox"),
     "manager": ("/admin", "/admin/products", "/admin/credit", "/admin/sms",
-                "/admin/settings/tags", "/admin/instagram-studio",
-                "/admin/instagram-studio/history"),
+                "/admin/settings/tags", "/admin/instagram-studio"),
     "owner": ("/admin/settings", "/admin/settings/appearance",
               "/admin/settings/shop-models", "/admin/birthdays",
               "/admin/tier-up", "/admin/logs"),

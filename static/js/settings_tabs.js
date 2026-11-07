@@ -61,37 +61,46 @@
     });
 })();
 
-/* Provider → model pair: one catalog's models at a time. Without JS every
-   model stays listed and the server rejects a mismatched save. */
+/* Provider → model pairs: one catalog's models at a time for both the edit
+   model and the separate text-generation model. Without JS every model stays
+   listed and the server rejects a mismatched save. */
 (function () {
     'use strict';
     var provider = document.getElementById('tryon_provider');
-    var model = document.getElementById('tryon_model');
-    if (!provider || !model) return;
-    var options = Array.prototype.slice.call(model.options);
+    if (!provider) return;
 
-    function sync() {
-        var current = model.value;
-        var first = null;
-        options.forEach(function (option) {
-            var match = option.getAttribute('data-provider') === provider.value;
-            option.hidden = !match;
-            option.disabled = !match;
-            if (match && !first) first = option.value;
-        });
-        var keep = options.filter(function (option) {
-            return !option.disabled && option.value === current;
-        });
-        if (!keep.length && first) model.value = first;
+    function wireModel(id) {
+        var model = document.getElementById(id);
+        if (!model) return null;
+        var options = Array.prototype.slice.call(model.options);
+
+        function sync() {
+            var current = model.value;
+            var first = null;
+            options.forEach(function (option) {
+                var match = option.getAttribute('data-provider') === provider.value;
+                option.hidden = !match;
+                option.disabled = !match;
+                if (match && !first) first = option.value;
+            });
+            var keep = options.filter(function (option) {
+                return !option.disabled && option.value === current;
+            });
+            if (!keep.length && first) model.value = first;
+        }
+        return sync;
     }
 
+    var syncers = [wireModel('tryon_model'),
+                   wireModel('instagram_generation_model')].filter(Boolean);
+
     provider.addEventListener('change', function () {
-        sync();
+        syncers.forEach(function (sync) { sync(); });
         // The form's dirty dot listens for input; a programmatic model change
         // must count as unsaved work too.
         if (provider.form) {
             provider.form.dispatchEvent(new Event('input', { bubbles: true }));
         }
     });
-    sync();
+    syncers.forEach(function (sync) { sync(); });
 })();

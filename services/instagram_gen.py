@@ -10,13 +10,20 @@ import base64
 import io
 import json
 import logging
+import time
 from pathlib import Path
 
 import httpx
 from PIL import Image, ImageOps
 
 from services.image_gen import ImageGenerationError, classify_response
-from services.image_models import SEEDREAM_JSON, api_base, resolve_selection
+from services.image_models import (
+    GENERATION_JSON,
+    SEEDREAM_JSON,
+    api_base,
+    resolve_generation_selection,
+    resolve_selection,
+)
 from services.instagram_prompts import ASPECTS
 
 logger = logging.getLogger(__name__)
@@ -24,7 +31,7 @@ logger = logging.getLogger(__name__)
 TARGET_SIZES = {key: tuple(value["target"]) for key, value in ASPECTS.items()}
 MAX_DIM = 1024
 READ_TIMEOUT = 300.0
-THUMB_MAX = 400
+OUTPUT_RETENTION_DAYS = 7
 
 
 def _prep_image(path: str) -> bytes:
@@ -109,19 +116,24 @@ def normalize_image(
     return buffer.getvalue()
 
 
-def write_output(image_bytes: bytes, output_path: str, thumbnail_path: str = "") -> None:
-    """Write the final JPEG and a small thumbnail beside it."""
+def write_output(image_bytes: bytes, output_path: str) -> None:
+    """Write the final JPEG and drop this folder's expired outputs.
+
+    The owner downloads and keeps the images outside the app, so the on-disk
+    copy only has to outlive the result view.
+    """
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(image_bytes)
-    if not thumbnail_path:
-        return
-    thumb = Path(thumbnail_path)
-    thumb.parent.mkdir(parents=True, exist_ok=True)
-    with Image.open(io.BytesIO(image_bytes)) as image:
-        image = image.convert("RGB")
-        image.thumbnail((THUMB_MAX, THUMB_MAX), Image.LANCZOS)
-        image.save(thumb, "JPEG", quality=85, optimize=True)
+    cutoff = time.time() - OUTPUT_RETENTION_DAYS * 86400
+    folders = (path.parent, path.parent / "thumbs")
+    for folder in folders:
+        for old in folder.glob("ig_*.jpg"):
+            try:
+                if old.stat().st_mtime < cutoff:
+                    old.unlink(missing_ok=True)
+            except OSError:
+                continue
 
 
 def _first_image(body: dict) -> str:
@@ -182,6 +194,16 @@ def _build_request(
     size_fallback: bool = False,
 ) -> dict:
     aspect = ASPECTS[aspect_ratio]
+    if model_entry["body"] == GENERATION_JSON:
+        # Text-to-image only: no image field, no edit options.
+        sizes = model_entry.get("sizes") or {}
+        size = "1024x1024" if size_fallback else sizes.get(aspect_ratio, "1024x1024")
+        return {"json": {
+            "model": model_entry["id"],
+            "prompt": prompt,
+            "n": 1,
+            "size": size,
+        }}
     if model_entry["body"] == SEEDREAM_JSON:
         payload = {
             "model": model_entry["id"],
@@ -225,7 +247,10 @@ def generate_instagram_image(
     job_id: int | None = None,
 ) -> bytes:
     """Send one request and return the normalized JPEG bytes."""
-    provider_id, entry = resolve_selection(provider, model)
+    if reference_paths:
+        provider_id, entry = resolve_selection(provider, model)
+    else:
+        provider_id, entry = resolve_generation_selection(provider, model)
     if not (api_key or "").strip():
         raise ImageGenerationError(
             f"کلید {provider_id} ذخیره نشده است.",
@@ -253,10 +278,12 @@ def generate_instagram_image(
             response = client.post(url, headers=headers, **request)
             # Seedream accepts the exact Instagram size per its docs, but a
             # rejected custom size is a free 4xx: retry once at 2K and crop.
+            # Generation models fall back to a square, then crop locally.
             if (response.status_code in (400, 422)
-                    and entry["body"] == SEEDREAM_JSON
+                    and entry["body"] in (SEEDREAM_JSON, GENERATION_JSON)
                     and "size" in response.text.lower()):
-                logger.info("instagram/%s rejected custom size; retrying at 2K", provider_id)
+                logger.info("instagram/%s rejected custom size; retrying smaller",
+                            provider_id)
                 request = _build_request(entry, prompt, prepared, aspect_ratio,
                                          size_fallback=True)
                 response = client.post(url, headers=headers, **request)

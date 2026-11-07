@@ -81,16 +81,18 @@ This is the canonical plan. If a future session hits a token limit, start there 
 - The text form does not post product or variant, so the route never asks the product picker for them.
 - The duplicate guard compares the trimmed stored brief for text instead of a variant.
 - `normalize_image` still crops the provider output to the exact selected Instagram size.
+- Text campaigns use `instagram_generation_model` from the provider's generation-only catalog; every image scenario keeps `tryon_model`. The provider and API key stay shared.
+- Generation models post JSON to `/v1/images/generations` with no `image` field. A rejected size retries once at `1024x1024`, then the local crop still lands on the exact Instagram size.
 
 ## Phase 5 progress
 
-- [x] «تولید تنوع» on completed result panels and history cards
+- [x] «تولید تنوع» on completed result panels
 - [x] Variation reuses product, variant, references, scene, aspect, note, logo, and model controls
 - [x] Job payload now keeps framing, lighting, composition, and full-garment choice for later variations
 - [x] Usage counts for today, the last 7 days, and the last 30 days
-- [x] Active model and approximate per-image cost remain on the studio page; provider/model remain on history cards
+- [x] Active model and approximate per-image cost remain on the studio page
 - [x] Actionable Persian error categories with provider codes kept in the log
-- [x] Favorite toggle endpoint (manager+), star buttons on result/history, and `?favorite=1` filter
+- [x] Removed 2026-11-07: history page, delete route, and favorites; the owner downloads images and keeps them, so outputs are purged after 7 days
 - [x] `docs/instagram-quality-checklist.md`
 - [x] `docs/instagram-studio.md`
 - [ ] Live smoke test — still blocked by the same AvalAI HTTP 429 `quota_exceeded`
@@ -98,9 +100,8 @@ This is the canonical plan. If a future session hits a token limit, start there 
 ### Phase 5 implementation notes (for the next session)
 
 - Variation reuses the existing generate route; no new job type, table, or worker branch.
-- The favorite redirect accepts only `/admin/instagram-studio...` return addresses, so an external `back` value cannot become an open redirect.
 - Old generations without the newer payload keys fall back to the default framing/lighting/composition values.
-- Reloading the studio with `?job_id=` rebuilds the full result context, so variation, favorite, retry, and logo-download actions survive a refresh (regression test in `tests/test_instagram_routes.py`).
+- Reloading the studio with `?job_id=` rebuilds the full result context, so variation, retry, and logo-download actions survive a refresh (regression test in `tests/test_instagram_routes.py`).
 - Full test run on 2026-11-06 after that fix: `1578 passed`; only the 4 pre-existing `test_visual_hover` Quartz failures.
 
 ### Phase 1 implementation notes (for the next session)
@@ -134,7 +135,8 @@ The garment must remain recognizably the same product: same color, silhouette, p
 | Color variants | **One color per generation**; no multi-color group shot in the first release |
 | Reference photos | Up to **3 per variant**: primary + additional views |
 | Source of reference photos | The variant's own gallery (`VariantImage`, fallback `ProductVariant.image_path`); never silently use a different color's image |
-| Provider / model / key | Share the existing try-on configuration (`tryon_provider`, `tryon_model`, `tryon_api_key`, `tryon_api_key_avalai`) |
+| Provider / key | Share the existing try-on configuration (`tryon_provider`, `tryon_api_key`, `tryon_api_key_avalai`) |
+| Model selection | Separate edit model (`tryon_model`) and text-to-image model (`instagram_generation_model`); generation-only models never appear in the edit list |
 | Active provider today | AvalAI + `seedream-5-0-260128` |
 | Instagram daily limit | Separate `instagram_daily_limit`, default **20/day** |
 | Roles | `manager` and `owner`; cashier must not see or open the page |

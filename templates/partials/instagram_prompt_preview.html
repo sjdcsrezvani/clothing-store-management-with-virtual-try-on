@@ -1,0 +1,25 @@
+<div data-theme="{{ theme.id }}">
+{% if error %}
+<p class="muted" style="margin:0;">{{ error }}</p>
+{% else %}
+<div class="prompt-sections">
+    {% for section in sections %}
+    <details class="prompt-section" {% if loop.first %}open{% endif %}>
+        <summary>
+            <span class="prompt-section-label">{{ section.label }}</span>
+            <span class="prompt-kind prompt-kind-{{ section.kind }}">
+                {% if section.kind == 'option' %}انتخاب شما
+                {% elif section.kind == 'user' %}متن شما
+                {% else %}ثابت{% endif %}
+            </span>
+        </summary>
+        <p class="prompt-section-text" dir="ltr">{{ section.text }}</p>
+    </details>
+    {% endfor %}
+</div>
+<details class="prompt-full">
+    <summary>پرامپت کامل</summary>
+    <pre dir="ltr">{{ prompt }}</pre>
+</details>
+{% endif %}
+</div>

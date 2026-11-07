@@ -1,20 +1,26 @@
 """Instagram Studio: manager/owner product photography inside the POS."""
 from __future__ import annotations
 
+import io
+import os
+import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
-from sqlalchemy import or_
+from PIL import Image
+from sqlalchemy import case, or_
 from sqlalchemy.orm import Session, joinedload
 
 from database import get_db
-from models import BackgroundJob, InstagramGeneration, Product, ProductVariant, Settings
-from services._common import int_arg, jalali_str, page_arg
-from services.image_gen import composite_logo, get_tryon_selection
+from models import (BackgroundJob, InstagramGeneration, Product, ProductVariant,
+                    Settings, to_english_digits, to_persian_digits)
+from services._common import int_arg
+from services.image_gen import composite_logo, get_generation_selection, get_tryon_selection
 from services.image_models import PROVIDERS
+from services.image_storage import compress_for_storage
 from services.instagram_prompts import (
     ASPECTS,
     BACKGROUNDS,
@@ -26,6 +32,7 @@ from services.instagram_prompts import (
     SCENARIO_MODEL_SCENE,
     SCENARIO_PRODUCT_BRIEF,
     SCENARIO_TEXT,
+    SCENARIO_TEXT_IMAGE,
     SCENARIOS,
     SCENES,
     SCENE_KEYS,
@@ -36,23 +43,23 @@ from services.instagram_studio import (
     InstagramValidationError,
     available_model_slots,
     create_generation,
-    delete_generation_files,
+    join_prompt_sections,
+    preview_prompt_sections,
     variation_payload,
+    variant_has_reference_photo,
     variant_reference_images,
 )
-from services.shop_models import SLOT_LABELS
 from services.security import (
     instagram_can_generate,
     instagram_daily_limit,
     instagram_daily_remaining,
     log_action,
     require_html_role,
+    require_role,
 )
 from services.templating import templates
 
 router = APIRouter(prefix="/admin")
-
-PAGE_SIZE = 24
 
 
 def _store_logo(db: Session) -> str:
@@ -60,9 +67,14 @@ def _store_logo(db: Session) -> str:
     return (row.value or "").strip() if row else ""
 
 
-def _model_hint(db: Session) -> tuple[str, str, str]:
-    provider, model, _key = get_tryon_selection(db)
-    entry = next((item for item in PROVIDERS[provider]["models"] if item["id"] == model), None)
+def _model_hint(db: Session, scenario: str = "") -> tuple[str, str, str]:
+    if scenario == SCENARIO_TEXT:
+        provider, model, _key = get_generation_selection(db)
+        models = PROVIDERS[provider]["generation_models"]
+    else:
+        provider, model, _key = get_tryon_selection(db)
+        models = PROVIDERS[provider]["models"]
+    entry = next((item for item in models if item["id"] == model), None)
     return provider, model, (entry or {}).get("cost", "—")
 
 
@@ -84,21 +96,6 @@ def _studio_url(*, product_id=None, variant_id=None, job_id=None,
     return "/admin/instagram-studio" + (f"?{urlencode(params)}" if params else "")
 
 
-def _history_url(*, page=1, scenario="", product_id=0, favorite="", msg="", err="") -> str:
-    params = {"page": page}
-    if scenario:
-        params["scenario"] = scenario
-    if product_id:
-        params["product_id"] = product_id
-    if favorite:
-        params["favorite"] = favorite
-    if msg:
-        params["msg"] = msg
-    if err:
-        params["err"] = err
-    return "/admin/instagram-studio/history?" + urlencode(params)
-
-
 def _load_product(db: Session, product_id: int) -> Product | None:
     product = db.get(Product, product_id) if product_id else None
     if product is None or product.is_active is False:
@@ -111,14 +108,6 @@ def _load_variant(db: Session, product: Product, variant_id: int) -> ProductVari
     if variant is None or variant.product_id != product.id or variant.is_active is False:
         return None
     return variant
-
-
-def _safe_back(value: str) -> str:
-    """Only the studio may be named as a return address."""
-    value = (value or "").strip()
-    if value.startswith("/admin/instagram-studio"):
-        return value
-    return "/admin/instagram-studio/history"
 
 
 def _instagram_usage(db: Session) -> dict:
@@ -162,11 +151,8 @@ def _result_context(db: Session, job: BackgroundJob, generation: InstagramGenera
         "logo_requested": bool(payload.get("logo")),
         "is_owner": is_owner,
         "variation": (variation_payload(generation, payload)
-                      if generation and job.status == "completed" else None),
-        "favorite_back": _studio_url(
-            product_id=generation.product_id if generation else 0,
-            variant_id=generation.variant_id if generation else 0,
-            job_id=job.id, scenario=scenario),
+                      if generation and job.status == "completed"
+                      and scenario != SCENARIO_TEXT_IMAGE else None),
         "retry_url": _studio_url(
             product_id=generation.product_id if generation else 0,
             variant_id=generation.variant_id if generation else 0,
@@ -174,10 +160,199 @@ def _result_context(db: Session, job: BackgroundJob, generation: InstagramGenera
     }
 
 
+def _active_variants(product: Product) -> list[ProductVariant]:
+    return sorted(
+        [item for item in product.variants if item.is_active is not False],
+        key=lambda item: ((item.color or ""), (item.size or ""), item.id),
+    )
+
+
+UPLOAD_MAX_BYTES = 15 * 1024 * 1024
+UPLOAD_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
+
+
+async def _save_uploaded_reference(upload) -> str:
+    """Validate one uploaded campaign photo and keep it for the queued job."""
+    if upload is None or not getattr(upload, "filename", ""):
+        raise InstagramValidationError("یک عکس مرجع انتخاب کنید.")
+    raw = await upload.read(UPLOAD_MAX_BYTES + 1)
+    if not raw:
+        raise InstagramValidationError("فایل انتخاب‌شده خالی است.")
+    if len(raw) > UPLOAD_MAX_BYTES:
+        raise InstagramValidationError("حجم عکس بیشتر از ۱۵ مگابایت است.")
+    try:
+        with Image.open(io.BytesIO(raw)) as image:
+            image.verify()
+    except Exception as error:
+        raise InstagramValidationError("فایل انتخاب‌شده عکس معتبر نیست.") from error
+    suffix = Path(upload.filename).suffix.lower()
+    if suffix not in UPLOAD_SUFFIXES:
+        suffix = ".jpg"
+    data, suffix = compress_for_storage(raw, suffix)
+    with tempfile.NamedTemporaryFile(prefix="ig_source_", suffix=suffix,
+                                     delete=False) as handle:
+        handle.write(data)
+        return handle.name
+
+
+def _variant_card_context(db: Session, scenario: str, product: Product,
+                          variant: ProductVariant | None, guard) -> dict:
+    """Everything the Step 2 card needs, shared by the page and the swap endpoint."""
+    return {
+        "product": product,
+        "variant": variant,
+        "reference_images": variant_reference_images(variant) if variant else [],
+        "model_slots": (available_model_slots(db)
+                        if scenario == SCENARIO_MODEL_SCENE else []),
+        "scenes": [{"key": key, "label": scene_label(key)} for key in SCENE_KEYS],
+        "poses": [{"key": key, "label": value["label"]} for key, value in POSES.items()],
+        "backgrounds": [{"key": key, "label": value["label"]}
+                        for key, value in BACKGROUNDS.items()],
+        "framings": [{"key": key, "label": value["label"]}
+                     for key, value in FRAMINGS.items()],
+        "lightings": [{"key": key, "label": value["label"]}
+                      for key, value in LIGHTINGS.items()],
+        "compositions": [{"key": key, "label": value["label"]}
+                         for key, value in COMPOSITIONS.items()],
+        "aspects": [{"key": key, "label": aspect_label(key)} for key in ASPECTS],
+        "scenario": scenario,
+        "scenario_label": SCENARIOS.get(scenario, scenario),
+        "has_logo": bool(_store_logo(db)),
+        "is_owner": guard.role == "owner",
+    }
+
+
+@router.get("/instagram-studio/prompt-preview", response_class=HTMLResponse)
+async def instagram_prompt_preview(request: Request, db: Session = Depends(get_db)):
+    """The exact prompt for the form's current choices, section by section."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+
+    params = request.query_params
+    scenario = (params.get("scenario") or SCENARIO_GARMENT).strip()
+    if scenario not in SCENARIOS:
+        scenario = SCENARIO_GARMENT
+    product = variant = None
+    if scenario not in (SCENARIO_TEXT, SCENARIO_TEXT_IMAGE):
+        product = _load_product(db, int_arg(params.get("product_id")))
+        if product is not None:
+            variant = _load_variant(db, product, int_arg(params.get("variant_id")))
+
+    sections: list[dict] = []
+    prompt = ""
+    error = ""
+    try:
+        sections = preview_prompt_sections(
+            db,
+            scenario=scenario,
+            product=product,
+            variant=variant,
+            selected_paths=params.getlist("image_paths"),
+            scene_key=(params.get("garment_mode") or "").strip(),
+            aspect_ratio=(params.get("aspect_ratio") or "4:5").strip(),
+            user_text=params.get("user_text") or "",
+            model_slot=(params.get("model_slot") or "").strip(),
+            pose_key=(params.get("pose_key") or "").strip(),
+            background_key=(params.get("background_key") or "").strip(),
+            framing_key=(params.get("framing_key") or "").strip(),
+            lighting_key=(params.get("lighting_key") or "").strip(),
+            composition_key=(params.get("composition_key") or "").strip(),
+            show_full_garment=bool(params.get("show_full_garment")),
+        )
+        prompt = join_prompt_sections(sections)
+    except InstagramValidationError as failure:
+        error = str(failure)
+    except (KeyError, ValueError):
+        error = "گزینه‌های انتخاب‌شده برای پیش‌نمایش کامل نیست."
+
+    return templates.TemplateResponse(
+        request, "partials/instagram_prompt_preview.html",
+        {"sections": sections, "prompt": prompt, "error": error})
+
+
+@router.get("/instagram-studio/variants")
+async def instagram_variant_search(request: Request, q: str = "",
+                                   db: Session = Depends(get_db)):
+    """Live variant suggestions: product name or barcode, top five usable ones."""
+    require_role(request, db, "manager")
+    needle = to_english_digits((q or "").strip())[:50]
+    if len(needle) < 2:
+        return JSONResponse({"items": []})
+
+    like = f"%{needle}%"
+    rank = case(
+        (ProductVariant.barcode == needle, 0),
+        (ProductVariant.barcode.like(f"{needle}%"), 1),
+        (Product.name.like(f"{needle}%"), 2),
+        else_=3,
+    )
+    candidates = (
+        db.query(ProductVariant)
+        .join(Product)
+        .options(joinedload(ProductVariant.images))
+        .filter(
+            ProductVariant.is_active.is_(True),
+            Product.is_active.is_not(False),
+            or_(Product.name.like(like), ProductVariant.barcode.like(like)),
+        )
+        .order_by(rank, Product.name, ProductVariant.id)
+        .limit(25)
+        .all()
+    )
+    items = []
+    for variant in candidates:
+        if not variant_has_reference_photo(variant):
+            continue
+        items.append({
+            "variant_id": variant.id,
+            "product_id": variant.product_id,
+            "label": variant.display_name,
+            "barcode": variant.barcode,
+            "stock": variant.available_quantity,
+            "stock_display": to_persian_digits(str(variant.available_quantity)),
+            "exact": variant.barcode == needle,
+        })
+        if len(items) == 5:
+            break
+    if request.headers.get("HX-Request"):
+        return templates.TemplateResponse(
+            request, "partials/instagram_variant_results.html", {"items": items})
+    return JSONResponse({"items": items})
+
+
+@router.get("/instagram-studio/variant-card", response_class=HTMLResponse)
+async def instagram_variant_card(request: Request, scenario: str = "",
+                                 product_id: str = "", variant_id: str = "",
+                                 db: Session = Depends(get_db)):
+    """One Step 2 card, for the typeahead to swap in without a reload."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+
+    scenario = (scenario or SCENARIO_GARMENT).strip()
+    if scenario not in SCENARIOS:
+        scenario = SCENARIO_GARMENT
+    product = _load_product(db, int_arg(product_id))
+    if product is None:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    requested_variant = int_arg(variant_id)
+    variant = _load_variant(db, product, requested_variant) if requested_variant else None
+    if requested_variant and variant is None:
+        raise HTTPException(status_code=404, detail="Variant not found")
+    if variant is None:
+        variants = _active_variants(product)
+        variant = variants[0] if variants else None
+
+    return templates.TemplateResponse(
+        request, "partials/instagram_variant_card.html",
+        _variant_card_context(db, scenario, product, variant, guard))
+
+
 @router.get("/instagram-studio", response_class=HTMLResponse)
 async def instagram_studio(
     request: Request,
-    q: str = "",
     product_id: str = "",
     variant_id: str = "",
     job_id: str = "",
@@ -193,63 +368,26 @@ async def instagram_studio(
     scenario = (scenario or SCENARIO_GARMENT).strip()
     if scenario not in SCENARIOS:
         scenario = SCENARIO_GARMENT
-    search = (q or "").strip()
-    products = []
     product = None
-    variants = []
     variant = None
-    reference_images = []
-    if scenario != SCENARIO_TEXT:
-        query = db.query(Product).filter(Product.is_active.is_not(False))
-        if search:
-            like = f"%{search}%"
-            query = query.filter(or_(
-                Product.name.ilike(like),
-                Product.base_barcode.ilike(like),
-                Product.variants.any(ProductVariant.barcode.ilike(like)),
-            ))
-        products = query.order_by(Product.id.desc()).limit(12).all()
-
+    if scenario not in (SCENARIO_TEXT, SCENARIO_TEXT_IMAGE):
         product = _load_product(db, int_arg(product_id))
         if product is not None:
-            variants = sorted(
-                [item for item in product.variants if item.is_active is not False],
-                key=lambda item: ((item.color or ""), (item.size or ""), item.id),
-            )
             variant = _load_variant(db, product, int_arg(variant_id))
-            if variant is None and variants:
-                variant = variants[0]
-            if variant is not None:
-                reference_images = variant_reference_images(variant)
+            if variant is None:
+                variants = _active_variants(product)
+                variant = variants[0] if variants else None
 
-    model_slots = available_model_slots(db) if scenario == SCENARIO_MODEL_SCENE else []
     job = generation = None
     requested_job = int_arg(job_id)
     if requested_job:
         job, generation = _job_and_generation(db, requested_job)
 
-    provider, model, model_cost = _model_hint(db)
+    provider, model, model_cost = _model_hint(db, scenario)
     context = {
-        "q": search,
-        "products": products,
-        "product": product,
-        "variants": variants,
-        "variant": variant,
-        "reference_images": reference_images,
-        "scenes": [{"key": key, "label": scene_label(key)} for key in SCENE_KEYS],
         "aspects": [{"key": key, "label": aspect_label(key)} for key in ASPECTS],
         "scenario_tabs": [{"key": key, "label": label}
                           for key, label in SCENARIOS.items()],
-        "model_slots": model_slots,
-        "poses": [{"key": key, "label": value["label"]} for key, value in POSES.items()],
-        "backgrounds": [{"key": key, "label": value["label"]}
-                        for key, value in BACKGROUNDS.items()],
-        "framings": [{"key": key, "label": value["label"]}
-                     for key, value in FRAMINGS.items()],
-        "lightings": [{"key": key, "label": value["label"]}
-                      for key, value in LIGHTINGS.items()],
-        "compositions": [{"key": key, "label": value["label"]}
-                         for key, value in COMPOSITIONS.items()],
         "daily_remaining": instagram_daily_remaining(db),
         "daily_limit": instagram_daily_limit(db),
         "usage": _instagram_usage(db),
@@ -259,6 +397,7 @@ async def instagram_studio(
         "has_logo": bool(_store_logo(db)),
         "is_owner": guard.role == "owner",
         "scenario": scenario,
+        "selected_label": variant.display_name if variant else "",
         "retry_url": _studio_url(
             product_id=product.id if product else 0,
             variant_id=variant.id if variant else 0,
@@ -268,9 +407,11 @@ async def instagram_studio(
         "msg": msg,
         "err": err,
     }
+    if product is not None:
+        context.update(_variant_card_context(db, scenario, product, variant, guard))
     if job is not None:
-        # A page reload keeps the completed/failed result actions (variation,
-        # favorite, retry, logo download) instead of dropping them.
+        # A page reload keeps the completed/failed result actions (variation and
+        # retry) instead of dropping them.
         context.update(_result_context(db, job, generation, guard.role == "owner"))
     return templates.TemplateResponse(request, "admin/instagram_studio.html", context)
 
@@ -292,7 +433,7 @@ async def instagram_generate(request: Request, db: Session = Depends(get_db)):
     variant = None
     product_id = 0
     variant_id = 0
-    if scenario != SCENARIO_TEXT:
+    if scenario not in (SCENARIO_TEXT, SCENARIO_TEXT_IMAGE):
         product_id = int_arg(form.get("product_id"))
         variant_id = int_arg(form.get("variant_id"))
         product = _load_product(db, product_id)
@@ -339,7 +480,7 @@ async def instagram_generate(request: Request, db: Session = Depends(get_db)):
             InstagramGeneration.created_at >= recent,
         )
     )
-    if scenario == SCENARIO_TEXT:
+    if scenario in (SCENARIO_TEXT, SCENARIO_TEXT_IMAGE):
         duplicate = duplicate.filter(InstagramGeneration.user_text == note)
     else:
         duplicate = duplicate.filter(InstagramGeneration.variant_id == variant.id)
@@ -359,7 +500,9 @@ async def instagram_generate(request: Request, db: Session = Depends(get_db)):
                         err="این تصویر همین حالا در صف است؛ چند لحظه صبر کنید."),
             status_code=303)
 
-    _provider, _model, api_key = get_tryon_selection(db)
+    _provider, _model, api_key = (
+        get_generation_selection(db) if scenario == SCENARIO_TEXT
+        else get_tryon_selection(db))
     if not api_key:
         return RedirectResponse(
             _studio_url(product_id=product_id, variant_id=variant_id, scenario=scenario,
@@ -369,6 +512,15 @@ async def instagram_generate(request: Request, db: Session = Depends(get_db)):
     logo_path = _store_logo(db)
     logo = bool(form.get("logo")) and bool(logo_path)
     selected_paths = [str(path) for path in form.getlist("image_paths")]
+    source_image_path = ""
+    if scenario == SCENARIO_TEXT_IMAGE:
+        try:
+            source_image_path = await _save_uploaded_reference(
+                form.get("reference_image"))
+        except InstagramValidationError as error:
+            return RedirectResponse(
+                _studio_url(scenario=scenario, err=str(error)),
+                status_code=303)
 
     try:
         generation, job = create_generation(
@@ -383,6 +535,7 @@ async def instagram_generate(request: Request, db: Session = Depends(get_db)):
             logo=logo,
             logo_path=logo_path,
             scenario=scenario,
+            source_image_path=source_image_path,
             model_slot=model_slot,
             pose_key=pose_key,
             background_key=background_key,
@@ -392,12 +545,14 @@ async def instagram_generate(request: Request, db: Session = Depends(get_db)):
             show_full_garment=show_full_garment,
         )
     except InstagramValidationError as error:
+        if source_image_path:
+            Path(source_image_path).unlink(missing_ok=True)
         return RedirectResponse(
             _studio_url(product_id=product_id, variant_id=variant_id,
                         scenario=scenario, err=str(error)),
             status_code=303)
 
-    if scenario == SCENARIO_TEXT:
+    if scenario in (SCENARIO_TEXT, SCENARIO_TEXT_IMAGE):
         detail = f"کمپین متنی / {note[:60]}"
     else:
         detail = f"{product.name} / {variant.display_name} / {scenario} / {scene_key or '—'}"
@@ -425,8 +580,6 @@ async def instagram_job(job_id: int, request: Request, db: Session = Depends(get
         "job_id": job.id,
         "status": job.status,
         "image_url": job.result_url if job.status == "completed" else None,
-        "thumbnail_url": (json_payload(job).get("thumbnail_url")
-                          if job.status == "completed" else None),
         "error": job.error_message if job.status == "failed" else None,
     })
 
@@ -439,142 +592,7 @@ def json_payload(job: BackgroundJob) -> dict:
         return {}
 
 
-@router.get("/instagram-studio/history", response_class=HTMLResponse)
-async def instagram_history(
-    request: Request,
-    scenario: str = "",
-    product_id: str = "",
-    favorite: str = "",
-    page: str = "1",
-    msg: str = "",
-    err: str = "",
-    db: Session = Depends(get_db),
-):
-    guard = require_html_role(request, db, "manager")
-    if not hasattr(guard, "role"):
-        return guard
-
-    if scenario not in SCENARIOS:
-        scenario = ""
-    current_page = page_arg(page)
-    query = db.query(InstagramGeneration).options(
-        joinedload(InstagramGeneration.job),
-        joinedload(InstagramGeneration.product),
-        joinedload(InstagramGeneration.variant),
-        joinedload(InstagramGeneration.staff),
-    )
-    if scenario:
-        query = query.filter(InstagramGeneration.scenario == scenario)
-    selected_product = int_arg(product_id)
-    if selected_product:
-        query = query.filter(InstagramGeneration.product_id == selected_product)
-    if favorite == "1":
-        query = query.filter(InstagramGeneration.is_favorite.is_(True))
-
-    total = query.count()
-    rows = (query.order_by(InstagramGeneration.created_at.desc())
-            .offset((current_page - 1) * PAGE_SIZE).limit(PAGE_SIZE).all())
-    cards = []
-    for row in rows:
-        job = row.job
-        payload = json_payload(job) if job else {}
-        cards.append({
-            "id": row.id,
-            "job_id": row.job_id,
-            "status": job.status if job else "missing",
-            "image_url": job.result_url if job and job.status == "completed" else "",
-            "thumbnail_url": payload.get("thumbnail_url", ""),
-            "error": job.error_message if job and job.status == "failed" else "",
-            "product_name": (row.product.name if row.product
-                             else ("کمپین متنی" if row.scenario == SCENARIO_TEXT else "—")),
-            "variant_label": row.variant.display_name if row.variant else "",
-            "brief": row.user_text or "",
-            "scenario_label": SCENARIOS.get(row.scenario, row.scenario),
-            "scene": (scene_label(row.garment_mode) if row.garment_mode in SCENES
-                      else ("کمپین آزاد" if row.scenario == SCENARIO_PRODUCT_BRIEF else "—")),
-            "model_slot": SLOT_LABELS.get(row.model_slot, row.model_slot or ""),
-            "pose": POSES[row.pose_key]["label"] if row.pose_key in POSES else "",
-            "background": (BACKGROUNDS[row.background_key]["label"]
-                           if row.background_key in BACKGROUNDS else ""),
-            "aspect": aspect_label(row.aspect_ratio) if row.aspect_ratio in ASPECTS else row.aspect_ratio,
-            "created_at": jalali_str(row.created_at),
-            "provider": row.provider or "—",
-            "model": row.model or "—",
-            "prompt": row.rendered_prompt,
-            "is_favorite": row.is_favorite,
-            "logo_requested": bool(payload.get("logo")),
-            "created_by": row.staff.username if row.staff else "—",
-            "variation": (variation_payload(row, payload)
-                          if job and job.status == "completed" else None),
-        })
-    pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
-    filter_products = (db.query(Product).filter(Product.is_active.is_not(False))
-                       .order_by(Product.name).limit(200).all())
-    return templates.TemplateResponse(request, "admin/instagram_history.html", {
-        "page_title": "تاریخچه استودیو اینستاگرام",
-        "cards": cards,
-        "page": current_page,
-        "pages": pages,
-        "total": total,
-        "scenario": scenario,
-        "scenarios": [{"key": key, "label": label} for key, label in SCENARIOS.items()],
-        "selected_product": selected_product,
-        "favorite": favorite,
-        "filter_products": filter_products,
-        "has_logo": bool(_store_logo(db)),
-        "is_owner": guard.role == "owner",
-        "msg": msg,
-        "err": err,
-    })
-
-
-@router.post("/instagram-studio/history/{generation_id}/favorite")
-async def instagram_favorite(generation_id: int, request: Request,
-                             db: Session = Depends(get_db)):
-    guard = require_html_role(request, db, "manager")
-    if not hasattr(guard, "role"):
-        return guard
-    generation = db.get(InstagramGeneration, generation_id)
-    if generation is None:
-        return RedirectResponse(_history_url(err="تصویر پیدا نشد."), status_code=303)
-    form = await request.form()
-    generation.is_favorite = not generation.is_favorite
-    db.commit()
-    log_action(db, "instagram_favorite",
-               f"generation {generation_id} -> {generation.is_favorite}",
-               request=request, target_type="instagram_generation",
-               target_id=generation_id)
-    return RedirectResponse(_safe_back(str(form.get("back") or "")), status_code=303)
-
-
-@router.post("/instagram-studio/history/{generation_id}/delete")
-async def instagram_delete(generation_id: int, request: Request, db: Session = Depends(get_db)):
-    guard = require_html_role(request, db, "owner")
-    if not hasattr(guard, "role"):
-        return guard
-    generation = db.query(InstagramGeneration).options(
-        joinedload(InstagramGeneration.job)).filter(
-        InstagramGeneration.id == generation_id).first()
-    if generation is None:
-        return RedirectResponse(_history_url(err="تصویر پیدا نشد."), status_code=303)
-    job = generation.job
-    if job and job.status in ("pending", "processing"):
-        return RedirectResponse(
-            _history_url(err="این تصویر در حال تولید است و حذف نمی‌شود."),
-            status_code=303)
-
-    delete_generation_files(generation)
-    if job:
-        job.result_path = None
-        job.result_url = None
-    db.delete(generation)
-    db.commit()
-    log_action(db, "instagram_delete", f"generation {generation_id}",
-               request=request, target_type="instagram_generation", target_id=generation_id)
-    return RedirectResponse(_history_url(msg="تصویر حذف شد."), status_code=303)
-
-
-@router.get("/instagram-studio/history/{generation_id}/download")
+@router.get("/instagram-studio/generations/{generation_id}/download")
 async def instagram_download(generation_id: int, request: Request,
                              db: Session = Depends(get_db)):
     guard = require_html_role(request, db, "manager")

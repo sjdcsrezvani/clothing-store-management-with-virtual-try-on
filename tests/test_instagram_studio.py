@@ -10,7 +10,6 @@ from services.instagram_studio import (
     InstagramValidationError,
     collect_reference_paths,
     create_generation,
-    delete_generation_files,
     variation_payload,
     variant_reference_images,
 )
@@ -395,24 +394,40 @@ def test_variation_payload_for_text_has_no_references(db_session):
     assert variation["user_text"] == "cozy autumn campaign with warm knit layers"
 
 
-def test_delete_generation_files_removes_output_and_thumbnail(db_session, tmp_path):
-    output = tmp_path / "out.jpg"
-    thumb = tmp_path / "thumbs" / "out.jpg"
-    thumb.parent.mkdir()
-    output.write_bytes(b"image")
-    thumb.write_bytes(b"thumb")
-    job = BackgroundJob(job_type="instagram_image", payload="{}", status="completed",
-                        result_path=str(output), result_url="/static/uploads/instagram/out.jpg")
-    db_session.add(job)
-    db_session.flush()
-    user, _password = _staff(db_session, "ig-delete", "owner")
-    generation = InstagramGeneration(
-        created_by_staff_id=user.id, scenario="garment", rendered_prompt="p",
-        prompt_version="v", job_id=job.id,
-    )
-    db_session.add(generation)
-    db_session.commit()
+def test_text_image_scene_uses_the_uploaded_photo(db_session, tmp_path):
+    import json
 
-    delete_generation_files(generation, thumb_path=str(thumb))
-    assert not output.exists()
-    assert not thumb.exists()
+    source = tmp_path / "campaign.jpg"
+    Image.new("RGB", (120, 120), (150, 120, 90)).save(source, "JPEG")
+    user, _password = _staff(db_session, "ig-text-image-maker", "manager")
+    generation, job = create_generation(
+        db_session, staff=user, product=None, variant=None, selected_paths=[],
+        scene_key="", aspect_ratio="4:5", scenario="text_image",
+        user_text="warm autumn window light", source_image_path=str(source))
+    payload = json.loads(job.payload)
+    assert generation.scenario == "text_image"
+    assert generation.product_id is None
+    assert generation.variant_id is None
+    assert payload["reference_paths"] == [str(source)]
+    assert payload["temporary_paths"] == [str(source)]
+    assert "Edit the supplied reference image" in generation.rendered_prompt
+    assert "warm autumn window light" in generation.rendered_prompt
+    # The worker removes it after the paid request; creation must not.
+    assert source.exists()
+
+
+def test_text_image_scene_needs_a_photo_and_a_ten_character_brief(db_session, tmp_path):
+    source = tmp_path / "campaign.jpg"
+    Image.new("RGB", (120, 120), (150, 120, 90)).save(source, "JPEG")
+    user, _password = _staff(db_session, "ig-text-image-short", "manager")
+    with pytest.raises(InstagramValidationError):
+        create_generation(
+            db_session, staff=user, product=None, variant=None, selected_paths=[],
+            scene_key="", aspect_ratio="4:5", scenario="text_image",
+            user_text="warm autumn window light", source_image_path="")
+    with pytest.raises(InstagramValidationError):
+        create_generation(
+            db_session, staff=user, product=None, variant=None, selected_paths=[],
+            scene_key="", aspect_ratio="4:5", scenario="text_image",
+            user_text="short", source_image_path=str(source))
+    assert db_session.query(InstagramGeneration).count() == 0

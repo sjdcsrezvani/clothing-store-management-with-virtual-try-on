@@ -691,8 +691,10 @@ NOT_A_PAGE: dict[str, str] = {
     "/sales/api/barcode/{barcode}": "the scanner's lookup, which answers in JSON",
     "/sales/api/product-search": "the name search for damaged tags, which answers in JSON",
     "/admin/try-on/saved/{img_id}/download": "the saved photo itself, not a page",
-    "/admin/instagram-studio/history/{generation_id}/download": "the generated Instagram image itself, not a page",
+    "/admin/instagram-studio/generations/{generation_id}/download": "the generated Instagram image itself, not a page",
     "/admin/instagram-studio/jobs/{job_id}": "the studio's progress poll, HTML only for HTMX and JSON otherwise",
+    "/admin/instagram-studio/variants": "the studio's live variant search, which answers in JSON",
+    "/admin/instagram-studio/variant-card": "one card fragment for the live variant picker, not a page",
 }
 
 # Addresses the matrix does not open at all, each with the reason. The till's

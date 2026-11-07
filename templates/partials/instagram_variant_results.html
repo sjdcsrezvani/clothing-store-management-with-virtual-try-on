@@ -1,0 +1,16 @@
+{% if items %}
+{% for item in items %}
+<li role="option" aria-selected="false" id="ig-variant-option-{{ loop.index0 }}"
+    data-variant-id="{{ item.variant_id }}" data-product-id="{{ item.product_id }}"
+    data-label="{{ item.label }}" data-barcode="{{ item.barcode }}"
+    data-exact="{{ '1' if item.exact else '0' }}">
+    <span class="variant-search-name">{{ item.label }}</span>
+    <span class="variant-search-meta">
+        <span dir="ltr">{{ item.barcode }}</span>
+        <span>موجودی {{ item.stock_display }}</span>
+    </span>
+</li>
+{% endfor %}
+{% else %}
+<li class="variant-search-empty" role="status">نتیجه‌ای پیدا نشد.</li>
+{% endif %}

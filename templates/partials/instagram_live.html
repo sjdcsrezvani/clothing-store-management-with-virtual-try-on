@@ -13,36 +13,22 @@
         <div class="tryon-result-actions">
             {% if generation %}
             {% if has_logo and logo_requested %}
-            <a href="/admin/instagram-studio/history/{{ generation.id }}/download?logo=yes"
+            <a href="/admin/instagram-studio/generations/{{ generation.id }}/download?logo=yes"
                class="btn btn-primary btn-sm">دانلود با لوگو</a>
-            <a href="/admin/instagram-studio/history/{{ generation.id }}/download"
+            <a href="/admin/instagram-studio/generations/{{ generation.id }}/download"
                class="btn btn-ghost btn-sm">دانلود بدون لوگو</a>
             {% else %}
-            <a href="/admin/instagram-studio/history/{{ generation.id }}/download"
+            <a href="/admin/instagram-studio/generations/{{ generation.id }}/download"
                class="btn btn-primary btn-sm">دانلود</a>
             {% if has_logo %}
-            <a href="/admin/instagram-studio/history/{{ generation.id }}/download?logo=yes"
+            <a href="/admin/instagram-studio/generations/{{ generation.id }}/download?logo=yes"
                class="btn btn-ghost btn-sm">دانلود با لوگو</a>
             {% endif %}
             {% endif %}
-            {% endif %}
-            {% if generation %}
-            <form method="post" action="/admin/instagram-studio/history/{{ generation.id }}/favorite">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <input type="hidden" name="back" value="{{ favorite_back }}">
-                <button type="submit"
-                        class="btn btn-ghost btn-sm favorite-toggle {% if generation.is_favorite %}is-favorite{% endif %}"
-                        aria-pressed="{{ 'true' if generation.is_favorite else 'false' }}"
-                        aria-label="{% if generation.is_favorite %}حذف از علاقه‌مندی‌ها{% else %}افزودن به علاقه‌مندی‌ها{% endif %}">
-                    <svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-star"/></svg>
-                    <span class="sr-only">{% if generation.is_favorite %}حذف از علاقه‌مندی‌ها{% else %}افزودن به علاقه‌مندی‌ها{% endif %}</span>
-                </button>
-            </form>
             {% if variation %}
             {% include 'partials/instagram_variation.html' %}
             {% endif %}
             {% endif %}
-            <a href="/admin/instagram-studio/history" class="btn btn-ghost btn-sm">تاریخچه</a>
         </div>
         {% if generation %}
         <details style="margin-top:1rem;text-align:right;">

@@ -4751,7 +4751,6 @@ html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
 .tryon-final-preview img { max-width: 100%; max-height: 400px; border-radius: 12px; box-shadow: var(--shadow-hover); display: block; }
 .tryon-result-actions { display: flex; gap: 0.5rem; justify-content: center; margin-top: 1rem; flex-wrap: wrap; }
 .tryon-result-actions form { display: inline; }
-.favorite-toggle.is-favorite .ui-icon { fill: currentColor; }
 .tryon-filters { display: flex; gap: 0.5rem; align-items: end; flex-wrap: wrap; margin-bottom: 0.8rem; }
 .tryon-filters label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.85rem; }
 .tryon-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.8rem; }
@@ -5104,4 +5103,89 @@ html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
   /* Single column needs no baseline reservation. */
   .owner-card .owner-grid > .hire-field > .owner-label,
   .owner-logo-title { min-height: 0; }
+}
+
+/* ─── Instagram Studio: live variant picker ─────────────────────────────── */
+.variant-search { position: relative; }
+.variant-search-list {
+  position: absolute;
+  inset-inline: 0;
+  top: calc(100% + 4px);
+  z-index: 30;
+  margin: 0;
+  padding: 0.25rem;
+  max-height: 22rem;
+  overflow: auto;
+  list-style: none;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.16);
+}
+.variant-search-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.variant-search-list li.is-active,
+.variant-search-list li:hover { background: var(--bg); }
+.variant-search-name { font-weight: 600; }
+.variant-search-meta {
+  display: flex;
+  gap: 0.6rem;
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.variant-search-error {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--persimmon);
+}
+
+/* ─── Instagram Studio: prompt preview ───────────────────────────────────── */
+.prompt-preview {
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 0.4rem 0.65rem;
+  background: var(--bg);
+}
+.prompt-sections { display: grid; gap: 0.1rem; }
+.prompt-section { border-bottom: 1px solid var(--rule); padding: 0.35rem 0; }
+.prompt-section:last-child { border-bottom: 0; }
+.prompt-section summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+.prompt-kind {
+  font-size: 0.68rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.prompt-section-text {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+.prompt-full { margin-top: 0.45rem; }
+.prompt-full summary { cursor: pointer; font-weight: 600; }
+.prompt-full pre {
+  margin: 0.4rem 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.75rem;
+  line-height: 1.6;
 }

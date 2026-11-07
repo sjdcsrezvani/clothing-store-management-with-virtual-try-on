@@ -68,9 +68,49 @@ def test_settings_offer_provider_and_model_and_both_keys(client, db_session):
     page = client.get("/admin/settings?tab=messaging").text
     assert 'name="tryon_provider"' in page
     assert 'name="tryon_model"' in page
+    assert 'name="instagram_generation_model"' in page
     assert 'name="tryon_api_key_avalai"' in page
     assert "seedream-5-0-260128" in page  # model catalog reaches the select
+    assert "qwen-image-3.0-pro" in page  # generation catalog reaches its own select
+    assert "gapgpt/qwen-image-2.1" in page
     assert 'name="tryon_api_url"' not in page  # retired: catalog owns base URLs
+
+
+def test_generation_selection_uses_its_own_setting(db_session):
+    from models import Settings
+    from services.image_gen import get_generation_selection, get_tryon_selection
+
+    db_session.add_all([
+        Settings(key="tryon_provider", value="avalai"),
+        Settings(key="tryon_model", value="seedream-5-0-260128"),
+        Settings(key="instagram_generation_model", value="qwen-image-3.0-pro"),
+        Settings(key="tryon_api_key_avalai", value="sk-avalai"),
+    ])
+    db_session.commit()
+
+    assert get_tryon_selection(db_session) == (
+        "avalai", "seedream-5-0-260128", "sk-avalai")
+    assert get_generation_selection(db_session) == (
+        "avalai", "qwen-image-3.0-pro", "sk-avalai")
+
+
+def test_settings_reject_an_edit_model_as_the_generation_model(client, db_session):
+    from models import Settings
+    from urllib.parse import unquote
+    token = csrf_token(client)
+    client.post("/admin/login", data={"username": "owner", "password": "test-admin-pass", "csrf_token": token}, follow_redirects=False)
+    token = csrf_token(client)
+    resp = client.post("/admin/settings", data={
+        "tab": "messaging", "tryon_provider": "avalai",
+        "tryon_model": "seedream-5-0-260128",
+        "instagram_generation_model": "seedream-5-0-260128",
+        "csrf_token": token,
+    }, follow_redirects=False)
+    assert resp.status_code == 303
+    assert "err=" in resp.headers["location"]
+    assert "seedream-5-0-260128" in unquote(resp.headers["location"])
+    assert db_session.query(Settings).filter(
+        Settings.key == "instagram_generation_model").first() is None
 
 
 def test_settings_reject_model_from_the_other_provider(client, db_session):

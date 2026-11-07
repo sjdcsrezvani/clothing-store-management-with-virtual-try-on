@@ -245,6 +245,7 @@ class InstagramGeneration(Base):
     provider = Column(String(40), nullable=True)
     model = Column(String(80), nullable=True)
     job_id = Column(Integer, ForeignKey("background_jobs.id"), nullable=True, unique=True, index=True)
+    # Unused: favorites were removed; kept so existing databases keep inserting.
     is_favorite = Column(Boolean, nullable=False, default=False, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 

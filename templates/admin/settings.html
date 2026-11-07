@@ -370,7 +370,7 @@
         </div>
         <div class="form-row">
             <div class="form-group">
-                <label for="tryon_model">مدل پرو مجازی {{ tip('هر مدل با ارزان‌ترین تنظیمات معتبر خودش اجرا می‌شود (۱۰۲۴×۱۰۲۴؛ Seedream با 2K)') }}</label>
+                <label for="tryon_model">مدل ویرایش تصویر {{ tip('برای پرو مجازی و حالت‌های عکس‌محور استودیو اینستاگرام؛ هر مدل با ارزان‌ترین تنظیمات معتبر خودش اجرا می‌شود (۱۰۲۴×۱۰۲۴؛ Seedream با 2K)') }}</label>
                 <select id="tryon_model" name="tryon_model">
                     {% for key, p in (tryon_providers or {}).items() %}
                     {% for m in p.models %}
@@ -379,6 +379,17 @@
                     {% endfor %}
                 </select>
                 <small>شماره مدل و هزینه تقریبی هر تصویر. مقایسه زمان و خطاها در صفحه پرو مجازی، بخش «لاگ تولید».</small>
+            </div>
+            <div class="form-group">
+                <label for="instagram_generation_model">مدل تولید کمپین متنی (بدون عکس) {{ tip('فقط برای تب «کمپین متنی» استودیو اینستاگرام؛ تب «کمپین متنی با عکس» از مدل ویرایش تصویر استفاده می‌کند. این مدل عکس مرجع نمی‌گیرد و از مسیر تولید متن‌به‌تصویر استفاده می‌کند') }}</label>
+                <select id="instagram_generation_model" name="instagram_generation_model">
+                    {% for key, p in (tryon_providers or {}).items() %}
+                    {% for m in p.generation_models %}
+                    <option value="{{ m.id }}" data-provider="{{ key }}"{% if key == tryon_selected_provider and m.id == tryon_generation_selected_model %} selected{% endif %} dir="ltr">{{ m.id }} — {{ m.cost }}</option>
+                    {% endfor %}
+                    {% endfor %}
+                </select>
+                <small>این فهرست جداست تا مدل متن‌به‌تصویر اشتباهی برای پرو مجازی انتخاب نشود.</small>
             </div>
         </div>
         <div class="form-row">

@@ -1,0 +1,206 @@
+<div class="card" id="ig-variant-card"{% if variant %} data-variant-id="{{ variant.id }}"{% endif %}>
+    <div class="section-heading">
+        <div>
+            <span class="eyebrow">مرحله ۲</span>
+            <h3>{{ product.name }}</h3>
+        </div>
+    </div>
+
+    <div class="sms-source-chips" style="flex-wrap:wrap;margin-bottom:0.8rem;">
+        <span class="source-chip is-active">{{ scenario_label }}</span>
+    </div>
+
+    {% if variant and variant.tryon_details %}
+    <p class="muted" style="margin-top:0;">
+        جزئیات ثبت‌شده این تنوع (به پرامپت اضافه می‌شود): {{ variant.tryon_details }}
+        · <a href="/admin/variants/{{ variant.id }}/edit">ویرایش</a>
+    </p>
+    {% endif %}
+
+    {% if scenario == 'model_scene' and not model_slots %}
+    <div class="alert alert-info" role="status">
+        هنوز عکس مرجعی برای مدل‌ها ثبت نشده است؛ تا آپلود نشود، عکس مدل ساخته نمی‌شود.
+        {% if is_owner %}<a href="/admin/settings/shop-models">کتابخانه مدل‌ها</a>{% endif %}
+    </div>
+    {% elif variant and reference_images %}
+    <form method="post" action="/admin/instagram-studio/generate"
+          hx-get="/admin/instagram-studio/prompt-preview"
+          hx-trigger="load, change, input changed delay:400ms"
+          hx-target="#ig-prompt-preview" hx-swap="innerHTML" hx-sync="this:replace"
+          onsubmit="this.querySelector('button[type=submit]').disabled=true;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="product_id" value="{{ product.id }}">
+        <input type="hidden" name="variant_id" value="{{ variant.id }}">
+        <input type="hidden" name="scenario" value="{{ scenario }}">
+
+        {% if scenario == 'model_scene' %}
+        <div class="form-group">
+            <label>مدل عکاسی</label>
+            <p class="muted" style="margin-top:0;">
+                عکس مدل خودکار به‌عنوان تصویر اول به مدل تصویری داده می‌شود.
+            </p>
+            <div class="image-picked-grid">
+                {% for model in model_slots %}
+                <label class="image-picked" style="cursor:pointer;align-items:center;">
+                    <input type="radio" name="model_slot" value="{{ model.slot_key }}"
+                           {% if loop.first %}checked{% endif %} required>
+                    <img src="{{ model.image_url }}" alt="{{ model.label_fa }}"
+                         style="width:84px;height:84px;object-fit:cover;border-radius:8px;">
+                    <span class="muted" style="font-size:0.72rem;">{{ model.label_fa }}</span>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="form-group">
+            <label>عکس‌های مرجع</label>
+            <p class="muted" style="margin-top:0;">
+                فقط عکس‌های همین رنگ/تنوع. حداکثر ۳ عکس انتخاب کنید.
+                اولین عکس، تصویر اصلی است.
+                {% if scenario == 'model_scene' %}
+                این عکس‌ها فقط لباس‌اند؛ عکس مدل بالاتر خودکار اضافه می‌شود.
+                {% endif %}
+            </p>
+            <div class="image-picked-grid">
+                {% for image in reference_images %}
+                <label class="image-picked" style="cursor:pointer;align-items:center;">
+                    <input type="checkbox" name="image_paths" value="{{ image.path }}"
+                           {% if loop.index <= 3 %}checked{% endif %}>
+                    <img src="{{ image.path }}" alt="{{ image.label }}"
+                         style="width:84px;height:84px;object-fit:cover;border-radius:8px;">
+                    <span class="muted" style="font-size:0.72rem;">{{ image.label }}</span>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+
+        {% if scenario == 'model_scene' %}
+        <div class="form-row">
+            <div class="form-group">
+                <label for="ig-pose">ژست</label>
+                <select id="ig-pose" name="pose_key">
+                    {% for pose in poses %}
+                    <option value="{{ pose.key }}">{{ pose.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="ig-background">پس‌زمینه</label>
+                <select id="ig-background" name="background_key">
+                    {% for background in backgrounds %}
+                    <option value="{{ background.key }}">{{ background.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="ig-framing">کادر</label>
+                <select id="ig-framing" name="framing_key">
+                    {% for framing in framings %}
+                    <option value="{{ framing.key }}">{{ framing.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="ig-lighting">نور</label>
+                <select id="ig-lighting" name="lighting_key">
+                    {% for lighting in lightings %}
+                    <option value="{{ lighting.key }}">{{ lighting.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="ig-composition">ترکیب‌بندی</label>
+                <select id="ig-composition" name="composition_key">
+                    {% for composition in compositions %}
+                    <option value="{{ composition.key }}">{{ composition.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="ig-aspect">نسبت تصویر</label>
+                <select id="ig-aspect" name="aspect_ratio">
+                    {% for aspect in aspects %}
+                    <option value="{{ aspect.key }}" {% if aspect.key == '4:5' %}selected{% endif %}>{{ aspect.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <label class="muted" style="display:flex;gap:0.4rem;align-items:center;margin-bottom:0.8rem;">
+            <input type="checkbox" name="show_full_garment" checked> نمایش کامل لباس
+        </label>
+        {% else %}
+        <div class="form-row">
+            <div class="form-group">
+                <label for="ig-scene">حالت عکاسی{% if scenario == 'garment' %} (الزامی){% endif %}</label>
+                <select id="ig-scene" name="garment_mode"{% if scenario == 'garment' %} required{% endif %}>
+                    {% if scenario == 'product_brief' %}
+                    <option value="">بدون صحنه — کمپین آزاد</option>
+                    {% endif %}
+                    {% for scene in scenes %}
+                    <option value="{{ scene.key }}">{{ scene.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="ig-aspect">نسبت تصویر</label>
+                <select id="ig-aspect" name="aspect_ratio">
+                    {% for aspect in aspects %}
+                    <option value="{{ aspect.key }}" {% if aspect.key == '4:5' %}selected{% endif %}>{{ aspect.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        {% endif %}
+        {% if reference_images | length < 2 %}
+        <p class="muted" style="margin-top:0;">
+            برای «نمای پشت/پهلو» بهتر است عکس پشت محصول را هم اضافه کنید؛
+            برای «نمای نزدیک جزئیات» و «بافت پارچه» یک عکس نزدیک کمک می‌کند.
+        </p>
+        {% endif %}
+
+        <div class="form-group">
+            {% if scenario == 'product_brief' %}
+            <label for="ig-note">توضیح کمپین (انگلیسی، حداقل ۱۰ نویسه)</label>
+            <textarea id="ig-note" name="user_text" rows="4" required minlength="10"
+                      placeholder="soft morning light, minimal beige studio, back-to-school mood"></textarea>
+            {% else %}
+            <label for="ig-note">توضیح تکمیلی (انگلیسی، اختیاری)</label>
+            <textarea id="ig-note" name="user_text" rows="3"
+                      placeholder="soft morning light, warm beige studio"></textarea>
+            {% endif %}
+        </div>
+
+        {% if has_logo %}
+        <label class="muted" style="display:flex;gap:0.4rem;align-items:center;margin-bottom:0.8rem;">
+            <input type="checkbox" name="logo"> افزودن لوگوی فروشگاه
+        </label>
+        {% endif %}
+
+        <div class="form-group">
+            <label>پیش‌نمایش پرامپت</label>
+            <div id="ig-prompt-preview" class="prompt-preview" aria-live="polite">
+                <p class="muted" style="margin:0;">در حال آماده‌سازی…</p>
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-large">
+            تولید تصویر
+        </button>
+        <p class="muted" style="margin-bottom:0;">
+            هر تولید هزینه دارد و از سقف روزانه کم می‌شود.
+        </p>
+    </form>
+    {% elif variant %}
+    <p class="muted">
+        برای این تنوع عکس ثبت نشده است.
+        <a href="/admin/variants/{{ variant.id }}/edit">افزودن عکس تنوع</a>
+    </p>
+    {% else %}
+    <p class="muted">برای این محصول تنوع فعالی وجود ندارد.</p>
+    {% endif %}
+</div>

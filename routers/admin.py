@@ -2074,6 +2074,7 @@ _SETTINGS_FIELD_TABS = {
     "instagram_daily_limit": "messaging",
     "tryon_api_key": "messaging", "tryon_api_key_avalai": "messaging",
     "tryon_provider": "messaging", "tryon_model": "messaging",
+    "instagram_generation_model": "messaging",
     "tryon_autoclear_kid": "messaging",
     "credit_terms_days": "credit",
     "credit_reminder_min_hours": "credit",
@@ -2249,12 +2250,15 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
 
     settings = {s.key: s.value for s in db.query(Settings).all()}
     tier_config = get_tier_config(db)
-    from services.image_gen import mask_tryon_key
-    from services.image_models import PROVIDERS, resolve_selection
+    from services.image_gen import GENERATION_MODEL_SETTING, mask_tryon_key
+    from services.image_models import (PROVIDERS, resolve_generation_selection,
+                                       resolve_selection)
     tryon_key_mask = mask_tryon_key(settings.get("tryon_api_key", ""))
     tryon_key_mask_avalai = mask_tryon_key(settings.get("tryon_api_key_avalai", ""))
     tryon_provider, tryon_model_entry = resolve_selection(
         settings.get("tryon_provider", ""), settings.get("tryon_model", ""))
+    _generation_provider, generation_model_entry = resolve_generation_selection(
+        tryon_provider, settings.get(GENERATION_MODEL_SETTING, ""))
     error_field = (request.query_params.get("field", "") or "").strip()
     if not re.fullmatch(r"[a-z0-9_]+", error_field):
         error_field = ""
@@ -2284,6 +2288,7 @@ async def admin_settings(request: Request, db: Session = Depends(get_db)):
         "tryon_providers": PROVIDERS,
         "tryon_selected_provider": tryon_provider,
         "tryon_selected_model": tryon_model_entry["id"],
+        "tryon_generation_selected_model": generation_model_entry["id"],
         "msg": request.query_params.get("msg", ""),
         "err": request.query_params.get("err", ""),
     })
@@ -2474,10 +2479,16 @@ async def admin_update_settings(request: Request, db: Session = Depends(get_db))
     # silently fall back at generation time, so refuse it here where it shows.
     posted_provider = str(form.get("tryon_provider") or "").strip()
     posted_model = str(form.get("tryon_model") or "").strip()
-    if posted_provider or posted_model:
-        from services.image_models import PROVIDERS, model_ids, resolve_selection
+    posted_generation_model = str(form.get("instagram_generation_model") or "").strip()
+    if posted_provider or posted_model or posted_generation_model:
+        from services.image_gen import GENERATION_MODEL_SETTING
+        from services.image_models import (PROVIDERS, generation_model_ids,
+                                           model_ids,
+                                           resolve_generation_selection,
+                                           resolve_selection)
         now = {s.key: (s.value or "") for s in db.query(Settings).filter(
-            Settings.key.in_(["tryon_provider", "tryon_model"])).all()}
+            Settings.key.in_(["tryon_provider", "tryon_model",
+                              GENERATION_MODEL_SETTING])).all()}
         provider = posted_provider or now.get("tryon_provider", "")
         if provider not in PROVIDERS:
             return RedirectResponse(
@@ -2489,9 +2500,25 @@ async def admin_update_settings(request: Request, db: Session = Depends(get_db))
                 url=(f"/admin/settings?tab=messaging&err=مدل «{model}» در فهرست "
                      f"{PROVIDERS[provider]['label']} نیست — ذخیره نشد."),
                 status_code=303)
+        stored_generation_model = now.get(GENERATION_MODEL_SETTING, "")
+        if posted_generation_model:
+            generation_model = posted_generation_model
+        else:
+            # A provider switch must not keep the previous provider's model.
+            generation_model = (stored_generation_model
+                                if stored_generation_model in generation_model_ids(provider)
+                                else "")
+        if generation_model and generation_model not in generation_model_ids(provider):
+            return RedirectResponse(
+                url=(f"/admin/settings?tab=messaging&err=مدل «{generation_model}» در فهرست "
+                     f"مدل‌های تولید {PROVIDERS[provider]['label']} نیست — ذخیره نشد."),
+                status_code=303)
         provider, entry = resolve_selection(provider, model)
+        _generation_provider, generation_entry = resolve_generation_selection(
+            provider, generation_model)
         updates["tryon_provider"] = provider
         updates["tryon_model"] = entry["id"]
+        updates[GENERATION_MODEL_SETTING] = generation_entry["id"]
     # The shop website is printed in document footers; a typo that is not a
     # hostname would be printed as-is, so refuse it at the same boundary the
     # owner-profile field used to.
