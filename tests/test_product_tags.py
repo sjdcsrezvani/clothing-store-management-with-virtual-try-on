@@ -549,3 +549,6 @@ def test_print_page_uses_requested_grid_and_warns_on_overflow(client, db_session
     assert "بزرگ‌تر است" in response.text
     assert '"columns": 6' in response.text
     assert '"rows": 10' in response.text
+    # The print preview can close itself in a browser; the desktop app's native
+    # print panel may never fire afterprint, so it also carries a close button.
+    assert "بستن پیش‌نمایش چاپ" in response.text

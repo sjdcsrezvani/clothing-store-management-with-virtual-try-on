@@ -495,11 +495,21 @@ async function printSelected() {
             body.tag-printing > *:not(#tag-print-output) { display: none !important; }
             body.tag-printing #tag-print-output { display: block !important; position: static; overflow: visible; padding: 0; background: #fff; }
             body.tag-printing #tag-print-output .tag-print-summary { display: none !important; }
+            body.tag-printing #tag-print-output .tag-print-close { display: none !important; }
         }
         ${style}
     `;
     const printOutput = document.createElement('div');
     printOutput.id = 'tag-print-output';
+    // The desktop app prints through the native panel, which may not fire
+    // afterprint; a visible close button keeps the preview from trapping the
+    // page if the browser's print-close event never arrives.
+    const printClose = document.createElement('button');
+    printClose.type = 'button';
+    printClose.className = 'btn btn-ghost tag-print-close';
+    printClose.textContent = 'بستن پیش‌نمایش چاپ';
+    printClose.addEventListener('click', cleanup);
+    printOutput.appendChild(printClose);
     // Screen-only receipt: what the overlay holds, so a short print is
     // diagnosable instead of mysterious. Hidden on paper by the print CSS.
     const summary = document.createElement('div');

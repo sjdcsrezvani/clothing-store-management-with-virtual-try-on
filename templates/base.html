@@ -153,7 +153,6 @@
     <script src="/static/js/dropdown.js?v={{ static_version }}" defer></script>
     <script>
     // Open the POS in a second native window (desktop app) or browser tab (web).
-    // target="_blank" alone does nothing inside pywebview, so pages call this.
     function openNewSaleWindow() {
         try {
             if (window.pywebview && window.pywebview.api && window.pywebview.api.open_new_sale) {
@@ -164,6 +163,36 @@
         window.open('/sales/new', '_blank', 'noopener');
         return false;
     }
+
+    // A CSV, PDF or generated image is a file to keep, not a page to render.
+    // pywebview needs the download attribute or it navigates the webview to
+    // the file and strands the app; ALLOW_DOWNLOADS then opens the native save
+    // dialog. The browser already downloads these responses either way.
+    function isDownloadLink(url) {
+        return /(^|\/)(export|download)[^/]*(\/|$)/.test(url.pathname)
+            || /\.(csv|xlsx?|pdf|zip|jpe?g|png|webp)$/i.test(url.pathname);
+    }
+    document.addEventListener('click', function (event) {
+        var link = event.target.closest && event.target.closest('a[href]');
+        if (!link) return;
+        var url = new URL(link.href, window.location.href);
+        if (url.origin !== window.location.origin || !isDownloadLink(url)) return;
+        link.setAttribute('download', '');
+        link.removeAttribute('target');
+    }, true);
+
+    // pywebview sends target="_blank" to the system browser, which has no shop
+    // session. Keep authenticated pages (print pages, receipts, contracts) in
+    // the app window; file links are handled by the download rule above.
+    document.addEventListener('click', function (event) {
+        if (!window.pywebview || !window.pywebview.platform) return;
+        var link = event.target.closest && event.target.closest('a[target="_blank"]');
+        if (!link) return;
+        var url = new URL(link.href, window.location.href);
+        if (url.origin !== window.location.origin || url.pathname.startsWith('/static/')) return;
+        event.preventDefault();
+        window.location.href = url.href;
+    }, true);
 
     // The Persian date picker (datepicker.js) wires up every .persian-date-input
     // itself, including fields added to the page later.

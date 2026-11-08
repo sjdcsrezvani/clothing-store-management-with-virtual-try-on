@@ -211,6 +211,12 @@ def main() -> None:
     try:
         import webview
 
+        # CSV exports, receipts and generated images are files to keep, not
+        # pages to render. With downloads allowed, the native save dialog asks
+        # for a folder instead of the webview navigating to the file and
+        # stranding the operator there.
+        webview.settings['ALLOW_DOWNLOADS'] = True
+
         class DesktopApi:
             """Exposed to pages as window.pywebview.api. Lets the UI do things
             the embedded browser cannot — like opening a second native window

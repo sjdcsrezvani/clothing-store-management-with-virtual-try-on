@@ -24,6 +24,29 @@ def test_desktop_window_keeps_cookies_between_launches():
     assert 'storage_path=os.path.join(data_dir, "webview")' in source
 
 
+def test_desktop_app_keeps_authenticated_links_in_the_window():
+    """pywebview opens target=_blank in the system browser, which has no shop
+    session, so a print page there is only a login screen."""
+    base = (Path(__file__).resolve().parents[1] / "templates/base.html").read_text()
+    assert 'a[target="_blank"]' in base
+    assert "url.pathname.startsWith('/static/')" in base
+    assert "window.location.href = url.href" in base
+
+
+def test_desktop_downloads_save_through_the_native_dialog():
+    """A file link must become a download, not an inline page that strands the
+    webview. pywebview shows the native save dialog when downloads are allowed
+    and the link carries the download attribute."""
+    root = Path(__file__).resolve().parents[1]
+    desktop = (root / "desktop_entry.py").read_text()
+    base = (root / "templates/base.html").read_text()
+    assert "webview.settings['ALLOW_DOWNLOADS'] = True" in desktop
+    assert "function isDownloadLink(url)" in base
+    assert "/(^|\\/)(export|download)[^/]*(\\/|$)/" in base
+    assert "link.setAttribute('download', '')" in base
+    assert "link.removeAttribute('target')" in base
+
+
 def test_admin_session_outlives_a_normal_day():
     source = (Path(__file__).resolve().parents[1] / "main.py").read_text()
     assert "max_age=10 * 3600" in source
