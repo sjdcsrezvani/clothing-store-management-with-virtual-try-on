@@ -1,3 +1,57 @@
+## 3.2.0 — 2026-11-08
+
+### استودیو اینستاگرام: a product photographed the way a shop shows it
+
+- **A new manager/owner-only studio turns a variant's own photos into
+  Instagram-ready images:** garment scenes, product briefs, model photoshoots
+  and text-only campaigns, all through the shop's existing try-on provider
+  settings. Jobs run in the background with a persisted daily quota, an
+  owner-managed model library, and per-generation usage and cost.
+- **Brand backgrounds are the shop's own.** Owners edit four starter sets, pick
+  the one active by default, and every prompt carries the locked set; room
+  scenes use them and let the background own the lighting.
+- **Scene suggestions follow the product.** Each product is classified into a
+  staging family — garment, accessory, shoe, one-piece — and the studio
+  recommends the matching scene, so a product cannot be classified one way in
+  the forms and another in the studio.
+- **Model scenes finish the outfit** around the product: identity and face stay
+  faithful to the try-on photo, garment fidelity is scoped so coordinated
+  pieces are allowed, a top always gets a bottom and shoes, a jacket gets a
+  neutral inner top, and a one-piece never grows pants. A manual outfit
+  override is stored with the generation and replayed for its variations.
+- **Text and text-with-reference campaigns** use their own generation model,
+  with live variant search and a per-scenario prompt preview.
+- Prompts name reference photos by their real slot, so a missing back or detail
+  shot is never described; GPT edits use the GPT size and the local crop owns
+  the final target size. Failed generations now say why in Persian.
+
+### محصول: photos have slots, not a gallery
+
+- **Every product family gets a predictable set of photo slots** — main, back
+  and detail for garments; main and back for accessories; top, left and right
+  for shoes. The variant form replaces or clears individual slots instead of
+  appending to a gallery, and keeps one display image for the product list.
+  Revision 41 renumbers an upgraded shop's existing photos into those slots.
+- The product tab's top-variants card stops at ten rows, and the colour × size
+  matrix spans its full grid row with a fixed layout, so switching to amount
+  wraps figures instead of scrolling sideways.
+
+### دسکتاپ: files and print pages stay in the app
+
+- CSV, PDF and image exports open the native save dialog instead of rendering
+  inside the app window, and every export, download and file link is tagged so
+  macOS and Windows ask for a folder.
+- Authenticated `target="_blank"` pages — print pages, receipts, contracts —
+  stay in the app window rather than opening a browser that has no shop
+  session, and the tag print preview gains a close button in case the native
+  print panel does not fire `afterprint`.
+
+### ظاهر: one font, served by us
+
+- Vazirmatn is self-hosted in its Arabic, Latin and Latin-ext subsets on the
+  shell and mobile capture pages; a test fails the build if a template fetches
+  an external asset.
+
 ## 3.1.4 — 2026-11-05
 
 ### خریدها: an invoice written the way the product is bought
