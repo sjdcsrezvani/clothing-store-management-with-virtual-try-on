@@ -168,6 +168,8 @@
     // pywebview needs the download attribute or it navigates the webview to
     // the file and strands the app; ALLOW_DOWNLOADS then opens the native save
     // dialog. The browser already downloads these responses either way.
+    // stopPropagation keeps htmx's boosted link handler from fetching the file
+    // into the page, which skips the download attribute and opens it inline.
     function isDownloadLink(url) {
         return /(^|\/)(export|download)[^/]*(\/|$)/.test(url.pathname)
             || /\.(csv|xlsx?|pdf|zip|jpe?g|png|webp)$/i.test(url.pathname);
@@ -179,6 +181,7 @@
         if (url.origin !== window.location.origin || !isDownloadLink(url)) return;
         link.setAttribute('download', '');
         link.removeAttribute('target');
+        event.stopPropagation();
     }, true);
 
     // pywebview sends target="_blank" to the system browser, which has no shop

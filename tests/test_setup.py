@@ -36,7 +36,8 @@ def test_desktop_app_keeps_authenticated_links_in_the_window():
 def test_desktop_downloads_save_through_the_native_dialog():
     """A file link must become a download, not an inline page that strands the
     webview. pywebview shows the native save dialog when downloads are allowed
-    and the link carries the download attribute."""
+    and the link carries the download attribute. htmx boost must not fetch the
+    file into the page on the way there."""
     root = Path(__file__).resolve().parents[1]
     desktop = (root / "desktop_entry.py").read_text()
     base = (root / "templates/base.html").read_text()
@@ -45,6 +46,7 @@ def test_desktop_downloads_save_through_the_native_dialog():
     assert "/(^|\\/)(export|download)[^/]*(\\/|$)/" in base
     assert "link.setAttribute('download', '')" in base
     assert "link.removeAttribute('target')" in base
+    assert "event.stopPropagation()" in base
 
 
 def test_admin_session_outlives_a_normal_day():
