@@ -1,3 +1,12 @@
+## 3.2.1 — 2026-11-08
+
+### دسکتاپ: the save dialog, not the page
+
+- Exports opened from a boosted list link were still handed to htmx even with
+  the `download` attribute set, so the CSV or image was fetched into the page
+  and shown inside the desktop window. The click now stops before htmx's link
+  handler, letting the native save dialog open as intended.
+
 ## 3.2.0 — 2026-11-08
 
 ### استودیو اینستاگرام: a product photographed the way a shop shows it
