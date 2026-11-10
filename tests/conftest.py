@@ -66,10 +66,12 @@ def _clean_db(client, db_session):
     # entry points at its shift, so it goes before that too.
     # Variant images die with their variants; tag templates are left standing
     # exactly as the suite always has — products may still be wearing them.
+    # Suppliers go after products/purchases/payments, the rows that point at
+    # them — otherwise a test that names its supplier leaks it into the next one.
     for model in (BusinessEvent, TagPrintBatchLine, TagPrintBatch, CheckoutEvent, StockReservation, CheckoutSession, CheckReminder, CheckRecord, RefundLine, FinancialEntry, PaymentReversal, Refund, SalaryPaymentItem, SalaryPayment, AttendanceRecord, CampaignAssignment, SaleCampaign, SalePaymentPart, SaleItem, StockMovement, POSTransaction, Payment, Sale, GeneratedImage,
                   SmsMessage, SmsTemplate, SmsDevice, InstagramGeneration, BackgroundJob, ShopModel,
                   InstagramBackground,
-                  Referral, SupplierPayment, PurchaseItem, Purchase, VariantImage, ProductImage, ProductVariant, Product, Expense, RecurringExpense,
+                  Referral, SupplierPayment, PurchaseItem, Purchase, VariantImage, ProductImage, ProductVariant, Product, Supplier, Expense, RecurringExpense,
                   Campaign, CashSessionEntry, CashSession, AdminLog, Customer, StaffUser, JobPosition, Settings):
         db_session.query(model).delete()
     db_session.commit()
