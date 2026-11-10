@@ -57,6 +57,16 @@ def _login(client, db_session, role="manager", username=None):
     return user
 
 
+def _store_logo(db_session) -> Path:
+    folder = Path("static/uploads/instagram")
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f"logo_{uuid.uuid4().hex[:8]}.png"
+    Image.new("RGB", (60, 60), (255, 0, 0)).save(path)
+    db_session.add(Settings(key="owner_logo_path", value="/" + str(path)))
+    db_session.commit()
+    return path
+
+
 def _seed_key(db_session):
     db_session.add_all([
         Settings(key="tryon_provider", value="avalai"),
@@ -674,6 +684,73 @@ def test_download_serves_the_clean_image(client, db_session):
         assert response.content
     finally:
         output.unlink(missing_ok=True)
+        _cleanup(root)
+
+
+def test_logo_checkbox_is_on_every_scenario_tab(client, db_session, tmp_path):
+    product, variant, paths, root = _make_variant(db_session)
+    logo = _store_logo(db_session)
+    _make_shop_model(db_session, tmp_path)
+    _login(client, db_session, "manager", "ig-logo-tabs")
+    try:
+        for scenario in ("text", "text_image"):
+            page = client.get(f"/admin/instagram-studio?scenario={scenario}")
+            assert page.status_code == 200, scenario
+            assert 'name="logo"' in page.text, scenario
+
+        for scenario in ("garment", "product_brief", "model_scene"):
+            page = client.get(
+                f"/admin/instagram-studio?scenario={scenario}"
+                f"&product_id={product.id}&variant_id={variant.id}")
+            assert page.status_code == 200, scenario
+            assert 'name="logo"' in page.text, scenario
+    finally:
+        logo.unlink(missing_ok=True)
+        _cleanup(root)
+
+
+def test_logo_download_uses_tryon_placement_and_size(client, db_session):
+    import io
+
+    product, variant, paths, root = _make_variant(db_session)
+    logo = _store_logo(db_session)
+    _login(client, db_session, "manager", "ig-logo-download")
+    _seed_key(db_session)
+    out_dir = Path("static/uploads/instagram")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    output = out_dir / f"logo_{uuid.uuid4().hex[:8]}.jpg"
+    try:
+        assert _post_generate(client, product, variant, paths,
+                              logo="1").status_code == 303
+        generation = db_session.query(InstagramGeneration).one()
+        job = db_session.get(BackgroundJob, generation.job_id)
+        Image.new("RGB", (400, 400), (255, 255, 255)).save(output, "JPEG")
+        job.status = "completed"
+        job.result_path = str(output)
+        job.result_url = f"/static/uploads/instagram/{output.name}"
+        db_session.commit()
+
+        partial = client.get(f"/admin/instagram-studio/jobs/{job.id}",
+                             headers={"HX-Request": "true"})
+        assert "?logo=yes" in partial.text
+        assert "دانلود با لوگو" in partial.text
+        # The checked generation's primary download carries the logo.
+        assert partial.text.index("?logo=yes") < partial.text.index("دانلود بدون لوگو")
+
+        badged = client.get(
+            f"/admin/instagram-studio/generations/{generation.id}/download?logo=yes")
+        assert badged.headers["content-type"].startswith("image/png")
+        image = Image.open(io.BytesIO(badged.content)).convert("RGB")
+        assert image.getpixel((5, 5)) == (255, 0, 0)
+        assert image.getpixel((229, 5)) == (255, 0, 0)   # same 230px width as try-on
+        assert image.getpixel((231, 5)) == (255, 255, 255)
+
+        clean = client.get(f"/admin/instagram-studio/generations/{generation.id}/download")
+        assert clean.headers["content-type"].startswith("image/jpeg")
+        assert Image.open(io.BytesIO(clean.content)).convert("RGB").getpixel((5, 5)) == (255, 255, 255)
+    finally:
+        output.unlink(missing_ok=True)
+        logo.unlink(missing_ok=True)
         _cleanup(root)
 
 

@@ -55,7 +55,7 @@ def _data_uri(raw: bytes) -> str:
     return "data:image/jpeg;base64," + base64.b64encode(raw).decode("ascii")
 
 
-def _logo_layer(path: str, width: int) -> Image.Image | None:
+def _logo_layer(path: str) -> Image.Image | None:
     try:
         with Image.open(path) as opened:
             logo = opened.convert("RGBA")
@@ -63,7 +63,8 @@ def _logo_layer(path: str, width: int) -> Image.Image | None:
     except Exception as error:
         logger.warning("Instagram logo could not be loaded at %s: %s", path, error)
         return None
-    scale = max(1, int(width * 0.12)) / max(logo.width, 1)
+    # Same 230px top-left badge as try-on's composite_logo().
+    scale = 230 / max(logo.width, 1)
     size = (max(1, int(logo.width * scale)), max(1, int(logo.height * scale)))
     return logo.resize(size, Image.LANCZOS)
 
@@ -75,7 +76,10 @@ def normalize_image(
     logo: bool = False,
     logo_path: str = "",
 ) -> bytes:
-    """Center-crop to the exact Instagram ratio, resize, optionally badge, JPEG.
+    """Center-crop to the exact Instagram ratio, resize, optionally badge.
+
+    Returns a lossless PNG; write_output() encodes the single final JPEG and
+    strips metadata on the way to disk.
 
     Raises KeyError for an unknown aspect and ImageGenerationError for bytes
     that are not an image.
@@ -105,15 +109,28 @@ def normalize_image(
     image = image.resize((target_width, target_height), Image.LANCZOS)
 
     if logo and logo_path:
-        layer = _logo_layer(logo_path, target_width)
+        layer = _logo_layer(logo_path)
         if layer is not None:
             canvas = image.convert("RGBA")
             canvas.alpha_composite(layer, (0, 0))
             image = canvas.convert("RGB")
 
     buffer = io.BytesIO()
-    image.save(buffer, "JPEG", quality=92, optimize=True)
+    image.save(buffer, "PNG", optimize=True)
     return buffer.getvalue()
+
+
+def strip_metadata(image_bytes: bytes, quality: int = 95) -> bytes:
+    """Re-encode as JPEG with no EXIF, XMP, ICC or comment payloads."""
+    with Image.open(io.BytesIO(image_bytes)) as opened:
+        image = ImageOps.exif_transpose(opened).convert("RGB")
+        image.load()
+        # Pillow carries `comment` through a normal save; clear it and every
+        # other info entry so only pixels survive.
+        image.info = {}
+        buffer = io.BytesIO()
+        image.save(buffer, "JPEG", quality=quality, optimize=True)
+        return buffer.getvalue()
 
 
 def write_output(image_bytes: bytes, output_path: str) -> None:
@@ -124,7 +141,7 @@ def write_output(image_bytes: bytes, output_path: str) -> None:
     """
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(image_bytes)
+    path.write_bytes(strip_metadata(image_bytes))
     cutoff = time.time() - OUTPUT_RETENTION_DAYS * 86400
     folders = (path.parent, path.parent / "thumbs")
     for folder in folders:
@@ -246,7 +263,7 @@ def generate_instagram_image(
     logo_path: str = "",
     job_id: int | None = None,
 ) -> bytes:
-    """Send one request and return the normalized JPEG bytes."""
+    """Send one request and return the normalized image bytes."""
     if reference_paths:
         provider_id, entry = resolve_selection(provider, model)
     else:

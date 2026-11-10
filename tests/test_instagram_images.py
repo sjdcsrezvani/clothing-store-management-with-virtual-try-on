@@ -3,7 +3,7 @@ import io
 
 from PIL import Image
 
-from services.instagram_gen import TARGET_SIZES, normalize_image
+from services.instagram_gen import TARGET_SIZES, normalize_image, strip_metadata, write_output
 
 
 def _jpeg(width: int, height: int, color=(230, 220, 210)) -> bytes:
@@ -257,3 +257,40 @@ def test_write_output_prunes_outputs_past_the_retention_window(tmp_path):
     assert not old.exists()
     assert fresh.exists()
     assert (tmp_path / "ig_new.jpg").exists()
+
+
+def _dirty_jpeg() -> bytes:
+    """A JPEG carrying EXIF, XMP, ICC and a comment."""
+    image = Image.new("RGB", (80, 80), (230, 220, 210))
+    exif = Image.Exif()
+    exif[274] = 1  # orientation
+    buffer = io.BytesIO()
+    image.save(buffer, "JPEG", exif=exif.tobytes(),
+               icc_profile=b"fake-icc-profile", comment=b"secret-comment")
+    raw = buffer.getvalue()
+    xmp = (b"http://ns.adobe.com/xap/1.0/\x00"
+           b'<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF/></x:xmpmeta>')
+    segment = b"\xff\xe1" + (len(xmp) + 2).to_bytes(2, "big") + xmp
+    return raw[:2] + segment + raw[2:]
+
+
+def test_write_output_strips_exif_xmp_icc_and_comment(tmp_path):
+    dirty = _dirty_jpeg()
+    assert b"ns.adobe.com/xap" in dirty
+    out = tmp_path / "ig_clean.jpg"
+
+    write_output(dirty, str(out))
+    data = out.read_bytes()
+
+    assert b"ns.adobe.com/xap" not in data
+    assert b"ICC_PROFILE" not in data
+    assert b"secret-comment" not in data
+    with Image.open(io.BytesIO(data)) as cleaned:
+        assert cleaned.format == "JPEG"
+        assert cleaned.size == (80, 80)
+        assert not cleaned.getexif()
+        assert not cleaned.info.get("exif")
+        assert not cleaned.info.get("xmp")
+        assert not cleaned.info.get("icc_profile")
+        assert not cleaned.info.get("comment")
+    assert strip_metadata(dirty) != dirty
