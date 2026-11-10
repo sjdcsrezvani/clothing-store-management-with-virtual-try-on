@@ -12,8 +12,10 @@ from services.instagram_prompts import (
     MODEL_IDENTITY,
     MODEL_OUTFIT_RULES,
     POSES,
+    POSE_REFERENCE_VIEWS,
     ROOM_BACKGROUND_SCENES,
     SCENES,
+    SCENE_REFERENCE_VIEWS,
     aspect_label,
     build_garment_prompt,
     build_model_prompt,
@@ -88,6 +90,25 @@ def test_scene_catalog_has_the_ten_approved_modes():
         "packshot", "back_view", "soft_shadow_studio",
     }
     assert scene_label("packshot") == "پکشات یکدست"
+
+
+def test_reference_views_default_to_main_and_name_the_special_cases():
+    assert set(SCENE_REFERENCE_VIEWS) == set(SCENES)
+    assert SCENE_REFERENCE_VIEWS["flat_lay"] == ("main",)
+    assert SCENE_REFERENCE_VIEWS["back_view"] == ("main", "back")
+    assert SCENE_REFERENCE_VIEWS["detail_closeup"] == ("main", "detail")
+    assert SCENE_REFERENCE_VIEWS["fabric_texture"] == ("main", "detail")
+
+    assert set(POSE_REFERENCE_VIEWS) == set(POSES)
+    assert POSE_REFERENCE_VIEWS["back_view"] == ("main", "back")
+    assert all(
+        views == ("main",)
+        for key, views in POSE_REFERENCE_VIEWS.items()
+        if key != "back_view"
+    )
+    assert all(
+        "detail" not in views for views in POSE_REFERENCE_VIEWS.values()
+    )
 
 
 def test_every_scene_carries_its_clause_fidelity_and_negatives():

@@ -478,7 +478,7 @@ def test_generate_model_scene_creates_a_generation(client, db_session, tmp_path)
         job = db_session.get(BackgroundJob, generation.job_id)
         payload = json.loads(job.payload)
         assert payload["reference_paths"][0] == model.image_path
-        assert payload["reference_paths"][1:] == [path.lstrip("/") for path in paths]
+        assert payload["reference_paths"][1:] == [path.lstrip("/") for path in paths[:1]]
     finally:
         _cleanup(root)
 
@@ -1087,12 +1087,99 @@ def test_prompt_preview_skips_the_absent_back_photo(client, db_session):
                 ("variant_id", variant.id),
                 ("image_paths", paths[0]),
                 ("image_paths", paths[1]),
-                ("garment_mode", "flat_lay"),
+                ("garment_mode", "detail_closeup"),
                 ("aspect_ratio", "4:5"),
             ])
         assert response.status_code == 200
         assert "Image 2 is the detail close-up" in response.text
         assert "back view" not in response.text
+    finally:
+        _cleanup(root)
+
+
+def test_prompt_preview_uses_only_the_scene_references(client, db_session):
+    product, variant, paths, root = _make_variant(db_session, images=3)
+    _login(client, db_session, "manager", "ig-preview-scene-refs")
+    try:
+        base = [
+            ("scenario", "garment"),
+            ("product_id", product.id),
+            ("variant_id", variant.id),
+            ("aspect_ratio", "4:5"),
+        ] + [("image_paths", path) for path in paths]
+
+        back = client.get(
+            "/admin/instagram-studio/prompt-preview",
+            params=base + [("garment_mode", "back_view")])
+        assert back.status_code == 200
+        assert "Image 2 is the back view" in back.text
+        assert "Image 3" not in back.text
+        assert "detail close-up" not in back.text
+
+        detail = client.get(
+            "/admin/instagram-studio/prompt-preview",
+            params=base + [("garment_mode", "detail_closeup")])
+        assert detail.status_code == 200
+        assert "Image 2 is the detail close-up" in detail.text
+        assert "back view" not in detail.text
+    finally:
+        _cleanup(root)
+
+
+def test_model_prompt_preview_never_sends_detail(client, db_session, tmp_path):
+    product, variant, paths, root = _make_variant(db_session, images=3)
+    _make_shop_model(db_session, tmp_path)
+    _login(client, db_session, "manager", "ig-preview-model-refs")
+    try:
+        base = [
+            ("scenario", "model_scene"),
+            ("product_id", product.id),
+            ("variant_id", variant.id),
+            ("model_slot", "girl_7"),
+            ("aspect_ratio", "4:5"),
+        ] + [("image_paths", path) for path in paths]
+
+        front = client.get(
+            "/admin/instagram-studio/prompt-preview",
+            params=base + [("pose_key", "standing_front")])
+        assert front.status_code == 200
+        assert "Image 2 is the primary product photo" in front.text
+        assert "Image 3" not in front.text
+        assert "detail close-up" not in front.text
+
+        back = client.get(
+            "/admin/instagram-studio/prompt-preview",
+            params=base + [("pose_key", "back_view")])
+        assert back.status_code == 200
+        assert "Image 2 is the primary product photo" in back.text
+        assert "Image 3 is the back view" in back.text
+        assert "detail close-up" not in back.text
+    finally:
+        _cleanup(root)
+
+
+def test_reference_picker_exposes_the_scene_and_pose_views(
+        client, db_session, tmp_path):
+    product, variant, paths, root = _make_variant(db_session, images=3)
+    _make_shop_model(db_session, tmp_path)
+    _login(client, db_session, "manager", "ig-ref-picker")
+    try:
+        page = client.get(
+            f"/admin/instagram-studio?scenario=garment"
+            f"&product_id={product.id}&variant_id={variant.id}")
+        assert page.status_code == 200
+        assert 'data-supported-views="main,back,detail"' in page.text
+        assert 'data-view="main"' in page.text
+        assert 'data-view="back"' in page.text
+        assert 'data-view="detail"' in page.text
+        assert 'data-views="main,back"' in page.text
+        assert "data-reference-warning" in page.text
+
+        model_page = client.get(
+            f"/admin/instagram-studio?scenario=model_scene"
+            f"&product_id={product.id}&variant_id={variant.id}")
+        assert model_page.status_code == 200
+        assert 'data-views="main,back"' in model_page.text
     finally:
         _cleanup(root)
 

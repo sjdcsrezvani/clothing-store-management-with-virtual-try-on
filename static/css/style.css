@@ -4951,6 +4951,8 @@ html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
 }
 .image-picked { display: flex; align-items: flex-start; gap: 0.55rem; flex-wrap: wrap; }
 .image-picked[hidden] { display: none; }
+.image-picked.is-disabled { opacity: 0.45; }
+.ig-reference-warning[hidden] { display: none; }
 .image-picked-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .image-picked figure { margin: 0; width: 84px; }
 .image-picked img {

@@ -15,26 +15,26 @@ MODE_SHOES = "shoes"
 
 SLOTS = {
     MODE_GARMENT: (
-        {"slot": 0, "label": "تصویر اصلی", "hint": "عکس روبه‌روی لباس.",
-         "prompt": "primary product photo"},
-        {"slot": 1, "label": "تصویر پشت", "hint": "پشت همان لباس.",
-         "prompt": "back view"},
-        {"slot": 2, "label": "تصویر جزئیات", "hint": "نزدیک از پارچه، دوخت، چاپ یا یقه.",
-         "prompt": "detail close-up"},
+        {"slot": 0, "view": "main", "label": "تصویر اصلی",
+         "hint": "عکس روبه‌روی لباس.", "prompt": "primary product photo"},
+        {"slot": 1, "view": "back", "label": "تصویر پشت",
+         "hint": "پشت همان لباس.", "prompt": "back view"},
+        {"slot": 2, "view": "detail", "label": "تصویر جزئیات",
+         "hint": "نزدیک از پارچه، دوخت، چاپ یا یقه.", "prompt": "detail close-up"},
     ),
     MODE_ACCESSORY: (
-        {"slot": 0, "label": "تصویر اصلی", "hint": "عکس روبه‌روی محصول.",
-         "prompt": "primary product photo"},
-        {"slot": 1, "label": "تصویر پشت", "hint": "پشت همان محصول.",
-         "prompt": "back view"},
+        {"slot": 0, "view": "main", "label": "تصویر اصلی",
+         "hint": "عکس روبه‌روی محصول.", "prompt": "primary product photo"},
+        {"slot": 1, "view": "back", "label": "تصویر پشت",
+         "hint": "پشت همان محصول.", "prompt": "back view"},
     ),
     MODE_SHOES: (
-        {"slot": 0, "label": "تصویر اصلی (از بالا)", "hint": "نمای از بالای کفش.",
-         "prompt": "primary product photo, top view"},
-        {"slot": 1, "label": "نمای چپ", "hint": "نمای کنار چپ کفش.",
-         "prompt": "left side view"},
-        {"slot": 2, "label": "نمای راست", "hint": "نمای کنار راست کفش.",
-         "prompt": "right side view"},
+        {"slot": 0, "view": "main", "label": "تصویر اصلی (از بالا)",
+         "hint": "نمای از بالای کفش.", "prompt": "primary product photo, top view"},
+        {"slot": 1, "view": "left", "label": "نمای چپ",
+         "hint": "نمای کنار چپ کفش.", "prompt": "left side view"},
+        {"slot": 2, "view": "right", "label": "نمای راست",
+         "hint": "نمای کنار راست کفش.", "prompt": "right side view"},
     ),
 }
 
@@ -58,3 +58,11 @@ def image_slots_for(product) -> list[dict]:
 def reference_views_for(family: str | None) -> list[str]:
     """English names of this family's photo slots, in slot order."""
     return [slot["prompt"] for slot in SLOTS[image_mode_for_family(family)]]
+
+
+def slot_for_view(family: str | None, view: str) -> int | None:
+    """The fixed slot for a semantic view, when this family has one."""
+    for slot in SLOTS[image_mode_for_family(family)]:
+        if slot["view"] == view:
+            return slot["slot"]
+    return None

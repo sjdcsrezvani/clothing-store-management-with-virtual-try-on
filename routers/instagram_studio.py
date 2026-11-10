@@ -20,6 +20,7 @@ from models import (BackgroundJob, InstagramGeneration, Product, ProductVariant,
 from services._common import int_arg
 from services.image_gen import composite_logo, get_generation_selection, get_tryon_selection
 from services.image_models import PROVIDERS
+from services.image_slots import image_slots_for
 from services.image_storage import compress_for_storage
 from services.instagram_backgrounds import (
     background_choices_for_scenario,
@@ -40,6 +41,7 @@ from services.instagram_prompts import (
     LIGHTINGS,
     MODEL_OUTFIT_LABELS_FA,
     POSES,
+    POSE_REFERENCE_VIEWS,
     ROOM_BACKGROUND_SCENES,
     SCENARIO_GARMENT,
     SCENARIO_MODEL_SCENE,
@@ -49,6 +51,7 @@ from services.instagram_prompts import (
     SCENARIOS,
     SCENES,
     SCENE_KEYS,
+    SCENE_REFERENCE_VIEWS,
     aspect_label,
     scene_label,
 )
@@ -216,7 +219,9 @@ def _variant_card_context(db: Session, scenario: str, product: Product,
     default = default_background(db) if backgrounds else None
     family = product_family(product)
     allowed_scenes = scene_keys_for_family(family)
-    scenes = [{"key": key, "label": scene_label(key)} for key in SCENE_KEYS
+    scenes = [{"key": key, "label": scene_label(key),
+               "views": SCENE_REFERENCE_VIEWS.get(key, ("main",))}
+              for key in SCENE_KEYS
               if allowed_scenes is None or key in allowed_scenes]
     recommended = recommended_scene(family)
     first_scene = scenes[0]["key"] if scenes else ""
@@ -249,7 +254,10 @@ def _variant_card_context(db: Session, scenario: str, product: Product,
             scenario == SCENARIO_MODEL_SCENE
             and family not in ACCESSORY_FAMILIES
         ),
-        "poses": [{"key": key, "label": value["label"]} for key, value in POSES.items()],
+        "poses": [{"key": key, "label": value["label"],
+                   "views": POSE_REFERENCE_VIEWS.get(key, ("main",))}
+                  for key, value in POSES.items()],
+        "supported_views": [slot["view"] for slot in image_slots_for(product)],
         "backgrounds": backgrounds,
         "default_background_key": default.key if default else "",
         "default_background_source": "brand" if default else "",

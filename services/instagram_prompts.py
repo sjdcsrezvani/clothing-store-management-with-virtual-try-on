@@ -172,6 +172,15 @@ SCENES = {
     },
 }
 
+# Fixed photo slots each scene actually needs. Main is always included by the
+# studio, so it is listed explicitly to keep the rule readable.
+SCENE_REFERENCE_VIEWS = {key: ("main",) for key in SCENES}
+SCENE_REFERENCE_VIEWS.update({
+    "detail_closeup": ("main", "detail"),
+    "fabric_texture": ("main", "detail"),
+    "back_view": ("main", "back"),
+})
+
 # Order used by the UI.
 SCENE_KEYS = tuple(SCENES)
 
@@ -351,6 +360,10 @@ POSES = {
                   "relaxed, garment unobstructed",
     },
 }
+
+# Model scenes never send the detail slot; only a back-facing pose needs back.
+POSE_REFERENCE_VIEWS = {key: ("main",) for key in POSES}
+POSE_REFERENCE_VIEWS["back_view"] = ("main", "back")
 
 BACKGROUNDS = {
     "studio_white": {

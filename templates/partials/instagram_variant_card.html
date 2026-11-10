@@ -34,6 +34,7 @@
     {% elif variant and reference_images %}
     <form method="post" action="/admin/instagram-studio/generate"
           data-room-background-scenes="{{ room_background_scenes | join(',') }}"
+          data-supported-views="{{ supported_views | join(',') }}"
           onsubmit="this.querySelector('button[type=submit]').disabled=true;">
         <div hx-get="/admin/instagram-studio/prompt-preview"
              hx-trigger="load, change, input changed delay:400ms"
@@ -85,16 +86,17 @@
         <div class="form-group">
             <label>عکس‌های مرجع</label>
             <p class="muted" style="margin-top:0;">
-                فقط عکس‌های همین رنگ/تنوع. حداکثر ۳ عکس انتخاب کنید.
-                اولین عکس، تصویر اصلی است.
+                فقط عکس‌های همین رنگ/تنوع. تصویر اصلی همیشه ارسال می‌شود؛
+                عکس پشت یا جزئیات فقط وقتی صحنه یا ژست به آن نیاز داشته باشد ارسال می‌شود.
                 {% if scenario == 'model_scene' %}
-                این عکس‌ها فقط لباس‌اند؛ عکس مدل بالاتر خودکار اضافه می‌شود.
+                این عکس‌ها فقط لباس‌اند؛ عکس مدل بالاتر خودکار اضافه می‌شود و عکس جزئیات ارسال نمی‌شود.
                 {% endif %}
             </p>
             <div class="image-picked-grid">
                 {% for image in reference_images %}
                 <label class="image-picked" style="cursor:pointer;align-items:center;">
                     <input type="checkbox" name="image_paths" value="{{ image.path }}"
+                           data-view="{{ image.view }}"
                            {% if loop.index <= 3 %}checked{% endif %}>
                     <img src="{{ image.path }}" alt="{{ image.label }}"
                          style="width:84px;height:84px;object-fit:cover;border-radius:8px;">
@@ -102,6 +104,8 @@
                 </label>
                 {% endfor %}
             </div>
+            <div class="alert alert-warning ig-reference-warning"
+                 data-reference-warning role="status" hidden></div>
         </div>
 
         {% if scenario == 'model_scene' %}
@@ -110,7 +114,8 @@
                 <label for="ig-pose">ژست</label>
                 <select id="ig-pose" name="pose_key">
                     {% for pose in poses %}
-                    <option value="{{ pose.key }}">{{ pose.label }}</option>
+                    <option value="{{ pose.key }}"
+                            data-views="{{ pose.views | join(',') }}">{{ pose.label }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -175,10 +180,11 @@
                 <label for="ig-scene">حالت عکاسی{% if scenario == 'garment' %} (الزامی){% endif %}</label>
                 <select id="ig-scene" name="garment_mode"{% if scenario == 'garment' %} required{% endif %}>
                     {% if scenario == 'product_brief' %}
-                    <option value="">بدون صحنه — کمپین آزاد</option>
+                    <option value="" data-views="main">بدون صحنه — کمپین آزاد</option>
                     {% endif %}
                     {% for scene in scenes %}
-                    <option value="{{ scene.key }}" {% if scenario == 'garment' and scene.key == recommended_scene %}selected{% endif %}>{{ scene.label }}</option>
+                    <option value="{{ scene.key }}"{% if scenario == 'garment' and scene.key == recommended_scene %} selected{% endif %}
+                            data-views="{{ scene.views | join(',') }}">{{ scene.label }}</option>
                     {% endfor %}
                 </select>
             </div>

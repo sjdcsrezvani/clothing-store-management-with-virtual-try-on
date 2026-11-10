@@ -4,7 +4,7 @@ product page and the variant edit page."""
 from pathlib import Path
 
 from models import Product, ProductVariant, VariantImage
-from services.image_slots import image_mode_for, image_slots_for
+from services.image_slots import image_mode_for, image_slots_for, slot_for_view
 from tests.conftest import csrf_token
 
 
@@ -29,6 +29,17 @@ def test_image_slots_follow_the_product_family():
     assert image_mode_for(shoes) == "shoes"
     assert [slot["label"] for slot in image_slots_for(shoes)] == [
         "تصویر اصلی (از بالا)", "نمای چپ", "نمای راست"]
+
+
+def test_slot_for_view_uses_only_the_family_s_real_slots():
+    assert slot_for_view("upper", "main") == 0
+    assert slot_for_view("upper", "back") == 1
+    assert slot_for_view("upper", "detail") == 2
+    assert slot_for_view("headwear", "back") == 1
+    assert slot_for_view("headwear", "detail") is None
+    assert slot_for_view("feet", "main") == 0
+    assert slot_for_view("feet", "back") is None
+    assert slot_for_view("feet", "detail") is None
 
 
 def _product_with_variant(db_session, category="تیشرت"):

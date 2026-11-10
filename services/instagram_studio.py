@@ -11,7 +11,7 @@ from pathlib import Path
 from models import InstagramGeneration, Product, ProductVariant, ShopModel, to_persian_digits
 from services.image_gen import get_generation_selection, get_tryon_selection
 from services.instagram_backgrounds import resolve_generation_background
-from services.image_slots import image_slots_for, reference_views_for
+from services.image_slots import image_slots_for, reference_views_for, slot_for_view
 from services.instagram_product_types import (
     ACCESSORY_FAMILIES,
     CLOTHING_FAMILIES,
@@ -25,6 +25,7 @@ from services.instagram_prompts import (
     IG_PROMPT_VERSION,
     LIGHTINGS,
     POSES,
+    POSE_REFERENCE_VIEWS,
     SCENARIO_GARMENT,
     SCENARIO_MODEL_SCENE,
     SCENARIO_PRODUCT_BRIEF,
@@ -33,6 +34,7 @@ from services.instagram_prompts import (
     SCENARIOS,
     SCENES,
     SCENE_KEYS,
+    SCENE_REFERENCE_VIEWS,
     garment_prompt_sections,
     model_prompt_sections,
     product_brief_prompt_sections,
@@ -70,6 +72,7 @@ def variant_reference_images(variant: ProductVariant) -> list[dict]:
     slots = image_slots_for(variant.product)
     allowed = {slot["slot"] for slot in slots}
     labels = {slot["slot"]: slot["label"] for slot in slots}
+    views = {slot["slot"]: slot["view"] for slot in slots}
     frames = sorted(variant.images or [], key=lambda frame: (frame.sort_order, frame.id))
     candidates = [(frame.sort_order, frame.image_path) for frame in frames
                   if frame.sort_order in allowed]
@@ -82,8 +85,11 @@ def variant_reference_images(variant: ProductVariant) -> list[dict]:
         if not path or "/uploads/barcodes/" in path or path in seen:
             continue
         seen.add(path)
-        images.append({"path": path, "sort_order": slot,
-                       "label": labels.get(slot, f"تصویر {to_persian_digits(str(slot + 1))}")})
+        images.append({
+            "path": path, "sort_order": slot, "view": views.get(slot, ""),
+            "label": labels.get(slot,
+                                f"تصویر {to_persian_digits(str(slot + 1))}"),
+        })
     return images
 
 
@@ -111,6 +117,60 @@ def selected_reference_views(variant: ProductVariant,
         if slot is not None and 0 <= slot < len(views):
             chosen.append(views[slot])
     return chosen
+
+
+def select_reference_paths(
+    variant: ProductVariant,
+    selected_paths: list[str],
+    *,
+    scenario: str,
+    scene_key: str = "",
+    pose_key: str = "",
+) -> list[str]:
+    """Keep only the fixed slots this scene/pose needs, main first.
+
+    The main photo is always included. A missing optional back/detail slot is
+    skipped, so the prompt never names an image that is not sent.
+    """
+    family = product_family(variant.product)
+    if scenario == SCENARIO_MODEL_SCENE:
+        views = POSE_REFERENCE_VIEWS.get(pose_key or "standing_front", ("main",))
+    else:
+        views = SCENE_REFERENCE_VIEWS.get(scene_key, ("main",))
+
+    slots: list[int] = []
+    for view in views:
+        slot = slot_for_view(family, view)
+        if slot is not None and slot not in slots:
+            slots.append(slot)
+    if 0 not in slots:
+        slots.insert(0, 0)
+
+    images = variant_reference_images(variant)
+    selected = {_disk_path(path) for path in selected_paths if path}
+    by_slot: dict[int, list[str]] = {}
+    for image in images:
+        by_slot.setdefault(image["sort_order"], []).append(image["path"])
+
+    picked: list[str] = []
+    for slot in slots:
+        options = by_slot.get(slot) or []
+        if not options:
+            if slot == 0:
+                raise InstagramValidationError(
+                    "تصویر اصلی (روبه‌روی) این تنوع ثبت نشده است — ابتدا آن را در محصولات آپلود کنید.")
+            continue
+        path = next((option for option in options
+                     if _disk_path(option) in selected), options[0])
+        disk = _disk_path(path)
+        if not Path(disk).exists():
+            if slot == 0:
+                raise InstagramValidationError(
+                    "فایل تصویر اصلی پیدا نشد — دوباره از محصولات آپلود کنید.")
+            continue
+        if disk not in picked:
+            picked.append(disk)
+    return picked
 
 
 def join_prompt_sections(sections: list[dict]) -> str:
@@ -237,6 +297,8 @@ def preview_prompt_sections(
     chosen = [path for path in (selected_paths or []) if path][:MAX_REFERENCES]
     if not chosen:
         raise InstagramValidationError("حداقل یک عکس مرجع محصول انتخاب کنید.")
+    chosen = select_reference_paths(
+        variant, chosen, scenario=scenario, scene_key=scene_key, pose_key=pose_key)
     reference_views = selected_reference_views(variant, chosen)
     reference_count = len(reference_views)
     details = (variant.tryon_details or "").strip()
@@ -431,6 +493,9 @@ def create_generation(
         details = ""
     else:
         garment_paths = collect_reference_paths(variant, selected_paths)
+        garment_paths = select_reference_paths(
+            variant, garment_paths, scenario=scenario, scene_key=scene_key,
+            pose_key=pose_key)
         reference_views = selected_reference_views(variant, garment_paths)
         reference_paths = ([model_disk_path] + garment_paths
                            if scenario == SCENARIO_MODEL_SCENE else garment_paths)
