@@ -1,3 +1,15 @@
+## 3.2.2 — 2026-11-10
+
+### استودیو اینستاگرام: the shop's mark, and nothing else in the file
+
+- **One logo option for every scenario.** The studio now offers the same
+  checkbox everywhere, using the 230px top-left badge already drawn on try-on
+  images, and a download that was ticked carries it. The clean download stays
+  available next to it.
+- **Downloaded images carry no hidden payload.** The final Instagram JPEG is
+  re-encoded at quality 95 with EXIF, XMP, ICC and comment data cleared before
+  it reaches disk, so what the shop uploads is pixels and nothing more.
+
 ## 3.2.1 — 2026-11-08
 
 ### دسکتاپ: the save dialog, not the page
