@@ -6,6 +6,7 @@ from services.instagram_backgrounds import (
     STARTER_BACKGROUNDS,
     background_choices_for_scenario,
     default_background,
+    delete_background,
     duplicate_background,
     ensure_instagram_backgrounds,
     list_backgrounds,
@@ -94,6 +95,30 @@ def test_the_last_active_background_cannot_be_deactivated(db_session):
     with pytest.raises(ValueError):
         toggle_active(db_session, "starter_gray")
     assert default_background(db_session).key == "starter_gray"
+
+
+def test_deleting_the_default_repairs_the_default_and_keeps_a_row(db_session):
+    ensure_instagram_backgrounds(db_session)
+
+    snapshot = delete_background(db_session, DEFAULT_STARTER_KEY)
+    assert snapshot["label"] == STARTER_BACKGROUNDS[0]["label_fa"]
+    assert (db_session.query(InstagramBackground)
+            .filter_by(key=DEFAULT_STARTER_KEY).count()) == 0
+    fallback = default_background(db_session)
+    assert fallback is not None
+    assert fallback.is_active is True
+
+
+def test_the_last_active_background_cannot_be_deleted(db_session):
+    import pytest
+
+    ensure_instagram_backgrounds(db_session)
+    for key in ("starter_white", "starter_oak", "starter_gray"):
+        delete_background(db_session, key)
+
+    with pytest.raises(ValueError):
+        delete_background(db_session, DEFAULT_STARTER_KEY)
+    assert default_background(db_session).key == DEFAULT_STARTER_KEY
 
 
 def test_missing_or_deactivated_keys_fall_back_to_the_shop_default(db_session):
@@ -294,6 +319,19 @@ def test_owner_can_toggle_duplicate_and_fail_validation(client, db_session):
     assert (db_session.query(InstagramBackground)
             .filter_by(key="starter_ivory").one().prompt_en
             != "too short")
+
+
+def test_owner_can_delete_a_background(client, db_session):
+    _login(client, db_session, "owner")
+    ensure_instagram_backgrounds(db_session)
+    token = csrf_token(client, "/admin/settings/instagram-backgrounds")
+
+    response = client.post(
+        "/admin/settings/instagram-backgrounds/delete",
+        data={"csrf_token": token, "key": "starter_oak"}, follow_redirects=False)
+    assert response.status_code == 303
+    assert (db_session.query(InstagramBackground)
+            .filter_by(key="starter_oak").count()) == 0
 
 
 def test_settings_page_links_to_the_background_library(client, db_session):

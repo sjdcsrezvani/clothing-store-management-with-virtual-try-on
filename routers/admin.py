@@ -142,6 +142,7 @@ from services.payroll import (create_salary_payment, current_period_key,
 from services.themes import THEMES, DEFAULT_THEME_ID, THEME_SETTING_KEY, CUSTOM_PRIMARY_KEY, CUSTOM_SECONDARY_KEY, DEFAULT_CUSTOM_PRIMARY, DEFAULT_CUSTOM_SECONDARY, CUSTOM_FONT_KEY, CUSTOM_RADIUS_KEY, CUSTOM_DARK_KEY, CUSTOM_PRIMARY_DARK_KEY, CUSTOM_SECONDARY_DARK_KEY, DEFAULT_CUSTOM_FONT, DEFAULT_CUSTOM_RADIUS, DEFAULT_CUSTOM_DARK, DEFAULT_CUSTOM_PRIMARY_DARK, DEFAULT_CUSTOM_SECONDARY_DARK, CUSTOM_FONTS, CUSTOM_RADII, FONT_SIZE_KEY, DENSITY_KEY, DEFAULT_FONT_SIZE, DEFAULT_DENSITY, FONT_SIZES, DENSITIES, all_theme_previews, validate_hex, contrast_ratio, get_theme, invalidate_theme_cache, migrate_retired_theme
 from services.shop_models import ensure_shop_models, save_model_image, delete_model_image
 from services.instagram_backgrounds import (
+    delete_background,
     duplicate_background,
     list_backgrounds,
     save_background,
@@ -2566,6 +2567,23 @@ async def admin_instagram_background_duplicate(request: Request, db: Session = D
     log_action(db, "instagram_background_duplicate", row.label_fa, request=request,
                target_type="instagram_background", target_id=row.id)
     return _background_redirect(msg="نسخه قابل ویرایش ساخته شد.")
+
+
+@router.post("/settings/instagram-backgrounds/delete", response_class=HTMLResponse)
+async def admin_instagram_background_delete(request: Request, db: Session = Depends(get_db)):
+    guard = require_html_role(request, db, "owner")
+    if not hasattr(guard, "role"):
+        return guard
+    form = await request.form()
+    try:
+        row = delete_background(db, str(form.get("key") or ""))
+    except ValueError as error:
+        return _background_redirect(err=str(error))
+
+    log_action(db, "instagram_background_delete", row["label"], request=request,
+               target_type="instagram_background",
+               before={"active": row["is_active"], "default": row["is_default"]})
+    return _background_redirect(msg="پس‌زمینه حذف شد.")
 
 
 @router.post("/settings", response_class=HTMLResponse)

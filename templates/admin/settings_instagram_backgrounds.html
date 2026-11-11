@@ -144,6 +144,13 @@
                 <input type="hidden" name="key" value="{{ bg.key }}">
                 <button type="submit" class="btn btn-sm btn-ghost">ساخت نسخه</button>
             </form>
+            <form method="post" action="/admin/settings/instagram-backgrounds/delete" class="bg-delete"
+                  data-confirm="پس‌زمینه «{{ bg.label_fa }}» برای همیشه حذف شود؟ نسخه‌های قبلی ساخته‌شده دست‌نخورده می‌مانند."
+                  data-confirm-title="حذف پس‌زمینه؟" data-confirm-ok="حذف">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="key" value="{{ bg.key }}">
+                <button type="submit" class="btn btn-sm btn-danger-quiet">حذف پس‌زمینه</button>
+            </form>
         </div>
     </div>
 </details>

@@ -287,6 +287,30 @@ def toggle_active(db, key: str, staff_id: int | None = None):
     return row
 
 
+def delete_background(db, key: str) -> dict:
+    """Delete one row, keeping at least one active row and repairing the default."""
+    row = get_background(db, key)
+    if row is None:
+        raise ValueError("پس‌زمینه پیدا نشد.")
+    active_others = (db.query(_model())
+                     .filter(_model().is_active.is_(True),
+                             _model().id != row.id)
+                     .count())
+    if not active_others:
+        raise ValueError("حداقل یک پس‌زمینه فعال باید بماند.")
+    snapshot = {
+        "key": row.key,
+        "label": row.label_fa,
+        "is_active": bool(row.is_active),
+        "is_default": bool(row.is_default),
+    }
+    db.delete(row)
+    db.flush()
+    _ensure_default(db)
+    db.commit()
+    return snapshot
+
+
 def duplicate_background(db, key: str, staff_id: int | None = None):
     source = get_background(db, key)
     if source is None:

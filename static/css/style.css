@@ -5298,6 +5298,7 @@ html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
   border-top: 1px solid var(--rule);
 }
 .bg-actions form { margin: 0; }
+.bg-actions .bg-delete { margin-inline-start: auto; }
 
 @media (max-width: 620px) {
   .bg-card > .bg-summary { grid-template-columns: minmax(0, 1fr) auto; }
