@@ -259,7 +259,7 @@
         {% set child_on = settings.get('child_profile_enabled', '1') not in ['0', 'false', 'False', 'no', 'off'] %}
         <div class="form-group">
             <label for="birthday_target">مبنای تخفیف و پیامک تولد {{ tip('همین گزینه تعیین می‌کند کدام تولد در صندوق تخفیف بگیرد و برای کدام پیامک برود. فروشگاه پوشاک بزرگسال روی «تولد خود مشتری» بگذارد؛ نیازی به اطلاعات فرزند ندارد.') }}</label>
-            <select id="birthday_target" name="birthday_target">
+            <select id="birthday_target" name="birthday_target" data-fancy>
                 <option value="child" {% if target == 'child' %}selected{% endif %}>تولد فرزند (فروشگاه کودک)</option>
                 <option value="customer" {% if target == 'customer' %}selected{% endif %}>تولد خود مشتری</option>
                 <option value="both" {% if target == 'both' %}selected{% endif %}>هر دو</option>
