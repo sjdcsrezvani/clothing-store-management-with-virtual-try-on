@@ -9,6 +9,8 @@ def test_supplier_payment_and_balance(client, db_session, authed):
     purchase = Purchase(supplier_id=supplier.id, total_cost=1000)
     db_session.add(purchase)
     db_session.commit()
+    page = client.get("/admin/suppliers")
+    assert page.text.count("data-fancy") == 2
     token = csrf_token(client, "/admin/suppliers")
     response = client.post(f"/admin/suppliers/{supplier.id}/payment", data={"amount": "400", "csrf_token": token}, follow_redirects=False)
     assert response.status_code == 303

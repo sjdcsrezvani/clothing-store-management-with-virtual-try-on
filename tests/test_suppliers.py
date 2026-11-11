@@ -160,6 +160,7 @@ def test_list_shows_type_and_city_and_links_to_the_edit_page(client, authed, db_
     assert "تولیدی" in page.text
     assert "تهران" in page.text
     assert f'href="/admin/suppliers/{supplier.id}/edit"' in page.text
+    assert '<select name="per_page" id="supplier-per-page" data-fancy' in page.text
 
 
 def test_search_covers_owner_city_type_and_economic_code(client, authed, db_session):
