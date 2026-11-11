@@ -362,7 +362,7 @@
             </div>
             <div class="form-group">
                 <label for="tryon_provider">ارائه‌دهنده تصویر {{ tip('کلید هر ارائه‌دهنده جدا ذخیره می‌شود؛ با عوض کردن این گزینه، فهرست مدل‌ها هم عوض می‌شود') }}</label>
-                <select id="tryon_provider" name="tryon_provider">
+                <select id="tryon_provider" name="tryon_provider" data-fancy>
                     {% for key, p in (tryon_providers or {}).items() %}
                     <option value="{{ key }}"{% if key == tryon_selected_provider %} selected{% endif %}>{{ p.label }}</option>
                     {% endfor %}
@@ -372,7 +372,7 @@
         <div class="form-row">
             <div class="form-group">
                 <label for="tryon_model">مدل ویرایش تصویر {{ tip('برای پرو مجازی و حالت‌های عکس‌محور استودیو اینستاگرام؛ هر مدل با ارزان‌ترین تنظیمات معتبر خودش اجرا می‌شود (۱۰۲۴×۱۰۲۴؛ Seedream با 2K)') }}</label>
-                <select id="tryon_model" name="tryon_model">
+                <select id="tryon_model" name="tryon_model" data-fancy>
                     {% for key, p in (tryon_providers or {}).items() %}
                     {% for m in p.models %}
                     <option value="{{ m.id }}" data-provider="{{ key }}"{% if key == tryon_selected_provider and m.id == tryon_selected_model %} selected{% endif %} dir="ltr">{{ m.id }} — {{ m.cost }}</option>
@@ -383,7 +383,7 @@
             </div>
             <div class="form-group">
                 <label for="instagram_generation_model">مدل تولید کمپین متنی (بدون عکس) {{ tip('فقط برای تب «کمپین متنی» استودیو اینستاگرام؛ تب «کمپین متنی با عکس» از مدل ویرایش تصویر استفاده می‌کند. این مدل عکس مرجع نمی‌گیرد و از مسیر تولید متن‌به‌تصویر استفاده می‌کند') }}</label>
-                <select id="instagram_generation_model" name="instagram_generation_model">
+                <select id="instagram_generation_model" name="instagram_generation_model" data-fancy>
                     {% for key, p in (tryon_providers or {}).items() %}
                     {% for m in p.generation_models %}
                     <option value="{{ m.id }}" data-provider="{{ key }}"{% if key == tryon_selected_provider and m.id == tryon_generation_selected_model %} selected{% endif %} dir="ltr">{{ m.id }} — {{ m.cost }}</option>
@@ -407,11 +407,13 @@
                 <small class="muted">{% if tryon_key_mask_avalai %}ذخیره شده ({{ tryon_key_mask_avalai }}) — برای همه مدل‌های این ارائه‌دهنده استفاده می‌شود.{% else %}هنوز کلیدی ذخیره نشده است.{% endif %}</small>
             </div>
         </div>
-        <div class="form-row">
-            <div class="form-group">
-                <input type="hidden" name="tryon_autoclear_kid" value="0"><input type="checkbox" id="tryon_autoclear_kid" name="tryon_autoclear_kid" value="1"{% if settings.get('tryon_autoclear_kid', '0') == '1' %} checked{% endif %}>
-                <label for="tryon_autoclear_kid">حذف خودکار عکس شخص پس از ذخیره {{ tip('عکس شخص فقط در حافظه است؛ با این گزینه پس از هر ذخیره پاک می‌شود') }}</label>
-            </div>
+        <div class="cap-row settings-cap">
+            <input type="hidden" name="tryon_autoclear_kid" value="0">
+            <label>
+                <input type="checkbox" id="tryon_autoclear_kid" name="tryon_autoclear_kid" value="1"{% if settings.get('tryon_autoclear_kid', '0') == '1' %} checked{% endif %}>
+                <span>حذف خودکار عکس شخص پس از ذخیره</span>
+            </label>
+            <p class="muted">عکس شخص فقط در حافظه است؛ با این گزینه پس از هر ذخیره پاک می‌شود.</p>
         </div>
         <div class="row">
             <button type="button" class="btn btn-ghost btn-sm" id="tryon-test-key"

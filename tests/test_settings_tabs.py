@@ -184,6 +184,14 @@ def test_messaging_tab_shows_gateway_status(client, db_session):
     assert "درگاه" in page and "/admin/sms" in page
 
 
+def test_messaging_model_dropdowns_use_the_custom_picker(client, db_session):
+    _owner_client(client, db_session, name="tabs-owner-fancy")
+    page = client.get("/admin/settings?tab=messaging").text
+    for field in ("tryon_provider", "tryon_model", "instagram_generation_model"):
+        assert f'<select id="{field}" name="{field}" data-fancy>' in page
+    assert '<div class="cap-row settings-cap">' in page
+
+
 # A link that promises one thing and lands on another is worse than no link:
 # the owner follows «تنظیمات چک‌ها», finds the shop panel, and concludes the
 # setting is gone. Each row below is a real link, the panel it must name, and a

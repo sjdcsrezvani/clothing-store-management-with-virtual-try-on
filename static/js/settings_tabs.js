@@ -86,7 +86,11 @@
             var keep = options.filter(function (option) {
                 return !option.disabled && option.value === current;
             });
-            if (!keep.length && first) model.value = first;
+            if (!keep.length && first) {
+                model.value = first;
+                // The custom dropdown mirrors its label from this event.
+                model.dispatchEvent(new Event('change', { bubbles: true }));
+            }
         }
         return sync;
     }

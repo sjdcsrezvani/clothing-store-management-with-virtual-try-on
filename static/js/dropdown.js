@@ -110,6 +110,25 @@
         });
         wrap.appendChild(list);
 
+        // Provider filters hide/disable native options after this list is
+        // built; mirror that state so the custom list cannot offer a model
+        // from the wrong catalog.
+        function syncItems() {
+            Array.prototype.forEach.call(list.children, function (item, index) {
+                var opt = select.options[index];
+                if (!opt) return;
+                item.hidden = !!opt.hidden;
+                item.setAttribute('aria-disabled', opt.disabled ? 'true' : 'false');
+            });
+        }
+        syncItems();
+        if (window.MutationObserver) {
+            new MutationObserver(syncItems).observe(select, {
+                subtree: true, attributes: true,
+                attributeFilter: ['disabled', 'hidden'],
+            });
+        }
+
         var typed = '', typedAt = 0;
         btn.addEventListener('click', function () { toggle(wrap); });
         btn.addEventListener('keydown', function (event) {
