@@ -29,6 +29,7 @@ def test_toolbar_names_both_tag_destinations_and_lists_csv(client, authed):
     assert "🏷️ تگ‌ها" in html
     assert 'class="btn btn-ghost">تنظیمات تگ</a>' in html  # a real button, not bare text
     assert "/admin/products/export?" in html
+    assert html.count("data-fancy") == 3
 
 
 def test_sort_by_name_and_price_reorders_rows(client, authed, db_session):

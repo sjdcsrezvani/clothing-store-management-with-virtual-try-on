@@ -48,14 +48,14 @@
         <label class="sr-only" for="barcode-scanner">بارکد یا نام محصول</label>
         <input type="text" id="barcode-scanner" name="search" value="{{ search }}" placeholder="بارکد، SKU، نام، دسته یا سایز" autofocus autocomplete="off">
         <label class="sr-only" for="product-category">دسته‌بندی</label>
-        <select name="category" id="product-category">
+        <select name="category" id="product-category" data-fancy>
             <option value="">همه دسته‌ها</option>
             {% for cat in categories %}
             <option value="{{ cat }}" {% if category_filter == cat %}selected{% endif %}>{{ cat }}</option>
             {% endfor %}
         </select>
         <label class="sr-only" for="product-size">سایز</label>
-        <select name="size" id="product-size" onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}" aria-label="سایز">
+        <select name="size" id="product-size" data-fancy onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}" aria-label="سایز">
             <option value="">همه سایزها</option>
             {% for choice in size_choices %}
             <option value="{{ choice }}" {% if size_filter == choice %}selected{% endif %}>{{ choice }}</option>
@@ -95,7 +95,7 @@
             <input type="hidden" name="dir" value="{{ sort_dir }}">
             <input type="hidden" name="size" value="{{ size_filter }}">
             <label class="sr-only" for="product-per-page">تعداد در صفحه</label>
-            <select name="per_page" id="product-per-page" onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}" aria-label="تعداد در صفحه">
+            <select name="per_page" id="product-per-page" data-fancy onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}" aria-label="تعداد در صفحه">
                 {% for option in per_page_options %}
                 <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }} در صفحه</option>
                 {% endfor %}
