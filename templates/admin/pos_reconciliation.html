@@ -64,7 +64,7 @@
         </div>
         <div class="form-group">
             <label class="sr-only" for="pos-status">وضعیت</label>
-            <select name="status" id="pos-status" onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}">
+            <select name="status" id="pos-status" data-fancy onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}">
                 {% for value, label in statuses.items() %}
                 <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}

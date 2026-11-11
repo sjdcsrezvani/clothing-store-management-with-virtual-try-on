@@ -176,6 +176,7 @@ def test_default_queue_hides_terminal_answers_and_never_offers_review_for_them(
     assert "APPROVED-VISIBLE" in default              # approved, but no invoice
     assert "CANCELLED-HIDDEN" not in default           # terminal already answered
     assert '<option value="unresolved" selected>' in default
+    assert '<select name="status" id="pos-status" data-fancy' in default
     assert "1 مورد" in default and "با همین فیلترها" not in default
 
     everything = client.get("/admin/pos-reconciliation?status=all").text
