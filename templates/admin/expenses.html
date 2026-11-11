@@ -90,7 +90,7 @@
             </div>
             <div class="form-group">
                 <label for="expense-type">نوع هزینه</label>
-                <select id="expense-type" name="expense_type">
+                <select id="expense-type" name="expense_type" data-fancy>
                     <option value="one_time">یک‌باره</option>
                     <option value="monthly">ماهانه</option>
                 </select>
@@ -98,7 +98,7 @@
             </div>
             <div class="form-group">
                 <label for="expense-method">روش پرداخت</label>
-                <select id="expense-method" name="payment_method">
+                <select id="expense-method" name="payment_method" data-fancy>
                     <option value="cash">نقدی (از صندوق)</option>
                     <option value="card">کارتی (بدون اثر بر صندوق)</option>
                 </select>
@@ -147,7 +147,7 @@
                 <input type="hidden" name="sort" value="{{ sort_key }}">
                 <input type="hidden" name="dir" value="{{ sort_dir }}">
                 <label class="sr-only" for="expense-per-page">تعداد در صفحه</label>
-                <select name="per_page" id="expense-per-page" onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}" aria-label="تعداد در صفحه">
+                <select name="per_page" id="expense-per-page" data-fancy onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}" aria-label="تعداد در صفحه">
                     {% for option in per_page_options %}
                     <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }} در صفحه</option>
                     {% endfor %}
@@ -169,7 +169,7 @@
         </div>
         <div class="form-group">
             <label class="sr-only" for="expense-type-filter">نوع</label>
-            <select id="expense-type-filter" name="type">
+            <select id="expense-type-filter" name="type" data-fancy>
                 <option value="all" {% if type_filter == 'all' %}selected{% endif %}>همه انواع</option>
                 <option value="one_time" {% if type_filter == 'one_time' %}selected{% endif %}>یک‌باره</option>
                 <option value="monthly" {% if type_filter == 'monthly' %}selected{% endif %}>ماهانه</option>
@@ -177,7 +177,7 @@
         </div>
         <div class="form-group">
             <label class="sr-only" for="expense-method-filter">روش پرداخت</label>
-            <select id="expense-method-filter" name="method">
+            <select id="expense-method-filter" name="method" data-fancy>
                 <option value="all" {% if method_filter == 'all' %}selected{% endif %}>همه روش‌ها</option>
                 <option value="cash" {% if method_filter == 'cash' %}selected{% endif %}>نقدی</option>
                 <option value="card" {% if method_filter == 'card' %}selected{% endif %}>کارتی</option>
@@ -185,7 +185,7 @@
         </div>
         <div class="form-group">
             <label class="sr-only" for="expense-status-filter">وضعیت</label>
-            <select id="expense-status-filter" name="status">
+            <select id="expense-status-filter" name="status" data-fancy>
                 <option value="all" {% if status_filter == 'all' %}selected{% endif %}>همه وضعیت‌ها</option>
                 <option value="active" {% if status_filter == 'active' %}selected{% endif %}>فعال</option>
                 <option value="reversed" {% if status_filter == 'reversed' %}selected{% endif %}>برگشت‌شده</option>

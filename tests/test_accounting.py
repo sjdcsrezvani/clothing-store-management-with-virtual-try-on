@@ -1075,6 +1075,7 @@ def test_expense_list_names_methods_breakdown_and_voider(client, db_session, aut
     assert "برگشت: کاربر حذف‌شده" not in page.text  # …by a named human
     assert 'data-label="مبلغ"' in page.text       # phone cards are labelled
     assert "جمع هزینه‌های بازه" in page.text
+    assert page.text.count("data-fancy") == 7
 
 
 def test_expenses_page_has_no_automatic_monthly_rules(client, db_session, authed):
