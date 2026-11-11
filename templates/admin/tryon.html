@@ -245,7 +245,7 @@
                         <form method="post" action="/admin/try-on/variant" class="tryon-variant-form">
                             <input type="hidden" name="product_id" value="{{ s.id }}">
                             <label class="sr-only" for="variant-{{ s.id }}">تنوع {{ s.name }}</label>
-                            <select id="variant-{{ s.id }}" name="barcode" data-autosubmit aria-label="تنوع {{ s.name }}">
+                            <select id="variant-{{ s.id }}" name="barcode" data-autosubmit data-fancy aria-label="تنوع {{ s.name }}">
                                 {% for v in s.variants %}
                                 <option value="{{ v.barcode }}"{% if v.barcode == s.barcode %} selected{% endif %}>{{ v.label }}</option>
                                 {% endfor %}
@@ -281,7 +281,7 @@
             <form id="gen-form" method="post" action="/admin/try-on/generate">
                 <div class="form-group">
                     <label for="mode">نوع پرو</label>
-                    <select id="mode" name="mode">
+                    <select id="mode" name="mode" data-fancy>
                         <option value="product_only" selected>فقط محصول (بقیه لباس‌ها دست‌نخورده بماند)</option>
                         <option value="head_to_toe">استایل کامل سر تا پا (هماهنگ با محصول)</option>
                     </select>
@@ -290,7 +290,7 @@
 
                 <div class="form-group">
                     <label for="category">نوع محصول (برای تنظیم قانون لباس)</label>
-                    <select id="category" name="category">
+                    <select id="category" name="category" data-fancy>
                         <option value="upper" selected>بالاتنه (تیشرت، سویشرت، هودی، پولیور)</option>
                         <option value="lower">پایین‌تنه (جین، شلوار، شلوارک، دامن)</option>
                         <option value="set">ست دو تکه (تیشرت+شلوارک، سویشرت+شلوار)</option>
@@ -302,7 +302,7 @@
 
                 <div class="form-group">
                     <label for="pose">ژست شخص</label>
-                    <select id="pose" name="pose">
+                    <select id="pose" name="pose" data-fancy>
                         {% for mode in pose_modes %}
                         <option value="{{ mode.key }}">{{ mode.label_fa }}</option>
                         {% endfor %}
@@ -311,7 +311,7 @@
 
                 <div class="form-group">
                     <label for="face">حالت چهره</label>
-                    <select id="face" name="face">
+                    <select id="face" name="face" data-fancy>
                         {% for mode in face_modes %}
                         <option value="{{ mode.key }}">{{ mode.label_fa }}</option>
                         {% endfor %}
@@ -321,7 +321,7 @@
 
                 <div class="form-group">
                     <label for="background">پس‌زمینه استودیو</label>
-                    <select id="background" name="background">
+                    <select id="background" name="background" data-fancy>
                         <option value="kids_classic" selected>استودیو کلاسیک با پرده سفید</option>
                         <option value="random">پس‌زمینه تصادفی</option>
                         <option value="">پس‌زمینه را تغییر نده</option>

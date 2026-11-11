@@ -27,6 +27,7 @@ def test_seasonal_group_and_fixed_default(client):
         assert f'value="{key}"' in page
     assert 'value="kids_classic" selected' in page  # fixed default kept
     assert 'name="custom_prompt"' in page and 'maxlength="500"' in page
+    assert page.count("data-fancy") == 5
 
 
 def test_custom_prompt_capped():
@@ -43,6 +44,7 @@ def test_remove_and_variant_switch(client, db_session):
     client.post("/admin/try-on/add-product", data={"barcode_input": "BC-1", "csrf_token": token})
     page = client.get("/admin/try-on").text
     assert "BC-1" in page
+    assert page.count("data-fancy") == 6
     token = csrf_token(client)
     client.post("/admin/try-on/variant", data={"product_id": "1", "barcode": "BC-2", "csrf_token": token})
     page = client.get("/admin/try-on").text
