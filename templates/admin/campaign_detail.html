@@ -141,7 +141,7 @@
                        {% if not customer_picker %}disabled{% endif %}
                        aria-describedby="assign-search-count">
                 <label class="sr-only" for="assign-customer">مشتری</label>
-                <select id="assign-customer" name="customer_id" {% if not customer_picker %}disabled{% endif %}>
+                <select id="assign-customer" name="customer_id" data-fancy {% if not customer_picker %}disabled{% endif %}>
                     {% for customer in customer_picker %}
                     <option value="{{ customer.id }}" data-search="{{ customer.name }} {{ customer.phone }}">{{ customer.name }} — {{ customer.phone }}</option>
                     {% endfor %}
