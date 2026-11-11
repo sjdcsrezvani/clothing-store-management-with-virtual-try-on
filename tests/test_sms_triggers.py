@@ -392,6 +392,7 @@ def test_the_manager_page_calls_a_triggered_template_automatic(client, authed, d
 
     assert "sms-fire-badge is-auto" in page
     assert "45" in page
+    assert page.count("data-fancy") == 2
     summary = fire_summary(db_session)
     assert template.id in [row.id for row in summary["auto"]]
     assert send_info(template)["mode"] == "auto"
