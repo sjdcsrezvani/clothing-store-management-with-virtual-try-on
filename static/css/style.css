@@ -4207,6 +4207,10 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
    they stack into a tower and the row grows past its neighbours. */
 .check-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
 .check-actions form { margin: 0; }
+/* The reminder list sits in a row of five buttons, so it takes field width,
+   not the full form width a table cell would hand it. */
+.check-reminder-form { display: inline-flex; align-items: center; gap: 0.35rem; }
+.check-reminder-form input { width: 6.5rem; padding: 0.5rem 0.75rem; text-align: center; font-size: 0.85rem; }
 /* An overdue cheque is money at risk: the row wears the warning face, not
    just the badge. Small row buttons stay tappable on a phone. */
 .check-table tr.check-overdue { background: color-mix(in srgb, var(--candy) 8%, transparent); }
