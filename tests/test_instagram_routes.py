@@ -955,6 +955,7 @@ def test_text_image_tab_offers_a_file_picker_and_no_product(client, db_session):
     assert page.status_code == 200
     assert "کمپین متنی با عکس" in page.text
     assert 'name="reference_image"' in page.text
+    assert 'data-image-field' in page.text
     assert 'enctype="multipart/form-data"' in page.text
     assert 'name="user_text"' in page.text
     assert 'name="product_id"' not in page.text
@@ -1070,35 +1071,8 @@ def test_prompt_preview_rejects_a_hanger_scene_for_shoes(client, db_session):
         _cleanup(root)
 
 
-def test_prompt_preview_skips_the_absent_back_photo(client, db_session):
-    product, variant, paths, root = _make_variant(db_session, images=2)
-    _login(client, db_session, "manager", "ig-preview-slots")
-    try:
-        frame = db_session.query(VariantImage).filter(
-            VariantImage.image_path == paths[1]).one()
-        frame.sort_order = 2
-        db_session.commit()
-
-        response = client.get(
-            "/admin/instagram-studio/prompt-preview",
-            params=[
-                ("scenario", "garment"),
-                ("product_id", product.id),
-                ("variant_id", variant.id),
-                ("image_paths", paths[0]),
-                ("image_paths", paths[1]),
-                ("garment_mode", "detail_closeup"),
-                ("aspect_ratio", "4:5"),
-            ])
-        assert response.status_code == 200
-        assert "Image 2 is the detail close-up" in response.text
-        assert "back view" not in response.text
-    finally:
-        _cleanup(root)
-
-
 def test_prompt_preview_uses_only_the_scene_references(client, db_session):
-    product, variant, paths, root = _make_variant(db_session, images=3)
+    product, variant, paths, root = _make_variant(db_session, images=2)
     _login(client, db_session, "manager", "ig-preview-scene-refs")
     try:
         base = [
@@ -1114,20 +1088,36 @@ def test_prompt_preview_uses_only_the_scene_references(client, db_session):
         assert back.status_code == 200
         assert "Image 2 is the back view" in back.text
         assert "Image 3" not in back.text
-        assert "detail close-up" not in back.text
-
-        detail = client.get(
-            "/admin/instagram-studio/prompt-preview",
-            params=base + [("garment_mode", "detail_closeup")])
-        assert detail.status_code == 200
-        assert "Image 2 is the detail close-up" in detail.text
-        assert "back view" not in detail.text
     finally:
         _cleanup(root)
 
 
-def test_model_prompt_preview_never_sends_detail(client, db_session, tmp_path):
-    product, variant, paths, root = _make_variant(db_session, images=3)
+def test_prompt_preview_never_names_a_missing_back_photo(client, db_session):
+    product, variant, paths, root = _make_variant(db_session, images=1)
+    _login(client, db_session, "manager", "ig-preview-missing-views")
+    try:
+        response = client.get(
+            "/admin/instagram-studio/prompt-preview",
+            params=[
+                ("scenario", "garment"),
+                ("product_id", product.id),
+                ("variant_id", variant.id),
+                ("image_paths", paths[0]),
+                ("garment_mode", "back_view"),
+                ("aspect_ratio", "4:5"),
+            ])
+        assert response.status_code == 200
+        assert "Image 1 is the primary product photo" in response.text
+        # Only main is sent, so no second-image line may be invented.
+        assert "Image 2" not in response.text
+        assert "is the back view" not in response.text
+    finally:
+        _cleanup(root)
+
+
+def test_model_prompt_preview_sends_only_the_pose_references(
+        client, db_session, tmp_path):
+    product, variant, paths, root = _make_variant(db_session, images=2)
     _make_shop_model(db_session, tmp_path)
     _login(client, db_session, "manager", "ig-preview-model-refs")
     try:
@@ -1168,10 +1158,27 @@ def test_reference_picker_exposes_the_scene_and_pose_views(
             f"/admin/instagram-studio?scenario=garment"
             f"&product_id={product.id}&variant_id={variant.id}")
         assert page.status_code == 200
-        assert 'data-supported-views="main,back,detail"' in page.text
-        assert 'data-view="main"' in page.text
+        assert 'data-supported-views="main,back"' in page.text
+        # Main is always sent, so it has no toggle — only the optional slots do.
+        assert (f'<input type="hidden" name="image_paths" value="{paths[0]}"'
+                in page.text)
+        assert "همیشه ارسال می‌شود" in page.text
         assert 'data-view="back"' in page.text
-        assert 'data-view="detail"' in page.text
+
+        # What the browser submits for a main-only variant must still reach
+        # the prompt as the primary product photo.
+        preview = client.get(
+            "/admin/instagram-studio/prompt-preview",
+            params=[
+                ("scenario", "garment"),
+                ("product_id", product.id),
+                ("variant_id", variant.id),
+                ("image_paths", paths[0]),
+                ("aspect_ratio", "4:5"),
+            ])
+        assert preview.status_code == 200
+        assert "Image 1 is the primary product photo" in preview.text
+        assert 'data-view="detail"' not in page.text
         assert 'data-views="main,back"' in page.text
         assert "data-reference-warning" in page.text
 
@@ -1180,6 +1187,8 @@ def test_reference_picker_exposes_the_scene_and_pose_views(
             f"&product_id={product.id}&variant_id={variant.id}")
         assert model_page.status_code == 200
         assert 'data-views="main,back"' in model_page.text
+        assert 'type="hidden" name="show_full_garment" value="1"' in model_page.text
+        assert 'type="checkbox" name="show_full_garment"' not in model_page.text
     finally:
         _cleanup(root)
 

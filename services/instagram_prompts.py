@@ -115,21 +115,6 @@ SCENES = {
             "head, or mannequin, studio e-commerce style, full garment visible."
         ),
     },
-    "detail_closeup": {
-        "label": "نمای نزدیک جزئیات",
-        "clause": (
-            "Macro close-up of the garment's construction details: seams, stitching, "
-            "buttons, zipper, cuffs, hem, or trims. Sharp focus, shallow depth of field, "
-            "do not invent details that are not visible."
-        ),
-    },
-    "fabric_texture": {
-        "label": "نمای نزدیک بافت پارچه",
-        "clause": (
-            "Extreme close-up of the visible fabric texture and weave/knit, soft raking "
-            "side light, sharp focus, do not invent fiber composition."
-        ),
-    },
     "folded_stack": {
         "label": "تاشده فروشگاهی",
         "clause": (
@@ -176,8 +161,6 @@ SCENES = {
 # studio, so it is listed explicitly to keep the rule readable.
 SCENE_REFERENCE_VIEWS = {key: ("main",) for key in SCENES}
 SCENE_REFERENCE_VIEWS.update({
-    "detail_closeup": ("main", "detail"),
-    "fabric_texture": ("main", "detail"),
     "back_view": ("main", "back"),
 })
 
@@ -361,7 +344,7 @@ POSES = {
     },
 }
 
-# Model scenes never send the detail slot; only a back-facing pose needs back.
+# Model scenes never send extra garment slots; only a back-facing pose needs back.
 POSE_REFERENCE_VIEWS = {key: ("main",) for key in POSES}
 POSE_REFERENCE_VIEWS["back_view"] = ("main", "back")
 

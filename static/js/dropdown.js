@@ -214,6 +214,20 @@
     }, true);
     window.addEventListener('resize', closeFixed);
 
+    // htmx swaps (Instagram variant card, filters) bring selects after the
+    // first pass. htmx.onLoad misses boosted full-page swaps, so afterSwap
+    // rescans whatever the swap landed in.
+    function initSwapped(event) {
+        var root = event.target;
+        initFancy(root && root.querySelectorAll ? root : document);
+    }
+    document.addEventListener('htmx:afterSwap', initSwapped);
+    if (window.htmx && typeof window.htmx.onLoad === 'function') {
+        window.htmx.onLoad(function (root) {
+            if (root && root.querySelectorAll) initFancy(root);
+        });
+    }
+
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', function () { initFancy(document); });
     } else {

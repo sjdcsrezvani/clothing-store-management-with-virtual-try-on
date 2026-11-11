@@ -66,7 +66,7 @@
         {% if outfit_override_visible %}
         <div class="form-group">
             <label for="ig-outfit">قاعده ست</label>
-            <select id="ig-outfit" name="outfit_category">
+            <select data-fancy id="ig-outfit" name="outfit_category">
                 <option value="">خودکار — {{ detected_outfit_label or 'نامشخص' }}</option>
                 {% for choice in outfit_choices %}
                 <option value="{{ choice.key }}">{{ choice.label }}</option>
@@ -87,13 +87,24 @@
             <label>عکس‌های مرجع</label>
             <p class="muted" style="margin-top:0;">
                 فقط عکس‌های همین رنگ/تنوع. تصویر اصلی همیشه ارسال می‌شود؛
-                عکس پشت یا جزئیات فقط وقتی صحنه یا ژست به آن نیاز داشته باشد ارسال می‌شود.
+                عکس پشت فقط وقتی صحنه یا ژست به آن نیاز داشته باشد ارسال می‌شود.
                 {% if scenario == 'model_scene' %}
-                این عکس‌ها فقط لباس‌اند؛ عکس مدل بالاتر خودکار اضافه می‌شود و عکس جزئیات ارسال نمی‌شود.
+                این عکس‌ها فقط لباس‌اند؛ عکس مدل بالاتر خودکار اضافه می‌شود.
                 {% endif %}
             </p>
             <div class="image-picked-grid">
                 {% for image in reference_images %}
+                {% if image.view == 'main' %}
+                {# Main is always sent, so a locked checkbox would only confuse. #}
+                <div class="image-picked" style="align-items:center;">
+                    {# Kept for the reference check in instagram_backgrounds.js; no toggle. #}
+                    <input type="hidden" name="image_paths" value="{{ image.path }}"
+                           data-view="{{ image.view }}">
+                    <img src="{{ image.path }}" alt="{{ image.label }}"
+                         style="width:84px;height:84px;object-fit:cover;border-radius:8px;">
+                    <span class="muted" style="font-size:0.72rem;">{{ image.label }} — همیشه ارسال می‌شود</span>
+                </div>
+                {% else %}
                 <label class="image-picked" style="cursor:pointer;align-items:center;">
                     <input type="checkbox" name="image_paths" value="{{ image.path }}"
                            data-view="{{ image.view }}"
@@ -102,6 +113,7 @@
                          style="width:84px;height:84px;object-fit:cover;border-radius:8px;">
                     <span class="muted" style="font-size:0.72rem;">{{ image.label }}</span>
                 </label>
+                {% endif %}
                 {% endfor %}
             </div>
             <div class="alert alert-warning ig-reference-warning"
@@ -112,7 +124,7 @@
         <div class="form-row">
             <div class="form-group">
                 <label for="ig-pose">ژست</label>
-                <select id="ig-pose" name="pose_key">
+                <select data-fancy id="ig-pose" name="pose_key">
                     {% for pose in poses %}
                     <option value="{{ pose.key }}"
                             data-views="{{ pose.views | join(',') }}">{{ pose.label }}</option>
@@ -121,7 +133,7 @@
             </div>
             <div class="form-group" data-background-field>
                 <label for="ig-background">پس‌زمینه</label>
-                <select id="ig-background" name="background_key">
+                <select data-fancy id="ig-background" name="background_key">
                     {% for background in backgrounds %}
                     <option value="{{ background.key }}"
                             data-source="{{ background.source }}"
@@ -137,7 +149,7 @@
         <div class="form-row">
             <div class="form-group">
                 <label for="ig-framing">کادر</label>
-                <select id="ig-framing" name="framing_key">
+                <select data-fancy id="ig-framing" name="framing_key">
                     {% for framing in framings %}
                     <option value="{{ framing.key }}">{{ framing.label }}</option>
                     {% endfor %}
@@ -146,7 +158,7 @@
             </div>
             <div class="form-group" data-lighting-field {% if default_background_source == 'brand' %}hidden{% endif %}>
                 <label for="ig-lighting">نور</label>
-                <select id="ig-lighting" name="lighting_key" {% if default_background_source == 'brand' %}disabled{% endif %}>
+                <select data-fancy id="ig-lighting" name="lighting_key" {% if default_background_source == 'brand' %}disabled{% endif %}>
                     {% for lighting in lightings %}
                     <option value="{{ lighting.key }}">{{ lighting.label }}</option>
                     {% endfor %}
@@ -156,7 +168,7 @@
         <div class="form-row">
             <div class="form-group">
                 <label for="ig-composition">ترکیب‌بندی</label>
-                <select id="ig-composition" name="composition_key">
+                <select data-fancy id="ig-composition" name="composition_key">
                     {% for composition in compositions %}
                     <option value="{{ composition.key }}">{{ composition.label }}</option>
                     {% endfor %}
@@ -164,21 +176,20 @@
             </div>
             <div class="form-group">
                 <label for="ig-aspect">نسبت تصویر</label>
-                <select id="ig-aspect" name="aspect_ratio">
+                <select data-fancy id="ig-aspect" name="aspect_ratio">
                     {% for aspect in aspects %}
                     <option value="{{ aspect.key }}" {% if aspect.key == '4:5' %}selected{% endif %}>{{ aspect.label }}</option>
                     {% endfor %}
                 </select>
             </div>
         </div>
-        <label class="muted" style="display:flex;gap:0.4rem;align-items:center;margin-bottom:0.8rem;">
-            <input type="checkbox" name="show_full_garment" checked> نمایش کامل لباس
-        </label>
+        {# Catalog shots always keep the whole garment in frame. #}
+        <input type="hidden" name="show_full_garment" value="1">
         {% else %}
         <div class="form-row">
             <div class="form-group">
                 <label for="ig-scene">حالت عکاسی{% if scenario == 'garment' %} (الزامی){% endif %}</label>
-                <select id="ig-scene" name="garment_mode"{% if scenario == 'garment' %} required{% endif %}>
+                <select data-fancy id="ig-scene" name="garment_mode"{% if scenario == 'garment' %} required{% endif %}>
                     {% if scenario == 'product_brief' %}
                     <option value="" data-views="main">بدون صحنه — کمپین آزاد</option>
                     {% endif %}
@@ -190,7 +201,7 @@
             </div>
             <div class="form-group">
                 <label for="ig-aspect">نسبت تصویر</label>
-                <select id="ig-aspect" name="aspect_ratio">
+                <select data-fancy id="ig-aspect" name="aspect_ratio">
                     {% for aspect in aspects %}
                     <option value="{{ aspect.key }}" {% if aspect.key == '4:5' %}selected{% endif %}>{{ aspect.label }}</option>
                     {% endfor %}
@@ -199,7 +210,7 @@
         </div>
         <div class="form-group" data-background-field {% if not background_field_visible %}hidden{% endif %}>
             <label for="ig-product-background">پس‌زمینه</label>
-            <select id="ig-product-background" name="background_key" {% if not background_field_visible %}disabled{% endif %}>
+            <select data-fancy id="ig-product-background" name="background_key" {% if not background_field_visible %}disabled{% endif %}>
                 {% for background in backgrounds %}
                 <option value="{{ background.key }}"
                         data-source="{{ background.source }}"
@@ -214,8 +225,7 @@
         {% endif %}
         {% if reference_images | length < 2 %}
         <p class="muted" style="margin-top:0;">
-            برای «نمای پشت/پهلو» بهتر است عکس پشت محصول را هم اضافه کنید؛
-            برای «نمای نزدیک جزئیات» و «بافت پارچه» یک عکس نزدیک کمک می‌کند.
+            برای «نمای پشت/پهلو» بهتر است عکس پشت محصول را هم اضافه کنید.
         </p>
         {% endif %}
 

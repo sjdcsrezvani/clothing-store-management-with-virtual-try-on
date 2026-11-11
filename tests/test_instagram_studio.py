@@ -62,8 +62,8 @@ def test_reference_images_are_variant_gallery_only(db_session):
 def test_collect_reference_paths_accepts_subset_and_rejects_foreign_path(db_session):
     product, variant, paths, root = _make_product_with_images(db_session, count=3)
     try:
-        selected = collect_reference_paths(variant, [paths[2], paths[0]])
-        assert selected == [paths[2].lstrip("/"), paths[0].lstrip("/")]
+        selected = collect_reference_paths(variant, [paths[1], paths[0]])
+        assert selected == [paths[1].lstrip("/"), paths[0].lstrip("/")]
 
         with pytest.raises(InstagramValidationError):
             collect_reference_paths(variant, ["/static/uploads/other.jpg"])
@@ -74,37 +74,26 @@ def test_collect_reference_paths_accepts_subset_and_rejects_foreign_path(db_sess
         _cleanup(root)
 
 
-def test_prompt_names_the_real_slots_and_skips_the_absent_back_photo(db_session):
+def test_prompt_names_the_real_back_slot(db_session):
     product, variant, paths, root = _make_product_with_images(db_session, count=2)
     user, _password = _staff(db_session, "ig-slot-views", "manager")
     try:
-        # Keep the main photo in slot 0 and move the second photo to the
-        # detail slot, leaving the back slot empty.
-        frame = db_session.query(VariantImage).filter(
-            VariantImage.image_path == paths[1]).one()
-        frame.sort_order = 2
-        db_session.commit()
-
         generation, _job = create_generation(
             db_session, staff=user, product=product, variant=variant,
-            selected_paths=[paths[0], paths[1]], scene_key="detail_closeup",
+            selected_paths=[paths[0], paths[1]], scene_key="back_view",
             aspect_ratio="4:5")
-        assert "Image 2 is the detail close-up" in generation.rendered_prompt
-        assert "back view" not in generation.rendered_prompt
+        assert "Image 2 is the back view" in generation.rendered_prompt
+        assert "detail close-up" not in generation.rendered_prompt
     finally:
         _cleanup(root)
 
 
 def test_select_reference_paths_uses_the_scene_slots(db_session):
-    product, variant, paths, root = _make_product_with_images(db_session, count=3)
+    product, variant, paths, root = _make_product_with_images(db_session, count=2)
     try:
-        main, back, detail = [path.lstrip("/") for path in paths]
+        main, back = [path.lstrip("/") for path in paths]
         for scene in SCENES:
-            expected = [main]
-            if scene == "back_view":
-                expected = [main, back]
-            elif scene in ("detail_closeup", "fabric_texture"):
-                expected = [main, detail]
+            expected = [main, back] if scene == "back_view" else [main]
             assert select_reference_paths(
                 variant, paths, scenario="garment", scene_key=scene) == expected, scene
 
@@ -115,12 +104,9 @@ def test_select_reference_paths_uses_the_scene_slots(db_session):
 
 
 def test_select_reference_paths_puts_main_first_and_auto_adds_it(db_session):
-    product, variant, paths, root = _make_product_with_images(db_session, count=3)
+    product, variant, paths, root = _make_product_with_images(db_session, count=2)
     try:
-        main, back, detail = [path.lstrip("/") for path in paths]
-        assert select_reference_paths(
-            variant, [paths[2], paths[0]], scenario="garment",
-            scene_key="detail_closeup") == [main, detail]
+        main, back = [path.lstrip("/") for path in paths]
         assert select_reference_paths(
             variant, [paths[1]], scenario="garment",
             scene_key="back_view") == [main, back]
@@ -134,8 +120,6 @@ def test_select_reference_paths_skips_a_missing_optional_view(db_session):
         main = paths[0].lstrip("/")
         assert select_reference_paths(
             variant, paths, scenario="garment", scene_key="back_view") == [main]
-        assert select_reference_paths(
-            variant, paths, scenario="garment", scene_key="detail_closeup") == [main]
     finally:
         _cleanup(root)
 
@@ -154,10 +138,10 @@ def test_select_reference_paths_rejects_a_variant_without_main(db_session):
         _cleanup(root)
 
 
-def test_model_reference_selection_never_sends_detail(db_session):
-    product, variant, paths, root = _make_product_with_images(db_session, count=3)
+def test_model_reference_selection_uses_only_the_pose_views(db_session):
+    product, variant, paths, root = _make_product_with_images(db_session, count=2)
     try:
-        main, back, _detail = [path.lstrip("/") for path in paths]
+        main, back = [path.lstrip("/") for path in paths]
         for pose in POSES:
             expected = [main, back] if pose == "back_view" else [main]
             assert select_reference_paths(
@@ -168,22 +152,22 @@ def test_model_reference_selection_never_sends_detail(db_session):
 
 
 def test_family_without_a_view_does_not_substitute_another_slot(db_session):
-    product, variant, paths, root = _make_product_with_images(db_session, count=3)
+    product, variant, paths, root = _make_product_with_images(db_session, count=2)
     try:
-        main, back, _detail = [path.lstrip("/") for path in paths]
+        main, back = [path.lstrip("/") for path in paths]
 
         product.category = "کفش"
         product.name = "کتانی تست"
         db_session.commit()
         assert select_reference_paths(
-            variant, paths, scenario="garment", scene_key="detail_closeup") == [main]
+            variant, paths, scenario="garment", scene_key="back_view") == [main]
         assert select_reference_paths(
             variant, paths, scenario="model_scene", pose_key="back_view") == [main]
 
         product.category = "کلاه"
         db_session.commit()
         assert select_reference_paths(
-            variant, paths, scenario="garment", scene_key="detail_closeup") == [main]
+            variant, paths, scenario="garment", scene_key="back_view") == [main, back]
         assert select_reference_paths(
             variant, paths, scenario="model_scene", pose_key="back_view") == [main, back]
     finally:
@@ -193,14 +177,12 @@ def test_family_without_a_view_does_not_substitute_another_slot(db_session):
 @pytest.mark.parametrize(("scene_key", "kept"), [
     ("flat_lay", (0,)),
     ("back_view", (0, 1)),
-    ("detail_closeup", (0, 2)),
-    ("fabric_texture", (0, 2)),
 ])
 def test_create_generation_sends_only_the_scene_references(
         db_session, scene_key, kept):
     import json
 
-    product, variant, paths, root = _make_product_with_images(db_session, count=3)
+    product, variant, paths, root = _make_product_with_images(db_session, count=2)
     user, _password = _staff(db_session, f"ig-refs-{scene_key}", "manager")
     try:
         generation, job = create_generation(
@@ -210,12 +192,8 @@ def test_create_generation_sends_only_the_scene_references(
         assert payload["reference_paths"] == [paths[i].lstrip("/") for i in kept]
         if len(kept) == 1:
             assert "Image 2" not in generation.rendered_prompt
-        elif scene_key == "back_view":
-            assert "Image 2 is the back view" in generation.rendered_prompt
-            assert "detail close-up" not in generation.rendered_prompt
         else:
-            assert "Image 2 is the detail close-up" in generation.rendered_prompt
-            assert "back view" not in generation.rendered_prompt
+            assert "Image 2 is the back view" in generation.rendered_prompt
     finally:
         _cleanup(root)
 
@@ -223,7 +201,7 @@ def test_create_generation_sends_only_the_scene_references(
 def test_product_brief_free_campaign_sends_main_only(db_session):
     import json
 
-    product, variant, paths, root = _make_product_with_images(db_session, count=3)
+    product, variant, paths, root = _make_product_with_images(db_session, count=2)
     user, _password = _staff(db_session, "ig-brief-refs", "manager")
     try:
         generation, job = create_generation(
@@ -240,7 +218,7 @@ def test_product_brief_free_campaign_sends_main_only(db_session):
 def test_model_scene_sends_only_the_pose_references(db_session, tmp_path):
     import json
 
-    product, variant, paths, root = _make_product_with_images(db_session, count=3)
+    product, variant, paths, root = _make_product_with_images(db_session, count=2)
     model = _model_slot(db_session, tmp_path)
     user, _password = _staff(db_session, "ig-model-refs", "manager")
     try:

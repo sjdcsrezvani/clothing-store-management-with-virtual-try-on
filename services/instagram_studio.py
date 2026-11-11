@@ -64,8 +64,8 @@ def _disk_path(url: str) -> str:
 def variant_reference_images(variant: ProductVariant) -> list[dict]:
     """Every usable photo of this exact variant, main first.
 
-    Only the product family's fixed slots count now (main/back/detail or
-    main/back or top/left/right); a hidden extra frame or a legacy single
+    Only the product family's fixed slots count now (main/back or
+    top/left/right); a hidden extra frame or a legacy single
     image still falls back when the gallery has no frames. A barcode label is
     not a garment photo and is skipped.
     """
@@ -105,8 +105,8 @@ def selected_reference_views(variant: ProductVariant,
                              paths: list[str]) -> list[str]:
     """View names for the photos actually selected, by their real fixed slot.
 
-    A variant with main + detail but no back photo therefore names Image 2 as
-    the detail close-up, and never invents a back-view line.
+    A variant with main but no back photo therefore never invents a back-view
+    line.
     """
     views = reference_views_for(product_family(variant.product))
     slot_by_path = {_disk_path(image["path"]): image["sort_order"]
@@ -129,7 +129,7 @@ def select_reference_paths(
 ) -> list[str]:
     """Keep only the fixed slots this scene/pose needs, main first.
 
-    The main photo is always included. A missing optional back/detail slot is
+    The main photo is always included. A missing optional back slot is
     skipped, so the prompt never names an image that is not sent.
     """
     family = product_family(variant.product)

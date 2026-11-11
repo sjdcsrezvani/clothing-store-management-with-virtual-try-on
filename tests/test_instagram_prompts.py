@@ -82,12 +82,11 @@ def _model_prompt(**overrides):
     return build_model_prompt(**values)
 
 
-def test_scene_catalog_has_the_ten_approved_modes():
-    assert len(SCENES) == 10
+def test_scene_catalog_has_the_eight_approved_modes():
+    assert len(SCENES) == 8
     assert set(SCENES) == {
-        "hanger", "flat_lay", "ghost_mannequin", "detail_closeup",
-        "fabric_texture", "folded_stack", "wooden_hanger_wall",
-        "packshot", "back_view", "soft_shadow_studio",
+        "hanger", "flat_lay", "ghost_mannequin", "folded_stack",
+        "wooden_hanger_wall", "packshot", "back_view", "soft_shadow_studio",
     }
     assert scene_label("packshot") == "پکشات یکدست"
 
@@ -96,8 +95,6 @@ def test_reference_views_default_to_main_and_name_the_special_cases():
     assert set(SCENE_REFERENCE_VIEWS) == set(SCENES)
     assert SCENE_REFERENCE_VIEWS["flat_lay"] == ("main",)
     assert SCENE_REFERENCE_VIEWS["back_view"] == ("main", "back")
-    assert SCENE_REFERENCE_VIEWS["detail_closeup"] == ("main", "detail")
-    assert SCENE_REFERENCE_VIEWS["fabric_texture"] == ("main", "detail")
 
     assert set(POSE_REFERENCE_VIEWS) == set(POSES)
     assert POSE_REFERENCE_VIEWS["back_view"] == ("main", "back")
@@ -129,10 +126,6 @@ def test_reference_mapping_is_generic_and_deterministic():
     two = _prompt(refs=2)
     assert "Image 2 is the back view" in two
     assert "Image 3" not in two
-
-    three = _prompt(refs=3)
-    assert "Image 2 is the back view" in three
-    assert "Image 3 is the detail close-up" in three
 
 
 def test_aspect_ratios_keep_the_composition_clause_without_a_size_claim():
@@ -218,9 +211,6 @@ def test_model_prompt_maps_image_one_to_the_model_and_later_images_to_the_garmen
     two = _model_prompt(garment_reference_count=2)
     assert "Image 3 is the back view" in two
     assert "Image 4" not in two
-
-    three = _model_prompt(garment_reference_count=3)
-    assert "Image 4 is the detail close-up" in three
 
 
 def test_model_prompt_carries_every_selected_photography_clause():
@@ -481,8 +471,8 @@ def test_room_scenes_carry_the_brand_background_and_its_lock():
 
 
 def test_specialized_scenes_ignore_the_brand_background():
-    for scene in ("packshot", "detail_closeup", "ghost_mannequin",
-                  "fabric_texture", "soft_shadow_studio", "flat_lay", "back_view"):
+    for scene in ("packshot", "ghost_mannequin", "soft_shadow_studio",
+                  "flat_lay", "back_view"):
         prompt = _prompt(scene=scene, background=BRAND_BACKGROUND)
         assert BRAND_BACKGROUND["prompt_en"] not in prompt, scene
 
@@ -611,18 +601,16 @@ def test_model_prompt_uses_the_family_s_slot_names():
 
 def test_reference_lines_follow_the_real_selected_slots():
     prompt = _prompt(refs=2, reference_views=[
-        "primary product photo", "detail close-up"])
-    assert "Image 2 is the detail close-up" in prompt
-    assert "back view" not in prompt
+        "primary product photo", "back view"])
+    assert "Image 2 is the back view" in prompt
 
-    only_detail = _prompt(refs=1, reference_views=["detail close-up"])
-    assert "Image 1 is the detail close-up" in only_detail
-    assert "Image 2" not in only_detail
+    only_back = _prompt(refs=1, reference_views=["back view"])
+    assert "Image 1 is the back view" in only_back
+    assert "Image 2" not in only_back
 
 
 def test_model_reference_lines_follow_the_real_selected_slots():
     prompt = _model_prompt(garment_reference_count=2, reference_views=[
-        "primary product photo", "detail close-up"])
+        "primary product photo", "back view"])
     assert "Image 2 is the primary product photo" in prompt
-    assert "Image 3 is the detail close-up" in prompt
-    assert "back view" not in prompt
+    assert "Image 3 is the back view" in prompt

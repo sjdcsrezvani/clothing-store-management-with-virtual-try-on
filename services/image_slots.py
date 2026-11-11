@@ -1,7 +1,7 @@
 """Fixed photo slots shared by the product and variant forms.
 
-Every garment is photographed the same way: main, back, detail. Hats, socks
-and gloves skip the detail shot, and shoes use top, left side, right side.
+Every garment is photographed the same way: main, back. Hats, socks and
+gloves use the same two slots, and shoes use top, left side, right side.
 The family comes from the same free-text classifier Instagram Studio uses, so
 the form and the studio can never disagree about what a product is.
 """
@@ -19,8 +19,6 @@ SLOTS = {
          "hint": "عکس روبه‌روی لباس.", "prompt": "primary product photo"},
         {"slot": 1, "view": "back", "label": "تصویر پشت",
          "hint": "پشت همان لباس.", "prompt": "back view"},
-        {"slot": 2, "view": "detail", "label": "تصویر جزئیات",
-         "hint": "نزدیک از پارچه، دوخت، چاپ یا یقه.", "prompt": "detail close-up"},
     ),
     MODE_ACCESSORY: (
         {"slot": 0, "view": "main", "label": "تصویر اصلی",

@@ -1,6 +1,6 @@
-"""Fixed photo slots: main/back/detail for garments, main/back for hats,
-socks and gloves, top/left/right for shoes. The same slots feed the add
-product page and the variant edit page."""
+"""Fixed photo slots: main/back for garments, hats, socks and gloves,
+top/left/right for shoes. The same slots feed the add product page and the
+variant edit page."""
 from pathlib import Path
 
 from models import Product, ProductVariant, VariantImage
@@ -17,7 +17,7 @@ def test_image_slots_follow_the_product_family():
     garment = _Text(category="تیشرت", garment_type="", name="")
     assert image_mode_for(garment) == "garment"
     assert [slot["label"] for slot in image_slots_for(garment)] == [
-        "تصویر اصلی", "تصویر پشت", "تصویر جزئیات"]
+        "تصویر اصلی", "تصویر پشت"]
 
     for category in ("کلاه", "جوراب", "دستکش"):
         accessory = _Text(category=category, garment_type="", name="")
@@ -34,7 +34,7 @@ def test_image_slots_follow_the_product_family():
 def test_slot_for_view_uses_only_the_family_s_real_slots():
     assert slot_for_view("upper", "main") == 0
     assert slot_for_view("upper", "back") == 1
-    assert slot_for_view("upper", "detail") == 2
+    assert slot_for_view("upper", "detail") is None
     assert slot_for_view("headwear", "back") == 1
     assert slot_for_view("headwear", "detail") is None
     assert slot_for_view("feet", "main") == 0
@@ -54,7 +54,7 @@ def _product_with_variant(db_session, category="تیشرت"):
 
 
 def test_variant_edit_shows_only_the_family_s_slots(client, db_session, authed):
-    product, variant = _product_with_variant(db_session, category="کلاه")
+    product, variant = _product_with_variant(db_session, category="تیشرت")
     page = client.get(f"/admin/variants/{variant.id}/edit").text
 
     assert "تصویر اصلی" in page
@@ -65,10 +65,10 @@ def test_variant_edit_shows_only_the_family_s_slots(client, db_session, authed):
     assert 'name="variant_image_2"' not in page
 
 
-def test_add_product_stores_main_back_and_detail_frames(client, db_session, authed):
+def test_add_product_stores_main_and_back_frames(client, db_session, authed):
     token = csrf_token(client, "/admin/products/add")
     data = {
-        "name": "پیراهن سه عکسه",
+        "name": "پیراهن دو عکسه",
         "category": "پیراهن",
         "variant_index_0": "0",
         "variant_price_0": "120000",
@@ -79,7 +79,6 @@ def test_add_product_stores_main_back_and_detail_frames(client, db_session, auth
     files = {
         "variant_image_0": ("main.jpg", b"main-photo", "image/jpeg"),
         "variant_image_1_0": ("back.jpg", b"back-photo", "image/jpeg"),
-        "variant_image_2_0": ("detail.jpg", b"detail-photo", "image/jpeg"),
     }
     response = client.post("/admin/products/add", data=data, files=files,
                            follow_redirects=False)
@@ -89,9 +88,9 @@ def test_add_product_stores_main_back_and_detail_frames(client, db_session, auth
         ProductVariant.barcode == "IMG-SLOT-ADD").one()
     frames = sorted(variant.images, key=lambda frame: frame.sort_order)
     try:
-        assert [frame.sort_order for frame in frames] == [0, 1, 2]
+        assert [frame.sort_order for frame in frames] == [0, 1]
         assert variant.image_path == frames[0].image_path
-        assert len({frame.image_path for frame in frames}) == 3
+        assert len({frame.image_path for frame in frames}) == 2
     finally:
         for frame in frames:
             Path(frame.image_path.lstrip("/")).unlink(missing_ok=True)

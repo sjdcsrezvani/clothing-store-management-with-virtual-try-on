@@ -82,7 +82,7 @@
         <div class="form-row">
             <div class="form-group">
                 <label for="ig-text-aspect">نسبت تصویر</label>
-                <select id="ig-text-aspect" name="aspect_ratio">
+                <select data-fancy id="ig-text-aspect" name="aspect_ratio">
                     {% for aspect in aspects %}
                     <option value="{{ aspect.key }}" {% if aspect.key == '4:5' %}selected{% endif %}>{{ aspect.label }}</option>
                     {% endfor %}
@@ -130,8 +130,18 @@
 
         <div class="form-group">
             <label for="ig-source-image">عکس مرجع</label>
-            <input id="ig-source-image" type="file" name="reference_image"
-                   accept="image/jpeg,image/png,image/webp" required>
+            <div class="image-field" data-image-field>
+                <label class="image-drop" for="ig-source-image">
+                    <span class="image-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></span>
+                    <span class="image-drop-copy"><strong>انتخاب عکس</strong><small>کلیک کنید یا عکس را اینجا رها کنید · JPG، PNG، WebP</small></span>
+                    <input class="image-input" id="ig-source-image" type="file" name="reference_image"
+                           accept="image/jpeg,image/png,image/webp" required>
+                </label>
+                <div class="image-picked" data-image-picked hidden>
+                    <div class="image-picked-grid" data-image-picked-grid></div>
+                    <button type="button" class="image-clear" data-image-clear>حذف انتخاب</button>
+                </div>
+            </div>
             <small class="muted">JPG، PNG یا WebP؛ حداکثر ۱۵ مگابایت.</small>
         </div>
         <div class="form-group">
@@ -142,7 +152,7 @@
         <div class="form-row">
             <div class="form-group">
                 <label for="ig-text-image-aspect">نسبت تصویر</label>
-                <select id="ig-text-image-aspect" name="aspect_ratio">
+                <select data-fancy id="ig-text-image-aspect" name="aspect_ratio">
                     {% for aspect in aspects %}
                     <option value="{{ aspect.key }}" {% if aspect.key == '4:5' %}selected{% endif %}>{{ aspect.label }}</option>
                     {% endfor %}

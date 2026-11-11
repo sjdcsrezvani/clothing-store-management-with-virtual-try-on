@@ -120,8 +120,7 @@ _SIZE_TYPE_FAMILIES = {"upper": UPPER, "lower": LOWER, "set": SET, "shoes": FEET
 
 # Accessories cannot hang on a shoulder hanger, fold into a clothing stack, or
 # wear a ghost mannequin; product-only scenes are the safe set.
-_ACCESSORY_SCENES = ("flat_lay", "packshot", "soft_shadow_studio",
-                     "detail_closeup")
+_ACCESSORY_SCENES = ("flat_lay", "packshot", "soft_shadow_studio")
 ALLOWED_SCENES = {
     HEADWEAR: _ACCESSORY_SCENES,
     HANDS: _ACCESSORY_SCENES,
