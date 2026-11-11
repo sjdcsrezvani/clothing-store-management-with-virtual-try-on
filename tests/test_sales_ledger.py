@@ -48,6 +48,7 @@ def test_ledger_has_no_emoji_and_names_its_columns(client, db_session):
         assert heading in page
     assert "sales-table" in page
     assert "فروش جدید" in page
+    assert page.count("data-fancy") == 3
 
 
 def test_stepper_clamps_to_stock_and_removes_at_zero(client, db_session):
