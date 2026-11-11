@@ -57,7 +57,7 @@
     </div>
     <div class="form-group">
       <label class="sr-only" for="staff-status">وضعیت</label>
-      <select id="staff-status" name="status">
+      <select id="staff-status" name="status" data-fancy>
         <option value="all" {% if status_filter == 'all' %}selected{% endif %}>فعال و غیرفعال</option>
         <option value="active" {% if status_filter == 'active' %}selected{% endif %}>فعال</option>
         <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>غیرفعال</option>

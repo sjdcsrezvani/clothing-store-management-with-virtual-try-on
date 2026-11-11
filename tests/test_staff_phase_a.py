@@ -26,6 +26,7 @@ def test_list_is_thin_directory_with_profile_links(client, db_session):
     assert f"/admin/staff/{worker.id}?tab=overview#staff-overview-form" in page
     assert "staff-record" not in page                        # no expanding edit rows
     assert "ثبت پرداخت حقوق" not in page                     # no inline salary boxes
+    assert '<select id="staff-status" name="status" data-fancy>' in page
 
 
 def test_pagination_slices_the_directory(client, db_session):
@@ -82,6 +83,10 @@ def test_new_page_renders_full_hire_form(client, db_session):
     assert 'id="hire-form-error"' in page
     assert "reportValidity" not in page
     assert 'hx-boost="false"' in page
+    for select_id in ("staff-role", "staff-gender", "staff-position",
+                      "staff-employment-type", "staff-contract-term"):
+        assert f'id="{select_id}"' in page
+    assert page.count("data-fancy") == 5
 
 
 def test_hire_form_controls_carry_explicit_types_and_use_the_wide_split(client, db_session):
