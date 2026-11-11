@@ -28,7 +28,7 @@
             {% elif source == 'actions' %}
             <label class="filter-field">
                 <span>عملیات</span>
-                <select name="action" id="logs-action">
+                <select name="action" id="logs-action" data-fancy>
                     <option value="">همه عملیات‌ها</option>
                     {% for code in known_actions %}
                     <option value="{{ code }}"{% if code == action %} selected{% endif %}>{{ action_labels.get(code, code) }}</option>
@@ -37,7 +37,7 @@
             </label>
             <label class="filter-field">
                 <span>کننده</span>
-                <select name="actor" id="logs-actor">
+                <select name="actor" id="logs-actor" data-fancy>
                     <option value="">همه کاربران</option>
                     {% for person in actors %}
                     <option value="{{ person.id }}"{% if person.id == actor_id %} selected{% endif %}>{{ person.full_name or person.username }}</option>

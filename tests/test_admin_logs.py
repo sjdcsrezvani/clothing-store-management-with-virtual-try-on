@@ -49,6 +49,8 @@ def test_combined_filters_narrow_to_one_row(client, db_session):
     # The form echoes the filters back as selected options.
     assert f'<option value="salary_void" selected>' in page
     assert f'<option value="{cashier.id}" selected>' in page
+    assert '<select name="action" id="logs-action" data-fancy>' in page
+    assert '<select name="actor" id="logs-actor" data-fancy>' in page
 
 
 def test_hour_and_minute_filter_narrows_to_one_minute(client, db_session):

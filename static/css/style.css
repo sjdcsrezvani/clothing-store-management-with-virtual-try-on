@@ -4507,6 +4507,16 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
 }
 .logs-filter .filter-field > input:focus,
 .logs-filter .filter-field > select:focus { border-color: var(--candy); box-shadow: var(--focus-ring); }
+/* The custom picker moves the select into a wrapper; keep the button on the
+   filter fields' compact, quiet recipe. */
+.logs-filter .filter-field .fancy-btn {
+  min-width: 11rem; padding: 0.58rem 0.8rem; padding-inline-end: 2.4rem;
+  font-size: 0.9rem; background-color: var(--card); border-color: transparent;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 6%, transparent);
+}
+.logs-filter .filter-field .fancy-btn:hover,
+.logs-filter .filter-field .fancy-btn:focus-visible { border-color: var(--candy); }
+.logs-filter .filter-field .fancy-btn:focus-visible { box-shadow: var(--focus-ring); }
 .logs-filter .filter-field.is-search { flex: 1 1 17rem; }
 .logs-search {
   display: flex; align-items: center; gap: 0.5rem; padding-inline-start: 0.75rem;
