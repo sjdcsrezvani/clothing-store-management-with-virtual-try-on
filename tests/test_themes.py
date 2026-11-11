@@ -1007,11 +1007,13 @@ def _one_of_everything(db_session, staff: dict) -> dict[str, object]:
     db_session.add(supplier_payment)
 
     # A check past its date: the checks page counts it and prints its days late
-    # in the attention colour.
-    db_session.add(CheckRecord(supplier_id=supplier.id, provider_name="چاپخانه تست",
-                               check_number="123456", amount_rials=5_000_000,
-                               issue_at=now - timedelta(days=40), due_at=now - timedelta(days=5),
-                               operator_user_id=staff["owner"].id, status="issued"))
+    # in the attention colour, and an issued one is the only kind its edit page
+    # will open.
+    check = CheckRecord(supplier_id=supplier.id, provider_name="چاپخانه تست",
+                        check_number="123456", amount_rials=5_000_000,
+                        issue_at=now - timedelta(days=40), due_at=now - timedelta(days=5),
+                        operator_user_id=staff["owner"].id, status="issued")
+    db_session.add(check)
 
     # One message that went out and one that failed: the history prints the
     # failure in the attention colour, and both carry the values behind them.
@@ -1052,7 +1054,7 @@ def _one_of_everything(db_session, staff: dict) -> dict[str, object]:
         "staff_id": staff["cashier"].id, "payment_id": salary.id,
         "supplier_payment_id": supplier_payment.id, "supplier_id": supplier.id,
         "template_id": template.id, "session_id": closed_shift.id, "img_id": image.id,
-        "sale_id": credit_sale.id, "barcode": variant.barcode,
+        "sale_id": credit_sale.id, "barcode": variant.barcode, "check_id": check.id,
         "message_id": message_id,
         "generation_id": instagram.id, "job_id": instagram_job.id,
     }
