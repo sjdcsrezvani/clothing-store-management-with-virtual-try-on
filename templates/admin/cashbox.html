@@ -195,7 +195,7 @@
                 <input type="hidden" name="q" value="{{ q }}">
                 <input type="hidden" name="outcome" value="{{ outcome }}">
                 <label class="sr-only" for="shift-per-page">تعداد در صفحه</label>
-                <select name="per_page" id="shift-per-page" onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}" aria-label="تعداد در صفحه">
+                <select name="per_page" id="shift-per-page" data-fancy onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}" aria-label="تعداد در صفحه">
                     {% for option in per_page_options %}
                     <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }} در صفحه</option>
                     {% endfor %}
@@ -213,7 +213,7 @@
         </div>
         <div class="form-group">
             <label class="sr-only" for="shift-outcome">نتیجه شیفت</label>
-            <select name="outcome" id="shift-outcome" onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}">
+            <select name="outcome" id="shift-outcome" data-fancy onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}">
                 <option value="" {% if not outcome %}selected{% endif %}>همه نتیجه‌ها</option>
                 <option value="open" {% if outcome == 'open' %}selected{% endif %}>باز</option>
                 <option value="balanced" {% if outcome == 'balanced' %}selected{% endif %}>مطابق</option>

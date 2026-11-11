@@ -400,6 +400,7 @@ def test_a_cashier_sees_their_own_shifts_and_no_managers_numbers(client, db_sess
     assert "موجودی پیش‌فرض شروع روز" in manager_page.text
     assert f"/admin/cashbox/sessions/{other_shift.id}" in manager_page.text
     assert "تا این لحظه باید در کشو باشد" in manager_page.text
+    assert manager_page.text.count("data-fancy") == 2
     assert "حرکت نقدی این بازه" in client.get("/admin/accounting").text
 
 
