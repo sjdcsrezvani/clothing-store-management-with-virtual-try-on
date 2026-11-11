@@ -4208,9 +4208,10 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
 .check-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
 .check-actions form { margin: 0; }
 /* The reminder list sits in a row of five buttons, so it takes field width,
-   not the full form width a table cell would hand it. */
+   not the full form width a table cell would hand it. A pill keeps the
+   six-character value from reading as a box among the row's buttons. */
 .check-reminder-form { display: inline-flex; align-items: center; gap: 0.35rem; }
-.check-reminder-form input { width: 6.5rem; padding: 0.5rem 0.75rem; text-align: center; font-size: 0.85rem; }
+.check-reminder-form input { width: 7rem; padding: 0.5rem 1rem; border-radius: 999px; text-align: center; font-size: 0.85rem; }
 /* An overdue cheque is money at risk: the row wears the warning face, not
    just the badge. Small row buttons stay tappable on a phone. */
 .check-table tr.check-overdue { background: color-mix(in srgb, var(--candy) 8%, transparent); }
