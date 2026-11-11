@@ -447,6 +447,7 @@ def test_reminder_is_queued_with_the_stored_pattern_and_marked(client, db_sessio
 
     page = client.get(f"/admin/credit/{customer.id}")
     assert "یادآوری پیامکی" in page.text
+    assert page.text.count("data-fancy") == 2
 
     response = _post(client, f"/admin/credit/{customer.id}/remind", {}, authed)
     assert response.status_code == 303

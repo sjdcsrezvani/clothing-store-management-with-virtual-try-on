@@ -58,6 +58,16 @@
         list.hidden = !willOpen;
         btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
         if (willOpen) {
+            // A list inside a scrolling table would be clipped by the table's
+            // overflow; pin it to the button in viewport coordinates instead.
+            if (wrap.dataset.fixedList) {
+                var rect = btn.getBoundingClientRect();
+                list.style.position = 'fixed';
+                list.style.top = (rect.bottom + 6) + 'px';
+                list.style.left = rect.left + 'px';
+                list.style.right = 'auto';
+                list.style.width = rect.width + 'px';
+            }
             var selected = wrap.querySelector('.fancy-option[aria-selected="true"]');
             wrap.querySelectorAll('.fancy-option').forEach(function (each) {
                 each.classList.toggle('is-active', each === selected);
@@ -69,6 +79,7 @@
     function build(select) {
         var wrap = document.createElement('span');
         wrap.className = 'fancy-wrap';
+        if (select.closest('.table-scroll')) wrap.dataset.fixedList = 'true';
         select.parentNode.insertBefore(wrap, select);
         wrap.appendChild(select);
         select.tabIndex = -1;
@@ -192,6 +203,16 @@
     document.addEventListener('keydown', function (event) {
         if (event.key === 'Escape') closeAll();
     });
+
+    // A fixed list no longer follows its button; close it when the page moves.
+    function closeFixed() {
+        if (document.querySelector('.fancy-wrap[data-fixed-list] .fancy-list:not([hidden])')) closeAll();
+    }
+    document.addEventListener('scroll', function (event) {
+        if (event.target && event.target.closest && event.target.closest('.fancy-list')) return;
+        closeFixed();
+    }, true);
+    window.addEventListener('resize', closeFixed);
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', function () { initFancy(document); });

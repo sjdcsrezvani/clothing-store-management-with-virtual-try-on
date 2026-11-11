@@ -86,7 +86,7 @@
                     </div>
                     <div class="form-group">
                         <label for="receive-method">روش</label>
-                        <select id="receive-method" name="method">
+                        <select id="receive-method" name="method" data-fancy>
                             <option value="cash">نقد (به صندوق می‌رود)</option>
                             <option value="card">کارت (به صندوق نمی‌رود)</option>
                         </select>
@@ -165,7 +165,7 @@
                                            max="{{ status.remaining }}"
                                            value="{{ status.remaining }}" class="tnum">
                                     <label class="sr-only" for="invoice-method-{{ sale.id }}">روش</label>
-                                    <select id="invoice-method-{{ sale.id }}" name="method">
+                                    <select id="invoice-method-{{ sale.id }}" name="method" data-fancy>
                                         <option value="cash">نقد</option>
                                         <option value="card">کارت</option>
                                     </select>
