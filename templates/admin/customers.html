@@ -103,7 +103,7 @@
             {% if mine %}<input type="hidden" name="mine" value="1">{% endif %}
             {% if day is not none %}<input type="hidden" name="day" value="{{ day }}">{% endif %}
             <label class="sr-only" for="customer-per-page">تعداد در صفحه</label>
-            <select name="per_page" id="customer-per-page" onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}" aria-label="تعداد در صفحه">
+            <select name="per_page" id="customer-per-page" data-fancy onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}" aria-label="تعداد در صفحه">
                 {% for option in per_page_options %}
                 <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }} در صفحه</option>
                 {% endfor %}
@@ -140,7 +140,7 @@
         </div>
         <div class="form-group">
             <label class="sr-only" for="filter-status">وضعیت</label>
-            <select id="filter-status" name="status">
+            <select id="filter-status" name="status" data-fancy>
                 {% for value in ['all', 'active', 'inactive', 'debtor', 'birthday', 'discount', 'campaign', 'archived'] %}
                 <option value="{{ value }}" {% if status == value %}selected{% endif %}>
                     {{ status_labels[value] }}{% if value == 'campaign' and overview.campaign_count %} ({{ overview.campaign_count }}){% endif %}
@@ -150,7 +150,7 @@
         </div>
         <div class="form-group">
             <label class="sr-only" for="filter-tier">سطح</label>
-            <select id="filter-tier" name="tier">
+            <select id="filter-tier" name="tier" data-fancy>
                 <option value="">همه سطوح</option>
                 {% for key, label in tier_labels.items() %}
                 <option value="{{ key }}" {% if tier == key %}selected{% endif %}>{{ label }}</option>
@@ -159,7 +159,7 @@
         </div>
         <div class="form-group">
             <label class="sr-only" for="filter-tag">برچسب</label>
-            <select id="filter-tag" name="tag">
+            <select id="filter-tag" name="tag" data-fancy>
                 <option value="">همه برچسب‌ها</option>
                 {% for key, label in tag_palette %}
                 <option value="{{ key }}" {% if tag == key %}selected{% endif %}>{{ label }}</option>
@@ -168,7 +168,7 @@
         </div>
         <div class="form-group">
             <label class="sr-only" for="filter-sort">ترتیب</label>
-            <select id="filter-sort" name="sort">
+            <select id="filter-sort" name="sort" data-fancy>
                 {% for key in ['date', 'oldest', 'tier', 'purchase_desc', 'purchase_asc', 'count_desc', 'points', 'debt', 'last_purchase', 'name'] %}
                 <option value="{{ key }}" {% if sort == key %}selected{% endif %}>{{ sort_labels[key] }}</option>
                 {% endfor %}

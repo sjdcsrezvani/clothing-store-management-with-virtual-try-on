@@ -1082,7 +1082,9 @@ def test_opt_in_helpers_treat_null_as_consent(db_session):
 
 def test_list_and_profile_are_linked_both_ways(authed, db_session):
     customer = make_customer(db_session, first_name="پیوندی")
-    assert f'/admin/customers/{customer.id}"' in list_html(authed)
+    listing = list_html(authed)
+    assert f'/admin/customers/{customer.id}"' in listing
+    assert listing.count("data-fancy") == 5
 
     body = list_html(authed, f"/{customer.id}")
     assert 'href="/admin/customers"' in body
