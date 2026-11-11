@@ -189,7 +189,7 @@
             <input type="hidden" name="sort" value="{{ sort_key }}">
             <input type="hidden" name="dir" value="{{ sort_dir }}">
             <label class="sr-only" for="movement-per-page">تعداد در صفحه</label>
-            <select name="per_page" id="movement-per-page" onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}" aria-label="تعداد در صفحه">
+            <select name="per_page" id="movement-per-page" data-fancy onchange="if(this.form.requestSubmit){this.form.requestSubmit()}else{this.form.submit()}" aria-label="تعداد در صفحه">
                 {% for option in per_page_options %}
                 <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }} در صفحه</option>
                 {% endfor %}
@@ -211,7 +211,7 @@
         </div>
         <div class="form-group">
             <label class="sr-only" for="filter-type">نوع حرکت</label>
-            <select id="filter-type" name="movement_type">
+            <select id="filter-type" name="movement_type" data-fancy>
                 <option value="all" {% if movement_type_filter == 'all' %}selected{% endif %}>همه انواع حرکت</option>
                 {% for value, label in movement_labels.items() %}
                 <option value="{{ value }}" {% if movement_type_filter == value %}selected{% endif %}>{{ label }}{% if value in legacy_types %} (قدیمی){% endif %}</option>
@@ -220,7 +220,7 @@
         </div>
         <div class="form-group">
             <label class="sr-only" for="filter-direction">جهت حرکت</label>
-            <select id="filter-direction" name="direction">
+            <select id="filter-direction" name="direction" data-fancy>
                 {% for value, label in directions.items() %}
                 <option value="{{ value }}" {% if direction_filter == value %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
@@ -228,7 +228,7 @@
         </div>
         <div class="form-group">
             <label class="sr-only" for="filter-product">محصول</label>
-            <select id="filter-product" name="product_id">
+            <select id="filter-product" name="product_id" data-fancy>
                 <option value="">همه محصولات</option>
                 {% for product in products %}
                 <option value="{{ product.id }}" {% if product_filter == product.id|string %}selected{% endif %}>{{ product.name }}</option>
@@ -237,7 +237,7 @@
         </div>
         <div class="form-group">
             <label class="sr-only" for="filter-actor">کاربر</label>
-            <select id="filter-actor" name="actor" {% if not actor_options %}disabled aria-disabled="true"{% endif %}>
+            <select id="filter-actor" name="actor" data-fancy {% if not actor_options %}disabled aria-disabled="true"{% endif %}>
                 <option value="">همه کاربران</option>
                 {% for user_id, label in actor_options %}
                 <option value="{{ user_id }}" {% if actor_filter == user_id|string %}selected{% endif %}>{{ label }}</option>

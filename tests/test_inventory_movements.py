@@ -51,6 +51,7 @@ def test_ledger_page_uses_the_catalog_design_language(client, db_session, authed
     assert "<title>📚" not in page.text
     for emoji in ("📥", "📦", "🛒", "🛠️", "💵"):
         assert emoji not in page.text, f"emoji {emoji} still rendered"
+    assert page.text.count("data-fancy") == 5
 
 
 def test_ledger_is_manager_only(client, db_session):
