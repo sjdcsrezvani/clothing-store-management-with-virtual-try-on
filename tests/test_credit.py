@@ -255,6 +255,7 @@ def test_the_page_shows_the_due_date_and_flags_the_late_ones(client, db_session,
     assert page.status_code == 200
     assert "سررسید گذشته" in page.text
     assert "۳۱–۶۰ روز دیرکرد" in page.text
+    assert page.text.count("data-fancy") == 4
 
     # …and the invoice view names the invoice itself, not just the customer.
     invoices = client.get("/admin/credit?view=invoices")
