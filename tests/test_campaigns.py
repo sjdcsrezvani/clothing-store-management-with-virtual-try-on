@@ -528,6 +528,7 @@ def test_the_list_page_filters_sort_and_counts(client, db_session):
     body = client.get("/admin/campaigns").text
     assert "LISTLIVE" in body and "LISTOFF" in body
     assert "+ در جریان" not in body  # no stray markup
+    assert body.count("data-fancy") == 3
 
     live_only = client.get("/admin/campaigns?status=live").text
     assert "LISTLIVE" in live_only
