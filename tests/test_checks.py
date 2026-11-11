@@ -193,6 +193,7 @@ def test_the_add_form_confirms_and_suggests_without_mixing(client, db_session, a
     assert "/static/js/checks.js" in page.text
     assert '<option value="پرداخت‌کننده پیشین">' in page.text
     assert '<option value="بانک پیشین">' in page.text
+    assert page.text.count("data-fancy") == 4
     # Same-named fields elsewhere must never leak into these suggestions.
     for field in ("provider_name", "bank_name"):
         tag = re.search(rf'<input[^>]*name="{field}"[^>]*>', page.text)
