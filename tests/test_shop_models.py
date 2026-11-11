@@ -88,6 +88,16 @@ def test_shop_model_settings_page_is_owner_only(client, db_session):
         assert label in page.text
 
 
+def test_shop_model_image_fields_use_the_shared_picker(client, db_session):
+    _login(client, db_session, "owner")
+    page = client.get("/admin/settings/shop-models")
+    assert page.status_code == 200
+    assert "data-image-field" in page.text
+    assert 'class="image-input"' in page.text
+    assert "data-image-picked" in page.text
+    assert "data-image-clear" in page.text
+
+
 def test_owner_upload_replaces_the_previous_model_file(client, db_session, tmp_path, monkeypatch):
     monkeypatch.setattr(shop_models, "MODEL_DIR", tmp_path / "shop_models")
     _login(client, db_session, "owner")
