@@ -196,7 +196,7 @@
             <input type="hidden" name="period" value="{{ period }}">
             <input type="hidden" name="start_date" value="{{ start_date }}">
             <input type="hidden" name="end_date" value="{{ end_date }}">
-            <select name="category" onchange="this.form.submit()">
+            <select name="category" data-fancy onchange="this.form.submit()">
                 <option value="">همه محصولات</option>
                 {% for c in all_categories %}
                 <option value="{{ c }}" {% if c == category %}selected{% endif %}>{{ c }}</option>

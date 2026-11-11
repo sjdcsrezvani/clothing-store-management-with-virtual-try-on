@@ -1577,3 +1577,4 @@ def test_matrix_toggle_sits_in_the_heading_row(client, db_session, authed):
         r'<div class="section-heading-row">\s*<h3>ماتریس.*?</div>\s*</div>', page, re.DOTALL)
     assert heading, "matrix heading row with its toggle"
     assert "data-matrix-mode" in heading.group(0)
+    assert '<select name="category" data-fancy' in page

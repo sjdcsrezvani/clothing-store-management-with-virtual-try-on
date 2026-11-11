@@ -4372,6 +4372,7 @@ html[data-theme-mode="high-contrast"] .sms-warning { border-width: 2px; }
 .board-head { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; }
 .board-head h3 { margin: 0; }
 .board-form { margin: 0; flex: 1; display: flex; gap: 0.5rem; align-items: center; }
+.board-form .fancy-wrap { flex: 0 1 240px; min-width: 160px; }
 .board-spread { gap: 1rem; margin-bottom: 0.5rem; }
 #customerSegChart { height: 220px; }
 
