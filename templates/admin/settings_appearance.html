@@ -90,12 +90,12 @@
             <section aria-labelledby="display-title">
                 <div class="section-heading"><div><span class="eyebrow">نمایش</span><h3 id="display-title">اندازه و تراکم</h3></div></div>
                 <div class="form-row">
-                    <div class="form-group"><label for="ui_font_size">اندازه قلم</label><select id="ui_font_size" name="ui_font_size">
+                    <div class="form-group"><label for="ui_font_size">اندازه قلم</label><select id="ui_font_size" name="ui_font_size" data-fancy>
                         <option value="s"{% if font_size == 's' %} selected{% endif %}>کوچک</option>
                         <option value="m"{% if font_size == 'm' %} selected{% endif %}>معمولی</option>
                         <option value="l"{% if font_size == 'l' %} selected{% endif %}>بزرگ</option>
                     </select></div>
-                    <div class="form-group"><label for="ui_density">تراکم</label><select id="ui_density" name="ui_density">
+                    <div class="form-group"><label for="ui_density">تراکم</label><select id="ui_density" name="ui_density" data-fancy>
                         <option value="comfortable"{% if density == 'comfortable' %} selected{% endif %}>راحت</option>
                         <option value="compact"{% if density == 'compact' %} selected{% endif %}>فشرده</option>
                     </select></div>
