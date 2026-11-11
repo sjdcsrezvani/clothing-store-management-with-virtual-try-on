@@ -304,6 +304,7 @@ def test_purchase_form_shows_tax_percent_and_no_landed_option(client, authed):
     assert page.status_code == 200
     assert 'name="tax_percent"' in page.text
     assert "extra_cost_in_landed" not in page.text
+    assert page.text.count("data-fancy") == 3
 
 
 def test_tax_percent_is_saved_and_books_the_taxed_total(client, db_session, authed):
