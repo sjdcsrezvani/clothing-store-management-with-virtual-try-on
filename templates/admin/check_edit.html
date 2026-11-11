@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% set page_title = 'ویرایش چک #' ~ check.id %}
+{% block content %}
+
+{% set page_description %}
+مشخصات روی چک را اصلاح کنید؛ مبلغ و تاریخ‌ها سند تعهدند و تغییر نمی‌کنند.
+{% endset %}
+{% set page_actions %}
+<a href="/admin/checks" class="btn btn-ghost">بازگشت به فهرست</a>
+{% endset %}
+{% include 'partials/page_header.html' %}
+
+<div class="stats-grid">
+    <div class="stat-card accent-persimmon">
+        <div class="stat-label">مبلغ چک</div>
+        <div class="stat-value tnum">{{ fmt(check.amount_rials) }}</div>
+        <div class="stat-sub">ریال</div>
+    </div>
+    <div class="stat-card accent-saffron">
+        <div class="stat-label">سررسید</div>
+        <div class="stat-value tnum">{{ jalali_str(check.due_at, false) }}</div>
+        <div class="stat-sub">تاریخ صدور {{ jalali_str(check.issue_at, false) }}</div>
+    </div>
+    <div class="stat-card accent-pine">
+        <div class="stat-label">وضعیت</div>
+        <div class="stat-value"><span class="badge badge-used">صادرشده</span></div>
+        <div class="stat-sub">فقط مشخصات این صفحه قابل ویرایش است</div>
+    </div>
+</div>
+
+<div class="alert alert-info" role="status">
+    مبلغ و تاریخ‌های چک قابل ویرایش نیستند. اگر مبلغ یا سررسید اشتباه است، چک را لغو و از نو ثبت کنید.
+</div>
+
+<div class="card">
+    <div class="section-heading-row">
+        <div>
+            <h3>مشخصات چک</h3>
+            <p class="muted">تغییرات در تاریخچه فعالیت‌ها ثبت می‌شود.</p>
+        </div>
+    </div>
+    <form method="post" action="/admin/checks/{{ check.id }}/edit" class="check-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <fieldset class="check-form-section">
+            <legend>در وجه چه کسی</legend>
+            <div class="form-row check-form-identity">
+                <div class="form-group">
+                    <label for="check-provider">دریافت‌کننده چک</label>
+                    <input type="text" id="check-provider" name="provider_name" required autocomplete="off"
+                           placeholder="نام شخص یا شرکت" value="{{ check.provider_name }}">
+                </div>
+                <div class="form-group">
+                    <label for="check-supplier">تأمین‌کننده مرتبط</label>
+                    <select id="check-supplier" name="supplier_id" data-fancy>
+                        <option value="">— بدون ارتباط —</option>
+                        {% for supplier in suppliers %}
+                        <option value="{{ supplier.id }}" {% if check.supplier_id == supplier.id %}selected{% endif %}>{{ supplier.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="check-number">شماره چک <span class="required-mark">*</span></label>
+                    <input type="text" id="check-number" name="check_number" dir="ltr" required
+                           placeholder="شماره چک" value="{{ check.check_number or '' }}">
+                </div>
+            </div>
+        </fieldset>
+        <fieldset class="check-form-section">
+            <legend>بانک و یادداشت</legend>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="check-bank">بانک</label>
+                    <input type="text" id="check-bank" name="bank_name" autocomplete="off"
+                           placeholder="نام بانک" value="{{ check.bank_name or '' }}">
+                </div>
+                <div class="form-group">
+                    <label for="check-account">شناسه حساب / توضیح بانکی</label>
+                    <input type="text" id="check-account" name="account_reference"
+                           placeholder="مثال: حساب 1234" value="{{ check.account_reference or '' }}">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="check-note">توضیحات</label>
+                <textarea id="check-note" name="note" rows="3"
+                          placeholder="توضیح اختیاری درباره چک">{{ check.note or '' }}</textarea>
+            </div>
+        </fieldset>
+        <div class="check-form-actions">
+            <button type="submit" class="btn btn-primary btn-large">ذخیره ویرایش</button>
+            <a href="/admin/checks" class="btn btn-ghost">انصراف</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

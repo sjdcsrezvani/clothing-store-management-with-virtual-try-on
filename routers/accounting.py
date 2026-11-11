@@ -184,7 +184,6 @@ async def admin_checks(
     end_date: str = "",
     page: str = "1",
     per_page: str = "25",
-    edit: str = "",
     reissue: str = "",
     db: Session = Depends(get_db),
 ):
@@ -286,14 +285,8 @@ async def admin_checks(
         **({"end_date": end_date} if end_date else {}),
         "per_page": per_page_int,
     })
-    # Edit mode: the row's words move into an edit card, never its money or
-    # its time. Re-issue mode: a dead cheque's words prefill the add form so
+    # Re-issue mode: a dead cheque's words prefill the add form so
     # the replacement is one confirmation, and the new row closes the loop.
-    edit_check = None
-    if edit.isdigit():
-        candidate = db.query(CheckRecord).filter(CheckRecord.id == int(edit)).first()
-        if candidate is not None and candidate.status == "issued":
-            edit_check = candidate
     prefill = {"provider_name": "", "supplier_id": "", "check_number": "",
                "amount_rials": "", "bank_name": "", "account_reference": "",
                "note": "", "reissue_id": ""}
@@ -317,7 +310,6 @@ async def admin_checks(
         "suppliers": suppliers,
         "past_payees": past_payees,
         "past_banks": past_banks,
-        "edit_check": edit_check,
         "prefill": prefill,
         "reissue_of": reissue_of,
         "summary": summary,
@@ -522,6 +514,27 @@ def _check_or_404(db, check_id: int) -> CheckRecord:
     if not check:
         raise HTTPException(status_code=404, detail="چک یافت نشد")
     return check
+
+
+@router.get("/checks/{check_id}/edit", response_class=HTMLResponse)
+async def admin_check_edit_page(
+    check_id: int, request: Request, db: Session = Depends(get_db),
+):
+    """A page of its own: the list is an htmx region, so an inline edit card
+    opened from a boosted row link was never swapped into view."""
+    guard = require_html_role(request, db, "manager")
+    if not hasattr(guard, "role"):
+        return guard
+    check = _check_or_404(db, check_id)
+    if check.status != "issued":
+        return RedirectResponse(url="/admin/checks?err=فقط چک صادرشده قابل ویرایش است.", status_code=303)
+    suppliers = db.query(Supplier).order_by(Supplier.name.asc()).all()
+    return templates.TemplateResponse(request, "admin/check_edit.html", {
+        "check": check,
+        "suppliers": suppliers,
+        "fmt": fmt,
+        "jalali_str": jalali_str,
+    })
 
 
 @router.post("/checks/{check_id}/edit", response_class=HTMLResponse)

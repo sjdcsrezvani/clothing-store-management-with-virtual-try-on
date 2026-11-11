@@ -255,6 +255,18 @@ def test_issued_words_edit_but_money_and_time_do_not(client, db_session, authed)
     assert check.provider_name == "گیرنده اصلاح‌شده"
 
 
+def test_check_edit_has_its_own_page_and_the_row_link_leaves_the_list(client, db_session, authed):
+    assert _add_check(client, "111101").status_code == 303
+    check = db_session.query(CheckRecord).one()
+    page = client.get(f"/admin/checks/{check.id}/edit")
+    assert page.status_code == 200
+    assert f'action="/admin/checks/{check.id}/edit"' in page.text
+    assert "data-fancy" in page.text
+    assert "مبلغ و تاریخ‌های چک قابل ویرایش نیستند" in page.text
+    listing = client.get("/admin/checks")
+    assert f'href="/admin/checks/{check.id}/edit" hx-boost="false"' in listing.text
+
+
 def _set_status(client, check_id, status):
     token = csrf_token(client, "/admin/checks")
     return client.post(

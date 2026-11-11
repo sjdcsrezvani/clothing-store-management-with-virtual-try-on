@@ -166,34 +166,6 @@
 </div>
 <script src="/static/js/checks.js?v={{ static_version }}"></script>
 
-{% if edit_check %}
-{# Words only: amount and dates are the promise itself, so they are shown
-   read-only here — a wrong figure or deadline means cancel-and-re-record. #}
-<div class="card">
-    <div class="section-heading-row">
-        <div>
-            <h3>ویرایش چک #{{ edit_check.id }}</h3>
-            <p class="muted">مبلغ {{ fmt(edit_check.amount_rials) }} ریال و سررسید {{ jalali_str(edit_check.due_at, false) }} قابل ویرایش نیست.</p>
-        </div>
-        <a href="/admin/checks" class="btn btn-ghost">انصراف</a>
-    </div>
-    <form method="post" action="/admin/checks/{{ edit_check.id }}/edit">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <div class="form-row is-3col">
-            <div class="form-group"><label for="edit-provider">دریافت‌کننده چک</label><input id="edit-provider" name="provider_name" required autocomplete="off" value="{{ edit_check.provider_name }}"></div>
-            <div class="form-group"><label for="edit-supplier">تأمین‌کننده مرتبط</label><select id="edit-supplier" name="supplier_id" data-fancy><option value="">— بدون ارتباط —</option>{% for supplier in suppliers %}<option value="{{ supplier.id }}" {% if edit_check.supplier_id == supplier.id %}selected{% endif %}>{{ supplier.name }}</option>{% endfor %}</select></div>
-            <div class="form-group"><label for="edit-number">شماره چک <span class="required-mark">*</span></label><input id="edit-number" name="check_number" dir="ltr" required value="{{ edit_check.check_number or '' }}"></div>
-        </div>
-        <div class="form-row">
-            <div class="form-group"><label for="edit-bank">بانک</label><input id="edit-bank" name="bank_name" autocomplete="off" value="{{ edit_check.bank_name or '' }}"></div>
-            <div class="form-group"><label for="edit-account">شناسه حساب / توضیح بانکی</label><input id="edit-account" name="account_reference" value="{{ edit_check.account_reference or '' }}"></div>
-        </div>
-        <div class="form-group"><label for="edit-note">توضیحات</label><textarea id="edit-note" name="note" rows="2">{{ edit_check.note or '' }}</textarea></div>
-        <button type="submit" class="btn btn-primary">ذخیره ویرایش</button>
-    </form>
-</div>
-{% endif %}
-
 {% if is_owner %}
 <div class="card">
     <div class="section-heading-row">
@@ -291,7 +263,7 @@
                     <form method="post" action="/admin/checks/{{ check.id }}/status"
                           data-check-action
                           data-confirm="چک {{ fmt(check.amount_rials) }} ریال برگشت خورد و نیازمند پیگیری است. ادامه؟"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="status" value="bounced"><button class="btn btn-sm btn-danger" type="submit">برگشتی</button></form>
-                    <a class="btn btn-sm btn-ghost" href="/admin/checks?edit={{ check.id }}">ویرایش</a>
+                    <a class="btn btn-sm btn-ghost" href="/admin/checks/{{ check.id }}/edit" hx-boost="false">ویرایش</a>
                     <form method="post" action="/admin/checks/{{ check.id }}/delete"
                           data-check-action
                           data-confirm="چک #{{ check.id }} برای همیشه حذف می‌شود. فقط چون هنوز هیچ ردپایی ندارد؛ در غیر این صورت لغو کنید. ادامه؟"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="btn btn-sm btn-ghost" type="submit">حذف</button></form>
