@@ -21,7 +21,7 @@
         <label class="sr-only" for="tag-search">جست‌وجوی محصول</label>
         <input type="text" id="tag-search" name="q" value="{{ search }}" placeholder="نام، بارکد یا SKU" autocomplete="off">
         <label class="sr-only" for="tag-category">دسته‌بندی</label>
-        <select name="category" id="tag-category">
+        <select name="category" id="tag-category" data-fancy>
             <option value="">همه دسته‌ها</option>
             {% for cat in categories %}
             <option value="{{ cat }}" {% if category_filter == cat %}selected{% endif %}>{{ cat }}</option>
