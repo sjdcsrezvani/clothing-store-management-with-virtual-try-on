@@ -1,3 +1,58 @@
+## 3.2.3 — 2026-11-11
+
+### سراسر پنل: the dropdown that fits its field
+
+- **The app's own listbox replaced the platform popup on ninety-five selects**
+  — it was seven before this release. Products, suppliers, purchases,
+  inventory movements, cashbox, expenses, checks, credit, customers,
+  campaigns, sales, SMS, staff, logs, analytics, POS reconciliation and every
+  settings tab now open a list exactly the field's width, wearing the theme,
+  instead of the OS menu that sizes itself to its longest option. The native
+  select stays in the form and still does the submitting, so nothing behind
+  the pages changed.
+- **Programmatic changes keep the button honest.** Setting the tag preset,
+  barcode density, or the messaging AI provider and model by script moves the
+  visible label with it, and changing the provider re-filters its model list.
+- **Coarse pointers keep the platform control** — a bottom sheet is still the
+  better picker on a phone — and so do the places a listbox would get in the
+  way, such as per-page counts, the staff profile's hire fields and the SMS
+  history filters.
+- The product list's filter dropdowns sit above the list card instead of
+  behind it, and the check reminder field folds into a pill on its row.
+
+### چک: ویرایش صفحهٔ خودش را دارد
+
+- Editing an issued cheque opened its card from a boosted row link inside an
+  htmx region, so the card never swapped into view. The form now has its own
+  page, and the list returns to being just a list. It still edits only the
+  row's words — never the money or the time — and a cheque that is no longer
+  issued comes back with a Persian reason.
+
+### پشتیبان‌گیری: the page in order, and a real drop field
+
+- The backup facts and the schedule settings sit in clear rows, the upload
+  form moved out of the restore danger zone, and the plain file input gave
+  way to the shared drag-and-drop field with the chosen file's name beside
+  it. The schedule and restore selects use the custom picker.
+
+### استودیو اینستاگرام: two photos, the whole garment
+
+- **The detail photo slot is gone.** Garment and accessory variants keep main
+  and back, so a variant needs at most two photos; the close-up scene went
+  with it and a back-view scene took its place. Fine detail still reaches the
+  prompt through the variant's supplementary notes.
+- **A scene asks only for the photos it can use.** Each studio scene and model
+  pose maps to the fixed slots it needs — the main photo always included — and
+  a missing back photo falls back to the main instead of naming an image that
+  was never sent. The form marks the photos a scene requires and disables the
+  ones it does not, so the prompt and the preview show the same list.
+- **Model shots keep the whole garment in frame**, and the studio now uses the
+  shared image picker and the custom dropdowns.
+- **The background library is an accordion**, and a saved background can be
+  deleted — the last active one is protected, and the default is repaired
+  after a delete. Shop-model photos upload through the same drop field as
+  variant photos.
+
 ## 3.2.2 — 2026-11-10
 
 ### استودیو اینستاگرام: the shop's mark, and nothing else in the file
