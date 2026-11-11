@@ -2258,6 +2258,9 @@ html[data-theme="custom-brand"] .kpi-card { border-top: 3px solid var(--candy); 
 .products-kpi { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .product-search-card,
 .product-list-card { overflow: hidden; }
+/* The filter card owns open dropdown lists; hidden clipped them at the card
+   edge, so the options fell behind the list card below. */
+.product-search-card { overflow: visible; z-index: 2; }
 .product-search-form { align-items: end; margin-bottom: 0; }
 .product-search-form input { flex: 2; }
 .product-search-form select { flex: 1; }
