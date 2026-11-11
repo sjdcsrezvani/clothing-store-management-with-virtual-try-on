@@ -2829,6 +2829,7 @@ async def admin_backups(request: Request, db: Session = Depends(get_db)):
         "keep_options": [(option, to_persian_digits(str(option)))
                          for option in (5, 10, 15, 20, 30)],
         "keep_count": keep,
+        "keep_count_fa": to_persian_digits(str(keep)),
         "shelf_count": to_persian_digits(str(count)),
         "shelf_size": format_bytes_fa(total),
     })

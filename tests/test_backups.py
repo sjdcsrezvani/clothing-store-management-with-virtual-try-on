@@ -193,6 +193,11 @@ def test_restore_card_lists_backups_and_owns_the_safety_toggle(client, db_sessio
         assert 'name="restore_snapshot"' in page
         schedule = page.split('action="/admin/backups/schedule"', 1)[1].split("</form>", 1)[0]
         assert "restore_snapshot" not in schedule
+        assert '<select id="backup-every-days" name="backup_every_days" data-fancy>' in schedule
+        assert '<select id="backup-keep-count" name="backup_keep_count" data-fancy>' in schedule
+        assert '<select name="name" id="restore-name" required data-fancy>' in page
+        assert "data-file-field" in page
+        assert "backup-pick-option" in page
         assert "زیپ" in page
         assert ".db" in page
         assert "دیتابیس + فایل‌ها" in page

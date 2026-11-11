@@ -5025,6 +5025,68 @@ html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
   .image-field .image-drop { padding: 0.8rem; gap: 0.6rem; }
   .image-drop-icon { width: 2.2rem; height: 2.2rem; }
 }
+
+/* ===================== Backups ===================== */
+.backup-status-card .section-heading { flex-wrap: wrap; align-items: flex-start; }
+.backup-status-card .section-heading h3 { margin-bottom: 0.2rem; }
+.backup-facts { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.9rem 0 0.8rem; }
+.backup-facts span {
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+}
+.backup-facts b { color: var(--ink); }
+.backup-note { margin: 0 0 1rem; font-size: 0.8rem; }
+.backup-schedule-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.8rem;
+  padding-top: 1rem;
+  border-top: 1px dashed var(--rule);
+}
+.backup-schedule-form .form-group { margin-bottom: 0; }
+.backup-pick-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; margin: 0.8rem 0 1rem; }
+.backup-pick-option {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+.backup-pick-option strong { font-size: 0.86rem; }
+.backup-pick-option small { color: var(--ink-soft); font-size: 0.76rem; line-height: 1.6; }
+.backup-pick-option.is-best {
+  border-color: color-mix(in srgb, var(--candy) 45%, var(--rule));
+  background: color-mix(in srgb, var(--candy) 6%, var(--surface-soft));
+}
+.backup-upload-form { display: grid; gap: 0.7rem; }
+.file-picked {
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.file-picked[hidden] { display: none; }
+.backup-restore-form { display: grid; gap: 0.9rem; }
+.backup-restore-form .form-group { margin-bottom: 0; }
+.backup-restore-form .form-actions-row { margin-top: 0; padding-top: 0.2rem; }
+.backup-snapshot { max-width: 42rem; }
+.backup-restore-summary { margin-top: 0.6rem; font-weight: 700; }
+@media (max-width: 700px) {
+  .backup-schedule-form,
+  .backup-pick-options { grid-template-columns: 1fr; }
+  .backup-schedule-form .btn { width: 100%; }
+}
 @media (prefers-reduced-motion: reduce) {
   .image-field .image-drop { transition: none; }
 }

@@ -10,30 +10,45 @@
 {% endset %}
 {% include 'partials/page_header.html' %}
 
-<div class="card">
-    <div class="section-heading"><div><span class="eyebrow">وضعیت پشتیبان‌گیری</span><h3>{% if last_backup %}آخرین نسخه: {{ last_backup }} ({{ last_age }}){% else %}هنوز نسخه‌ای ساخته نشده{% endif %}</h3></div></div>
-    <p class="muted">خودکار هر {{ every_days_fa }} روز، حدود ساعت ۰۲:۰۰ UTC و فقط وقتی برنامه در حال اجراست (اجرای بعدی: {{ next_run }}) · {{ shelf_count }} نسخه · {{ shelf_size }}</p>
-    <p class="muted">هر نسخه دو بخش دارد: دیتابیس (همه اطلاعات) و فایل‌ها (تصاویر و پیوست‌ها).</p>
-    <div class="list-heading-actions">
+<div class="card backup-status-card">
+    <div class="section-heading">
+        <div>
+            <span class="eyebrow">وضعیت پشتیبان‌گیری</span>
+            <h3>{% if last_backup %}آخرین نسخه: {{ last_backup }} <span class="muted">({{ last_age }})</span>{% else %}هنوز نسخه‌ای ساخته نشده{% endif %}</h3>
+        </div>
         <form method="post" action="/admin/backup">
             <button type="submit" class="btn btn-primary"><svg class="ui-icon" aria-hidden="true" focusable="false"><use href="#icon-backup"/></svg>پشتیبان‌گیری الآن</button>
         </form>
     </div>
-    <form method="post" action="/admin/backups/schedule" class="form-row">
-        <label>هر چند روز
-            <select name="backup_every_days">
+
+    <div class="backup-facts" aria-label="تنظیمات پشتیبان‌گیری">
+        <span>دوره: <b>هر {{ every_days_fa }} روز</b></span>
+        <span>نگهداری: <b>{{ keep_count_fa }} نسخه</b></span>
+        <span>موجودی: <b>{{ shelf_count }} نسخه · {{ shelf_size }}</b></span>
+        {% if next_run %}<span>اجرای بعدی: <b>{{ next_run }}</b></span>{% endif %}
+    </div>
+    <p class="muted backup-note">
+        خودکار حدود ساعت ۰۲:۰۰ UTC و فقط وقتی برنامه در حال اجراست. نسخه‌ها می‌توانند
+        دیتابیس و فایل‌ها (تصاویر و پیوست‌ها) را با هم داشته باشند؛ ستون «محتوا» نشان می‌دهد هر فایل چه دارد.
+    </p>
+
+    <form method="post" action="/admin/backups/schedule" class="backup-schedule-form">
+        <div class="form-group">
+            <label for="backup-every-days">هر چند روز</label>
+            <select id="backup-every-days" name="backup_every_days" data-fancy>
                 {% for value, label in every_options %}
                 <option value="{{ value }}"{% if value == every_days %} selected{% endif %}>{{ label }} روز</option>
                 {% endfor %}
             </select>
-        </label>
-        <label>نگه‌داشتن
-            <select name="backup_keep_count">
+        </div>
+        <div class="form-group">
+            <label for="backup-keep-count">نگه‌داشتن</label>
+            <select id="backup-keep-count" name="backup_keep_count" data-fancy>
                 {% for value, label in keep_options %}
                 <option value="{{ value }}"{% if value == keep_count %} selected{% endif %}>{{ label }} نسخه اخیر</option>
                 {% endfor %}
             </select>
-        </label>
+        </div>
         <button class="btn btn-ghost" type="submit">ذخیره زمان‌بندی</button>
     </form>
 </div>
@@ -85,39 +100,73 @@
     {% endif %}
 </div>
 
+<div class="card backup-upload-card">
+    <div class="section-heading"><div><span class="eyebrow">افزودن نسخه</span><h3>فایل پشتیبان از جای دیگر</h3></div></div>
+    <p class="muted">فایل را به فهرست اضافه کنید؛ هنوز چیزی بازیابی نمی‌شود.</p>
+
+    <div class="backup-pick-options" id="backup-upload-help">
+        <div class="backup-pick-option is-best">
+            <strong>زیپ کامل (ZIP)</strong>
+            <small>دیتابیس + تصاویر — همان فایل «دانلود همه».</small>
+        </div>
+        <div class="backup-pick-option">
+            <strong>فایل دیتابیس (.db)</strong>
+            <small>فقط دیتابیس؛ تصاویر و پیوست‌ها برنمی‌گردند.</small>
+        </div>
+    </div>
+
+    <form method="post" action="/admin/backups/upload" enctype="multipart/form-data" class="backup-upload-form">
+        <div class="image-field file-field" data-file-field>
+            <label class="image-drop" for="backup-file">
+                <span class="image-drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg></span>
+                <span class="image-drop-copy">
+                    <strong>انتخاب فایل پشتیبان</strong>
+                    <small>کلیک کنید یا فایل را اینجا رها کنید · ZIP یا DB</small>
+                </span>
+                <input class="image-input" id="backup-file" type="file" name="backup_file"
+                       accept=".zip,.db" required aria-describedby="backup-upload-help" data-file-input>
+            </label>
+            <p class="file-picked" data-file-picked aria-live="polite" hidden></p>
+        </div>
+        <div class="form-actions-row">
+            <button class="btn btn-primary" type="submit">افزودن به فهرست</button>
+        </div>
+    </form>
+</div>
+
 <div class="card danger-zone" id="restore">
     <div class="section-heading"><div><span class="eyebrow">بازیابی</span><h3>بازیابی فروشگاه</h3></div></div>
-    <p class="muted">برای بازیابی، نسخه را از همین فهرست انتخاب کنید؛ نیازی به انتخاب فایل نیست. بازیابی کل اطلاعات فعلی را جایگزین می‌کند — دیتابیس و فایل‌های پیوستش با هم.</p>
+    <p class="muted">بازیابی کل اطلاعات فعلی را جایگزین می‌کند — دیتابیس و فایل‌های پیوستش با هم.</p>
 
     {% if backups %}
-    <form method="post" action="/admin/backups/restore" class="form-row" data-native id="restore-form">
-        <label>نسخه برای بازیابی
-            <select name="name" id="restore-name" required>
+    <form method="post" action="/admin/backups/restore" class="backup-restore-form" data-native id="restore-form">
+        <div class="form-group">
+            <label for="restore-name">نسخه برای بازیابی</label>
+            <select name="name" id="restore-name" required data-fancy>
                 {% for b in backups %}
                 <option value="{{ b.name }}" data-created="{{ b.created_fa }}" data-files="{{ '1' if b.includes_uploads else '0' }}"{% if b.schema_newer %} data-newer="1"{% endif %}>{{ b.created_fa }} — {{ b.size_fa }}{% if b.uploads_size_fa %} + {{ b.uploads_size_fa }}{% endif %} — {% if b.includes_uploads %}دیتابیس + فایل‌ها{% else %}فقط دیتابیس{% endif %}{% if b.schema_newer %} — نسخه جدیدتر{% endif %}</option>
                 {% endfor %}
             </select>
-        </label>
-        <label class="switch-inline">
-            <input type="hidden" name="restore_snapshot" value="0">
-            <input type="checkbox" name="restore_snapshot" value="1" id="restore-snapshot" checked>
-            پیش از بازیابی، از وضعیت فعلی نسخه امن بساز
-        </label>
-        <button type="submit" class="btn btn-danger">بازیابی این نسخه</button>
-    </form>
-    <p class="field-help" id="restore-summary" aria-live="polite"></p>
-    <p class="muted field-help">اگر اشتباه شد، همین نسخه امن شما را برمی‌گرداند.</p>
-    {% else %}
-    <p class="empty-state">هنوز نسخه‌ای برای بازیابی نیست — اول یک نسخه بسازید یا فایل را پایین اضافه کنید.</p>
-    {% endif %}
+        </div>
 
-    <form method="post" action="/admin/backups/upload" enctype="multipart/form-data" class="form-row">
-        <label>فایل پشتیبان از جای دیگر
-            <input type="file" name="backup_file" accept=".zip,.db" required aria-describedby="backup-upload-help">
-            <small class="field-help" id="backup-upload-help">زیپ «دانلود همه» را انتخاب کنید تا دیتابیس و تصاویر با هم برگردند. اگر فقط فایل ‎.db‎ دارید، همان را انتخاب کنید؛ اطلاعات برمی‌گردد ولی تصاویر نه. فایل فقط به فهرست اضافه می‌شود و تا زدن «بازیابی» چیزی را عوض نمی‌کند.</small>
-        </label>
-        <button class="btn btn-ghost" type="submit">افزودن به فهرست</button>
+        <div class="cap-row settings-cap backup-snapshot">
+            {# The hidden companion comes first so an unticked box still clears the flag. #}
+            <input type="hidden" name="restore_snapshot" value="0">
+            <label>
+                <input type="checkbox" name="restore_snapshot" value="1" id="restore-snapshot" checked>
+                <span>پیش از بازیابی، از وضعیت فعلی نسخه امن بساز</span>
+            </label>
+            <p class="muted">با تیک‌خوردن، اگر بازیابی اشتباه شد همین نسخه امن شما را برمی‌گرداند.</p>
+        </div>
+
+        <div class="form-actions-row">
+            <button type="submit" class="btn btn-danger">بازیابی این نسخه</button>
+        </div>
     </form>
+    <p class="field-help backup-restore-summary" id="restore-summary" aria-live="polite"></p>
+    {% else %}
+    <p class="empty-state">هنوز نسخه‌ای برای بازیابی نیست — اول یک نسخه بسازید یا فایل پشتیبان را اضافه کنید.</p>
+    {% endif %}
 </div>
 
 {# One confirm surface for the whole page: destructive forms carry their
@@ -136,6 +185,50 @@
 </div>
 <script>
 (function () {
+    var fileField = document.querySelector('[data-file-field]');
+    var fileInput = document.getElementById('backup-file');
+    var filePicked = document.querySelector('[data-file-picked]');
+
+    function showPickedFile() {
+        if (!fileInput || !filePicked) return;
+        var file = fileInput.files && fileInput.files[0];
+        if (!file) {
+            filePicked.hidden = true;
+            filePicked.textContent = '';
+            return;
+        }
+        var size = file.size >= 1048576
+            ? (file.size / 1048576).toFixed(1) + ' MB'
+            : Math.max(1, Math.round(file.size / 1024)) + ' KB';
+        filePicked.hidden = false;
+        filePicked.textContent = 'انتخاب شد: ' + file.name + ' · ' + size;
+    }
+
+    if (fileField && fileInput) {
+        fileInput.addEventListener('change', showPickedFile);
+        ['dragenter', 'dragover'].forEach(function (name) {
+            fileField.addEventListener(name, function (event) {
+                event.preventDefault();
+                fileField.classList.add('is-dragging');
+            });
+        });
+        ['dragleave', 'drop'].forEach(function (name) {
+            fileField.addEventListener(name, function (event) {
+                event.preventDefault();
+                fileField.classList.remove('is-dragging');
+            });
+        });
+        fileField.addEventListener('drop', function (event) {
+            if (!event.dataTransfer || !event.dataTransfer.files.length) return;
+            try {
+                fileInput.files = event.dataTransfer.files;
+            } catch (error) {
+                return;
+            }
+            showPickedFile();
+        });
+    }
+
     var form = document.getElementById('restore-form');
     var select = document.getElementById('restore-name');
     var snapshot = document.getElementById('restore-snapshot');
