@@ -311,6 +311,7 @@ def test_the_shared_period_filter_pairs_its_dates_on_each_page(client, authed):
         assert f'data-pdp-pair="#{prefix}-end"' in page.text, path
         assert f'id="{prefix}-start"' in page.text, path
         assert f'id="{prefix}-end"' in page.text, path
+        assert '<select name="period" data-fancy' in page.text, path
 
     drawer = client.get("/admin/cashbox")
     assert drawer.status_code == 200

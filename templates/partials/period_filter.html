@@ -21,9 +21,9 @@
        the same defect as a figure that quietly prints a plausible wrong number. #}
     {% if range_notice %}<p class="filter-problem" role="status">⚠️ {{ range_notice }}</p>{% endif %}
     <form method="get" action="{{ filter_action }}" class="filter-bar is-inline">
-        <label class="filter-field">
+        <div class="filter-field">
             <span>بازه</span>
-            <select name="period">
+            <select name="period" data-fancy aria-label="بازه">
                 <option value="today" {% if period == 'today' %}selected{% endif %}>امروز</option>
                 <option value="week" {% if period == 'week' %}selected{% endif %}>این هفته</option>
                 <option value="month" {% if period == 'month' %}selected{% endif %}>این ماه</option>
@@ -31,7 +31,7 @@
                 <option value="all" {% if period == 'all' %}selected{% endif %}>همه</option>
                 <option value="custom" {% if period == 'custom' %}selected{% endif %}>دلخواه</option>
             </select>
-        </label>
+        </div>
         <label class="filter-field">
             <span>از تاریخ</span>
             <input type="text" id="{{ filter_id }}-start" name="start_date" class="persian-date-input"
