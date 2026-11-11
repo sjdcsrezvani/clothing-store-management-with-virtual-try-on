@@ -12,131 +12,142 @@
 {% if msg %}<div class="screen-only"><div class="toaster-flash" data-toast data-toast-type="success" role="status">{{ msg }}</div></div>{% endif %}
 {% if err %}<div class="screen-only"><div class="toaster-flash" data-toast data-toast-type="error" role="alert">{{ err }}</div></div>{% endif %}
 
-<div class="card">
-    <div class="section-heading">
-        <div>
-            <span class="eyebrow">استودیو اینستاگرام</span>
-            <h3>پس‌زمینه‌های برند</h3>
-        </div>
-    </div>
-    <p class="muted" style="margin-top:0;">
+<div class="bg-library">
+<div class="card bg-intro">
+    <p class="muted">
         هر پس‌زمینه یک اتاق ثابت با دیوار، کف، نور و رنگ‌بندی مشخص است تا همه
         عکس‌های فروشگاه شبیه یک ست فیزیکی باشند. متن انگلیسی را کامل و دقیق
         نگه دارید؛ این متن همان چیزی است که به مدل تصویر داده می‌شود.
     </p>
-    <p class="muted" style="margin-bottom:0;">
-        جمله ثابت شروع همه پس‌زمینه‌ها:
-        <code dir="ltr" style="display:inline-block;">Use the shop's fixed studio set. Keep the wall, floor, lighting direction, lens, and color grade identical in every image; do not redesign, recolor, or rearrange the set.</code>
-    </p>
+    <div class="bg-lock">
+        <span>جمله ثابت شروع همه پس‌زمینه‌ها</span>
+        <code dir="ltr">Use the shop's fixed studio set. Keep the wall, floor, lighting direction, lens, and color grade identical in every image; do not redesign, recolor, or rearrange the set.</code>
+    </div>
+</div>
+
+<details class="card bg-card bg-new" data-bg-new>
+    <summary class="bg-summary">
+        <span class="bg-summary-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg></span>
+        <span class="bg-summary-text">
+            <strong class="bg-summary-title">افزودن اتاق جدید</strong>
+            <small class="bg-summary-desc">یک پس‌زمینه تازه برای استودیو بسازید</small>
+        </span>
+        <span class="bg-chevron" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5 8 11l4.5-4.5"/></svg></span>
+    </summary>
+    <div class="bg-body">
+        <form method="post" action="/admin/settings/instagram-backgrounds/save">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="is_active" value="1">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="bg-new-label">عنوان فارسی</label>
+                    <input id="bg-new-label" type="text" name="label_fa" maxlength="120" required>
+                </div>
+                <div class="form-group">
+                    <label for="bg-new-desc">توضیح کوتاه (یک خط)</label>
+                    <input id="bg-new-desc" type="text" name="description_fa" maxlength="240">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="bg-new-prompt">متن انگلیسی پس‌زمینه</label>
+                <textarea id="bg-new-prompt" name="prompt_en" rows="9" dir="ltr" class="bg-prompt"
+                          minlength="80" required
+                          placeholder="Walls: ...&#10;Floor: ...&#10;Lighting: ...&#10;Lens and color: ...&#10;Set rules: ..."></textarea>
+                <small>دیوار، کف، نور، لنز، رنگ‌بندی و قواعد ست را در همین متن بنویسید.</small>
+            </div>
+            <label class="check-row">
+                <input type="checkbox" name="is_default" value="1"> پیش‌فرض شود
+            </label>
+            <div class="form-actions-row">
+                <button type="submit" class="btn btn-primary btn-sm">افزودن پس‌زمینه</button>
+            </div>
+        </form>
+    </div>
+</details>
+
+<div class="section-heading-row bg-list-heading">
+    <div>
+        <h3>اتاق‌های ذخیره‌شده</h3>
+        <p class="muted">برای ویرایش، روی هر اتاق بزنید.</p>
+    </div>
 </div>
 
 {% for bg in backgrounds %}
-<div class="card">
-    <div class="section-heading">
-        <div>
-            <span class="eyebrow">پس‌زمینه</span>
-            <h3>{{ bg.label_fa }}</h3>
-        </div>
-        <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
+<details class="card bg-card" id="bg-{{ bg.key }}" data-bg-key="{{ bg.key }}" name="bg-accordion">
+    <summary class="bg-summary">
+        <span class="bg-summary-text">
+            <strong class="bg-summary-title">{{ bg.label_fa }}</strong>
+            <small class="bg-summary-desc">{{ bg.description_fa or 'بدون توضیح' }}</small>
+        </span>
+        <span class="bg-chips">
             {% if bg.is_default %}<span class="source-chip is-active">پیش‌فرض</span>{% endif %}
             {% if bg.is_starter %}<span class="source-chip">استارتر</span>{% endif %}
             <span class="source-chip {% if bg.is_active %}is-active{% endif %}">
                 {% if bg.is_active %}فعال{% else %}غیرفعال{% endif %}
             </span>
-        </div>
-    </div>
-    {% if bg.is_starter and bg.prompt_en == starter_prompts.get(bg.key) %}
-    <p class="muted" style="margin-top:0;">این پس‌زمینه هنوز ویرایش نشده است.</p>
-    {% endif %}
+        </span>
+        <span class="bg-chevron" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6.5 8 11l4.5-4.5"/></svg></span>
+    </summary>
+    <div class="bg-body">
+        {% if bg.is_starter and bg.prompt_en == starter_prompts.get(bg.key) %}
+        <p class="muted bg-untouched">این پس‌زمینه هنوز ویرایش نشده است.</p>
+        {% endif %}
 
-    <form method="post" action="/admin/settings/instagram-backgrounds/save">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <input type="hidden" name="key" value="{{ bg.key }}">
-        <div class="form-row">
-            <div class="form-group">
-                <label for="bg-label-{{ bg.key }}">عنوان فارسی</label>
-                <input id="bg-label-{{ bg.key }}" type="text" name="label_fa"
-                       value="{{ bg.label_fa }}" maxlength="120" required>
+        <form method="post" action="/admin/settings/instagram-backgrounds/save">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="key" value="{{ bg.key }}">
+            {# Status is edited by the toggle action below. The route reads a
+               missing field as inactive, so only active rows send it. #}
+            {% if bg.is_active %}<input type="hidden" name="is_active" value="1">{% endif %}
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="bg-label-{{ bg.key }}">عنوان فارسی</label>
+                    <input id="bg-label-{{ bg.key }}" type="text" name="label_fa"
+                           value="{{ bg.label_fa }}" maxlength="120" required>
+                </div>
+                <div class="form-group">
+                    <label for="bg-desc-{{ bg.key }}">توضیح کوتاه (یک خط)</label>
+                    <input id="bg-desc-{{ bg.key }}" type="text" name="description_fa"
+                           value="{{ bg.description_fa or '' }}" maxlength="240">
+                </div>
             </div>
             <div class="form-group">
-                <label for="bg-desc-{{ bg.key }}">توضیح کوتاه (یک خط)</label>
-                <input id="bg-desc-{{ bg.key }}" type="text" name="description_fa"
-                       value="{{ bg.description_fa or '' }}" maxlength="240">
+                <label for="bg-prompt-{{ bg.key }}">متن انگلیسی پس‌زمینه</label>
+                <textarea id="bg-prompt-{{ bg.key }}" name="prompt_en" rows="9"
+                          dir="ltr" class="bg-prompt"
+                          minlength="80" required>{{ bg.prompt_en }}</textarea>
+                <small>دیوار، کف، نور، لنز، رنگ‌بندی و قواعد ست را در همین متن بنویسید.</small>
             </div>
-        </div>
-        <div class="form-group">
-            <label for="bg-prompt-{{ bg.key }}">متن انگلیسی پس‌زمینه</label>
-            <textarea id="bg-prompt-{{ bg.key }}" name="prompt_en" rows="11"
-                      dir="ltr" style="font-family:monospace;font-size:0.85rem;"
-                      minlength="80" required>{{ bg.prompt_en }}</textarea>
-            <small>دیوار، کف، نور، لنز، رنگ‌بندی و قواعد ست را در همین متن بنویسید.</small>
-        </div>
-        <label style="display:inline-flex;align-items:center;gap:0.4rem;">
-            <input type="checkbox" name="is_active" value="1" {% if bg.is_active %}checked{% endif %}>
-            فعال باشد
-        </label>
-        <button type="submit" class="btn btn-primary btn-sm">ذخیره پس‌زمینه</button>
-    </form>
+            <div class="form-actions-row">
+                <button type="submit" class="btn btn-primary btn-sm">ذخیره پس‌زمینه</button>
+            </div>
+        </form>
 
-    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.8rem;">
-        <form method="post" action="/admin/settings/instagram-backgrounds/default">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <input type="hidden" name="key" value="{{ bg.key }}">
-            <button type="submit" class="btn btn-sm btn-ghost"
-                    {% if bg.is_default or not bg.is_active %}disabled{% endif %}>
-                تعیین به‌عنوان پیش‌فرض
-            </button>
-        </form>
-        <form method="post" action="/admin/settings/instagram-backgrounds/toggle">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <input type="hidden" name="key" value="{{ bg.key }}">
-            <button type="submit" class="btn btn-sm btn-ghost">
-                {% if bg.is_active %}غیرفعال کردن{% else %}فعال کردن{% endif %}
-            </button>
-        </form>
-        <form method="post" action="/admin/settings/instagram-backgrounds/duplicate">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <input type="hidden" name="key" value="{{ bg.key }}">
-            <button type="submit" class="btn btn-sm btn-ghost">ساخت نسخه</button>
-        </form>
+        <div class="bg-actions">
+            <form method="post" action="/admin/settings/instagram-backgrounds/default">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="key" value="{{ bg.key }}">
+                <button type="submit" class="btn btn-sm btn-ghost"
+                        {% if bg.is_default or not bg.is_active %}disabled{% endif %}>
+                    تعیین به‌عنوان پیش‌فرض
+                </button>
+            </form>
+            <form method="post" action="/admin/settings/instagram-backgrounds/toggle">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="key" value="{{ bg.key }}">
+                <button type="submit" class="btn btn-sm btn-ghost">
+                    {% if bg.is_active %}غیرفعال کردن{% else %}فعال کردن{% endif %}
+                </button>
+            </form>
+            <form method="post" action="/admin/settings/instagram-backgrounds/duplicate">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="key" value="{{ bg.key }}">
+                <button type="submit" class="btn btn-sm btn-ghost">ساخت نسخه</button>
+            </form>
+        </div>
     </div>
-</div>
+</details>
 {% endfor %}
-
-<div class="card">
-    <div class="section-heading">
-        <div>
-            <span class="eyebrow">پس‌زمینه جدید</span>
-            <h3>افزودن اتاق</h3>
-        </div>
-    </div>
-    <form method="post" action="/admin/settings/instagram-backgrounds/save">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <div class="form-row">
-            <div class="form-group">
-                <label for="bg-new-label">عنوان فارسی</label>
-                <input id="bg-new-label" type="text" name="label_fa" maxlength="120" required>
-            </div>
-            <div class="form-group">
-                <label for="bg-new-desc">توضیح کوتاه (یک خط)</label>
-                <input id="bg-new-desc" type="text" name="description_fa" maxlength="240">
-            </div>
-        </div>
-        <div class="form-group">
-            <label for="bg-new-prompt">متن انگلیسی پس‌زمینه</label>
-            <textarea id="bg-new-prompt" name="prompt_en" rows="11" dir="ltr"
-                      style="font-family:monospace;font-size:0.85rem;"
-                      minlength="80" required
-                      placeholder="Walls: ...&#10;Floor: ...&#10;Lighting: ...&#10;Lens and color: ...&#10;Set rules: ..."></textarea>
-        </div>
-        <label style="display:inline-flex;align-items:center;gap:0.4rem;">
-            <input type="checkbox" name="is_active" value="1" checked> فعال باشد
-        </label>
-        <label style="display:inline-flex;align-items:center;gap:0.4rem;margin-inline-start:1rem;">
-            <input type="checkbox" name="is_default" value="1"> پیش‌فرض شود
-        </label>
-        <button type="submit" class="btn btn-primary btn-sm">افزودن پس‌زمینه</button>
-    </form>
 </div>
 
 {% endblock %}

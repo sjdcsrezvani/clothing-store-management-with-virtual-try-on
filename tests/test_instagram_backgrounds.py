@@ -218,6 +218,16 @@ def test_background_settings_page_is_owner_only(client, db_session):
     assert "این پس‌زمینه هنوز ویرایش نشده است" in page.text
 
 
+def test_background_library_uses_accordion_rows_and_preserves_status(client, db_session):
+    _login(client, db_session, "owner")
+    page = client.get("/admin/settings/instagram-backgrounds")
+    assert page.status_code == 200
+    assert "data-bg-new" in page.text
+    assert 'class="card bg-card"' in page.text
+    assert 'type="hidden" name="is_active" value="1"' in page.text
+    assert 'type="checkbox" name="is_active"' not in page.text
+
+
 def test_owner_can_edit_a_starter_background(client, db_session):
     _login(client, db_session, "owner")
     token = csrf_token(client, "/admin/settings/instagram-backgrounds")

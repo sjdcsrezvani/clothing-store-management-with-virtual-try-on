@@ -5189,3 +5189,120 @@ html[data-density="compact"] .btn { padding: 0.6rem 1.1rem; }
   font-size: 0.75rem;
   line-height: 1.6;
 }
+
+/* ===================== Instagram background library =====================
+   Native <details> rows keep the list short without a script: the summary
+   carries the name and state, the body carries the editor. */
+.bg-library { display: grid; gap: 0.9rem; }
+.bg-library .card { margin-bottom: 0; }
+
+.bg-intro { padding: 1.1rem 1.2rem; }
+.bg-intro p { margin: 0; }
+.bg-lock {
+  margin-top: 0.7rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  font-size: 0.8rem;
+}
+.bg-lock > span { color: var(--ink-soft); font-weight: 700; }
+.bg-lock code {
+  display: block;
+  margin-top: 0.35rem;
+  direction: ltr;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  line-height: 1.7;
+  color: var(--ink);
+}
+
+.bg-list-heading { margin: 0.4rem 0 0; }
+.bg-list-heading h3 { margin: 0 0 0.2rem; }
+
+.bg-card { padding: 0; overflow: hidden; }
+.bg-card > .bg-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 44px;
+  padding: 1.15rem 1.2rem 0.95rem;
+  cursor: pointer;
+  list-style: none;
+}
+/* The new-room row leads with its icon, so its text takes the flexible cell. */
+.bg-new > .bg-summary { grid-template-columns: auto minmax(0, 1fr) auto; }
+.bg-card > .bg-summary::-webkit-details-marker { display: none; }
+.bg-card > .bg-summary:focus-visible {
+  outline: 2px solid var(--candy);
+  outline-offset: -2px;
+}
+.bg-summary-text { display: grid; gap: 0.15rem; min-width: 0; }
+.bg-summary-title { font-size: 0.98rem; font-weight: 800; }
+.bg-summary-desc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  font-weight: 400;
+}
+.bg-summary-icon {
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--candy) 14%, var(--card));
+  color: var(--link-hover);
+}
+.bg-summary-icon svg { width: 1.1rem; height: 1.1rem; }
+.bg-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  justify-content: flex-end;
+}
+.bg-chips .source-chip { font-size: 0.7rem; padding: 0.2rem 0.55rem; }
+.bg-chevron {
+  display: grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  color: var(--ink-soft);
+  transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.bg-chevron svg { width: 0.9rem; height: 0.9rem; }
+.bg-card[open] > .bg-summary .bg-chevron { transform: rotate(180deg); }
+.bg-card[open] > .bg-summary { border-bottom: 1px solid var(--rule); }
+
+.bg-body { padding: 1rem 1.2rem 1.2rem; }
+.bg-untouched { margin: 0 0 0.8rem; font-size: 0.8rem; }
+.bg-prompt {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  line-height: 1.7;
+  resize: vertical;
+}
+.bg-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--rule);
+}
+.bg-actions form { margin: 0; }
+
+@media (max-width: 620px) {
+  .bg-card > .bg-summary { grid-template-columns: minmax(0, 1fr) auto; }
+  .bg-new > .bg-summary { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .bg-chips { grid-column: 1 / -1; justify-content: flex-start; }
+  .bg-actions form { flex: 1 1 100%; }
+  .bg-actions .btn { width: 100%; }
+}
