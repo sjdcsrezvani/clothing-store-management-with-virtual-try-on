@@ -2809,7 +2809,9 @@ body.is-soft-busy::before {
 .ctl-step { flex: 0 0 auto; width: 1.7rem; height: 1.7rem; display: inline-grid; place-items: center; border-radius: 50%; background: color-mix(in srgb, var(--candy) 14%, var(--card)); color: var(--link-hover); font-weight: 800; font-size: 0.85rem; }
 .tag-ctl-card .form-row { margin: 0 0 0.7rem; }
 .ctl-row-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.ctl-row-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+/* The unit tag can wrap above a narrow field, so align the inputs on their
+   bottom edge instead of letting the first two sit lower than the rest. */
+.ctl-row-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: end; }
 .ctl-row-last { margin-bottom: 0 !important; }
 .tag-ctl-card label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.74rem; font-weight: 700; }
 .tag-ctl-card .form-row > label { display: block; }
@@ -2831,20 +2833,24 @@ body.is-soft-busy::before {
 .tag-preview-card { min-width: 0; }
 .tag-preview-card .tag-ctl-title p { margin-bottom: 0.6rem; }
 .barcode-density-control { display: grid; grid-template-columns: minmax(180px, 0.7fr) minmax(0, 1.3fr); gap: 0.8rem; align-items: end; margin-top: 0.8rem; padding-top: 0.8rem; border-top: 1px dashed var(--rule); }
-.barcode-density-control label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.74rem; font-weight: 700; }
+.barcode-density-field { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; font-size: 0.74rem; font-weight: 700; }
+.barcode-density-field > label { display: block; }
 .barcode-density-control select { min-height: 40px; }
+.compact-control { display: flex; align-items: center; gap: 0.5rem; }
+.compact-control > label { font-size: 0.74rem; font-weight: 700; white-space: nowrap; }
+.compact-control .fancy-wrap { min-width: 200px; }
 .barcode-density-control p { margin: 0; padding: 0.65rem 0.75rem; border-radius: var(--radius-sm); background: var(--surface-soft); font-size: 0.76rem; }
 
 @media (max-width: 1180px) {
   .tag-settings-side { position: static; }
   .tag-settings-side > .card:first-child { position: static; }
   .tag-ctl-grid { grid-template-columns: 1fr; }
-  .ctl-row-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tag-ctl-card-wide { grid-column: auto; }
   .tag-editor-workspace { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 600px) {
   .ctl-row-2 { grid-template-columns: 1fr; }
+  .ctl-row-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tag-editor-toolbar { justify-content: flex-start; }
   .barcode-density-control { grid-template-columns: 1fr; }
 }

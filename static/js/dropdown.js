@@ -25,6 +25,9 @@
         var select = wrap.querySelector('select');
         var btn = wrap.querySelector('.fancy-btn');
         select.value = option.dataset.value;
+        // A native pick fires input then change; pages that preview live
+        // listen for the input event.
+        select.dispatchEvent(new Event('input', { bubbles: true }));
         select.dispatchEvent(new Event('change', { bubbles: true }));
         btn.querySelector('.fancy-label').textContent = option.textContent;
         wrap.querySelectorAll('.fancy-option').forEach(function (each) {

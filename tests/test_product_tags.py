@@ -495,6 +495,8 @@ def test_tag_settings_page_has_no_layout_mode(client, authed):
     assert "ستون‌ها" in response.text
     assert "سطرها" in response.text
     assert "خطای قالب" not in response.text
+    assert '<select id="tag-preset" data-fancy>' in response.text
+    assert '<select id="barcode-density" data-fancy>' in response.text
 
 
 def test_tag_price_label_carries_the_shop_currency(db_session):

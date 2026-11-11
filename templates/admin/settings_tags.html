@@ -49,12 +49,12 @@
         <div class="tag-head-actions">
             <span id="tag-unsaved" class="unsaved-chip" hidden>تغییرات ذخیره نشده است</span>
             <button type="button" id="use-default-tag" class="btn btn-sm btn-ghost" title="بوم را به قالب پیش‌فرض برمی‌گرداند">شروع دوباره</button>
-            <label class="compact-control"><span>قالب آماده</span><select id="tag-preset">
+            <div class="compact-control"><label for="tag-preset">قالب آماده</label><select id="tag-preset" data-fancy>
                 <option value="">— انتخاب قالب —</option>
                 <option value="kids_boutique">Kids Boutique — پیش‌فرض</option>
                 <option value="compact">تگ کوچک</option>
                 <option value="large">تگ بزرگ</option>
-            </select></label>
+            </select></div>
         </div>
     </div>
 
@@ -232,12 +232,13 @@
                     <label class="choice-card"><input type="radio" name="barcode-mode" value="hidden"> <strong>مخفی</strong><small>این ناحیه چاپ نمی‌شود</small></label>
                 </div>
                 <div class="barcode-density-control">
-                    <label>تراکم بارکد
-                        <select id="barcode-density">
+                    <div class="barcode-density-field">
+                        <label for="barcode-density">تراکم بارکد</label>
+                        <select id="barcode-density" data-fancy>
                             <option value="compact">فشرده — مناسب کدهای ۱۰ تا ۱۲ رقمی</option>
                             <option value="standard">استاندارد — خوانایی بیشتر</option>
                         </select>
-                    </label>
+                    </div>
                     <p class="muted" id="barcode-scan-status" aria-live="polite">بارکد واقعی از کد دقیق تنوع ساخته می‌شود و عدد زیر آن جداست.</p>
                     <p class="muted" id="barcode-width-readout" aria-live="polite"></p>
                 </div>
@@ -440,7 +441,10 @@ function syncInputsFromConfig(){
   document.querySelectorAll('input[name="barcode-mode"]').forEach(i => { i.checked = (i.value === workingConfig.barcode_mode); });
   // Restored values are valid by construction: rings retire with the undo.
   Object.keys(inputErrors).forEach(id => { const el = $(id); if (el) flagInput(el, null); });
-  $('barcode-density').value = workingConfig.barcode_density || 'compact';
+  const density = $('barcode-density');
+  density.value = workingConfig.barcode_density || 'compact';
+  // The custom dropdown mirrors its label from the change event.
+  density.dispatchEvent(new Event('change', { bubbles: true }));
   $('custom-image-warning').hidden = workingConfig.barcode_mode !== 'custom_image';
   updateBarcodeStatus();
   updateFitGuide();
@@ -905,9 +909,14 @@ function loadBuiltInLayout(key){
 $('tag-preset').addEventListener('change', async function () {
   const key = this.value;
   if (!key || !tagPresets[key]) { this.value = ''; return; }
-  if (dirty && !(await window.RaykidConfirm.ask('با بارگذاری قالب آماده، تغییرات فعلی از بین می‌رود. ادامه می‌دهید؟', {title: 'تغییرات ذخیره‌نشده', ok: 'ادامه'}))) { this.value = ''; return; }
+  if (dirty && !(await window.RaykidConfirm.ask('با بارگذاری قالب آماده، تغییرات فعلی از بین می‌رود. ادامه می‌دهید؟', {title: 'تغییرات ذخیره‌نشده', ok: 'ادامه'}))) {
+    this.value = '';
+    this.dispatchEvent(new Event('change', { bubbles: true }));
+    return;
+  }
   loadBuiltInLayout(key);
   this.value = '';
+  this.dispatchEvent(new Event('change', { bubbles: true }));
 });
 $('use-default-tag').addEventListener('click', async () => {
   if (dirty && !(await window.RaykidConfirm.ask('شروع دوباره بوم را به قالب پیش‌فرض برمی‌گرداند و تغییرات فعلی از بین می‌رود. ادامه می‌دهید؟', {title: 'تغییرات ذخیره‌نشده', ok: 'ادامه'}))) return;
